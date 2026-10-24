@@ -28,7 +28,10 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
   metricRiseCeiling: 'a topology-config option; neither construction site passes it',
   metricFleetBaseline: 'a topology-config option; neither construction site passes it',
   failedEdgeWeight:
-    'ships at 0 and is never forwarded, so the direction term is off for every engine run',
+    'ships at 0 and is never forwarded, so the direction term is off for every engine run — and that is now the ' +
+    'REASON a licensed arm cannot ship rather than a fact about an unused knob: the term has a measured gate in the ' +
+    "engine (`admitsFailedEdgeTerm`, +42 with zero regressed fault types on FSE'26) whose second acceptance condition " +
+    "is this surface's nine cells, which no dispatch can state a weight for. See `fse26-discriminator-verdict.md` §23",
   failedEdgeMode: 'meaningless without a weight to aggregate; ships at `sum`, never forwarded',
   failedEdgeMinRecords: 'meaningless without a weight to threshold; ships at 1, never forwarded',
 };

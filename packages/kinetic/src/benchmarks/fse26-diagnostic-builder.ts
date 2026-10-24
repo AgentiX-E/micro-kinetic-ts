@@ -111,20 +111,17 @@ export function buildFSE26Diagnostic(input: DiagnosticCaseInput): string {
   // measured at all. The maximum rather than the mean because one caller going from 1 ms to 2 s is
   // the signal, and averaging it against twenty unchanged callers would bury it.
   //
-  // `post / pre` is computed WITHOUT the guard the raw reader used to need: `FaultEdgeLatency` is
-  // the loader's own type and its converter drops a row whose durations are not finite and positive
-  // (see `toFSE26EdgeLatency`), so `pre > 0` holds by construction and the division is finite. A
-  // defensive branch here could never fire — and if one ever did, the formatter's `nonfinite` render
-  // is the tripwire, which is louder than a silently skipped row.
-  const latencyByCallee = new Map<string, { rise: number; count: number }>();
-  for (const row of benchCase.edgeLatency ?? []) {
-    const previous = latencyByCallee.get(row.callee);
-    const rise = row.postMeanMs / row.preMeanMs;
-    latencyByCallee.set(row.callee, {
-      rise: previous === undefined ? rise : Math.max(previous.rise, rise),
-      count: (previous?.count ?? 0) + 1,
-    });
-  }
+  // Read from the GRAPH rather than re-derived from the case, for the reason every other term above
+  // is: the gate that decides whether the failed-edge direction term may act reads
+  // `computeEdgeLatencyByCallee`, and an artifact that computed its own copy would let a reader
+  // check the dump's `latRise` against a number the engine never used. One derivation, two readers.
+  //
+  // `post / pre` needs no guard here: `FaultEdgeLatency` is the loader's own type and its converter
+  // drops a row whose durations are not finite and positive (see `toFSE26EdgeLatency`), so
+  // `pre > 0` holds by construction and the division is finite. A defensive branch here could never
+  // fire — and if one ever did, the formatter's `nonfinite` render is the tripwire, which is louder
+  // than a silently skipped row.
+  const latencyByCallee = graph.edgeLatencyByCallee;
 
   const services: FSE26DiagnosticService[] = [];
   for (const serviceId of input.callGraph.nodes.keys()) {
@@ -169,8 +166,8 @@ export function buildFSE26Diagnostic(input: DiagnosticCaseInput): string {
       logScore,
       failedEdgeScore,
       failedEdgeRecords: failedEdgeRecordsByCallee.get(serviceId) ?? 0,
-      latRise: latencyByCallee.get(serviceId)?.rise,
-      latEdges: latencyByCallee.get(serviceId)?.count ?? 0,
+      latRise: latencyByCallee?.get(serviceId)?.rise,
+      latEdges: latencyByCallee?.get(serviceId)?.count ?? 0,
       // Read from the graph like every other term above, so the dump reports the engine's own delay
       // rather than a re-derivation. Passed through RAW: the engine's `-1` ("undetermined") is data,
       // and the formatter decides how it renders, so no call site can quietly turn it into a 0 or an

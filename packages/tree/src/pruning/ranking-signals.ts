@@ -1257,6 +1257,70 @@ export function computeFailedEdgeScores(
   return scores;
 }
 
+/** One callee's inbound latency observation: the largest rise, and how many edges produced it. */
+export interface InboundLatency {
+  readonly rise: number;
+  readonly count: number;
+}
+
+/**
+ * Aggregate `post / pre` per CALLEE over the edges an acceptance predicate keeps.
+ *
+ * A callee is credited on its LARGEST inbound rise, never its mean: one caller going from 1 ms to
+ * 2 s is the signal, and averaging it against twenty unchanged callers would bury it.
+ *
+ * The predicate is the parameter rather than a filter applied afterwards because the two differ.
+ * Dropping a row after aggregation removes a callee but not the influence of that row on a
+ * surviving callee's MAXIMUM — so a filtered-after map would still carry an out-of-graph caller's
+ * rise, which is exactly the leak the term's own filter exists to prevent.
+ *
+ * @param edges - Per-edge latency records.
+ * @param accept - Whether this row may contribute.
+ * @returns The aggregation, empty when no row was accepted.
+ * @internal
+ */
+function aggregateInboundLatency(
+  edges: ReadonlyArray<FaultEdgeLatency>,
+  accept: (edge: FaultEdgeLatency) => boolean,
+): Map<ServiceId, InboundLatency> {
+  const byCallee = new Map<ServiceId, InboundLatency>();
+  for (const row of edges) {
+    if (!accept(row)) continue;
+    const previous = byCallee.get(row.callee);
+    const rise = row.postMeanMs / row.preMeanMs;
+    byCallee.set(row.callee, {
+      rise: previous === undefined ? rise : Math.max(previous.rise, rise),
+      count: (previous?.count ?? 0) + 1,
+    });
+  }
+  return byCallee;
+}
+
+/**
+ * Per-callee inbound latency rise, **RAW** — the observable the `lat` term is a shape over, and
+ * the quantity the diagnostic dump renders as `latRise` / `latEdges`.
+ *
+ * Accepts EVERY row. That is the diagnostic's population by construction (it reads
+ * `benchCase.edgeLatency` with no filter), and the gate that decides whether the failed-edge
+ * direction term may act reads this map — so the number the engine decides on is the number the
+ * artifact prints. A second, differently-filtered derivation would let the benchmark's measurement
+ * and the engine's behaviour be about two quantities that merely share a name.
+ *
+ * NOT a ranking term: no `log1p`, no floor mask, no max-normalisation. Those belong to
+ * {@link computeEdgeLatencyScores}, and a decision made in the dump's own units cannot read them —
+ * rank normalisation puts the top candidate at the maximum of the term's range whatever the
+ * input was, which is why a saturated term cannot be read to decide whether to trust it.
+ *
+ * @param edges - Per-edge latency records, or `undefined` when not recorded.
+ * @returns The per-callee maximum rise with its contributing-edge count; empty when absent.
+ */
+export function computeEdgeLatencyByCallee(
+  edges: ReadonlyArray<FaultEdgeLatency> | undefined,
+): Map<ServiceId, InboundLatency> {
+  if (edges === undefined || edges.length === 0) return new Map();
+  return aggregateInboundLatency(edges, () => true);
+}
+
 /**
  * Per-callee inbound latency rise, max-normalised into [0, 1].
  *
@@ -1299,18 +1363,20 @@ export function computeEdgeLatencyScores(
   const scores = new Map<ServiceId, number>();
   if (edges === undefined || edges.length === 0) return scores;
 
+  // The RANKING term's population: both endpoints rankable, no self-call, a finite positive
+  // baseline. The raw observable below keeps the diagnostic's wider population — see
+  // `computeEdgeLatencyByCallee` for why the two are not the same set and must not be merged.
   const rise = new Map<ServiceId, number>();
-  for (const edge of edges) {
-    if (!nodeIds.has(edge.caller) || !nodeIds.has(edge.callee)) continue;
-    if (edge.caller === edge.callee) continue;
-    if (!Number.isFinite(edge.preMeanMs) || !Number.isFinite(edge.postMeanMs)) continue;
+  for (const [callee, { rise: value }] of aggregateInboundLatency(edges, (edge) => {
+    if (!nodeIds.has(edge.caller) || !nodeIds.has(edge.callee)) return false;
+    if (edge.caller === edge.callee) return false;
+    if (!Number.isFinite(edge.preMeanMs) || !Number.isFinite(edge.postMeanMs)) return false;
     // A non-positive baseline would divide to Infinity. The converter already
     // excludes it; the guard is here so a hand-built case cannot poison the
     // case maximum and thereby rescale every other candidate.
-    if (edge.preMeanMs <= 0) continue;
-    const value = edge.postMeanMs / edge.preMeanMs;
-    const previous = rise.get(edge.callee);
-    if (previous === undefined || value > previous) rise.set(edge.callee, value);
+    return edge.preMeanMs > 0;
+  })) {
+    rise.set(callee, value);
   }
   if (rise.size === 0) return scores;
 

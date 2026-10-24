@@ -67,6 +67,7 @@ import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   computeDeepestExceptions,
+  computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeLogScores,
@@ -926,6 +927,107 @@ export const DEFAULT_RISE_WEIGHT = 0.0;
 export const DEFAULT_FAILED_EDGE_WEIGHT = 0.0;
 
 /**
+ * The rank-1 latency rise, in the dump's own units, at which the failed-edge direction term is
+ * allowed to act — and the interval it was measured inside.
+ *
+ * ## Why the term is gated at all
+ *
+ * The ungated term is not a candidate: it takes FSE'26 from 750 to 855 (+105) and **regresses two
+ * fault types**, so the engine's acceptance condition — gain on the benchmark, no regressed fault
+ * type — refuses it. The gross gain of the ungated term sits ENTIRELY inside the network class
+ * (+62 of +62) while its losses sit entirely outside it, which is a mechanism rather than a
+ * pattern: a failed call names the fault site exactly when what failed IS the connection.
+ *
+ * ## What the gate reads, and what it must NOT read
+ *
+ * Two observables of the engine's **own rank-1** service, both computable at inference time and
+ * neither derived from the injected label:
+ *
+ * 1. whether the metric that dominates its anomaly is a **duration series** — the deployable proxy
+ *    that clears the base rate at 30.1% precision / 90.6% recall against 17.9%;
+ * 2. whether that service's **raw inbound latency rise** clears {@link FAILED_EDGE_LAT_RISE_FLOOR},
+ *    which is what separates the two types the metric proxy alone keeps breaking. Their rank-1 rise
+ *    has a median of **9.0** against **340.9** on the cases the term is for — a 38× separation in
+ *    MAGNITUDE, and the only one available: the harmful types' dominant metric is literally
+ *    `http.server.request.duration`, the same series family as the useful ones, so no metric NAME
+ *    can separate them.
+ *
+ * The gate reads the raw rise and **not** `edgeLatencyScores`. That map is `log1p`-compressed and
+ * max-normalised, so the top candidate always sits at the maximum of the term's range whatever its
+ * input was — a saturated quantity, and law 1 forbids reading one to decide whether to trust it.
+ *
+ * ## Why 300, and why it is not a fitted point
+ *
+ * A fine scan puts the criterion's feasible region at **`[240, 360]`, where the net is exactly +42
+ * and no fault type regresses at every point**. The corpus therefore does not offer a number, it
+ * offers an INTERVAL, and the constant is that interval's **midpoint** — a canonical point inside a
+ * region where every choice gives the same answer, which is what makes the choice unfalsifiable by
+ * fold protocol rather than merely lucky on it. Held out per fold by taking each training interval's
+ * midpoint, the criterion holds on **every** fold with **zero leaking folds** (+42 over 1422), where
+ * choosing the point that maximises the training net leaked a regressed type on the fold that
+ * dissented.
+ *
+ * The value is FITTED in the statistician's sense — it came from a scan — and the licence is the
+ * plateau's width plus the held-out protocol, not the number's identity. A reader who moves it
+ * anywhere inside the interval has not changed the measurement.
+ */
+export const FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU = { lo: 240, hi: 360 } as const;
+
+/**
+ * The admitted floor: the plateau's midpoint. See
+ * {@link FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU} for the measurement, the width and the protocol.
+ */
+export const FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300;
+
+/**
+ * The metric-name families that count as a duration series.
+ *
+ * These four alternatives are not a guess: they are the ones the corpus's dominant labels use
+ * (`http.server.request.duration`, `http.client.request.duration.max`,
+ * `hubble_http_request_duration_p90_seconds`, `*_p99_*`, `*latency*`, `*_time`) and the ones the
+ * deployable proxy was measured with. **Widening it would not help**: the two harmful types reach
+ * the gate through `http.server.request.duration` itself, so the separator cannot be a name.
+ */
+const DURATION_DOMINANT_METRIC = /duration|latency|time|p99|p95/i;
+
+/**
+ * May the failed-edge direction term act on a case whose rank-1 service looks like this?
+ *
+ * Ported from the benchmark's `admitsToGate`, in the engine, reading the engine's OWN observables:
+ * the label of the metric that won the rank-1's anomaly, and that service's raw inbound dwell rise.
+ *
+ * Both halves are required, and each closes a different residue:
+ *
+ * - **the name** alone admits 765 of 1422 cases and regresses two types (+110);
+ * - **the magnitude** alone is not computable without a candidate to measure;
+ * - together they admit ~130 cases and regress **none** (+42).
+ *
+ * `latRise` is `undefined` when the case carried no per-edge measurement, and an absent measurement
+ * is read as **0** — the term is then refused. That is the only safe direction: a case with no
+ * latency evidence is precisely the case where the gate's second half cannot speak, and defaulting
+ * the other way would let "no data" admit the term.
+ *
+ * @param dominantMetric - The label of the rank-1 service's dominant metric, if measured.
+ * @param latRise - The rank-1 service's largest raw inbound `post / pre` rise, if measured.
+ * @returns True only when both halves of the gate hold.
+ */
+export function admitsFailedEdgeTerm(
+  dominantMetric: string | undefined,
+  latRise: number | undefined,
+): boolean {
+  // `undefined` is not the empty string: a metric with an empty label was never named by the
+  // producer, and `RegExp.test('')` is false anyway — but the explicit first test is what makes
+  // the absence-vs-empty distinction readable rather than incidental.
+  if (dominantMetric === undefined) return false;
+  if (!DURATION_DOMINANT_METRIC.test(dominantMetric)) return false;
+  // A missing rise reads as 0 and is refused; `Number.isFinite` keeps a NaN out, which would
+  // otherwise make every comparison false and silently reproduce the same refusal for a different
+  // reason than the one this branch states.
+  const rise = latRise === undefined || !Number.isFinite(latRise) ? 0 : latRise;
+  return rise >= FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR;
+}
+
+/**
  * The engine's own defaults table, exported so that a caller cannot hold a second opinion about what the
  * engine ships.
  *
@@ -1270,6 +1372,12 @@ export class TreePruner {
       new Set(callGraph.nodes.keys()),
       this.options.latMinRise,
     );
+    // The RAW per-callee rise behind that term — the observable, not a shape over it. Derived once
+    // here so the gate that decides the failed-edge term and the diagnostic artifact that reports
+    // it read the SAME numbers; two derivations of one statistic is how a measurement comes to be
+    // about a quantity the code never used. See `computeEdgeLatencyByCallee` for why this map is
+    // deliberately wider than the term's population.
+    const edgeLatencyByCallee = computeEdgeLatencyByCallee(options?.edgeLatency);
 
     return {
       callGraph: topologyGraph,
@@ -1292,6 +1400,7 @@ export class TreePruner {
       prismScores,
       failedEdgeScores,
       edgeLatencyScores,
+      edgeLatencyByCallee,
       poolMetricScores,
       stabilityScores,
     };
@@ -1337,8 +1446,55 @@ export class TreePruner {
     const allCycles = graph.detectedCycles;
     const prunedTree = pruneCycles(graph, allCycles.length > 0 ? allCycles : undefined);
 
-    // Perform tree RCA on the pruned tree with collision energy
-    const results = performTreeRCA(
+    // The BASELINE ranking — the configuration every mutation of this engine is measured against,
+    // and the only one in which the gate's subject is observable. When the direction term is off
+    // this pass IS the answer and nothing below runs.
+    const baseline = performTreeRCA(
+      prunedTree,
+      graph.anomalyScores,
+      graph.anomalyOnsetTimes,
+      graph.postInjectOnsetDelays,
+      graph.injectTimeMs ?? 0,
+      graph.callGraph.nodes,
+      graph.propagationWeights,
+      k,
+      { ...this.options, failedEdgeWeight: 0 },
+      graph.collisionEnergy,
+      graph.logScores,
+      graph.topoScores,
+      graph.riseScores,
+      graph.traceActivityScores,
+      graph.prismScores,
+      graph.failedEdgeScores,
+      graph.edgeLatencyScores,
+      graph.poolMetricScores,
+      graph.stabilityScores,
+    );
+
+    // ── The failed-edge direction term's GATE ────────────────────────────────
+    // The term is not a reweighting that can be applied unconditionally: ungated it regresses two
+    // fault types on FSE'26, so the engine's acceptance condition refuses it. What licenses it is a
+    // predicate on the engine's OWN rank-1 — the service the baseline ranking already chose, which
+    // is the only subject the benchmark's measurement was taken on, and never the injected label.
+    //
+    // The pass above is what makes this decidable: a gate that needed the term's own output to
+    // name its subject would be circular, and a gate that read the option instead of the ranking
+    // would decide about a service the engine does not answer with. The cost is a second ranking
+    // ONLY on the cases the gate admits; a refused case returns the baseline it already has.
+    const directionWeight = this.options.failedEdgeWeight;
+    if (directionWeight === 0) return baseline;
+    const rankOne = baseline[0];
+    if (rankOne === undefined) return baseline;
+    if (
+      !admitsFailedEdgeTerm(
+        graph.dominantMetrics?.get(rankOne.serviceId)?.label,
+        graph.edgeLatencyByCallee?.get(rankOne.serviceId)?.rise,
+      )
+    ) {
+      return baseline;
+    }
+
+    return performTreeRCA(
       prunedTree,
       graph.anomalyScores,
       graph.anomalyOnsetTimes,
@@ -1359,8 +1515,6 @@ export class TreePruner {
       graph.poolMetricScores,
       graph.stabilityScores,
     );
-
-    return results;
   }
 
   /**

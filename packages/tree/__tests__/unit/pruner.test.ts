@@ -1477,20 +1477,47 @@ describe('TreePruner — failed-edge-direction signal', () => {
   // roles the signal has to tell apart, and the direction is the whole point.
   const CALLER = 'ts-ui-dashboard';
   const CALLEE = 'ts-order-service';
+  const GATEWAY = 'ts-gateway';
   const failedTraceEdges = [{ caller: CALLER, callee: CALLEE, failed: 10, baseline: 0 }];
+  // The gate's second half needs an INBOUND rise on the rank-1 service, and the
+  // dashboard is the root of the fixture's topology — so a third service calls
+  // it. 400 / 1 = 400, inside the measured plateau ([240, 360] is where the
+  // corpus's criterion holds; the constant is its midpoint, 300).
+  const inboundLatency = [{ caller: GATEWAY, callee: CALLER, preMeanMs: 1, postMeanMs: 400 }];
 
-  // Both services deviate after injection, so both are rankable candidates and
-  // the ONLY thing that can separate their scores is the new term.
-  const makeCase = (): [ServiceCallGraph, MetricMap] => [
-    makeCallGraph([CALLER, CALLEE], [[CALLER, CALLEE]]),
-    makeMetrics({
-      [CALLER]: [1, 1, 1, 1, 4, 4, 4, 4],
-      [CALLEE]: [1, 1, 1, 1, 3, 3, 3, 3],
-    }),
+  const makeCase = (
+    /**
+     * The rank-1 service's dominant metric. The gate reads it, so a fixture that
+     * leaves it a resource series is a fixture of a case the term is REFUSED on —
+     * which is the second half of this block rather than a variation of the first.
+     */
+    rankOneMetricLabel = 'http.server.request.duration',
+  ): [ServiceCallGraph, MetricMap] => [
+    makeCallGraph(
+      [GATEWAY, CALLER, CALLEE],
+      [
+        [GATEWAY, CALLER],
+        [CALLER, CALLEE],
+      ],
+    ),
+    new Map<string, readonly TimeSeries[]>([
+      // Both of these deviate after injection, so both are rankable candidates
+      // and the ONLY thing that can separate their scores is the new term.
+      [GATEWAY, [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 2, 2, 2, 2])]],
+      [CALLER, [makeTimeSeries(rankOneMetricLabel, [1, 1, 1, 1, 4, 4, 4, 4])]],
+      [CALLEE, [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 3, 3, 3, 3])]],
+    ]),
   ];
 
-  const scores = (pruner: TreePruner, options?: { failedTraceEdges: typeof failedTraceEdges }) => {
-    const [callGraph, metrics] = makeCase();
+  const scores = (
+    pruner: TreePruner,
+    options?: {
+      failedTraceEdges: typeof failedTraceEdges;
+      edgeLatency?: typeof inboundLatency;
+    },
+    rankOneMetricLabel?: string,
+  ) => {
+    const [callGraph, metrics] = makeCase(rankOneMetricLabel);
     const graph = pruner.buildFaultGraph(callGraph, metrics, options);
     return {
       graph,
@@ -1526,13 +1553,72 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // single charged callee the delta is exactly 1 — and the caller's own score
     // must not move, or the signal would be a re-weighting rather than a new
     // axis.
+    //
+    // The case is the one the term is ADMITTED on: its rank-1 carries a duration
+    // dominant metric and an inbound rise of 400. Both halves are the fixture's,
+    // and the two tests below are what make them load-bearing rather than
+    // decoration.
     const base = new TreePruner();
     const enabled = new TreePruner({ failedEdgeWeight: 1 });
-    const before = scores(base, { failedTraceEdges }).byService;
-    const after = scores(enabled, { failedTraceEdges }).byService;
+    const before = scores(base, { failedTraceEdges, edgeLatency: inboundLatency }).byService;
+    const after = scores(enabled, { failedTraceEdges, edgeLatency: inboundLatency }).byService;
 
     expect(after.get(CALLEE)! - before.get(CALLEE)!).toBeCloseTo(1, 10);
     expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('refuses the term on a rank-1 whose dominant metric is a RESOURCE series, whatever the rise', () => {
+    // The oracle mutation, at the engine's own boundary: the same failures, the
+    // same topology and a rise of 400 — an observably enormous one — and the term
+    // must contribute NOTHING, because the only thing that changed is the name of
+    // the metric that won the rank-1's anomaly. A gate that admitted this would
+    // be reading the injected fault CLASS rather than an observable, which is the
+    // defect that kept the term out of the engine for six iterations.
+    const base = new TreePruner();
+    const enabled = new TreePruner({ failedEdgeWeight: 1 });
+    const before = scores(
+      base,
+      { failedTraceEdges, edgeLatency: inboundLatency },
+      'cpu_usage',
+    ).byService;
+    const after = scores(
+      enabled,
+      { failedTraceEdges, edgeLatency: inboundLatency },
+      'cpu_usage',
+    ).byService;
+
+    expect(after.get(CALLEE)!).toBeCloseTo(before.get(CALLEE)!, 12);
+    expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('refuses the term on a duration-dominant rank-1 whose rise is below the floor', () => {
+    // The other half, isolated: the name admits and the MAGNITUDE does not. 40 is
+    // below the plateau's lower bound (240) as well as below the constant (300),
+    // so the case is refused at every point a reader could plausibly reconstruct
+    // the rule from — the harmful types' median rise is 9.0, an order of magnitude
+    // under even the smallest floor the corpus admits.
+    const base = new TreePruner();
+    const enabled = new TreePruner({ failedEdgeWeight: 1 });
+    const slow = [{ caller: GATEWAY, callee: CALLER, preMeanMs: 10, postMeanMs: 400 }];
+    const before = scores(base, { failedTraceEdges, edgeLatency: slow }).byService;
+    const after = scores(enabled, { failedTraceEdges, edgeLatency: slow }).byService;
+
+    expect(after.get(CALLEE)!).toBeCloseTo(before.get(CALLEE)!, 12);
+  });
+
+  it('reads the RANK-1 rise, not the term target’s — the subject is the engine’s own answer', () => {
+    // A case where the two roles differ: the rank-1 (the dashboard) is slow by 400
+    // and the term's own target (the order service) has NO inbound measurement at
+    // all. Admitting on the target's rise would make the gate unobservable here;
+    // admitting on the rank-1's is what the benchmark measured, and it is the only
+    // subject that exists before the term is applied.
+    const base = new TreePruner();
+    const enabled = new TreePruner({ failedEdgeWeight: 1 });
+    const before = scores(base, { failedTraceEdges, edgeLatency: inboundLatency });
+    const after = scores(enabled, { failedTraceEdges, edgeLatency: inboundLatency });
+
+    expect(after.graph.edgeLatencyByCallee?.get(CALLEE)).toBeUndefined();
+    expect(after.byService.get(CALLEE)! - before.byService.get(CALLEE)!).toBeCloseTo(1, 10);
   });
 
   it('carries the weight into the shared RankingWeights contract', () => {

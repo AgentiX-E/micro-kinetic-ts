@@ -27,13 +27,18 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { FaultPropagationGraph, ServiceCallGraph } from '../../packages/core/src/index.js';
+import type {
+  FaultEdgeLatency,
+  FaultPropagationGraph,
+  ServiceCallGraph,
+} from '../../packages/core/src/index.js';
 import {
   buildFSE26Diagnostic,
   SERVICE_FIELD_DECIMALS,
   SyntheticBenchmarkGenerator,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { computeEdgeLatencyByCallee } from '../../packages/tree/src/index.js';
 import type { DiagnosedService } from '../src/fse26-diagnose-analyze.js';
 import {
   onsetAvailability,
@@ -167,12 +172,16 @@ function caseOf(nonFinite = false): BenchmarkCase {
   // unexercised while the equality above still passed.
   return {
     ...base,
-    // `latRise` is the one formatter-rendered row field the GRAPH cannot set: it comes from the case's own
-    // edge latencies, as `postMeanMs / preMeanMs`. A zero denominator makes that rise `Infinity`, which is
-    // exactly the non-finite value `fmt` renders as the tripwire — a real division, not a typed-in NaN.
-    // A zero denominator makes the rise `Infinity` — a real division rather than a typed-in NaN. The healthy
-    // case carries a finite one, so `latRise` is a NUMBER there and the control below has something to be
-    // true about.
+    // `latRise` is the rise the GRAPH carries, derived from these tuples by the same function
+    // `buildFaultGraph` calls — `postMeanMs / preMeanMs`, per callee, maximum over inbound edges. A zero
+    // denominator makes that rise `Infinity`, which is exactly the non-finite value `fmt` renders as the
+    // tripwire: a real division, not a typed-in NaN. The healthy case carries a finite one, so `latRise` is a
+    // NUMBER there and the control below has something to be true about.
+    //
+    // It used to be read from THIS object by the builder, which made the field belong to the case rather than
+    // to the graph. The engine now derives the map and the builder reads it, so the fixture has to carry the
+    // tuples through the same function or the block would render `-` — the dump is a report about the graph,
+    // and a case-only path is one no run of the engine produces.
     edgeLatency: [
       {
         caller: 'caller-a',
@@ -217,6 +226,7 @@ function graphOf(
   onsetBase = 100,
   onsetStep = 50,
   nonFinite = false,
+  edgeLatency: readonly FaultEdgeLatency[] = [],
 ): FaultPropagationGraph {
   const ids = [...callGraph.nodes.keys()];
   // Every number a formatter renders, in one object, so the non-finite case cannot miss one by being
@@ -295,6 +305,9 @@ function graphOf(
     // producer prints a zero delay as `0` (`fmtOnset` rounds and keeps it), so a graph with all-zero delays
     // is a block where the same token that means NO ANCHOR on the header means a MEASUREMENT on the row.
     postInjectOnsetDelays: new Map(ids.map((id, index) => [id, onsetBase + index * onsetStep])),
+    // The engine's own derivation of the raw rise, so the block's `latRise` is the observable
+    // `buildFaultGraph` produced rather than one this fixture computed for the builder's benefit.
+    edgeLatencyByCallee: computeEdgeLatencyByCallee(edgeLatency),
   };
 }
 
@@ -328,6 +341,7 @@ function blockWith(
     options.onsetBase ?? 100,
     options.onsetStep ?? 50,
     nonFinite,
+    benchCase.edgeLatency,
   );
   return buildFSE26Diagnostic({
     case: benchCase,

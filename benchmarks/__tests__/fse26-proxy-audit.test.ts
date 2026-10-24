@@ -22,9 +22,11 @@ import {
   formatDeployableGate,
   formatFloorHoldout,
   formatPlateauHoldout,
+  formatPortAgreement,
   formatProxyAudit,
   holdoutFloorReport,
   holdoutPlateauReport,
+  portAgreement,
   proxyAudit,
   proxyRows,
   rankOneLatencyDominant,
@@ -1146,5 +1148,130 @@ describe('holdoutPlateauReport — the interval, and its midpoint read out of sa
     );
     expect(negative).toContain('-2');
     expect(negative).not.toContain('+-2');
+  });
+});
+
+describe('portAgreement — the engine’s predicate held to this module’s proxy', () => {
+  const admitCase = (datapack: string) =>
+    kase({
+      datapack,
+      groundTruth: ['a'],
+      services: [
+        svc({
+          serviceId: 'a',
+          predictedRank: 1,
+          dominantMetric: 'http.server.request.duration',
+          latRise: 500,
+        }),
+      ],
+    });
+
+  it('counts a case the two readings ADMIT as one agreement, and reports the admission on both sides', () => {
+    const report = portAgreement([admitCase('d1')], 300);
+    expect(report.cases).toBe(1);
+    expect(report.benchmarkAdmits).toBe(1);
+    expect(report.engineAdmits).toBe(1);
+    expect(report.agreed).toBe(1);
+    expect(report.mismatches).toEqual([]);
+  });
+
+  it('holds the ORACLE refusal on both sides: a resource metric at an enormous rise is refused twice', () => {
+    // The mutation that would make the port a re-implementation: a rise of 999 on a CPU series. Both
+    // readings must refuse, and the count is what says the engine reads the NAME too.
+    const cpu = kase({
+      datapack: 'd2',
+      groundTruth: ['a'],
+      services: [
+        svc({
+          serviceId: 'a',
+          predictedRank: 1,
+          dominantMetric: 'container_cpu_usage_seconds_total',
+          latRise: 999,
+        }),
+      ],
+    });
+    const report = portAgreement([cpu], 300);
+    expect(report.benchmarkAdmits).toBe(0);
+    expect(report.engineAdmits).toBe(0);
+    expect(report.agreed).toBe(1);
+  });
+
+  it('skips a case that names no root, because neither reading has a subject there', () => {
+    const noRoot = kase({ datapack: 'd3', groundTruth: [], services: [] });
+    expect(portAgreement([noRoot], 300).cases).toBe(0);
+  });
+
+  it('renders agreement BEFORE the net, and names the floor it read', () => {
+    // Law 41: a reader who meets the total first has already been misled. The agreement line is
+    // asserted to precede the arm's result in the rendered block, not merely to exist in it.
+    const gate = deployableGateReport([admitCase('d1')], OPTS, 3, 300);
+    const text = formatPortAgreement(portAgreement([admitCase('d1')], 300), gate, {
+      cases: 1,
+      agreed: 1,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    });
+    const lines = text.split('\n');
+    const agreementAt = lines.findIndex((line) => line.includes('baseline agreement'));
+    const netAt = lines.findIndex((line) => line.includes('behind that floor'));
+    expect(agreementAt).toBeGreaterThan(-1);
+    expect(netAt).toBeGreaterThan(agreementAt);
+    expect(text).toContain('floor 300');
+    expect(text).toContain('the port IS the semantics');
+  });
+
+  it('renders a zero population, a negative net and a regressed type without breaking the sentence', () => {
+    // The three shapes every formatter in this module is held to: a division it must not perform, a
+    // sign it must not print twice, and a residue it must name rather than summarise. The block is
+    // printed on every screen, so a formatter that threw on an empty artifact would take the whole
+    // discriminator section with it.
+    const text = formatPortAgreement(
+      {
+        floor: 300,
+        plateau: { lo: 240, hi: 360 },
+        cases: 0,
+        benchmarkAdmits: 0,
+        engineAdmits: 0,
+        agreed: 0,
+        mismatches: [],
+      },
+      {
+        weight: 3,
+        minLatRise: 300,
+        admitted: 0,
+        cases: 0,
+        baselineCorrect: 5,
+        correct: 3,
+        regressed: ['HTTPRequestDelay 2'],
+      },
+      { cases: 0, agreed: 0, recordedRight: 0, rebuiltRight: 0, recordedNotListed: 0 },
+    );
+    expect(text).toContain('0.00%');
+    expect(text).toContain('(-2)');
+    expect(text).not.toContain('+-2');
+    expect(text).toContain('regressed types: HTTPRequestDelay 2');
+    expect(text).not.toContain('NaN');
+  });
+
+  it('prints every DISAGREEMENT by datapack rather than a count, so a divergence is reproducible', () => {
+    // The branch the two implementations only reach if they diverge. It is exercised by handing the
+    // formatter a report that carries one, because the point of the failure text is what a reader
+    // needs when a port has silently become a re-implementation.
+    const text = formatPortAgreement(
+      {
+        floor: 300,
+        plateau: { lo: 240, hi: 360 },
+        cases: 2,
+        benchmarkAdmits: 1,
+        engineAdmits: 0,
+        agreed: 1,
+        mismatches: ['dp-17'],
+      },
+      deployableGateReport([admitCase('d1')], OPTS, 3, 300),
+      { cases: 2, agreed: 2, recordedRight: 2, rebuiltRight: 2, recordedNotListed: 0 },
+    );
+    expect(text).toContain('DISAGREE on 1 case(s): dp-17');
+    expect(text).not.toContain('the port IS the semantics');
   });
 });

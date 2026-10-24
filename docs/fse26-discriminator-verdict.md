@@ -967,6 +967,99 @@ changes with it.
   implement the gate in `pruner.ts` and run the RCAEval golden nine-cell, which is the pruner's second condition and is
   measured in a different harness. **A benchmark arm is not an engine change.**
 
+## 23. The engine step: the predicate is ported, and the flip is REFUSED for a reason newer than the plateau (iteration 123)
+
+Section 22 licensed an arm **in the benchmark**. Its last sentence is the debt this section pays: *a benchmark arm is not
+an engine change*. Two things were owed — the predicate in `packages/tree/src/pruning/pruner.ts`, and the RCAEval
+nine-cell, which is the engine's second acceptance condition and is measured in a different harness.
+
+### What was ported, and what had to move for it to be portable
+
+`admitsFailedEdgeTerm(dominantMetric, latRise)` in `packages/tree/src/pruning/pruner.ts`, with the two constants it
+reads: `FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU = { lo: 240, hi: 360 }` and `FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300`,
+the plateau's midpoint. The **semantics** were ported, not the module: the engine imports nothing from `benchmarks/`.
+
+The gate needed two observables the engine did not expose, and the interesting one is the second:
+
+1. **The rank-1 service.** It is the engine's OWN answer, so it only exists after a ranking — and the ranking is what
+   the term changes. `analyze()` therefore runs the baseline pass (the term at weight 0, the configuration every
+   measurement here was taken against), reads its rank-1, and re-ranks only when the gate admits. A refused case returns
+   the pass it already has; an admitted case pays one extra ranking. The alternative — gating on the option or on the
+   case's label — would decide about a service the engine does not answer with.
+2. **The raw inbound latency rise.** `edgeLatencyScores` is a shape over it: `log1p`-compressed, floor-masked and
+   max-normalised, so the top candidate always sits at the maximum of the term's range whatever its input was. Reading
+   that to decide whether to trust the term is law 1's defect named exactly. The observable is now carried on the graph
+   as **`edgeLatencyByCallee`** — `postMeanMs / preMeanMs` per callee, maximum over inbound edges, no compression — and
+   the diagnostic builder **reads it instead of re-deriving it**, so the number the gate decides on and the number the
+   dump prints are one derivation. This is a producer change, and it is the one that makes the port checkable: a second
+   derivation would let the measurement and the code be about two quantities that merely share a name.
+
+### The port agrees with the instrument it came from, case for case
+
+A port is a second implementation, and nothing in "the tests pass" says it is the *same rule*. `portAgreement` reads
+both — this module's `admitsToGate` and the engine's `admitsFailedEdgeTerm` — over the artifact, and the discriminator
+section now prints it as its seventeenth block, agreement first:
+
+```
+  floor 300, inside the measured plateau [240, 360]
+  admits — benchmark 131/1422, engine 131/1422
+  the two readings agree on 1422/1422 cases — the port IS the semantics
+  behind that floor: right 792 against a baseline of 750 (+42), regressed types: NONE
+```
+
+**131 admitted, +42, zero regressed types** — and the count is the one the ENGINE's constant produces, not 250's 138.
+The plateau says this was already known in aggregate (`[240, 360]`, +42 at every point); what is new is that the two
+implementations agree on **every one of 1422 cases**, so the +42 is a statement about the code that ships and not about
+a benchmark module that resembles it.
+
+### The nine-cell half: measured where it can be, fenced where it cannot
+
+The RCAEval nine-cell cannot be run in this repository — the corpus is 735 parquet case directories — so what ships here
+is (a) a **fixture fence** on the shipped default and (b) the reason the flip is refused.
+
+**The fence** (`packages/tree/__tests__/unit/rcaeval-golden-nine-cells.test.ts`) is a nine-cell table whose cells are
+produced by the real engine, pinned at `new TreePruner()` — no options passed, so it asserts what a run with no input
+actually does. Its second assertion is what makes the first evidence (law 34): at the arm's own weight of 3 **exactly
+one cell moves**, `RE2-TT`, and it is the cell whose fixture carries a case the gate admits. A flip without a
+measurement therefore goes red in a unit test.
+
+**The refusal, and its reason is not the plateau.** Section 21 refused the flip because the *choice* was unstable;
+section 22 answered that. The reason now is mechanical and was found by asking what the golden half would even read:
+
+| the question | the answer | how it was read |
+| --- | --- | --- |
+| does the RCAEval runner accept `--failed-edge-weight`? | **no** | `grep -c -- '--failed-edge-weight' benchmarks/src/rcaeval-cli.ts` → **0** |
+| does its workflow forward one? | **no** | `grep -c 'failed_edge_weight' .github/workflows/benchmark-rcaeval.yml` → **0** |
+| does the FSE'26 workflow forward one? | **yes** | `grep -c 'failed_edge_weight' .github/workflows/fse26-benchmark.yml` → **3** |
+| what does the census say the knob's reach is? | `rcaeval: null` | `dispatch-surface-census.test.ts`, the `failedEdgeWeight` row |
+| what does the artifact standard say? | exempt, and why | `UNREPORTED_BY_ENGINE_RUNNERS.failedEdgeWeight`: *"ships at 0 and is never forwarded"* |
+
+**So the knob is measurable on one half of the and-criterion and unmeasurable on the other**, which is the same shape
+this register repaired for `latWeight`, `latMinRise` and `poolMetricPenaltyWeight` one iteration earlier — found the same
+way, by asking whether a DISPATCH could state the value rather than whether the engine could apply it.
+
+**Therefore `DEFAULT_FAILED_EDGE_WEIGHT` stays `0.0`**, and the honest sentence is the one the table supports: the arm is
+licenced and ported, its second condition has no instrument on the surface that measures it, and a flip would be a blind
+change to nine published cells. **The next step is the instrument**: `--failed-edge-weight` on `rcaeval-cli.ts`, a
+`failed_edge_weight` input on `benchmark-rcaeval.yml` passed by all seven suites, the census row's `rcaeval` field, and
+then one dispatch at weight 3. Only a nine-cell reading from that dispatch licenses the flip, and the flip is its own
+commit.
+
+### What the port cost nothing to prove
+
+- **`packages/tree`**: 699 tests, coverage **100 / 100 / 100 / 100** on statements / branches / functions / lines.
+- **`packages/kinetic`**: 1081 tests, **99.97 / 99.29 / 100 / 99.97**; the touched builder is **100 / 100 / 100 / 100**,
+  because its new optional-chain is exercised in both directions — a graph WITH the map and one without.
+- **Three mutations, three distinct red sets**, source restored byte-identically (md5 checked after each):
+  `>=` → `>` fails the boundary and the families tests; dropping the duration half fails the oracle mutation, the
+  unnamed-metric test, `WEIGHT_ZERO`, and the engine-level resource fixture; removing the gate call fails `WEIGHT_ZERO`,
+  the missing-map case, the resource fixture and the below-floor fixture.
+- **One regression was caught by an existing suite and it was not cosmetic**: the capability census reads a rendered
+  dump, and the builder no longer re-derives `latRise` from the case. Its fixture carried the tuples on the CASE and a
+  graph without the map, which is a state no run of the engine produces — so the fixture now carries them through
+  `computeEdgeLatencyByCallee`, and the builder gained the test that asserts provenance where the two disagree (a case
+  with tuples, a graph without the map, renders `-`).
+
 ## 8. Reproduce
 
 ```bash

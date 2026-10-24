@@ -11,6 +11,7 @@
  */
 
 import type { FaultPropagationGraph, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import { computeEdgeLatencyByCallee } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 import { SERVICE_FIELD_DECIMALS } from '../../../src/benchmarks/fse26-diagnose.js';
@@ -201,11 +202,36 @@ describe('buildFSE26Diagnostic', () => {
         ['caller-a', b, 10, 20],
       ]),
     };
-    const text = render(benchCase, graphOf(benchCase.callGraph));
+    // The map is the ENGINE's, built by the same function `buildFaultGraph` calls — the builder reads
+    // it rather than re-deriving the statistic, so a fixture that computed its own copy would be
+    // testing a second implementation of the number.
+    const text = render(
+      benchCase,
+      graphOf(benchCase.callGraph, {
+        edgeLatencyByCallee: computeEdgeLatencyByCallee(benchCase.edgeLatency),
+      }),
+    );
 
     // The maximum, not the mean: one caller going from 10 ms to 2 s is the signal, and averaging it
     // against two unchanged callers would bury it. Three rows, so three callers measured.
     expect(text).toContain('latRise=20.000 latEdges=3');
+  });
+
+  it('renders the graph’s rise, not the case’s — provenance, asserted where the two disagree', () => {
+    // The dump must describe the graph the RANKING consumed. A case can carry the tuples while the
+    // graph carries no derivation of them — which is what an engine that does not build the map
+    // produces — and in that case the honest render is `-`: the ranking never saw a rise, so a dump
+    // that printed one would report a number no term used. This is the assertion that makes the
+    // builder's read a provenance claim rather than a formatting convention.
+    const base = caseOf();
+    const [, b] = idsOf(base);
+    const benchCase = {
+      ...base,
+      edgeLatency: toFSE26EdgeLatency([['caller-a', b, 10, 200]]),
+    };
+    const text = render(benchCase, graphOf(benchCase.callGraph));
+
+    expect(text).toContain('latRise=- latEdges=0');
   });
 
   it('renders an unmeasured rise as a dash', () => {

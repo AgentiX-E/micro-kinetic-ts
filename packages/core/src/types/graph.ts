@@ -179,8 +179,13 @@ export interface FaultPropagationGraph {
    * anomaly score (highest feature-weighted deviation). Used by diagnostics
    * to surface the TRUE anomaly driver rather than a metric picked by a
    * separate ratio heuristic (which may point at an idle metric the guards
-   * already skipped). Optional: it is a diagnostic convenience, not a ranking
-   * input, so engines may omit it.
+   * already skipped).
+   *
+   * **It is read by the RANKING too, and this comment used to say it was not.** The failed-edge
+   * direction term is gated on whether the engine's own rank-1 service is dominated by a
+   * duration series (`admitsFailedEdgeTerm`), so an engine that omits this map does not merely
+   * lose a diagnostic: it refuses that term on every case. Omission is therefore safe (the gate
+   * fails closed) and is no longer free.
    */
   readonly dominantMetrics?: ReadonlyMap<
     ServiceId,
@@ -294,6 +299,27 @@ export interface FaultPropagationGraph {
    * `latWeight`.
    */
   readonly edgeLatencyScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-callee inbound latency rise, **RAW** — the largest `postMeanMs / preMeanMs` over the
+   * edges `caller → v`, plus how many edges contributed.
+   *
+   * This is the OBSERVABLE `edgeLatencyScores` is a term over, and the distinction is
+   * load-bearing: that map is `log1p`-compressed, floor-masked and max-normalised, so it is a
+   * shape within one case and its units are not comparable across cases. A decision that has to
+   * be made in the dump's own units — "is this case's rank-1 rise inside the measured plateau?"
+   * — cannot read it, and reading it would be law 1's saturated-term defect: rank normalisation
+   * puts the top candidate at the maximum of the term's range whatever the term's input was.
+   *
+   * Semantics are the diagnostic's, exactly: no node filter, no self-call exclusion, no masking.
+   * A gate and the artifact that reports it must read the SAME number or the measurement is
+   * about a different quantity than the code.
+   *
+   * Optional: absent when the case carried no per-edge measurements.
+   */
+  readonly edgeLatencyByCallee?: ReadonlyMap<
+    ServiceId,
+    { readonly rise: number; readonly count: number }
+  >;
   /**
    * Per-service topological-source score (0-1) — `1 − maxParentExplanation`,
    * where `maxParentExplanation` is the largest `propagationWeight(p→v) ×

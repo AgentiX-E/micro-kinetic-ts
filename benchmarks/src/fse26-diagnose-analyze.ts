@@ -65,9 +65,11 @@ import {
   formatDeployableGate,
   formatFloorHoldout,
   formatPlateauHoldout,
+  formatPortAgreement,
   formatProxyAudit,
   holdoutFloorReport,
   holdoutPlateauReport,
+  portAgreement,
   proxyAudit,
   proxyRows,
 } from './fse26-proxy-audit.js';
@@ -8224,7 +8226,23 @@ export function formatDiscriminatorSection(
     holdoutPlateauReport(cases, options, BEST_DIRECTION_WEIGHT),
     engineAgreement(cases, options),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}\n\n${floorHoldout}\n\n${plateauHoldout}`;
+  // **The port itself, held to the instrument it came from.** Every block above measures the arm IN
+  // THIS HARNESS; iteration 123 moved the predicate into `packages/tree/src/pruning/pruner.ts`, and a
+  // port is only the same rule while the two implementations agree case for case. The check reads both
+  // — this module's `admitsToGate` and the ENGINE's `admitsFailedEdgeTerm` — and prints the arm's own
+  // result at the ENGINE's floor beside the agreement, so a reader meets "is this the same rule"
+  // before "what does it score". Agreement first, on law 41's rule and for the same reason.
+  const portReport = portAgreement(cases);
+  const port = formatPortAgreement(
+    portReport,
+    // The gate is scored at the floor the PORT reads, taken from the report rather than from a
+    // second reference to the constant: a block that named the floor twice could print an agreement
+    // at one floor and a net at another, which is the shape this repository's comparisons keep
+    // failing on.
+    deployableGateReport(cases, options, BEST_DIRECTION_WEIGHT, portReport.floor),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}\n\n${floorHoldout}\n\n${plateauHoldout}\n\n${port}`;
 }
 
 function analyzeSectionText(

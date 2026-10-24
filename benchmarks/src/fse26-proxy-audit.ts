@@ -16,6 +16,11 @@
  * @module benchmarks/fse26-proxy-audit
  */
 
+import {
+  admitsFailedEdgeTerm,
+  FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
+  FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
+} from '@agentix-e/micro-kinetic-tree';
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 import { foldOf } from './fse26-discriminator.js';
 import type { AgreementReport } from './fse26-engine-agreement.js';
@@ -724,5 +729,111 @@ export function formatPlateauHoldout(report: PlateauHoldout, agreement: Agreemen
           'the licence the point fit could not give'
       : '  verdict: the plateau does not protect every fold — the criterion leaks on at least one, so no flip',
   );
+  return lines.join('\n');
+}
+
+/** Whether the ENGINE's predicate and the BENCHMARK's proxy make the same decision, case for case. */
+export interface PortAgreement {
+  /** The floor the engine's constant names, in the dump's own units. */
+  readonly floor: number;
+  readonly plateau: { readonly lo: number; readonly hi: number };
+  /** Cases the two readings were compared on — every case that names a root. */
+  readonly cases: number;
+  readonly benchmarkAdmits: number;
+  readonly engineAdmits: number;
+  readonly agreed: number;
+  /** Datapacks the two readings disagree on, named so a divergence is reproducible rather than a count. */
+  readonly mismatches: readonly string[];
+}
+
+/**
+ * Hold the ENGINE's ported predicate to the BENCHMARK's proxy, over the artifact.
+ *
+ * Section 22 licensed an arm that was measured *in the benchmark*; iteration 123 moved the predicate
+ * into `packages/tree/src/pruning/pruner.ts`. Those are two implementations of one rule, and the
+ * entire claim that the engine now does what the measurement describes rests on their agreeing — so
+ * it is checked rather than asserted. The two read the same two observables **through different
+ * code**: `admitsToGate` (this module) and `admitsFailedEdgeTerm` (the engine), each with its own
+ * duration test and its own boundary comparison.
+ *
+ * The check is worth exactly what a divergence would be worth: `>=` against `>`, or a regex that
+ * admitted one family the other refused, moves cases at the boundary — and a report that printed a
+ * net without this line could not tell a port from a re-implementation.
+ *
+ * @param cases - Parsed cases.
+ * @param floor - The floor to read both sides at; the engine's own constant by default.
+ * @returns The two admission counts, the agreement, and every disagreement by datapack.
+ */
+export function portAgreement(
+  cases: readonly DiagnosedCase[],
+  floor = FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
+): PortAgreement {
+  // Every case that names a root, decided by BOTH readings, then counted — rather than counted while
+  // iterating. The difference is law 6: a `if (benchmark === engine) agreed++ else mismatches.push()`
+  // leaves a branch no input can reach, because two correct implementations of one rule cannot
+  // disagree, and an unreachable branch is dead code the coverage gate has to spend a line finding.
+  // Derived this way, `agreed` cannot disagree with the list it summarises, and a divergence that
+  // ever DID appear is reported without needing a counter beside it.
+  const subjects = cases
+    .filter((kase) => kase.groundTruth.filter((name) => name !== '').length > 0)
+    .map((kase) => {
+      const top = kase.services.find((service) => service.predictedRank === 1);
+      return {
+        datapack: kase.datapack,
+        benchmark: admitsToGate(kase, floor),
+        // The SAME two observables, handed to the ENGINE's own function: the rank-1's dominant label
+        // and its raw rise. `admitsToGate` derives them itself from the case; this line is where the
+        // two derivations meet.
+        engine: admitsFailedEdgeTerm(top?.dominantMetric, top?.latRise),
+      };
+    });
+  const mismatches = subjects
+    .filter((one) => one.benchmark !== one.engine)
+    .map((one) => one.datapack);
+  return {
+    floor,
+    plateau: {
+      lo: FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU.lo,
+      hi: FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU.hi,
+    },
+    cases: subjects.length,
+    benchmarkAdmits: subjects.filter((one) => one.benchmark).length,
+    engineAdmits: subjects.filter((one) => one.engine).length,
+    agreed: subjects.length - mismatches.length,
+    mismatches,
+  };
+}
+
+/**
+ * Render the port check, with the arm's own result at the engine's floor beside it.
+ *
+ * Agreement is printed FIRST, on law 41's rule: a reader who meets the net before knowing whether the
+ * two readings even describe the same rule has already been misled.
+ *
+ * @param port - The agreement report.
+ * @param gate - The direction term behind that floor, scored.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatPortAgreement(
+  port: PortAgreement,
+  gate: DeployableGateReport,
+  agreement: AgreementReport,
+): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const net = gate.correct - gate.baselineCorrect;
+  const lines = [
+    'Engine port — the predicate benchmark/src carries, held to the ENGINE’s own function:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    `  floor ${port.floor}, inside the measured plateau [${port.plateau.lo}, ${port.plateau.hi}]`,
+    `  admits — benchmark ${port.benchmarkAdmits}/${port.cases}, engine ${port.engineAdmits}/${port.cases}`,
+    port.mismatches.length === 0
+      ? `  the two readings agree on ${port.agreed}/${port.cases} cases — the port IS the semantics`
+      : `  the two readings DISAGREE on ${port.mismatches.length} case(s): ${port.mismatches.join(', ')}`,
+    `  behind that floor: right ${gate.correct} against a baseline of ${gate.baselineCorrect} ` +
+      `(${net >= 0 ? `+${net}` : net}), regressed types: ` +
+      `${gate.regressed.length === 0 ? 'NONE' : gate.regressed.join(', ')}`,
+  ];
   return lines.join('\n');
 }
