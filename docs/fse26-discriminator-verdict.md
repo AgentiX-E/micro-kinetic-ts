@@ -1060,6 +1060,26 @@ commit.
   `computeEdgeLatencyByCallee`, and the builder gained the test that asserts provenance where the two disagree (a case
   with tuples, a graph without the map, renders `-`).
 
+### Verified on this push's own run — and what that verification does and does not say
+
+`Benchmark — RCAEval Full Dataset` run **`40058955974`** on **`ef94269`**, 10 of 10 jobs green, 2 h 00 m
+(03:35:52Z → 05:36:09Z). The golden cells, read off each job's own table:
+
+| suite | OnlineBoutique | SockShop | TrainTicket | RE average |
+| --- | ---: | ---: | ---: | ---: |
+| RE1 | 80.0 | 92.8 | 68.0 | 80.27 |
+| RE2 | 86.7 | 92.2 | 71.1 | 83.33 |
+| RE3 | 80.0 | 45.0 | 51.1 | 58.69 |
+
+That is `docs/sota-comparison.md`'s standing line **cell for cell**, so the pruner's second condition holds for what
+ships. **And the sentence has to finish there, because this run cannot speak about the flip**: it is the shipped
+configuration, where the gate is not consulted at all — the term's weight is 0, so `analyze()` returns the baseline pass
+before it ever reads a dominant metric. The reading proves the change disturbed nothing; it says nothing about weight 3.
+Presenting it as the flip's evidence would be the vacuous-assertion defect this register calls law 34, one level up.
+
+**What the run DID measure freshly** is the trace term's own ablation on the same commit: RE3-TrainTicket **51.1 → 3.6**
+with `traceWeight` off, i.e. the −47.5 pp structural lever reproduced on a third independent pair of runs.
+
 ## 8. Reproduce
 
 ```bash
