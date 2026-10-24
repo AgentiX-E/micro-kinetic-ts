@@ -610,6 +610,39 @@ Two consequences, and neither is about the `lat` term:
 The line lives beside this census because the two are one sentence. Reading either alone is how "the mechanism had no
 input" and "the mechanism was tested and made no difference" become the same artifact.
 
+### 7.13 The view now decides whether the DIRECTION term can fire — and RE2-TrainTicket is what it costs
+
+§7.12 recorded that a weight above zero on the `shipped` view buys a gate that cannot fire. Iteration 127 enrolled
+the demand guard and the nine cells moved (`docs/rcaeval-local-harness.md`), and reading the RE2 losses afterwards
+turns that sentence from "the arm is unmeasured on the golden half" into a **named residue with a column**:
+
+| RE2-TrainTicket, at the enrolled default | cpu | delay | disk | **loss** | mem | socket |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| AC@1 | 86.7 | 73.3 | 73.3 | **33.3** | 80.0 | 80.0 |
+
+`loss` is the only column below 60% on any RE2 cell, and the reason is visible in the per-case census rather than
+inferred. On all ten of its misses the truth's own term list is **`selfAnomalyLog1p` plus `stability`, and nothing
+else** — `failedEdge` is 0 for the truth on every one of them, so the mechanism built for exactly this fault family
+("a failed call names the CALLEE") contributes nothing. It is not that the traces are missing: RE2 ships 6781
+latency rows on the `whole-file` view and the failed-edge tuples are derived from traces, not from `edgeLatency`.
+What is missing is the GATE's second observable, and `direction-gate[shipped]` says so on every run:
+
+```
+direction-gate[shipped]: weight 3 but this view supplied 0 latency rows over 90 cases — the gate's SECOND half has
+  no value, so the term CANNOT fire and an unchanged cell is NOT evidence for it
+```
+
+**So the `shipped` view disables the one mechanism aimed at the weakest column of the only cell this project is
+behind on.** That makes the view a corpus BUG with a measurable cost, not a configuration choice — §7's own finding
+is that `shipped` scales an already-millisecond start time a second time, so every span lands after the anchor and
+the array is empty by construction. `whole-file` parses the same data without that defect.
+
+The experiment that decides it is a single dispatch at `latency_view=whole-file` on the enrolled default, run
+`40128592846`. Its reading has to beat three recorded facts at once, and they are the reason this is a dispatch and
+not a flip: `whole-file` alone moved RE2-OnlineBoutique **−2.3** and RE2-TrainTicket **+2.2** (§7.4), and since
+iteration 125 the direction weight is 3 rather than 0 — so the combination "correct view + live gate" has never been
+measured, and its two halves push in opposite directions on two cells.
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the

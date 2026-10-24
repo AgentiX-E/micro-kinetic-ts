@@ -174,6 +174,66 @@ derivation and a reader can tell the two kinds of discarded metric apart:
 the wrong quantity — a routing outcome rather than the service's behaviour. A single vocabulary word would have made
 those two indistinguishable in the artifact that justifies the ranking.
 
+### The nine cells, read at the enrolled default — and TrainTicket was the one that moved most
+
+The enrolment's own commit triggered a full dispatch, and the reading is not the one the local loop predicted from
+one cell. It is larger, and it lands on the cell the goal is named against:
+
+| suite | OnlineBoutique | SockShop | TrainTicket | RE average |
+| --- | ---: | ---: | ---: | ---: |
+| RE1 — published | 80.0 | 92.8 | 68.0 | 80.27 |
+| **RE1 — at the enrolled default** | **82.4** | 92.8 | **75.2** | **83.47** |
+| RE2 — published | 86.7 | 92.2 | 71.1 | 83.33 |
+| RE2 — at the enrolled default | 86.7 | 92.2 | 71.1 | 83.33 |
+| RE3 — published | 80.0 | 45.0 | 51.1 | 58.69 |
+| RE3 — at the enrolled default | 80.0 | **47.5** | 51.1 | **59.53** |
+
+Run `40098640380`, 10 of 10 jobs green. **Three cells up, seven unmoved, none down**: RE1-TrainTicket **68.0 →
+75.2** (+7.2 pp, +9 cases of 125), RE1-OnlineBoutique **80.0 → 82.4**, RE3-SockShop **45.0 → 47.5**. Per fault type on
+TrainTicket RE1, where the cell was weakest and is now second only to SockShop: cpu 80 → **92**, delay 72 → **76**,
+disk 48 → **64**, loss 48 → **52**, mem 92 unchanged.
+
+The 735-case aggregate, on the convention `docs/accuracy-aggregation.md` owns (per-cell averages weighted by case
+count): **78.75% → 80.49%**, i.e. **+1.74 pp**, and RE1 moves from −5.13 pp against `arXiv:2610.05009`'s `L0` to
+**−1.93 pp**, and from −2.53 pp against its `L3` to **+0.67 pp**. FSE'26 is unchanged at **56.12%**, which the same
+day's dispatch (run `40098746681`, 56.1% Top@1) confirms rather than assumes.
+
+### And the one thing that moved the wrong way, said before it is asked about
+
+RE2-TrainTicket's average is identical at **71.1**, and the composition is not: **cpu 80.0 → 86.7 (+1 case) and loss
+40.0 → 33.3 (−1 case)**. A cell average that does not move can hide a fault type that did, so the ledger states it:
+by the criterion's strict second condition — no regressed fault type — this enrolment has **one**, worth one case,
+offset inside the same cell. It is recorded, not excused, and the aggregate it belongs to gained thirteen cases
+across three cells with none down.
+
+### The residue, named case by case — and where the α-plateau's extra two live
+
+A net of +3 is not a statement about which cases moved. The loss census at both poles gives the list, and it is
+short enough to read:
+
+| outcome | case | truth | was | now |
+| --- | --- | --- | --- | --- |
+| **fixed** | `re1ob_cartservice_disk_3` | cartservice | emailservice | — (rank 2 → 1) |
+| **fixed** | `re1ob_cartservice_disk_5` | cartservice | checkoutservice | — (rank 4 → 1) |
+| **fixed** | `re1ob_checkoutservice_loss_2` | checkoutservice | shippingservice | — (rank 2 → 1) |
+| **fixed** | `re1ob_checkoutservice_loss_3` | checkoutservice | paymentservice | — (rank 3 → 1) |
+| **fixed** | `re1ob_checkoutservice_loss_5` | checkoutservice | paymentservice | — (rank 2 → 1) |
+| **broken** | `re1ob_adservice_loss_3` | adservice | rank 1 | **rank 7** |
+| **broken** | `re1ob_adservice_loss_5` | adservice | rank 1 | **rank 6** |
+
+Five false winners were leaning on a bystander's traffic; two truths were leaning on their OWN. The two losses are
+one service and one fault type, and the dump says why in one line: on those cases every other metric of `adservice`
+was already dropped (`cpu:transient-return`, `error:non-positive-mean`, …), so `workload` was the only evidence it
+had left. **The guard removed the truth's last witness, not a bystander's alibi** — which is a precise statement of
+what a role rule cannot do, and it is why the α-discount was kept on the record rather than discarded.
+
+**And the plateau's extra two are exactly those two cases.** The discount at `α ∈ [0.20, 0.50]` reads 105/125: the
+three `checkoutservice` fixes survive, the two `adservice` truths keep enough of their own evidence to stay first,
+and the two `cartservice` disk fixes survive as well — so the +2 that separates 105 from 103 is not a diffuse gain,
+it is the residue named above. That makes the next step a well-posed problem rather than a hope: find a
+PARAMETER-FREE discriminator between "a bystander's traffic moved" and "the source's own traffic moved", and it is
+worth exactly two cases.
+
 ### The other half, stated as a proof rather than a hope
 
 The FSE'26 dump carries **no member of the family at all** — `grep -c 'workload='` over run `34928980425`'s 7781

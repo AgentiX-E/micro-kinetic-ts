@@ -42,22 +42,26 @@ absolute score can be read against the floor a random ranker would reach on the 
 
 | evaluation | metric | ours | best published competitor | margin | basis |
 | --- | --- | --- | --- | --- | --- |
-| **RCAEval, all 735 cases** | service Top-1 | **78.8%** | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+10.8 pp, ≈1.16×** | cross-paper (§2a) |
-| **RCAEval, all 735 cases** | service Top-1 | **78.75%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **−0.16 pp = 1 case of 735** | controlled head-to-head (§3) |
+| **RCAEval, all 735 cases** | service Top-1 | **80.49%** | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+12.5 pp, ≈1.18×** | cross-paper (§2a) |
+| **RCAEval, all 735 cases** | service Top-1 | **80.49%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **+1.58 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by one default**; a re-run is owed (§3) |
 | **RCAEval RE2-OB (90 cases)** | AC@1 | **86.7%** | RCLAgent **56.67%** (arXiv:2605.14866) | **+30.0 pp** | cross-paper (§2b) |
-| **FSE'26 RCABench** | Top@1 | **53.23%** (757/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+16 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
-| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 80.0%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +2.0 pp** | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b) |
-| **RCAEval RE1 (375 cases)** | service Top-1 | **80.27%** | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)** | **−5.13 / −2.53 pp** | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5) — and the **first reference ABOVE us on a population we can name** |
+| **FSE'26 RCABench** | Top@1 | **56.12%** (798/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+19.1 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
+| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 82.4%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +4.4 pp** | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b) |
+| **RCAEval RE1 (375 cases)** | service Top-1 | **83.47%** (313/375) | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)** | **−1.93 / +0.67 pp** | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5). The cell moved 80.27 → 83.47 on run `40098640380` (RE1-OB 80.0 → 82.4, RE1-TT 68.0 → 75.2), which takes it from **BELOW both reference configurations to above the `L3` one**; the `L0` gap it still carries is 1.93 pp = 1.0 SD at n = 375 |
 
-**Ranking: first on RCAEval's 735 overall and on FSE'26, level with the best controlled competitor on the
-harness, and SECOND on RE1 — a cell we had never been second on, because the population of the reference that
-took it was filed unverified for three iterations.** The
-project leads the pre-LLM causal cohort by a wide margin on RCAEval overall (BARO 19%, with its
-often-quoted 0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by
-20–40 pp. On our own harness — the only comparison with no cross-paper confound — we are **0.16 pp, i.e. one
-case, behind** PRISM's additive pooling, not ahead. And on RE1 we are behind a single-run LLM-agent figure whose
-`L0`-against-`L3` ranking does not survive its own error bar (§0a entry 5): **the gap is real, quoted, and 2.7 SD
-wide; the ordering inside it is not established.**
+**Ranking: first on RCAEval's 735 overall and on FSE'26, and SECOND on RE1 — where the gap has halved and the
+comparison now straddles the reference's own two configurations.** Iteration 127's enrolment moved RE1
+**80.27 → 83.47** (run `40098640380`), which is **1.93 pp below** `arXiv:2610.05009`'s `L0` (85.4) and **0.67 pp
+ABOVE** its `L3` (82.8) — so on one of that paper's two arms this project is now ahead, and on the other it is 1.0
+standard deviation behind rather than 2.7. That paper's own `L0`-against-`L3` ordering sits UNDER one standard
+deviation, so **which of the two arms is the comparison at all is not established** — and both are quoted.
+
+The project leads the pre-LLM causal cohort by a wide margin on RCAEval overall (BARO 19%, with its often-quoted
+0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by 20–40 pp. **On our
+own harness the last true head-to-head remains `78.75 against 78.91` — one case behind PRISM's additive pooling —
+and it is now STALE**: the demand guard of iteration 127 changed our engine and would have changed the
+reimplementation too, so the current 80.49 is not a re-measurement of that pair and no margin is claimed from it.
+A re-run of §3 is the only thing that can restore the sentence, and it is owed.
 
 **What this ranking is NOT.** Every `68%` figure above is **cross-paper**: its dataset, its harness, its case
 sets, its metric implementation. The controlled re-run exists (`docs/prism-head-to-head.md`, run `34246577708`)
