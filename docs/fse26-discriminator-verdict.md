@@ -895,6 +895,78 @@ net, the held-out population and the regressed-type count, with `distinct` repor
 rather than asserted. `admitsToGate` is the applicability predicate, so the floor's protocol and the class set's use the
 same machinery.
 
+## 22. The plateau: the criterion holds on EVERY held-out fold (iteration 122)
+
+Section 21 refused the flip because the floor's **choice** was unstable (4 of 5 folds picked 250; the fifth picked 100
+and leaked a regressed type out of sample). This section finds why, and the answer is not "a better floor".
+
+### First: the parameter-free remedies do not exist
+
+The obvious fix was a rule with no number in it. Four were measured:
+
+| rule | admitted | net | regressed types |
+| --- | ---: | ---: | ---: |
+| metric only | 765 | **+110** | 2 |
+| `latRise >= 250` (fitted) | 138 | **+42** | **0** |
+| rank-1 rise is the strict maximum | 285 | **−3** | 5 |
+| rank-1 rise is the non-strict maximum | 285 | **−3** | 5 |
+| rank-1's share of the case rise >= 1/2 | 128 | **−3** | 3 |
+| rank-1 rise >= 2× the median of the others | 626 | +85 | 2 |
+
+**Every relative form is worse**, two of them with a NEGATIVE net. **The signal is absolute, not relative** — a slow case
+is slow on its own scale, and normalising it against its own services destroys the information. So the floor must be an
+absolute constant, and the objection "it was scanned" has to be answered another way.
+
+### The answer: the constant sits inside an INTERVAL, and the result is flat across it
+
+A fine scan (200…420 in steps of 10):
+
+| floor | admitted | net | regressed |
+| ---: | ---: | ---: | ---: |
+| 200 | 154 | +44 | 1 |
+| 230 | 145 | +42 | 1 |
+| **240 … 360** | 141 … 119 | **+42 at every point** | **0 at every point** |
+| 370 | 118 | +41 | 0 |
+| 400 | 113 | +40 | 0 |
+
+**Over `[240, 360]` the net is EXACTLY +42 and no type regresses.** The floor is therefore not a point fit: it is a point
+**inside a 120-wide plateau where every choice gives the same answer**. Above 360 the gain erodes (fewer cases admitted);
+below 240 one type breaks.
+
+**That reframes the objection.** Section 21's protocol maximised a NUMBER, which is why the number moved between folds.
+The corpus does not offer a number; it offers an **interval**.
+
+### The protocol, and what it gives out of sample
+
+Per fold: find the interval where the criterion holds on the TRAINING folds, take its **midpoint** (canonical — no
+preference to fit), and read the held-out fold with it.
+
+| fold | feasible interval | midpoint | held-out | cases | regressed |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 0 | [240, 400] | 320 | **+11** | 278 | **0** |
+| 1 | [240, 400] | 320 | **+9** | 274 | **0** |
+| 2 | [240, 400] | 320 | **+10** | 310 | **0** |
+| 3 | [200, 400] | 300 | **+6** | 300 | **0** |
+| 4 | [240, 400] | 320 | **+6** | 260 | **0** |
+| **all** | | | **+42** | **1422** | **0 leaking folds** |
+
+**The criterion holds on every held-out fold, and the choice inside the plateau is arbitrary.** That is the licence
+section 21 said was missing: not a number that survives folds, but an **interval wide enough that surviving them is not a
+coincidence**. It costs nothing against the point fit (+42 either way).
+
+The interval is defined by **the criterion alone**, not by equal net: conditioning on exact net equality collapsed it to
+a single point on the fold whose net differed by one, which is noise dressed as a boundary. `leaking` is reported as the
+number of folds that leaked a regressed type — the number the criterion actually cares about — and the verdict sentence
+changes with it.
+
+### What this does and does not license
+
+- **Does**: a deployable arm now meets the engine's acceptance condition with **zero leaking folds**, at **+42**,
+  reading no label. The choice of floor is arbitrary inside a measured interval.
+- **Does not**: flip the default *by itself*. The remaining step is the one this whole axis has owed since section 16 —
+  implement the gate in `pruner.ts` and run the RCAEval golden nine-cell, which is the pruner's second condition and is
+  measured in a different harness. **A benchmark arm is not an engine change.**
+
 ## 8. Reproduce
 
 ```bash

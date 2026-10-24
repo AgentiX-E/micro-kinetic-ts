@@ -64,8 +64,10 @@ import {
   formatDatumLocus,
   formatDeployableGate,
   formatFloorHoldout,
+  formatPlateauHoldout,
   formatProxyAudit,
   holdoutFloorReport,
+  holdoutPlateauReport,
   proxyAudit,
   proxyRows,
 } from './fse26-proxy-audit.js';
@@ -8214,7 +8216,15 @@ export function formatDiscriminatorSection(
     holdoutFloorReport(cases, options, BEST_DIRECTION_WEIGHT),
     engineAgreement(cases, options),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}\n\n${floorHoldout}`;
+  // **The remedy for what the floor holdout diagnosed.** Choosing the floor that maximises the training net optimised a
+  // NUMBER and moved between folds; what the corpus offers is an INTERVAL in which the criterion holds, so the choice
+  // inside it is arbitrary. This block finds that interval per fold and reads its MIDPOINT — the only claim that
+  // survives every held-out fold.
+  const plateauHoldout = formatPlateauHoldout(
+    holdoutPlateauReport(cases, options, BEST_DIRECTION_WEIGHT),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}\n\n${floorHoldout}\n\n${plateauHoldout}`;
 }
 
 function analyzeSectionText(

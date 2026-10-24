@@ -21,8 +21,10 @@ import {
   formatDatumLocus,
   formatDeployableGate,
   formatFloorHoldout,
+  formatPlateauHoldout,
   formatProxyAudit,
   holdoutFloorReport,
+  holdoutPlateauReport,
   proxyAudit,
   proxyRows,
   rankOneLatencyDominant,
@@ -945,5 +947,204 @@ describe('holdoutFloorReport — the floor chosen on four folds, read on the fif
     });
     expect(text).toContain('0/0');
     expect(text).not.toContain('NaN');
+  });
+});
+
+describe('holdoutPlateauReport — the interval, and its midpoint read out of sample', () => {
+  const fix = (datapack: string, latRise: number, faultType = 'NetworkLoss', truth = 'source') =>
+    kase({
+      datapack,
+      faultType,
+      groundTruth: [truth],
+      services: [
+        svc({
+          serviceId: truth === 'source' ? 'symptom' : 'symptom',
+          selfAnomaly: Math.exp(1),
+          predictedRank: 1,
+          dominantMetric: 'duration_p99',
+          latRise,
+        }),
+        svc({
+          serviceId: truth === 'source' ? 'source' : 'source2',
+          selfAnomaly: 0,
+          failedEdgeScore: 1,
+        }),
+      ],
+    });
+
+  it('reports the feasible interval and takes its midpoint, not a maximising point', () => {
+    // Two folds' worth of cases so the training set is non-empty for each. Every floor from 200 up is feasible here
+    // because the only admitted case is fixed by the term, so the interval is the whole grid and the midpoint is its
+    // centre — which is the property that makes the choice arbitrary rather than fitted.
+    const cases = [fix('q1', 500), fix('q2', 500), fix('q3', 500), fix('q4', 500)];
+    const report = holdoutPlateauReport(cases, OPTS, 3, [200, 300, 400], 2);
+    for (const fold of report.folds) {
+      expect(fold.lo).toBe(200);
+      expect(fold.hi).toBe(400);
+      expect(fold.midpoint).toBe(300);
+    }
+    expect(report.leaking).toBe(0);
+  });
+
+  it('finds the interval on the TRAINING folds only, so a held-out case cannot widen it', () => {
+    // Datapacks hash to folds deterministically with 2 folds: `g2` sits in fold 0 and `g1` in fold 1. Fold 0 gets the
+    // GOOD case and fold 1 the HARMFUL one, so fold 1's training set is a single case that regresses nothing at any
+    // floor — its interval must therefore start at the grid's floor. A chooser that scored the whole corpus would have
+    // to climb to 310 to exclude the held-out harmful case, which is the mutation this test exists to kill.
+    const good = kase({
+      datapack: 'g2',
+      faultType: 'NetworkLoss',
+      groundTruth: ['source'],
+      services: [
+        svc({
+          serviceId: 'symptom',
+          selfAnomaly: Math.exp(1),
+          predictedRank: 1,
+          dominantMetric: 'duration_p99',
+          latRise: 500,
+        }),
+        svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+      ],
+    });
+    const harmful = kase({
+      datapack: 'g1',
+      faultType: 'HTTPRequestDelay',
+      groundTruth: ['symptom2'],
+      services: [
+        svc({
+          serviceId: 'symptom2',
+          selfAnomaly: Math.exp(1),
+          predictedRank: 1,
+          dominantMetric: 'duration_p99',
+          latRise: 300,
+        }),
+        svc({ serviceId: 'source2', selfAnomaly: 0, failedEdgeScore: 1 }),
+      ],
+    });
+    const report = holdoutPlateauReport([good, harmful], OPTS, 3, [200, 310, 400], 2);
+    const foldOne = report.folds.find((fold) => fold.fold === 1)!;
+    expect(foldOne.lo).toBe(200);
+    expect(foldOne.hi).toBe(400);
+  });
+
+  it('collapses to a zero-width interval at the grid floor when no floor is feasible', () => {
+    // Every floor admits the harmful case, so the criterion never holds on training: the plateau is empty and must be
+    // reported as a point at the grid's first entry rather than as `undefined`.
+    const cases = [
+      fix('w1', 500, 'HTTPRequestDelay', 'symptom'),
+      fix('w2', 500, 'HTTPRequestDelay', 'symptom'),
+    ];
+    const report = holdoutPlateauReport(cases, OPTS, 3, [200, 300], 2);
+    for (const fold of report.folds) {
+      expect(fold.hi).toBe(fold.lo);
+      expect(fold.midpoint).toBe(fold.lo);
+    }
+    // And `leaking` must be DERIVED from the folds rather than asserted: the term breaks the held-out fold here, so
+    // the count is at least one. A hard-coded zero would make the verdict sentence a claim instead of a measurement.
+    expect(report.leaking).toBe(report.folds.filter((fold) => fold.regressed > 0).length);
+    expect(report.leaking).toBeGreaterThan(0);
+  });
+
+  it('counts leaking folds, and the two verdicts say different things', () => {
+    const clean = formatPlateauHoldout(
+      {
+        folds: [
+          {
+            fold: 0,
+            lo: 240,
+            hi: 600,
+            midpoint: 420,
+            heldOutNet: 11,
+            heldOutCases: 278,
+            regressed: 0,
+          },
+        ],
+        heldOutNet: 11,
+        heldOutCases: 278,
+        leaking: 0,
+      },
+      { cases: 1, agreed: 1, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(clean).toContain('the licence the point fit could not give');
+    const leaky = formatPlateauHoldout(
+      {
+        folds: [
+          {
+            fold: 3,
+            lo: 200,
+            hi: 200,
+            midpoint: 200,
+            heldOutNet: 5,
+            heldOutCases: 300,
+            regressed: 1,
+          },
+        ],
+        heldOutNet: 5,
+        heldOutCases: 300,
+        leaking: 1,
+      },
+      { cases: 1, agreed: 1, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(leaky).toContain('does not protect every fold');
+    expect(leaky).toContain('folds leaking a regressed type: 1');
+  });
+
+  it('handles a root with no services, a case with no rank-1, and an EMPTY grid', () => {
+    // Three populations the plateau must survive: a root nothing can match (so the ranking has no order[0]), a case
+    // whose services were never ranked (so there is no rise to read), and a grid with no candidate floor at all (so the
+    // interval's lower edge has nothing to index).
+    const cases = [
+      kase({ datapack: 'k1', faultType: 'NetworkLoss', groundTruth: ['ghost'], services: [] }),
+      kase({
+        datapack: 'k2',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [svc({ serviceId: 'source' })],
+      }),
+    ];
+    const report = holdoutPlateauReport(cases, OPTS, 3, [200, 300], 2);
+    expect(report.heldOutCases).toBe(2);
+    for (const fold of report.folds) expect(Number.isFinite(fold.heldOutNet)).toBe(true);
+
+    const noGrid = holdoutPlateauReport(cases, OPTS, 3, [], 2);
+    for (const fold of noGrid.folds) {
+      expect(fold.lo).toBe(0);
+      expect(fold.hi).toBe(0);
+    }
+  });
+
+  it('renders a zero population without dividing by it, and no negative net with a plus sign', () => {
+    const empty = holdoutPlateauReport([], OPTS, 3, [200, 300], 2);
+    expect(empty.heldOutCases).toBe(0);
+    const text = formatPlateauHoldout(empty, {
+      cases: 0,
+      agreed: 0,
+      recordedRight: 0,
+      rebuiltRight: 0,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('0/0');
+    expect(text).not.toContain('NaN');
+    const negative = formatPlateauHoldout(
+      {
+        folds: [
+          {
+            fold: 0,
+            lo: 240,
+            hi: 600,
+            midpoint: 420,
+            heldOutNet: -2,
+            heldOutCases: 100,
+            regressed: 1,
+          },
+        ],
+        heldOutNet: -2,
+        heldOutCases: 100,
+        leaking: 1,
+      },
+      { cases: 1, agreed: 1, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(negative).toContain('-2');
+    expect(negative).not.toContain('+-2');
   });
 });

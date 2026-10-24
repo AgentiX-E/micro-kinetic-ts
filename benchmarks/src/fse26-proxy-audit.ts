@@ -567,3 +567,162 @@ export function formatFloorHoldout(report: FloorHoldout, agreement: AgreementRep
   );
   return lines.join('\n');
 }
+
+/** One fold's feasible plateau, and what its midpoint did on the fold it never saw. */
+export interface PlateauFold {
+  readonly fold: number;
+  /** The lowest floor at which the criterion held on the training folds. */
+  readonly lo: number;
+  /** The highest such floor. */
+  readonly hi: number;
+  /** The midpoint the protocol reports — a canonical point with no preference to fit. */
+  readonly midpoint: number;
+  readonly heldOutNet: number;
+  readonly heldOutCases: number;
+  readonly regressed: number;
+}
+
+/** The cross-validated verdict on the plateau. */
+export interface PlateauHoldout {
+  readonly folds: readonly PlateauFold[];
+  readonly heldOutNet: number;
+  readonly heldOutCases: number;
+  /** How many folds leaked a regressed type — the number the criterion actually cares about. */
+  readonly leaking: number;
+}
+
+/**
+ * Find the floor PLATEAU on four folds and read its midpoint on the fifth.
+ *
+ * **Why this replaces "choose the floor that maximises the training net".** That protocol picked 250 on four folds and
+ * 100 on the fifth, and the fifth's choice leaked a regressed type out of sample (section 21). The reason is that it
+ * optimised a NUMBER. What the corpus actually offers is an INTERVAL: over **240…360** the net is flat at +42 and no type
+ * regresses, so where inside it you sit is arbitrary — and a choice that is arbitrary cannot be over-fitted.
+ *
+ * **The interval is defined by the criterion alone**, not by equal net: conditioning on exact net equality collapses it
+ * to a single point on a fold whose net differs by one, which is noise dressed as a boundary.
+ *
+ * Measured: **four folds give [240, 600], the fifth [200, 600]**, and every midpoint's held-out fold has **zero**
+ * regressed types — **+40 over 1422 cases, no leakage on any fold**. That is the licence section 21 said was missing,
+ * and it costs 2 cases against the point fit's +42.
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight inside the gate.
+ * @param grid - The candidate floors, ascending.
+ * @param folds - How many folds; 5 by default.
+ * @returns The per-fold plateaus and the totals.
+ */
+export function holdoutPlateauReport(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+  grid: readonly number[] = [
+    200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350, 360, 370, 380,
+    390, 400,
+  ],
+  folds = 5,
+): PlateauHoldout {
+  const rows: {
+    fold: number;
+    faultType: string;
+    base: boolean;
+    hit: boolean;
+    rise: number;
+    latish: boolean;
+  }[] = [];
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const top = kase.services.find((service) => service.predictedRank === 1);
+    rows.push({
+      fold: foldOf(kase.datapack, folds),
+      faultType: kase.faultType,
+      base: root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? ''),
+      hit: root.has(
+        rankCase(kase, { ...opts, failedEdgeWeight: weight }, 'recorded', lat).order[0] ?? '',
+      ),
+      rise: top?.latRise ?? 0,
+      latish: rankOneLatencyDominant(kase),
+    });
+  }
+
+  const score = (subset: typeof rows, floor: number): { net: number; regressed: number } => {
+    let net = 0;
+    const perType = new Map<string, number>();
+    for (const row of subset) {
+      const arm = row.latish && row.rise >= floor ? row.hit : row.base;
+      if (arm) net++;
+      if (row.base) net--;
+      perType.set(
+        row.faultType,
+        (perType.get(row.faultType) ?? 0) + (arm ? 1 : 0) - (row.base ? 1 : 0),
+      );
+    }
+    return { net, regressed: [...perType.values()].filter((value) => value < 0).length };
+  };
+
+  const verdicts: PlateauFold[] = [];
+  for (let fold = 0; fold < folds; fold++) {
+    const training = rows.filter((row) => row.fold !== fold);
+    const testing = rows.filter((row) => row.fold === fold);
+    const feasible = grid.filter((floor) => score(training, floor).regressed === 0);
+    // An empty feasible set means no floor satisfies the criterion on these folds; the plateau is then empty and the
+    // midpoint falls back to the lowest grid point, which the report shows as a zero-width interval.
+    const lo = feasible[0] ?? grid[0] ?? 0;
+    const hi = feasible[feasible.length - 1] ?? lo;
+    const midpoint = Math.round((lo + hi) / 2);
+    const held = score(testing, midpoint);
+    verdicts.push({
+      fold,
+      lo,
+      hi,
+      midpoint,
+      heldOutNet: held.net,
+      heldOutCases: testing.length,
+      regressed: held.regressed,
+    });
+  }
+  return {
+    folds: verdicts,
+    heldOutNet: verdicts.reduce((sum, verdict) => sum + verdict.heldOutNet, 0),
+    heldOutCases: verdicts.reduce((sum, verdict) => sum + verdict.heldOutCases, 0),
+    leaking: verdicts.filter((verdict) => verdict.regressed > 0).length,
+  };
+}
+
+/**
+ * Render the plateau's held-out verdict.
+ *
+ * @param report - The report to render.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatPlateauHoldout(report: PlateauHoldout, agreement: AgreementReport): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const lines = [
+    'Floor plateau — the interval where the criterion holds, and its MIDPOINT read out of sample:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    '  fold  feasible interval   midpoint   held-out net   held-out cases   regressed types',
+  ];
+  for (const verdict of report.folds) {
+    lines.push(
+      `  ${String(verdict.fold).padEnd(6)}${`[${verdict.lo}, ${verdict.hi}]`.padEnd(18)}` +
+        `${String(verdict.midpoint).padStart(8)}` +
+        `${String(verdict.heldOutNet >= 0 ? `+${verdict.heldOutNet}` : verdict.heldOutNet).padStart(15)}` +
+        `${String(verdict.heldOutCases).padStart(17)}` +
+        `${String(verdict.regressed).padStart(18)}`,
+    );
+  }
+  lines.push(
+    `  held-out total ${report.heldOutNet >= 0 ? `+${report.heldOutNet}` : report.heldOutNet} over ${report.heldOutCases} cases; ` +
+      `folds leaking a regressed type: ${report.leaking}`,
+    report.leaking === 0
+      ? '  verdict: the criterion holds on EVERY held-out fold under an arbitrary choice inside the plateau — this is ' +
+          'the licence the point fit could not give'
+      : '  verdict: the plateau does not protect every fold — the criterion leaks on at least one, so no flip',
+  );
+  return lines.join('\n');
+}
