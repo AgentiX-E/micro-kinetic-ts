@@ -69,6 +69,10 @@ export default defineConfig({
         'src/fse26-engine-agreement.ts',
         'src/fse26-fourth-term.ts',
         'src/fse26-proxy-audit.ts',
+        // Added with the module: the metric-family ablation reads a DIAG dump and REFUSES to report a delta
+        // unless its re-ranking reproduces the engine's rank-1 case for case. The refusal is the module's
+        // whole value, so it is measured here rather than trusted.
+        'src/rcaeval-metric-ablation.ts',
         // Added with the module: the separator screen is the register's own precondition
         // ("show it separates, on a free read") turned into code.
         'src/fse26-separator.ts',

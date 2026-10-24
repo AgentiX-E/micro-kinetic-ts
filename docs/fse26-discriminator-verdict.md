@@ -1249,6 +1249,32 @@ moved.
 with the five exceptions being `packages/kinetic/index.test.ts` barrel-import timeouts under a 187-file parallel run on
 two cores (693 ms in isolation, and green in CI); `zsh .git/check_fences.sh` → **FENCES CLEAR**.
 
+### The nine cells, read on the flip's own run — the structural zero, confirmed where it was claimed
+
+`Benchmark — RCAEval Full Dataset` run **`40082217235`** on **`5772906`** (the commit that enrolled the weight),
+**10 of 10 jobs green**, 09:30:24Z → 10:55:33Z. This is the DEPLOY path — no input passed, so `failedEdgeWeight`
+resolves to the engine's 3 — and every cell:
+
+| suite | OnlineBoutique | SockShop | TrainTicket | average |
+| --- | ---: | ---: | ---: | ---: |
+| RE1 | 80.0 | 92.8 | 68.0 | 80.27 |
+| RE2 | 86.7 | 92.2 | 71.1 | 83.33 |
+| RE3 | 80.0 | 45.0 | 51.1 | 58.69 |
+
+**Cell for cell the published table, including every fault-type column**, and the run's own census states why in
+one line per suite:
+
+```
+direction-gate[shipped]: weight 3 but this view supplied 0 latency rows over 125 cases — the gate's SECOND half
+  has no value, so the term CANNOT fire and an unchanged cell is NOT evidence for it
+```
+
+So three independent readings agree, and they are worth stating together because each alone is ambiguous: the
+**instrument** says the gate cannot fire at weight 3 on this view; the **cells** are unchanged; and **an offline
+RE1-OnlineBoutique run at the same default** (`docs/rcaeval-local-harness.md`) reads `80.0%` with the identical
+per-type split. The invariance is a consequence of an empty input, not of an inert term — and the term's own +41
+is measured on the corpus that does supply one.
+
 ## 8. Reproduce
 
 ```bash
