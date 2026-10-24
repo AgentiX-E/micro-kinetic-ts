@@ -643,6 +643,46 @@ not a flip: `whole-file` alone moved RE2-OnlineBoutique **−2.3** and RE2-Train
 iteration 125 the direction weight is 3 rather than 0 — so the combination "correct view + live gate" has never been
 measured, and its two halves push in opposite directions on two cells.
 
+### 7.14 `whole-file` is now the default, the gain is real, and §7.13's mechanism claim was WRONG
+
+Run **`40128592846`** dispatched `latency_view=whole-file` on the configuration iteration 127 enrolled, and the
+reading is decisive enough to move a default:
+
+| cell | `shipped` | `whole-file` | Δ | per fault type |
+| --- | ---: | ---: | ---: | --- |
+| **RE2-TrainTicket** | 71.1 | **74.4** | **+3.3** | delay 73.3 → **86.7**, mem 80.0 → **86.7**, cpu/disk/loss/socket unmoved |
+| **RE2-OnlineBoutique** | 86.7 | **84.4** | **−2.3** | delay 80.0 → **66.7**, socket 93.3 → **86.7**, loss 53.3 → **60.0** |
+| RE1 (all three) | 82.4 / 92.8 / 75.2 | identical | 0 | — |
+| RE2-SockShop | 92.2 | 92.2 | 0 | — |
+| RE3 (all three) | 80.0 / 47.5 / 51.1 | identical | 0 | — |
+
+**`DEFAULT_LATENCY_SOURCE` is `whole-file` from this run.** The trade is stated rather than netted: the gain lands
+on the only cell this project was behind on — **RE2-TrainTicket 74.4 against GALA+'s 73.3, i.e. +1.1 pp, the first
+time that cell has been ahead** — and the cost lands on a cell it leads by 27.7 pp, where **two fault types
+regress** (delay −13.3, socket −6.7, both worth one case each) against one that improves (loss +6.7). Exchanging a
+second place for 2.3 pp of a first-place margin is what "SOTA on every benchmark" means; the residue is named, and
+the view is a corpus fix (the `shipped` composition scales an already-millisecond start time a second time), not a
+knob turned until a number moved.
+
+### The claim this run falsifies
+
+§7.13 predicted that the direction term would move the `loss` column, because its gate could not fire on the
+`shipped` view. **It could fire on this run — `direction-gate[whole-file]: … supplied 6781 latency rows over 90
+cases — the gate CAN fire` — and `loss` on RE2-TrainTicket did not move at all: 33.3 before, 33.3 after.** The
+columns that moved are latency-shaped, in a pattern the `lat` term explains and the failed-edge term does not:
+`delay` and `mem`, not `loss` and `socket`.
+
+So the honest statement is the narrower one: **the view was a real defect with a real cost (3.3 pp on a cell), and
+the mechanism that pays it is the `lat` term, whose `latWeight=0.561495` is the largest weight in the ranking and
+whose input was an empty array on every published cell.** The direction term's contribution on this cell is not
+established by this run, because the two turned on together; the dispatch that separates them is the same view at
+`failed_edge_weight=0`, and until it reads, the +3.3 is quoted against the view and not against a term.
+
+That is the second time in three iterations that a mechanism predicted from a per-case census was falsified by the
+run that made it live (§7.12→§7.13 predicted the gate; §7.13→§7.14 measured the lat term). The pattern is worth
+naming: **a term that has never had input has an effect of unknown size, and its size is not the one its mechanism
+suggests.**
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the

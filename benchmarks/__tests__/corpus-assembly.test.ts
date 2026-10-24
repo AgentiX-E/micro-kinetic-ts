@@ -46,6 +46,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_LATENCY_SOURCE } from '../src/rcaeval-corpus.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, '..', 'src');
 
@@ -155,12 +157,17 @@ describe('the corpus has one owner, and four paths used to assemble it', () => {
     expect(owner, 'the latency input is a VIEW, selected by the corpus owner').toMatch(
       /edgeLatency: views\[options\.latencyFrom\]/,
     );
-    expect(owner, 'and the published cells take the composed one').toMatch(
-      /DEFAULT_LATENCY_SOURCE: LatencySource = 'shipped'/,
+    // The default is asserted as a VALUE, not as the text that declares it. The line above this fence pinned
+    // `/DEFAULT_LATENCY_SOURCE: LatencySource = 'shipped'/` — a regex over the source, which passes when the
+    // declaration is re-worded and, more to the point, cannot fail for the reason that matters: a default that
+    // CHANGES while the test still describes the old one. Iteration 129 changed it, and this version would have
+    // gone red on the value while the text fence went red only because the literal moved.
+    expect(DEFAULT_LATENCY_SOURCE, 'the default view is the one a bare run ranks on').toBe(
+      'whole-file',
     );
-    // The first of the three views is the composition the nine published cells ranked with — a value that has
-    // to exist as code, because the `capped` view beside it is what repairs the unit and the two differ by a
-    // factor of 1000 on a start time.
+    // The `shipped` composition still exists as code and still carries the unit defect — the view was replaced,
+    // not deleted, so a dispatch can still reproduce the published cells and this repository can still say what
+    // they were taken with.
     expect(owner).toMatch(/startTime: s\.startTime \* 1000/);
   });
 });

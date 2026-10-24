@@ -184,7 +184,10 @@ describe('the three routes to `edgeLatency`', () => {
     expect(applied[0]!.edgeLatency).toEqual(VIEWS.capped);
     expect(applied[1]).toBe(orphan);
     // The published corpus's view is the one whose array is empty, so the default is not a cosmetic choice.
-    expect(DEFAULT_LATENCY_SOURCE).toBe('shipped');
+    // `whole-file` since iteration 129: the `shipped` composition scales an already-millisecond start time a
+    // second time, so its `edgeLatency` is empty on all nine cells and two mechanisms were inert behind it.
+    // The reading that enrolled the replacement is on the constant's own docblock.
+    expect(DEFAULT_LATENCY_SOURCE).toBe('whole-file');
   });
 });
 
@@ -460,7 +463,10 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
 
   it('accepts the whole union by the union’s own guard, and defaults to the published view', () => {
     expect(parseRCAEvalArgs([]).latencyView).toBe(DEFAULT_LATENCY_SOURCE);
-    expect(DEFAULT_LATENCY_SOURCE).toBe('shipped');
+    // `whole-file` since iteration 129: the `shipped` composition scales an already-millisecond start time a
+    // second time, so its `edgeLatency` is empty on all nine cells and two mechanisms were inert behind it.
+    // The reading that enrolled the replacement is on the constant's own docblock.
+    expect(DEFAULT_LATENCY_SOURCE).toBe('whole-file');
     // Every member, from the union's own table rather than a pair this file spells: a hand-written pair is
     // exactly what `--log-signal-mode` accepted while four of its six modes ran as `count`.
     const members = Object.keys(LATENCY_SOURCES);
@@ -489,7 +495,7 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     // The banner and the dump take one string, so they cannot disagree about it.
     expect(owner).toContain('export function formatCorpusLine(');
     expect(formatCorpusLine('whole-file')).toBe('corpus: latencyView=whole-file');
-    expect(formatCorpusLine(DEFAULT_LATENCY_SOURCE)).toBe('corpus: latencyView=shipped');
+    expect(formatCorpusLine(DEFAULT_LATENCY_SOURCE)).toBe('corpus: latencyView=whole-file');
     expect(golden).toContain('formatCorpusLine(opts.latencyView)');
     expect(golden).toContain('console.log(configuration);');
     expect(golden).toContain('new DiagnoseDump(opts.diagnoseDump, configuration)');

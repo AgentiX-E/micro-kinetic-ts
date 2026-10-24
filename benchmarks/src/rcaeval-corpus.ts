@@ -107,13 +107,40 @@ export const SHIPPED_TRACE_AUGMENTATION = { minCallFrequency: 1 } as const;
 export type LatencySource = 'shipped' | 'capped' | 'whole-file';
 
 /**
- * The view the PUBLISHED cells ranked on.
+ * The view a run ranks on when no input says otherwise — **`whole-file` since iteration 129**, the view that
+ * carries no unit defect.
  *
- * Named rather than inlined because it is the default a reader has to be able to find: it is the composition
- * whose `edgeLatency` is empty by the unit defect above, which is why `latWeight` is a no-op in every
- * published cell.
+ * ## What it replaced, and why the replacement is a bug fix rather than a knob
+ *
+ * `shipped` scales an already-millisecond start time by 1000 a second time, so every span lands after the
+ * injection anchor and the derived `edgeLatency` is **empty on every cell** — `latency-routes` prints `rows:
+ * shipped 0` for all nine. Two mechanisms were therefore inert on the whole golden half: the `lat` term, whose
+ * `latWeight=0.561495` is the largest weight in the ranking, and the failed-edge direction gate, whose second
+ * observable is the same array. Keeping a unit bug because it scored better on one cell was the wrong trade,
+ * and §7.4's note that `whole-file` moves RE2-OB −2.3 is the price of not making it.
+ *
+ * ## The measurement that enrolled it (run `40128592846`, the whole-file view on the current default)
+ *
+ * | cell | `shipped` | `whole-file` | Δ |
+ * | --- | ---: | ---: | ---: |
+ * | RE2-TrainTicket | 71.1 | **74.4** | **+3.3** (delay 73.3 → 86.7, mem 80.0 → 86.7) |
+ * | RE2-OnlineBoutique | 86.7 | **84.4** | **−2.3** (delay 80.0 → 66.7, socket 93.3 → 86.7, loss 53.3 → 60.0) |
+ * | the other seven | — | — | **0** |
+ *
+ * The gain lands on the only cell this project was behind on — **RE2-TrainTicket 74.4 against GALA+'s 73.3** —
+ * and the cost lands on a cell it leads by 27.7 pp. Exchanging a second place for 2.3 pp of a first-place margin
+ * is what "SOTA on every benchmark" means, and the residue is named rather than netted away: **two fault types
+ * regress on RE2-OnlineBoutique**, worth one and a half cases each.
+ *
+ * ## What it did NOT do, said here so it is not read into the number
+ *
+ * The direction gate went from CANNOT FIRE to CAN at once, and **`loss` on RE2-TrainTicket did not move at all**
+ * (33.3 before and after). The columns that moved are latency-shaped, so the live mechanism is the `lat` term,
+ * not the direction one; `docs/latency-channel-views.md` §7.14 records the falsification and names the run that
+ * separates the two. The gain is real, its attribution is not yet measured, and one dispatch apart is the
+ * difference between the two sentences.
  */
-export const DEFAULT_LATENCY_SOURCE: LatencySource = 'shipped';
+export const DEFAULT_LATENCY_SOURCE: LatencySource = 'whole-file';
 
 /**
  * The union's members, as the option surface's own guard reads them.
