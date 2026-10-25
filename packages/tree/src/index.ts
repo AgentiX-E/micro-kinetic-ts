@@ -68,6 +68,7 @@ export { DEFAULT_RANK_NORMALIZATION } from './causal/topology-fault-graph.js';
 // and `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` is what keeps the list from growing
 // back one instance at a time.
 export {
+  DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,

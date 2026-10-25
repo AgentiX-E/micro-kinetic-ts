@@ -483,6 +483,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         // The anomaly composition, named unconditionally: on this corpus it IS the ranking, so a line that
         // omitted it (or printed only non-defaults) could not attribute a RE1 movement to anything.
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0.1 anomalyCvWeight=0.05 anomalyBreadthWeight=0 ' +
+        'anomalyBreadthGate=0 ' +
         'temporalWeight=0 onsetShape=earliness',
     );
   });

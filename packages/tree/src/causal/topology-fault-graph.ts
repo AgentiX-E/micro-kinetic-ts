@@ -374,6 +374,24 @@ export interface TopologyFaultGraphConfig {
    * decision: the 26 one-step misses on RE1 are what it is aimed at, and the nine cells decide.
    */
   readonly anomalyBreadthWeight: number;
+  /**
+   * CONTENDER gate for the breadth term: the bonus applies only to nodes whose own deviation is at least
+   * this FRACTION of the fleet's largest.
+   *
+   * `0` — the shipped value — means no gate, i.e. every node with a breadth earns the bonus. A gate exists
+   * because the ungated term was measured on both halves (`docs/anomaly-composition.md` §4a–§4b): RCAEval
+   * gained **11 cases with no cell down**, while FSE'26 gained **7 Top@1 but lost 6 Top@5**. The reading is
+   * that the bonus promotes nodes that are nowhere near contention into the top five, which a Top-1 metric
+   * cannot see and a Top-5 metric pays for. The gate is a RATIO of the node's own score to the fleet's
+   * best — the same dimensionless form the bonus itself uses — so it transfers between a raw and a
+   * rank-normalised score.
+   *
+   * The prediction it is built on is falsifiable: on FSE'26 the Top@5 loss must shrink while Top@1 holds
+   * its gain; if it does not, the promotion explanation is wrong and the term stays refused.
+   *
+   * Default: 0 (no gate).
+   */
+  readonly anomalyBreadthGate: number;
 }
 
 /**
@@ -534,6 +552,14 @@ export const DEFAULT_ANOMALY_CV_WEIGHT = 0.05;
 export const DEFAULT_ANOMALY_BREADTH_WEIGHT = 0;
 
 /**
+ * The shipped breadth GATE — `0`, i.e. the bonus is not gated.
+ *
+ * Not a refusal: with the weight at 0 the gate cannot matter, and the ungated form's own measurement is
+ * what named the gate as the next question rather than a parameter to guess at.
+ */
+export const DEFAULT_ANOMALY_BREADTH_GATE = 0;
+
+/**
  * The topology graph's own defaults table, exported for the reason {@link DEFAULT_RANK_NORMALIZATION} is:
  * a caller that cannot read the engine's table holds a second opinion about what the engine ships.
  *
@@ -568,6 +594,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (shipped behaviour)
   anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT, // dispersion bonus (shipped behaviour)
   anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT, // channels-moved term (OFF)
+  anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE, // no contender gate (shipped)
 };
 
 /**
@@ -734,6 +761,9 @@ export function buildTopologyFaultGraph(
     invariantFinite(weight, label);
     invariantRange(weight, 0, 10, label);
   }
+  // The GATE is a fraction of the fleet's best, so its domain is the unit interval rather than a weight's.
+  invariantFinite(cfg.anomalyBreadthGate, 'anomalyBreadthGate');
+  invariantRange(cfg.anomalyBreadthGate, 0, 1, 'anomalyBreadthGate');
 
   // ── Adaptive decayAlpha based on topology size ──────────
   // Larger graphs need lower decay to prevent child contributions
@@ -749,6 +779,8 @@ export function buildTopologyFaultGraph(
     { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
   >();
   const metricDiagnostics = new Map<ServiceId, readonly MetricDiagnostic[]>();
+  /** Per-service breadth, applied once the fleet's best is known (see Step 1a). */
+  const breadthByService = new Map<ServiceId, number>();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -763,6 +795,7 @@ export function buildTopologyFaultGraph(
     postInjectOnsetDelays.set(serviceId, result.postInjectOnsetDelay);
     dominantMetrics.set(serviceId, result.dominantMetric);
     metricDiagnostics.set(serviceId, result.metricDiagnostics);
+    if (result.breadth !== 0) breadthByService.set(serviceId, result.breadth);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
       diagNoMetrics++;
@@ -856,6 +889,26 @@ export function buildTopologyFaultGraph(
         if (excess > best) best = excess;
       }
       anomalyScores.set(serviceId, best);
+    }
+  }
+
+  // ── Step 1a: the breadth term, once per fleet ───────────
+  //
+  // The bonus is a function of a node's own channels, but the GATE is a function of the fleet: a node earns
+  // it only if its deviation is at least `anomalyBreadthGate × the largest deviation in the graph`. That
+  // comparison is why this lives here rather than inside `computeAnomalyFeatures`, and it is the defect the
+  // ungated form exposed on FSE'26 — promoting non-contenders into the top five. With the weight at 0 — the
+  // shipped value — this block does nothing at all, so the shipped ranking is bit-identical by construction.
+  if (cfg.anomalyBreadthWeight !== 0) {
+    let fleetMax = 0;
+    for (const score of anomalyScores.values()) {
+      if (score > fleetMax) fleetMax = score;
+    }
+    const floor = cfg.anomalyBreadthGate * fleetMax;
+    for (const [serviceId, base] of anomalyScores) {
+      if (base < floor) continue;
+      const breadth = breadthByService.get(serviceId) ?? 0;
+      if (breadth !== 0) anomalyScores.set(serviceId, base + cfg.anomalyBreadthWeight * breadth);
     }
   }
 
@@ -1024,6 +1077,14 @@ function metricFamilyOf(label: string): string | undefined {
 
 interface AnomalyFeatures {
   score: number;
+  /**
+   * The effective number of channels that moved, minus one — `(Σd)²/Σd² − 1` over the KEPT metrics.
+   *
+   * Returned rather than added to `score` because the bonus is GATED on the fleet: a node earns it only
+   * when its own deviation is within `anomalyBreadthGate` of the largest in the graph, which this function
+   * cannot see. `0` when the weight is 0, i.e. the shipped path computes nothing.
+   */
+  breadth: number;
   onsetIndex: number;
   /**
    * Onset delay in milliseconds after the fault injection time (the first
@@ -1102,6 +1163,9 @@ function computeAnomalyFeatures(
   if (!serviceMetrics || serviceMetrics.length === 0) {
     return {
       score: 0,
+      // A service with no metrics has no channels to have moved; the empty result is an absence, not a
+      // breadth of zero over an empty set.
+      breadth: 0,
       onsetIndex: Number.MAX_SAFE_INTEGER,
       postInjectOnsetDelay: -1,
       dominantMetric: { label: '', head: [], tail: [], transientSkipped: [] },
@@ -1484,7 +1548,11 @@ function computeAnomalyFeatures(
   }
 
   return {
-    score: bestScore + cfg.anomalyBreadthWeight * breadth,
+    // The bonus is NOT applied here: it is applied once the whole fleet is known, because the contender
+    // gate compares a node's score with the fleet's best — a comparison this function cannot make. The
+    // weight being 0 keeps the shipped path exact: `score` is `bestScore + 0·breadth`.
+    score: bestScore,
+    breadth,
     onsetIndex: bestMetricOnset,
     postInjectOnsetDelay,
     dominantMetric: {

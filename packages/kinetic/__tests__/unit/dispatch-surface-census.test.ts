@@ -260,6 +260,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-burst-weight',
     '--anomaly-cv-weight',
     '--anomaly-breadth-weight',
+    '--anomaly-breadth-gate',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -269,6 +270,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-burst-weight',
     '--anomaly-cv-weight',
     '--anomaly-breadth-weight',
+    '--anomaly-breadth-gate',
   ],
 };
 
@@ -475,6 +477,14 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
+  anomalyBreadthGate: {
+    // The contender gate: the bonus is paid only to nodes within this fraction of the fleet's best. 0 = no
+    // gate, which is what the ungated nine-cell reading and the ungated FSE'26 pair were taken under.
+    flag: '--anomaly-breadth-gate',
+    owner: 'anomaly-composition.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
   fusionCeiling: {
     flag: '--fusion-ceiling',
     owner: NOT_A_RANKING_KNOB,
@@ -583,6 +593,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   // kill criterion's AND needs — a candidate that moves one benchmark and cannot be asked on the other is
   // undecidable, and the breadth term is the first candidate in four iterations to move the golden half
   // without losing a cell, so its other half is the next question rather than a later one.
+  'anomalyBreadthGate',
   'anomalyBreadthWeight',
   'anomalyBurstWeight',
   'anomalyCvWeight',

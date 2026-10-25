@@ -1600,6 +1600,86 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       expect(delta('multi')).toBeCloseTo(0.5, 10);
     });
 
+    it('gates the bonus on the fleet: a node nowhere near contention earns nothing', () => {
+      // The ungated term's own measurement named this gate: RCAEval gained 11 cases with no cell down, but
+      // FSE'26 gained 7 Top@1 and lost 6 Top@5, which is what a bonus paid to NON-contenders looks like —
+      // it promotes them into the top five. `anomalyBreadthGate` says a node earns the bonus only when its
+      // own deviation is at least that FRACTION of the fleet's largest.
+      const graph = makeCallGraph(['top', 'tail', 'idle'], []);
+      // The separation has to be in the RATIO, not the magnitude: `deviation = log10(1 + rise ratio)`, so a
+      // series scaled by ten scores exactly what the original scored — a fact this fixture's first version
+      // demonstrated by failing to separate its two nodes at all. `top` rises ~5×, `tail` ~1.1×.
+      const jump = (base: number, peak: number) => [
+        ...Array.from({ length: 19 }, () => base),
+        peak,
+      ];
+      const metrics = makeMetrics([
+        ['top', [makeTimeSeries('cpu', jump(10, 60)), makeTimeSeries('mem', jump(10, 60))]],
+        ['tail', [makeTimeSeries('cpu', jump(10, 11)), makeTimeSeries('mem', jump(10, 11))]],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+
+      const off = buildTopologyFaultGraph(graph, metrics);
+      const ungated = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.5 });
+      const gated = buildTopologyFaultGraph(graph, metrics, {
+        anomalyBreadthWeight: 0.5,
+        anomalyBreadthGate: 0.5,
+      });
+
+      const d = (map: Map<string, number>, id: string) => map.get(id)! - off.anomalyScores.get(id)!;
+      // Ungated, BOTH earn it — the fleet's best does not matter.
+      expect(d(ungated.anomalyScores, 'top')).toBeCloseTo(0.5, 10);
+      expect(d(ungated.anomalyScores, 'tail')).toBeCloseTo(0.5, 10);
+      // Gated at half the fleet's best, only the contender does.
+      expect(d(gated.anomalyScores, 'top')).toBeCloseTo(0.5, 10);
+      expect(d(gated.anomalyScores, 'tail')).toBe(0);
+    });
+
+    it('gates at the fleet maximum when the gate is 1, and never gates a lone node', () => {
+      // `gate = 1` is the tightest admissible gate: only nodes tied with the fleet's best earn the bonus.
+      // A graph whose only varied node IS the fleet's best must therefore be UNAFFECTED by the gate — a
+      // gate that could suppress a single contender would be a threshold on the term rather than on the
+      // comparison it exists for.
+      const graph = makeCallGraph(['solo', 'idle'], []);
+      const metrics = makeMetrics([
+        [
+          'solo',
+          [
+            makeTimeSeries('cpu', ramp),
+            makeTimeSeries(
+              'mem',
+              ramp.map((v) => v * 2),
+            ),
+          ],
+        ],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+
+      const off = buildTopologyFaultGraph(graph, metrics);
+      const gated = buildTopologyFaultGraph(graph, metrics, {
+        anomalyBreadthWeight: 0.5,
+        anomalyBreadthGate: 1,
+      });
+      expect(gated.anomalyScores.get('solo')! - off.anomalyScores.get('solo')!).toBeCloseTo(
+        0.5,
+        10,
+      );
+    });
+
+    it('refuses a gate outside [0, 1] rather than clamping it', () => {
+      const graph = makeCallGraph(['svc', 'idle'], []);
+      const metrics = makeMetrics([
+        ['svc', [makeTimeSeries('cpu', ramp)]],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+      expect(() => buildTopologyFaultGraph(graph, metrics, { anomalyBreadthGate: 1.5 })).toThrow(
+        /anomalyBreadthGate/,
+      );
+      expect(() => buildTopologyFaultGraph(graph, metrics, { anomalyBreadthGate: -0.1 })).toThrow(
+        /anomalyBreadthGate/,
+      );
+    });
+
     it('measures breadth as a RATIO, so scaling every channel up multiplies nothing', () => {
       // The scale-free property, asserted rather than argued: the same two-channel SHAPE at ten times the
       // magnitude must earn the same reward, or the term would be a magnitude term in disguise.

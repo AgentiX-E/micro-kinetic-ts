@@ -44,6 +44,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     anomalyBurstWeight: 0.1,
     anomalyCvWeight: 0.05,
     anomalyBreadthWeight: 0,
+    anomalyBreadthGate: 0,
     dropMetrics: [],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
@@ -173,6 +174,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // so an omission rule would render the shipped run and an ablation identically — and the fourth is
         // the knob a dispatch varies.
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0.1 anomalyCvWeight=0.05 anomalyBreadthWeight=0 ' +
+        'anomalyBreadthGate=0 ' +
         'latWeight=0 ' +
         'poolMetricPenaltyWeight=0 stabilityWeight=0 temporalWeight=0 onsetShape=earliness',
     );

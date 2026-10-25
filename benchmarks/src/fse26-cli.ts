@@ -36,6 +36,7 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/in
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
@@ -69,7 +70,13 @@ import {
   type PrismPooling,
 } from '../../packages/tree/src/index.js';
 
-import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli-args.js';
+import {
+  hasValue,
+  parseFieldDecimals,
+  parseNodeCount,
+  parseUnitInterval,
+  parseWeight,
+} from './cli-args.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -316,6 +323,8 @@ export interface Fse26CliOptions {
   readonly anomalyBurstWeight: number;
   readonly anomalyCvWeight: number;
   readonly anomalyBreadthWeight: number;
+  /** The breadth contender gate — see the RCAEval runner's `CliOptions.anomalyBreadthGate`. */
+  readonly anomalyBreadthGate: number;
   /**
    * Whether a metric that was IDLE before the fault and only became active during it is discarded as an
    * artifact of its near-zero baseline.
@@ -431,6 +440,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
     anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
     anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
+    anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
@@ -557,6 +567,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.anomalyCvWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_CV_WEIGHT);
     } else if (arg === '--anomaly-breadth-weight' && hasValue(argv, i + 1)) {
       opts.anomalyBreadthWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_BREADTH_WEIGHT);
+    } else if (arg === '--anomaly-breadth-gate' && hasValue(argv, i + 1)) {
+      opts.anomalyBreadthGate = parseUnitInterval(argv[++i]!, DEFAULT_ANOMALY_BREADTH_GATE);
     } else if (arg === '--collapse-discount' && hasValue(argv, i + 1)) {
       // The golden parser's own arithmetic rather than `parseWeight`: this knob is a FRACTION, and it
       // CLAMPS to `[0, 1]` rather than falling back, so a value outside the range is a legal dispatch

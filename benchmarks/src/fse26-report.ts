@@ -63,6 +63,8 @@ export interface FSE26RunConfig {
   readonly anomalyBurstWeight: number;
   readonly anomalyCvWeight: number;
   readonly anomalyBreadthWeight: number;
+  /** The breadth contender gate (0 = none). */
+  readonly anomalyBreadthGate: number;
   /** Metric names dropped for this run (empty = no ablation). */
   readonly dropMetrics: readonly string[];
   /**
@@ -355,7 +357,8 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     ` anomalyTrendWeight=${config.anomalyTrendWeight}` +
     ` anomalyBurstWeight=${config.anomalyBurstWeight}` +
     ` anomalyCvWeight=${config.anomalyCvWeight}` +
-    ` anomalyBreadthWeight=${config.anomalyBreadthWeight}`;
+    ` anomalyBreadthWeight=${config.anomalyBreadthWeight}` +
+    ` anomalyBreadthGate=${config.anomalyBreadthGate}`;
   if (config.dropMetrics.length > 0) {
     line += ` dropMetrics=[${config.dropMetrics.join(', ')}]`;
   }

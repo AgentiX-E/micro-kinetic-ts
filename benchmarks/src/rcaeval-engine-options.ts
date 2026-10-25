@@ -113,6 +113,8 @@ export interface RCAEvalTopologyOptions {
   readonly anomalyCvWeight: number;
   /** The channels-moved term — see `CliOptions.anomalyBreadthWeight`. */
   readonly anomalyBreadthWeight: number;
+  /** The contender gate — see `CliOptions.anomalyBreadthGate`. */
+  readonly anomalyBreadthGate: number;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -183,6 +185,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       anomalyBurstWeight: opts.anomalyBurstWeight,
       anomalyCvWeight: opts.anomalyCvWeight,
       anomalyBreadthWeight: opts.anomalyBreadthWeight,
+      anomalyBreadthGate: opts.anomalyBreadthGate,
     },
   };
 }
@@ -232,7 +235,7 @@ export function formatSignalLine(opts: CliOptions): string {
     // so an artifact that omitted it could not attribute a RE1 movement to anything at all.
     `anomalyTrendWeight=${opts.anomalyTrendWeight} ` +
     `anomalyBurstWeight=${opts.anomalyBurstWeight} anomalyCvWeight=${opts.anomalyCvWeight} ` +
-    `anomalyBreadthWeight=${opts.anomalyBreadthWeight} ` +
+    `anomalyBreadthWeight=${opts.anomalyBreadthWeight} anomalyBreadthGate=${opts.anomalyBreadthGate} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

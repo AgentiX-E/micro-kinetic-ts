@@ -52,7 +52,7 @@ on:
         required: false
         default: ''
       ranking_knobs:
-        description: 'Comma-separated name=value pairs for the eight ranking knobs that a dispatch could not state until iteration 96. They are ONE input rather than eight because of a HARD GITHUB LIMIT, not a preference: a workflow_dispatch accepts at most 25 inputs, naming them one per input took this workflow to 30, and the workflow file was therefore INVALID - the push-triggered validation run failed and the dispatch was refused with HTTP 422. Accepted names: trace_weight, topo_weight, collision_weight, prism_weight, prism_pooling, collapse_discount, suppress_idle_transients, suppress_near_zero_baseline_rise, anomaly_trend_weight, anomaly_burst_weight, anomaly_cv_weight, anomaly_breadth_weight. The two suppression switches take 1 to switch ON and 0 to switch OFF (emitting the runner''s own negated pole); every other name takes its value verbatim, and a malformed VALUE falls back to the runner''s shipped value on the CLI''s own rule rather than inventing a configuration. Example: suppress_idle_transients=1,trace_weight=1. An unrecognised NAME fails the step rather than being dropped, because a silently ignored knob is a run that reports a configuration nobody asked for'
+        description: 'Comma-separated name=value pairs for the eight ranking knobs that a dispatch could not state until iteration 96. They are ONE input rather than eight because of a HARD GITHUB LIMIT, not a preference: a workflow_dispatch accepts at most 25 inputs, naming them one per input took this workflow to 30, and the workflow file was therefore INVALID - the push-triggered validation run failed and the dispatch was refused with HTTP 422. Accepted names: trace_weight, topo_weight, collision_weight, prism_weight, prism_pooling, collapse_discount, suppress_idle_transients, suppress_near_zero_baseline_rise, anomaly_trend_weight, anomaly_burst_weight, anomaly_cv_weight, anomaly_breadth_weight, anomaly_breadth_gate. The two suppression switches take 1 to switch ON and 0 to switch OFF (emitting the runner''s own negated pole); every other name takes its value verbatim, and a malformed VALUE falls back to the runner''s shipped value on the CLI''s own rule rather than inventing a configuration. Example: suppress_idle_transients=1,trace_weight=1. An unrecognised NAME fails the step rather than being dropped, because a silently ignored knob is a run that reports a configuration nobody asked for'
         required: false
         default: ''
       drop_metrics:
@@ -334,6 +334,9 @@ jobs:
                   ;;
                 anomaly_breadth_weight)
                   KNOB_ARGS+=(--anomaly-breadth-weight "$value")
+                  ;;
+                anomaly_breadth_gate)
+                  KNOB_ARGS+=(--anomaly-breadth-gate "$value")
                   ;;
                 suppress_idle_transients)
                   if [ "$value" = "1" ]; then

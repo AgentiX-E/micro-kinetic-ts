@@ -176,6 +176,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       anomalyBurstWeight: opts.anomalyBurstWeight,
       anomalyCvWeight: opts.anomalyCvWeight,
       anomalyBreadthWeight: opts.anomalyBreadthWeight,
+      anomalyBreadthGate: opts.anomalyBreadthGate,
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
       suppressDemandMetrics: opts.suppressDemandMetrics,

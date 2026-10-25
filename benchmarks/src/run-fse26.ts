@@ -177,6 +177,7 @@ async function main(): Promise<void> {
     anomalyBurstWeight: opts.anomalyBurstWeight,
     anomalyCvWeight: opts.anomalyCvWeight,
     anomalyBreadthWeight: opts.anomalyBreadthWeight,
+    anomalyBreadthGate: opts.anomalyBreadthGate,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

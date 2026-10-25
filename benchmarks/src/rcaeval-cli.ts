@@ -67,6 +67,7 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fs
 import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
@@ -332,6 +333,16 @@ export interface CliOptions {
    */
   anomalyBreadthWeight: number;
   /**
+   * CONTENDER gate for the breadth term: the bonus is paid only to nodes whose own deviation is at least
+   * this fraction of the fleet's largest (0 = no gate, the shipped value).
+   *
+   * The gate exists because the UNGATED term's two halves disagree: +11 cases on RCAEval with no cell down,
+   * but +7 Top@1 and −6 Top@5 on FSE'26 — the shape of a bonus paid to non-contenders. Accepts 0..1; a
+   * value outside falls back to the shipped 0 rather than being clamped, because a fraction outside the
+   * unit interval is a different quantity (the rule `--topo-discount` recorded).
+   */
+  anomalyBreadthGate: number;
+  /**
    * When set, compute the PRISM graph-free baseline on the SAME loaded cases
    * and emit the fusion-ceiling analysis (engine vs PRISM union of correct
    * cases) as JSON to this path, in addition to the normal benchmark table.
@@ -450,6 +461,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
     anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
     anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
+    anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE,
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
@@ -612,6 +624,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.anomalyCvWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_CV_WEIGHT);
     else if (args[i] === '--anomaly-breadth-weight' && hasValue(args, i + 1))
       opts.anomalyBreadthWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_BREADTH_WEIGHT);
+    else if (args[i] === '--anomaly-breadth-gate' && hasValue(args, i + 1))
+      opts.anomalyBreadthGate = parseUnitInterval(args[++i]!, DEFAULT_ANOMALY_BREADTH_GATE);
     else if (args[i] === '--suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = true;
     } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {
