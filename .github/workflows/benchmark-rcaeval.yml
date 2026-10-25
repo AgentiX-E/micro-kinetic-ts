@@ -118,6 +118,11 @@ on:
         required: false
         default: ''
         type: string
+      scopes:
+        description: "Which jobs of the battery to run, comma separated (empty = every job, the shipped behaviour). `golden` runs only the three RCAEval runners and the dashboard; `ablation` and `optimize` name the two exploration jobs. It exists because the answer this workflow produces takes 30 minutes and the run that delivers it takes two: `optimize-rcaeval` and `ablation-re2` are serialised after the golden jobs, they are exploration rather than gates, and a dispatch that asks one question should not pay for them. Run `40133507548` is the argument — the optimiser hit its 60-minute bound at 22:17 and the RUN was reported `cancelled` although all nine cells had already succeeded and been uploaded. A job that did not run is not a job that failed, and this input is how a dispatch says which it is asking for"
+        required: false
+        default: ''
+        type: string
   push:
     paths:
       - '.github/workflows/benchmark-rcaeval.yml'
@@ -1355,7 +1360,7 @@ jobs:
   # ── Ablation: 3 parallel runners (RE1 / RE2 / RE3) ──
   ablation-re1:
     needs: rcaeval-re1
-    if: needs.rcaeval-re1.result == 'success'
+    if: needs.rcaeval-re1.result == 'success' && (inputs.scopes == '' || contains(inputs.scopes, 'ablation'))
     runs-on: ubuntu-latest
     # `timeout-minutes` is a WORKING-versus-STUCK bound, not a target, and the corpus work moved the real cost
     # past it: `ablation-re2` measured **53.6 min** on run `37838593082` at 150 cases and **77.8 min** on run
@@ -1405,7 +1410,7 @@ jobs:
 
   ablation-re2:
     needs: rcaeval-re2
-    if: needs.rcaeval-re2.result == 'success'
+    if: needs.rcaeval-re2.result == 'success' && (inputs.scopes == '' || contains(inputs.scopes, 'ablation'))
     runs-on: ubuntu-latest
     # The binding job, and it moved again when the corpus did. Measured at **150 cases** (the capped corpus):
     # 54.3 min on run `37858643162`. At RE2's full 270 it is **77.8 min** on run `38145565230`, so the earlier
@@ -1455,7 +1460,7 @@ jobs:
 
   ablation-re3:
     needs: rcaeval-re3
-    if: needs.rcaeval-re3.result == 'success'
+    if: needs.rcaeval-re3.result == 'success' && (inputs.scopes == '' || contains(inputs.scopes, 'ablation'))
     runs-on: ubuntu-latest
     # **30.7 min of 90** — 32.4 min at 30 configs on run `37838593082`, 30.7 min at 33 on run `38145565230`.
     # See `ablation-re1` for why the bound moved.
@@ -1501,6 +1506,7 @@ jobs:
   # ── L2 ranking-weight search (RCAEval, train/val/test) ──
   optimize-rcaeval:
     needs: [synthetic, artifact]
+    if: inputs.scopes == '' || contains(inputs.scopes, 'optimize')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

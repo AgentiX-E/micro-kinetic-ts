@@ -16,6 +16,7 @@ import {
   DEMAND_METRIC_LABELS,
   isDemandMetric,
   rankNormalizeScores,
+  transientPermanence,
 } from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
@@ -1425,6 +1426,110 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     const result = buildTopologyFaultGraph(graph, metrics);
 
     expect(result.dominantMetrics.get('svc')?.label).toBe('cpu');
+  });
+
+  it('keeps an intermittent step whose LAST sample happens to sit at baseline', () => {
+    // RCAEval RE1-OnlineBoutique `re1ob_adservice_delay_3`, reduced. The delay
+    // injection is INTERMITTENT: over the 721-sample window the latency-50
+    // series alternates between its 5 ms baseline and a 106 ms plateau, and the
+    // window happens to END on a baseline sample (0.0046 after 0.106). The
+    // guard used to read `values[0]` and `values[n-1]` — two samples out of 721
+    // — and called the fault's own signature a transient (permanence 0.03), so
+    // the faulted service was scored on a flat `mem` series (deviation 0.010)
+    // and lost to a caller whose latency channel was intact.
+    //
+    // A verdict that discards a metric must not be decided by which sample the
+    // window ends on: the guard's question is whether the metric RETURNED to
+    // its starting LEVEL, and a level is estimated from a window.
+    const graph = makeCallGraph(['svc'], []);
+    const baseline = Array.from({ length: 30 }, () => 0.002);
+    const intermittent = Array.from({ length: 10 }, (_, i) => (i % 2 === 0 ? 0.106 : 0.005));
+    const metrics = makeMetrics([
+      ['svc', [makeTimeSeries('latency-50', [...baseline, ...intermittent])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => d.outcome)).toEqual(['kept']);
+    expect(result.anomalyScores.get('svc')).toBeGreaterThan(0);
+  });
+
+  it('does not let the choice of final sample change the verdict', () => {
+    // The same series, in two spellings that differ only in whether the last
+    // sample is a plateau or a baseline point. Both are the same fault, so both
+    // must reach the SAME outcome. This is the invariant the two-sample test
+    // violated: it could not be stated as a property of the series at all.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const base = Array.from({ length: 30 }, () => 0.002);
+    const endsLow = [...base, 0.106, 0.005, 0.106, 0.005, 0.106, 0.005];
+    const endsHigh = [...base, 0.005, 0.106, 0.005, 0.106, 0.005, 0.106];
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('latency-50', endsLow)]],
+      ['svc-b', [makeTimeSeries('latency-50', endsHigh)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const a = result.metricDiagnostics.get('svc-a')![0]!.outcome;
+    const b = result.metricDiagnostics.get('svc-b')![0]!.outcome;
+    expect(a).toBe(b);
+    expect(a).toBe('kept');
+  });
+
+  it('estimates the end level from a window, and the window size is not load-bearing', () => {
+    // The estimate is the mean of the last `fraction` of the series. `0.1` is
+    // the shipped value; 5% and 20% are measured here against the SAME shapes,
+    // so the shipped choice is shown to be a resolution, not a tuned parameter:
+    // every window size separates the intermittent fault (a level that moved
+    // and stayed moved) from a genuine return (a level that came back).
+    const base = Array.from({ length: 30 }, () => 0.002);
+    const intermittent = [
+      ...base,
+      ...Array.from({ length: 10 }, (_, i) => (i % 2 ? 0.106 : 0.005)),
+    ];
+    const returns = [
+      ...Array.from({ length: 20 }, () => 0.13),
+      ...Array.from({ length: 4 }, () => 2.0),
+      ...Array.from({ length: 16 }, () => 0.107),
+    ];
+
+    for (const fraction of [0.05, 0.1, 0.2]) {
+      expect(transientPermanence(intermittent, fraction).permanence).toBeGreaterThan(0.3);
+      expect(transientPermanence(returns, fraction).permanence).toBeLessThan(0.3);
+    }
+    // …and a permanent step reads as permanent at every window size.
+    const step = [
+      ...Array.from({ length: 30 }, () => 0.4),
+      ...Array.from({ length: 10 }, () => 1.4),
+    ];
+    for (const fraction of [0.05, 0.1, 0.2]) {
+      expect(transientPermanence(step, fraction).permanence).toBeGreaterThan(0.3);
+    }
+  });
+
+  it('still skips a transient whose tail window is back at its starting level', () => {
+    // The protection this guard exists for (#197 RE3 TrainTicket): a resource
+    // pulse that RETURNS. Its tail window is at the starting level, so the
+    // permanence estimate is near zero however the pulse is shaped.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: 20 }, () => 0.13),
+            ...Array.from({ length: 4 }, () => 2.0),
+            ...Array.from({ length: 16 }, () => 0.107),
+          ]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => d.outcome)).toEqual([
+      'transient-return',
+    ]);
   });
 
   it('suppresses an idle-start transient spike (0 → pulse → non-zero tail) behind the flag', () => {

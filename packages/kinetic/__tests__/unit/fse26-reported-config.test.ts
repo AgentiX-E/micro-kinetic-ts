@@ -970,6 +970,8 @@ const DESCRIBES_IN_WORDS: Readonly<Record<string, string>> = {
   drop_metrics: 'the default is an EMPTY LIST, and the description says "(empty = no ablation)"',
   fleet_baseline:
     "the default is the boolean measured and REJECTED at +0.49pp with 6 regressed fault types, and the description states the flag's effect rather than its shipped state",
+  scopes:
+    'the default is the EMPTY STRING, which means "run every job" — the shipped behaviour has no VALUE to check, because this input selects JOB SETS rather than a ranking option, and its whole purpose is that a run which skips a job is distinguishable from one that lost it',
 };
 
 /**

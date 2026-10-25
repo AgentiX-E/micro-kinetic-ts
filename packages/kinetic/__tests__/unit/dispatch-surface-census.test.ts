@@ -163,6 +163,11 @@ const OPERATIONAL_INPUTS: Readonly<Record<string, string>> = {
     'carries the eight iteration-96 knobs as a name=value list; the flags it can emit are spelled in the ' +
     "step's own case block, which is where the reach is read from",
   categories: 'filters the converter output; consumed by the shard step',
+  // Not a knob at all: it names which JOBS run. It reaches no runner because the jobs' own `if:`
+  // conditions read it, and it exists so that a dispatch asking one question does not pay for the
+  // optimiser and the 34-config ablation — run `40133507548` had all nine cells uploaded and was still
+  // reported `cancelled` because the optimiser hit its 60-minute bound afterwards.
+  scopes: "selects job sets; read by the jobs' `if:` conditions, never by a runner",
 };
 
 /**
