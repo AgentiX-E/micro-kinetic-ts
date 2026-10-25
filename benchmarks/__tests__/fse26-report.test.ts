@@ -38,6 +38,12 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     logSignalMode: 'logicHttp',
     rankNormalization: true,
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
+    // Shipped composition. The four are REQUIRED fields rather than optional ones so that a test fixture
+    // cannot omit them: an optional field here is a fixture that silently describes a different engine.
+    anomalyTrendWeight: 0.15,
+    anomalyBurstWeight: 0.1,
+    anomalyCvWeight: 0.05,
+    anomalyBreadthWeight: 0,
     dropMetrics: [],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
@@ -162,7 +168,12 @@ describe('FSE26 report — the two renderings agree', () => {
     // line unable to distinguish the two populations.
     expect(shipped).toBe(
       'Config: logWeight=1 logMode=logicHttp rankNormalization=true ' +
-        `anomalyNormalizeNodeThreshold=${ANOMALY_NORMALIZE_NODE_THRESHOLD} latWeight=0 ` +
+        `anomalyNormalizeNodeThreshold=${ANOMALY_NORMALIZE_NODE_THRESHOLD} ` +
+        // The anomaly composition, unconditional for the threshold's reason: three of the four are non-zero,
+        // so an omission rule would render the shipped run and an ablation identically — and the fourth is
+        // the knob a dispatch varies.
+        'anomalyTrendWeight=0.15 anomalyBurstWeight=0.1 anomalyCvWeight=0.05 anomalyBreadthWeight=0 ' +
+        'latWeight=0 ' +
         'poolMetricPenaltyWeight=0 stabilityWeight=0 temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(

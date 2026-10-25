@@ -51,6 +51,18 @@ export interface FSE26RunConfig {
    * an omitted-when-default field would render the shipped run and its ablation byte-identically.
    */
   readonly anomalyNormalizeNodeThreshold: number;
+  /**
+   * The anomaly composition's four coefficients.
+   *
+   * On the RCAEval half these ARE the ranking (every other term is inert there); here they decide how a
+   * service's own series is scored before any term reads it. The artifact printed none of them until an
+   * `anomaly_breadth_weight=0.05` run reported 56.6% and the `Config:` line could not be checked against
+   * the dispatch — the defect this whole line exists to prevent, one object over.
+   */
+  readonly anomalyTrendWeight: number;
+  readonly anomalyBurstWeight: number;
+  readonly anomalyCvWeight: number;
+  readonly anomalyBreadthWeight: number;
   /** Metric names dropped for this run (empty = no ablation). */
   readonly dropMetrics: readonly string[];
   /**
@@ -335,6 +347,15 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // rescaled every graph. It is also the field that says WHICH CASES the boolean above could act on, so
   // omitting it would leave the line unable to distinguish the two populations the axis is about.
   line += ` anomalyNormalizeNodeThreshold=${config.anomalyNormalizeNodeThreshold}`;
+  // Unconditional, and for the reason the threshold above is: three of the four are NON-zero, so an
+  // omitted-when-default rule would render the shipped run and an ablation identically, and the fourth
+  // (breadth) is the one a dispatch varies — a line that could not show it made a 56.6% reading
+  // unattributable to the knob that produced it.
+  line +=
+    ` anomalyTrendWeight=${config.anomalyTrendWeight}` +
+    ` anomalyBurstWeight=${config.anomalyBurstWeight}` +
+    ` anomalyCvWeight=${config.anomalyCvWeight}` +
+    ` anomalyBreadthWeight=${config.anomalyBreadthWeight}`;
   if (config.dropMetrics.length > 0) {
     line += ` dropMetrics=[${config.dropMetrics.join(', ')}]`;
   }

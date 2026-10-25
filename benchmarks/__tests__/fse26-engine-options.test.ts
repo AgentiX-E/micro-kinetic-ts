@@ -203,6 +203,13 @@ describe('buildFse26EngineOptions', () => {
       // The demand guard, at its shipped pole on a dispatch that says nothing about it — and the assertion is
       // that a value the parser never touched still REACHES the builder, which is what this test is for.
       suppressDemandMetrics: true,
+      // The anomaly composition, at its shipped values on a dispatch that says nothing about them. The breadth
+      // term is the interesting one: it ships OFF, and this assertion is what makes "OFF" a value that reaches
+      // the builder rather than a field the mapping remembered to omit.
+      anomalyTrendWeight: 0.15,
+      anomalyBurstWeight: 0.1,
+      anomalyCvWeight: 0.05,
+      anomalyBreadthWeight: 0,
     });
   });
 

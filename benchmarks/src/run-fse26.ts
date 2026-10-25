@@ -171,6 +171,12 @@ async function main(): Promise<void> {
     collapseDiscount: opts.collapseDiscount,
     suppressIdleTransients: opts.suppressIdleTransients,
     suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
+    // The anomaly composition: carried so the JSON records it too, and printed unconditionally by the
+    // line, because on the golden half these four ARE the ranking.
+    anomalyTrendWeight: opts.anomalyTrendWeight,
+    anomalyBurstWeight: opts.anomalyBurstWeight,
+    anomalyCvWeight: opts.anomalyCvWeight,
+    anomalyBreadthWeight: opts.anomalyBreadthWeight,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark
