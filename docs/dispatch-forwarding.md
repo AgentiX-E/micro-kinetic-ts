@@ -145,19 +145,25 @@ multiplicative discount should move TT up where the additive form moved it down 
 Dispatched at ρ = 0.25 and ρ = 0.1, everything else shipped, both with the repaired forwarding (so both
 configuration lines read the value asked for — `topoDiscount=0.25` / `=0.1`):
 
-| cell | shipped | ρ=0.25 | ρ=0.1 |
-| --- | ---: | ---: | ---: |
-| RE1-OnlineBoutique | 103/125 | **106/125** | **106/125** |
-| RE1-SockShop | 116/125 | 116/125 | 116/125 |
-| **RE1-TrainTicket** | **94/125** | **35/125** | **46/125** |
-| **RE1** | **313/375 = 83.47%** | **257/375 = 68.53%** | **268/375 = 71.47%** |
-| RE3 (90 cases) | 49/90 | 48/90 | 49/90 |
+| cell | cases | shipped | ρ=0.25 | ρ=0.1 |
+| --- | ---: | ---: | ---: | ---: |
+| RE1-OnlineBoutique | 125 | 103 | **106** | **106** |
+| RE1-SockShop | 125 | 116 | 116 | 116 |
+| **RE1-TrainTicket** | 125 | **94** | **35** | **46** |
+| **RE1** | 375 | **313 (83.47%)** | **257 (68.53%)** | **268 (71.47%)** |
+| RE2-OnlineBoutique | 90 | 76 | 77 | 76 |
+| RE2-SockShop | 90 | 83 | 82 | 82 |
+| **RE2-TrainTicket** | 90 | **67 (74.4%)** | **56 (62.2%)** | **57 (63.3%)** |
+| RE2 | 270 | 226 | 215 | 215 |
+| RE3 | 90 | 49 | 48 | 49 |
+| **all three suites** | 735 | **588** | **520 (−68)** | **532 (−56)** |
 
-**RE1-TrainTicket loses 59 of its 94 hits at ρ = 0.25 (−47.2 pp) and 48 at ρ = 0.1 (−38.4 pp).** The
-prediction that the ratio form would survive the rank-normalised scale is **false**, and with it the
-explanation that the additive form's damage was a UNIT problem: two different functional forms — a bounded
-constant added to the score, and a dimensionless multiplier applied to it — cost the same cell 46.4 pp and
-47.2 pp. The unit was not what was wrong.
+**RE1-TrainTicket loses 59 of its 94 hits at ρ = 0.25 (−47.2 pp) and 48 at ρ = 0.1 (−38.4 pp); RE2-TT
+loses 11 and 10.** Across the three suites the discount gives back **68 cases at ρ = 0.25 and 56 at ρ =
+0.1**, out of 735. The prediction that the ratio form would survive the rank-normalised scale is **false**,
+and with it the explanation that the additive form's damage was a UNIT problem: two different functional
+forms — a bounded constant added to the score, and a dimensionless multiplier applied to it — cost the same
+cells the same accuracy. The unit was not what was wrong.
 
 ## 8. What is actually wrong: the measure awards LEAVES, and TrainTicket is a graph of leaves
 
@@ -184,6 +190,10 @@ and the discount's effect is a property of WHICH service is the truth:
 | `ts-train-service` | 25 | **25** | **0** | 6 |
 | `ts-travel-service` | 25 | 20 | **0** | 15 |
 | **TrainTicket** | 125 | **94** | **35** | **46** |
+
+RE2 repeats it on the two services it shares with RE1: `ts-travel-service` 12 → 6 and `ts-order-service`
+13 → 8; on the cells that IMPROVE the movement is a single case — OnlineBoutique's `currencyservice`
+13 → 14 — and SockShop's `user` 17 → 16 is the only other loss.
 
 **Three columns go to exactly zero — including one that was perfect: `ts-train-service` 25/25 → 0/25.**
 A term cannot remove every instance of a service's fault because of that service's *identity* unless the
