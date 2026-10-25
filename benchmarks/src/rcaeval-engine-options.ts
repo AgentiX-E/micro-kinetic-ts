@@ -100,6 +100,19 @@ export interface RCAEvalTopologyOptions {
   readonly suppressNearZeroBaselineRise: boolean;
   /** The demand guard — see `CliOptions.suppressDemandMetrics` for the measurement that enrolled it. */
   readonly suppressDemandMetrics: boolean;
+  /**
+   * The anomaly composition's three coefficients — see `CliOptions.anomalyTrendWeight`.
+   *
+   * Here rather than in `signals` for the reason {@link RCAEvalTopologyOptions.anomalyNormalizeNodeThreshold}
+   * gives: they are arguments to the graph builder, not terms in the ranking. On RCAEval RE1 the graph
+   * builder's output IS the ranking, so the distinction is about which function reads the value, not about
+   * which number it moves.
+   */
+  readonly anomalyTrendWeight: number;
+  readonly anomalyBurstWeight: number;
+  readonly anomalyCvWeight: number;
+  /** The channels-moved term — see `CliOptions.anomalyBreadthWeight`. */
+  readonly anomalyBreadthWeight: number;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -166,6 +179,10 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
       suppressDemandMetrics: opts.suppressDemandMetrics,
+      anomalyTrendWeight: opts.anomalyTrendWeight,
+      anomalyBurstWeight: opts.anomalyBurstWeight,
+      anomalyCvWeight: opts.anomalyCvWeight,
+      anomalyBreadthWeight: opts.anomalyBreadthWeight,
     },
   };
 }
@@ -211,6 +228,11 @@ export function formatSignalLine(opts: CliOptions): string {
     // only the non-default would render this run and its ablation identically — the defect the failed-edge
     // weight's comment above records, one guard over.
     `suppressDemandMetrics=${opts.suppressDemandMetrics} ` +
+    // The anomaly COMPOSITION. On this corpus it is the ranking itself (every other term is inert on RE1),
+    // so an artifact that omitted it could not attribute a RE1 movement to anything at all.
+    `anomalyTrendWeight=${opts.anomalyTrendWeight} ` +
+    `anomalyBurstWeight=${opts.anomalyBurstWeight} anomalyCvWeight=${opts.anomalyCvWeight} ` +
+    `anomalyBreadthWeight=${opts.anomalyBreadthWeight} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

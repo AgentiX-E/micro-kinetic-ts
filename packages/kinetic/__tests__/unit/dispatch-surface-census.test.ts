@@ -256,6 +256,15 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--suppress-idle-transients',
     '--suppress-near-zero-baseline-rise',
   ],
+  // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
+  // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
+  // checked flag by flag by `reaches()`, so a key dropped from the workflow's `case` block fails here.
+  anomaly_knobs: [
+    '--anomaly-trend-weight',
+    '--anomaly-burst-weight',
+    '--anomaly-cv-weight',
+    '--anomaly-breadth-weight',
+  ],
 };
 
 const KNOBS: Readonly<
@@ -375,11 +384,13 @@ const KNOBS: Readonly<
   topoDiscount: {
     flag: '--topo-discount',
     owner: 'topological-source-direction.md',
-    // FSE'26 has no input for it yet: its `ranking_knobs` case block enumerates eight names, and a
-    // ninth is a separate edit. The RCAEval half is where the multiplicative form was measured, so the
-    // knob is dispatchable where its evidence is.
+    // THE INPUT WAS RETIRED, and the flag survives: the discount was measured at two values on all 735
+    // cases and refused (RE1 83.47 → 68.53 at ρ = 0.25, three of TrainTicket's five injected services to
+    // exactly zero), so its dispatch slot went to the anomaly composition, which is the only thing that
+    // can move RE1 at all. The flag stays because the successor measure — a relative explanation that
+    // cannot be won by having no out-edges — will be re-tested through the same plumbing.
     fse26: null,
-    rcaeval: 'topo_discount',
+    rcaeval: null,
   },
   traceWeight: {
     flag: '--trace-weight',
@@ -431,6 +442,35 @@ const KNOBS: Readonly<
     owner: 'rcaeval-local-harness.md',
     fse26: null,
     rcaeval: 'suppress_demand_metrics',
+  },
+  anomalyTrendWeight: {
+    flag: '--anomaly-trend-weight',
+    owner: 'anomaly-composition.md',
+    // FSE'26 has no input for it: that workflow's `ranking_knobs` case block enumerates eight names and a
+    // ninth is a separate edit. The RCAEval half is where the composition IS the ranking, so the knob is
+    // dispatchable where its evidence is — the same asymmetry `topoDiscount` recorded before it was
+    // retired.
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
+  },
+  anomalyBurstWeight: {
+    flag: '--anomaly-burst-weight',
+    owner: 'anomaly-composition.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
+  },
+  anomalyCvWeight: {
+    flag: '--anomaly-cv-weight',
+    owner: 'anomaly-composition.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
+  },
+  anomalyBreadthWeight: {
+    // The channels-moved term: `(Σd)²/Σd² − 1` times its weight, added to a service's `max`. OFF at 0.
+    flag: '--anomaly-breadth-weight',
+    owner: 'anomaly-composition.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
   },
   fusionCeiling: {
     flag: '--fusion-ceiling',
@@ -637,6 +677,9 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',
+  // Retired, not refused: the discount's input became the anomaly composition's when the 25-input budget
+  // ran out, and the flag remains on the runner for the successor measure's re-test. See `topoDiscount`.
+  '--topo-discount',
 ];
 
 /**
@@ -773,6 +816,10 @@ describe('the dispatch surface has one owner per knob', () => {
     const check = (inputs: readonly string[], accepted: Map<string, string>, which: string) => {
       for (const name of inputs) {
         if (name in OPERATIONAL_INPUTS) continue;
+        // A SHARED input carries a LIST and names no flag of its own, so the derivation that reads an
+        // input's name has nothing to read; its members are checked flag by flag where the table is
+        // declared, and the workflow's own code is checked by `reaches()` in two other tests.
+        if (name in SHARED_INPUTS) continue;
         expect(accepted.has(flagOfInput(name)), `${which} input ${name}`).toBe(true);
       }
     };
@@ -1059,8 +1106,14 @@ describe('the dispatch surface has one owner per knob', () => {
     // FSE'26 does"; the golden half now exposes MORE (18 against 15) because the eight axes above were given
     // inputs here and the FSE'26 CLI has no matching flags. Neither ordering is the invariant — what matters
     // is that the two sides are different surfaces, and that the difference is the one the tables record.
-    expect(declared(fse26Inputs, fse26Flags, fse26Yml).length).not.toBe(
-      declared(rcaevalInputs, rcaevalFlags, rcaevalYml).length,
+    // **The SIZE stopped being the proxy in iteration 135 and the set is what the claim always was.**
+    // The count comparison read "the two surfaces differ", and it passed for two iterations because they
+    // differed in both content and length (20 against 15, later 22 against 23). This iteration brought
+    // them to 23 and 23 by adding three knobs to one side and retiring one — a COINCIDENCE of arithmetic
+    // that a count assertion reports as a regression. What the section is for is that the two dispatch
+    // surfaces are not interchangeable, which is a statement about their members.
+    expect(new Set(declared(fse26Inputs, fse26Flags, fse26Yml))).not.toEqual(
+      new Set(declared(rcaevalInputs, rcaevalFlags, rcaevalYml)),
     );
   });
 
@@ -1208,6 +1261,29 @@ describe('the dispatch surface has one owner per knob', () => {
       }
     }
     expect(unforwarded).toEqual([]);
+    // …and "somewhere" is not enough. `reaches()` answers whether ANY step can spell a flag, and a knob
+    // forwarded by six of the seven golden invocations passes it while producing a run that mixes two
+    // configurations — measured: deleting one of `topo_discount`'s seven blocks left this test green.
+    // The yardstick is the knob's own SIBLING, `--topo-weight`, which is this discount's additive form and
+    // is wired at every invocation: wherever a step expands the ranking array with the weight it must
+    // expand it with the discount, so the two counts are equal and so are the STEP SETS that carry them.
+    const steps = (yml: string): string[] => yml.split(/^ {6}- /m).slice(1);
+    const carrying = (yml: string, flag: string): number =>
+      steps(yml).filter((step) => reaches(flag, step)).length;
+    const weightSites = carrying(texts.rcaeval, '--topo-weight');
+    expect(weightSites, "the sibling knob's own wiring is the yardstick").toBeGreaterThan(5);
+    // The per-step group: every invocation that expands the ranking array with ONE of these expands it
+    // with all of them. `--topo-discount` left the group when its input was retired, which is why the
+    // group is a named list rather than "every flag in the table".
+    for (const flag of [
+      '--anomaly-trend-weight',
+      '--anomaly-burst-weight',
+      '--anomaly-cv-weight',
+    ]) {
+      expect(carrying(texts.rcaeval, flag), `${flag} is forwarded at every invocation`).toBe(
+        weightSites,
+      );
+    }
     // Non-vacuity: the population walked must be the knobs that declare an input, not an empty set.
     const walked = Object.values(KNOBS).filter(
       (knob) =>

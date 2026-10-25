@@ -1467,6 +1467,189 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(result.faultHypotheses.has('svc-empty')).toBe(false);
   });
 
+  describe("the anomaly composition's three coefficients", () => {
+    // `featureScore = deviation + 0.15·trend + 0.1·deviation·burst + 0.05·cv` — three numbers written at
+    // one line inside `computeAnomalyFeatures`, with three more thresholds beside them. On RCAEval RE1
+    // the ranking IS this score plus a 0.007352 tie-break: every other term is `WEIGHT_ZERO` or
+    // `INPUT_MAP_EMPTY` on all 374 analysable cases, so these are the only coefficients that can move the
+    // one benchmark this engine does not lead. They had never been named, let alone ablated.
+    const pristine = [10, 10, 10, 10, 10, 10, 10, 10];
+    // A pure monotone ramp: trend strength ≈ 1, no burst, low CV.
+    const ramp = [10, 11, 12, 13, 14, 15, 16, 17];
+    // A single spike above mean + 3σ: a burst. Twenty samples, because the threshold is computed from the
+    // window's own mean and sigma — with eight samples one spike moves both enough to hide itself
+    // (mean 16.25, σ 17.7, threshold 69 > 60), which is a fact about the detector rather than the test.
+    const burst = [...Array.from({ length: 19 }, () => 10), 200];
+    // Alternating values: high CV, no monotone trend.
+    const wide = [10, 40, 10, 40, 10, 40, 10, 40];
+
+    /** The one metric's diagnostic entry, from a graph built with `config`. */
+    function scoreOf(
+      values: readonly number[],
+      config?: Record<string, number>,
+    ): { score: number; trend: number; burst: number; cv: number } {
+      const graph = makeCallGraph(['svc', 'idle'], []);
+      const metrics = makeMetrics([
+        ['svc', [makeTimeSeries('cpu', [...values])]],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+      const result = buildTopologyFaultGraph(graph, metrics, config);
+      const entry = result.metricDiagnostics.get('svc')!.find((d) => d.label === 'cpu')!;
+      const breakdown = entry.breakdown!;
+      return {
+        score: entry.score,
+        trend: breakdown.trend,
+        burst: breakdown.burst,
+        cv: breakdown.cv,
+      };
+    }
+
+    it('is bit-identical when the three weights are stated as their shipped values', () => {
+      // A required acceptance condition for a change that must only make a constant reachable: the
+      // default configuration and the explicit one must produce the same number, not merely a similar one.
+      const implied = scoreOf(ramp);
+      const stated = scoreOf(ramp, {
+        anomalyTrendWeight: 0.15,
+        anomalyBurstWeight: 0.1,
+        anomalyCvWeight: 0.05,
+      });
+      expect(stated).toEqual(implied);
+    });
+
+    it('drops the trend bonus when its weight is zero, and only that bonus', () => {
+      const withTrend = scoreOf(ramp);
+      const without = scoreOf(ramp, { anomalyTrendWeight: 0 });
+      expect(withTrend.trend).toBeGreaterThan(0);
+      expect(without.trend).toBe(0);
+      expect(without.score).toBeCloseTo(withTrend.score - withTrend.trend, 12);
+      // The other two are untouched, so a zeroed weight cannot be read as "the feature was off" for them.
+      expect(without.burst).toBe(withTrend.burst);
+      expect(without.cv).toBe(withTrend.cv);
+    });
+
+    it('drops the burst bonus when its weight is zero', () => {
+      const withBurst = scoreOf(burst);
+      const without = scoreOf(burst, { anomalyBurstWeight: 0 });
+      expect(withBurst.burst).toBeGreaterThan(0);
+      expect(without.burst).toBe(0);
+      expect(without.score).toBeCloseTo(withBurst.score - withBurst.burst, 12);
+    });
+
+    it('drops the CV bonus when its weight is zero', () => {
+      const withCv = scoreOf(wide);
+      const without = scoreOf(wide, { anomalyCvWeight: 0 });
+      expect(withCv.cv).toBeGreaterThan(0);
+      expect(without.cv).toBe(0);
+      expect(without.score).toBeCloseTo(withCv.score - withCv.cv, 12);
+    });
+
+    it('adds nothing when the breadth weight is zero, and that is the shipped configuration', () => {
+      // `max` over metrics is the aggregation, so a service whose three channels moved equally scores the
+      // same as one where a single channel moved: that is the defect the breadth term exists for. Zero is
+      // the shipped value and it must skip the arithmetic rather than add a computed zero.
+      const multi = [
+        makeTimeSeries('cpu', ramp),
+        makeTimeSeries(
+          'mem',
+          ramp.map((v) => v * 2),
+        ),
+        makeTimeSeries(
+          'latency-50',
+          ramp.map((v) => v * 3),
+        ),
+      ];
+      const graph = makeCallGraph(['svc', 'idle'], []);
+      const metrics = makeMetrics([
+        ['svc', multi],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+
+      const off = buildTopologyFaultGraph(graph, metrics);
+      const explicitZero = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0 });
+
+      expect(explicitZero.anomalyScores.get('svc')).toBe(off.anomalyScores.get('svc'));
+    });
+
+    it('rewards the service whose SEVERAL channels moved, and leaves a single-channel one alone', () => {
+      // The reward is `w · ((Σd)²/Σd² − 1)`: zero for one channel, `k−1` for `k` equal channels. A ratio,
+      // so it cannot be inflated by a metric's units — the property three iterations of scale defects
+      // taught this file to check first.
+      const graph = makeCallGraph(['multi', 'single', 'idle'], []);
+      const metrics = makeMetrics([
+        [
+          'multi',
+          [
+            makeTimeSeries('cpu', ramp),
+            makeTimeSeries(
+              'mem',
+              ramp.map((v) => v * 2),
+            ),
+          ],
+        ],
+        ['single', [makeTimeSeries('cpu', ramp)]],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+
+      const off = buildTopologyFaultGraph(graph, metrics);
+      const on = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.5 });
+
+      const delta = (id: string) => on.anomalyScores.get(id)! - off.anomalyScores.get(id)!;
+      expect(delta('single')).toBe(0);
+      expect(delta('multi')).toBeGreaterThan(0);
+      // Two identical channels: n_eff = 2, so the reward is exactly `w · 1`.
+      expect(delta('multi')).toBeCloseTo(0.5, 10);
+    });
+
+    it('measures breadth as a RATIO, so scaling every channel up multiplies nothing', () => {
+      // The scale-free property, asserted rather than argued: the same two-channel SHAPE at ten times the
+      // magnitude must earn the same reward, or the term would be a magnitude term in disguise.
+      const graph = makeCallGraph(['small', 'large', 'idle'], []);
+      const metrics = makeMetrics([
+        [
+          'small',
+          [
+            makeTimeSeries('cpu', ramp),
+            makeTimeSeries(
+              'mem',
+              ramp.map((v) => v * 2),
+            ),
+          ],
+        ],
+        [
+          'large',
+          [
+            makeTimeSeries(
+              'cpu',
+              ramp.map((v) => v * 10),
+            ),
+            makeTimeSeries(
+              'mem',
+              ramp.map((v) => v * 20),
+            ),
+          ],
+        ],
+        ['idle', [makeTimeSeries('cpu', pristine)]],
+      ]);
+
+      const off = buildTopologyFaultGraph(graph, metrics);
+      const on = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.25 });
+
+      const delta = (id: string) => on.anomalyScores.get(id)! - off.anomalyScores.get(id)!;
+      expect(delta('small')).toBeCloseTo(0.25, 10);
+      expect(delta('large')).toBeCloseTo(0.25, 10);
+    });
+
+    it('refuses a negative weight rather than inverting a feature', () => {
+      // A negative coefficient would make a metric score HIGHER the less it moved, which is not a
+      // configuration of this engine but a different (and meaningless) quantity.
+      expect(() => scoreOf(ramp, { anomalyTrendWeight: -0.1 })).toThrow(/anomalyTrendWeight/);
+      expect(() => scoreOf(burst, { anomalyBurstWeight: Number.NaN })).toThrow(
+        /anomalyBurstWeight/,
+      );
+      expect(() => scoreOf(wide, { anomalyCvWeight: -1 })).toThrow(/anomalyCvWeight/);
+    });
+  });
+
   it('reports the true anomaly driver, not the idle metric the guards skipped', () => {
     // A service with two metrics: an idle latency-90 (0 everywhere except a
     // brief pulse, skipped by the idle/burst guards) and a genuine workload

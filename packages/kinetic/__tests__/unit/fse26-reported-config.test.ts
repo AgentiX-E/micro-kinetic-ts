@@ -970,10 +970,11 @@ const DESCRIBES_IN_WORDS: Readonly<Record<string, string>> = {
   drop_metrics: 'the default is an EMPTY LIST, and the description says "(empty = no ablation)"',
   fleet_baseline:
     "the default is the boolean measured and REJECTED at +0.49pp with 6 regressed fault types, and the description states the flag's effect rather than its shipped state",
-  // The multiplicative topological discount. Its shipped value is 0, and the description says so because
-  // a reader of a dispatch surface must be able to tell an off term from an unmeasured one. `0` is also
-  // what `DEFAULT_TREE_PRUNER_OPTIONS.topoDiscount` holds, so the claim is checkable at the owner.
-  topo_discount: '0',
+  // The anomaly composition. Its shipped values are the three coefficients plus the OFF breadth term, and
+  // the description states them as numbers because a reader of a dispatch surface must be able to tell an
+  // off term from an unmeasured one. All four are checkable at
+  // `DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG`, which is where the census reads them from.
+  anomaly_knobs: '0.15/0.1/0.05/0',
   scopes:
     'the default is the EMPTY STRING, which means "run every job" — the shipped behaviour has no VALUE to check, because this input selects JOB SETS rather than a ranking option, and its whole purpose is that a run which skips a job is distinguishable from one that lost it',
 };

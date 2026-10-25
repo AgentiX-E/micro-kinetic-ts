@@ -67,6 +67,10 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fs
 import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_ANOMALY_BURST_WEIGHT,
+  DEFAULT_ANOMALY_CV_WEIGHT,
+  DEFAULT_ANOMALY_TREND_WEIGHT,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
@@ -307,6 +311,27 @@ export interface CliOptions {
    */
   suppressDemandMetrics: boolean;
   /**
+   * Weight of the TREND bonus in the anomaly composition — `deviation + trend + burst + cv`.
+   *
+   * These three coefficients ARE the RCAEval RE1 ranking: on that population every other term is
+   * `WEIGHT_ZERO` or `INPUT_MAP_EMPTY` on all 374 analysable cases, so the published RE1 number is this
+   * composition plus a `0.007352` tie-break. They had never been named in the artifact or reachable from
+   * a dispatch. Defaults are the shipped 0.15 / 0.1 / 0.05; a weight above the engine's bound of 10 is
+   * refused at graph build rather than clamped here, because that is the only place that knows the bound.
+   */
+  anomalyTrendWeight: number;
+  /** Weight of the BURST bonus (`deviation × w` on any sample above `mean + 3σ`). Default 0.1. */
+  anomalyBurstWeight: number;
+  /** Weight of the CV bonus (`min(cv, 1.5) × w` on `cv > 0.5`). Default 0.05. */
+  anomalyCvWeight: number;
+  /**
+   * Weight of the BREADTH term — the effective number of a service's channels that moved, minus one.
+   *
+   * The aggregation elsewhere is a `max`, which cannot tell three moving channels from one; on RCAEval that
+   * is the shape of the 26 one-step misses. Default 0 = OFF (bit-identical to the shipped ranking).
+   */
+  anomalyBreadthWeight: number;
+  /**
    * When set, compute the PRISM graph-free baseline on the SAME loaded cases
    * and emit the fusion-ceiling analysis (engine vs PRISM union of correct
    * cases) as JSON to this path, in addition to the normal benchmark table.
@@ -421,6 +446,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
+    anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
+    anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
+    anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
+    anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
@@ -575,6 +604,14 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.suppressIdleTransients = false;
     } else if (args[i] === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
     else if (args[i] === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
+    else if (args[i] === '--anomaly-trend-weight' && hasValue(args, i + 1))
+      opts.anomalyTrendWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_TREND_WEIGHT);
+    else if (args[i] === '--anomaly-burst-weight' && hasValue(args, i + 1))
+      opts.anomalyBurstWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_BURST_WEIGHT);
+    else if (args[i] === '--anomaly-cv-weight' && hasValue(args, i + 1))
+      opts.anomalyCvWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_CV_WEIGHT);
+    else if (args[i] === '--anomaly-breadth-weight' && hasValue(args, i + 1))
+      opts.anomalyBreadthWeight = parseWeight(args[++i]!, DEFAULT_ANOMALY_BREADTH_WEIGHT);
     else if (args[i] === '--suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = true;
     } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {

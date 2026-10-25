@@ -118,8 +118,8 @@ on:
         required: false
         default: ''
         type: string
-      topo_discount:
-        description: "Multiplicative discount on a node's own anomaly by the fraction its CALLEES explain (empty = the runner default, which is the SHIPPED 0 = off). It is the scale-free form of `topo_weight`: a weight adds a [0,1] term to a score that is raw on OnlineBoutique (order 1-3) and rank-normalised on TrainTicket (steps of 1/63 = 0.0159), so the same weight is 3% of one cell's scale and six rank steps of another's and `topo_weight=0.1` costs RE1-TrainTicket 46.4pp on run `40167961908`. A RATIO says 'an explained node keeps 70% of its anomaly' and means that on both scales. Accepts 0..1; a value outside it falls back to the shipped 0 rather than being clamped, because a fraction outside the unit interval is a different quantity"
+      anomaly_knobs:
+        description: "The anomaly composition's three coefficients as a comma-separated name=value list: `trend=0.15,burst=0.1,cv=0.05` (empty = the runner's shipped 0.15/0.1/0.05). They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget: `topo_discount` was retired to make room, since it was measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25) and its release record is `docs/dispatch-forwarding.md`"
         required: false
         default: ''
         type: string
@@ -295,9 +295,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -449,9 +459,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -628,9 +648,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -791,9 +821,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -978,9 +1018,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -1133,9 +1183,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -1289,9 +1349,19 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
-          if [ -n "${{ inputs.topo_discount }}" ]; then
-            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
-          fi
+          # The anomaly composition, as `name=value` pairs. An unknown key FAILS the step rather than
+          # being ignored: a typo that silently ran the shipped composition would produce an artifact whose
+          # configuration line disagrees with the dispatch, which is exactly what `topo_discount`'s
+          # retirement record is about.
+          for kv in $(echo "${{ inputs.anomaly_knobs }}" | tr ',' ' '); do
+            case "$kv" in
+              trend=*) RANKING_ARG+=(--anomaly-trend-weight "${kv#trend=}") ;;
+              burst=*) RANKING_ARG+=(--anomaly-burst-weight "${kv#burst=}") ;;
+              cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
+              breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
+              *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
+            esac
+          done
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi

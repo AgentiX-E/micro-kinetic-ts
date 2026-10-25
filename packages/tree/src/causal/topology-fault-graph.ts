@@ -50,7 +50,11 @@ import type {
   ServiceId,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import { StatisticalAnalyzer } from '@agentix-e/micro-kinetic-core';
+import {
+  invariantFinite,
+  invariantRange,
+  StatisticalAnalyzer,
+} from '@agentix-e/micro-kinetic-core';
 
 import type { BOCPDConfig } from '../../../kinetic/src/signals/bocpd-detector.js';
 
@@ -328,6 +332,48 @@ export interface TopologyFaultGraphConfig {
    * Default: `false` (bit-identical to shipped behaviour).
    */
   readonly metricFleetBaseline: boolean;
+  /**
+   * Weight of the TREND bonus: `trendStrength × this`, added to a metric's score when the fitted drift of
+   * the window exceeds `0.1` of its mean.
+   *
+   * One of three coefficients that together ARE the RCAEval RE1 ranking. On that population every other
+   * term is `WEIGHT_ZERO` or `INPUT_MAP_EMPTY` on all 374 analysable cases (run `40133362501`'s loss
+   * census), so the ranking there is `deviation + trend + burst + cv` plus a `0.007352` tie-break — and the
+   * three numbers had never been named, let alone ablated, which is why they are configuration now.
+   *
+   * Default: 0.15 (shipped behaviour).
+   */
+  readonly anomalyTrendWeight: number;
+  /**
+   * Weight of the BURST bonus: `deviation × this`, added when any sample exceeds `mean + 3σ`.
+   *
+   * Default: 0.1 (shipped behaviour).
+   */
+  readonly anomalyBurstWeight: number;
+  /**
+   * Weight of the coefficient-of-variation bonus: `min(cv, 1.5) × this`, added when `cv > 0.5`.
+   *
+   * Default: 0.05 (shipped behaviour).
+   */
+  readonly anomalyCvWeight: number;
+  /**
+   * Weight of the BREADTH term: how many of a service's channels moved, added to its anomaly score.
+   *
+   *   breadth(v) = (Σ_i d_i)² / Σ_i d_i²  −  1        over the KEPT metrics of v
+   *
+   * The score is a `max` over metrics, so a node whose cpu, mem and latency ALL moved scores exactly the
+   * same as a node where a single latency channel moved by the same amount — and on RCAEval the second is
+   * usually the propagated SYMPTOM while the first is the source. `breadth` is the effective number of
+   * moving channels minus one: 0 for a single channel, `k−1` when `k` channels moved equally, and — the
+   * property that matters after three iterations of scale defects — a pure RATIO, so it means the same
+   * thing on OnlineBoutique's raw scores (order 1–3) and on TrainTicket's rank-normalised ones (steps of
+   * 1/63). It is added rather than multiplied because a node-dependent multiplier was measured to destroy
+   * the ranking it was meant to refine (`docs/dispatch-forwarding.md` §7–§8).
+   *
+   * Default: 0 — OFF, i.e. bit-identical to the shipped ranking. A non-zero value is a candidate, not a
+   * decision: the 26 one-step misses on RE1 are what it is aimed at, and the nine cells decide.
+   */
+  readonly anomalyBreadthWeight: number;
 }
 
 /**
@@ -465,6 +511,29 @@ export const DEFAULT_METRIC_RISE_CEILING = 0;
 export const DEFAULT_METRIC_FLEET_BASELINE = false;
 
 /**
+ * The shipped trend-bonus coefficient — `0.15`, on `trendStrength > 0.1`.
+ *
+ * Named for the reason every other shipped value in this file is: the number was written inside
+ * `computeAnomalyFeatures` and reachable from nowhere, so "0.15" could not be ablated, cited, or printed.
+ */
+export const DEFAULT_ANOMALY_TREND_WEIGHT = 0.15;
+
+/** The shipped burst-bonus coefficient — `0.1`, on any sample above `mean + 3σ`. */
+export const DEFAULT_ANOMALY_BURST_WEIGHT = 0.1;
+
+/** The shipped coefficient-of-variation bonus coefficient — `0.05`, on `cv > 0.5`, capped at `cv = 1.5`. */
+export const DEFAULT_ANOMALY_CV_WEIGHT = 0.05;
+
+/**
+ * The shipped BREADTH weight — `0`, i.e. the term is OFF.
+ *
+ * `0` is a starting point rather than a refusal: the term has no shipped value to preserve, and its
+ * candidate values are what a dispatch varies. Named anyway, because an unnamed literal in the defaults
+ * table is the class of defect this file's constants exist to close.
+ */
+export const DEFAULT_ANOMALY_BREADTH_WEIGHT = 0;
+
+/**
  * The topology graph's own defaults table, exported for the reason {@link DEFAULT_RANK_NORMALIZATION} is:
  * a caller that cannot read the engine's table holds a second opinion about what the engine ships.
  *
@@ -495,6 +564,10 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS, // demand metrics are not fault evidence (enrolled)
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
+  anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT, // monotone drift bonus (shipped behaviour)
+  anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (shipped behaviour)
+  anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT, // dispersion bonus (shipped behaviour)
+  anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT, // channels-moved term (OFF)
 };
 
 /**
@@ -647,6 +720,20 @@ export function buildTopologyFaultGraph(
   config?: Partial<TopologyFaultGraphConfig>,
 ): TopologyFaultGraphResult {
   const cfg = { ...DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG, ...config };
+
+  // The three composition coefficients are validated ONCE, at the boundary, rather than per metric: they
+  // are properties of the configuration and a graph with no metrics would otherwise accept them silently.
+  // `invariantFinite` first because `invariantRange` cannot see `NaN` — `NaN < 0` and `NaN > max` are both
+  // false, so a `NaN` weight would pass a range check and poison every score downstream.
+  for (const [label, weight] of [
+    ['anomalyTrendWeight', cfg.anomalyTrendWeight],
+    ['anomalyBurstWeight', cfg.anomalyBurstWeight],
+    ['anomalyCvWeight', cfg.anomalyCvWeight],
+    ['anomalyBreadthWeight', cfg.anomalyBreadthWeight],
+  ] as const) {
+    invariantFinite(weight, label);
+    invariantRange(weight, 0, 10, label);
+  }
 
   // ── Adaptive decayAlpha based on topology size ──────────
   // Larger graphs need lower decay to prevent child contributions
@@ -1303,9 +1390,9 @@ function computeAnomalyFeatures(
     // Trend bonus is direction-agnostic: trendStrength is already the
     // ABSOLUTE normalized slope, so a monotonic drop (memory release,
     // crash) gets the same bonus as a monotonic rise (leak, saturation).
-    const trendBonus = trendStrength > 0.1 ? trendStrength * 0.15 : 0;
-    const burstBonus = hasBurst ? deviation * 0.1 : 0;
-    const cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * 0.05 : 0;
+    const trendBonus = trendStrength > 0.1 ? trendStrength * cfg.anomalyTrendWeight : 0;
+    const burstBonus = hasBurst ? deviation * cfg.anomalyBurstWeight : 0;
+    const cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * cfg.anomalyCvWeight : 0;
     let featureScore = deviation + trendBonus + burstBonus + cvBonus;
     featureScore = Math.max(0, featureScore);
 
@@ -1373,8 +1460,31 @@ function computeAnomalyFeatures(
     cfg.injectTimeMs ?? 0,
   );
 
+  // Breadth: the effective number of channels that moved, minus one, times its weight. A `max` over
+  // metrics cannot see a source (three channels moved) from a symptom (one channel moved) at the same
+  // magnitude, which is the shape of RCAEval's one-step misses; this term can, and it is a ratio so it
+  // transfers between a raw and a rank-normalised score. `w = 0` — the shipped value — skips the
+  // arithmetic entirely, so the shipped ranking is bit-identical by construction.
+  let breadth = 0;
+  if (cfg.anomalyBreadthWeight !== 0) {
+    let sum = 0;
+    let sumSq = 0;
+    let keptCount = 0;
+    for (const entry of metricDiagnostics) {
+      if (entry.outcome !== 'kept') continue;
+      keptCount++;
+      sum += entry.score;
+      sumSq += entry.score * entry.score;
+    }
+    // `sumSq > 0` needs no guard: every kept entry has `deviation ≥ 1e-6` by the `continue` in the loop
+    // above, so at least one score is positive whenever `keptCount ≥ 1` — and with `keptCount ∈ {0, 1}` the
+    // expression is `0` or `1 − 1 = 0` on its own. A `sumSq > 0 ? … : 0` here would be a branch no input can
+    // reach, which this repository counts as dead code rather than as defensive programming.
+    breadth = keptCount > 0 ? (sum * sum) / sumSq - 1 : 0;
+  }
+
   return {
-    score: bestScore,
+    score: bestScore + cfg.anomalyBreadthWeight * breadth,
     onsetIndex: bestMetricOnset,
     postInjectOnsetDelay,
     dominantMetric: {
