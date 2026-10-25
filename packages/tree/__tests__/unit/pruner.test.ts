@@ -1195,22 +1195,28 @@ describe('TreePruner', () => {
       C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
     });
 
-    it('stores topological-source scores with the parentless root highest', () => {
+    it('stores topological-source scores with the deepest CALLEE highest', () => {
+      // The convention, now written down because it is the whole content of this signal: `A → B`
+      // means A CALLS B, so a fault at B makes A wait and A's anomaly is the symptom. The chain
+      // A → B → C therefore leaves C unexplained — it has no callee — while A and B are explained by
+      // the node downstream of them.
+      //
+      // The test used to assert the opposite (`A` scores 1 because it has no PARENT) for the whole
+      // life of the term, which is the direction that costs 24.8 pp at weight 0.5 on RCAEval.
       const pruner = new TreePruner();
       const graph = pruner.buildFaultGraph(callGraph, metrics);
 
-      // A has no parent → score 1. B/C have an anomalous parent → score < 1.
-      expect(graph.topoScores?.get('A')).toBe(1);
+      expect(graph.topoScores?.get('C')).toBe(1);
+      expect(graph.topoScores?.get('A')).toBeLessThan(1);
       expect(graph.topoScores?.get('B')).toBeLessThan(1);
-      expect(graph.topoScores?.get('C')).toBeLessThan(1);
     });
 
-    it('lifts the parentless source to rank first when enabled', () => {
+    it('lifts the unexplained callee to rank first when enabled', () => {
       const pruner = new TreePruner({ topoWeight: 5.0 });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
 
       const results = pruner.analyze(graph, 3);
-      expect(results[0]!.serviceId).toBe('A');
+      expect(results[0]!.serviceId).toBe('C');
     });
 
     it('is disabled by default (pure self-anomaly ranking)', () => {

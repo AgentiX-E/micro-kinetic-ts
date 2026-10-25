@@ -274,18 +274,26 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly collisionWeight: number;
   /**
-   * Weight of the topological-source signal: reward a node with no strongly
-   * anomalous upstream parent.
+   * Weight of the topological-source signal: reward a node whose CALLEES are healthy.
    *
    *   finalScore(v) += topoWeight × topoSource(v)
    *
-   * `topoSource(v) = 1 − max over parents p of (propagationWeight(p→v) ×
-   * anomaly(p))` — a source has no explaining parent (score 1), a symptom is
-   * explained by an already-anomalous parent (score low). This is a PURE
-   * structural signal, deliberately distinct from the nonlinear collision
-   * gain so the two can be ablated independently.
+   * `topoSource(v) = 1 − max over callees c of (propagationWeight(v→c) ×
+   * anomaly(c))` — a source has no anomalous callee (score 1), while a caller whose callee is
+   * already anomalous is explained by it (score low). This is a PURE structural signal,
+   * deliberately distinct from the nonlinear collision gain so the two can be ablated
+   * independently.
    *
-   * Default: 0 (opt-in).
+   * **The direction was the other way round, and it was measured rather than argued.** The term used
+   * to explain a node by its anomalous PARENT, which penalises the source and rewards its caller. On
+   * RCAEval RE1-OnlineBoutique the old direction reads **57.6% at weight 0.5** (−24.8 pp) while the
+   * corrected one reads 82.4% at the same weight and **85.6% at 0.1**. It also explains the −42.4 /
+   * −37.8 / −3.1 case verdict this term carries from FSE'26: those numbers were taken with the sign
+   * `docs/transient-guard-window.md`'s successor records as backwards. See
+   * {@link computeTopoSourceScores} for the table.
+   *
+   * Default: 0 (opt-in), and that default is unchanged by the correction — a weight of zero makes
+   * every direction equivalent, so no published cell moved.
    */
   readonly topoWeight: number;
   /**

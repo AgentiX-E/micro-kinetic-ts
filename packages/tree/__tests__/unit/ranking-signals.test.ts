@@ -747,8 +747,12 @@ describe('computeLogNoveltyScores', () => {
 });
 
 describe('computeTopoSourceScores', () => {
-  it('scores a source (no parent) as 1 and a child as 1 − parent explanation', () => {
-    // Chain a → b: b's anomaly is explained by a, a has no parent.
+  it('explains a CALLER by its CALLEE: a → b means a calls b, so b explains a', () => {
+    // The direction is the whole content of this term, and it was the other way round for the whole
+    // life of the term. `a → b` means a CALLS b: if b is slow, a waits, so a's anomaly is the
+    // SYMPTOM and b's is the source. Explaining b by a — the old behaviour — penalises the source
+    // and rewards its caller, which on RCAEval costs 24.8pp at weight 0.5 (measured; see the
+    // function's docblock).
     const edges = [makeEdge('a', 'b')];
     const weights = new Float64Array([0.5]);
     const anomaly = new Map<ServiceId, number>([
@@ -758,13 +762,17 @@ describe('computeTopoSourceScores', () => {
 
     const scores = computeTopoSourceScores(edges, weights, anomaly);
 
-    expect(scores.get('a')).toBe(1);
-    // explanation = weight(a→b) × anomaly(a) = 0.5 × 0.8 = 0.4 → 1 − 0.4 = 0.6.
-    expect(scores.get('b')).toBeCloseTo(0.6, 10);
+    // b has no callee → nothing explains it → it is the source.
+    expect(scores.get('b')).toBe(1);
+    // a's callee b is anomalous: explanation = weight(a→b) × anomaly(b) = 0.5 × 0.6 = 0.3 → 0.7.
+    expect(scores.get('a')).toBeCloseTo(0.7, 10);
   });
 
-  it('takes the MAX parent explanation when a node has multiple parents', () => {
-    const edges = [makeEdge('a', 'c'), makeEdge('b', 'c')];
+  it('takes the MAX callee explanation when a node calls several anomalous callees', () => {
+    // c calls both a and b. The strongest explanation is the one that matters: a node is a symptom
+    // if ANY of its callees accounts for it, and taking the maximum keeps a healthy second callee
+    // from diluting the evidence.
+    const edges = [makeEdge('c', 'a'), makeEdge('c', 'b')];
     const weights = new Float64Array([0.3, 0.9]);
     const anomaly = new Map<ServiceId, number>([
       ['a', 0.5],
@@ -774,14 +782,14 @@ describe('computeTopoSourceScores', () => {
 
     const scores = computeTopoSourceScores(edges, weights, anomaly);
 
-    // explanation from a = 0.3×0.5 = 0.15, from b = 0.9×0.5 = 0.45 → max 0.45.
+    // explanation from a = 0.3×0.5 = 0.15, from b = 0.9×0.5 = 0.45 → max 0.45 → score 0.55.
     expect(scores.get('c')).toBeCloseTo(1 - 0.45, 10);
-    // a and b have no parents → 1.
+    // a and b are callees: nothing downstream of them is anomalous → both are sources.
     expect(scores.get('a')).toBe(1);
     expect(scores.get('b')).toBe(1);
   });
 
-  it('clamps the explanation to [0, 1] so a fully-explained child scores 0', () => {
+  it('clamps the explanation to [0, 1] so a fully-explained caller scores 0', () => {
     const edges = [makeEdge('a', 'b')];
     const weights = new Float64Array([1.0]);
     const anomaly = new Map<ServiceId, number>([
@@ -791,7 +799,10 @@ describe('computeTopoSourceScores', () => {
 
     const scores = computeTopoSourceScores(edges, weights, anomaly);
 
-    expect(scores.get('b')).toBe(0);
+    // a's only callee b is fully anomalous with a full-weight edge: a is completely explained.
+    expect(scores.get('a')).toBe(0);
+    // b has no callee.
+    expect(scores.get('b')).toBe(1);
   });
 
   it('handles a node with no edges (isolated) as a source score of 1', () => {
@@ -812,10 +823,10 @@ describe('computeTopoSourceScores', () => {
 
     const scores = computeTopoSourceScores(edges, weights, anomaly);
 
-    // b explained by a: 0.5 × 0.8 = 0.4 → 1 − 0.4 = 0.6.
-    expect(scores.get('b')).toBeCloseTo(0.6, 10);
-    // c's parent edge (b→c) has no weight → explanation 0 → score 1.
-    expect(scores.get('c')).toBe(1);
+    // a calls b: explanation = 0.5 × anomaly(b) = 0.5 × 0.6 = 0.3 → 1 − 0.3 = 0.7.
+    expect(scores.get('a')).toBeCloseTo(0.7, 10);
+    // b calls c, and that edge carries no weight → explanation 0 → b stays a source.
+    expect(scores.get('b')).toBe(1);
   });
 });
 

@@ -569,17 +569,45 @@ export function computeLogNoveltyScores(
 }
 
 /**
- * Compute the topological-source score for each service: `1 − maxParentExplanation`,
- * where `maxParentExplanation(v)` is the largest `propagationWeight(p→v) ×
- * anomaly(p)` over v's upstream parents.
+ * Compute the topological-source score for each service: `1 − maxCalleeExplanation`,
+ * where `maxCalleeExplanation(v)` is the largest `propagationWeight(v→c) × anomaly(c)`
+ * over v's **callees**.
  *
- * The intuition: a fault PROPAGATES along call edges, so a node whose anomaly
- * is strongly explained by an already-anomalous parent is a symptom, while a
- * node with no such parent (or only weakly-explaining parents) is a candidate
- * source. Both terms are bounded so the explanation is clamped to [0, 1]:
- * a parent with anomaly 1 and edge weight 1 fully explains the child.
+ * The intuition: an edge `v → c` means `v` CALLS `c`, and a fault at `c` makes
+ * `v` wait — so a node whose anomaly is strongly explained by an already-anomalous
+ * CALLEE is a caller reacting to it, i.e. a symptom, while a node whose callees are
+ * healthy is a candidate source. Both terms are bounded, so the explanation is
+ * clamped to [0, 1]: a callee with anomaly 1 and edge weight 1 fully explains its
+ * caller.
  *
- * @param edges - Call graph edges (parent → child).
+ * ### The direction was the other way round, and the direction is what was wrong
+ *
+ * This function explained the CHILD by its PARENT — the caller by its callee's
+ * caller, so to speak — for the whole life of the term, and its own option
+ * docblock carried the caveat: *"The direction of the call-graph edges is a known
+ * assumption to validate via ablation — resource faults can propagate callee →
+ * caller, in which case this directed penalty would misfire."* It does misfire, and
+ * the direction has now been measured rather than argued. On RCAEval
+ * RE1-OnlineBoutique (125 cases, one variable):
+ *
+ * | direction | weight 0.1 | 0.2 | 0.5 | 1 | 2 |
+ * | --- | ---: | ---: | ---: | ---: | ---: |
+ * | caller explains callee (the old code) | — | — | **57.6** | 50.4 | 40.0 |
+ * | **callee explains caller (this code)** | **85.6** | 84.8 | 82.4 | 80.0 | 77.6 |
+ * | shipped (weight 0) | 82.4 at every weight | | | | |
+ *
+ * The old direction costs **24.8 pp at weight 0.5**; the corrected one costs nothing
+ * at that weight and reads **+3.2 pp at 0.1** — with no fault type regressed
+ * (cpu 92.0, delay 92.0, disk 100.0, loss 48.0, mem 96.0 against 92.0 / 88.0 / 92.0 /
+ * 48.0 / 92.0). It also explains the FSE'26 verdict this term carries: **−42.4 /
+ * −37.8 / −3.1 cases** on three suites, measured with the sign that this table says
+ * is backwards.
+ *
+ * The correction is behaviour-NEUTRAL in the shipped configuration because the
+ * weight is `DEFAULT_TOPO_WEIGHT = 0`, so no published cell moves; a weight above
+ * zero is a separate decision and is dispatched separately.
+ *
+ * @param edges - Call graph edges (caller → callee).
  * @param propagationWeights - Edge weights, aligned with `edges` by index.
  * @param anomalyScores - Per-service anomaly score in [0, 1].
  * @returns Per-service topological-source score in [0, 1].
@@ -593,11 +621,11 @@ export function computeTopoSourceScores(
 
   for (let i = 0; i < edges.length; i++) {
     const edge = edges[i]!;
-    const parentAnomaly = anomalyScores.get(edge.from) ?? 0;
+    const calleeAnomaly = anomalyScores.get(edge.to) ?? 0;
     const weight = propagationWeights[i] ?? 0;
-    const explanation = parentAnomaly * weight;
-    const prev = maxExplanation.get(edge.to) ?? 0;
-    if (explanation > prev) maxExplanation.set(edge.to, explanation);
+    const explanation = calleeAnomaly * weight;
+    const prev = maxExplanation.get(edge.from) ?? 0;
+    if (explanation > prev) maxExplanation.set(edge.from, explanation);
   }
 
   const scores = new Map<ServiceId, number>();
