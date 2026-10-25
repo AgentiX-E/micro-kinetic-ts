@@ -684,3 +684,19 @@ become one case:**
    own ground truth is a ceiling on *everyone's* headline number. **And no error rate for those labels is
    published**, so a **0.16 pp** difference cannot be attributed to either engine: gap 2's target is the right
    one, and no arithmetic here can substitute for it.
+
+## Claims recorded in October 2026, and why none is placed in the table
+
+Three publications from the last two months bear on this comparison and none of them can be placed beside the
+nine cells, for three different reasons. They are recorded with the reason, because a claim that is silently
+dropped is indistinguishable from a claim that was never checked.
+
+| claim | what it reports | why it is not in the table |
+| --- | --- | --- |
+| **TA-RCD** (arXiv v2, 9 Oct 2026) | on RCAEval: "metric-level AC@5 +18% and Avg@5 +19% over the strongest baseline" | **metric-level**, not service-level, and relative to a baseline rather than absolute. A metric-level number cannot be compared with an `AC@1` over services, and no per-cell table is published |
+| **arXiv:2608.21310** (trajectory study, RCABench) | a defence prototype raises Acc@1 by **3.5–35.1 pp** across ten framework/backbone configurations | **RCABench**, not RCAEval's nine cells; and the delta is against agent frameworks, not against a ranking engine |
+| **arXiv:2609.36771** (deep causal models) | **0.88 Sock Shop / 0.78 Online Boutique** Top-1, no call graph | the closest thing to a like-for-like comparator, and it is **below** this engine's RE1 cells (92.8 / 82.4 `AC@1`) — placed as a reference in `docs/anomaly-composition.md` rather than as a row here, because the two runs do not share a harness |
+
+The one number that has been stable all year is the one this record keeps returning to: **`L0` at 85.4% on
+RE1's 375 cases** (arXiv:2610.05009), a Python reference setting rather than an agent. This engine reads
+83.47% and, with the breadth term measured but not enrolled, 85.07% — one case short.
