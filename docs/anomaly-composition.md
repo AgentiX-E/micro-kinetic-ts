@@ -146,6 +146,36 @@ the total without costing a single cell. It also lands where it was aimed: RE1-T
 of the 26 one-step misses, gains the most (+4), and RE1 reaches **85.07%**, 0.33 pp — one case — below
 `L0`'s 85.4%, the closest this engine has been to the only published arm ahead of it.
 
+### 4b. The other half, and why 0.05 is still not enrolled
+
+The kill criterion is an AND over two benchmarks, so the FSE'26 half had to be askable — it was not: the
+composition had no FSE'26 flag. Four flags and four `ranking_knobs` arms later, the pair is attributable at
+one commit (`4c4d2ee`), both runs' `Config:` lines naming the knob:
+
+| FSE'26 (1422 cases) | shipped (`40189402677`) | `breadth=0.05` (`40189405012`) | Δ |
+| --- | ---: | ---: | ---: |
+| Top@1 | 56.12% | **56.61%** | **+0.49 pp (+7 cases)** |
+| Top@3 | 69.48% | 69.55% | +1 case |
+| **Top@5** | **72.01%** | **71.59%** | **−6 cases** |
+| fault types regressed | — | `HTTPRequestDelay` −2, `NetworkLoss` −1 | 3 of 14 |
+
+**It is a trade, not a free lunch, and this record does not book it as one.** On the golden half the term
+is a strict improvement (+11 cases, no cell down); on FSE'26 it buys 7 Top@1 cases and pays 6 Top@5 cases,
+with two fault types regressing. The pattern is interpretable — the bonus CONCENTRATES a ranking rather
+than reordering its tail, which helps a Top-1 metric and slightly hurts a Top-5 one — but an interpretation
+is not an acceptance criterion, and this repository's criterion is that no cell goes down.
+
+So `DEFAULT_ANOMALY_BREADTH_WEIGHT` stays **0**. The named next experiments, in the order the evidence
+supports them:
+
+1. **A GATED breadth** — fire the bonus only when the node's runner-up is within one rank step, i.e. only
+   where a tie is being broken. That is the shape the failed-edge term already ships (`admitsFailedEdgeTerm`),
+   and it is aimed at exactly what the term did wrong on FSE'26: bonus cases it was not needed for, which
+   is what moved a truth out of the top five.
+2. **A smaller weight**, `0.02`, measured as a pair on both halves. Cheap, but the local curve (84.0 at
+   0.05, 82.4 at 0.15) says the gain is concentrated near the smallest weight, which is the weak-signal
+   signature that made this record refuse an earlier term.
+
 ## 5. What ships, and what is pending
 
 | item | status |
@@ -153,7 +183,7 @@ of the 26 one-step misses, gains the most (+4), and RE1 reaches **85.07%**, 0.33
 | the three coefficients: named, configurable, printed, dispatched, validated | **shipped** |
 | `anomaly_knobs` input, `topo_discount` retired to make room | **shipped** |
 | the breadth term with `DEFAULT_ANOMALY_BREADTH_WEIGHT = 0` | **shipped, OFF** |
-| `W = 0.05` | **measured on both halves, not yet enrolled** — nine cells +11 with no cell down; the FSE'26 half is dispatched because the kill criterion is an AND |
+| `W = 0.05` | **measured on both halves, NOT enrolled** — RCAEval +11 with no cell down, but FSE'26 Top@5 −6 cases and two fault types regressed |
 | every published cell | **unchanged**: all defaults are the shipped values, and the bit-identity test says so |
 
 The next decision is the nine cells at `breadth=0.05`, read against the per-service table for TrainTicket
