@@ -343,6 +343,23 @@ describe('Standalone Metrics', () => {
       const prediction = makePrediction('svc_a', 'CPU');
       expect(computeTA(prediction, 'MEM')).toBe(0);
     });
+
+    it('scores the CATEGORY of an object fault type, not its modifier', () => {
+      // The engine reports `{category, subType, severity}`. Scoring the concatenation asked whether
+      // the refinement matched too, so `delay-severe-local-anomaly` never equalled `delay` and `TA`
+      // was structurally zero for every engine that names a sub-type. The modifier is reported, and
+      // is not what "failure type identification" means.
+      const prediction = {
+        ...makePrediction('svc_a', 'CPU'),
+        faultType: {
+          category: 'DELAY' as const,
+          subType: 'severe_local_anomaly',
+          severity: 'critical' as const,
+        },
+      };
+      expect(computeTA(prediction, 'delay')).toBe(1);
+      expect(computeTA(prediction, 'severe_locan_anomaly')).toBe(0);
+    });
   });
 
   describe('computeAggregateTA', () => {

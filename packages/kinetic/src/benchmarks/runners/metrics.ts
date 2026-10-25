@@ -243,9 +243,34 @@ export function computeAggregateLA(
  * @returns Type accuracy score (0 or 1).
  */
 export function computeTA(prediction: RootCauseResult, truthFaultType: string): number {
-  const predType = normalizeFaultType(prediction.faultType);
+  // A prediction names a type in one of two forms, and both are answers:
+  //
+  //   • `category + subType` when the subType is part of the taxonomy — `MEMORY`+`LEAK` IS
+  //     `memory_leak`, and that reading was the only one this function had;
+  //   • the bare `category` when the subType is a modifier ON the type rather than a kind —
+  //     `delay`+`severe_local_anomaly` is a delay fault, and concatenating made it
+  //     `delay-severe-local-anomaly`, which no ground truth can equal. With RCAEval's labels
+  //     (`cpu`/`mem`/`disk`/`delay`/`loss`) that reading made `TA` structurally zero for every engine
+  //     that names a sub-type, i.e. for every engine at all.
+  //
+  // Accepting either form cannot manufacture a match: the full form is the stricter test and is tried
+  // first, and the bare category can only match a truth that IS that category.
   const truthType = normalizeFaultType(truthFaultType);
-  return predType === truthType ? 1 : 0;
+  if (normalizeFaultType(prediction.faultType) === truthType) return 1;
+  return faultCategoryOf(prediction.faultType) === truthType ? 1 : 0;
+}
+
+/**
+ * The TYPE half of a fault type, as a comparable token.
+ *
+ * @param raw - A `FaultType` object or a bare label.
+ * @returns The category, lowercased with separators normalised.
+ */
+function faultCategoryOf(raw: unknown): string {
+  if (raw && typeof raw === 'object' && 'category' in (raw as Record<string, unknown>)) {
+    return normalizeFaultType((raw as { category: unknown }).category);
+  }
+  return normalizeFaultType(raw);
 }
 
 /**

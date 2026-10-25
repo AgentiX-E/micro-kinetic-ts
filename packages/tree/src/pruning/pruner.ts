@@ -38,6 +38,7 @@ import {
   invariantRange,
   type BuildFaultGraphOptions,
   type DetectedCycle,
+  type FaultCategory,
   type FaultEdgeLatency,
   type FaultPropagationGraph,
   type MetricMap,
@@ -1192,6 +1193,7 @@ export class TreePruner {
       postInjectOnsetDelays,
       dominantMetrics,
       metricDiagnostics,
+      faultHypotheses,
       propagationWeights,
     } = topoResult;
 
@@ -1420,6 +1422,7 @@ export class TreePruner {
       postInjectOnsetDelays,
       dominantMetrics,
       metricDiagnostics,
+      faultHypotheses,
       injectTimeMs,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
@@ -1515,38 +1518,41 @@ export class TreePruner {
     // would decide about a service the engine does not answer with. The cost is a second ranking
     // ONLY on the cases the gate admits; a refused case returns the baseline it already has.
     const directionWeight = this.options.failedEdgeWeight;
-    if (directionWeight === 0) return baseline;
+    if (directionWeight === 0) return withFaultHypotheses(graph, baseline);
     const rankOne = baseline[0];
-    if (rankOne === undefined) return baseline;
+    if (rankOne === undefined) return withFaultHypotheses(graph, baseline);
     if (
       !admitsFailedEdgeTerm(
         graph.dominantMetrics?.get(rankOne.serviceId)?.label,
         graph.edgeLatencyByCallee?.get(rankOne.serviceId)?.rise,
       )
     ) {
-      return baseline;
+      return withFaultHypotheses(graph, baseline);
     }
 
-    return performTreeRCA(
-      prunedTree,
-      graph.anomalyScores,
-      graph.anomalyOnsetTimes,
-      graph.postInjectOnsetDelays,
-      graph.injectTimeMs ?? 0,
-      graph.callGraph.nodes,
-      graph.propagationWeights,
-      k,
-      this.options,
-      graph.collisionEnergy,
-      graph.logScores,
-      graph.topoScores,
-      graph.riseScores,
-      graph.traceActivityScores,
-      graph.prismScores,
-      graph.failedEdgeScores,
-      graph.edgeLatencyScores,
-      graph.poolMetricScores,
-      graph.stabilityScores,
+    return withFaultHypotheses(
+      graph,
+      performTreeRCA(
+        prunedTree,
+        graph.anomalyScores,
+        graph.anomalyOnsetTimes,
+        graph.postInjectOnsetDelays,
+        graph.injectTimeMs ?? 0,
+        graph.callGraph.nodes,
+        graph.propagationWeights,
+        k,
+        this.options,
+        graph.collisionEnergy,
+        graph.logScores,
+        graph.topoScores,
+        graph.riseScores,
+        graph.traceActivityScores,
+        graph.prismScores,
+        graph.failedEdgeScores,
+        graph.edgeLatencyScores,
+        graph.poolMetricScores,
+        graph.stabilityScores,
+      ),
     );
   }
 
@@ -1703,6 +1709,50 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
  *
  * @internal
  */
+/**
+ * How confident a shape hypothesis must be before it is reported as the fault TYPE.
+ *
+ * `0.35` is the lowest confidence any rule in `StatisticalAnalyzer` can emit (`0.4 + 0.5·trend` at a
+ * trend of zero, minus rounding), so a hypothesis below it is one no rule produced. Below the floor the
+ * severity descriptor is the more honest answer, and it says which of the two answered through its own
+ * `subType`.
+ */
+const HYPOTHESIS_CONFIDENCE_FLOOR = 0.35;
+
+/**
+ * Report each ranked node's fault-type CATEGORY from the shape of its series, when the graph has one.
+ *
+ * The two answers are different questions and both are kept: the descriptor produced by the ranking
+ * says how SEVERE the node is and whether it is local or cascaded, and the hypothesis says WHICH KIND
+ * of fault its series looks like. Only the category is replaced, so a reader keeps the severity and
+ * the local/cascaded distinction while the reported type becomes one the benchmark can score.
+ *
+ * Before this, `TA` (type accuracy) was structurally zero: the descriptor's vocabulary is
+ * `CPU`/`MEMORY`/`CONNECTION_POOL`/`CODE_ERROR` and the ground truth's is `cpu`/`mem`/`disk`/`delay`/
+ * `loss`/`socket`. The results table hid it by printing `AC@1` under the `TA` label.
+ *
+ * @param graph - The graph the ranking was computed on (it carries the hypotheses).
+ * @param results - The ranking, in order.
+ * @returns The same ranking with categories replaced where a confident hypothesis exists.
+ */
+function withFaultHypotheses(
+  graph: FaultPropagationGraph,
+  results: readonly RootCauseResult[],
+): RootCauseResult[] {
+  const hypotheses = graph.faultHypotheses;
+  if (hypotheses === undefined) return [...results];
+  return results.map((result) => {
+    const hypothesis = hypotheses.get(result.serviceId);
+    if (hypothesis === undefined || hypothesis.confidence < HYPOTHESIS_CONFIDENCE_FLOOR) {
+      return result;
+    }
+    return {
+      ...result,
+      faultType: { ...result.faultType, category: hypothesis.category as FaultCategory },
+    };
+  });
+}
+
 function performTreeRCA(
   tree: PrunedTree,
   anomalyScores: ReadonlyMap<ServiceId, number>,

@@ -65,7 +65,12 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
     metricSeries: readonly TimeSeries[],
     _context: FaultClassifierContext,
   ): FaultTypeHypothesis[] {
-    if (metricSeries.length < this.config.minDataPoints) {
+    // `minDataPoints` counts POINTS, and it was compared with the number of SERIES. A service that
+    // ships one or two series — which is common in a five-metric corpus — was therefore refused a
+    // classification outright, and the refusal was invisible: the caller got `UNKNOWN` and read it as
+    // "no pattern", not "not enough input". The check is now what its name says, per series, so a
+    // service is classified on its own evidence and only a genuinely short window is refused.
+    if (!metricSeries.some((series) => series.values.length >= this.config.minDataPoints)) {
       return this.emptyResult();
     }
 
@@ -220,17 +225,28 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
       sxy += x * y;
     }
     const denominator = halfN * sxx - sx * sx;
-    const trendSlope = denominator !== 0 ? (halfN * sxy - sx * sy) / denominator : 0;
+    const fittedSlope = denominator !== 0 ? (halfN * sxy - sx * sy) / denominator : 0;
+    // RELATIVE drift, not the absolute slope: the fitted change across the fitted half, as a share of
+    // the window's mean. The absolute slope is measured in the metric's own units per SAMPLE, so the
+    // rule that reads it (`trendStrength > 0.3`, the DELAY pattern) was a statement about units: a
+    // latency series in seconds on a 721-sample window produced 383, a cpu series produced 0.004, and
+    // the rule was satisfied by every metric of every service in the corpus — `DELAY` was the only
+    // category the classifier could ever emit, and no consumer noticed because nothing called it.
+    // This is the quantity the type's own docblock describes ("ratio … drift detection").
+    const trendSlope = mean !== 0 ? (fittedSlope * halfN) / Math.abs(mean) : 0;
 
     // ── Coefficient of variation ─────────────────────────
     const cv = mean !== 0 ? stddev / Math.abs(mean) : 0;
 
     // ── Monotonic increase check ─────────────────────────
-    let isMonotonicIncreasing = true;
-    for (let i = 1; i < n; i++) {
+    // A LEAK RISES. "Never decreases" also describes a constant series, and the memory-leak rule reads
+    // this flag alone, so a flat metric was classified `MEM` — the pattern the rule exists to detect
+    // was satisfied by a series with no trend at all. The end-to-start comparison is what makes the
+    // word "increasing" do work.
+    let isMonotonicIncreasing = series.values[n - 1]! > series.values[0]!;
+    for (let i = 1; i < n && isMonotonicIncreasing; i++) {
       if (series.values[i]! < series.values[i - 1]!) {
         isMonotonicIncreasing = false;
-        break;
       }
     }
 

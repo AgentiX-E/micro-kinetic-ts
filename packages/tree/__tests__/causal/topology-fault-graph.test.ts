@@ -1398,6 +1398,75 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(result.anomalyScores.get('svc-ramp')).toBeGreaterThan(0);
   });
 
+  it('names a fault TYPE from the dominant metric family, not from the score', () => {
+    // `RootCauseResult.faultType` is what the benchmark scores as `TA`, and its vocabulary used to be
+    // a severity descriptor read off the score (`CPU`/`MEMORY`/`CONNECTION_POOL`/`CODE_ERROR`) that
+    // could never equal a ground-truth label like `delay`. The definitional link is the metric family:
+    // a node whose largest deviation is in a response-time series was delayed.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('latency-90', [
+            ...Array.from({ length: 10 }, () => 0.01),
+            ...Array.from({ length: 10 }, () => 0.5),
+          ]),
+          makeTimeSeries(
+            'cpu',
+            Array.from({ length: 20 }, () => 0.4),
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.dominantMetrics.get('svc')?.label).toBe('latency-90');
+    expect(result.faultHypotheses.get('svc')?.category).toBe('DELAY');
+  });
+
+  it('falls through to the shape rules when the dominant label names no family', () => {
+    // `workload` measures how much work a service was HANDED; it names no fault family, so the
+    // hypothesis must come from the shape rather than from the label. The evidence says which of the
+    // two answered, so a reader can tell a definitional link from a statistical one.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          // A label no family rule knows (`queue_size`), whose shape is the memory-leak pattern: it
+          // only rises, and its coefficient of variation stays low.
+          makeTimeSeries(
+            'queue_size',
+            Array.from({ length: 20 }, (_, i) => 100 + i * 5),
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const hypothesis = result.faultHypotheses.get('svc');
+    expect(hypothesis).toBeDefined();
+    // The fall-through is the property under test: the answer comes from a SHAPE rule, and its
+    // evidence says so. Which shape wins is the shape rules' business, and their arbitration is a
+    // recorded open question rather than something this fixture should freeze — two rules can fire on
+    // one series (`MEM` on monotonicity, `CPU` on autocorrelation) and the higher confidence formula
+    // wins regardless of which pattern the series actually is.
+    expect(hypothesis!.evidence[0]).not.toContain('names the');
+    expect(['MEM', 'CPU', 'DELAY', 'DISK', 'LOSS', 'SOCKET']).toContain(hypothesis!.category);
+  });
+
+  it('gives no hypothesis to a service with no metrics at all', () => {
+    // Absent is not "low confidence": the consumer falls back to the severity descriptor, so a service
+    // whose series never arrived cannot silently be reported as a confident category.
+    const graph = makeCallGraph(['svc-empty'], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([]));
+
+    expect(result.faultHypotheses.has('svc-empty')).toBe(false);
+  });
+
   it('reports the true anomaly driver, not the idle metric the guards skipped', () => {
     // A service with two metrics: an idle latency-90 (0 everywhere except a
     // brief pulse, skipped by the idle/burst guards) and a genuine workload

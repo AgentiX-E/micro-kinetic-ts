@@ -50,6 +50,8 @@ import type {
   ServiceId,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import { StatisticalAnalyzer } from '@agentix-e/micro-kinetic-core';
+
 import type { BOCPDConfig } from '../../../kinetic/src/signals/bocpd-detector.js';
 
 import { computePropagationVelocity } from './propagation-velocity.js';
@@ -563,6 +565,17 @@ export interface TopologyFaultGraphResult {
    * guard". This is that distinction, recorded rather than inferred.
    */
   readonly metricDiagnostics: ReadonlyMap<ServiceId, readonly MetricDiagnostic[]>;
+  /**
+   * Per-service fault-TYPE hypothesis from the shape of its own series (see `classifyServices`).
+   *
+   * The vocabulary is the one the benchmark's ground truth uses — `MEM`/`DISK`/`CPU`/`DELAY`/
+   * `LOSS`/`SOCKET` — because it comes from `StatisticalAnalyzer`, which was written for this
+   * question and had never been called from the RCA path. Absent for a service with no metrics.
+   */
+  readonly faultHypotheses: ReadonlyMap<
+    ServiceId,
+    { readonly category: string; readonly confidence: number; readonly evidence: readonly string[] }
+  >;
   /** Per-edge propagation weights (0-1), aligned with callGraph.edges. */
   readonly propagationWeights: Float64Array;
   /** Diagnostic: number of edges computed via Pearson correlation. */
@@ -834,7 +847,90 @@ export function buildTopologyFaultGraph(
     fallbackEdgeCount,
     temporalEdgeCount,
     computedDecayAlpha,
+    faultHypotheses: classifyServices(callGraph, metrics, dominantMetrics),
   };
+}
+
+/**
+ * The fault-type hypothesis per service, from the shape of its own series.
+ *
+ * `RootCauseResult.faultType` used to be built by `classifyFaultType(score, depth, childContribution)`
+ * — a severity descriptor read off the SCORE, whose categories are `CPU`/`MEMORY`/`CONNECTION_POOL`/
+ * `CODE_ERROR`. That vocabulary cannot name `mem`, `disk`, `delay`, `loss` or `socket`, which are the
+ * labels RCAEval's ground truth uses, so the benchmark's Type Accuracy was **structurally 0.0**: the
+ * table printed it as `0.0%` on all fifteen cells once the row stopped being a copy of `AC@1`, and it
+ * had been printing `AC@1`'s value under the `TA` label before that.
+ *
+ * `StatisticalAnalyzer` — Layer 2 of the classifier pyramid in `@agentix-e/micro-kinetic-core` — was
+ * written for exactly this question and produces exactly this vocabulary
+ * (`MEM`/`DISK`/`CPU`/`DELAY`/`LOSS`/`SOCKET`), and nothing in the RCA path had ever called it. This
+ * function is that call: one hypothesis per service, from the series the anomaly scorer already read.
+ *
+ * A service with no metrics gets no entry, which is different from a low-confidence entry and is kept
+ * different: the caller falls back to the severity descriptor, so an absent series cannot silently
+ * become a confident `CPU`.
+ *
+ * @param callGraph - The services to classify.
+ * @param metrics - The series, keyed by service.
+ */
+function classifyServices(
+  callGraph: ServiceCallGraph,
+  metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
+  dominant: ReadonlyMap<ServiceId, { label: string }>,
+): Map<ServiceId, { category: string; confidence: number; evidence: readonly string[] }> {
+  const analyzer = new StatisticalAnalyzer();
+  const hypotheses = new Map<
+    ServiceId,
+    { category: string; confidence: number; evidence: readonly string[] }
+  >();
+  for (const serviceId of callGraph.nodes.keys()) {
+    const series = metrics.get(serviceId);
+    if (series === undefined || series.length === 0) continue;
+    // The DOMINANT metric's family first: these are definitional links, not fitted ones. A series
+    // named `latency-90` measures response time, so a node whose largest deviation is in it was
+    // delayed; `mem` measures memory, so the fault is a memory one. The shape rules below cannot see
+    // this — they average the coefficient of variation across metrics of different units — and the
+    // corpus has no packet-loss series at all, which is why `loss` and `socket` fall through to them.
+    const family = metricFamilyOf(dominant.get(serviceId)?.label ?? '');
+    if (family !== undefined) {
+      hypotheses.set(serviceId, {
+        category: family,
+        confidence: 0.9,
+        evidence: [
+          `dominant metric ${dominant.get(serviceId)?.label ?? ''} names the ${family} family`,
+        ],
+      });
+      continue;
+    }
+    const [best] = analyzer.classify(series, {
+      serviceId,
+      metricNames: series.map((ts) => ts.label),
+    });
+    if (best === undefined) continue;
+    hypotheses.set(serviceId, {
+      category: best.category,
+      confidence: best.confidence,
+      evidence: best.evidence,
+    });
+  }
+  return hypotheses;
+}
+
+/**
+ * The fault family a metric LABEL names, or `undefined` when the label names none.
+ *
+ * Definitional, and deliberately tiny: a label that measures response time names `DELAY`, one that
+ * measures memory names `MEM`, and so on. A label that measures neither (`workload`, `error`, `load`)
+ * names nothing, and answering anyway is how a classifier becomes a guess.
+ *
+ * @param label - The dominant metric's label.
+ */
+function metricFamilyOf(label: string): string | undefined {
+  if (label.startsWith('latency')) return 'DELAY';
+  if (label === 'mem' || label.startsWith('mem')) return 'MEM';
+  if (label === 'cpu' || label.startsWith('cpu')) return 'CPU';
+  if (label.startsWith('disk') || label.startsWith('io')) return 'DISK';
+  return undefined;
 }
 
 // ── Internal Types ────────────────────────────────────────

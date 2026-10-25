@@ -222,6 +222,22 @@ export interface FaultPropagationGraph {
    */
   readonly metricDiagnostics?: ReadonlyMap<ServiceId, readonly MetricDiagnostic[]>;
   /**
+   * Per-service fault-TYPE hypothesis, from the shape of that service's own series.
+   *
+   * `RootCauseResult.faultType` is reported as `TA` (type accuracy) by the benchmark harness, and it
+   * used to be a severity descriptor read off the score — `CPU`/`MEMORY`/`CONNECTION_POOL`/
+   * `CODE_ERROR` — a vocabulary that cannot name `mem`, `disk`, `delay`, `loss` or `socket`. Since the
+   * ground truth uses exactly those, the metric was structurally zero and nobody could see it: the
+   * `TA` row of the results table printed the `AC@1` column.
+   *
+   * Optional, and the absence of an entry is meaningful — a service with no metrics has no hypothesis,
+   * which is why the consumer falls back rather than defaulting to a category.
+   */
+  readonly faultHypotheses?: ReadonlyMap<
+    ServiceId,
+    { readonly category: string; readonly confidence: number; readonly evidence: readonly string[] }
+  >;
+  /**
    * Fault injection time in Unix milliseconds, when known.
    *
    * This is the temporal anchor for the causal root-cause signal: the fault

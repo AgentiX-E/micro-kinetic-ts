@@ -134,7 +134,13 @@ export interface TimeSeriesFeatures {
   readonly variance: number;
   /** Median value (50th percentile). */
   readonly median: number;
-  /** Ratio of the last N values to the historical mean (drift detection). */
+  /**
+   * RELATIVE drift of the series' last half: the change the linear fit predicts across that half, as
+   * a share of the window's mean (dimensionless, so one threshold means one thing for every metric).
+   *
+   * It was the raw per-sample slope, in the metric's own units, and the one rule that reads it
+   * (`trendStrength > 0.3`) was therefore a statement about units rather than about drift.
+   */
   readonly trendSlope: number;
   /** Coefficient of variation (stddev / mean, 0 if mean ≈ 0). */
   readonly coefficientOfVariation: number;

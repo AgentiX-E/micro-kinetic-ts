@@ -243,6 +243,48 @@ describe('TreePruner', () => {
       }
     });
 
+    it("reports the graph's fault-TYPE hypothesis, keeping the descriptor's severity", () => {
+      // Two questions, two answers, one object: the descriptor says how SEVERE the node is and
+      // whether it is local or cascaded (`subType`), and the hypothesis says WHICH KIND of fault its
+      // dominant metric names (`category`). Only the category is replaced — the benchmark scores that
+      // as `TA`, and the descriptor's own vocabulary could never match a ground-truth label.
+      const pruner = new TreePruner({ defaultTopK: 3 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 10, 10, 10, 10],
+      });
+
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+
+      expect(graph.faultHypotheses?.get('A')?.category).toBe('CPU');
+      expect(results[0]!.serviceId).toBe('A');
+      expect(results[0]!.faultType.category).toBe('CPU');
+      expect(results[0]!.faultType.subType).toContain('anomaly');
+    });
+
+    it('falls back to the severity descriptor when the graph carries no hypotheses', () => {
+      // A graph built by another engine, or by an older one, has no hypotheses — and the fallback has
+      // to be the descriptor rather than a default category, because a default would be a claim about
+      // a series the engine never saw.
+      const pruner = new TreePruner({ defaultTopK: 3 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 10, 10, 10, 10],
+      });
+
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze({ ...graph, faultHypotheses: undefined }, 3);
+
+      // The descriptor's whole vocabulary, `UNKNOWN` included: the fallback's job is to answer with
+      // what the ranking knows, not to invent a category the series never supported.
+      expect(['CPU', 'MEMORY', 'CONNECTION_POOL', 'CODE_ERROR', 'UNKNOWN']).toContain(
+        results[0]!.faultType.category,
+      );
+    });
+
     it('preserves topology edges and detects cycles for pruning', () => {
       const pruner = new TreePruner({ pruneEpsilon: 1.0, useTwoHopDecay: true });
       const callGraph = makeCallGraph(
