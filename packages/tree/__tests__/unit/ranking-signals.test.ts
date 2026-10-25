@@ -747,6 +747,34 @@ describe('computeLogNoveltyScores', () => {
 });
 
 describe('computeTopoSourceScores', () => {
+  it('gives a LEAF exactly 1.0, whatever its own anomaly — the degree bias the discount inherits', () => {
+    // This pins a KNOWN DEFECT rather than a desired property, and it is written down because the defect
+    // is load-bearing: `topoSource(v) = 1 − max over callees of (w × a(c))`, so a node with NO callees
+    // scores exactly 1 by arithmetic and can never be discounted, while any node that calls anything
+    // loses up to the full discount. On a graph where most nodes are leaves the measure therefore reads
+    // "is this node a leaf" as much as "is this node a source", and TrainTicket is such a graph: 79 edges
+    // over 64 services (run `40176043723`'s own `[topo]` line), so being a hub costs a node the discount
+    // while being a leaf never does. Measured consequence: the multiplicative discount moved RE1-SS by 0
+    // and RE1-OB by +2 cases but moved RE1-TT from 94/125 to 35/125, with the losses concentrated on
+    // `ts-order-service` — a hub — and the gains on `ts-auth-service` and `ts-route-service`.
+    //
+    // A future fix (normalise the explanation by degree, or compare it against the fleet's typical
+    // explanation) has to CHANGE this assertion, on purpose, which is the point of pinning it.
+    const edges = [makeEdge('hub', 'leaf')];
+    const weights = new Float64Array([1]);
+    const anomaly = new Map<ServiceId, number>([
+      ['hub', 1],
+      ['leaf', 0.9],
+    ]);
+
+    const scores = computeTopoSourceScores(edges, weights, anomaly);
+
+    // The leaf is fully anomalous itself, and still scores the maximum: nothing explains it.
+    expect(scores.get('leaf')).toBe(1);
+    // The hub is discounted for calling an anomalous node, even though it is the more anomalous of the two.
+    expect(scores.get('hub')).toBeCloseTo(0.1, 10);
+  });
+
   it('explains a CALLER by its CALLEE: a → b means a calls b, so b explains a', () => {
     // The direction is the whole content of this term, and it was the other way round for the whole
     // life of the term. `a → b` means a CALLS b: if b is slow, a waits, so a's anomaly is the

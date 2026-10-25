@@ -60,7 +60,7 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
   topoDiscount:
-    'the multiplicative topological discount, measured and NOT enrolled: dispatched at 0.25 on nine cells and refused (see docs/topological-discount.md); a term whose weight is still 0 has no business being searched',
+    'the multiplicative topological discount, off at 0 and not searched: its scale-free form is recorded in docs/dispatch-forwarding.md §5, and a term whose additive sibling ships at weight 0 has no business being a search axis',
 };
 
 /**

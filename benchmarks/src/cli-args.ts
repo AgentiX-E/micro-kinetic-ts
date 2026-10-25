@@ -67,8 +67,14 @@ export function parseWeight(raw: string, shipped: number): number {
  * @param shipped - The value to fall back to (default 0).
  */
 export function parseUnitInterval(raw: string, shipped = 0): number {
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : shipped;
+  // Through `parseWeight`, so the "is this a number at all" rule has ONE owner — including the empty
+  // string, which `Number('')` reads as `0` and which is inside this function's range: an empty value
+  // would have become the legitimate setting `0`. That was the defect iteration 125 found inside
+  // `parseWeight`, and writing this function with a raw `Number` reintroduced it one iteration later.
+  // The `NaN` sentinel is how `parseWeight`'s refusal is told apart from a legitimate `0`; this function
+  // then adds the UPPER bound and nothing else.
+  const value = parseWeight(raw, Number.NaN);
+  return value <= 1 ? value : shipped;
 }
 
 /**

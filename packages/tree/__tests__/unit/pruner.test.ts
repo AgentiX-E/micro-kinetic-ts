@@ -1229,6 +1229,36 @@ describe('TreePruner', () => {
       );
     });
 
+    it("returns the graph's own map when the graph carries no topological scores at all", () => {
+      // A graph assembled by another engine — or by an older one — has anomalies and no `topoScores`. The
+      // discount is a function OF that map, so with nothing to consult the honest answer is no discount,
+      // and it must be no discount rather than a throw: a missing optional is not a configuration error.
+      const pruner = new TreePruner({ topoDiscount: 0.5 });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze({ ...graph, topoScores: undefined }, 2);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]!.serviceId).toBe('a');
+    });
+
+    it('treats a node with no topological score as a source — nothing explains it, so nothing discounts it', () => {
+      // The `?? 1` in the multiplier, asserted on the OBSERVABLE instead of on the internals: with a full
+      // discount the explained caller `a` loses rank 1, but if `a` is ABSENT from the map there is no
+      // explanation to charge it, so it keeps its anomaly entire and keeps rank 1. A default of `0` here
+      // would silently erase every node the map does not mention.
+      const graph = new TreePruner().buildFaultGraph(callGraph, metrics);
+      const partial = new Map(graph.topoScores!);
+      partial.delete('a');
+
+      const results = new TreePruner({ topoDiscount: 1 }).analyze(
+        { ...graph, topoScores: partial },
+        2,
+      );
+
+      expect(results[0]!.serviceId).toBe('a');
+    });
+
     it('rejects a discount outside [0, 1] rather than clamping it', () => {
       // A fraction outside the unit interval is a different QUANTITY, not a different setting: `2` would
       // invert the node's anomaly's sign. Failing here is the point; a silent fallback would answer a

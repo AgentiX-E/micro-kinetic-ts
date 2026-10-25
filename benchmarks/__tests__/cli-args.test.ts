@@ -20,12 +20,60 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { DEFAULT_TRACE_WEIGHT } from '../../packages/tree/src/index.js';
 
-import { parseFieldDecimals, parseNodeCount, parseWeight } from '../src/cli-args.js';
+import {
+  parseFieldDecimals,
+  parseNodeCount,
+  parseUnitInterval,
+  parseWeight,
+} from '../src/cli-args.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH_SRC = resolve(HERE, '../src');
+
+describe('parseUnitInterval', () => {
+  it('passes a fraction through and refuses anything outside [0, 1]', () => {
+    // The bound IS the function: a discount of 2 is not a stronger discount, it inverts the sign of the
+    // node's anomaly, and a discount of −1 doubles it. Every case here is a value a dispatcher could type.
+    expect(parseUnitInterval('0')).toBe(0);
+    expect(parseUnitInterval('0.25')).toBe(0.25);
+    expect(parseUnitInterval('1')).toBe(1);
+    expect(parseUnitInterval('0.999')).toBe(0.999);
+    expect(parseUnitInterval('1.0001')).toBe(0);
+    expect(parseUnitInterval('2')).toBe(0);
+    expect(parseUnitInterval('-1')).toBe(0);
+    expect(parseUnitInterval('abc')).toBe(0);
+    // The fallback is the CALLER's shipped value, not a constant, for the reason `parseWeight` takes one.
+    expect(parseUnitInterval('2', 0.4)).toBe(0.4);
+  });
+
+  it('treats an EMPTY value as absent rather than as zero, because Number("") is 0', () => {
+    // The defect iteration 125 found inside `parseWeight` and this function then reintroduced one
+    // iteration after that fix: `Number('')` is `0`, which is a legitimate fraction, so an empty flag
+    // value would be read as the setting `0` rather than as "no value". With a non-zero fallback the two
+    // readings differ observably, which is the only way this can be a test rather than a comment.
+    expect(parseUnitInterval('', 0.4)).toBe(0.4);
+    expect(parseUnitInterval('   ', 0.4)).toBe(0.4);
+    // …and a real zero is still a zero.
+    expect(parseUnitInterval('0', 0.4)).toBe(0);
+  });
+
+  it('is what the RCAEval runner binds --topo-discount to, including its refusals', () => {
+    // The parse rule is only worth its bound if the flag uses it. `--topo-discount 2` must build the
+    // SHIPPED configuration rather than a negated anomaly, and a flag left without a value must not
+    // swallow the next flag — the failure `hasValue` exists for.
+    expect(parseRCAEvalArgs(['--topo-discount', '0.25']).topoDiscount).toBe(0.25);
+    expect(parseRCAEvalArgs(['--topo-discount', '2']).topoDiscount).toBe(0);
+    // A flag with NO value is REPORTED at the flag rather than silently defaulted — the rule `hasValue`
+    // exists for, and the reason this is a throw rather than a fallback: a dispatcher who forgot a value
+    // would otherwise get two defaults and an artifact that says the flags were never asked for.
+    expect(() => parseRCAEvalArgs(['--topo-discount'])).toThrow(/--topo-discount/);
+    expect(() => parseRCAEvalArgs(['--topo-discount', '--trace-weight', '0.5'])).toThrow(
+      /--topo-discount/,
+    );
+  });
+});
 
 describe('parseWeight', () => {
   it('returns the parsed value for a finite, non-negative number', () => {
