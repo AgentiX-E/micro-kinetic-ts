@@ -372,6 +372,15 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'topo_weight',
   },
+  topoDiscount: {
+    flag: '--topo-discount',
+    owner: 'topological-source-direction.md',
+    // FSE'26 has no input for it yet: its `ranking_knobs` case block enumerates eight names, and a
+    // ninth is a separate edit. The RCAEval half is where the multiplicative form was measured, so the
+    // knob is dispatchable where its evidence is.
+    fse26: null,
+    rcaeval: 'topo_discount',
+  },
   traceWeight: {
     flag: '--trace-weight',
     owner: 'rank-collapse-falsified.md',

@@ -57,6 +57,7 @@ import {
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   isOnsetShape,
@@ -76,7 +77,13 @@ import {
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
-import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli-args.js';
+import {
+  hasValue,
+  parseFieldDecimals,
+  parseNodeCount,
+  parseUnitInterval,
+  parseWeight,
+} from './cli-args.js';
 // The view union, from the module that OWNS the three views. A `type` import would leave the guard
 // unimported, and a guard restated here would be a second answer to "is this a view" — the defect
 // `--prism-pooling` was repaired for, moved to the third vocabulary on this surface.
@@ -202,6 +209,8 @@ export interface CliOptions {
   collisionWeight: number;
   /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
   topoWeight: number;
+  /** Multiplicative topological discount (0 = off; see `RCAEngineOptions.topoDiscount`). */
+  topoDiscount: number;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
   /**
@@ -378,6 +387,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
+    topoDiscount: DEFAULT_TOPO_DISCOUNT,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
     // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
@@ -501,6 +511,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.collisionWeight = parseWeight(args[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (args[i] === '--topo-weight' && hasValue(args, i + 1))
       opts.topoWeight = parseWeight(args[++i]!, DEFAULT_TOPO_WEIGHT);
+    else if (args[i] === '--topo-discount' && hasValue(args, i + 1))
+      opts.topoDiscount = parseUnitInterval(args[++i]!);
     else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a

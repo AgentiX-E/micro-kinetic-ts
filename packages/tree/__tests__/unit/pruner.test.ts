@@ -1181,6 +1181,64 @@ describe('TreePruner', () => {
     });
   });
 
+  describe('topological discount (multiplicative, scale-free)', () => {
+    // `a → b` means a CALLS b, so `a` is the caller of an anomalous callee: its own anomaly is the
+    // symptom's. `a`'s self-anomaly is the larger of the two, which is exactly the situation the
+    // discount exists for — magnitude favours the symptom.
+    const callGraph = makeCallGraph(['a', 'b'], [['a', 'b']]);
+    const metrics = makeMetrics({
+      a: [1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3],
+      b: [1, 1, 1, 1, 1, 1, 2.8, 2.8, 2.8, 2.8, 2.8, 2.8],
+    });
+
+    it('is off by default and changes nothing when off', () => {
+      // Bit-identity, asserted on the OBSERVABLE rather than on an internal: the shipped pruner and a
+      // pruner whose discount is 0 must produce the same ranking and the same scores.
+      const shipped = new TreePruner();
+      const explicitZero = new TreePruner({ topoDiscount: 0 });
+      const graph = shipped.buildFaultGraph(callGraph, metrics);
+
+      const a = shipped.analyze(graph, 2);
+      const b = explicitZero.analyze(graph, 2);
+
+      expect(a.map((r) => r.serviceId)).toEqual(b.map((r) => r.serviceId));
+      expect(a.map((r) => r.finalScore)).toEqual(b.map((r) => r.finalScore));
+      // …and the shipped ranking is the one magnitude picks: the larger self-anomaly first.
+      expect(a[0]!.serviceId).toBe('a');
+    });
+
+    it('demotes the explained caller and leaves the unexplained callee where it is', () => {
+      // `b` has no callee, so nothing explains it and the multiplier is 1: its score is unchanged. `a`
+      // is explained by `b`, keeps (1 − ρ·(1 − topoSource(a))) of its anomaly, and loses rank 1 for a
+      // full discount. This is the behaviour the additive term could not express on a rank scale:
+      // the shape of the change is a RATIO, not a constant.
+      const shipped = new TreePruner();
+      const discounted = new TreePruner({ topoDiscount: 1 });
+      const graph = shipped.buildFaultGraph(callGraph, metrics);
+
+      const before = shipped.analyze(graph, 2);
+      const after = discounted.analyze(graph, 2);
+
+      expect(before[0]!.serviceId).toBe('a');
+      expect(after[0]!.serviceId).toBe('b');
+      const bBefore = before.find((r) => r.serviceId === 'b')!.finalScore!;
+      const bAfter = after.find((r) => r.serviceId === 'b')!.finalScore!;
+      expect(bAfter).toBeCloseTo(bBefore, 12);
+      expect(after.find((r) => r.serviceId === 'a')!.finalScore!).toBeLessThan(
+        before.find((r) => r.serviceId === 'a')!.finalScore!,
+      );
+    });
+
+    it('rejects a discount outside [0, 1] rather than clamping it', () => {
+      // A fraction outside the unit interval is a different QUANTITY, not a different setting: `2` would
+      // invert the node's anomaly's sign. Failing here is the point; a silent fallback would answer a
+      // question nobody asked.
+      const pruner = new TreePruner({ topoDiscount: 2 });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(() => pruner.analyze(graph, 2)).toThrow(/topoDiscount/);
+    });
+  });
+
   describe('topological source signal ranking (opt-in)', () => {
     const callGraph = makeCallGraph(
       ['A', 'B', 'C'],

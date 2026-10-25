@@ -118,6 +118,11 @@ on:
         required: false
         default: ''
         type: string
+      topo_discount:
+        description: "Multiplicative discount on a node's own anomaly by the fraction its CALLEES explain (empty = the runner default, which is the SHIPPED 0 = off). It is the scale-free form of `topo_weight`: a weight adds a [0,1] term to a score that is raw on OnlineBoutique (order 1-3) and rank-normalised on TrainTicket (steps of 1/63 = 0.0159), so the same weight is 3% of one cell's scale and six rank steps of another's and `topo_weight=0.1` costs RE1-TrainTicket 46.4pp on run `40167961908`. A RATIO says 'an explained node keeps 70% of its anomaly' and means that on both scales. Accepts 0..1; a value outside it falls back to the shipped 0 rather than being clamped, because a fraction outside the unit interval is a different quantity"
+        required: false
+        default: ''
+        type: string
       scopes:
         description: "Which jobs of the battery to run, comma separated (empty = every job, the shipped behaviour). `golden` runs only the three RCAEval runners and the dashboard; `ablation` and `optimize` name the two exploration jobs. It exists because the answer this workflow produces takes 30 minutes and the run that delivers it takes two: `optimize-rcaeval` and `ablation-re2` are serialised after the golden jobs, they are exploration rather than gates, and a dispatch that asks one question should not pay for them. Run `40133507548` is the argument — the optimiser hit its 60-minute bound at 22:17 and the RUN was reported `cancelled` although all nine cells had already succeeded and been uploaded. A job that did not run is not a job that failed, and this input is how a dispatch says which it is asking for"
         required: false

@@ -474,7 +474,7 @@ describe('the RCAEval configuration line carries the configuration that produced
     // line gained one field by design and the cells must be unmoved, which is checked on the run rather
     // than argued here.
     expect(formatSignalLine(shipped)).toBe(
-      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 ' +
+      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +

@@ -56,6 +56,22 @@ export function parseWeight(raw: string, shipped: number): number {
 }
 
 /**
+ * Parse a value that must lie in [0, 1], falling back to the shipped value when it does not.
+ *
+ * A weight measures a term; a DISCOUNT measures a fraction of one, and a fraction outside [0, 1] is not
+ * a different setting but a different quantity — `2` would invert the node's anomaly sign and `-1` would
+ * double it. The flag's failure mode is therefore silent in a way a weight's is not, so the bound is
+ * refused here rather than clamped: a run that asked for 2 gets the shipped 0 and prints it.
+ *
+ * @param raw - The flag's raw value.
+ * @param shipped - The value to fall back to (default 0).
+ */
+export function parseUnitInterval(raw: string, shipped = 0): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : shipped;
+}
+
+/**
  * Parse one render precision from a flag's raw value.
  *
  * The same strictness as {@link parseWeight} and one extra bound, because this flag's failure mode is

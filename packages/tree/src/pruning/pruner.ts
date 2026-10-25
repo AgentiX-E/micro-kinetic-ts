@@ -297,6 +297,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly topoWeight: number;
   /**
+   * Multiplicative discount on a node's own anomaly, by how much of it its CALLEES explain.
+   *
+   *   anomaly'(v) = anomaly(v) × (1 − topoDiscount × (1 − topoSource(v)))
+   *
+   * `topoSource(v) = 1` for a node no anomalous callee explains, so a source keeps ALL of its anomaly;
+   * `topoSource(v) = 0` is a node entirely explained by what it calls, which keeps `1 − topoDiscount`.
+   *
+   * **This is the additive `topoWeight`'s scale-free form, and the difference was measured rather than
+   * argued.** The additive term is bounded by [0, 1] while the score it is added to is raw on
+   * OnlineBoutique (order 1–3) and rank-normalised on TrainTicket (63–69 nodes trip
+   * `anomalyNormalizeNodeThreshold`, so the anomaly is a rank with steps of **1/63 = 0.0159**). At
+   * `topoWeight = 0.1` the same term is 3% of one cell's score scale and **six rank steps** of another's:
+   * RE1-OnlineBoutique gained 3.2 pp and RE1-TrainTicket lost **46.4 pp** on run `40167961908`.
+   *
+   * A RATIO has no such problem — it says "an explained node keeps 70% of its anomaly" and means the
+   * same thing on both scales — which is why the suppression this project wants is expressed here as a
+   * discount rather than as a bonus.
+   *
+   * Default: 0 (off; bit-identical to the shipped ranking).
+   */
+  readonly topoDiscount: number;
+  /**
    * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
    * log volume is highest.
    *
@@ -904,6 +926,15 @@ export const DEFAULT_TRACE_WEIGHT = 0.0;
 export const DEFAULT_TOPO_WEIGHT = 0.0;
 
 /**
+ * The shipped topological DISCOUNT — off.
+ *
+ * A name rather than a literal in two files, for the reason `DEFAULT_TOPO_WEIGHT` has one: the value is
+ * written in the engine's defaults table and in both runners' option objects, and a numeric literal in
+ * each is a class of drift this repository has a census for (`docs/ranking-default-owners.md`).
+ */
+export const DEFAULT_TOPO_DISCOUNT = 0;
+
+/**
  * @see DEFAULT_TOPO_WEIGHT — the class these names close.
  *
  * The collision term is the Deng-Yu-inspired `Q(f,f)` aggregation, and 0 is a REJECTION rather than an
@@ -1096,6 +1127,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   onsetShape: DEFAULT_ONSET_SHAPE,
   collisionWeight: DEFAULT_COLLISION_WEIGHT,
   topoWeight: DEFAULT_TOPO_WEIGHT,
+  topoDiscount: DEFAULT_TOPO_DISCOUNT,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
@@ -1483,6 +1515,10 @@ export class TreePruner {
     const k = topK ?? this.options.defaultTopK;
     invariantPositiveInt(k, 'topK');
 
+    // The anomaly map the ranking reads. `topoDiscount = 0` returns the graph's own map, so the shipped
+    // configuration is bit-identical by construction rather than by test.
+    const anomalyScores = this.discountedAnomalies(graph);
+
     // Prune ALL cycles — significant and insignificant alike. Breaking the
     // weakest edge in every cycle keeps dense topologies analyzable; throwing
     // on significant cycles previously returned "no prediction" for the whole
@@ -1495,7 +1531,7 @@ export class TreePruner {
     // this pass IS the answer and nothing below runs.
     const baseline = performTreeRCA(
       prunedTree,
-      graph.anomalyScores,
+      anomalyScores,
       graph.anomalyOnsetTimes,
       graph.postInjectOnsetDelays,
       graph.injectTimeMs ?? 0,
@@ -1542,7 +1578,7 @@ export class TreePruner {
       graph,
       performTreeRCA(
         prunedTree,
-        graph.anomalyScores,
+        anomalyScores,
         graph.anomalyOnsetTimes,
         graph.postInjectOnsetDelays,
         graph.injectTimeMs ?? 0,
@@ -1562,6 +1598,36 @@ export class TreePruner {
         graph.stabilityScores,
       ),
     );
+  }
+
+  /**
+   * The per-node anomaly the ranking reads, after the topological discount.
+   *
+   *   anomaly'(v) = anomaly(v) × (1 − rho × (1 − topoSource(v)))
+   *
+   * A source — no anomalous callee — keeps its anomaly entire; a node that is entirely explained by
+   * what it calls keeps `1 − rho` of it. The multiplier is in [1−rho, 1], i.e. a RATIO, which is why it
+   * transfers between a raw score scale and a rank-normalised one where an additive term does not (see
+   * {@link RCAEngineOptions.topoDiscount}).
+   *
+   * `rho = 0` — the shipped value — returns the graph's own map unchanged, so the shipped configuration
+   * is bit-identical by construction: no copy, no float rounding, no comparison to defend.
+   *
+   * @param graph - The graph whose anomalies are to be discounted.
+   * @returns The map the ranking should read.
+   */
+  private discountedAnomalies(graph: FaultPropagationGraph): ReadonlyMap<ServiceId, number> {
+    const rho = this.options.topoDiscount;
+    if (rho === 0) return graph.anomalyScores;
+    invariantRange(rho, 0, 1, 'topoDiscount');
+    const topo = graph.topoScores;
+    if (topo === undefined) return graph.anomalyScores;
+    const discounted = new Map<ServiceId, number>();
+    for (const [nodeId, anomaly] of graph.anomalyScores) {
+      const source = topo.get(nodeId) ?? 1;
+      discounted.set(nodeId, anomaly * (1 - rho * (1 - source)));
+    }
+    return discounted;
   }
 
   /**
