@@ -121,6 +121,31 @@ additive topological term's weight undecidable. The difference here is the loss 
 cases at its first weight, this one loses none — and zero losses at the point where two one-step misses
 flip is the only evidence that has ever pointed at RE1's gap rather than at its noise floor.
 
+### 4a. The nine cells, dispatched (`40182461658`, `anomaly_knobs=breadth=0.05`)
+
+| cell | shipped | breadth 0.05 | Δ |
+| --- | ---: | ---: | ---: |
+| RE1-OnlineBoutique | 103/125 | **105/125** | **+2** |
+| RE1-SockShop | 116/125 | 116/125 | 0 |
+| RE1-TrainTicket | 94/125 | **98/125** | **+4** |
+| **RE1** | **313/375 = 83.47%** | **319/375 = 85.07%** | **+6** |
+| RE2-OnlineBoutique | 76/90 | 76/90 | 0 |
+| RE2-SockShop | 83/90 | **85/90** | **+2** |
+| RE2-TrainTicket | 67/90 | **69/90** | **+2** |
+| **RE2** | 226/270 = 83.70% | **230/270 = 85.19%** | **+4** |
+| RE3-OnlineBoutique | 22/30 | 22/30 | 0 |
+| RE3-SockShop | 12/30 | **13/30** | **+1** |
+| RE3-TrainTicket | 15/30 | 15/30 | 0 |
+| **RE3** | 49/90 = 54.44% | **50/90 = 55.56%** | **+1** |
+| **all three** | **588/735** | **599/735** | **+11** |
+
+**Six cells up, three unchanged, none down, +11 cases.** Four iterations of candidates have been measured
+on this population — a transient-guard window (−2), an additive topological weight (−56), a multiplicative
+topological discount (−68), three coefficient ablations (0 to +1 each) — and this is the first that moves
+the total without costing a single cell. It also lands where it was aimed: RE1-TrainTicket, which holds 18
+of the 26 one-step misses, gains the most (+4), and RE1 reaches **85.07%**, 0.33 pp — one case — below
+`L0`'s 85.4%, the closest this engine has been to the only published arm ahead of it.
+
 ## 5. What ships, and what is pending
 
 | item | status |
@@ -128,7 +153,7 @@ flip is the only evidence that has ever pointed at RE1's gap rather than at its 
 | the three coefficients: named, configurable, printed, dispatched, validated | **shipped** |
 | `anomaly_knobs` input, `topo_discount` retired to make room | **shipped** |
 | the breadth term with `DEFAULT_ANOMALY_BREADTH_WEIGHT = 0` | **shipped, OFF** |
-| `W = 0.05` | **dispatched, not enrolled** — one cell at +2 with no losses is a reason to measure, not a number to ship |
+| `W = 0.05` | **measured on both halves, not yet enrolled** — nine cells +11 with no cell down; the FSE'26 half is dispatched because the kill criterion is an AND |
 | every published cell | **unchanged**: all defaults are the shipped values, and the bit-identity test says so |
 
 The next decision is the nine cells at `breadth=0.05`, read against the per-service table for TrainTicket
