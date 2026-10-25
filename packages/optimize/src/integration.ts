@@ -59,6 +59,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
+  topoDiscount:
+    'the multiplicative topological discount, measured and NOT enrolled: dispatched at 0.25 on nine cells and refused (see docs/topological-discount.md); a term whose weight is still 0 has no business being searched',
 };
 
 /**

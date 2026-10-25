@@ -295,6 +295,9 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
+          fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -445,6 +448,9 @@ jobs:
           fi
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
           fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
@@ -622,6 +628,9 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
+          fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -781,6 +790,9 @@ jobs:
           fi
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
           fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
@@ -966,6 +978,9 @@ jobs:
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
+          fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
           fi
@@ -1117,6 +1132,9 @@ jobs:
           fi
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
           fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
@@ -1270,6 +1288,9 @@ jobs:
           fi
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_discount }}" ]; then
+            RANKING_ARG+=(--topo-discount "${{ inputs.topo_discount }}")
           fi
           if [ -n "${{ inputs.collision_weight }}" ]; then
             RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")

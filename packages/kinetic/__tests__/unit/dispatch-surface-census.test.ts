@@ -1182,6 +1182,41 @@ describe('the dispatch surface has one owner per knob', () => {
     }
   });
 
+  it('forwards every declared knob input, so an input nobody passes cannot exist', () => {
+    // The third direction, and it cost a dispatch to find. Every other assertion here reads a NAME: the
+    // table says which input exposes a knob, the input's name derives a flag, and the runner's parser is
+    // asked whether it accepts that flag. None of them asks whether the WORKFLOW passes it. Measured:
+    // `topo_discount` was declared as a `workflow_dispatch` input, registered in this table, accepted by the
+    // runner's parser, and forwarded by nothing — so dispatching `topo_discount=0.25` produced a nine-cell
+    // run whose own `signals:` line read `topoDiscount=0`, and the reading was interpreted as a measured
+    // refutation before the config line was compared with the request. An input declared and never
+    // forwarded is a knob only a commit can turn, which is the failure `dispatch-surface-audit.md` names.
+    //
+    // A SHARED input is skipped here because its reach is asserted flag by flag in the test above.
+    const texts = {
+      fse26: readFileSync(FSE26_WORKFLOW, 'utf8'),
+      rcaeval: readFileSync(RCAEVAL_WORKFLOW, 'utf8'),
+    };
+    const unforwarded: string[] = [];
+    for (const [option, knob] of Object.entries(KNOBS)) {
+      for (const which of ['fse26', 'rcaeval'] as const) {
+        const input = knob[which];
+        if (input === null || input in SHARED_INPUTS) continue;
+        if (!reaches(knob.flag, texts[which])) {
+          unforwarded.push(`${which}: ${input} declares ${option} but never passes ${knob.flag}`);
+        }
+      }
+    }
+    expect(unforwarded).toEqual([]);
+    // Non-vacuity: the population walked must be the knobs that declare an input, not an empty set.
+    const walked = Object.values(KNOBS).filter(
+      (knob) =>
+        (knob.rcaeval !== null && !(knob.rcaeval in SHARED_INPUTS)) ||
+        (knob.fse26 !== null && !(knob.fse26 in SHARED_INPUTS)),
+    );
+    expect(walked.length).toBeGreaterThan(10);
+  });
+
   it('never lets a step PIN a flag that an array it expands also sets', () => {
     // The direction no other assertion here reads. Every check above asks whether a KNOB is
     // reachable; none asked what a single command line means when it names the same knob twice, and
