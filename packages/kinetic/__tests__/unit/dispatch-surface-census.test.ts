@@ -255,6 +255,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--collapse-discount',
     '--suppress-idle-transients',
     '--suppress-near-zero-baseline-rise',
+    // The anomaly composition reached this block in iteration 135, after the golden half had measured it.
+    '--anomaly-trend-weight',
+    '--anomaly-burst-weight',
+    '--anomaly-cv-weight',
+    '--anomaly-breadth-weight',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -446,30 +451,28 @@ const KNOBS: Readonly<
   anomalyTrendWeight: {
     flag: '--anomaly-trend-weight',
     owner: 'anomaly-composition.md',
-    // FSE'26 has no input for it: that workflow's `ranking_knobs` case block enumerates eight names and a
-    // ninth is a separate edit. The RCAEval half is where the composition IS the ranking, so the knob is
-    // dispatchable where its evidence is — the same asymmetry `topoDiscount` recorded before it was
-    // retired.
-    fse26: null,
+    // Both halves, because the kill criterion is an AND: a candidate measured only where its evidence is
+    // newest would leave the other half undecidable — the defect `topoDiscount`'s table entry records.
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   anomalyBurstWeight: {
     flag: '--anomaly-burst-weight',
     owner: 'anomaly-composition.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   anomalyCvWeight: {
     flag: '--anomaly-cv-weight',
     owner: 'anomaly-composition.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   anomalyBreadthWeight: {
     // The channels-moved term: `(Σd)²/Σd² − 1` times its weight, added to a service's `max`. OFF at 0.
     flag: '--anomaly-breadth-weight',
     owner: 'anomaly-composition.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   fusionCeiling: {
@@ -576,6 +579,14 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  * to catch. Its FSE'26 half was undecidable, and this is what made it decidable.
  */
 const DISPATCHABLE_ON_BOTH: readonly string[] = [
+  // Iteration 135: the anomaly composition. All four are dispatchable on both halves, which is what the
+  // kill criterion's AND needs — a candidate that moves one benchmark and cannot be asked on the other is
+  // undecidable, and the breadth term is the first candidate in four iterations to move the golden half
+  // without losing a cell, so its other half is the next question rather than a later one.
+  'anomalyBreadthWeight',
+  'anomalyBurstWeight',
+  'anomalyCvWeight',
+  'anomalyTrendWeight',
   'anomalyNormalizeNodeThreshold',
   'collapseDiscount',
   'collisionWeight',

@@ -36,6 +36,10 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/in
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_ANOMALY_BURST_WEIGHT,
+  DEFAULT_ANOMALY_CV_WEIGHT,
+  DEFAULT_ANOMALY_TREND_WEIGHT,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -304,6 +308,15 @@ export interface Fse26CliOptions {
    */
   readonly collapseDiscount: number;
   /**
+   * The anomaly composition's four coefficients — see `CliOptions.anomalyTrendWeight` in the RCAEval
+   * runner, where they are measured. Exposed here so the kill criterion, which is an AND over the two
+   * benchmarks, can be evaluated: a candidate that moves one half and not the other is undecidable.
+   */
+  readonly anomalyTrendWeight: number;
+  readonly anomalyBurstWeight: number;
+  readonly anomalyCvWeight: number;
+  readonly anomalyBreadthWeight: number;
+  /**
    * Whether a metric that was IDLE before the fault and only became active during it is discarded as an
    * artifact of its near-zero baseline.
    *
@@ -414,6 +427,10 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     prismWeight: DEFAULT_PRISM_WEIGHT,
     prismPooling: DEFAULT_PRISM_POOLING,
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
+    anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
+    anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
+    anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
+    anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
@@ -532,6 +549,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // given a SUBSET, and a test asserts the accepted set is the union rather than a subset of it.
       const pooling = argv[++i]!;
       opts.prismPooling = isPrismPooling(pooling) ? pooling : DEFAULT_PRISM_POOLING;
+    } else if (arg === '--anomaly-trend-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyTrendWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_TREND_WEIGHT);
+    } else if (arg === '--anomaly-burst-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyBurstWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_BURST_WEIGHT);
+    } else if (arg === '--anomaly-cv-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyCvWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_CV_WEIGHT);
+    } else if (arg === '--anomaly-breadth-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyBreadthWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_BREADTH_WEIGHT);
     } else if (arg === '--collapse-discount' && hasValue(argv, i + 1)) {
       // The golden parser's own arithmetic rather than `parseWeight`: this knob is a FRACTION, and it
       // CLAMPS to `[0, 1]` rather than falling back, so a value outside the range is a legal dispatch
