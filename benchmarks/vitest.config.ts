@@ -73,6 +73,9 @@ export default defineConfig({
         // unless its re-ranking reproduces the engine's rank-1 case for case. The refusal is the module's
         // whole value, so it is measured here rather than trusted.
         'src/rcaeval-metric-ablation.ts',
+        // Added with the module: the table's four rows each name one field, and the mapping is the
+        // only place a row can become another row's number again.
+        'src/rcaeval-metric-rows.ts',
         // Added with the module: the separator screen is the register's own precondition
         // ("show it separates, on a free read") turned into code.
         'src/fse26-separator.ts',

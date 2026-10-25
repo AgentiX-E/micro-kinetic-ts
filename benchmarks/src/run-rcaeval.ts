@@ -60,7 +60,6 @@ import type {
 // The suite-number fold. This file used to own it inline; it is now owned once, for both this path and
 // the study's, because the two of them had implemented it with DIFFERENT conventions and the difference
 // was recorded as an input defect for three runs (see the module's own header).
-import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
 // The corpus assembly — the augmentation, the two direction-carrying inputs and the span activity — now
 // lives in one owner, because this path and the study's had assembled it differently (this one pruned the
 // graph from traces and the study never did).
@@ -90,6 +89,7 @@ import {
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
+import { buildMetricRows } from './rcaeval-metric-rows.js';
 // The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
 // cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
 // empty map differ in everything a fix would depend on.
@@ -764,32 +764,24 @@ function printResultsTable(
 
   console.log(`${'═'.repeat(80)}`);
 
-  // Metric rows: AC@1, Avg@5, LA, TA
-  const metrics: Array<{ key: keyof RunResult; label: string }> = [
-    { key: 'avgTop1', label: 'AC@1  ' },
-    { key: 'avgTop5', label: 'Avg@5 ' },
-    { key: 'locationAccuracy', label: 'LA    ' },
-    { key: 'typeAccuracy', label: 'TA    ' },
-  ];
-
-  for (const metric of metrics) {
-    const averages: number[] = [];
+  // Metric rows: AC@1, Avg@5, LA, TA — one field each, named once in `rcaeval-metric-rows`.
+  // Until that module existed the loop below read `perFaultType[ft].accuracy` for EVERY row and used the
+  // metric's key only for its LABEL, so the four rows printed one number: `Avg@5`, `LA` and `TA` were
+  // the `AC@1` column reprinted on every published cell.
+  const metricRows = buildMetricRows(faultTypes, (ft) => {
+    const r = results.get(ft);
+    return r?.perFaultType.get(ft);
+  });
+  for (const metric of metricRows) {
     let row = `║ Micro-Kinetic       | ${metric.label} |`;
-    for (const ft of faultTypes) {
-      const r = results.get(ft);
-      if (r) {
-        const perFault = r.perFaultType.get(ft);
-        const val = perFault ? perFault.accuracy : 0;
-        row += ` ${(val * 100).toFixed(1).padStart(5)}% |`;
-        averages.push(val * 100);
-      } else {
-        row += `   N/A |`;
-      }
+    for (const cell of metric.cells) {
+      row += cell === null ? '   N/A |' : ` ${(cell * 100).toFixed(1).padStart(5)}% |`;
     }
-    // The published convention, over the cells this table just printed — NOT over the cases. The two
-    // coincide only when every fault type holds the same number of cases, which is RE1 and is not RE2/RE3.
-    const avg = meanOverFaultTypes(averages);
-    row += ` ${avg.toFixed(1).padStart(5)}% ║`;
+    // The published convention is the mean over the CELLS printed, not over the cases — the two coincide
+    // only when every fault type holds the same number of cases, which is RE1 and is not RE2 or RE3. The
+    // mean now comes from the row that owns it, so a row cannot be averaged over a different population
+    // than the one it printed.
+    row += ` ${(metric.average * 100).toFixed(1).padStart(5)}% ║`;
     console.log(row);
   }
 

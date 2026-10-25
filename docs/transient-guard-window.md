@@ -1,11 +1,11 @@
-# The transient guard read two samples, and they decided whether the fault was visible
+# The transient guard reads two samples — and measuring it was how we learned it is right
 
 The transient-spike guard decides whether a metric is a **symptom of propagation** (an excursion that
 came back) or **the fault itself** (a level that moved and stayed moved). It has existed since the
 `#197` RE3 TrainTicket regression, where a brief cpu pulse on a non-source service outranked the real
-fault, and it has been the only thing standing between a resource pulse and the ranking ever since.
+fault.
 
-Its test compared two numbers: `values[0]` and `values[n-1]`.
+Its test compares two numbers:
 
 ```
 permanence = |values[0] − values[n−1]| / (max − min)      < 0.3  →  discard the metric
@@ -13,9 +13,12 @@ permanence = |values[0] − values[n−1]| / (max − min)      < 0.3  →  disc
 
 On a 721-sample window — the shape every RCAEval RE1 case has — **two samples out of 721 decide
 whether the fault's own signature channel survives**, and the second of them is whichever sample the
-window happens to end on.
+window happens to end on. That is indefensible as a measurement of a LEVEL, and the first half of this
+document is the case against it. The second half is the measurement, which says the estimator is wrong
+and the guard is right: **the fix was reverted on the nine cells**, and the reason it loses is the
+finding the iteration actually produced.
 
-## The corpus instance
+## 1. The corpus instance
 
 `re1ob_adservice_delay_3` injects a delay at `adservice`. Its `latency-50` series is not a step. It is
 **intermittent**: over the last 250 samples it alternates between the 5 ms baseline and a 106 ms
@@ -42,16 +45,16 @@ GT transientSkipped=[cpu,latency-50,latency-90]
 ```
 
 The case is then lost to `checkoutservice`, a **caller** whose latency channel was intact
-(`dev=0.754`, `rise=4.681`). The ranking did not choose the wrong service between comparably-moving
-candidates; it chose between a service whose evidence had been deleted and one whose had not.
+(`dev=0.754`, `rise=4.681`). The ranking did not choose wrongly between comparably-moving candidates;
+it chose between a service whose evidence had been deleted and one whose had not.
 
 Fourteen of the twenty-five failure blocks printed by run `40133362501` (RE1, the shipped
 configuration) carry `latency` in the truth's `transientSkipped` list, and three of them list
 `[cpu,latency-50,latency-90]` — every informative channel at the faulted service.
 
-## The fix, and the fix it is not
+## 2. The candidate fix, and why it looked sufficient
 
-Both ends are now **levels**, not samples: the mean of the first and last tenth of the series.
+Both ends become **levels** instead of samples: the mean of the first and last tenth of the series.
 
 ```
 headLevel = mean(values[0 … w))          w = max(3, ceil(n × 0.1))
@@ -59,93 +62,104 @@ tailLevel = mean(values[n−w … n))
 permanence = |headLevel − tailLevel| / (max − min)
 ```
 
-`0.1` is a resolution rather than a fitted parameter, and it is measured as one: the
-`transientPermanence` unit test evaluates the same three shapes at **0.05, 0.10 and 0.20** and requires
-every window to separate an intermittent fault (level moved and stayed) from a genuine return (level
-came back). A window whose size changes the verdict would be a parameter wearing a constant's clothes.
+`0.1` is a resolution rather than a fitted parameter: the estimator was unit-tested at **0.05, 0.10 and
+0.20** and each window separates an intermittent fault (level moved and stayed) from a genuine return
+(level came back). A change-point estimate — pre-level against post-level — was refused first, and for
+a reason that survives: with the fault at the end of the window a terminal spike and a terminal step
+are indistinguishable, so a change-point test would keep every trailing pulse the guard exists to
+discard.
 
-A change-point estimate — `pre-level` against `post-level` — was considered and refused: with the fault
-at the end of the window, a terminal spike and a terminal step are indistinguishable, so a
-change-point test would keep every trailing pulse the guard exists to discard. Comparing the two ends
-is the right *kind* of test; only the estimator was wrong.
-
-## The measurement, and it is a pair
-
-One corpus, one runner, one configuration, one variable. `--suite re1` over the 125-case
-RE1-OnlineBoutique mirror (923 MB, 7.3 s), the window restored to `fraction = 0, min = 1` for the
-"before" column so that the two runs differ **only** in the estimator.
+The local pair was clean. One corpus, one runner, one configuration, one variable — the 125-case
+RE1-OnlineBoutique mirror, with `fraction = 0, min = 1` restoring the shipped estimator for the "before"
+column:
 
 | RE1-OnlineBoutique | before | after | Δ |
 | --- | ---: | ---: | ---: |
 | CPU | 92.0 | 92.0 | 0 |
 | **DELAY** | **88.0** | **100.0** | **+12.0** |
-| DISK | 92.0 | 84.0 | −8.0 |
+| DISK | 92.0 | 92.0 → 84.0 | −8.0 |
 | LOSS | 48.0 | 48.0 | 0 |
 | MEM | 92.0 | 96.0 | +4.0 |
 | **AVERAGE** | **82.4** | **84.0** | **+1.6** |
 
-103/125 → 105/125. Five cases gained, three lost:
+103/125 → 105/125, five gained and three lost. The DELAY column goes to **100%**: every delay case in
+the cell now reads the delay it was given.
 
-| case | before | after |
-| --- | --- | --- |
-| `adservice_delay_3` | checkoutservice | **adservice** |
-| `adservice_delay_4` | checkoutservice | **adservice** |
-| `productcatalogservice_delay_1` | frontend | **productcatalogservice** |
-| `cartservice_loss_4` | redis | **cartservice** |
-| `currencyservice_mem_1` | checkoutservice | **currencyservice** |
-| `adservice_disk_1` | adservice | cartservice (truth rank 2) |
-| `adservice_disk_3` | adservice | cartservice (truth rank 2) |
-| `currencyservice_loss_4` | currencyservice | recommendationservice (truth rank 2) |
+## 3. The nine cells, and the refusal
 
-The DELAY column goes to **100%**: every delay case in the cell now reads the delay.
+The dispatch (`scopes=golden`, run `40153872789`) reads the other eight cells, and the local gain does
+not survive them.
 
-## The three losses are the finding, not the cost
+| cell | shipped | window | Δ (cases) |
+| --- | ---: | ---: | ---: |
+| RE1-OnlineBoutique | 82.4 | **84.0** | **+2** |
+| RE1-SockShop | 92.8 | **93.6** | **+1** |
+| **RE1-TrainTicket** | **75.2** | **71.2** | **−5** |
+| **RE1** | **83.47** | **82.93** | **−2** |
+| RE3-OnlineBoutique | 73.3 | 73.3 | 0 |
+| RE3-SockShop | 40.0 | **50.0** | **+3** |
+| RE3-TrainTicket | 50.0 | 50.0 | 0 |
+| **FSE'26 (1422)** | **56.12** | **57.8** | **+1.7 pp** |
 
-All three are the same mechanism, and it names the next unsolved problem. `adservice_disk_1`:
+**Fifteen cases gained, seventeen lost on RE1**, and the fault-type ledger says which:
+
+| fault type (RE1, 375 cases) | shipped | window |
+| --- | ---: | ---: |
+| cpu | 71 | **67** |
+| delay | 66 | **69** |
+| disk | 64 | **58** |
+| loss | 42 | **45** |
+| mem | 70 | **72** |
+
+**REVERTED.** The criterion this project applies to every axis is that a gain must not be bought with a
+regression on the cell that blocks the goal, and RE1 is that cell: it is the one population where this
+engine is **second** (`83.47` against `arXiv:2610.05009`'s `L0` 85.4), and this change moves it to
+82.93, further from the only target it has not reached. FSE'26's +1.7 pp is real and lands on a cell
+this engine leads by 19 pp; buying margin there with distance here is the trade that iteration 129
+refused in the other direction, and refusing it in both directions is what makes the rule a rule.
+
+## 4. Why it loses — and this is the finding
+
+The seventeen losses are not noise, and they are not spread out. **Eleven of the seventeen lose by
+exactly `0.0078`** — one rank step on a rank-normalised graph (`ln((1+1)/(1+1−1/63))`), which is the
+whole dynamic range of a TrainTicket anomaly gap. The winner changes, the margin does not.
+
+The mechanism is visible on `adservice_disk_1`:
 
 | | winner `cartservice` decisive metric | score |
 | --- | --- | ---: |
-| before | `cpu` 0.185, with `latency-90:transient-return` | 0.185 |
-| after | `latency-90` 2.096 (`dev=1.430 rise=25.89`) | 2.096 |
+| shipped estimator | `cpu` 0.185, with `latency-90:transient-return` | 0.185 |
+| window estimator | `latency-90` 2.096 (`dev=1.430 rise=25.89`) | 2.096 |
 
 The truth `adservice` scores `cpu` 1.648 (`rise=14.35`) in **both** runs. The guard had been discarding
 the **caller's** latency channel as well as the source's, and the caller's channel is the *larger* of
 the two: 25.89× against 14.35×. Restoring both ends correctly restores the **symptom's** evidence too,
-and propagated latency rises more than the source's resource metric.
+because a propagated latency rises further than the resource metric at its origin.
 
-So the guard was doing two jobs — discarding transients, and incidentally damping latency channels
-that carry propagated load — and the second was load-bearing. The first job is now done by a
-statistic. The second is a ranking problem: **magnitude favours the symptom**, and it is the same
-problem the failed-edge direction term exists to solve, currently inert on this cell because
-`edgeLatency` is empty there (`direction-gate[whole-file]: weight 3 but this view supplied 0 latency
-rows over 125 cases`).
+So the guard is doing two jobs. The first is discarding transients. The second is **damping the
+magnitude advantage of propagated symptoms**, and nobody had named it, because it was never a term —
+it was a side effect of a shape test discarding the channel that carries propagation. The second job
+is load-bearing, and it is doing it *better than the mechanism built for it*: the failed-edge
+direction term ships at weight 3 and contributes **exactly 0.0000 cases** on all three RE2 cells
+(run `40133507548`, `whole-file` at `failed_edge_weight=0`, reproduces `40133362501`'s eighteen
+fault-type cells byte for byte), and on RE1 it cannot fire at all — `direction-gate[whole-file]: weight
+3 but this view supplied 0 latency rows over 125 cases`.
 
-That is a measured statement about the next iteration rather than a guess, which is why the three
-losses are recorded case by case instead of netted.
+That is the shape of the next iteration, and it is now a target with a number on it rather than a
+direction: **a suppression mechanism that recovers the six disk and four cpu cases without returning
+the three delay, three loss and two mem cases** is worth **+8 cases on RE1 (83.5 → 85.6)**, which is
+past `L0`, while holding FSE'26 at 57.8. The estimator fix is the *enabling* measurement: it is what
+makes the magnitude advantage of a symptom observable, and it is the control arm for that mechanism.
 
-## What ships
+## 5. What ships, and what does not
 
-| the change | where |
+| change | state |
 | --- | --- |
-| `transientPermanence(values, fraction)` — the two end LEVELS and their spread over the range | `packages/tree/src/causal/topology-fault-graph.ts` |
-| `TRANSIENT_LEVEL_WINDOW_FRACTION = 0.1`, `TRANSIENT_PERMANENCE_FLOOR = 0.3` named once | same file |
-| four unit tests: the intermittent shape, the end-sample SYMMETRY (same series, two last samples, same verdict), the 0.05/0.10/0.20 window sweep, and the surviving protection | `packages/tree/__tests__/causal/topology-fault-graph.test.ts` |
-| `scopes` dispatch input: `golden` runs the three RCAEval runners and the dashboard, leaving the optimiser and the 34-config ablation out | `.github/workflows/benchmark-rcaeval.yml` |
-
-`scopes` exists because of run `40133507548`: all nine cells had been uploaded and the RUN was still
-reported `cancelled`, because `optimize-rcaeval` hit its 60-minute bound afterwards. A job that did not
-run is not a job that failed, and a dispatch that asks one question should not pay two hours for it.
+| window-mean estimator `transientPermanence`, its four unit tests, the 0.05/0.10/0.20 sweep | **REVERTED** — code byte-identical to `58972a3` apart from the docblock at the guard that records this measurement and its seventeen cases |
+| `scopes` dispatch input (`golden` = the three runners and the dashboard) | **SHIPPED** — run `40133507548` had all nine cells uploaded and was still reported `cancelled` because the optimiser hit its 60-minute bound afterwards |
+| the RCAEval table's four metric rows | **SHIPPED separately** — `Avg@5`, `LA` and `TA` were the `AC@1` column reprinted, because the row loop read `perFaultType[ft].accuracy` for every row and used the metric's key only for its label; see `docs/rcaeval-metric-rows.md` |
 
 ## Gates
 
-`packages/tree` **708/708** tests, coverage **100 / 100 / 100 / 100**. Repository **4837/4837**.
-`zsh .git/check_fences.sh` → FENCES CLEAR.
-
-## The nine cells
-
-This document's measurement is the local pair, which is the only instrument that can hold both
-configurations of one variable at once. The nine-cell reading is the dispatch's, because the corpus it
-needs is the CI cache and no local mirror carries RE1-SS, RE1-TT, RE2 or RE3. The verdict, the per-cell
-table and the accept/refuse decision are recorded in `PROGRESS_2026-10-06.md` under the iteration that
-dispatched it, against the rule this repository applies to every axis: **a cell that regresses must be
-named with its fault types, and the trade must be stated rather than netted.**
+`packages/tree` **704/704** (the four window tests went with the estimator), coverage
+**100 / 100 / 100 / 100**. Repository **4837/4837**. `zsh .git/check_fences.sh` → FENCES CLEAR.

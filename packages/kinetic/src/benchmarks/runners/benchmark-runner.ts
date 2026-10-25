@@ -79,10 +79,28 @@ function pickDominantMetric(series: readonly TimeSeries[] | undefined): TimeSeri
 export interface FaultTypeMetric {
   /** Total cases of this fault type. */
   readonly cases: number;
-  /** Number of correctly identified cases (Avg@5). */
+  /** Cases whose FIRST-ranked service is the ground truth. */
   readonly correct: number;
-  /** Accuracy (0-1). */
+  /** Top-1 accuracy (0-1). This is the column the RCAEval table prints as `AC@1`. */
   readonly accuracy: number;
+  /**
+   * Cases whose ground truth is anywhere in the first five ranked services — `Acc@5`, a DIAGNOSTIC.
+   *
+   * It is not `Avg@5`. RCAEval's `Avg@5` is `(1/5)·Σ_{k=1..5} Acc@k`, so a case at rank 3 contributes
+   * `3/5` and a case at rank 1 contributes `1`; a hit-at-5 count is that sum's last term alone. The two
+   * coincide only when every case that is inside five is at rank one, which is why the distinction has to
+   * be a field name rather than a comment.
+   */
+  readonly top5Correct: number;
+  /** `Acc@5` ratio (0-1): the share of cases with the truth inside the first five. */
+  readonly acc5: number;
+  /** RCAEval's `Avg@5`: the mean over cases of `(1/5)·Σ_{k=1..5} Acc@k` (0-1). */
+  readonly avg5: number;
+
+  /** Cases whose top-1 prediction names the ground-truth FAULT TYPE. */
+  readonly typeCorrect: number;
+  /** Fault-type accuracy of the top-1 prediction (0-1). */
+  readonly typeAccuracy: number;
 }
 
 /** A case that failed analysis. */
@@ -588,7 +606,14 @@ export class BenchmarkRunner {
     const casePredictionRecords: CasePrediction[] = [];
 
     // Per-fault-type tracking
-    const faultTypeTracker = new Map<string, { cases: number; correct: number }>();
+    // Four counters per fault type, because the table prints four rows. `correct` is Top-1,
+    // `top5` is a hit anywhere in the first five (RCAEval's `Avg@5` numerator), and `type` is the
+    // top-1 prediction naming the ground-truth fault type. They were one counter until the printed
+    // `Avg@5`/`LA`/`TA` rows were found to be the `AC@1` column reprinted.
+    const faultTypeTracker = new Map<
+      string,
+      { cases: number; correct: number; top5: number; avg5: number; type: number }
+    >();
 
     for (const benchCase of suite.cases) {
       // Scoped before try so catch block can access diagnostic data
@@ -802,7 +827,7 @@ export class BenchmarkRunner {
         const faultTypeKey = benchCase.groundTruth.faultType;
         let tracker = faultTypeTracker.get(faultTypeKey);
         if (!tracker) {
-          tracker = { cases: 0, correct: 0 };
+          tracker = { cases: 0, correct: 0, top5: 0, avg5: 0, type: 0 };
           faultTypeTracker.set(faultTypeKey, tracker);
         }
         tracker.cases++;
@@ -811,6 +836,23 @@ export class BenchmarkRunner {
         // highest-ranked prediction). This value feeds perFaultType.accuracy,
         // which is reported as AC@1 and must therefore be Top-1, NOT Top-K.
         const top1Service = results[0]?.serviceId;
+        // The hit-at-5 share and the fault-type share are counted here, beside the Top-1 count and
+        // from the same ranking, so the three printed rows describe one run rather than three passes.
+        if (results.slice(0, 5).some((r) => r.serviceId === benchCase.groundTruth.serviceId)) {
+          tracker.top5++;
+        }
+        // RCAEval's `Avg@5`: the mean of Acc@1..Acc@5 for THIS case, summed and divided by cases below.
+        let accSum = 0;
+        for (let k = 1; k <= 5; k++) {
+          if (results.slice(0, k).some((r) => r.serviceId === benchCase.groundTruth.serviceId)) {
+            accSum++;
+          }
+        }
+        tracker.avg5 += accSum / 5;
+        const topResult = results[0];
+        if (topResult !== undefined && computeTA(topResult, faultTypeKey) === 1) {
+          tracker.type++;
+        }
         if (top1Service === benchCase.groundTruth.serviceId) {
           tracker.correct++;
         } else if (enrichedTop) {
@@ -930,6 +972,11 @@ export class BenchmarkRunner {
         // its `cases` incremented before it can appear in `faultTypeTracker`,
         // so the `cases > 0 ? … : 0` guard was unreachable dead code.
         accuracy: tracker.correct / tracker.cases,
+        top5Correct: tracker.top5,
+        acc5: tracker.top5 / tracker.cases,
+        avg5: tracker.avg5 / tracker.cases,
+        typeCorrect: tracker.type,
+        typeAccuracy: tracker.type / tracker.cases,
       });
     }
 

@@ -53,6 +53,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { buildMetricRows } from '../src/rcaeval-metric-rows.js';
 
 import { stripComments } from './helpers/source-text.js';
 
@@ -79,15 +80,26 @@ describe('the fold has one owner, and 5 sites used to have their own', () => {
     expect(OWNER).toMatch(/faultTypeMean:[\s\S]{0,200}caseWeighted:/);
   });
 
-  it('is the fold the golden table uses, and the inline expression it replaced is gone', () => {
+  it('delegates the published fold to the one module that owns it, and folds nothing itself', () => {
     // The regression this fence exists for: the four copies drifted apart because each was written at
     // its own call site. A new `reduce((s, v) => s + v, 0) / averages.length` here is the fifth.
-    expect(RCAEVAL).toContain('meanOverFaultTypes');
-    expect(RCAEVAL).toContain(
-      "from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js'",
-    );
+    //
+    // The fence was a TEXT test — the file had to contain the name `meanOverFaultTypes` — and it was
+    // rewritten with the row repair rather than after it, because the row repair is what proved the text
+    // test was not enough: the same block printed one number under four labels while containing exactly
+    // the string this test demanded. The fold now lives in `rcaeval-metric-rows.ts` beside the row it
+    // belongs to, and what is asserted here is that this file computes NONE of its own — with the
+    // arithmetic asserted where it lives, on values, below.
+    expect(RCAEVAL).toContain("from './rcaeval-metric-rows.js'");
+    expect(RCAEVAL).toContain('buildMetricRows(');
     expect(RCAEVAL).not.toContain('averages.reduce(');
-    expect(RCAEVAL).toMatch(/const avg = meanOverFaultTypes\(averages\)/);
+    expect(RCAEVAL).not.toContain('meanOverFaultTypes');
+    // The fold, on values: two columns, one of them absent. The AVERAGE is the mean over the CELLS the
+    // table printed (0.5), not over the cases and not over a padded column set (0.25).
+    const rows = buildMetricRows(['cpu', 'ghost'], (ft) =>
+      ft === 'cpu' ? { cases: 4, accuracy: 0.5, avg5: 0.65, typeAccuracy: 0.25 } : undefined,
+    );
+    expect(rows.find((r) => r.key === 'ac1')!.average).toBe(0.5);
   });
 
   it('makes the ablation report the PUBLISHED convention as its headline, with the study one beside it', () => {

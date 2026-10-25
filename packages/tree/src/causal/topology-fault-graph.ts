@@ -898,86 +898,6 @@ interface EdgeWeightResult {
 // ── Anomaly Score Computation ─────────────────────────────
 
 /**
- * Fraction of a series whose two ends estimate the LEVEL the transient guard compares.
- *
- * The guard asks a question about a LEVEL — did the metric return to where it
- * started? — and a level estimated from a single sample has the sample's own
- * variance. Reading `values[0]` and `values[n-1]` made two samples out of 721
- * decide whether a fault's signature channel was discarded: RCAEval
- * `re1ob_adservice_delay_3` injects an INTERMITTENT 5 ms → 106 ms delay, the
- * window ends on a 4.6 ms sample, `permanence` read 0.03, and the faulted
- * service was scored on a flat `mem` series instead of the delay it had been
- * given. A window mean is the smallest change that makes the verdict a property
- * of the series rather than of its last element.
- *
- * `0.1` is a RESOLUTION, not a tuned parameter, and it is measured as one: the
- * `transientPermanence` unit test evaluates the same shapes at 0.05 and 0.20 and
- * requires every one of them to separate an intermittent fault from a genuine
- * return. Sensitivity on the corpus is recorded in
- * `docs/transient-guard-window.md`.
- */
-export const TRANSIENT_LEVEL_WINDOW_FRACTION = 0.1;
-
-/** Shortest window: the corpus's 10-sample windows would otherwise get one sample each. */
-const TRANSIENT_LEVEL_WINDOW_MIN = 3;
-
-/**
- * How much of the range the two end levels must differ by for the excursion to
- * count as PERMANENT. Below it the metric returned to where it started, which is
- * a symptom of propagation rather than a fault.
- */
-export const TRANSIENT_PERMANENCE_FLOOR = 0.3;
-
-/** The two end levels of a series, and how far apart they are relative to its range. */
-export interface TransientPermanence {
-  /** `|headLevel − tailLevel| / range`, or 1 when the series has no range. */
-  readonly permanence: number;
-  /** Mean of the first window — the level the series started at. */
-  readonly headLevel: number;
-  /** Mean of the last window — the level it ended at. */
-  readonly tailLevel: number;
-  /** `max − min` over the whole series. */
-  readonly range: number;
-}
-
-/**
- * Estimate how much of its range a series moved by, comparing its two ENDS as levels.
- *
- * Pure and exported so the window size can be measured rather than asserted: a
- * guard whose verdict changes with the window would be a parameter in disguise.
- *
- * @param values - The series, in sample order.
- * @param fraction - Share of the series that estimates each end's level.
- */
-export function transientPermanence(
-  values: readonly number[] | Float64Array,
-  fraction: number = TRANSIENT_LEVEL_WINDOW_FRACTION,
-): TransientPermanence {
-  const n = values.length;
-  const window = Math.max(TRANSIENT_LEVEL_WINDOW_MIN, Math.ceil(n * fraction));
-  let headSum = 0;
-  let tailSum = 0;
-  let max = -Infinity;
-  let min = Infinity;
-  for (let i = 0; i < n; i++) {
-    const v = values[i]!;
-    if (v > max) max = v;
-    if (v < min) min = v;
-    if (i < window) headSum += v;
-    if (i >= n - window) tailSum += v;
-  }
-  const headLevel = headSum / window;
-  const tailLevel = tailSum / window;
-  const range = max - min;
-  return {
-    permanence: range > max * 1e-6 ? Math.abs(headLevel - tailLevel) / range : 1,
-    headLevel,
-    tailLevel,
-    range,
-  };
-}
-
-/**
  * Compute per-service anomaly features: score and onset index.
  *
  * Score: maximum feature-weighted anomaly across all metrics (0-1).
@@ -1107,16 +1027,28 @@ function computeAnomalyFeatures(
     // spike height from where it started to count as transient; a permanent
     // shift of any magnitude (even 40%) has spread/range ≈ 1 and is kept.
     //
-    // Both ends are LEVELS (the mean of a window at each end), not single
-    // samples: see {@link TRANSIENT_LEVEL_WINDOW_FRACTION}. Reading the
-    // endpoints made the verdict depend on which sample the window happened to
-    // end with, which on an intermittent fault is the difference between
-    // scoring the fault's own signature and discarding it.
-    const levels = transientPermanence(ts.values);
-    const headLevel = levels.headLevel;
-    const tailLevel = levels.tailLevel;
+    // THESE TWO SAMPLES ARE LOAD-BEARING, AND THE ESTIMATOR WAS MEASURED RATHER
+    // THAN ASSUMED. Reading `values[0]` and `values[n-1]` is indefensible as a
+    // measurement of a LEVEL — on RCAEval's 721-sample windows two samples decide
+    // a metric's fate, and `re1ob_adservice_delay_3` loses its own delay channel
+    // to it — so the two ends were replaced by window MEANS (the first and last
+    // tenth, minimum three samples) and the change was dispatched. It was
+    // REVERTED on the nine cells: RE1 83.47 → 82.93 (OnlineBoutique 82.4 → 84.0,
+    // SockShop 92.8 → 93.6, TrainTicket 75.2 → 71.2), 15 cases gained and 17
+    // lost, eleven of the losses by exactly one rank step. The reason is not
+    // noise: the guard had been discarding the CALLER's latency channel too, and
+    // a caller's propagated latency rises further than the source's resource
+    // metric, so restoring both ends correctly restores the SYMPTOM's evidence.
+    // The guard is therefore doing a second job nobody named — damping the
+    // magnitude advantage of propagated symptoms — and the fix is a suppression
+    // mechanism, not a better estimator. `docs/transient-guard-window.md` holds
+    // the measurement, the seventeen cases, and the mechanism.
+    const headLevel = ts.values[0]!;
+    const tailLevel = ts.values[n - 1]!;
+    const range = max - min;
+    const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
-    const permanence = levels.permanence;
+    const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
@@ -1124,7 +1056,7 @@ function computeAnomalyFeatures(
     // NON-zero-tail requirement keeps the zero→burst→zero EVENT fault (#199).
     const idleStartTransient =
       cfg.suppressIdleTransients && headLevel <= max * 0.001 && tailLevel > max * 0.001;
-    if ((nonZeroBaseline || idleStartTransient) && permanence < TRANSIENT_PERMANENCE_FLOOR) {
+    if ((nonZeroBaseline || idleStartTransient) && permanence < 0.3) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
