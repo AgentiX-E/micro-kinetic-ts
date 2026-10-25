@@ -209,8 +209,8 @@ describe('buildFse26EngineOptions', () => {
       anomalyTrendWeight: 0.15,
       anomalyBurstWeight: 0.1,
       anomalyCvWeight: 0.05,
-      anomalyBreadthWeight: 0,
-      anomalyBreadthGate: 0,
+      anomalyBreadthWeight: 0.05,
+      anomalyBreadthGate: 0.8,
     });
   });
 

@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   buildTopologyFaultGraph,
+  DEFAULT_ANOMALY_BREADTH_GATE,
+  DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEMAND_METRIC_LABELS,
   isDemandMetric,
   rankNormalizeScores,
@@ -1468,6 +1470,19 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
   });
 
   describe("the anomaly composition's three coefficients", () => {
+    /**
+     * The breadth term switched OFF, as a base for the arithmetic tests below.
+     *
+     * The shipped weight is no longer 0, so `buildTopologyFaultGraph(graph, metrics)` no longer means "no
+     * breadth term" — a test comparing against the default would be comparing against the ENROLLED
+     * configuration, which is a different question. Every assertion here states its own zero.
+     */
+    const OFF_BREADTH = { anomalyBreadthWeight: 0, anomalyBreadthGate: 0 } as const;
+    /** The shipped pair, read from the module's own constants rather than retyped. */
+    const DEFAULT_BREADTH_PAIR = {
+      weight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
+      gate: DEFAULT_ANOMALY_BREADTH_GATE,
+    };
     // `featureScore = deviation + 0.15·trend + 0.1·deviation·burst + 0.05·cv` — three numbers written at
     // one line inside `computeAnomalyFeatures`, with three more thresholds beside them. On RCAEval RE1
     // the ranking IS this score plus a 0.007352 tie-break: every other term is `WEIGHT_ZERO` or
@@ -1543,7 +1558,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       expect(without.score).toBeCloseTo(withCv.score - withCv.cv, 12);
     });
 
-    it('adds nothing when the breadth weight is zero, and that is the shipped configuration', () => {
+    it('is OFF when asked for zero, which is no longer the shipped configuration', () => {
       // `max` over metrics is the aggregation, so a service whose three channels moved equally scores the
       // same as one where a single channel moved: that is the defect the breadth term exists for. Zero is
       // the shipped value and it must skip the arithmetic rather than add a computed zero.
@@ -1564,8 +1579,8 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
 
-      const off = buildTopologyFaultGraph(graph, metrics);
-      const explicitZero = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0 });
+      const off = buildTopologyFaultGraph(graph, metrics, OFF_BREADTH);
+      const explicitZero = buildTopologyFaultGraph(graph, metrics, { ...OFF_BREADTH });
 
       expect(explicitZero.anomalyScores.get('svc')).toBe(off.anomalyScores.get('svc'));
     });
@@ -1590,8 +1605,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
 
-      const off = buildTopologyFaultGraph(graph, metrics);
-      const on = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.5 });
+      const off = buildTopologyFaultGraph(graph, metrics, OFF_BREADTH);
+      const on = buildTopologyFaultGraph(graph, metrics, {
+        ...OFF_BREADTH,
+        anomalyBreadthWeight: 0.5,
+      });
 
       const delta = (id: string) => on.anomalyScores.get(id)! - off.anomalyScores.get(id)!;
       expect(delta('single')).toBe(0);
@@ -1619,9 +1637,13 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
 
-      const off = buildTopologyFaultGraph(graph, metrics);
-      const ungated = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.5 });
+      const off = buildTopologyFaultGraph(graph, metrics, OFF_BREADTH);
+      const ungated = buildTopologyFaultGraph(graph, metrics, {
+        ...OFF_BREADTH,
+        anomalyBreadthWeight: 0.5,
+      });
       const gated = buildTopologyFaultGraph(graph, metrics, {
+        ...OFF_BREADTH,
         anomalyBreadthWeight: 0.5,
         anomalyBreadthGate: 0.5,
       });
@@ -1655,8 +1677,9 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
 
-      const off = buildTopologyFaultGraph(graph, metrics);
+      const off = buildTopologyFaultGraph(graph, metrics, OFF_BREADTH);
       const gated = buildTopologyFaultGraph(graph, metrics, {
+        ...OFF_BREADTH,
         anomalyBreadthWeight: 0.5,
         anomalyBreadthGate: 1,
       });
@@ -1711,8 +1734,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
 
-      const off = buildTopologyFaultGraph(graph, metrics);
-      const on = buildTopologyFaultGraph(graph, metrics, { anomalyBreadthWeight: 0.25 });
+      const off = buildTopologyFaultGraph(graph, metrics, OFF_BREADTH);
+      const on = buildTopologyFaultGraph(graph, metrics, {
+        ...OFF_BREADTH,
+        anomalyBreadthWeight: 0.25,
+      });
 
       const delta = (id: string) => on.anomalyScores.get(id)! - off.anomalyScores.get(id)!;
       expect(delta('small')).toBeCloseTo(0.25, 10);
@@ -3102,8 +3128,14 @@ describe('buildTopologyFaultGraph — Fleet-Relative Metric Baseline', () => {
     // The same three cases, scored both ways. This is the ONLY kind of operation
     // that can reorder them: a bound on the ratio cannot, because `min` is
     // monotone (see the rise-ceiling suite).
-    const open = buildTopologyFaultGraph(graph, fleet());
-    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+    // The breadth term is OFF here on purpose: the subject is the FLEET-BASELINE aggregation, and a
+    // shipped bonus that reads every service's channel count would be a second variable inside it.
+    const noBreadth = { anomalyBreadthWeight: 0, anomalyBreadthGate: 0 } as const;
+    const open = buildTopologyFaultGraph(graph, fleet(), noBreadth);
+    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), {
+      ...noBreadth,
+      metricFleetBaseline: true,
+    });
 
     const openTop = [...open.anomalyScores.entries()].sort((a, b) => b[1] - a[1])[0]![0];
     const adjustedTop = [...fleetRelative.anomalyScores.entries()].sort(
@@ -3118,7 +3150,12 @@ describe('buildTopologyFaultGraph — Fleet-Relative Metric Baseline', () => {
     // Re-derived from the RAW diagnostics rather than from a hand-copied
     // expectation: the adjustment is defined against the same scores the
     // diagnostic reports, so the two must agree per service and per metric.
-    const result = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+    const result = buildTopologyFaultGraph(graph, fleet(), {
+      // Same reason: the aggregation is the subject, not the shipped bonus.
+      anomalyBreadthWeight: 0,
+      anomalyBreadthGate: 0,
+      metricFleetBaseline: true,
+    });
 
     const fleetMedian = new Map<string, number>();
     const byLabel = new Map<string, number[]>();
@@ -3171,8 +3208,14 @@ describe('buildTopologyFaultGraph — Fleet-Relative Metric Baseline', () => {
   it('leaves the diagnostic reporting the raw scores, not the adjusted ones', () => {
     // An instrument that echoed the adjusted value could no longer show the
     // excursion the adjustment exists to remove.
-    const open = buildTopologyFaultGraph(graph, fleet());
-    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+    // The breadth term is OFF here on purpose: the subject is the FLEET-BASELINE aggregation, and a
+    // shipped bonus that reads every service's channel count would be a second variable inside it.
+    const noBreadth = { anomalyBreadthWeight: 0, anomalyBreadthGate: 0 } as const;
+    const open = buildTopologyFaultGraph(graph, fleet(), noBreadth);
+    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), {
+      ...noBreadth,
+      metricFleetBaseline: true,
+    });
 
     for (const id of ['svc-a', 'svc-b', 'svc-c']) {
       expect(fleetRelative.metricDiagnostics.get(id)).toEqual(open.metricDiagnostics.get(id));

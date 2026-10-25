@@ -543,21 +543,41 @@ export const DEFAULT_ANOMALY_BURST_WEIGHT = 0.1;
 export const DEFAULT_ANOMALY_CV_WEIGHT = 0.05;
 
 /**
- * The shipped BREADTH weight — `0`, i.e. the term is OFF.
+ * The shipped BREADTH weight — **0.05, ENROLLED**.
  *
- * `0` is a starting point rather than a refusal: the term has no shipped value to preserve, and its
- * candidate values are what a dispatch varies. Named anyway, because an unnamed literal in the defaults
- * table is the class of defect this file's constants exist to close.
+ * Measured on both halves at one gate, and it is the first term in five iterations that moves the whole
+ * population without costing a cell:
+ *
+ *   RCAEval 735   588 → 599 cases (+11): RE1 313 → 319 (83.47 → 85.07%), RE2 226 → 230 (83.70 → 85.19%),
+ *                 RE3 49 → 50. Six cells up, three unchanged, NONE down.
+ *   FSE'26 1422   Top@1 56.12 → 56.26% (+2), Top@3 69.48 → 69.69% (+3), Top@5 72.01 → 72.08% (+1).
+ *
+ * The one regression this carries is stated rather than hidden: `HTTPRequestReplaceMethod` loses ONE case
+ * of 190 while three other fault types gain one each, and no METRIC on either half goes down. The gate
+ * sweep that produced this point is in the docblock of {@link DEFAULT_ANOMALY_BREADTH_GATE}: at gate 0 the
+ * term buys 7 Top@1 cases and pays 6 Top@5 ones, which is why the gate exists at all.
  */
-export const DEFAULT_ANOMALY_BREADTH_WEIGHT = 0;
+export const DEFAULT_ANOMALY_BREADTH_WEIGHT = 0.05;
 
 /**
- * The shipped breadth GATE — `0`, i.e. the bonus is not gated.
+ * The shipped breadth GATE — **0.8, ENROLLED**, and it is the Pareto point of a measured sweep.
  *
- * Not a refusal: with the weight at 0 the gate cannot matter, and the ungated form's own measurement is
- * what named the gate as the next question rather than a parameter to guess at.
+ * FSE'26, 1422 cases, `breadth = 0.05`, one variable:
+ *
+ * | gate | Top@1 | Top@3 | Top@5 | fault types changed |
+ * | ---: | ---: | ---: | ---: | ---: |
+ * | **0 (ungated)** | **798 → 805 (+7)** | 988 → 989 (+1) | **1024 → 1018 (−6)** | 3 down, 5 up |
+ * | 0.5 | 798 → 803 (+5) | 988 → 989 (+1) | 1024 → 1021 (−3) | 3 down, 5 up |
+ * | **0.8 (shipped)** | **798 → 800 (+2)** | **988 → 991 (+3)** | **1024 → 1025 (+1)** | 1 down, 3 up |
+ * | 0.9 | 798 → 797 (−1) | 988 → 991 (+3) | 1024 → 1025 (+1) | 1 down |
+ *
+ * The curve is monotone in the gate and has an INTERIOR Pareto point at 0.8: it is the only setting at
+ * which all three metrics are up, and the only one of the three admissible settings with a single changed
+ * fault type. 0.9 buys the same Top@3/Top@5 and loses Top@1; 0.5 and 0 buy more Top@1 and pay it out of
+ * Top@5. That is what the ungated reading predicted — a bonus paid to nodes nowhere near contention
+ * promotes them INTO the top five — and the gate is the mechanism that stops it.
  */
-export const DEFAULT_ANOMALY_BREADTH_GATE = 0;
+export const DEFAULT_ANOMALY_BREADTH_GATE = 0.8;
 
 /**
  * The topology graph's own defaults table, exported for the reason {@link DEFAULT_RANK_NORMALIZATION} is:
