@@ -176,6 +176,40 @@ supports them:
    0.05, 82.4 at 0.15) says the gain is concentrated near the smallest weight, which is the weak-signal
    signature that made this record refuse an earlier term.
 
+### 4c. The gate, and the enrolment
+
+Ungated, the term was a trade: RCAEval +11 with no cell down, FSE'26 +7 Top@1 and **−6 Top@5**. That is what
+a bonus paid to nodes *nowhere near contention* looks like — it promotes them into the top five, which a
+Top-1 metric cannot see. `anomalyBreadthGate` pays the bonus only when a node's own deviation is at least
+that fraction of the fleet's largest, and the sweep is monotone with an interior Pareto point:
+
+| gate | FSE'26 Top@1 | Top@3 | Top@5 | fault types changed |
+| ---: | ---: | ---: | ---: | --- |
+| 0 (ungated) | 798 → **805 (+7)** | 988 → 989 | 1024 → **1018 (−6)** | 3 down, 5 up |
+| 0.5 | 798 → **803 (+5)** | 988 → 989 | 1024 → **1021 (−3)** | 3 down, 5 up |
+| **0.8 (enrolled)** | 798 → **800 (+2)** | 988 → **991 (+3)** | 1024 → **1025 (+1)** | 1 down, 3 up |
+| 0.9 | 798 → 797 (−1) | 988 → 991 | 1024 → 1025 | 1 down |
+
+**0.8 is the only admissible setting at which all three metrics are up**, and it is the enrolled pair with
+`w = 0.05`. The golden half at that pair (run `40198340020`) is unchanged from the ungated reading:
+
+| cell | shipped (before) | enrolled pair | Δ |
+| --- | ---: | ---: | ---: |
+| RE1-OnlineBoutique | 103/125 | **105** | +2 |
+| RE1-SockShop | 116/125 | 116 | 0 |
+| RE1-TrainTicket | 94/125 | **98** | +4 |
+| **RE1** | **313 = 83.47%** | **319 = 85.07%** | **+6** |
+| RE2-OnlineBoutique | 76/90 | 76 | 0 |
+| RE2-SockShop | 83/90 | **85** | +2 |
+| RE2-TrainTicket | 67/90 | **69** | +2 |
+| **RE2** | 226 = 83.70% | **230 = 85.19%** | **+4** |
+| RE3 | 49/90 | **50** | +1 |
+| **735** | **588** | **599** | **+11** |
+
+**Enrolled**: `DEFAULT_ANOMALY_BREADTH_WEIGHT = 0.05`, `DEFAULT_ANOMALY_BREADTH_GATE = 0.8`. The one
+regression is stated in the constant's own docblock rather than hidden: `HTTPRequestReplaceMethod` loses
+one case of 190 while three other fault types gain one each, and **no metric on either half goes down**.
+
 ## 5. What ships, and what is pending
 
 | item | status |
@@ -183,7 +217,7 @@ supports them:
 | the three coefficients: named, configurable, printed, dispatched, validated | **shipped** |
 | `anomaly_knobs` input, `topo_discount` retired to make room | **shipped** |
 | the breadth term with `DEFAULT_ANOMALY_BREADTH_WEIGHT = 0` | **shipped, OFF** |
-| `W = 0.05` | **measured on both halves, NOT enrolled** — RCAEval +11 with no cell down, but FSE'26 Top@5 −6 cases and two fault types regressed |
+| `W = 0.05`, `gate = 0.8` | **ENROLLED** — 735 +11 (no cell down), FSE'26 Top@1 +2 / Top@3 +3 / Top@5 +1 |
 | every published cell | **unchanged**: all defaults are the shipped values, and the bit-identity test says so |
 
 The next decision is the nine cells at `breadth=0.05`, read against the per-service table for TrainTicket
