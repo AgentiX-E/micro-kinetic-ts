@@ -41,7 +41,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // Shipped composition. The four are REQUIRED fields rather than optional ones so that a test fixture
     // cannot omit them: an optional field here is a fixture that silently describes a different engine.
     anomalyTrendWeight: 0.15,
-    anomalyBurstWeight: 0.1,
+    // The coefficient was REMOVED in iteration 137 (the joint sweep's monotone curve); the fixture states
+    // the shipped value, because a fixture that retyped the old one would describe an engine we no longer ship.
+    anomalyBurstWeight: 0,
     anomalyCvWeight: 0.05,
     // The SHIPPED pair, so this fixture describes the engine a default run builds — an enrolment is two
     // numbers and a fixture frozen at the pre-enrolment zeroes would describe an engine nobody runs.
@@ -177,7 +179,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // The anomaly composition, unconditional for the threshold's reason: three of the four are non-zero,
         // so an omission rule would render the shipped run and an ablation identically — and the fourth is
         // the knob a dispatch varies.
-        'anomalyTrendWeight=0.15 anomalyBurstWeight=0.1 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +
+        'anomalyTrendWeight=0.15 anomalyBurstWeight=0 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +
         'anomalyBreadthGate=0.8 ' +
         'latWeight=0 ' +
         'poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 temporalWeight=0 onsetShape=earliness',

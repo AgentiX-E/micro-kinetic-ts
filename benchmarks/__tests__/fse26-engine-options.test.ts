@@ -209,7 +209,10 @@ describe('buildFse26EngineOptions', () => {
       // term is the interesting one: it ships OFF, and this assertion is what makes "OFF" a value that reaches
       // the builder rather than a field the mapping remembered to omit.
       anomalyTrendWeight: 0.15,
-      anomalyBurstWeight: 0.1,
+      // REMOVED in iteration 137, and it is the field this assertion was built for: the burst coefficient now
+      // ships at 0, so "the default reaches the builder" is a claim about ZERO — the value a dropped field
+      // would also produce. The sweep that removed it is in the constant's own docblock.
+      anomalyBurstWeight: 0,
       anomalyCvWeight: 0.05,
       anomalyBreadthWeight: 0.05,
       anomalyBreadthGate: 0.8,

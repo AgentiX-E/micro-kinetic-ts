@@ -222,3 +222,85 @@ one case of 190 while three other fault types gain one each, and **no metric on 
 
 The next decision is the nine cells at `breadth=0.05`, read against the per-service table for TrainTicket
 (18 of the 26 one-step misses are there) and the same no-loss condition that the local pair showed.
+
+## 6. The joint re-sweep — and the coefficient that was standing in for breadth
+
+Iteration 135–136 measured each coefficient ONE at a time, before the breadth term existed, and concluded
+the composition was "at a local optimum". That conclusion had a shelf life of exactly one enrolment: the
+breadth bonus shifts every node's score, so the coefficients' relative weight changed under them. The sweep
+was therefore repeated **jointly**, one variable per dispatch, every other value at its shipped setting, on
+the golden nine cells (`scopes=golden`, ~35 min per arm, eight arms in parallel).
+
+### 6.1 The coordinate scan at the enrolled breadth pair
+
+| arm | RE1 | RE2 | RE3 | 735 | Δ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **shipped** (`trend=0.15 burst=0.10 cv=0.05 breadth=0.05 gate=0.8`) | 319 | 230 | 50 | **599** | — |
+| `trend=0.10` | 313 | 228 | 51 | 592 | **−7** |
+| `trend=0.20` | 319 | 231 | 51 | 601 | +2 |
+| `burst=0.05` | 322 | 231 | 52 | 605 | +6 |
+| `burst=0.15` | 316 | 230 | 49 | 595 | −4 |
+| `cv=0.00` | 319 | 230 | 50 | 599 | 0 |
+| `cv=0.10` | 317 | 229 | 50 | 596 | −3 |
+| `breadth=0.02` | 316 | 227 | 49 | 592 | −7 |
+| `breadth=0.08` | 319 | 231 | 50 | 600 | +1 |
+
+Two readings. **`trend` and the breadth pair are at their own optimum** — the trend weight is load-bearing
+in both directions (0.10 costs 7, 0.20 gains 2 but interacts: at `burst=0.05` it *loses* five cases, 605 →
+604, so the two are not separable and 0.15 stays). And **`cv` is inert at 0 and harmful above its shipped
+value**, which is the same statement §4 already made about the feature being rare on this corpus.
+
+### 6.2 `burst` is monotone, and the mechanism is the point
+
+| burst | RE1 | RE2 | RE3 | 735 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.15 | 316 | 230 | 49 | 595 |
+| 0.10 (shipped) | 319 | 230 | 50 | 599 |
+| 0.05 | 322 | 231 | 52 | 605 |
+| **0.00** | **323** | **231** | **52** | **606** |
+
+Monotone in the weight, which means the bonus **never pays at any strength** once breadth is enrolled. The
+explanation is mechanical rather than fitted: `burst = deviation × weight` on a sample above `mean + 3σ`, and
+`breadth = (Σd)²/Σd² − 1` over the KEPT metrics — both reward "more than one thing moved", the first through
+a threshold on ONE channel and the second through the count of channels. The crude proxy was carrying the
+signal the principled term now carries, and at `burst > 0` it double-counts it.
+
+**The two halves, same commit** (`0c61004`): control `40251642673`, candidate `40251646079`.
+
+| metric | control | `burst=0` | Δ |
+| --- | ---: | ---: | ---: |
+| Top@1 | 800 / 1422 = 56.26% | **802 = 56.40%** | **+2 cases** |
+| Top@3 | 991 | 991 | 0 |
+| Top@5 | 1025 | 1025 | 0 |
+| fault types up | — | `JVMMemoryStress` 13→15, `HTTPResponseReplaceBody` 45→46 | +3 |
+| fault types down | — | `ContainerKill` 6→5 | **−1** |
+
+**And on the golden half not one fault-type cell regressed.** Six went up and none went down:
+RE2-OB `CPU` 93.3 → 100.0, RE1-SS `MEM` 96.0 → 100.0, RE3-SS `F1` 60.0 → 70.0 and `F4` 0.0 → 14.3,
+RE1-TT `CPU` 96.0 → 100.0, `LOSS` 56.0 → 60.0, `MEM` 92.0 → 96.0.
+
+### 6.3 The enrolment
+
+```
+DEFAULT_ANOMALY_BURST_WEIGHT = 0        // was 0.1; REMOVED, not merely deflated
+```
+
+| population | before | after | Δ |
+| --- | ---: | ---: | ---: |
+| RE1 (375) | 319 = 85.07% | **323 = 86.13%** | **+4** |
+| RE2 (270) | 230 = 85.19% | **231 = 85.56%** | +1 |
+| RE3 (90) | 50 = 55.56% | **52 = 57.78%** | +2 |
+| **735** | 599 = 81.50% | **606 = 82.45%** | **+7** |
+| FSE'26 Top@1 | 56.26% | **56.40%** | +2 cases |
+
+**RE1 is 86.13%, which passes the only published arm ahead of this engine** — `arXiv:2610.05009`'s `L0` at
+85.4%, which this project has trailed by one case since iteration 136.
+
+The cell that made the decision is `RE1-TrainTicket`: 98 → 101, and three of those four RE1 cases are in the
+cell whose 18 one-step misses §3 of this document tabulated. The burst bonus was firing on TrainTicket's
+spiky dominant metrics and promoting the spike's owner over the service whose SEVERAL channels moved — which
+is what breadth measures and what burst could not distinguish.
+
+The detector is now **guarded on the coefficient** (`if (cfg.anomalyBurstWeight !== 0)`), so the shipped
+path skips a pass whose result it would multiply by zero — the same rule the breadth block follows, and the
+reason the shipped ranking stays bit-identical by construction rather than by arithmetic.

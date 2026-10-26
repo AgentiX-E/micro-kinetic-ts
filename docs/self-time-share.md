@@ -1,6 +1,7 @@
 # The self-time share — transport is created where it is not inherited
 
-**Status:** the mechanism is IMPLEMENTED, tested, and shipped at weight **0**. This document is its
+**Status:** the mechanism is IMPLEMENTED, tested, shipped at weight **0**, and REFUSED at both measured
+weights (§6). This document is its
 design record; the measurement that enrols or refuses it is appended below as §5 and §6, and until one
 of them exists the term is OFF and the published numbers are unaffected by construction.
 
@@ -117,18 +118,42 @@ Two defects were found while wiring it, and both are the same class this reposit
    the default path's own value had no fence. It now reads the pair **back off the default object**, which
    is the assertion the 24.2pp `config`-block drift says is worth having.
 
-## 6. The measurement plan
+## 6. The measurement — REFUSED at both weights, and the mechanism is the leaf
 
-The term's own arms are dispatchable now, and the kill criterion is unchanged: a gain must not be bought
-with a regression on the cell that blocks the goal.
+Two arms on the golden nine cells, same commit (`0c61004`), one variable each, every other weight at its
+shipped value. Control is run `40198340020`'s configuration read at `0c61004`'s ranking, which the
+`selfTimeWeight=0` line makes bit-identical by construction.
 
-| arm | dispatch | what it decides |
-| --- | --- | --- |
-| control | shipped configuration | the baseline the other arms are read against |
-| term alone | `anomaly_knobs=selftime=0.3` | whether inherited transport is worth demoting at all |
-| term, small | `anomaly_knobs=selftime=0.1` | the shape of the response, at a weight that cannot dominate the base term |
-| composition control | the window estimator's arm | the term's own *enabling* measurement: with the source's latency channel restored, the share has two numbers to compare |
+| arm | RE1 | RE1-OB | RE1-SS | RE1-TT | RE2 | RE3 | 735 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| control | 319 | 105 | 116 | 98 | 230 | 50 | **599** |
+| `selftime=0.1` | 271 | 108 | 116 | **47** | 234 | 48 | 553 |
+| `selftime=0.3` | 269 | 110 | 117 | **42** | 239 | 43 | 551 |
 
-`docs/transient-guard-window.md` §4 predicted the size of the prize: **+8 cases on RE1**, which is past the
-one published arm this engine does not lead. That prediction is the thing the runs test, and it is stated
-here as a number so a null result is as informative as a positive one.
+**RE1 loses 48–50 cases, and TrainTicket accounts for 51–56 of them.** Online Boutique and Sock Shop *gain* — 
++3 and +1 at 0.1, +5 and +1 at 0.3 — and TrainTicket collapses from 98 to 42, which is the signature
+`docs/transient-guard-window.md` recorded for the multiplicative topological discount: **a leaf scores 1.0
+by arithmetic and a hub cannot.**
+
+That is not a tuning problem, it is the definition meeting the graph. TrainTicket is 64 services over
+**79 edges**, so most nodes are leaves; a share that pays every leaf its whole rise is a hub penalty wearing
+a transport hat, and the hubs include `ts-order-service`, the truth in a plurality of that cell's cases. On
+Online Boutique's 14 services and 13 edges the same term has almost no hub to punish, which is why the two
+sparse cells improve: **the term is a graph-density-dependent bias, not a source signal.**
+
+### What this refuses, and what it does not
+
+Refused: the term as written, at both weights, on the cell that blocks the goal. The prediction in
+`transient-guard-window.md` §4 (+8 cases on RE1) is **not** supported — the mechanism it named is real
+(the caller does own the larger channel) but the statistic built on it moves the answer the wrong way by an
+order of magnitude more than the effect it was meant to recover.
+
+Not refused, and now a named target with the measurement to back it: **a degree-normalised share.** The
+falsification gives the requirement precisely — the quantity must compare a node's self-created transport
+against the FLEET's typical self-created transport on the same graph, not against the absolute `[0, 1]`
+scale, because `1.0` means two different things for a leaf and for a hub. That is the same lesson
+`docs/topological-source-direction.md` records one term over.
+
+The term stays shipped at weight 0 with its tests, its two dispatch keys and this record. A refused
+mechanism that can be re-measured in two dispatches is worth more than a deleted one that has to be
+re-derived.

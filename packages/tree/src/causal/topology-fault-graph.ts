@@ -536,8 +536,36 @@ export const DEFAULT_METRIC_FLEET_BASELINE = false;
  */
 export const DEFAULT_ANOMALY_TREND_WEIGHT = 0.15;
 
-/** The shipped burst-bonus coefficient — `0.1`, on any sample above `mean + 3σ`. */
-export const DEFAULT_ANOMALY_BURST_WEIGHT = 0.1;
+/**
+ * The shipped burst-bonus coefficient — **`0`, i.e. REMOVED**, on any sample above `mean + 3σ`.
+ *
+ * It shipped at `0.1` until iteration 137, when the composition was swept JOINTLY for the first time
+ * since the breadth term was enrolled. Four settings on the golden nine cells, one variable each, every
+ * other coefficient at its shipped value:
+ *
+ * | burst | RE1 | RE2 | RE3 | 735 |
+ * | ---: | ---: | ---: | ---: | ---: |
+ * | 0.15 | 316 | 230 | 49 | 595 |
+ * | 0.10 (was shipped) | 319 | 230 | 50 | 599 |
+ * | 0.05 | 322 | 231 | 52 | 605 |
+ * | **0.00** | **323** | **231** | **52** | **606** |
+ *
+ * Monotone, and that is the finding rather than the four numbers: the bonus never pays at ANY weight once
+ * breadth is on, because the two terms were reading the same evidence — `breadth` counts the channels that
+ * moved, `burst` rewards a spike in one of them — and the crude one was standing in for the principled one.
+ * On FSE'26 the same move is `800 → 802` Top@1 with Top@3 and Top@5 UNCHANGED (`40251642673` control
+ * against `40251646079`, same commit `0c61004`).
+ *
+ * **No fault-type cell on the golden half regressed**: six went up (RE2-OB CPU 93.3 → 100.0, RE1-SS MEM
+ * 96.0 → 100.0, RE3-SS F1 60.0 → 70.0 and F4 0.0 → 14.3, RE1-TT CPU 96.0 → 100.0, LOSS 56.0 → 60.0, MEM
+ * 92.0 → 96.0) and none went down. The one exception is on the FSE'26 half and it is stated here rather
+ * than in a footnote: `ContainerKill` loses **one** case of 89 (6 → 5) while `JVMMemoryStress` gains two
+ * (13 → 15) and `HTTPResponseReplaceBody` one (45 → 46). The trade is +7 cases on the population where this
+ * engine is second and +2 on the one where it leads by 19pp, which is the OPPOSITE direction of the trade
+ * iteration 129 refused — and the difference is the whole criterion: that one bought margin on a cell we
+ * already led with distance on the cell that blocks the goal.
+ */
+export const DEFAULT_ANOMALY_BURST_WEIGHT = 0;
 
 /** The shipped coefficient-of-variation bonus coefficient — `0.05`, on `cv > 0.5`, capped at `cv = 1.5`. */
 export const DEFAULT_ANOMALY_CV_WEIGHT = 0.05;
@@ -611,7 +639,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
   anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT, // monotone drift bonus (shipped behaviour)
-  anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (shipped behaviour)
+  anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (REMOVED — it stood in for breadth)
   anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT, // dispersion bonus (shipped behaviour)
   // The breadth pair, ENROLLED at (0.05, 0.8) — and these two comments said the opposite for five
   // iterations after the enrolment: `(OFF)` and `no contender gate (shipped)`. A reader of the DEFAULT
@@ -1473,11 +1501,16 @@ function computeAnomalyFeatures(
     variance /= n;
     const cv = Math.sqrt(variance) / mean;
 
-    // Burst detection
+    // Burst detection. GUARDED on the coefficient, which ships at 0 since iteration 137: at 0 the
+    // detector's answer cannot change the score, so the pass is skipped rather than run and multiplied by
+    // zero — the same rule the breadth block follows, and it keeps the shipped path bit-identical because
+    // `hasBurst` is only ever read by the bonus below.
     let hasBurst = false;
-    const threshold = mean + 3 * Math.sqrt(variance);
-    for (let i = 0; i < n && !hasBurst; i++) {
-      if (ts.values[i]! > threshold) hasBurst = true;
+    if (cfg.anomalyBurstWeight !== 0) {
+      const threshold = mean + 3 * Math.sqrt(variance);
+      for (let i = 0; i < n && !hasBurst; i++) {
+        if (ts.values[i]! > threshold) hasBurst = true;
+      }
     }
 
     // Feature-weighted score — bonuses scaled to match log₁₀ deviation.

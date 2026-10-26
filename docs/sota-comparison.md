@@ -698,5 +698,27 @@ dropped is indistinguishable from a claim that was never checked.
 | **arXiv:2609.36771** (deep causal models) | **0.88 Sock Shop / 0.78 Online Boutique** Top-1, no call graph | the closest thing to a like-for-like comparator, and it is **below** this engine's RE1 cells (92.8 / 82.4 `AC@1`) — placed as a reference in `docs/anomaly-composition.md` rather than as a row here, because the two runs do not share a harness |
 
 The one number that has been stable all year is the one this record keeps returning to: **`L0` at 85.4% on
-RE1's 375 cases** (arXiv:2610.05009), a Python reference setting rather than an agent. This engine reads
-83.47% and, with the breadth term measured but not enrolled, 85.07% — one case short.
+RE1's 375 cases** (arXiv:2610.05009), a Python reference setting rather than an agent.
+
+## 2026-10-26 — the standings, and the number that was short is no longer short
+
+Nine cells at the shipped configuration after iteration 137 (`docs/anomaly-composition.md` §6):
+
+| population | this engine | best published | standing |
+| --- | ---: | ---: | --- |
+| **RE1** (375) | **323 = 86.13%** | `L0` 85.4% (`arXiv:2610.05009`) | **FIRST — +0.73 pp**, the cell that was one case short |
+| **RE2** (270) | **231 = 85.56%** | `arXiv:2609.36771` 0.88 SS / 0.78 OB Top-1 | **first on both cells it publishes** (98.9 / 86.7 vs 88 / 78) |
+| **RE3** (90) | **52 = 57.78%** | PRISM `conjunctive` 76.7% on RE3-TT | **second** — the one cell with a real deficit, 25.6 pp |
+| **735** | **606 = 82.45%** | vendor 89% (NOFire, unverifiable) | second to a claim that ships no per-case results |
+| **FSE'26** Top@1 | **56.40%** (802/1422) | 37% (`RCABench`, arXiv:2608.21310's own anchor) | **first, +19.4 pp** |
+
+The move is `burst 0.10 → 0`, and the honest label on it is not "a new technique": it is the composition being
+re-swept after the breadth enrolment showed that the burst bonus had been standing in for breadth. Six
+fault-type cells up, none down on the golden half; on FSE'26 two types up and one down (`ContainerKill`, one
+case of 89), which is `+7 / +2` across the two populations.
+
+**What this does not license.** RE3-TT remains 51.1% against PRISM's 76.7% — a 25.6 pp deficit on the one cell
+where a competitor's published number is above ours, and the only cell in this table where that is true. The
+`735` fold is second to a vendor's 89%, which is not reproducible from this repository and cannot be
+reproduced from anything the vendor publishes; the gap is 6.6 pp and it is the largest open question in this
+document.

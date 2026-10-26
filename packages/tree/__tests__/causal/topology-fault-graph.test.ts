@@ -15,6 +15,7 @@ import {
   buildTopologyFaultGraph,
   DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
   isDemandMetric,
@@ -1503,6 +1504,24 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       expect(DEFAULT_BREADTH_PAIR.weight).toBe(0.05);
       expect(DEFAULT_BREADTH_PAIR.gate).toBe(0.8);
     });
+
+    it('states the whole shipped composition as VALUES, because two of the five have moved', () => {
+      // One fence for the five numbers the ranking reads on this corpus, read off the DEFAULT object rather
+      // than off the constants: `trend` 0.15 has never moved, `burst` shipped at 0.1 until iteration 137 and
+      // now ships at 0 (the joint sweep's monotone curve), `cv` 0.05, and the enrolled breadth pair. A test
+      // that only checked the constants would pass while the default object hardcoded the old numbers —
+      // which is the drift this repository has published once, and the reason the values are read here.
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyTrendWeight).toBe(0.15);
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBurstWeight).toBe(0);
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyCvWeight).toBe(0.05);
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthWeight).toBe(0.05);
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthGate).toBe(0.8);
+      // And the removal is a ZERO rather than a missing field: `scoreOf(burst)` and the constant agree, so a
+      // graph built with no configuration charges no burst bonus at all.
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBurstWeight).toBe(
+        DEFAULT_ANOMALY_BURST_WEIGHT,
+      );
+    });
     // `featureScore = deviation + 0.15·trend + 0.1·deviation·burst + 0.05·cv` — three numbers written at
     // one line inside `computeAnomalyFeatures`, with three more thresholds beside them. On RCAEval RE1
     // the ranking IS this score plus a 0.007352 tie-break: every other term is `WEIGHT_ZERO` or
@@ -1562,8 +1581,12 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       expect(without.cv).toBe(withTrend.cv);
     });
 
-    it('drops the burst bonus when its weight is zero', () => {
-      const withBurst = scoreOf(burst);
+    it('drops the burst bonus when its weight is zero — which is now the SHIPPED value', () => {
+      // Both arms state their own weight, and that is not tidiness: the default moved to 0 in iteration
+      // 137, so `scoreOf(burst)` — the shipped configuration — is now the "without" arm. A test that read
+      // the default as its "with" arm would have silently compared zero against zero, and the assertion
+      // below is the one that caught it when the coefficient was removed.
+      const withBurst = scoreOf(burst, { anomalyBurstWeight: 0.1 });
       const without = scoreOf(burst, { anomalyBurstWeight: 0 });
       expect(withBurst.burst).toBeGreaterThan(0);
       expect(without.burst).toBe(0);
