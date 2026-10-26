@@ -73,6 +73,8 @@ export interface Fse26SignalOptions {
    * shipped value is 0, which is exactly the value a silent no-op produces.
    */
   readonly selfTimeWeight: number;
+  /** Weight on the internal/external symmetry mask. Required for the same reason as the pool penalty. */
+  readonly victimWeight: number;
   /**
    * Weight of the injection-anchored temporal prior. Required for the same reason as
    * every weight above: a PARTIAL passed through here would be a silent no-op if the
@@ -150,6 +152,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       stabilityWeight: opts.stabilityWeight,
       selfTimeWeight: opts.selfTimeWeight,
+      victimWeight: opts.victimWeight,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       // The five the golden half could state alone until `docs/dispatch-surface-audit.md`'s Finding 6

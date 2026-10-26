@@ -13,6 +13,7 @@
 
 import type { ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import {
+  computeChannelSymmetry,
   computePrismScores,
   DEFAULT_PRISM_POOLING,
   isPrismPooling,
@@ -177,5 +178,69 @@ describe('computePrismScores', () => {
       expect(isPrismPooling(member)).toBe(true);
     }
     expect(isPrismPooling('nope')).toBe(false);
+  });
+});
+
+// ── computeChannelSymmetry ────────────────────────────────
+
+describe('computeChannelSymmetry', () => {
+  // The mask form of PRISM's axiom. The measurement that motivates it is the six-arm
+  // `prism_weight × prism_pooling` sweep (iteration 140): the conjunctive form lifts RE3-TrainTicket
+  // from 15 to 24 of 30 cases — past PRISM's own 23 — while costing RE1 37 cases, because an ADDITIVE
+  // score at a weight that can reorder everything trades one population for another. The axiom does not
+  // need to reorder anything: it only says a component must not look like a root cause when it has no
+  // internal anomaly at all, so the form built here is a bounded MULTIPLIER on a candidate's own
+  // evidence rather than a new score added beside it.
+
+  it('is 1 for a component whose two channels moved equally — nothing to discount', () => {
+    const metrics = metricsOf({
+      v: [makeSeries('cpu', [10, 10], [20, 20]), makeSeries('latency-90', [20, 20], [40, 40])],
+    });
+    // |20-10|/10 = 1 and |40-20|/20 = 1 → the harmonic-style ratio 2·min/(sum) = 1.
+    expect(computeChannelSymmetry(metrics, nodesOf('v'), INJECT_MS).get('v')).toBeCloseTo(1, 12);
+  });
+
+  it('is 0 for an EXTERNAL-ONLY component — the victim signature PRISM names', () => {
+    const metrics = metricsOf({
+      v: [makeSeries('cpu', [10, 10], [10, 10]), makeSeries('latency-90', [10, 10], [30, 30])],
+    });
+    expect(computeChannelSymmetry(metrics, nodesOf('v'), INJECT_MS).get('v')).toBe(0);
+  });
+
+  it('is 1 when the component carries NO internal channel — unknown is not a measured zero', () => {
+    // The rule the self-time term records one module over: a component with no internal telemetry
+    // cannot be judged by an axiom about internal properties, and answering anyway is how a classifier
+    // becomes a guess. Absence of the channel is therefore NEUTRAL, not a full discount.
+    const metrics = metricsOf({ v: [makeSeries('latency-90', [10, 10], [30, 30])] });
+    expect(computeChannelSymmetry(metrics, nodesOf('v'), INJECT_MS).get('v')).toBe(1);
+  });
+
+  it('is a RATIO, so the same shape at a different MAGNITUDE scores the same', () => {
+    // Scale-freedom is the property the breadth and self-time terms were both re-derived to get: a
+    // statistic whose value depends on the units of its inputs is a graph-density artefact waiting to
+    // happen. Service `a` moves 1σ internal / 2σ external; service `b` is the SAME shape at 5× the
+    // magnitude (5σ / 10σ). A statistic that read magnitudes would separate them; a ratio cannot.
+    const metrics = metricsOf({
+      a: [makeSeries('cpu', [10, 10], [20, 20]), makeSeries('latency-90', [20, 20], [60, 60])],
+      b: [makeSeries('cpu', [10, 10], [60, 60]), makeSeries('latency-90', [20, 20], [220, 220])],
+    });
+    const sym = computeChannelSymmetry(metrics, nodesOf('a', 'b'), INJECT_MS);
+    // |20-10|/10 = 1 against |60-20|/20 = 2 → 2·1/3; and |60-10|/10 = 5 against |220-20|/20 = 10
+    // → 2·5/15, the same number.
+    expect(sym.get('a')).toBeCloseTo(2 / 3, 12);
+    expect(sym.get('b')).toBeCloseTo(sym.get('a')!, 12);
+  });
+
+  it('refuses to answer without an injection instant, like the score it is derived beside', () => {
+    const metrics = metricsOf({ v: [makeSeries('cpu', [10, 10], [20, 20])] });
+    expect(computeChannelSymmetry(metrics, nodesOf('v'), 0)).toEqual(new Map());
+  });
+
+  it('scores only the services in the graph', () => {
+    const metrics = metricsOf({
+      in: [makeSeries('cpu', [10, 10], [20, 20])],
+      out: [makeSeries('cpu', [10, 10], [90, 90])],
+    });
+    expect([...computeChannelSymmetry(metrics, nodesOf('in'), INJECT_MS).keys()]).toEqual(['in']);
   });
 });

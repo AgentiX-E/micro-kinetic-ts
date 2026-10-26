@@ -59,6 +59,109 @@ export {
 export type { PrismPooling } from '@agentix-e/micro-kinetic-core';
 
 /**
+ * The two channels' pooled deviations for one component, and whether it carries internal telemetry at
+ * all.
+ *
+ * `hasInternal` is not decoration: a component with NO internal series and a component whose internal
+ * series did not move both produce `internal === 0`, and the two mean different things. An axiom about
+ * internal properties cannot be applied to a component that has none — the rule the self-time term
+ * records as "unknown is not a measured zero" — so the flag travels beside the number rather than being
+ * re-derived by every consumer.
+ */
+export interface ChannelExtremes {
+  /** `S^I`: the largest internal deviation, 0 when none moved or none exist. */
+  readonly internal: number;
+  /** `S^E`: the largest external deviation, 0 when none moved. */
+  readonly external: number;
+  /** Whether the component carries any internal property at all (cpu/mem/disk/socket). */
+  readonly hasInternal: boolean;
+}
+
+/**
+ * Pool every graph member's per-channel deviations — the ONE place the internal/external split is
+ * walked, shared by {@link computePrismScores} and {@link computeChannelSymmetry}.
+ *
+ * Restricted to `nodeIds` (a series for a service absent from the call graph cannot contribute a ranking
+ * signal) and gated on a known injection time (PRISM needs the clean pre-injection baseline to split the
+ * windows). Empty when there is nothing to measure.
+ *
+ * @param metrics - Per-service time series, keyed by service id.
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
+ */
+export function computeChannelExtremes(
+  metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): Map<ServiceId, ChannelExtremes> {
+  const out = new Map<ServiceId, ChannelExtremes>();
+  if (injectTimeMs <= 0 || metrics.size === 0 || nodeIds.size === 0) return out;
+  for (const nodeId of nodeIds) {
+    const series = metrics.get(nodeId);
+    if (!series || series.length === 0) continue;
+    let internal = 0;
+    let external = 0;
+    let hasInternal = false;
+    for (const ts of series) {
+      const s = deviationZScore(ts, injectTimeMs);
+      if (classifyMetricChannel(ts.label) === 'internal') {
+        hasInternal = true;
+        if (s > internal) internal = s;
+      } else if (s > external) {
+        external = s;
+      }
+    }
+    out.set(nodeId, { internal, external, hasInternal });
+  }
+  return out;
+}
+
+/**
+ * The internal/external SYMMETRY of each graph member's anomaly, in [0, 1] — PRISM's axiom as a MASK.
+ *
+ * ```
+ *   sym(v) = hasInternal(v) && S^I+S^E > 0 ? 2·min(S^I, S^E) / (S^I + S^E) : 1
+ * ```
+ *
+ * 1 means the two channels moved alike (nothing to discount); 0 means only ONE channel moved, which is
+ * exactly the victim signature: a fault propagates through observable interfaces and does not penetrate a
+ * component's internal state, so a component with an external anomaly and no internal one is downstream
+ * of something.
+ *
+ * **Why a mask and not a score.** The six-arm `prism_weight × prism_pooling` sweep (iteration 140, runs
+ * `40341334056`…`40341401043`) measured PRISM's own conjunctive form as an ADDITIVE term: it lifts
+ * RE3-TrainTicket from **15 to 24 of 30** cases — past PRISM's own 23 — while costing RE1 **37** cases,
+ * because an added score at a weight that can reorder the whole ranking trades one population for
+ * another. The axiom does not need to reorder anything. As a bounded multiplier on a candidate's own
+ * evidence it changes the ORDER only between a component that fails the axiom and one that does not, and
+ * on a population where every candidate is external-only (a pure delay fault) it is very nearly neutral
+ * by construction, because it discounts them alike.
+ *
+ * The ratio is scale-free and threshold-free: no constant had to be invented for "how small is small",
+ * which is the failure mode both the breadth gate and the trend ceiling were built to avoid.
+ *
+ * @param metrics - Per-service time series, keyed by service id.
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
+ * @returns Per-service symmetry in [0, 1]; empty when there is nothing to measure.
+ */
+export function computeChannelSymmetry(
+  metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): Map<ServiceId, number> {
+  const symmetry = new Map<ServiceId, number>();
+  for (const [nodeId, e] of computeChannelExtremes(metrics, nodeIds, injectTimeMs)) {
+    const total = e.internal + e.external;
+    symmetry.set(
+      nodeId,
+      !e.hasInternal || total <= 0 ? 1 : (2 * Math.min(e.internal, e.external)) / total,
+    );
+  }
+  return symmetry;
+}
+
+/**
  * Compute the PRISM root-cause score for each graph member, max-normalised to
  * [0, 1].
  *
@@ -90,20 +193,8 @@ export function computePrismScores(
 
   const raw = new Map<ServiceId, number>();
   let max = 0;
-  for (const nodeId of nodeIds) {
-    const series = metrics.get(nodeId);
-    if (!series || series.length === 0) continue;
-    let internal = 0;
-    let external = 0;
-    for (const ts of series) {
-      const s = deviationZScore(ts, injectTimeMs);
-      if (classifyMetricChannel(ts.label) === 'internal') {
-        if (s > internal) internal = s;
-      } else if (s > external) {
-        external = s;
-      }
-    }
-    const m = combinePrismScore(internal, external, pooling);
+  for (const [nodeId, e] of computeChannelExtremes(metrics, nodeIds, injectTimeMs)) {
+    const m = combinePrismScore(e.internal, e.external, pooling);
     raw.set(nodeId, m);
     if (m > max) max = m;
   }

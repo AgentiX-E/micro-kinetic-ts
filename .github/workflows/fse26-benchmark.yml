@@ -345,6 +345,9 @@ jobs:
                 self_time_weight)
                   KNOB_ARGS+=(--self-time-weight "$value")
                   ;;
+                victim_weight)
+                  KNOB_ARGS+=(--victim-weight "$value")
+                  ;;
                 # A GUARD rather than a weight, and it takes 1/0 like the two suppression switches above.
                 zero_baseline_latency)
                   if [ "$value" = "1" ]; then

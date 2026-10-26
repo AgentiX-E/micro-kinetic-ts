@@ -66,6 +66,7 @@ import {
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
+  DEFAULT_VICTIM_WEIGHT,
   isLogSignalMode,
   isOnsetShape,
   isPrismPooling,
@@ -254,6 +255,12 @@ export interface Fse26CliOptions {
    * as the golden half; until it is measured the weight stays 0 and the map is not even built.
    */
   readonly selfTimeWeight: number;
+  /**
+   * Weight on the internal/external SYMMETRY MASK. Exposed on this half for the reason every term is: a
+   * mechanism measurable on one half only has an undecidable other half. The shipped value is the engine's
+   * 0, and at 0 the symmetry map is not even built.
+   */
+  readonly victimWeight: number;
   /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
@@ -447,6 +454,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    victimWeight: DEFAULT_VICTIM_WEIGHT,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
@@ -562,6 +570,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
       // selecting the ablation — the rule every weight on this parser follows.
       opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    } else if (arg === '--victim-weight' && hasValue(argv, i + 1)) {
+      opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
     } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

@@ -23,6 +23,7 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
@@ -47,6 +48,7 @@ describe('buildFse26EngineOptions', () => {
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+      victimWeight: DEFAULT_VICTIM_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

@@ -45,6 +45,8 @@ export interface RCAEvalSignalOptions {
    * prevent, one term over. It ships at the engine's 0 until a measurement enrols it.
    */
   readonly selfTimeWeight: number;
+  /** The internal/external symmetry mask — see `CliOptions.victimWeight`. */
+  readonly victimWeight: number;
   /**
    * The per-edge latency pair — a WEIGHT and the RISE FLOOR it was measured with.
    *
@@ -174,6 +176,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       onsetShape: opts.onsetShape,
       stabilityWeight: opts.stabilityWeight,
       selfTimeWeight: opts.selfTimeWeight,
+      victimWeight: opts.victimWeight,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -256,6 +259,7 @@ export function formatSignalLine(opts: CliOptions): string {
     // The self-time term, named unconditionally for the failed-edge reason: it ships at 0, so an
     // omitted-when-default rule would render the measured arm and the shipped run identically.
     `selfTimeWeight=${opts.selfTimeWeight} ` +
+    `victimWeight=${opts.victimWeight} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

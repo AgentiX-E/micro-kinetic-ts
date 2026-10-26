@@ -61,6 +61,7 @@ import {
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
+  DEFAULT_VICTIM_WEIGHT,
   isOnsetShape,
 } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -178,6 +179,15 @@ export interface CliOptions {
    * outranking the truth's `cpu` (14.35×) because a caller's response time contains its callees'.
    */
   selfTimeWeight: number;
+  /**
+   * Weight on the internal/external SYMMETRY MASK — PRISM's axiom as a bounded discount on a candidate's
+   * own evidence (see `TreePrunerOptions.victimWeight`).
+   *
+   * Read from {@link DEFAULT_VICTIM_WEIGHT}, which is 0. There is no `workflow_dispatch` input of its own
+   * because the golden half's 25-input budget is full — the same constraint the self-time term works
+   * under — so it travels in the packed `anomaly_knobs` block as `victim=<weight>`.
+   */
+  victimWeight: number;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -445,6 +455,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    victimWeight: DEFAULT_VICTIM_WEIGHT,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -540,6 +551,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
     else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    else if (args[i] === '--victim-weight' && hasValue(args, i + 1))
+      opts.victimWeight = parseWeight(args[++i]!, DEFAULT_VICTIM_WEIGHT);
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

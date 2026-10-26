@@ -159,6 +159,7 @@ async function main(): Promise<void> {
     poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
     stabilityWeight: opts.stabilityWeight,
     selfTimeWeight: opts.selfTimeWeight,
+    victimWeight: opts.victimWeight,
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
     // The eight the mirror made reachable on this half. Carried on the config rather than left to the

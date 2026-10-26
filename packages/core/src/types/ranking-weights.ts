@@ -189,6 +189,17 @@ export interface RankingWeights {
    */
   readonly stabilityWeight?: number;
   /**
+   * Weight on the internal/external SYMMETRY mask — PRISM's axiom as a bounded discount on a candidate's
+   * own evidence:
+   *
+   *   finalScore(v) −= victimWeight × (1 − symmetry(v)) × log1p(selfAnomaly(v))
+   *
+   * The mask form rather than a score, because `prismWeight`'s own six-arm sweep measured the additive
+   * form trading one population for another (RE3-TrainTicket +9, RE1 −37 at `conjunctive 0.75`). Ships at
+   * 0, where the symmetry map is not even built.
+   */
+  readonly victimWeight?: number;
+  /**
    * Self-time prior: rewards a service for the share of its OWN latency rise that no callee can
    * explain.
    *

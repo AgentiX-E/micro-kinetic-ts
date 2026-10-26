@@ -125,6 +125,7 @@ export {
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_TREE_PRUNER_OPTIONS,
+  DEFAULT_VICTIM_WEIGHT,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
   ONSET_SHAPES,
@@ -179,6 +180,8 @@ export type {
 export {
   DEFAULT_PRISM_POOLING,
   PRISM_POOLINGS,
+  computeChannelExtremes,
+  computeChannelSymmetry,
   computePrismScores,
   isPrismPooling,
 } from './pruning/prism-signal.js';

@@ -405,6 +405,20 @@ export interface FaultPropagationGraph {
    */
   readonly selfTimeScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service INTERNAL/EXTERNAL SYMMETRY in [0, 1]: `2·min(Sⁱ,Sᵉ)/(Sⁱ+Sᵉ)` over the component's internal
+   * (cpu/mem/disk/socket) and external (latency/error/…) deviation z-scores. Feeds the (opt-in)
+   * `victimWeight` term.
+   *
+   * `1` means the two channels moved alike — nothing to discount; `0` means only ONE moved, which is
+   * PRISM's victim signature (arXiv:2601.21359): a fault propagates through observable interfaces and does
+   * not penetrate a component's internal state. A component with NO internal channel is `1` rather than
+   * `0`, because an axiom about internal properties cannot be applied to a component that carries none.
+   *
+   * ABSENT (not empty) when the weight is 0, so the shipped path does not build it at all, and when the
+   * injection instant is unknown — in both cases the term contributes nothing rather than a measured zero.
+   */
+  readonly channelSymmetry?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
    * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
    * LLM reranker so the model reasons over the actual exception identity, not

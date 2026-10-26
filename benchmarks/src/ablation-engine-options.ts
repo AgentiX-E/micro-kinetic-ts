@@ -47,6 +47,7 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
 
 /**
@@ -132,6 +133,13 @@ export interface AblationSignalOptions {
    * a reader has to guess, and 0 is a fact rather than an omission.
    */
   readonly selfTimeWeight: number;
+  /**
+   * The internal/external symmetry mask. Held at the shipped value by every row, on the rule the six
+   * inherited terms above follow: the study's flags are binary and this term's shipped weight is 0, so no
+   * row of the cube can express it — but a configuration the artifact cannot state is one a reader has to
+   * guess at.
+   */
+  readonly victimWeight: number;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly prismPooling: PrismPooling;
@@ -224,6 +232,8 @@ export interface AblationEngineOverrides {
   readonly stabilityWeight?: number;
   /** Overrides `selfTimeWeight` — the self-time prior. See the field on the signals object. */
   readonly selfTimeWeight?: number;
+  /** Overrides `victimWeight` — the internal/external symmetry mask. */
+  readonly victimWeight?: number;
   /**
    * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
    *
@@ -267,6 +277,7 @@ export function buildAblationEngineOptions(
         overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
+      victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -308,6 +319,7 @@ export function formatAblationConfigLine(
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
+    `victimWeight=${signals.victimWeight} ` +
     `collapseDiscount=${topology.collapseDiscount} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +

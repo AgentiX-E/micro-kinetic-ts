@@ -62,7 +62,7 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computePrismScores } from './prism-signal.js';
+import { computeChannelSymmetry, computePrismScores } from './prism-signal.js';
 import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -613,6 +613,29 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the map's construction entirely, so the shipped ranking is bit-identical by construction.
    */
   readonly selfTimeWeight: number;
+  /**
+   * Weight on the INTERNAL/EXTERNAL SYMMETRY MASK — PRISM's axiom (arXiv:2601.21359) applied as a bounded
+   * discount on a candidate's own evidence rather than as an extra score.
+   *
+   *   finalScore(v) −= victimWeight × (1 − symmetry(v)) × log1p(selfAnomaly(v))
+   *
+   * where `symmetry(v) = 2·min(Sⁱ,Sᵉ)/(Sⁱ+Sᵉ)` over the component's internal (cpu/mem/disk/socket) and
+   * external (latency/error/…) channels, and 1 when the component carries no internal channel at all — an
+   * axiom about internal properties cannot be applied to a component that has none.
+   *
+   * **The form is the measurement.** Iteration 140 swept PRISM's own score as an ADDITIVE term over six
+   * arms (`prism_weight` × `prism_pooling`, runs `40341334056`–`40341401043`): the conjunctive form takes
+   * RE3-TrainTicket from **15 to 24 of 30** cases — past PRISM's own 23 — while costing RE1 **37**, because
+   * a score added at a weight that can reorder the whole ranking trades one population for another. The
+   * axiom does not need to reorder anything; it only says a component that shows an external anomaly and
+   * no internal one is downstream of something. As a multiplier it can only move a candidate relative to
+   * the ones that fail the axiom, and on a case where every candidate is external-only (a pure delay
+   * fault) it discounts them alike and moves nothing.
+   *
+   * Ships at {@link DEFAULT_VICTIM_WEIGHT} = **0**, and at 0 the symmetry map is not even built, so the
+   * shipped ranking is bit-identical by construction.
+   */
+  readonly victimWeight: number;
 }
 
 /**
@@ -637,6 +660,7 @@ export function toRankingWeights(
     | 'poolMetricPenaltyWeight'
     | 'stabilityWeight'
     | 'selfTimeWeight'
+    | 'victimWeight'
   >,
 ): RankingWeights {
   return {
@@ -653,6 +677,7 @@ export function toRankingWeights(
     poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
     stabilityWeight: options.stabilityWeight,
     selfTimeWeight: options.selfTimeWeight,
+    victimWeight: options.victimWeight,
   };
 }
 
@@ -771,6 +796,15 @@ export const DEFAULT_STABILITY_WEIGHT = 0.007352;
  * the weight is the only thing that differs between two runs. The map is not even built at 0.
  */
 export const DEFAULT_SELF_TIME_WEIGHT = 0;
+
+/**
+ * The shipped weight of the internal/external symmetry mask — `0`, i.e. OFF until a dispatch measures it.
+ *
+ * Its measurement is recorded here rather than in a note, on the rule the other shipped weights follow.
+ * The build is not the claim: `docs/prism-symmetry-mask.md` holds the design argument, the six-arm additive
+ * sweep that rejected PRISM's own score as a term, and the arms that decide this one.
+ */
+export const DEFAULT_VICTIM_WEIGHT = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.
@@ -1176,6 +1210,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+  victimWeight: DEFAULT_VICTIM_WEIGHT,
 };
 
 /**
@@ -1498,6 +1533,15 @@ export class TreePruner {
         ? computeSelfTimeScores(topologyGraph.edges, metrics)
         : undefined;
 
+    // The INTERNAL/EXTERNAL SYMMETRY, PRISM's axiom in the form the six-arm sweep argued for: a mask on a
+    // candidate's own evidence rather than a score beside it. Built only when the weight is non-zero, so
+    // the shipped path is byte-identical by construction rather than by arithmetic — the rule the
+    // self-time and breadth maps follow.
+    const channelSymmetry =
+      this.options.victimWeight !== 0
+        ? computeChannelSymmetry(metrics, new Set(callGraph.nodes.keys()), injectTimeMs)
+        : undefined;
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -1524,6 +1568,7 @@ export class TreePruner {
       poolMetricScores,
       stabilityScores,
       selfTimeScores,
+      channelSymmetry,
     };
   }
 
@@ -1595,6 +1640,7 @@ export class TreePruner {
       graph.poolMetricScores,
       graph.stabilityScores,
       graph.selfTimeScores,
+      graph.channelSymmetry,
     );
 
     // ── The failed-edge direction term's GATE ────────────────────────────────
@@ -1643,6 +1689,7 @@ export class TreePruner {
         graph.poolMetricScores,
         graph.stabilityScores,
         graph.selfTimeScores,
+        graph.channelSymmetry,
       ),
     );
   }
@@ -1898,6 +1945,7 @@ function performTreeRCA(
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
   stabilityScores?: ReadonlyMap<ServiceId, number>,
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
+  channelSymmetry?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -2107,7 +2155,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with eleven causal priors (all opt-in except log):
+  // Rank by self anomaly combined with twelve causal priors (all opt-in except log) and one mask:
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -2148,6 +2196,10 @@ function performTreeRCA(
   //    the mechanism `docs/transient-guard-window.md` §4 measured: a caller's response time
   //    contains its callees', so a rise a slow callee accounts for is INHERITED rather
   //    than created — and a maximum-over-metrics anomaly cannot tell the two apart.
+  // 13. An INTERNAL/EXTERNAL SYMMETRY MASK (`victimWeight`) — SUBTRACT a share of a candidate's OWN
+  //    evidence when its anomaly is EXTERNAL-ONLY, which is PRISM's victim signature (arXiv:2601.21359).
+  //    The only entry here that is a bounded MULTIPLIER on the base term rather than a prior beside it,
+  //    and the only one whose value is a ratio of two channels' deviations with no constant in it.
   //
   // This list has to grow with the score: it was one term short for a release
   // (the per-edge latency prior shipped without an entry), and a reader counting
@@ -2231,6 +2283,11 @@ function performTreeRCA(
   // candidate has an undecidable callee), so the lookup keeps the neutral 0 — the same rule the other
   // sparse maps follow: a missing measurement is not a measured zero, and this term only ever rewards.
   const selfTimeWeight = options.selfTimeWeight;
+  // The internal/external symmetry mask. Its map is ABSENT at the shipped weight (not built), and a
+  // candidate missing from it is NEUTRAL rather than fully discounted — a case the map cannot judge is not
+  // a case it can punish, which is why the lookup substitutes the symmetry 1 the map would have given a
+  // component with no internal channel.
+  const victimWeight = options.victimWeight;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -2284,6 +2341,7 @@ function performTreeRCA(
       const poolEntry = poolMetricScores?.get(id);
       const stabilityEntry = stabilityScores?.get(id);
       const selfTimeEntry = selfTimeScores?.get(id);
+      const symmetryEntry = channelSymmetry?.get(id);
       const riseHasLogic = (logEntry ?? 0) > 0;
       // The direction the map carried, or the NEUTRAL 0.5 the formula substitutes. Read once so the value and
       // the ungated value it is compared against cannot come from two different lookups.
@@ -2367,6 +2425,16 @@ function performTreeRCA(
           presence: presenceOf(selfTimeScores, id),
           source: 'selfTimeScores',
         }),
+        // PRISM's axiom as a MASK: a component whose anomaly is EXTERNAL-ONLY is downstream of something, so
+        // the term removes a share of its own evidence rather than adding a score beside it. The value is
+        // `(1 − symmetry) × log1p(selfAnomaly)`, i.e. at weight 1 it cancels exactly the base term of a
+        // component that failed the axiom and exactly half of one that is balanced.
+        buildTerm(
+          'victim',
+          -victimWeight,
+          (1 - (symmetryEntry ?? 1)) * Math.log1p(selfScores.get(id)!),
+          { presence: presenceOf(channelSymmetry, id), source: 'channelSymmetry' },
+        ),
       ];
       termCache.set(id, t);
     }

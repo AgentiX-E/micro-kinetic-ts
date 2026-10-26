@@ -272,6 +272,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
+    // Iteration 140: the internal/external symmetry mask. A ranking WEIGHT rather than a composition
+    // coefficient, packed here for the reason the self-time term is: the golden half's input budget is full.
+    '--victim-weight',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -285,6 +288,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--self-time-weight',
     '--suppress-zero-baseline-latency',
     '--cap-trend-bonus-at-deviation',
+    '--victim-weight',
   ],
 };
 
@@ -387,6 +391,12 @@ const KNOBS: Readonly<
   capTrendBonusAtDeviation: {
     flag: '--cap-trend-bonus-at-deviation',
     owner: 'zero-baseline-transport.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  victimWeight: {
+    flag: '--victim-weight',
+    owner: 'prism-symmetry-mask.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -652,6 +662,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'capTrendBonusAtDeviation',
   'selfTimeWeight',
   'stabilityWeight',
+  'victimWeight',
   'suppressZeroBaselineLatency',
   'suppressIdleTransients',
   'suppressNearZeroBaselineRise',

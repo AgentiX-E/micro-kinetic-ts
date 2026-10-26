@@ -1089,6 +1089,7 @@ describe('TreePruner', () => {
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
+        victimWeight: 0.9,
       });
 
       expect(weights).toEqual({
@@ -1105,6 +1106,7 @@ describe('TreePruner', () => {
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
+        victimWeight: 0.9,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1785,6 +1787,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      victimWeight: 0.9,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -2049,6 +2052,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       poolMetricPenaltyWeight: 0.0679,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      victimWeight: 0.9,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -2078,6 +2082,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      victimWeight: 0.9,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -2514,8 +2519,8 @@ describe('the score breakdown — the total IS its terms', () => {
   it('names the term set EXACTLY, so a term added to the formula cannot go missing from the breakdown', () => {
     // The identity above is satisfied by any array whose sum is the total, including one that silently DROPPED
     // a term from both sides — and that is the failure the identity alone cannot see. So the population is
-    // enumerated: these are the fourteen terms `finalScore(v)` is made of, in the formula's order, and a
-    // fifteenth added to the ranking weights without a line here fails this test rather than entering the
+    // enumerated: these are the fifteen terms `finalScore(v)` is made of, in the formula's order, and a
+    // sixteenth added to the ranking weights without a line here fails this test rather than entering the
     // total unaccounted for.
     expect(ranked()[0]!.terms!.map((t) => t.name)).toEqual([
       'selfAnomalyLog1p',
@@ -2532,6 +2537,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'pool',
       'stability',
       'selfTime',
+      'victim',
     ]);
   });
 });
@@ -2886,5 +2892,140 @@ describe('TreePruner — self-time prior', () => {
     expect(term.contribution).toBeCloseTo(weight, 10);
     expect(term.cause).toBeUndefined();
     expect(term.source).toBeUndefined();
+  });
+});
+
+describe('TreePruner — the internal/external symmetry mask', () => {
+  // PRISM's axiom (arXiv:2601.21359) as a MASK rather than a score. A fault propagates through
+  // observable interfaces and does not penetrate a component's internal state, so a component with an
+  // external anomaly and NO internal one is downstream of something. The measurement that fixes the form
+  // is iteration 140's six-arm sweep: PRISM's own conjunctive score, ADDED at a weight that can reorder
+  // everything, takes RE3-TrainTicket from 15 to 24 of 30 cases and costs RE1 37 — it trades one
+  // population for another. A bounded multiplier on a candidate's own evidence cannot do that.
+  const SOURCE = 'ts-consign-service';
+  const VICTIM = 'ts-food-service';
+
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      // Both channels move: 3σ internal, 1σ external → symmetry 0.5.
+      [
+        SOURCE,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 40, 40, 40, 40]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 20, 20, 20, 20]),
+        ],
+      ],
+      // External only: cpu flat, latency 5σ → symmetry 0. This is the victim signature, and its latency
+      // rise is deliberately the LARGEST in the case, because a victim's anomaly is amplified by
+      // propagation — the fact that makes the maximum-anomaly heuristic fail.
+      [
+        VICTIM,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 60, 60, 60, 60]),
+        ],
+      ],
+    ]);
+    return [makeCallGraph([SOURCE, VICTIM], [[VICTIM, SOURCE]]), metrics];
+  };
+
+  const INJECT = 4 * 60000;
+
+  const build = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    return pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT });
+  };
+
+  const scores = (pruner: TreePruner): Map<string, number> => {
+    const graph = build(pruner);
+    return new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!]));
+  };
+
+  it('carries the symmetry in the graph it builds: none at the victim, half at the source', () => {
+    const graph = build(new TreePruner({ victimWeight: 1 }));
+
+    expect(graph.channelSymmetry?.get(VICTIM)).toBe(0);
+    expect(graph.channelSymmetry?.get(SOURCE)).toBeCloseTo(0.5, 12);
+  });
+
+  it('builds NO map at weight 0 — the shipped path does not pay for a term it does not use', () => {
+    expect(build(new TreePruner({ victimWeight: 0 })).channelSymmetry).toBeUndefined();
+  });
+
+  it('is inert at weight 0 against a pruner that never mentions it', () => {
+    const zero = scores(new TreePruner({ victimWeight: 0 }));
+    const graph = build(new TreePruner());
+    const absent = new Map(
+      new TreePruner()
+        .analyze({ ...graph, channelSymmetry: undefined })
+        .map((r) => [r.serviceId, r.finalScore!]),
+    );
+
+    expect(zero.get(VICTIM)!).toBeCloseTo(absent.get(VICTIM)!, 12);
+    expect(zero.get(SOURCE)!).toBeCloseTo(absent.get(SOURCE)!, 12);
+  });
+
+  it('charges the discount as a SHARE of the candidate own evidence, and nothing else', () => {
+    // `−victimWeight × (1 − symmetry) × log1p(selfAnomaly)`, so the term at weight 1 removes exactly the
+    // base term of a component that failed the axiom, and exactly half of it from one that is balanced.
+    const weight = 0.4;
+    const graph = build(new TreePruner({ victimWeight: weight }));
+    const pruner = new TreePruner({ victimWeight: weight });
+    const results = new Map(pruner.analyze(graph).map((r) => [r.serviceId, r]));
+
+    const baseOf = (id: string) => Math.log1p(graph.anomalyScores.get(id)!);
+    const victimTerm = results.get(VICTIM)!.terms!.find((t) => t.name === 'victim')!;
+    const sourceTerm = results.get(SOURCE)!.terms!.find((t) => t.name === 'victim')!;
+
+    expect(victimTerm.contribution).toBeCloseTo(-weight * baseOf(VICTIM), 10);
+    expect(sourceTerm.contribution).toBeCloseTo(-weight * 0.5 * baseOf(SOURCE), 10);
+    // A discount is a penalty: it can never pay.
+    expect(victimTerm.contribution).toBeLessThan(0);
+    expect(sourceTerm.contribution).toBeLessThan(0);
+  });
+
+  it('hands the case to the component that passed the axiom', () => {
+    // The whole point. At weight 0 the victim ranks first because its propagated rise is the largest
+    // anomaly in the case; at weight 1 its own-evidence term is cancelled while the source keeps half of
+    // its own, and the ranking flips — which is the sentence "an external-only component is downstream of
+    // something" expressed as a decision.
+    const before = scores(new TreePruner({ victimWeight: 0 }));
+    const after = scores(new TreePruner({ victimWeight: 1 }));
+
+    expect(before.get(VICTIM)!).toBeGreaterThan(before.get(SOURCE)!);
+    expect(after.get(SOURCE)!).toBeGreaterThan(after.get(VICTIM)!);
+  });
+
+  it('leaves a case where EVERY candidate is external-only alone', () => {
+    // The neutrality that a score would not have. A pure delay fault moves latency everywhere and no
+    // internal channel anywhere: every candidate fails the axiom, every one is discounted, and the ORDER
+    // is unchanged — which is why this form is expected to be nearly free on RE1 while an added score is
+    // not (the sweep measured −37 cases there).
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        SOURCE,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 20, 20, 20, 20]),
+        ],
+      ],
+      [
+        VICTIM,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 60, 60, 60, 60]),
+        ],
+      ],
+    ]);
+    const callGraph = makeCallGraph([SOURCE, VICTIM], [[VICTIM, SOURCE]]);
+    const rankOf = (weight: number) => {
+      const pruner = new TreePruner({ victimWeight: weight });
+      const r = pruner.analyze(
+        pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT }),
+      );
+      return r.map((x) => x.serviceId);
+    };
+
+    expect(rankOf(0.2)).toEqual(rankOf(0));
   });
 });

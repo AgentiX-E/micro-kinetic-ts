@@ -238,6 +238,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'stabilityWeight',
       'topoDiscount',
       'useTwoHopDecay',
+      'victimWeight',
     ]);
   });
 
