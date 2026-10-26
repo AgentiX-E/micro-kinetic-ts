@@ -304,3 +304,17 @@ is what breadth measures and what burst could not distinguish.
 The detector is now **guarded on the coefficient** (`if (cfg.anomalyBurstWeight !== 0)`), so the shipped
 path skips a pass whose result it would multiply by zero — the same rule the breadth block follows, and the
 reason the shipped ranking stays bit-identical by construction rather than by arithmetic.
+
+### 6.4 Acceptance on the DEFAULT path, both halves
+
+The flag path and the default path are two declarations of one configuration, and this repository has
+published a number 24.2 pp off the best-measured value for exactly that reason. So both halves were
+re-measured on the merged commit `5b65751` with **no dispatch input at all**:
+
+| half | run | reads | expected from the sweep |
+| --- | --- | --- | --- |
+| RCAEval (push-triggered, `scopes` unset) | `40255890256` | **RE1 105/117/101 = 323**, RE2 77/85/69 = 231, RE3 22/15/15 = 52, **735 = 606 = 82.45%** | 323 / 231 / 52 ✓ |
+| FSE'26 (dispatch, no knobs) | `40276272775` | **Top@1 56.4% (802/1422)**, Top@3 69.7%, Top@5 72.1% | 802 / 991 / 1025 ✓ |
+
+All three workflows are green on `5b65751` (`40255890307` CI, `40255890173` Release, `40255890256` the
+benchmark). The enrolment is therefore a property of the engine's defaults, not of a dispatch that names it.
