@@ -205,6 +205,7 @@ describe('buildFse26EngineOptions', () => {
       // The zero-baseline transport guard, at its shipped pole — a GUARD rather than a weight, so it states
       // `false` here like its two neighbours.
       suppressZeroBaselineLatency: false,
+      capTrendBonusAtDeviation: false,
       // The demand guard, at its shipped pole on a dispatch that says nothing about it — and the assertion is
       // that a value the parser never touched still REACHES the builder, which is what this test is for.
       suppressDemandMetrics: true,

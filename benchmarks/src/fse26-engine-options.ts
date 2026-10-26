@@ -187,6 +187,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
       suppressZeroBaselineLatency: opts.suppressZeroBaselineLatency,
+      capTrendBonusAtDeviation: opts.capTrendBonusAtDeviation,
       suppressDemandMetrics: opts.suppressDemandMetrics,
     },
   };

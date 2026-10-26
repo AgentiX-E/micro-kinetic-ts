@@ -157,6 +157,8 @@ export interface FSE26RunConfig {
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level; `false` is the shipped value. */
   readonly suppressZeroBaselineLatency: boolean;
+  /** Cap the trend bonus at its deviation; `false` is the shipped value. */
+  readonly capTrendBonusAtDeviation: boolean;
   /**
    * The demand guard. Printed only at its NON-shipped pole, on this line's own rule: the shipped line stays
    * byte-identical to the published one, so the DEFAULT here is invisible and the ablation is not.
@@ -460,6 +462,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   if (config.suppressZeroBaselineLatency) {
     line += ' suppressZeroBaselineLatency=true';
+  }
+  if (config.capTrendBonusAtDeviation) {
+    line += ' capTrendBonusAtDeviation=true';
   }
   // Ships `true`, so the pole worth printing is the one an ABLATION chooses — the inverse of its neighbours
   // above, and the reason this line's rule is "print the non-shipped value" rather than "print what is true".

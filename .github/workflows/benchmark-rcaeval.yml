@@ -315,6 +315,12 @@ jobs:
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
                 esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -488,6 +494,12 @@ jobs:
                   1) RANKING_ARG+=(--suppress-zero-baseline-latency) ;;
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
+                esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -688,6 +700,12 @@ jobs:
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
                 esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -870,6 +888,12 @@ jobs:
                   1) RANKING_ARG+=(--suppress-zero-baseline-latency) ;;
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
+                esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -1078,6 +1102,12 @@ jobs:
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
                 esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -1252,6 +1282,12 @@ jobs:
                   1) RANKING_ARG+=(--suppress-zero-baseline-latency) ;;
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
+                esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -1428,6 +1464,12 @@ jobs:
                   1) RANKING_ARG+=(--suppress-zero-baseline-latency) ;;
                   0) RANKING_ARG+=(--no-suppress-zero-baseline-latency) ;;
                   *) echo "::error::anomaly_knobs: zerolat takes 1 or 0, got '${kv#zerolat=}'"; exit 1 ;;
+                esac ;;
+              trendcap=*)
+                case "${kv#trendcap=}" in
+                  1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
+                  0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
+                  *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac

@@ -356,6 +356,16 @@ jobs:
                     exit 1
                   fi
                   ;;
+                cap_trend_bonus)
+                  if [ "$value" = "1" ]; then
+                    KNOB_ARGS+=(--cap-trend-bonus-at-deviation)
+                  elif [ "$value" = "0" ]; then
+                    KNOB_ARGS+=(--no-cap-trend-bonus-at-deviation)
+                  else
+                    echo "::error::ranking_knobs: cap_trend_bonus takes 1 or 0, got '$value'"
+                    exit 1
+                  fi
+                  ;;
                 suppress_idle_transients)
                   if [ "$value" = "1" ]; then
                     KNOB_ARGS+=(--suppress-idle-transients)

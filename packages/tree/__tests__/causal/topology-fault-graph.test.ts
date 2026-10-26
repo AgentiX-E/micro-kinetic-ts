@@ -3462,6 +3462,59 @@ describe('buildTopologyFaultGraph — a DEMAND metric is not fault evidence', ()
   });
 });
 
+describe('the trend-bonus ceiling — an amplifier may not exceed the signal it amplifies', () => {
+  // RE3-TrainTicket `re3tt_ts-route-service_f1_3`, read off run `40285881991`: after the zero-baseline
+  // guard removed the first artifact, the new winner scored `latency-90` 2.35 -> 0.021 — a COLLAPSE — at
+  // `dev=0.301` with a **trend bonus of 0.661**. The bonus is more than twice the evidence it supplements,
+  // because a relative drift is unbounded in the denominator while a collapse's deviation is capped at
+  // `log10(2)` by construction. A bonus that exceeds its signal is no longer an amplifier.
+  const collapse = [
+    ...Array.from({ length: 20 }, (_, i) => 2.35 - i * 0.11),
+    ...Array<number>(20).fill(0.021),
+  ];
+  const rise = [...Array<number>(20).fill(0.5), ...Array<number>(20).fill(1.0)];
+
+  const breakdownOf = (values: readonly number[], config?: Record<string, unknown>) => {
+    const graph = makeCallGraph(['svc', 'idle'], []);
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      ['svc', [makeTimeSeries('cpu', [...values])]],
+      ['idle', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10])]],
+    ]);
+    return buildTopologyFaultGraph(graph, metrics, config)
+      .metricDiagnostics.get('svc')!
+      .find((d) => d.label === 'cpu')!.breakdown!;
+  };
+
+  it('caps the bonus at the deviation when the flag is on, and reports the capped value', () => {
+    const shipped = breakdownOf(collapse);
+    const capped = breakdownOf(collapse, { capTrendBonusAtDeviation: true });
+
+    // The defect, reproduced: the shipped bonus is larger than the deviation it augments.
+    expect(shipped.trend).toBeGreaterThan(shipped.deviation);
+    expect(capped.trend).toBeCloseTo(capped.deviation, 12);
+    // The breakdown IS the score, so the cap has to be visible in it — a term that reported the uncapped
+    // number beside a capped total would be the second description of a score this file refuses to keep.
+    expect(capped.trend).toBeLessThan(shipped.trend);
+  });
+
+  it('leaves a RISE alone when its bonus is already below its deviation', () => {
+    // The population the cap must not reach: a 2x rise whose trend bonus is a fraction of its deviation.
+    const shipped = breakdownOf(rise);
+    const capped = breakdownOf(rise, { capTrendBonusAtDeviation: true });
+
+    expect(shipped.trend).toBeGreaterThan(0);
+    expect(shipped.trend).toBeLessThan(shipped.deviation);
+    expect(capped.trend).toBeCloseTo(shipped.trend, 12);
+  });
+
+  it('changes nothing when the flag is off', () => {
+    expect(breakdownOf(collapse, { capTrendBonusAtDeviation: false }).trend).toBeCloseTo(
+      breakdownOf(collapse).trend,
+      12,
+    );
+  });
+});
+
 describe('the zero-baseline transport guard — a percentile with no traffic has no relative rise', () => {
   // The RE3-TrainTicket miss, verbatim from the acceptance run `40255890256`: the winner's decisive
   // channel is `latency-90` with `head=[0,0,0,0,0,0]` and `tail=[0.0235, …]`, which the engine reads as a

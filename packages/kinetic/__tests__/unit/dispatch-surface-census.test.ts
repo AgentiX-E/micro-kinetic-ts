@@ -269,6 +269,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 138: a GUARD rather than a weight, and it travels in the packed block for the same reason —
     // the golden half has no input of its own to spend (25/25 used).
     '--suppress-zero-baseline-latency',
+    // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
+    // reason — the golden half has no input left to spend.
+    '--cap-trend-bonus-at-deviation',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -281,6 +284,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-breadth-gate',
     '--self-time-weight',
     '--suppress-zero-baseline-latency',
+    '--cap-trend-bonus-at-deviation',
   ],
 };
 
@@ -377,6 +381,12 @@ const KNOBS: Readonly<
   suppressZeroBaselineLatency: {
     flag: '--suppress-zero-baseline-latency',
     owner: 'fault-type-identification.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  capTrendBonusAtDeviation: {
+    flag: '--cap-trend-bonus-at-deviation',
+    owner: 'zero-baseline-transport.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -639,6 +649,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'prismPooling',
   'prismWeight',
   'rankNormalization',
+  'capTrendBonusAtDeviation',
   'selfTimeWeight',
   'stabilityWeight',
   'suppressZeroBaselineLatency',
@@ -727,6 +738,8 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // and both polls travel through the packed block's `1`/`0` branches. This member is therefore the
   // NEGATIVE pole of a guard whose positive pole IS an input — reachable, and not a KNOBS row of its own.
   '--no-suppress-zero-baseline-latency',
+  // Iteration 139: the NEGATIVE pole of the trend-bonus ceiling, same shape as the guard above.
+  '--no-cap-trend-bonus-at-deviation',
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',

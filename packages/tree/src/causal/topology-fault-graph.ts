@@ -276,6 +276,22 @@ export interface TopologyFaultGraphConfig {
    */
   readonly suppressZeroBaselineLatency: boolean;
   /**
+   * Whether the TREND bonus may exceed the deviation it augments.
+   *
+   * `true` caps `trendBonus` at `deviation`; `false` is the shipped, unbounded shape.
+   *
+   * The defect, read off run `40285881991` on RE3-TrainTicket `re3tt_ts-route-service_f1_3`: the winner
+   * scored `latency-90` 2.35 → 0.021 — a COLLAPSE — at `deviation = 0.301` with a **trend bonus of 0.661**.
+   * A relative drift is unbounded in the denominator, while a collapse's deviation is capped at `log₁₀(2)`
+   * by construction (`docs/re3-fault-ceiling.md`), so the bonus can exceed the evidence **only** on the
+   * collapse side — which is exactly the side a service that stopped serving occupies.
+   *
+   * This is the minimal form of the asymmetry rule: it treats both directions alike (a rise whose bonus
+   * exceeds its deviation is capped too, and never occurs on this corpus) and refuses to re-introduce the
+   * direction the term deliberately does not read.
+   */
+  readonly capTrendBonusAtDeviation: boolean;
+  /**
    * Whether a DEMAND metric may be a node's decisive evidence at all.
    *
    * A demand metric counts how much work a service was HANDED (`workload` and its family), not how it
@@ -535,6 +551,13 @@ export const DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE = false;
 export const DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY = false;
 
 /**
+ * The shipped value of {@link TopologyFaultGraphConfig.capTrendBonusAtDeviation}, which is `false`.
+ *
+ * Opt-in until a dispatch measures it, on the rule every switch in this file follows.
+ */
+export const DEFAULT_CAP_TREND_BONUS_AT_DEVIATION = false;
+
+/**
  * The shipped value of {@link TopologyFaultGraphConfig.metricRiseCeiling}, which is `0` = unbounded.
  *
  * Named because the FSE'26 workflow exposes it as `rise_ceiling` and its description states the shipped
@@ -660,6 +683,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
   suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY, // no-traffic transport channels (opt-in)
+  capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION, // the trend bonus may not exceed its evidence (opt-in)
   suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS, // demand metrics are not fault evidence (enrolled)
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
@@ -1565,7 +1589,13 @@ function computeAnomalyFeatures(
     // Trend bonus is direction-agnostic: trendStrength is already the
     // ABSOLUTE normalized slope, so a monotonic drop (memory release,
     // crash) gets the same bonus as a monotonic rise (leak, saturation).
-    const trendBonus = trendStrength > 0.1 ? trendStrength * cfg.anomalyTrendWeight : 0;
+    // The bonus is an AMPLIFIER, so it may not exceed the signal it amplifies. On a COLLAPSE it routinely
+    // does: a relative drift is unbounded in the denominator while a drop's deviation is capped at
+    // `log10(2)`, so the ratio between them is not a fixed scale — see `capTrendBonusAtDeviation`.
+    const trendBonusRaw = trendStrength > 0.1 ? trendStrength * cfg.anomalyTrendWeight : 0;
+    const trendBonus = cfg.capTrendBonusAtDeviation
+      ? Math.min(trendBonusRaw, deviation)
+      : trendBonusRaw;
     const burstBonus = hasBurst ? deviation * cfg.anomalyBurstWeight : 0;
     const cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * cfg.anomalyCvWeight : 0;
     let featureScore = deviation + trendBonus + burstBonus + cvBonus;

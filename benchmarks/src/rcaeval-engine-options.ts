@@ -108,6 +108,8 @@ export interface RCAEvalTopologyOptions {
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level — see `CliOptions`. */
   readonly suppressZeroBaselineLatency: boolean;
+  /** Cap the trend bonus at its deviation — see `CliOptions`. */
+  readonly capTrendBonusAtDeviation: boolean;
   /** The demand guard — see `CliOptions.suppressDemandMetrics` for the measurement that enrolled it. */
   readonly suppressDemandMetrics: boolean;
   /**
@@ -192,6 +194,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
       suppressZeroBaselineLatency: opts.suppressZeroBaselineLatency,
+      capTrendBonusAtDeviation: opts.capTrendBonusAtDeviation,
       suppressDemandMetrics: opts.suppressDemandMetrics,
       anomalyTrendWeight: opts.anomalyTrendWeight,
       anomalyBurstWeight: opts.anomalyBurstWeight,
@@ -240,6 +243,7 @@ export function formatSignalLine(opts: CliOptions): string {
     `suppressIdleTransients=${opts.suppressIdleTransients} ` +
     `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise} ` +
     `suppressZeroBaselineLatency=${opts.suppressZeroBaselineLatency} ` +
+    `capTrendBonusAtDeviation=${opts.capTrendBonusAtDeviation} ` +
     // Named unconditionally even though it ships `true`: the ablation is `false`, and a line that printed
     // only the non-default would render this run and its ablation identically — the defect the failed-edge
     // weight's comment above records, one guard over.

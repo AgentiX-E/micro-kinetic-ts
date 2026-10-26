@@ -41,6 +41,7 @@ import {
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
   DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -363,6 +364,12 @@ export interface Fse26CliOptions {
    */
   readonly suppressZeroBaselineLatency: boolean;
   /**
+   * Cap the trend bonus at the deviation it augments. Exposed on this half because FSE'26 is where a bonus
+   * larger than its evidence would do most damage: `JVMMemoryStress` runs at `selfAnomaly`-only Top@1 2.3%
+   * over 171 cases, so any term that amplifies a small deviation moves that block furthest. Shipped `false`.
+   */
+  readonly capTrendBonusAtDeviation: boolean;
+  /**
    * Whether a DEMAND metric (`workload`) may be a node's decisive evidence. Shipped `true` since iteration 127.
    *
    * Reachable here even though this corpus carries no member of the family — `grep -c 'workload=' on run
@@ -461,6 +468,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+    capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
   };
 
@@ -608,6 +616,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--suppress-zero-baseline-latency') opts.suppressZeroBaselineLatency = true;
     else if (arg === '--no-suppress-zero-baseline-latency')
       opts.suppressZeroBaselineLatency = false;
+    else if (arg === '--cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = true;
+    else if (arg === '--no-cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = false;
     else {
       throw new Error(
         `unrecognised argument ${arg} — either this runner does not accept it, ` +

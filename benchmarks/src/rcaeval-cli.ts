@@ -73,6 +73,7 @@ import {
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
   DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
@@ -323,6 +324,15 @@ export interface CliOptions {
    */
   suppressZeroBaselineLatency: boolean;
   /**
+   * Cap the TREND bonus at the deviation it augments.
+   *
+   * The RE3-TrainTicket lever of iteration 138's diff: the winner after the zero-baseline guard scored
+   * `latency-90` 2.35 → 0.021 (a collapse, `dev=0.301`) with a **trend bonus of 0.661** — an amplifier
+   * larger than the signal it amplifies, which can only happen on the collapse side because a drop's
+   * deviation is capped at `log₁₀(2)`. `false` until a dispatch measures it.
+   */
+  capTrendBonusAtDeviation: boolean;
+  /**
    * Whether a DEMAND metric (`workload` — how much work a service was HANDED) may be a node's decisive
    * evidence. Shipped `true` since iteration 127, on the measurement `docs/rcaeval-local-harness.md` carries:
    * the family is decisive for 4.0% of ground truths against 12.5% of bystanders, and removing it takes
@@ -480,6 +490,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+    capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
     anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
@@ -660,6 +671,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.suppressZeroBaselineLatency = true;
     } else if (args[i] === '--no-suppress-zero-baseline-latency') {
       opts.suppressZeroBaselineLatency = false;
+    } else if (args[i] === '--cap-trend-bonus-at-deviation') {
+      opts.capTrendBonusAtDeviation = true;
+    } else if (args[i] === '--no-cap-trend-bonus-at-deviation') {
+      opts.capTrendBonusAtDeviation = false;
     } else if (args[i] === '--fusion-ceiling' && hasValue(args, i + 1)) {
       opts.fusionCeiling = args[++i]!;
     } else if (args[i] === '--routing-probe' && hasValue(args, i + 1)) {
