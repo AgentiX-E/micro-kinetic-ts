@@ -45,6 +45,7 @@ one it was short of, and the project page added here, are both recorded rather t
 | --- | --- | --- | --- |
 | `arXiv:2610.05009` | **OURS** | **RCAEval RE1 — 375 = 3 × 125 (OnlineBoutique, SockShop, TrainTicket)**, service `top-1`. Its own full text: *"the three RCAEval diagnostic environments"*; its own project page: *"RCAEval RE1 failure cases (375)"* | 2026-10-14, arXiv HTML full text + the authors' own project page |
 | `luoyu100.github.io/projects/toolrca/project` | **OURS** | the project page of the entry above. It **resolves** and names *"RCAEval RE1 failure cases (375)"*, so it is what the population verdict rests on | 2026-10-14, project page |
+| `DeltaRCA` (ASE'26, `10.1145/3832783.3837424`) | **OTHER** | "two microservice benchmarks with **200 injected fault cases**" — 63% Top-1 / 79% Top-3 over that corpus, which is neither RCAEval's 735 nor its nine cells | 2026-10-26, DOI resolution + paper abstract |
 | `arXiv:2609.36771` | **OURS** | RE1 SockShop / OnlineBoutique, **125 cases each**, service Top-1 | 2026-10-10, paper text + `github.com/Musfiqshohan/RCA-DCM` |
 | `github.com/Musfiqshohan/RCA-DCM` | **OURS** | the artefact of the row above; its README states the two systems' shared five-fault composition, which is what fixes 125 | 2026-10-13, GitHub API + README |
 | `arXiv:2601.21359` | **OURS** | **RCAEval all 735 cases**, service Top-1 — the benchmark author's own method | 2026-10-13, paper text; and our reimplementation on the identical 735 (`prism-head-to-head.md`) |
