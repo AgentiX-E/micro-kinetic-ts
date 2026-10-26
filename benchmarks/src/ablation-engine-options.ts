@@ -37,10 +37,12 @@
 
 import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 import {
+  DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
+  DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
@@ -48,6 +50,7 @@ import {
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
+  type DropDeviationMode,
 } from '../../packages/tree/src/index.js';
 
 /**
@@ -159,6 +162,16 @@ export interface AblationTopologyOptions {
    * so it appears here as a constant and on the line below as a stated one.
    */
   readonly suppressDemandMetrics: boolean;
+  /**
+   * The largest ratio one metric's deviation may reflect, held at the shipped 0.
+   *
+   * Named here for the reason every constant of this object is: the reported-field partition requires every
+   * field the artifact can omit to be either printed or exempted, and this one stopped being exempt when the
+   * golden runner began forwarding it. No row VARIES it — the study's subject is Deng Yu's terms.
+   */
+  readonly metricRiseCeiling: number;
+  /** How a metric's DROP becomes a deviation, held at the shipped `bounded`. */
+  readonly dropDeviationMode: DropDeviationMode;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -234,6 +247,10 @@ export interface AblationEngineOverrides {
   readonly selfTimeWeight?: number;
   /** Overrides `victimWeight` — the internal/external symmetry mask. */
   readonly victimWeight?: number;
+  /** Overrides `metricRiseCeiling` — the ratio ceiling. */
+  readonly metricRiseCeiling?: number;
+  /** Overrides `dropDeviationMode` — how a drop becomes a deviation. */
+  readonly dropDeviationMode?: DropDeviationMode;
   /**
    * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
    *
@@ -291,6 +308,8 @@ export function buildAblationEngineOptions(
       rankNormalization: flags.rankNormalization,
       suppressIdleTransients: flags.suppressIdleTransients,
       suppressDemandMetrics: flags.suppressDemandMetrics,
+      metricRiseCeiling: overrides.metricRiseCeiling ?? DEFAULT_METRIC_RISE_CEILING,
+      dropDeviationMode: overrides.dropDeviationMode ?? DEFAULT_DROP_DEVIATION_MODE,
     },
   };
 }
@@ -321,6 +340,8 @@ export function formatAblationConfigLine(
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
     `collapseDiscount=${topology.collapseDiscount} ` +
+    `metricRiseCeiling=${topology.metricRiseCeiling} ` +
+    `dropDeviationMode=${topology.dropDeviationMode} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
     `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +

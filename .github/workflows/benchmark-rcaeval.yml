@@ -308,6 +308,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -489,6 +491,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -695,6 +699,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -885,6 +891,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -1099,6 +1107,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -1281,6 +1291,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.
@@ -1464,6 +1476,8 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
                 # reachable or an ablation cannot name the control it is read against.

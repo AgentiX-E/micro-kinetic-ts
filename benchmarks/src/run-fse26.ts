@@ -149,6 +149,7 @@ async function main(): Promise<void> {
     anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
     dropMetrics: opts.dropMetrics,
     metricRiseCeiling: opts.metricRiseCeiling,
+    dropDeviationMode: opts.dropDeviationMode,
     metricFleetBaseline: opts.metricFleetBaseline,
     suppressDemandMetrics: opts.suppressDemandMetrics,
     failedEdgeWeight: opts.failedEdgeWeight,

@@ -344,6 +344,26 @@ export interface TopologyFaultGraphConfig {
    */
   readonly metricRiseCeiling: number;
   /**
+   * How a metric's DROP is turned into a deviation.
+   *
+   * - `bounded` (shipped): `deviation = log₁₀(1 + max(riseRatio, dropRatio))`, so a drop is bounded at
+   *   `log₁₀2 ≈ 0.301` — a metric can fall by at most 100% — while a rise is unbounded.
+   * - `log`: `max(log₁₀(1 + riseRatio), −log₁₀(1 − dropRatio))`, i.e. a drop measured against the POST-drop
+   *   level, so a 10× drop scores what a 10× rise scores.
+   *
+   * The two are IDENTICAL for a rise (`post/base = 1 + riseRatio`), which is what makes this an axis about
+   * drops rather than a re-scoring of the whole engine.
+   *
+   * `log` is the form #193 tried and reverted — "a counter collapsing ~153× to a near-zero floor outranked
+   * the genuine fault" — and it was reverted because the ratio was unbounded. Two guards have been added
+   * SINCE: the event/idle guard drops a channel whose minimum is below `max × 0.001`, and
+   * {@link metricRiseCeiling} bounds the ratio itself. The axis is therefore reopened as a PAIR, and neither
+   * half is a measurement on its own.
+   *
+   * Opt-in until a dispatch measures it: the shipped ranking must be unchanged while the mechanism is read.
+   */
+  readonly dropDeviationMode: DropDeviationMode;
+  /**
    * Subtract each metric's CROSS-SERVICE median from the metric's score before
    * taking the service maximum.
    *
@@ -558,6 +578,38 @@ export const DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY = false;
 export const DEFAULT_CAP_TREND_BONUS_AT_DEVIATION = false;
 
 /**
+ * How a metric's DROP becomes a deviation — see
+ * {@link TopologyFaultGraphConfig.dropDeviationMode}.
+ */
+export type DropDeviationMode = 'bounded' | 'log';
+
+/**
+ * Every drop-deviation mode, as a `Record` over the union.
+ *
+ * Exhaustive by construction: a new member of {@link DropDeviationMode} is a COMPILE error here until it is
+ * named, which is the rule `LOG_SIGNAL_MODES` and `PRISM_POOLINGS` follow — a list of names cannot be checked
+ * against a union, a record can.
+ */
+export const DROP_DEVIATION_MODES: Readonly<Record<DropDeviationMode, true>> = {
+  bounded: true,
+  log: true,
+};
+
+/**
+ * Whether a raw argument names a drop-deviation mode.
+ *
+ * @param value - A raw CLI value.
+ */
+export function isDropDeviationMode(value: string): value is DropDeviationMode {
+  return Object.prototype.hasOwnProperty.call(DROP_DEVIATION_MODES, value);
+}
+
+/**
+ * The shipped drop-deviation mode: `bounded`, the form every published number was measured under.
+ */
+export const DEFAULT_DROP_DEVIATION_MODE: DropDeviationMode = 'bounded';
+
+/**
  * The shipped value of {@link TopologyFaultGraphConfig.metricRiseCeiling}, which is `0` = unbounded.
  *
  * Named because the FSE'26 workflow exposes it as `rise_ceiling` and its description states the shipped
@@ -686,6 +738,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION, // the trend bonus may not exceed its evidence (opt-in)
   suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS, // demand metrics are not fault evidence (enrolled)
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
+  dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE, // a drop bounded at log10(2) (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
   anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT, // monotone drift bonus (shipped behaviour)
   anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (REMOVED — it stood in for breadth)
@@ -1521,7 +1574,16 @@ function computeAnomalyFeatures(
     // the default 0 this is bit-identical to max(riseRatio, dropRatio).
     const collapseDiscount = cfg.collapseDiscount > 0 ? cfg.collapseDiscount : 0;
     const effectiveDrop = dropRatio * (1 - collapseDiscount);
-    const unboundedRatio = Math.max(riseRatio, effectiveDrop);
+    // The DROP's ratio, in the units the mode names. `bounded` hands the ceiling the drop fraction directly,
+    // so a 100% drop is a ratio of 1 and the deviation is capped at `log10(2)`. `log` hands it the post-drop
+    // level instead, so a 10× drop is a ratio of 9 — the same number a 10× rise produces — and the ceiling,
+    // when it is set, is what keeps that from exploding (the failure #193 recorded). The event/idle guard
+    // above has already removed `min < max × 0.001`, so `dropRatio < 1` and the denominator is positive by
+    // construction: no clamp of this function's own is needed, and inventing one would be a constant with no
+    // measurement behind it.
+    const dropDevRatio =
+      cfg.dropDeviationMode === 'log' ? effectiveDrop / (1 - effectiveDrop) : effectiveDrop;
+    const unboundedRatio = Math.max(riseRatio, dropDevRatio);
     // The ceiling bounds the ratio, not the score, so the breakdown keeps
     // reporting the TRUE rise/drop while the deviation reflects the clamp: a
     // diagnostic that echoed the clamped value could no longer justify the

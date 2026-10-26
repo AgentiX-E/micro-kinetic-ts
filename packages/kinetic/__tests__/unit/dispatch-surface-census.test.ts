@@ -275,6 +275,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 140: the internal/external symmetry mask. A ranking WEIGHT rather than a composition
     // coefficient, packed here for the reason the self-time term is: the golden half's input budget is full.
     '--victim-weight',
+    // Iteration 141: the DROP-deviation pair. Both travel in the packed block because the golden half's input
+    // budget is full, and both are needed together — `log` without a ceiling is the #193 explosion.
+    '--drop-deviation-mode',
+    '--rise-ceiling',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -289,6 +293,8 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--suppress-zero-baseline-latency',
     '--cap-trend-bonus-at-deviation',
     '--victim-weight',
+    '--drop-deviation-mode',
+    '--rise-ceiling',
   ],
 };
 
@@ -330,9 +336,12 @@ const KNOBS: Readonly<
   },
   metricRiseCeiling: {
     flag: '--rise-ceiling',
-    owner: 'fse26-metric-competition-verdict.md',
+    // Two owners, because the axis was opened on one half and closed on the other: `fse26-metric-competition-verdict.md`
+    // measured the ceiling there, and `drop-deviation-symmetry.md` is where the PAIR it belongs to (a symmetric drop
+    // plus a ceiling) is measured on the golden half. The row is one because the knob is one.
+    owner: 'drop-deviation-symmetry.md',
     fse26: 'rise_ceiling',
-    rcaeval: null,
+    rcaeval: 'anomaly_knobs',
   },
   metricFleetBaseline: {
     flag: '--fleet-baseline',
@@ -391,6 +400,12 @@ const KNOBS: Readonly<
   capTrendBonusAtDeviation: {
     flag: '--cap-trend-bonus-at-deviation',
     owner: 'zero-baseline-transport.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  dropDeviationMode: {
+    flag: '--drop-deviation-mode',
+    owner: 'drop-deviation-symmetry.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -663,6 +678,8 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'selfTimeWeight',
   'stabilityWeight',
   'victimWeight',
+  'dropDeviationMode',
+  'metricRiseCeiling',
   'suppressZeroBaselineLatency',
   'suppressIdleTransients',
   'suppressNearZeroBaselineRise',

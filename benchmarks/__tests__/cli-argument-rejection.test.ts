@@ -51,6 +51,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DROP_DEVIATION_MODES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   PRISM_POOLINGS,
@@ -124,8 +125,21 @@ const fse26Accepted = acceptedFlags(fse26Source, 'argv');
 const rcaevalAccepted = acceptedFlags(rcaevalSource, 'args');
 
 /** A minimal argv that exercises one accepted flag at its own arity. */
+/**
+ * A representative value per MODE flag, because `1` is not a member of a mode's union.
+ *
+ * The defaults are the engine's own vocabularies rather than a list this file maintains: a new member extends
+ * the probe set by existing. A mode flag's parser REFUSES a value it cannot name (`--drop-deviation-mode` throws
+ * rather than silently becoming the shipped mode), so an arity probe that handed it `1` would be testing the
+ * refusal instead of the arity.
+ */
+const MODE_VALUES: Readonly<Record<string, string>> = {
+  '--drop-deviation-mode': 'log',
+};
+
 function argvFor(one: AcceptedFlag): string[] {
-  return one.takesValue ? [one.flag, '1'] : [one.flag];
+  if (!one.takesValue) return [one.flag];
+  return [one.flag, MODE_VALUES[one.flag] ?? '1'];
 }
 
 describe('an unrecognised argument fails loudly', () => {
@@ -375,6 +389,7 @@ describe('every option the golden runner forwards can be set from the command li
       ...ONSET_SHAPES,
       ...Object.keys(LOG_SIGNAL_MODES),
       ...Object.keys(PRISM_POOLINGS),
+      ...Object.keys(DROP_DEVIATION_MODES),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

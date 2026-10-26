@@ -75,6 +75,7 @@ export {
   DEFAULT_ANOMALY_TREND_WEIGHT,
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
   // The demand guard: an ENROLMENT, not an opt-in, and the only member of its family list is `workload`.
@@ -86,7 +87,9 @@ export {
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
+  DROP_DEVIATION_MODES,
   isDemandMetric,
+  isDropDeviationMode,
   // The transport family, exported on the same rule as the demand family: the term that credits a
   // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
   isLatencyMetric,
@@ -97,6 +100,7 @@ export {
 // the type. It is also the home of the scoring ablation switches, which a
 // benchmark harness has to be able to describe.
 export type {
+  DropDeviationMode,
   MetricBreakdown,
   MetricDiagnostic,
   MetricDiagnosticOutcome,

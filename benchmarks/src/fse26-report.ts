@@ -24,7 +24,7 @@ export interface FSE26Anchor {
 }
 
 import type { FaultFailedEdge } from '../../packages/core/src/index.js';
-import type { OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
+import type { DropDeviationMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -155,6 +155,8 @@ export interface FSE26RunConfig {
    */
   readonly prismPooling: PrismPooling;
   readonly collapseDiscount: number;
+  /** How a metric's drop becomes a deviation; `bounded` is the shipped value. */
+  readonly dropDeviationMode: DropDeviationMode;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level; `false` is the shipped value. */
@@ -308,6 +310,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'rankNormalization',
   'dropMetrics',
   'metricRiseCeiling',
+  'dropDeviationMode',
   'metricFleetBaseline',
   'failedEdgeWeight',
   'failedEdgeMode',
@@ -378,9 +381,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   // Printed only when it changes the configuration, like `dropMetrics`: the JSON
   // always carries it, and the line exists to make a NON-default run visible.
-  if (config.metricRiseCeiling > 0) {
-    line += ` riseCeiling=${config.metricRiseCeiling}`;
-  }
+  // Both are printed UNCONDITIONALLY, and their tokens are the FIELD names: the reported-field partition
+  // is read by matching `<field>=` on the line, so a shorter token (`riseCeiling=`) would leave the field
+  // looking unreported and force an exemption that then contradicts the printed name.
+  line += ` metricRiseCeiling=${config.metricRiseCeiling}`;
+  line += ` dropDeviationMode=${config.dropDeviationMode}`;
   if (config.metricFleetBaseline) {
     line += ' fleetBaseline=true';
   }

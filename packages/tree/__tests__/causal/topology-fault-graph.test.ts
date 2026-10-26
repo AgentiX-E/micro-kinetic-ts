@@ -18,7 +18,9 @@ import {
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
+  DROP_DEVIATION_MODES,
   isDemandMetric,
+  isDropDeviationMode,
   isLatencyMetric,
   rankNormalizeScores,
 } from '../../src/causal/topology-fault-graph.js';
@@ -3512,6 +3514,94 @@ describe('the trend-bonus ceiling — an amplifier may not exceed the signal it 
       breakdownOf(collapse).trend,
       12,
     );
+  });
+});
+
+describe('the drop-deviation vocabulary — one owner, checked against its union', () => {
+  it('names exactly the two modes, and refuses anything else', () => {
+    // The guard the parsers call, so a value the engine cannot name is REFUSED at the command line rather than
+    // silently becoming the shipped mode — the defect `logSignalMode` carried for two iterations.
+    expect(Object.keys(DROP_DEVIATION_MODES).sort()).toEqual(['bounded', 'log']);
+    expect(isDropDeviationMode('bounded')).toBe(true);
+    expect(isDropDeviationMode('log')).toBe(true);
+    expect(isDropDeviationMode('sym')).toBe(false);
+    expect(isDropDeviationMode('')).toBe(false);
+    // A prototype key is not a member: `hasOwnProperty` rather than `in`, or every object would answer true.
+    expect(isDropDeviationMode('toString')).toBe(false);
+  });
+});
+
+describe('drop deviation — the axis #193 closed, reopened where its precondition now exists', () => {
+  // RE3-TrainTicket's misses are a truth whose decisive channel is a `socket` DROP — 18 → 11 in case after
+  // case — against a victim whose cpu or latency sits at `dev` 1.2–2.9. `deviation = log10(1 + max(rise,
+  // drop))` is unbounded in the rise direction and bounded at `log10(2)` for a drop, so a service that
+  // LOST ITS DATABASE CONNECTIONS can never out-score one that got slower. PRISM, which reads
+  // `|mean shift|`, has no such asymmetry — and PRISM is the one competitor above us on that cell.
+  //
+  // The symmetric form was tried in #193 and reverted: `docs/re3-fault-ceiling.md` records that measuring a
+  // drop against the post-drop MINIMUM "re-exploded drop-noise", because a counter collapsing to a near-zero
+  // floor produces an unbounded ratio. Two guards have been added SINCE — the event/idle guard
+  // (`min < max × 0.001` → the channel is dropped) and `metricRiseCeiling` — so the axis is reopened here as
+  // a PAIR, because neither half is meaningful alone.
+
+  const dropOf = (values: readonly number[], config?: Record<string, unknown>) => {
+    const graph = makeCallGraph(['svc', 'idle'], []);
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      ['svc', [makeTimeSeries('socket', [...values])]],
+      ['idle', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10])]],
+    ]);
+    return buildTopologyFaultGraph(graph, metrics, config)
+      .metricDiagnostics.get('svc')!
+      .find((d) => d.label === 'socket')!;
+  };
+
+  /** 100 → 11: a 89% drop, far above the event/idle guard's floor. */
+  const partialDrop = [...Array<number>(4).fill(100), ...Array<number>(4).fill(11)];
+  /** 100 → 0.2: a 99.8% drop, still above `max × 0.001`. */
+  const totalDrop = [...Array<number>(4).fill(100), ...Array<number>(4).fill(0.2)];
+
+  it('ships the BOUNDED form, and it is bit-identical to the default path', () => {
+    // The shipped arm is the current expression, not a rewriting of it: `log10(1 + max(rise, drop))`.
+    const shipped = dropOf(partialDrop);
+    expect(shipped.breakdown!.deviation).toBeCloseTo(Math.log10(1 + 89 / 100), 12);
+  });
+
+  it('the LOG form gives a drop the range the bounded form cannot', () => {
+    const bounded = dropOf(totalDrop);
+    const log = dropOf(totalDrop, { dropDeviationMode: 'log' });
+
+    // 0.3006 vs 2.6990: the bounded form says "a total collapse is worth a third of a 2× rise".
+    expect(bounded.breakdown!.deviation).toBeLessThan(0.31);
+    expect(log.breakdown!.deviation).toBeCloseTo(-Math.log10(0.002), 10);
+  });
+
+  it('leaves a RISE exactly where it was, in both forms', () => {
+    // The property that makes this a symmetric-DROP change rather than a re-scoring: for a rise,
+    // `post/base = 1 + riseRatio`, so the two forms coincide by construction, and a 10× rise reads 1.0 in
+    // both. A form that moved rises too would be a different axis.
+    const rise = [...Array<number>(4).fill(1), ...Array<number>(4).fill(10)];
+    const bounded = dropOf(rise);
+    const log = dropOf(rise, { dropDeviationMode: 'log' });
+
+    expect(bounded.breakdown!.deviation).toBeCloseTo(1, 10);
+    expect(log.breakdown!.deviation).toBeCloseTo(bounded.breakdown!.deviation, 12);
+  });
+
+  it('is BOUNDED by the ratio ceiling, which is the precondition #193 did not have', () => {
+    // `rise_ceiling=10` says no channel may claim more than 10× its baseline. Under the log form that is
+    // what turns an unbounded 499× drop into a finite 1.041, i.e. exactly a 10× rise — symmetry, with the
+    // explosion #193 hit capped by a knob that already exists for the rise side.
+    const log = dropOf(totalDrop, { dropDeviationMode: 'log', metricRiseCeiling: 10 });
+
+    expect(log.breakdown!.deviation).toBeCloseTo(Math.log10(11), 10);
+  });
+
+  it('refuses to invent a constant for a drop the idle guard has already removed', () => {
+    // `min < max × 0.001` is dropped BEFORE the deviation is computed, so `dropRatio < 1` always holds and
+    // `1 − dropRatio` is a positive denominator by construction — which is why the log form needs no clamp
+    // of its own. This asserts the guard, not the form: a channel at 0 of a 100 peak never reaches here.
+    const zeroed = dropOf([...Array<number>(4).fill(100), ...Array<number>(4).fill(0)]);
+    expect(zeroed.outcome).not.toBe('kept');
   });
 });
 

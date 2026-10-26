@@ -66,7 +66,11 @@ import {
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
-import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
+import type {
+  DropDeviationMode,
+  LogSignalMode,
+  PrismPooling,
+} from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_ANOMALY_BREADTH_GATE,
@@ -76,12 +80,15 @@ import {
   DEFAULT_ANOMALY_TREND_WEIGHT,
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+  isDropDeviationMode,
   isLogSignalMode,
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -295,6 +302,23 @@ export interface CliOptions {
    */
   collapseDiscount: number;
   /**
+   * The largest ratio ONE metric's deviation may reflect (`0` = unbounded).
+   *
+   * Exposed on this half because the axis it belongs to — how a DROP becomes a deviation — is a PAIR, and a
+   * pair measurable on one half only has an undecidable other half. It had been FSE'26-only, so the golden
+   * half could not state the value every published number ran at.
+   */
+  metricRiseCeiling: number;
+  /**
+   * How a metric's DROP becomes a deviation (`bounded` = shipped, `log` = symmetric with a rise).
+   *
+   * The blocking cell's defect: RE3-TrainTicket's truth is a `socket` drop (18 → 11) against victims whose
+   * latency sits at `dev` 1.2–2.9, and the bounded form caps a drop at `log10(2) = 0.301` while a rise is
+   * unbounded. `log` makes a 10× drop score what a 10× rise scores — and it is the form #193 reverted, which
+   * is why it is only meaningful together with `metricRiseCeiling`.
+   */
+  dropDeviationMode: DropDeviationMode;
+  /**
    * Rank-based anomaly-score normalization on large topologies. Robust to a
    * single near-zero-baseline outlier that would otherwise stretch the min-max
    * range. SHIPPED ON (`DEFAULT_RANK_NORMALIZATION`) — the register keeps the axis on, and this
@@ -476,6 +500,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // the alias is gone and both sites read this one.
     logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
+    metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
+    dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
     // Named rather than a literal, and this site is WHY the census exists: `traceWeight` had a constant and
     // a guarded description while the field default the no-flag path resolves to still wrote `0`. The
     // fallback below and this default are two answers to one question, and a guard that reads only the
@@ -648,6 +674,15 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     } else if (args[i] === '--collapse-discount' && hasValue(args, i + 1)) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;
+    } else if (args[i] === '--rise-ceiling' && hasValue(args, i + 1)) {
+      const ceiling = parseFloat(args[++i]!);
+      opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
+    } else if (args[i] === '--drop-deviation-mode' && hasValue(args, i + 1)) {
+      // Through the guard that owns the union, so a value the engine cannot name is REFUSED rather than
+      // silently becoming the shipped mode — the defect `logSignalMode` carried for two iterations.
+      const raw = args[++i]!;
+      if (isDropDeviationMode(raw)) opts.dropDeviationMode = raw;
+      else throw new Error(`--drop-deviation-mode expects bounded|log, got '${raw}'`);
     } else if (args[i] === '--rank-normalization') {
       opts.rankNormalization = true;
     } else if (args[i] === '--no-rank-normalization') {

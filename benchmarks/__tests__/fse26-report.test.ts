@@ -71,6 +71,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     prismWeight: 0,
     prismPooling: 'additive',
     collapseDiscount: 0,
+    dropDeviationMode: 'bounded',
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
     suppressZeroBaselineLatency: false,
@@ -128,6 +129,7 @@ describe('FSE26 report — attribution', () => {
       'logSignalMode',
       'dropMetrics',
       'metricRiseCeiling',
+      'dropDeviationMode',
       'metricFleetBaseline',
       'failedEdgeWeight',
       'failedEdgeMode',
@@ -185,8 +187,9 @@ describe('FSE26 report — the two renderings agree', () => {
         // the knob a dispatch varies.
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +
         'anomalyBreadthGate=0.8 ' +
-        'latWeight=0 ' +
-        'poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 temporalWeight=0 onsetShape=earliness',
+        'metricRiseCeiling=0 dropDeviationMode=bounded ' +
+        'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
+        'temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
@@ -249,13 +252,20 @@ describe('FSE26 report — the two renderings agree', () => {
     );
   });
 
-  it('names the rise ceiling only when it changes the configuration', () => {
-    // The shipped configuration is an unbounded rise, so a ceiling of 0 adds
-    // nothing to the line — but a run WITH one is a different configuration and
-    // must be distinguishable from the published numbers at a glance.
-    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('riseCeiling');
+  it('names the ratio ceiling and the drop mode on EVERY run', () => {
+    // UNCONDITIONAL since iteration 141, and the token is the FIELD name. Both changed for one reason: the
+    // reported-field partition is read by matching `<field>=` on the line, so a shorter token
+    // (`riseCeiling=`) left the field looking unreported and forced an exemption that then contradicted the
+    // printed name. The ceiling ships at 0 and the mode at `bounded`, so an omitted-when-default rule would
+    // render a bounded-drop run and a log-drop run byte-identically — which is exactly what these two
+    // fields exist to prevent.
+    expect(formatFSE26ConfigLine(makeConfig())).toContain('metricRiseCeiling=0');
     expect(formatFSE26ConfigLine(makeConfig({ metricRiseCeiling: 10 }))).toContain(
-      'riseCeiling=10',
+      'metricRiseCeiling=10',
+    );
+    expect(formatFSE26ConfigLine(makeConfig())).toContain('dropDeviationMode=bounded');
+    expect(formatFSE26ConfigLine(makeConfig({ dropDeviationMode: 'log' }))).toContain(
+      'dropDeviationMode=log',
     );
   });
 

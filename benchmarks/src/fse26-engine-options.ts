@@ -182,6 +182,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       // default because its own rule makes the omission readable, while a PARTIAL here with a key left out
       // would be a silent revert to the engine's default with nothing failing.
       collapseDiscount: opts.collapseDiscount,
+      dropDeviationMode: opts.dropDeviationMode,
       anomalyTrendWeight: opts.anomalyTrendWeight,
       anomalyBurstWeight: opts.anomalyBurstWeight,
       anomalyCvWeight: opts.anomalyCvWeight,

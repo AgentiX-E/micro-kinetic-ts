@@ -348,6 +348,9 @@ jobs:
                 victim_weight)
                   KNOB_ARGS+=(--victim-weight "$value")
                   ;;
+                drop_deviation)
+                  KNOB_ARGS+=(--drop-deviation-mode "$value")
+                  ;;
                 # A GUARD rather than a weight, and it takes 1/0 like the two suppression switches above.
                 zero_baseline_latency)
                   if [ "$value" = "1" ]; then

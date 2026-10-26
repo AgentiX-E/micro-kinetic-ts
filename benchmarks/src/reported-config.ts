@@ -25,7 +25,6 @@
  */
 export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
   dropMetrics: 'a load-time input ablation; the engine runners have no loader that can apply it',
-  metricRiseCeiling: 'a topology-config option; neither construction site passes it',
   metricFleetBaseline: 'a topology-config option; neither construction site passes it',
   failedEdgeMode: 'meaningless without a weight to aggregate; ships at `sum`, never forwarded',
   failedEdgeMinRecords: 'meaningless without a weight to threshold; ships at 1, never forwarded',

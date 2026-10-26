@@ -398,15 +398,16 @@ describe('the RCAEval configuration line carries the configuration that produced
     for (const [field, reason] of Object.entries(UNREPORTED_BY_ENGINE_RUNNERS)) {
       expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
     }
-    // Five, not six: iteration 124 forwarded `failedEdgeWeight`, so the standard no longer permits its
-    // omission and the exemption it carried is GONE rather than reworded. An exemption that outlives the
-    // reason for it is how a required field stops being required.
+    // Four, not five: iteration 141 made the golden runner FORWARD `metricRiseCeiling`, so the standard no
+    // longer permits its omission and the exemption is GONE rather than reworded — the same rule iteration
+    // 124 applied to `failedEdgeWeight`. An exemption that outlives the reason for it is how a required
+    // field stops being required, and the reason it carried ("neither construction site passes it") became
+    // false the moment a construction site did.
     expect(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS).sort()).toEqual([
       'dropMetrics',
       'failedEdgeMinRecords',
       'failedEdgeMode',
       'metricFleetBaseline',
-      'metricRiseCeiling',
     ]);
   });
 
@@ -477,7 +478,8 @@ describe('the RCAEval configuration line carries the configuration that produced
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
-        'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
+        'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
+        'traceWeight=0 prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
         'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
         'suppressZeroBaselineLatency=false capTrendBonusAtDeviation=false ' +

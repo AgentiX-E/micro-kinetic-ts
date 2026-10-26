@@ -28,7 +28,12 @@
  * @module benchmarks/rcaeval-engine-options
  */
 
-import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
+import type {
+  DropDeviationMode,
+  LogSignalMode,
+  OnsetShape,
+  PrismPooling,
+} from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
 
@@ -95,6 +100,10 @@ export interface RCAEvalSignalOptions {
  */
 export interface RCAEvalTopologyOptions {
   readonly collapseDiscount: number;
+  /** The largest ratio one metric's deviation may reflect; `0` = unbounded. */
+  readonly metricRiseCeiling: number;
+  /** How a metric's drop becomes a deviation (`bounded` = shipped, `log` = symmetric). */
+  readonly dropDeviationMode: DropDeviationMode;
   readonly rankNormalization: boolean;
   /**
    * The node count at or above which `rankNormalization` runs at all.
@@ -192,6 +201,8 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
     },
     topology: {
       collapseDiscount: opts.collapseDiscount,
+      metricRiseCeiling: opts.metricRiseCeiling,
+      dropDeviationMode: opts.dropDeviationMode,
       rankNormalization: opts.rankNormalization,
       anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       suppressIdleTransients: opts.suppressIdleTransients,
@@ -239,7 +250,8 @@ export function formatSignalLine(opts: CliOptions): string {
     // omitted-when-default rule would render the measured arm and the shipped configuration byte-identically —
     // the defect this line exists to prevent, one term over.
     `failedEdgeWeight=${opts.failedEdgeWeight} ` +
-    `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
+    `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
+    `dropDeviationMode=${opts.dropDeviationMode} traceWeight=${opts.traceWeight} ` +
     `prismWeight=${opts.prismWeight} prismPooling=${opts.prismPooling} ` +
     `rankNormalization=${opts.rankNormalization} ` +
     `anomalyNormalizeNodeThreshold=${opts.anomalyNormalizeNodeThreshold} ` +
