@@ -85,6 +85,9 @@ export {
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
   isDemandMetric,
+  // The transport family, exported on the same rule as the demand family: the term that credits a
+  // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
+  isLatencyMetric,
 } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
@@ -113,6 +116,7 @@ export {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RISE_WEIGHT,
+  DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
@@ -150,6 +154,7 @@ export {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeSelfTimeScores,
   computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,

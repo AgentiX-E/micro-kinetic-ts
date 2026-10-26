@@ -1088,6 +1088,7 @@ describe('TreePruner', () => {
         latWeight: 0.95,
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
+        selfTimeWeight: 0.9,
       });
 
       expect(weights).toEqual({
@@ -1103,6 +1104,7 @@ describe('TreePruner', () => {
         latWeight: 0.95,
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
+        selfTimeWeight: 0.9,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1782,6 +1784,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       latWeight: 0.25,
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
+      selfTimeWeight: 0.9,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -2045,6 +2048,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       latWeight: 0,
       poolMetricPenaltyWeight: 0.0679,
       stabilityWeight: 0,
+      selfTimeWeight: 0.9,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -2073,6 +2077,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       latWeight: 0,
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
+      selfTimeWeight: 0.9,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -2509,8 +2514,8 @@ describe('the score breakdown — the total IS its terms', () => {
   it('names the term set EXACTLY, so a term added to the formula cannot go missing from the breakdown', () => {
     // The identity above is satisfied by any array whose sum is the total, including one that silently DROPPED
     // a term from both sides — and that is the failure the identity alone cannot see. So the population is
-    // enumerated: these are the thirteen terms `finalScore(v)` is made of, in the formula's order, and a
-    // fourteenth added to the ranking weights without a line here fails this test rather than entering the
+    // enumerated: these are the fourteen terms `finalScore(v)` is made of, in the formula's order, and a
+    // fifteenth added to the ranking weights without a line here fails this test rather than entering the
     // total unaccounted for.
     expect(ranked()[0]!.terms!.map((t) => t.name)).toEqual([
       'selfAnomalyLog1p',
@@ -2526,6 +2531,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'lat',
       'pool',
       'stability',
+      'selfTime',
     ]);
   });
 });
@@ -2791,5 +2797,94 @@ describe('the gated term — a decline, a neutral direction and a missing map ar
     const risen = withRise(new Map([['A', 0.9]]), new Map([['A', 0]]));
     expect(risen.contribution).toBe(0.5 * 2 * (0.9 - 0.5));
     expect(risen.cause).toBeUndefined();
+  });
+});
+
+describe('TreePruner — self-time prior', () => {
+  // The failure this term exists for, in its smallest form: a CALLEE breaks and a CALLER's own response
+  // time rises with it, because a caller's latency CONTAINS its callees'. The two services carry the
+  // same channel and differ only in how much of the rise is theirs — the callee created all of it, the
+  // caller created none, and a maximum-over-metrics anomaly cannot tell those apart.
+  const CALLER = 'ts-food-service';
+  const SOURCE = 'ts-consign-service';
+
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      // 10 → 30 ms: 3×, entirely inherited from the callee below.
+      [CALLER, [makeTimeSeries('latency-90', [10, 10, 10, 10, 30, 30, 30, 30])]],
+      // 10 → 50 ms: 5×, and it has no callee at all — nothing downstream can have created it.
+      [SOURCE, [makeTimeSeries('latency-90', [10, 10, 10, 10, 50, 50, 50, 50])]],
+    ]);
+    return [makeCallGraph([CALLER, SOURCE], [[CALLER, SOURCE]]), metrics];
+  };
+
+  const scores = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+    return {
+      graph,
+      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+    };
+  };
+
+  /** The same graph with the term's own field removed, so "inert" is measured against its ABSENCE. */
+  const withoutField = (): ReadonlyMap<string, number> => {
+    const [callGraph, metrics] = makeCase();
+    const graph = new TreePruner().buildFaultGraph(callGraph, metrics);
+    return new Map(
+      new TreePruner()
+        .analyze({ ...graph, selfTimeScores: undefined })
+        .map((r) => [r.serviceId, r.finalScore!]),
+    );
+  };
+
+  it('carries the SHARE in the graph it builds: all of it at the leaf, none of it at the caller', () => {
+    const { graph } = scores(new TreePruner({ selfTimeWeight: 1 }));
+
+    expect(graph.selfTimeScores?.get(SOURCE)).toBe(1);
+    // The caller's rise is smaller than its callee's, so nothing it has is self-created.
+    expect(graph.selfTimeScores?.get(CALLER)).toBe(0);
+  });
+
+  it('builds NO map at weight 0 — the shipped path does not pay for a term it does not use', () => {
+    // Not merely "the term contributes 0": at the shipped weight the map is never constructed, which is
+    // what makes the shipped ranking bit-identical by construction rather than by arithmetic.
+    const { graph } = scores(new TreePruner({ selfTimeWeight: 0 }));
+
+    expect(graph.selfTimeScores).toBeUndefined();
+  });
+
+  it('is inert at weight 0 against a pruner that never mentions it', () => {
+    const zero = scores(new TreePruner({ selfTimeWeight: 0 })).byService;
+    const absent = withoutField();
+
+    expect(zero.get(SOURCE)!).toBeCloseTo(absent.get(SOURCE)!, 12);
+    expect(zero.get(CALLER)!).toBeCloseTo(absent.get(CALLER)!, 12);
+  });
+
+  it('RAISES the service whose transport rise it created by exactly the weight, and nobody else', () => {
+    // A new axis rather than a re-weighting, and stated at an explicit weight so the property survives any
+    // future enrolment of a shipped default.
+    const weight = 0.3;
+    const before = scores(new TreePruner({ selfTimeWeight: 0 })).byService;
+    const after = scores(new TreePruner({ selfTimeWeight: weight })).byService;
+
+    expect(after.get(SOURCE)! - before.get(SOURCE)!).toBeCloseTo(weight, 10);
+    expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('names the term in the breakdown, with the weight already applied', () => {
+    // The attribution a benchmark reads: the contribution is `weight × share`, so a reader of a dump can
+    // reconstruct the total without knowing the term's shape.
+    const weight = 0.4;
+    const [callGraph, metrics] = makeCase();
+    const pruner = new TreePruner({ selfTimeWeight: weight });
+    const results = pruner.analyze(pruner.buildFaultGraph(callGraph, metrics));
+    const source = results.find((r) => r.serviceId === SOURCE)!;
+    const term = source.terms!.find((t) => t.name === 'selfTime')!;
+
+    expect(term.contribution).toBeCloseTo(weight, 10);
+    expect(term.cause).toBeUndefined();
+    expect(term.source).toBeUndefined();
   });
 });

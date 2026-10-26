@@ -613,8 +613,14 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT, // monotone drift bonus (shipped behaviour)
   anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT, // single-spike bonus (shipped behaviour)
   anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT, // dispersion bonus (shipped behaviour)
-  anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT, // channels-moved term (OFF)
-  anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE, // no contender gate (shipped)
+  // The breadth pair, ENROLLED at (0.05, 0.8) — and these two comments said the opposite for five
+  // iterations after the enrolment: `(OFF)` and `no contender gate (shipped)`. A reader of the DEFAULT
+  // object therefore learned that the term was disabled, which is the same class of defect as the five
+  // declarations `docs/shipped-declaration-audit.md` refuted, one field over. Both values are named
+  // constants, so the pair cannot drift from the numbers the runs measured — but a comment is not a
+  // constant, and only a reader can catch one that lies.
+  anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT, // channels-moved bonus (enrolled)
+  anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE, // contender gate: the bonus is paid only near the top
 };
 
 /**
@@ -1077,6 +1083,21 @@ function classifyServices(
 }
 
 /**
+ * Whether a label names a TRANSPORT metric — the family that measures how long a service took to
+ * answer, and therefore the only family whose rise a caller can inherit from a callee.
+ *
+ * The single owner of that question, for the same reason {@link isDemandMetric} is: the anomaly
+ * classifier names the family `DELAY` and the self-time signal has to credit the same series, so a
+ * second substring test somewhere else would be free to disagree with the first about `latency-99`.
+ *
+ * @param label - The metric label as the converter wrote it.
+ * @returns Whether it belongs to the transport (response-time) family.
+ */
+export function isLatencyMetric(label: string): boolean {
+  return label.startsWith('latency');
+}
+
+/**
  * The fault family a metric LABEL names, or `undefined` when the label names none.
  *
  * Definitional, and deliberately tiny: a label that measures response time names `DELAY`, one that
@@ -1086,7 +1107,7 @@ function classifyServices(
  * @param label - The dominant metric's label.
  */
 function metricFamilyOf(label: string): string | undefined {
-  if (label.startsWith('latency')) return 'DELAY';
+  if (isLatencyMetric(label)) return 'DELAY';
   if (label === 'mem' || label.startsWith('mem')) return 'MEM';
   if (label === 'cpu' || label.startsWith('cpu')) return 'CPU';
   if (label.startsWith('disk') || label.startsWith('io')) return 'DISK';
@@ -1648,14 +1669,20 @@ function computePostInjectOnsetDelay(
 /**
  * Median of a half-open slice `values[start..end)`.
  *
+ * Exported for the self-time signal (`computeSelfTimeScores`), which needs the median of a window at
+ * each END of a latency channel and must use the SAME primitive this module's baselines use: two
+ * medians would be two estimators, and the whole point of the signal is that the two ends of two
+ * different services are measured the same way.
+ *
+ * Every caller passes a window of at least two samples — the onset baseline (`boundary >= 2`), the
+ * robust baseline's fixed 2–5 sample head/tail, and the self-time signal's thirds (`width >= 2`) —
+ * so a one-sample window is not a case this function has to answer.
+ *
  * @internal
  */
-function medianOfRange(values: Float64Array, start: number, end: number): number {
+export function medianOfRange(values: Float64Array, start: number, end: number): number {
   const slice = Array.from(values.slice(start, end)).sort((a, b) => a - b);
   const n = slice.length;
-  // `n` is always >= 2 here: the sole caller (`computePostInjectOnsetDelay`)
-  // returns early when `boundary < 2`, and `medianOfRange(values, 0, boundary)`
-  // slices exactly `boundary` elements. The former `n === 0` guard was dead code.
   const mid = Math.floor(n / 2);
   if (n % 2 === 1) return slice[mid]!;
   return (slice[mid - 1]! + slice[mid]!) / 2;

@@ -32,9 +32,12 @@ import type {
   FaultEdgeLatency,
   FaultFailedEdge,
   FaultLogEntry,
+  MetricMap,
   ServiceId,
   TraceActivityCounts,
 } from '@agentix-e/micro-kinetic-core';
+
+import { isLatencyMetric, medianOfRange } from '../causal/topology-fault-graph.js';
 
 /**
  * The log signal's scoring mode.
@@ -634,6 +637,149 @@ export function computeTopoSourceScores(
     scores.set(nodeId, 1 - explained);
   }
   return scores;
+}
+
+/**
+ * The fewest samples a latency channel needs before it can carry a level at each end.
+ *
+ * Six, because the estimator reads a THIRD at each end and neither window may be smaller than two
+ * samples: a one-sample "level" is the two-sample reading the transient guard already paid for
+ * (`docs/transient-guard-window.md`), and at six samples the two thirds are `[0,2)` and `[4,6)`.
+ */
+export const SELF_TIME_MIN_SAMPLES = 6;
+
+/**
+ * The share of a service's OWN transport disturbance that nothing downstream can explain.
+ *
+ * ## The defect this measures
+ *
+ * A caller's response time CONTAINS its callees'. When a fault makes a callee slow, the caller's
+ * own latency metric rises with it — and on RCAEval's rank-normalised graphs the caller then
+ * outranks the service that actually broke. The measurement that named the mechanism is
+ * `docs/transient-guard-window.md` §4: on `adservice_disk_1` the winner `cartservice` — a CALLER —
+ * carries `latency-90` at 25.89× against the truth's `cpu` at 14.35×, and the seventeen cases the
+ * window estimator lost were eleven single-rank-step losses caused by restoring the caller's
+ * channel. The guard had been damping that advantage as a side effect; this term replaces the side
+ * effect with a mechanism.
+ *
+ * ## The statistic
+ *
+ * ```
+ *   L(v)       = log₁₀(1 + (post(v) − pre(v)) / pre(v))     over v's latency channels, max
+ *   inherited  = max over callees c of L(c)
+ *   share(v)   = max(0, L(v) − inherited) / L(v)            ∈ [0, 1]
+ * ```
+ *
+ * This is the transport counterpart of a **collision source**: in Deng Yu's picture a disturbance is
+ * *created* at a point and carried along the transport afterwards, so the observable question is not
+ * how far a node moved but how much of its movement nothing upstream of the transport can account
+ * for. A leaf scores `1` whenever it moved, and that is the definition rather than the degree
+ * artefact `topoSource` inherits — a service that calls nothing has no callee whose time its own
+ * response time could contain.
+ *
+ * ## Why this is not a closed row
+ *
+ * `topoSource` and its mirror (Direction 2, `docs/reverse-propagation-falsified.md`) both read TOTAL
+ * anomaly and both answer "is this node explained by a neighbour", which their own falsification
+ * shows cannot be right: a source's neighbours are anomalous in both directions, so any
+ * explained-by-a-neighbour test discounts the source. This statistic is not that test. It is defined
+ * on the TRANSPORT channel alone, it asks a question with a physical answer (`response time ≥
+ * inherited response time`), and it is a SHARE rather than a signed bonus, so a node's own quiet
+ * resource channels neither help nor hurt it.
+ *
+ * ## The estimator, and why it is not the engine's deviation
+ *
+ * `deviation` exists only for metrics the guards KEPT, and the guard deletes the propagation-symptom
+ * latency channels — including, on fourteen RE1 failure blocks, the faulted service's own. A
+ * relational measure that reads an absent level as 0 reports the CALLER's whole rise as self-created
+ * on exactly the cases it exists for. So the level is estimated from the raw series with a median of
+ * the first and last thirds, and a node whose level is unknown is ABSENT rather than zero: the term
+ * contributes nothing where it cannot see. The median is what makes a 721-sample window's two ends a
+ * measurement of a level; the same estimator was REFUSED as a guard trigger because a guard needs an
+ * ABSOLUTE judgement, while a share compares two nodes measured identically and the common-mode error
+ * cancels in the ratio.
+ *
+ * @param edges - Call graph edges (caller → callee).
+ * @param metrics - Raw per-service metric series, the same map the anomaly features read.
+ * @param minSamples - Series floor; defaults to {@link SELF_TIME_MIN_SAMPLES}.
+ * @returns Per-service share in [0, 1]. A service is ABSENT when it carries no measurable latency
+ *   channel, or when any callee it has carries none — a caller with one undecidable callee cannot be
+ *   judged, because that callee may be the one it inherited from.
+ */
+export function computeSelfTimeScores(
+  edges: readonly CallEdge[],
+  metrics: MetricMap,
+  minSamples = SELF_TIME_MIN_SAMPLES,
+): Map<ServiceId, number> {
+  const levels = new Map<ServiceId, number>();
+  for (const [serviceId, seriesList] of metrics) {
+    let best: number | undefined;
+    for (const ts of seriesList) {
+      if (!isLatencyMetric(ts.label)) continue;
+      const level = latencyLevel(ts.values, minSamples);
+      if (level === undefined) continue;
+      if (best === undefined || level > best) best = level;
+    }
+    if (best !== undefined) levels.set(serviceId, best);
+  }
+  if (levels.size === 0) return new Map();
+
+  const inherited = new Map<ServiceId, number>();
+  const undecided = new Set<ServiceId>();
+  for (const edge of edges) {
+    const calleeLevel = levels.get(edge.to);
+    if (calleeLevel === undefined) {
+      undecided.add(edge.from);
+      continue;
+    }
+    const previous = inherited.get(edge.from);
+    if (previous === undefined || calleeLevel > previous) {
+      inherited.set(edge.from, calleeLevel);
+    }
+  }
+
+  const scores = new Map<ServiceId, number>();
+  for (const [serviceId, level] of levels) {
+    if (undecided.has(serviceId)) continue;
+    // No callee at all is a MEASURED zero inheritance, not a missing one: this is the leaf case.
+    const downstream = inherited.get(serviceId) ?? 0;
+    if (level <= 0) {
+      scores.set(serviceId, 0);
+      continue;
+    }
+    const created = level - downstream;
+    scores.set(serviceId, created > 0 ? created / level : 0);
+  }
+  return scores;
+}
+
+/**
+ * The transport level of one latency channel: `log₁₀(1 + rise)`, or `undefined` when the window
+ * cannot carry one.
+ *
+ * @param values - The channel's samples.
+ * @param minSamples - Series floor.
+ * @returns The level (0 for a fall or a flat series), or `undefined` for an unusable channel.
+ * @internal
+ */
+function latencyLevel(values: Float64Array, minSamples: number): number | undefined {
+  const n = values.length;
+  const width = Math.max(2, Math.floor(n / 3));
+  // Two non-overlapping thirds, and never fewer samples than the declared floor.
+  if (n < minSamples || n < 2 * width) return undefined;
+  const pre = medianOfRange(values, 0, width);
+  const post = medianOfRange(values, n - width, n);
+  // A non-positive pre-fault level has no relative rise — the idle-percentile artifact
+  // `near-zero-rise-suppression-falsified.md` documents. It carries no level, rather than a big one.
+  // Written as `!(pre > 0)` rather than `pre <= 0` so the NaN arm is the same arm: `NaN <= 0` is false,
+  // which would let an unusable channel through to a comparison it cannot win.
+  if (!(pre > 0)) return undefined;
+  const rise = (post - pre) / pre;
+  // A FALL creates nothing: the share measures disturbance a node created, and a service that got
+  // faster while its peers broke did not create any. The finiteness guard is load-bearing rather than
+  // defensive: a pre-fault level small enough to be positive yet denormal makes the ratio overflow to
+  // `Infinity`, and a share of `Infinity` poisons every score in the case rather than scoring one.
+  return rise > 0 && Number.isFinite(rise) ? Math.log10(1 + rise) : 0;
 }
 
 /**

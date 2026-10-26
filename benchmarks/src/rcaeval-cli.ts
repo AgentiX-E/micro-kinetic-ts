@@ -55,6 +55,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_WEIGHT,
+  DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
@@ -164,6 +165,17 @@ export interface CliOptions {
    * was REJECTED for moving four of the nine golden cells, one of them by 15.8pp.
    */
   stabilityWeight: number;
+  /**
+   * Strength of the SELF-TIME prior: the share of a service's own latency rise that no callee can
+   * explain.
+   *
+   * Read from {@link DEFAULT_SELF_TIME_WEIGHT}, which is 0 — the term is OFF until a measurement
+   * enrols it. This runner is the golden 9-cell, so the weight a dispatch states here is the only
+   * way the term can be measured on the half that decides the goal: on RCAEval RE1 the mechanism it
+   * targets is the one `docs/transient-guard-window.md` §4 named, a CALLER's `latency-90` (25.89×)
+   * outranking the truth's `cpu` (14.35×) because a caller's response time contains its callees'.
+   */
+  selfTimeWeight: number;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -412,6 +424,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -503,6 +516,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
     } else if (args[i] === '--stability-weight' && hasValue(args, i + 1))
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
+    else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
+      opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

@@ -56,6 +56,7 @@ import {
   DEFAULT_PRISM_POOLING,
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
+  DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
@@ -243,6 +244,15 @@ export interface Fse26CliOptions {
    */
   readonly stabilityWeight: number;
   /**
+   * Weight on the SELF-TIME prior, SHIPPED OFF at {@link DEFAULT_SELF_TIME_WEIGHT} = 0.
+   *
+   * The term rewards the share of a service's own latency rise that no CALLEE can explain — a
+   * caller's response time contains its callees', so an inherited rise is not evidence about the
+   * caller. Exposed here so the FSE'26 half of the kill criterion is measurable at the same weight
+   * as the golden half; until it is measured the weight stays 0 and the map is not even built.
+   */
+  readonly selfTimeWeight: number;
+  /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
    * configuration rather than inventing one.
@@ -423,6 +433,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
@@ -532,6 +543,10 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
       // turn a blank flag into a measurement of the ablation).
       opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
+    } else if (arg === '--self-time-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
+      // selecting the ablation — the rule every weight on this parser follows.
+      opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
     } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

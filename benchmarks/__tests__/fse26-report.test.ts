@@ -57,6 +57,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     latMinRise: 1,
     poolMetricPenaltyWeight: 0,
     stabilityWeight: 0,
+    selfTimeWeight: 0,
     temporalWeight: 0,
     onsetShape: 'earliness',
     // The eight the mirror made reachable on this half, all at their SHIPPED values — which is what makes
@@ -130,6 +131,7 @@ describe('FSE26 report — attribution', () => {
       'latMinRise',
       'poolMetricPenaltyWeight',
       'stabilityWeight',
+      'selfTimeWeight',
       'temporalWeight',
       'onsetShape',
     ]);
@@ -178,7 +180,7 @@ describe('FSE26 report — the two renderings agree', () => {
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0.1 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +
         'anomalyBreadthGate=0.8 ' +
         'latWeight=0 ' +
-        'poolMetricPenaltyWeight=0 stabilityWeight=0 temporalWeight=0 onsetShape=earliness',
+        'poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

@@ -121,6 +121,12 @@ export interface FSE26RunConfig {
    * path and the DEFAULT path agree on this line.
    */
   readonly stabilityWeight: number;
+  /**
+   * Weight on the SELF-TIME prior; the shipped value is the engine's 0, i.e. OFF. Printed
+   * unconditionally, because the term ships at 0 and an omitted-when-default rule would render the
+   * measured arm and the shipped run byte-identically.
+   */
+  readonly selfTimeWeight: number;
   /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */
   readonly temporalWeight: number;
   /** Which shape the prior reads the onsets in; inert while the weight is 0. */
@@ -304,6 +310,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'latMinRise',
   'poolMetricPenaltyWeight',
   'stabilityWeight',
+  'selfTimeWeight',
   'temporalWeight',
   'onsetShape',
 ] as const;
@@ -407,6 +414,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // become non-zero, and an omitted-when-default field would then render a byte-identical line for
   // the shipped run and for its ablation.
   line += ` stabilityWeight=${config.stabilityWeight}`;
+  // Unconditional on the same rule: the term ships OFF, so the only thing that can distinguish a
+  // measured arm from the shipped run on an artifact is this field.
+  line += ` selfTimeWeight=${config.selfTimeWeight}`;
   // Both unconditional, and for a stronger reason than the pool term's: a SHAPE is not a
   // weight, so there is no "default 0" it could be omitted against — and the weight's
   // own default is about to become non-zero, at which point an omitted-when-default

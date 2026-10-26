@@ -261,6 +261,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-cv-weight',
     '--anomaly-breadth-weight',
     '--anomaly-breadth-gate',
+    // Iteration 137: the self-time term, and it travels here for a reason that is not the composition's.
+    // The RCAEval workflow is at GitHub's 25-input ceiling, so a term added after that ceiling has no
+    // input of its own on the golden half — and a term measurable on one half only has an undecidable
+    // other half, which is what `topo_discount`'s retirement record is about.
+    '--self-time-weight',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -271,6 +276,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-cv-weight',
     '--anomaly-breadth-weight',
     '--anomaly-breadth-gate',
+    '--self-time-weight',
   ],
 };
 
@@ -363,6 +369,15 @@ const KNOBS: Readonly<
     owner: 'fse26-cv-screen.md',
     fse26: 'stability_weight',
     rcaeval: 'stability_weight',
+  },
+  selfTimeWeight: {
+    flag: '--self-time-weight',
+    owner: 'transient-guard-window.md',
+    // BOTH halves through a PACKED block, and each spells the key its own block's style: the FSE'26 parser
+    // is a `name=value` map (`self_time_weight`), the RCAEval one a short-key map (`selftime`, beside
+    // `trend`/`burst`/`cv`/`breadth`/`gate`) because its input budget is full.
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
   },
   temporalWeight: {
     flag: '--temporal-weight',
@@ -614,6 +629,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'prismPooling',
   'prismWeight',
   'rankNormalization',
+  'selfTimeWeight',
   'stabilityWeight',
   'suppressIdleTransients',
   'suppressNearZeroBaselineRise',
@@ -1038,6 +1054,7 @@ describe('the dispatch surface has one owner per knob', () => {
       'latWeight',
       'poolMetricPenaltyWeight',
       'prismPooling',
+      'selfTimeWeight',
       'stabilityWeight',
       'temporalWeight',
     ];

@@ -44,6 +44,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -124,6 +125,13 @@ export interface AblationSignalOptions {
   readonly failedEdgeWeight: number;
   readonly poolMetricPenaltyWeight: number;
   readonly stabilityWeight: number;
+  /**
+   * The self-time prior. Held at the shipped value by every row — the study's flags are binary and this
+   * term's shipped weight is 0, so no row of the cube can express it. Named here anyway, on the rule the
+   * six inherited terms above were added for: a configuration the artifact cannot state is a configuration
+   * a reader has to guess, and 0 is a fact rather than an omission.
+   */
+  readonly selfTimeWeight: number;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly prismPooling: PrismPooling;
@@ -214,6 +222,8 @@ export interface AblationEngineOverrides {
   readonly poolMetricPenaltyWeight?: number;
   /** Overrides `stabilityWeight` — the decisive-stability prior. See above. */
   readonly stabilityWeight?: number;
+  /** Overrides `selfTimeWeight` — the self-time prior. See the field on the signals object. */
+  readonly selfTimeWeight?: number;
   /**
    * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
    *
@@ -256,6 +266,7 @@ export function buildAblationEngineOptions(
       poolMetricPenaltyWeight:
         overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
+      selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -296,7 +307,8 @@ export function formatAblationConfigLine(
     `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
-    `stabilityWeight=${signals.stabilityWeight} collapseDiscount=${topology.collapseDiscount} ` +
+    `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
+    `collapseDiscount=${topology.collapseDiscount} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
     `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +

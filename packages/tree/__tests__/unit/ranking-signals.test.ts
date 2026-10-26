@@ -3,7 +3,9 @@ import type {
   FaultEdgeLatency,
   FaultFailedEdge,
   FaultLogEntry,
+  MetricMap,
   ServiceId,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 import {
   computeDeepestExceptions,
@@ -15,6 +17,7 @@ import {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeSelfTimeScores,
   computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
@@ -855,6 +858,170 @@ describe('computeTopoSourceScores', () => {
     expect(scores.get('a')).toBeCloseTo(0.7, 10);
     // b calls c, and that edge carries no weight → explanation 0 → b stays a source.
     expect(scores.get('b')).toBe(1);
+  });
+});
+
+describe('computeSelfTimeScores', () => {
+  /** A step series: `pre` for the first half of the window, `post` for the second. */
+  const step = (pre: number, post: number, n = 30): number[] => {
+    const first = Math.floor(n / 2);
+    return [...Array<number>(first).fill(pre), ...Array<number>(n - first).fill(post)];
+  };
+  const series = (label: string, values: readonly number[]): TimeSeries => ({
+    label,
+    timestamps: values.map((_, i) => i * 1000),
+    values: Float64Array.from(values),
+    unit: '',
+  });
+  const mapOf = (entries: Record<string, readonly TimeSeries[]>): MetricMap =>
+    new Map(Object.entries(entries));
+
+  it('credits a leaf with everything, and a caller with only what its callee cannot explain', () => {
+    // The defining case. `caller` and `source` rise by the SAME ratio (5×), so on the raw anomaly
+    // they are indistinguishable — which is the failure this term exists for. The difference is that
+    // the source's rise is created at the source and the caller's is inherited from it.
+    const metrics = mapOf({
+      caller: [series('latency-90', step(5, 25))],
+      source: [series('latency-90', step(10, 50))],
+    });
+    const scores = computeSelfTimeScores([makeEdge('caller', 'source')], metrics);
+
+    // log₁₀(1 + 4) is the same for both, so the caller's inherited share is all of it.
+    expect(scores.get('source')).toBe(1);
+    expect(scores.get('caller')).toBe(0);
+  });
+
+  it('gives a LEAF a full share because nothing downstream can have created its delay', () => {
+    // The same arithmetic that makes `topoSource`'s leaf 1.0 by accident — and here it is the
+    // MEANING rather than an artefact: a service that calls nothing has no callee whose time its
+    // own response time could contain. This assertion is deliberately NOT a carbon copy of
+    // `computeTopoSourceScores`' "pins a known defect" test: if this ever changes, the term's
+    // definition changed, not its degree bias.
+    const metrics = mapOf({ leaf: [series('latency-50', step(2, 4))] });
+
+    expect(computeSelfTimeScores([], metrics).get('leaf')).toBe(1);
+  });
+
+  it('leaves a caller UNDECIDED when a callee carries no latency channel', () => {
+    // The guard that deletes a propagation-symptom latency channel deletes the SOURCE's channel too
+    // (`docs/transient-guard-window.md` records fourteen RE1 failure blocks where the truth's own
+    // latency was discarded). Reading the absent level as 0 would make the caller's entire rise look
+    // self-created — the term would vote for exactly the wrong service on exactly the cases it was
+    // built for. Unknown is therefore ABSENT, and an absent entry contributes nothing.
+    const metrics = mapOf({
+      caller: [series('latency-90', step(5, 25))],
+      source: [series('cpu', step(0.2, 0.9))],
+    });
+    const scores = computeSelfTimeScores([makeEdge('caller', 'source')], metrics);
+
+    expect(scores.has('caller')).toBe(false);
+    expect(scores.has('source')).toBe(false);
+  });
+
+  it('is scale-invariant: every latency channel multiplied by ten gives the same map', () => {
+    // The four scale defects this repository has already paid for make this the first property any
+    // new term is asked for. The share is a ratio of deviations, and a deviation is itself a ratio,
+    // so the map must be bit-identical rather than merely close.
+    const edges = [makeEdge('caller', 'source'), makeEdge('caller', 'sibling')];
+    const base = mapOf({
+      caller: [series('latency-90', step(5, 25))],
+      source: [series('latency-90', step(10, 30))],
+      sibling: [series('latency-90', step(1, 1.2))],
+    });
+    const scaled = mapOf({
+      caller: [series('latency-90', step(50, 250))],
+      source: [series('latency-90', step(100, 300))],
+      sibling: [series('latency-90', step(10, 12))],
+    });
+
+    expect(computeSelfTimeScores(edges, scaled)).toEqual(computeSelfTimeScores(edges, base));
+  });
+
+  it('inherits from the LARGEST callee, not from their sum', () => {
+    // A caller's response time contains the time of the callee it WAITED on longest, so the
+    // statistic is a maximum. A sum would let a caller with many quiet callees inherit more than it
+    // ever spent, and the share would go negative on cases that are plainly inherited.
+    const edges = [makeEdge('caller', 'a'), makeEdge('caller', 'b')];
+    const metrics = mapOf({
+      caller: [series('latency-90', step(10, 30))], // ratio 2 → log₁₀3 = 0.4771
+      a: [series('latency-90', step(10, 20))], // ratio 1 → log₁₀2 = 0.3010
+      b: [series('latency-90', step(10, 11))], // ratio 0.1 → log₁₀1.1 = 0.0414
+    });
+
+    const scores = computeSelfTimeScores(edges, metrics);
+
+    expect(scores.get('caller')).toBeCloseTo((Math.log10(3) - Math.log10(2)) / Math.log10(3), 12);
+    // The callees are leaves and keep everything.
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(1);
+  });
+
+  it('creates nothing when the channel FELL, and inherits nothing from a faller', () => {
+    // A share measures CREATED disturbance. A service whose latency dropped created none, whatever
+    // caused the drop; a caller of that service therefore has nothing to inherit and keeps its own.
+    const edges = [makeEdge('caller', 'callee')];
+    const metrics = mapOf({
+      caller: [series('latency-90', step(10, 20))],
+      callee: [series('latency-90', step(50, 5))],
+    });
+
+    const scores = computeSelfTimeScores(edges, metrics);
+
+    expect(scores.get('callee')).toBe(0);
+    expect(scores.get('caller')).toBe(1);
+  });
+
+  it('ignores every metric that is not a latency channel, however far it moved', () => {
+    // `workload` and `cpu` are not transport: a service's own resource excursion is not a delay it
+    // could have inherited or created for a caller. A cpu series rising 100× must not create a share.
+    const metrics = mapOf({
+      noisy: [series('cpu', step(0.1, 10)), series('workload', step(1, 100))],
+    });
+
+    expect(computeSelfTimeScores([], metrics).size).toBe(0);
+  });
+
+  it('takes the largest of a service MULTIPLE latency channels', () => {
+    // A service carries latency-50/90/99; the disturbance is the largest one, matching the way the
+    // anomaly score takes a maximum over metrics rather than a mean.
+    const metrics = mapOf({
+      v: [series('latency-50', step(10, 12)), series('latency-99', step(10, 40))],
+    });
+
+    // The p99 channel is the one that moved: log₁₀(1 + 3).
+    const scores = computeSelfTimeScores([], metrics);
+    expect(scores.get('v')).toBe(1);
+  });
+
+  it('refuses a channel with no positive pre-fault level', () => {
+    // An idle percentile (0 → 14 s) has an undefined relative rise; crediting it is the exact
+    // artifact `near-zero-rise-suppression-falsified.md` documents. `pre <= 0` therefore carries no
+    // level at all, and a service whose only latency channel is like that is absent.
+    const metrics = mapOf({ v: [series('latency-90', step(0, 14))] });
+
+    expect(computeSelfTimeScores([], metrics).size).toBe(0);
+  });
+
+  it('creates nothing from a channel whose pre-fault level makes the ratio OVERFLOW', () => {
+    // A positive but denormal baseline divides to `Infinity`. Left unguarded that value reaches the share,
+    // and `Infinity / Infinity` is `NaN` — one channel's rounding would erase every candidate in the case
+    // rather than scoring one of them. The honest reading is a measured zero: the relative rise of a
+    // channel whose baseline is indistinguishable from 0 is not a measurement of anything.
+    const metrics = mapOf({ v: [series('latency-90', step(Number.MIN_VALUE, 1))] });
+
+    expect(computeSelfTimeScores([], metrics).get('v')).toBe(0);
+  });
+
+  it('refuses a series too short to carry two non-overlapping thirds', () => {
+    // Five samples cannot be split into two thirds of two, so the estimator would average a window
+    // with itself. The floor is a property of the estimator, not a tuned constant.
+    const metrics = mapOf({ v: [series('latency-90', [1, 1, 1, 9, 9])] });
+
+    expect(computeSelfTimeScores([], metrics).size).toBe(0);
+  });
+
+  it('is empty for a case with no metrics at all', () => {
+    expect(computeSelfTimeScores([makeEdge('a', 'b')], new Map()).size).toBe(0);
   });
 });
 

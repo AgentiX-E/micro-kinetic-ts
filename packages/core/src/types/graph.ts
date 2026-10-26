@@ -384,6 +384,17 @@ export interface FaultPropagationGraph {
    */
   readonly stabilityScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service SELF-TIME share in [0, 1]: the fraction of a service's own transport (latency) rise
+   * that no callee can explain. Feeds the (opt-in) `selfTimeWeight` term.
+   *
+   * SPARSE by construction, and the sparseness is the semantics: a service is ABSENT when it carries
+   * no measurable latency channel, or when any callee it has carries none. The second case is the one
+   * that matters — `docs/transient-guard-window.md` records fourteen RE1 failure blocks whose truth
+   * lost its own latency channel to the transient guard, and reading that absence as a level of 0
+   * would report the CALLER's whole rise as self-created on precisely the cases the term exists for.
+   */
+  readonly selfTimeScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
    * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
    * LLM reranker so the model reasons over the actual exception identity, not

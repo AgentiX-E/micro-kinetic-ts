@@ -31,6 +31,7 @@
  *                 + latWeight       × latScore(v)
  *                 − poolMetricPenaltyWeight × poolMetricScore(v)
  *                 + stabilityWeight × stabilityScore(v)
+ *                 + selfTimeWeight  × selfTimeShare(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -187,4 +188,23 @@ export interface RankingWeights {
    * 9 of 9 byte-identical) and the DEFAULT path re-measured afterwards (`35416576350`).
    */
   readonly stabilityWeight?: number;
+  /**
+   * Self-time prior: rewards a service for the share of its OWN latency rise that no callee can
+   * explain.
+   *
+   *   finalScore(v) += selfTimeWeight × selfTimeShare(v)
+   *
+   * `selfTimeShare(v) = max(0, L(v) − max over callees c of L(c)) / L(v)` where `L` is the transport
+   * (latency-channel) level. A caller's response time CONTAINS its callees', so a rise that a slow
+   * callee explains is inherited rather than created — the distinction a maximum-over-metrics anomaly
+   * cannot make, and the reason a caller outranks the callee that broke on rank-normalised graphs.
+   * A leaf (no callees) keeps its whole rise, which is the definition rather than a degree artefact:
+   * nothing downstream exists that could have created it.
+   *
+   * Shares are ABSENT, not zero, for a service with no measurable latency channel or with any callee
+   * that has none — unknown is not a measured 0.
+   *
+   * OPTIONAL: absent means 0 (disabled).
+   */
+  readonly selfTimeWeight?: number;
 }

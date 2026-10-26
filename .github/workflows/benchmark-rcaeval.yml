@@ -306,6 +306,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -471,6 +472,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -661,6 +663,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -835,6 +838,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -1033,6 +1037,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -1199,6 +1204,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -1366,6 +1372,7 @@ jobs:
               cv=*) RANKING_ARG+=(--anomaly-cv-weight "${kv#cv=}") ;;
               breadth=*) RANKING_ARG+=(--anomaly-breadth-weight "${kv#breadth=}") ;;
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
+              selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done

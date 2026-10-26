@@ -338,6 +338,13 @@ jobs:
                 anomaly_breadth_gate)
                   KNOB_ARGS+=(--anomaly-breadth-gate "$value")
                   ;;
+                # The self-time term. Not a coefficient of the composition but a RANKING weight, and it
+                # travels in this block for the same reason the composition does: the RCAEval half's
+                # 25-input budget is full, so a term whose two halves must be measurable together needs a
+                # channel on each side, and this block is the FSE'26 side's.
+                self_time_weight)
+                  KNOB_ARGS+=(--self-time-weight "$value")
+                  ;;
                 suppress_idle_transients)
                   if [ "$value" = "1" ]; then
                     KNOB_ARGS+=(--suppress-idle-transients)

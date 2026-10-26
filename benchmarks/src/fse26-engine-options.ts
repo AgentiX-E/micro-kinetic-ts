@@ -68,6 +68,12 @@ export interface Fse26SignalOptions {
   /** Weight on the decisive-stability prior. Required for the same reason as the pool penalty. */
   readonly stabilityWeight: number;
   /**
+   * Weight on the SELF-TIME prior. Required for the same reason as the pool penalty: a PARTIAL
+   * passed through here would be a silent no-op if the key were ever misspelled, and the term's
+   * shipped value is 0, which is exactly the value a silent no-op produces.
+   */
+  readonly selfTimeWeight: number;
+  /**
    * Weight of the injection-anchored temporal prior. Required for the same reason as
    * every weight above: a PARTIAL passed through here would be a silent no-op if the
    * key were ever misspelled, and this file exists precisely because a dropped option
@@ -143,6 +149,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       latMinRise: opts.latMinRise,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       stabilityWeight: opts.stabilityWeight,
+      selfTimeWeight: opts.selfTimeWeight,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       // The five the golden half could state alone until `docs/dispatch-surface-audit.md`'s Finding 6

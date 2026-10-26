@@ -74,6 +74,7 @@ import {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeSelfTimeScores,
   computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
@@ -594,6 +595,24 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * against the run that rejected it.
    */
   readonly stabilityWeight: number;
+  /**
+   * Weight on the SELF-TIME prior: rewards a service for the part of its own latency rise that no
+   * callee can explain (see {@link computeSelfTimeScores}).
+   *
+   *   finalScore(v) += selfTimeWeight × selfTimeShare(v)
+   *
+   * The term exists because a caller's response time CONTAINS its callees', so on a rank-normalised
+   * graph a slow callee lifts its caller further than itself. That is the mechanism
+   * `docs/transient-guard-window.md` §4 names when it records that the window estimator's seventeen
+   * RE1 losses are eleven single-rank-step calls decided by a CALLER's `latency-90` (25.89×) against
+   * the truth's `cpu` (14.35×). The guard had been damping that advantage as a side effect of
+   * discarding propagation channels; this term replaces the side effect with a mechanism.
+   *
+   * Ships at {@link DEFAULT_SELF_TIME_WEIGHT} = **0**, i.e. OFF, because it has no measurement yet —
+   * and the docblock on that constant is where its measurement will be recorded. A weight of 0 skips
+   * the map's construction entirely, so the shipped ranking is bit-identical by construction.
+   */
+  readonly selfTimeWeight: number;
 }
 
 /**
@@ -617,6 +636,7 @@ export function toRankingWeights(
     | 'latWeight'
     | 'poolMetricPenaltyWeight'
     | 'stabilityWeight'
+    | 'selfTimeWeight'
   >,
 ): RankingWeights {
   return {
@@ -632,6 +652,7 @@ export function toRankingWeights(
     latWeight: options.latWeight,
     poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
     stabilityWeight: options.stabilityWeight,
+    selfTimeWeight: options.selfTimeWeight,
   };
 }
 
@@ -737,6 +758,19 @@ export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
  * never become the default, and neither can any value nobody has run.
  */
 export const DEFAULT_STABILITY_WEIGHT = 0.007352;
+
+/**
+ * The shipped weight of the self-time term.
+ *
+ * **0, i.e. OFF**, and this constant is where the value stops being a bare literal and starts being a
+ * name: the term's own docblock on {@link TreePrunerOptions.selfTimeWeight} carries the mechanism, and
+ * the measurement that enrols it will be recorded here.
+ *
+ * A new term ships at 0 for the reason every other one did: the shipped ranking has to be
+ * bit-identical by construction while the mechanism is being measured, so that a dispatch which states
+ * the weight is the only thing that differs between two runs. The map is not even built at 0.
+ */
+export const DEFAULT_SELF_TIME_WEIGHT = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.
@@ -1141,6 +1175,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+  selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
 };
 
 /**
@@ -1454,6 +1489,15 @@ export class TreePruner {
     // deliberately wider than the term's population.
     const edgeLatencyByCallee = computeEdgeLatencyByCallee(options?.edgeLatency);
 
+    // The SELF-TIME share: the fraction of a service's own latency rise that no callee can explain.
+    // Computed from the RAW metric series rather than from the anomaly features, because the guards
+    // delete exactly the propagation channels this term has to compare — see the function's docblock.
+    // At weight 0 the map is not built at all, so the shipped path is byte-identical by construction.
+    const selfTimeScores =
+      this.options.selfTimeWeight !== 0
+        ? computeSelfTimeScores(topologyGraph.edges, metrics)
+        : undefined;
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -1479,6 +1523,7 @@ export class TreePruner {
       edgeLatencyByCallee,
       poolMetricScores,
       stabilityScores,
+      selfTimeScores,
     };
   }
 
@@ -1549,6 +1594,7 @@ export class TreePruner {
       graph.edgeLatencyScores,
       graph.poolMetricScores,
       graph.stabilityScores,
+      graph.selfTimeScores,
     );
 
     // ── The failed-edge direction term's GATE ────────────────────────────────
@@ -1596,6 +1642,7 @@ export class TreePruner {
         graph.edgeLatencyScores,
         graph.poolMetricScores,
         graph.stabilityScores,
+        graph.selfTimeScores,
       ),
     );
   }
@@ -1850,6 +1897,7 @@ function performTreeRCA(
   edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
   stabilityScores?: ReadonlyMap<ServiceId, number>,
+  selfTimeScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -2095,6 +2143,11 @@ function performTreeRCA(
   //    series. The only term here keyed on WHICH evidence won rather than on how
   //    much, and the only one whose sign is a penalty on the evidence rather than
   //    on inherited energy.
+  // 12. A SELF-TIME prior (`selfTimeWeight`) — reward the part of a service's own latency
+  //    rise that no CALLEE can explain. The transport counterpart of 1, and the answer to
+  //    the mechanism `docs/transient-guard-window.md` §4 measured: a caller's response time
+  //    contains its callees', so a rise a slow callee accounts for is INHERITED rather
+  //    than created — and a maximum-over-metrics anomaly cannot tell the two apart.
   //
   // This list has to grow with the score: it was one term short for a release
   // (the per-edge latency prior shipped without an entry), and a reader counting
@@ -2174,6 +2227,10 @@ function performTreeRCA(
   // The decisive-stability term. Its map is ABSENT for a service the engine could not decompose,
   // which is why the lookup keeps a neutral fallback: `undefined` is not a measured bonus of zero.
   const stabilityWeight = options.stabilityWeight;
+  // The self-time term. Its map is ABSENT when the case carries no usable latency channel (or when a
+  // candidate has an undecidable callee), so the lookup keeps the neutral 0 — the same rule the other
+  // sparse maps follow: a missing measurement is not a measured zero, and this term only ever rewards.
+  const selfTimeWeight = options.selfTimeWeight;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -2226,6 +2283,7 @@ function performTreeRCA(
       const latEntry = edgeLatencyScores?.get(id);
       const poolEntry = poolMetricScores?.get(id);
       const stabilityEntry = stabilityScores?.get(id);
+      const selfTimeEntry = selfTimeScores?.get(id);
       const riseHasLogic = (logEntry ?? 0) > 0;
       // The direction the map carried, or the NEUTRAL 0.5 the formula substitutes. Read once so the value and
       // the ungated value it is compared against cannot come from two different lookups.
@@ -2300,6 +2358,14 @@ function performTreeRCA(
         buildTerm('stability', stabilityWeight, stabilityEntry ?? 0, {
           presence: presenceOf(stabilityScores, id),
           source: 'stabilityScores',
+        }),
+        // The only term whose INPUT is a comparison with the candidate's CALLEES rather than a
+        // property of the candidate: `selfTimeShare` is 0 for a service whose rise a callee fully
+        // explains, so a missing entry (an undecidable callee) and a measured 0 both contribute
+        // nothing and the term can only ever reward a node DOWNSTREAM evidence does not cover.
+        buildTerm('selfTime', selfTimeWeight, selfTimeEntry ?? 0, {
+          presence: presenceOf(selfTimeScores, id),
+          source: 'selfTimeScores',
         }),
       ];
       termCache.set(id, t);

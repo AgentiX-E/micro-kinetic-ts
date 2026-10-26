@@ -20,6 +20,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -45,6 +46,7 @@ describe('buildFse26EngineOptions', () => {
       latMinRise: DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+      selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

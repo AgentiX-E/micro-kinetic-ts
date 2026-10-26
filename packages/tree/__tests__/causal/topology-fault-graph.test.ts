@@ -15,8 +15,10 @@ import {
   buildTopologyFaultGraph,
   DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
   isDemandMetric,
+  isLatencyMetric,
   rankNormalizeScores,
 } from '../../src/causal/topology-fault-graph.js';
 
@@ -1483,6 +1485,22 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       weight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
       gate: DEFAULT_ANOMALY_BREADTH_GATE,
     };
+
+    it('ships the enrolled pair on the DEFAULT path, not only when a caller passes it', () => {
+      // This constant existed and was UNUSED for one iteration — declared, so the lint run reported it,
+      // and never read. What it was for is the failure this repository has published once already: the
+      // default object and the parsed default are two declarations of one value, and they agreed only
+      // because both were literals of the same number (the 24.2pp drift of the FSE'26 `config` block).
+      // Reading the pair back OFF the default object is what makes the enrolment a property of the
+      // default path rather than of a constant nobody consults.
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthWeight).toBe(
+        DEFAULT_BREADTH_PAIR.weight,
+      );
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthGate).toBe(DEFAULT_BREADTH_PAIR.gate);
+      // And the pair is the ENROLLED one, not a zero the two ledgers could agree on in silence.
+      expect(DEFAULT_BREADTH_PAIR.weight).toBe(0.05);
+      expect(DEFAULT_BREADTH_PAIR.gate).toBe(0.8);
+    });
     // `featureScore = deviation + 0.15·trend + 0.1·deviation·burst + 0.05·cv` — three numbers written at
     // one line inside `computeAnomalyFeatures`, with three more thresholds beside them. On RCAEval RE1
     // the ranking IS this score plus a 0.007352 tie-break: every other term is `WEIGHT_ZERO` or
@@ -3416,5 +3434,30 @@ describe('buildTopologyFaultGraph — a DEMAND metric is not fault evidence', ()
     const result = buildTopologyFaultGraph(graph, metrics);
     expect(result.anomalyScores.has('svc-demand')).toBe(true);
     expect(result.anomalyScores.get('svc-demand')).toBe(0);
+  });
+});
+
+describe('isLatencyMetric — the transport family, and the ONE owner of that question', () => {
+  it('names every latency percentile and nothing else', () => {
+    for (const label of ['latency', 'latency-50', 'latency-90', 'latency-99', 'latency_p99']) {
+      expect(isLatencyMetric(label), label).toBe(true);
+    }
+    // The near-misses are the ones a hand-written test gets wrong: a label that CONTAINS the word, a
+    // resource metric that a naive `includes('lat')` would swallow, and the demand family beside it.
+    for (const label of ['error', 'workload', 'cpu', 'mem', 'diskio', 'p99-latency', 'LATENCY-90']) {
+      expect(isLatencyMetric(label), label).toBe(false);
+    }
+  });
+
+  it('is what the fault classifier asks, so a latency-dominant service is a DELAY hypothesis', () => {
+    // The classifier's `DELAY` arm and the self-time signal's credit have to be the same question asked
+    // once. This asserts the ANSWER travels: a service whose only moving channel is `latency-90` is
+    // classified DELAY by the dominant-metric rule, which reads `isLatencyMetric`.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-90', [10, 10, 10, 10, 90, 90, 90, 90])]]]);
+    const hypothesis = buildTopologyFaultGraph(graph, metrics).faultHypotheses.get('svc');
+
+    expect(hypothesis?.category).toBe('DELAY');
+    expect(hypothesis?.evidence.join(' ')).toContain('latency-90');
   });
 });

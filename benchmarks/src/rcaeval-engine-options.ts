@@ -38,6 +38,14 @@ export interface RCAEvalSignalOptions {
   readonly onsetShape: OnsetShape;
   readonly stabilityWeight: number;
   /**
+   * The SELF-TIME prior: the share of a service's own latency rise that no callee can explain.
+   *
+   * Required here for the reason every other weight is: the engine's default is 0, and a runner that
+   * inherited it by omission could not state the term on an artifact — the defect this file exists to
+   * prevent, one term over. It ships at the engine's 0 until a measurement enrols it.
+   */
+  readonly selfTimeWeight: number;
+  /**
    * The per-edge latency pair — a WEIGHT and the RISE FLOOR it was measured with.
    *
    * The two are one configuration rather than two settings: the floor is not safe on its own, and
@@ -161,6 +169,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       stabilityWeight: opts.stabilityWeight,
+      selfTimeWeight: opts.selfTimeWeight,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -236,6 +245,9 @@ export function formatSignalLine(opts: CliOptions): string {
     `anomalyTrendWeight=${opts.anomalyTrendWeight} ` +
     `anomalyBurstWeight=${opts.anomalyBurstWeight} anomalyCvWeight=${opts.anomalyCvWeight} ` +
     `anomalyBreadthWeight=${opts.anomalyBreadthWeight} anomalyBreadthGate=${opts.anomalyBreadthGate} ` +
+    // The self-time term, named unconditionally for the failed-edge reason: it ships at 0, so an
+    // omitted-when-default rule would render the measured arm and the shipped run identically.
+    `selfTimeWeight=${opts.selfTimeWeight} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

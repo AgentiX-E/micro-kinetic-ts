@@ -55,6 +55,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   prismPooling:
     'which of PRISM\u2019s two combination functions its signal uses; the search tunes the PRISM WEIGHT only, and the pooling is a per-context CHOICE rather than a weight',
   stabilityWeight: 'the decisive-stability prior, solved outside this search space',
+  selfTimeWeight:
+    'the self-time prior, shipped OFF and measured outside this search space: it is a transport-causality term whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
   failedEdgeWeight:
     "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
