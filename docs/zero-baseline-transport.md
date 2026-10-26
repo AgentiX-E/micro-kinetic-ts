@@ -56,6 +56,12 @@ level.
 The candidate's own `signals:` line reads `suppressZeroBaselineLatency=true`, so the field reached the
 engine — this is not the `topo_discount` defect of a knob that never arrives.
 
+**The other half, and why it is a structural zero rather than an unmeasured one**: run `40285886030`
+carries `zero_baseline_latency=1` and reads **Top@1 56.4% / Top@3 69.7% / Top@5 72.1%** — identical to the
+shipped default. FSE'26's corpus is `Resource,Pod,JVM`: it carries **no transport family at all**, so the
+guard's population does not exist there. That is the kill criterion's second half answered as
+"inapplicable, with the reason", not left as "unmeasured".
+
 ## 4. What the per-case diff says, and it is the reason this document exists
 
 Eight of the 100 rendered diagnostic blocks differ. In `re3tt_ts-route-service_f1_3`:
