@@ -1496,7 +1496,9 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthWeight).toBe(
         DEFAULT_BREADTH_PAIR.weight,
       );
-      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthGate).toBe(DEFAULT_BREADTH_PAIR.gate);
+      expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.anomalyBreadthGate).toBe(
+        DEFAULT_BREADTH_PAIR.gate,
+      );
       // And the pair is the ENROLLED one, not a zero the two ledgers could agree on in silence.
       expect(DEFAULT_BREADTH_PAIR.weight).toBe(0.05);
       expect(DEFAULT_BREADTH_PAIR.gate).toBe(0.8);
@@ -3444,7 +3446,15 @@ describe('isLatencyMetric — the transport family, and the ONE owner of that qu
     }
     // The near-misses are the ones a hand-written test gets wrong: a label that CONTAINS the word, a
     // resource metric that a naive `includes('lat')` would swallow, and the demand family beside it.
-    for (const label of ['error', 'workload', 'cpu', 'mem', 'diskio', 'p99-latency', 'LATENCY-90']) {
+    for (const label of [
+      'error',
+      'workload',
+      'cpu',
+      'mem',
+      'diskio',
+      'p99-latency',
+      'LATENCY-90',
+    ]) {
       expect(isLatencyMetric(label), label).toBe(false);
     }
   });
@@ -3454,7 +3464,9 @@ describe('isLatencyMetric — the transport family, and the ONE owner of that qu
     // once. This asserts the ANSWER travels: a service whose only moving channel is `latency-90` is
     // classified DELAY by the dominant-metric rule, which reads `isLatencyMetric`.
     const graph = makeCallGraph(['svc'], []);
-    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-90', [10, 10, 10, 10, 90, 90, 90, 90])]]]);
+    const metrics = makeMetrics([
+      ['svc', [makeTimeSeries('latency-90', [10, 10, 10, 10, 90, 90, 90, 90])]],
+    ]);
     const hypothesis = buildTopologyFaultGraph(graph, metrics).faultHypotheses.get('svc');
 
     expect(hypothesis?.category).toBe('DELAY');
