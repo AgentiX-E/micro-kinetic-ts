@@ -172,6 +172,7 @@ async function main(): Promise<void> {
     collapseDiscount: opts.collapseDiscount,
     suppressIdleTransients: opts.suppressIdleTransients,
     suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
+    suppressZeroBaselineLatency: opts.suppressZeroBaselineLatency,
     // The anomaly composition: carried so the JSON records it too, and printed unconditionally by the
     // line, because on the golden half these four ARE the ranking.
     anomalyTrendWeight: opts.anomalyTrendWeight,

@@ -79,6 +79,7 @@ import {
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+  DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   isLogSignalMode,
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -313,6 +314,15 @@ export interface CliOptions {
    */
   suppressNearZeroBaselineRise: boolean;
   /**
+   * Discard a TRANSPORT channel (a latency percentile) whose head window has no level.
+   *
+   * The RE3-TrainTicket lever, measured from the acceptance artifact: the winning service's decisive channel
+   * is `latency-90` at `head=[0,0,0,0,0,0]` and `tail=[0.0235, …]` — a 764× "rise" that is the arrival of
+   * traffic, not slowness — against a truth whose own evidence is a `socket` drop. Read from
+   * {@link DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY}, which is `false` until a dispatch measures it.
+   */
+  suppressZeroBaselineLatency: boolean;
+  /**
    * Whether a DEMAND metric (`workload` — how much work a service was HANDED) may be a node's decisive
    * evidence. Shipped `true` since iteration 127, on the measurement `docs/rcaeval-local-harness.md` carries:
    * the family is decisive for 4.0% of ground truths against 12.5% of bystanders, and removing it takes
@@ -469,6 +479,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+    suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
     anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
@@ -645,6 +656,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.suppressNearZeroBaselineRise = true;
     } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = false;
+    } else if (args[i] === '--suppress-zero-baseline-latency') {
+      opts.suppressZeroBaselineLatency = true;
+    } else if (args[i] === '--no-suppress-zero-baseline-latency') {
+      opts.suppressZeroBaselineLatency = false;
     } else if (args[i] === '--fusion-ceiling' && hasValue(args, i + 1)) {
       opts.fusionCeiling = args[++i]!;
     } else if (args[i] === '--routing-probe' && hasValue(args, i + 1)) {

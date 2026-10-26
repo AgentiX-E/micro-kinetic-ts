@@ -479,7 +479,8 @@ describe('the RCAEval configuration line carries the configuration that produced
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
-        'suppressIdleTransients=false suppressNearZeroBaselineRise=false suppressDemandMetrics=true ' +
+        'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
+        'suppressZeroBaselineLatency=false suppressDemandMetrics=true ' +
         // The anomaly composition, named unconditionally: on this corpus it IS the ranking, so a line that
         // omitted it (or printed only non-defaults) could not attribute a RE1 movement to anything.
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +

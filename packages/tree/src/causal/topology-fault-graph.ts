@@ -260,6 +260,22 @@ export interface TopologyFaultGraphConfig {
    */
   readonly suppressNearZeroBaselineRise: boolean;
   /**
+   * Whether a TRANSPORT channel whose head window has no level is discarded as evidence.
+   *
+   * The RE3-TrainTicket miss, verbatim from run `40255890256`: the winner's decisive channel is `latency-90`
+   * with `head=[0,0,0,0,0,0]` and `tail=[0.0235, …]`, read as a **764× rise** (`dev=2.884`) against a truth
+   * whose own evidence is a `socket` DROP (17 → 9, `dev=0.34`). A percentile that reports `0` means the
+   * service answered NOTHING in that window, so the "rise" measures the arrival of traffic rather than
+   * slowness.
+   *
+   * Deliberately NARROWER than {@link suppressNearZeroBaselineRise}, which was measured a no-op: that guard
+   * tests every family's baseline MEAN against `0.001`, and the failing winners sit at `base = 0.002` — just
+   * above it. The question here is not "is the baseline small" but "did the channel have a LEVEL", and it is
+   * asked of the transport family only: a resource channel at zero is the idle/crash question the
+   * `duty-cycled-idle` guard already owns, and it is the signature of genuine TrainTicket faults.
+   */
+  readonly suppressZeroBaselineLatency: boolean;
+  /**
    * Whether a DEMAND metric may be a node's decisive evidence at all.
    *
    * A demand metric counts how much work a service was HANDED (`workload` and its family), not how it
@@ -511,6 +527,14 @@ export const DEFAULT_SUPPRESS_DEMAND_METRICS = true;
 export const DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE = false;
 
 /**
+ * The shipped value of {@link TopologyFaultGraphConfig.suppressZeroBaselineLatency}, which is `false`.
+ *
+ * Opt-in until a dispatch measures it, on the rule every guard in this file follows: the shipped ranking has
+ * to be unchanged while the mechanism is being read.
+ */
+export const DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY = false;
+
+/**
  * The shipped value of {@link TopologyFaultGraphConfig.metricRiseCeiling}, which is `0` = unbounded.
  *
  * Named because the FSE'26 workflow exposes it as `rise_ceiling` and its description states the shipped
@@ -635,6 +659,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
   suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
+  suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY, // no-traffic transport channels (opt-in)
   suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS, // demand metrics are not fault evidence (enrolled)
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
@@ -1318,6 +1343,18 @@ function computeAnomalyFeatures(
     if (nearZeroCount > n * 0.4) {
       drop(ts.label, 'duty-cycled-idle');
       continue;
+    }
+
+    // Zero-baseline transport guard: a latency percentile whose head window has NO level is a channel that
+    // measured an absence, and the relative rise of an absence is undefined rather than large. The window is
+    // a tenth of the series with a floor of three samples — never one sample, for the reason
+    // `docs/transient-guard-window.md` records — so a channel that opens on a single zero keeps its level.
+    if (cfg.suppressZeroBaselineLatency && isLatencyMetric(ts.label)) {
+      const headWidth = Math.max(3, Math.ceil(n * 0.1));
+      if (medianOfRange(ts.values, 0, headWidth) <= 0) {
+        drop(ts.label, 'zero-baseline-transport');
+        continue;
+      }
     }
 
     // Transient-spike guard: a metric that spikes and then RETURNS to (or

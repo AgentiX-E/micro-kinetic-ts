@@ -345,6 +345,17 @@ jobs:
                 self_time_weight)
                   KNOB_ARGS+=(--self-time-weight "$value")
                   ;;
+                # A GUARD rather than a weight, and it takes 1/0 like the two suppression switches above.
+                zero_baseline_latency)
+                  if [ "$value" = "1" ]; then
+                    KNOB_ARGS+=(--suppress-zero-baseline-latency)
+                  elif [ "$value" = "0" ]; then
+                    KNOB_ARGS+=(--no-suppress-zero-baseline-latency)
+                  else
+                    echo "::error::ranking_knobs: zero_baseline_latency takes 1 or 0, got '$value'"
+                    exit 1
+                  fi
+                  ;;
                 suppress_idle_transients)
                   if [ "$value" = "1" ]; then
                     KNOB_ARGS+=(--suppress-idle-transients)

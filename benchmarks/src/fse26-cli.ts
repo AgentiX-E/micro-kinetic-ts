@@ -61,6 +61,7 @@ import {
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+  DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
@@ -357,6 +358,11 @@ export interface Fse26CliOptions {
    */
   readonly suppressNearZeroBaselineRise: boolean;
   /**
+   * Discard a transport channel whose head window has no level. Exposed on this half for the reason every
+   * guard is: a term measurable on one half only has an undecidable other half. `false` is the shipped value.
+   */
+  readonly suppressZeroBaselineLatency: boolean;
+  /**
    * Whether a DEMAND metric (`workload`) may be a node's decisive evidence. Shipped `true` since iteration 127.
    *
    * Reachable here even though this corpus carries no member of the family — `grep -c 'workload=' on run
@@ -454,6 +460,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+    suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
   };
 
@@ -598,6 +605,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--suppress-near-zero-baseline-rise') opts.suppressNearZeroBaselineRise = true;
     else if (arg === '--no-suppress-near-zero-baseline-rise')
       opts.suppressNearZeroBaselineRise = false;
+    else if (arg === '--suppress-zero-baseline-latency') opts.suppressZeroBaselineLatency = true;
+    else if (arg === '--no-suppress-zero-baseline-latency')
+      opts.suppressZeroBaselineLatency = false;
     else {
       throw new Error(
         `unrecognised argument ${arg} — either this runner does not accept it, ` +

@@ -101,7 +101,17 @@ export type MetricDiagnosticOutcome =
    * guards above on purpose: those say the metric's series is uninformative, and this says the metric is
    * informative about the wrong thing.
    */
-  | 'demand-not-health';
+  | 'demand-not-health'
+  /**
+   * A TRANSPORT channel (a latency percentile) whose head window has no level at all — the service answered
+   * nothing there, so the channel's relative rise measures the ARRIVAL OF TRAFFIC rather than slowness.
+   *
+   * Its own member rather than `near-zero-baseline-rise`, because the two ask different questions: that
+   * guard tests the BASELINE MEAN against epsilon `0.001` for every family, while this one tests whether
+   * the transport channel had a LEVEL — a percentile reading exactly `0` is an absence, not a small value,
+   * and `0.002` passes the epsilon while still being "no traffic at the start of the window".
+   */
+  | 'zero-baseline-transport';
 
 /**
  * The decomposition of a metric's feature-weighted anomaly score.

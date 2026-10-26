@@ -266,6 +266,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // input of its own on the golden half — and a term measurable on one half only has an undecidable
     // other half, which is what `topo_discount`'s retirement record is about.
     '--self-time-weight',
+    // Iteration 138: a GUARD rather than a weight, and it travels in the packed block for the same reason —
+    // the golden half has no input of its own to spend (25/25 used).
+    '--suppress-zero-baseline-latency',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -277,6 +280,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-breadth-weight',
     '--anomaly-breadth-gate',
     '--self-time-weight',
+    '--suppress-zero-baseline-latency',
   ],
 };
 
@@ -369,6 +373,12 @@ const KNOBS: Readonly<
     owner: 'fse26-cv-screen.md',
     fse26: 'stability_weight',
     rcaeval: 'stability_weight',
+  },
+  suppressZeroBaselineLatency: {
+    flag: '--suppress-zero-baseline-latency',
+    owner: 'fault-type-identification.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
   },
   selfTimeWeight: {
     flag: '--self-time-weight',
@@ -631,6 +641,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'rankNormalization',
   'selfTimeWeight',
   'stabilityWeight',
+  'suppressZeroBaselineLatency',
   'suppressIdleTransients',
   'suppressNearZeroBaselineRise',
   'temporalWeight',
@@ -695,7 +706,7 @@ function axisOf(option: string): string {
  * vary had an undecidable golden half — the same hole `latWeight`, `latMinRise` and `poolMetricPenaltyWeight`
  * were repaired for one iteration earlier, found by the same census.
  *
- * The four that remain are NOT of that shape, and their reasons are beside them: an output path that is
+ * The five that remain are NOT of that shape, and their reasons are beside them: an output path that is
  * not a ranking knob, a positive pole whose axis is reachable through its negation, and two negated poles
  * that can only restate a default of false. **A set that shrinks without a note is a set nobody can audit**,
  * so the departures are listed here rather than dropped.
@@ -712,6 +723,10 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // reachable in the only state that differs from the shipped one.
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
+  // Iteration 138's zero-baseline transport guard is the same shape: the KNOB row names the positive pole,
+  // and both polls travel through the packed block's `1`/`0` branches. This member is therefore the
+  // NEGATIVE pole of a guard whose positive pole IS an input — reachable, and not a KNOBS row of its own.
+  '--no-suppress-zero-baseline-latency',
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',

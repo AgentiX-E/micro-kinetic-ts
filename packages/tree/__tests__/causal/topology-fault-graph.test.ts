@@ -3462,6 +3462,75 @@ describe('buildTopologyFaultGraph — a DEMAND metric is not fault evidence', ()
   });
 });
 
+describe('the zero-baseline transport guard — a percentile with no traffic has no relative rise', () => {
+  // The RE3-TrainTicket miss, verbatim from the acceptance run `40255890256`: the winner's decisive
+  // channel is `latency-90` with `head=[0,0,0,0,0,0]` and `tail=[0.0235, …]`, which the engine reads as a
+  // **764x rise** (`dev=2.884`) against a truth whose own evidence is a `socket` DROP (17 -> 9,
+  // `dev=0.34`). A latency percentile that reports 0 means the service answered NOTHING in that window, so
+  // the "rise" measures the ARRIVAL OF TRAFFIC rather than slowness — the relative rise of a channel with
+  // no level at all is undefined, not merely large.
+  // 30% zeros, which is what the corpus case is: the existing `duty-cycled-idle` guard owns a metric that is
+  // ~0 for MORE than 40% of its history, and a fixture at 50% would be taken by that guard and never reach
+  // this one — the first version of this test did exactly that and failed for the wrong reason.
+  const zeroThenTraffic = [...Array<number>(12).fill(0), ...Array<number>(28).fill(0.0235)];
+  /** A real latency channel: 5 ms to 100 ms. */
+  const realLatency = [...Array<number>(20).fill(0.005), ...Array<number>(20).fill(0.1)];
+
+  const diagnosticOf = (
+    values: readonly number[],
+    label: string,
+    config?: Record<string, unknown>,
+  ) => {
+    const graph = makeCallGraph(['svc', 'idle'], []);
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      ['svc', [makeTimeSeries(label, [...values])]],
+      ['idle', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10])]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, config);
+    return result.metricDiagnostics.get('svc')!.find((d) => d.label === label)!;
+  };
+
+  it('drops a transport channel whose head has no level, behind the flag', () => {
+    const on = diagnosticOf(zeroThenTraffic, 'latency-90', { suppressZeroBaselineLatency: true });
+    const off = diagnosticOf(zeroThenTraffic, 'latency-90');
+
+    // Opt-in at measurement time, so the shipped ranking is unchanged until a dispatch says otherwise.
+    expect(off.outcome).toBe('kept');
+    // The number is not the point — that it is SCORED is. A 0.0235 s percentile against a 0 mean is read as a
+    // large deviation by the shipped path, and the guard is what turns that into no evidence at all.
+    expect(off.score).toBeGreaterThan(0);
+    expect(on.outcome).toBe('zero-baseline-transport');
+    expect(on.score).toBe(0);
+  });
+
+  it('leaves a transport channel with a REAL head alone, however far it rises', () => {
+    // 5 ms -> 100 ms is a 20x rise from a level that exists: that is what a delay fault looks like, and it
+    // is the population the guard must not touch.
+    expect(
+      diagnosticOf(realLatency, 'latency-90', { suppressZeroBaselineLatency: true }).outcome,
+    ).not.toBe('zero-baseline-transport');
+  });
+
+  it('is scoped to the TRANSPORT family: a resource channel at zero keeps its existing guards', () => {
+    // `cpu` 0 -> 5 is the idle/crash question the duty-cycled-idle guard already owns, and it is the
+    // signature of genuine faults on TrainTicket. A rule about "no traffic" must not reach it.
+    const cpu = diagnosticOf(zeroThenTraffic, 'cpu', { suppressZeroBaselineLatency: true });
+    // Whatever the EXISTING guards do with it, the new rule is not what decided — the duty-cycled-idle
+    // guard owns a resource channel that is zero for half its history, and it is allowed to take it.
+    expect(cpu.outcome).not.toBe('zero-baseline-transport');
+  });
+
+  it('reads a WINDOW, not the first sample', () => {
+    // The guard exists because two samples are indefensible as a measurement of a level (the lesson
+    // `docs/transient-guard-window.md` records). A channel that opens on one zero and then holds 5 ms has a
+    // level, and a first-sample test would delete it.
+    const opensOnOneZero = [0, ...Array<number>(39).fill(0.005)];
+    expect(
+      diagnosticOf(opensOnOneZero, 'latency-90', { suppressZeroBaselineLatency: true }).outcome,
+    ).not.toBe('zero-baseline-transport');
+  });
+});
+
 describe('isLatencyMetric — the transport family, and the ONE owner of that question', () => {
   it('names every latency percentile and nothing else', () => {
     for (const label of ['latency', 'latency-50', 'latency-90', 'latency-99', 'latency_p99']) {
