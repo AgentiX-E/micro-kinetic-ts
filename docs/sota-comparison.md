@@ -676,9 +676,14 @@ become one case:**
 4. **The field is moving to harder benchmarks.** FSE'26 (arXiv:2510.04711): 11 SOTA models avg Top@1 0.21 / best
    0.37 on a fault-propagation-aware benchmark. ORCA-bench (arXiv:2607.28545): frontier LLM agents 25.3% Medium /
    10.0% Hard, 7–40% hallucinated root causes. Both are where "SOTA" is now actually decided, and we have not run.
-5. **RE3 code-level is our weak flank** (SS 45%, TT 51.1%) — and, per PRISM's internal/external framing, likely
-   the most fixable with the right new signal. It is also the suite where PRISM's conjunctive form beats us by
-   25.6 pp (RE3-TT 76.7% vs 51.1%), which is the single largest per-cell deficit we have against any competitor.
+5. **RE3 code-level is our weak flank** (SS 45.0%, TT **50.0% case-level**) — and, per PRISM's internal/external
+   framing, likely the most fixable with the right new signal. It is also the suite where PRISM's conjunctive
+   form beats us by **26.7 pp** (RE3-TT 76.7% vs 50.0%), the single largest per-cell deficit we have against any
+   competitor. **A correction, because the previous revision compared two different statistics**: the `51.1%`
+   in this document is the `AVERAGE` column — the unweighted mean of the five per-fault-type accuracies — while
+   PRISM's `76.7%` is **23 of 30 cases** CASE-LEVEL. The two are not the same quantity (`docs/accuracy-aggregation.md`
+   defines both), and pairing them was the same class of defect as the `Avg@5` column that once printed `AC@1`
+   one table over. On the comparable reading the cell is **15 of 30 = 50.0%** against **23 of 30 = 76.7%**.
 6. **Validity threat to every number (ours included).** pith.science review: RCAEval's 735 root-cause labels were
    produced by a single 5-year engineer with no inter-annotator consistency check. A ceiling on the benchmark's
    own ground truth is a ceiling on *everyone's* headline number. **And no error rate for those labels is
@@ -718,8 +723,28 @@ re-swept after the breadth enrolment showed that the burst bonus had been standi
 fault-type cells up, none down on the golden half; on FSE'26 two types up and one down (`ContainerKill`, one
 case of 89), which is `+7 / +2` across the two populations.
 
-**What this does not license.** RE3-TT remains 51.1% against PRISM's 76.7% — a 25.6 pp deficit on the one cell
+**What this does not license.** RE3-TT remains **50.0% case-level, 15 of 30** against PRISM's **76.7%, 23 of 30** — a 26.7 pp deficit on the one cell
 where a competitor's published number is above ours, and the only cell in this table where that is true. The
 `735` fold is second to a vendor's 89%, which is not reproducible from this repository and cannot be
 reproduced from anything the vendor publishes; the gap is 6.6 pp and it is the largest open question in this
 document.
+
+## 2026-10-27 — the PRISM family is closed in three forms, and the deficit is measured in one statistic
+
+The competitor whose published per-cell number is above ours is PRISM (`arXiv:2601.21359`, the RCAEval author's
+own method), and it is now the only one. Three forms of its internal/external axiom have been built and measured
+on the nine cells at the shipped configuration of everything else:
+
+| form | best arm | RE3-TT | cost | verdict |
+| --- | --- | ---: | ---: | --- |
+| additive score (`prismWeight`) | `additive 0.50` | 15 → 18 of 30 | RE1 **−10** (fold **+12**) | refused |
+| conjunctive score (`prismPooling`) | `conjunctive 0.75` | **15 → 24 of 30** | RE1 **−37** | refused |
+| symmetry mask (`victimWeight`) | `victim 0.05` | 15 → 15 of 30 | RE1 **−33**, FSE'26 Top@1 −1.4 pp | refused |
+
+All three read the same underlying quantity — a z-score mean shift whose scale is each channel's own units —
+so each re-weights a ranking that already carries eleven priors by an amount no other term controls. Online
+Boutique and Sock Shop are untouched at every weight; TrainTicket absorbs all of it (RE1-TT 101 → 68 → 42 → 18
+→ 10). The one number worth keeping is `conjunctive 0.75` at 24 of 30: it proves the cell's truth DOES carry
+internal evidence this engine does not exploit, and it sets the requirement for anything that tries again — a
+per-family normalisation (compare a node's internal shift against the fleet's internal shifts), which is the
+same requirement the self-time refusal named.

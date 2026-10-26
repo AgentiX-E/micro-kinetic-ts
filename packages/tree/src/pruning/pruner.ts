@@ -798,11 +798,30 @@ export const DEFAULT_STABILITY_WEIGHT = 0.007352;
 export const DEFAULT_SELF_TIME_WEIGHT = 0;
 
 /**
- * The shipped weight of the internal/external symmetry mask — `0`, i.e. OFF until a dispatch measures it.
+ * The shipped weight of the internal/external symmetry mask — `0`, and **REFUSED at the first weight it was
+ * measured at**.
  *
- * Its measurement is recorded here rather than in a note, on the rule the other shipped weights follow.
- * The build is not the claim: `docs/prism-symmetry-mask.md` holds the design argument, the six-arm additive
- * sweep that rejected PRISM's own score as a term, and the arms that decide this one.
+ * | arm | RE1 | RE2 | RE3 | 735 |
+ * | ---: | ---: | ---: | ---: | ---: |
+ * | 0 (shipped) | 323 | 231 | 52 | 606 |
+ * | 0.05 | 290 | 215 | 52 | 557 |
+ * | 0.10 | 262 | 212 | 53 | 527 |
+ * | 0.20 | 237 | 205 | 53 | 495 |
+ * | 0.50 | 217 | 194 | 51 | 462 |
+ *
+ * On FSE'26 the same term at 0.2 reads Top@1 55.0% against 56.4% (run `40378704523`).
+ *
+ * **The mechanism, and it is a DEFECT in the form rather than a bad weight.** Online Boutique and Sock Shop
+ * are untouched at every weight and everything happens on TrainTicket (RE1-TT 101 → 68 → 42 → 18 → 10): a
+ * re-weighting has nothing to reorder on 13 edges and everything on 79. `sym` is a ratio of two quantities
+ * that are not commensurable — a resource channel's relative mean shift is ~0.1σ where a transport
+ * channel's is ~4σ — so the discount is near-uniform on a sparse graph and violently non-uniform on a dense
+ * one, where the components that keep an internal anomaly are the CALLERS retrying rather than the source.
+ *
+ * The build is kept because the refusal is worth more than a deletion: `docs/prism-symmetry-mask.md` §5
+ * closes the PRISM family in three forms (additive score −10 RE1, conjunctive score −37, this mask −33) with
+ * one cause, and states the requirement a successor must meet — a per-family normalisation the engine does
+ * not have.
  */
 export const DEFAULT_VICTIM_WEIGHT = 0;
 
