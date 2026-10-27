@@ -131,3 +131,41 @@ middle of a 68-service ranking should be lifted over its top third.
 1, 1, 3, 0, 1, 0, 0, 0, 0 times by cell, i.e. **six of the 100 sampled misses are retrieval failures on Online
 Boutique and Sock Shop and none is on TrainTicket**. No reweighting addresses those six, and no reading of this
 corpus should average them with the 94.
+
+## 7. The lever that finally moved it without a cost: the shape as PRESENCE
+
+§6 said what a lever must do — lift one candidate 32 places without lifting the 32 above it. The shape test is
+the only thing that has ever reached this cell, and three attempts to import it as a **score** failed (PRISM
+additive −10 on RE1, conjunctive −37, the symmetry mask −33): each brought an imported z-scale into a ranking
+fifteen terms already tune.
+
+Imported as **presence** instead — a 0/1 membership, so the term can claim at most its weight:
+
+```
+dual(v) = hasInternal(v) && Sⁱ(v) > 0 && Sᵉ(v) > 0
+finalScore(v) += dualFamilyWeight × 1[dual(v)]
+```
+
+| dualfam | RE1 | RE2 | RE3 | 735 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 (was shipped) | **323** (105/117/101) | **231** (77/85/69) | 52 (22/15/15) | **606** |
+| 0.10 | **323** (105/117/101) | **231** (77/85/69) | 54 (22/**17**/15) | **608** |
+| **0.25** | **323** (105/117/101) | **231** (77/85/69) | **55** (22/**18**/15) | **609** |
+| 0.50 | **323** (105/117/101) | **231** (77/85/69) | **55** (22/**18**/15) | **609** |
+
+**No cell moved down, and RE1 and RE2 are byte-identical at every weight — the first arm this month of which
+that is true.** The exchange rate §5 measured is broken, and the reason is the form: a membership cannot
+re-weight a ranking, only add its own weight to the components that pass the shape test.
+
+On FSE'26 the same weight reads Top@1 56.4% / Top@3 69.7% / Top@5 72.1% — **exactly the shipped line** (run
+`40501641253`). It is inert there rather than harmful, and that is the form working as designed: the corpus is
+`Resource,Pod,JVM`, so nearly every candidate carries a moving channel in both families, the bonus is
+near-uniform, and a near-uniform bonus cannot reorder anything.
+
+**Enrolled at 0.25** — the left edge of the plateau (0.25 and 0.50 both read 609), on the rule the breadth gate
+established. What it does NOT do is move RE3-TrainTicket: the three cases are all in SockShop, so the cell that
+motivated the whole audit is still 15 of 30. The shape test finds that cell's truth when it is computed the way
+PRISM computes it (23 of 30); as a membership over this engine's own deviations it finds SockShop's and not
+TrainTicket's, and **that gap is the next measurement**: PRISM's `Sⁱ`/`Sᵉ` are z-scores of a mean shift, this
+engine's are `log₁₀(1 + ratio)` over a max — and the difference between those two statistics on the same
+channels is what separates 18 gains from 0.

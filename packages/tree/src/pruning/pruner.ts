@@ -654,7 +654,8 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * and the form matters: as a SCORE it brings an imported z-scale and re-weights everything (three forms
    * refused, −10 to −37 on RE1). As a 0/1 indicator it can claim at most its own weight.
    *
-   * Ships at {@link DEFAULT_DUAL_FAMILY_WEIGHT} = **0**, and at 0 the membership set is not built.
+   * Ships at {@link DEFAULT_DUAL_FAMILY_WEIGHT} = **0.25**, ENROLLED on a sweep with no cell down (RE3 52 → 55
+   * at RE1/RE2 byte-identical). At 0 — an ablation a dispatch can still state — the membership set is not built.
    */
   readonly dualFamilyWeight: number;
 }
@@ -849,13 +850,33 @@ export const DEFAULT_SELF_TIME_WEIGHT = 0;
 export const DEFAULT_VICTIM_WEIGHT = 0;
 
 /**
- * The shipped weight of the dual-family presence bonus — `0`, i.e. OFF until a dispatch measures it.
+ * The shipped weight of the dual-family presence bonus — **`0.25`, ENROLLED**, on a plateau that costs nothing.
  *
- * The shape it encodes is the only one that has ever reached RE3-TrainTicket (PRISM's conjunctive form, 23 of
- * 30 against this engine's 15), and the form is what this repository's record says to change: a score imports
- * a scale, a membership does not. `docs/re3-quiet-truth.md` §6 holds the rank measurement that motivated it.
+ * Three arms on the golden nine cells, same commit (`be40fe5`), one input each, everything else shipped:
+ *
+ * | dualfam | RE1 | RE2 | RE3 | 735 |
+ * | ---: | ---: | ---: | ---: | ---: |
+ * | 0 (was shipped) | **323** | **231** | 52 | **606** |
+ * | 0.10 | **323** | **231** | **54** | **608** |
+ * | **0.25** | **323** | **231** | **55** | **609** |
+ * | 0.50 | **323** | **231** | **55** | **609** |
+ *
+ * **No cell moved down — the first arm this month of which that is true.** Every magnitude lever measured since
+ * iteration 137 traded RE1 for RE3 (PRISM −10/−37, the mask −33, drop symmetry −35, the ceiling −7); this one
+ * leaves RE1 and RE2 BYTE-IDENTICAL (105/117/101 and 77/85/69) and takes RE3 from 52 to 55 — all three cases in
+ * SockShop (15 → 18), which is the cell whose truth carries both families.
+ *
+ * On FSE'26 the same weight reads Top@1 56.4% / Top@3 69.7% / Top@5 72.1% — **exactly the shipped line**
+ * (run `40501641253`). The term is inert there rather than harmful: that corpus is `Resource,Pod,JVM`, so
+ * almost every candidate carries a moving channel in both families and the bonus is near-uniform, which cannot
+ * reorder a ranking. That is the form working as designed — a membership that fails to discriminate stays
+ * silent instead of re-weighting everything.
+ *
+ * 0.25 is the LEFT EDGE of the plateau (0.25 and 0.50 both read 609), taken on the rule the breadth gate
+ * established: the smallest weight that reaches the measured value is the one that leaves the most room before
+ * the next mechanism starts to matter.
  */
-export const DEFAULT_DUAL_FAMILY_WEIGHT = 0;
+export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
 
 /**
  * How the temporal prior turns onset delays into an order.

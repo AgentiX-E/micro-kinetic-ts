@@ -206,7 +206,7 @@ export interface RankingWeights {
    *
    * Imported as PRESENCE rather than as a score because the score form was measured in three variants and
    * refused (`docs/prism-symmetry-mask.md`): each brought its own z-scale into a ranking fourteen terms already
-   * tune. Ships at 0, where the membership set is not built.
+   * tune. Ships at **0.25**, enrolled on a sweep with no cell down (RE3 52 → 55, RE1 and RE2 byte-identical).
    */
   readonly dualFamilyWeight?: number;
   /**

@@ -2948,21 +2948,25 @@ describe('TreePruner — the internal/external symmetry mask', () => {
   };
 
   it('carries the symmetry in the graph it builds: none at the victim, half at the source', () => {
-    const graph = build(new TreePruner({ victimWeight: 1 }));
+    const graph = build(new TreePruner({ victimWeight: 1, dualFamilyWeight: 0 }));
 
     expect(graph.channelSymmetry?.get(VICTIM)).toBe(0);
     expect(graph.channelSymmetry?.get(SOURCE)).toBeCloseTo(0.5, 12);
   });
 
   it('builds NO map at weight 0 — the shipped path does not pay for a term it does not use', () => {
-    expect(build(new TreePruner({ victimWeight: 0 })).channelSymmetry).toBeUndefined();
+    expect(
+      build(new TreePruner({ victimWeight: 0, dualFamilyWeight: 0 })).channelSymmetry,
+    ).toBeUndefined();
   });
 
   it('is inert at weight 0 against a pruner that never mentions it', () => {
-    const zero = scores(new TreePruner({ victimWeight: 0 }));
-    const graph = build(new TreePruner());
+    const zero = scores(new TreePruner({ victimWeight: 0, dualFamilyWeight: 0 }));
+    // BOTH arms state the dual-family weight: that term is ENROLLED, and an arm that inherited it would differ
+    // from the other for a reason this test is not about.
+    const graph = build(new TreePruner({ dualFamilyWeight: 0 }));
     const absent = new Map(
-      new TreePruner()
+      new TreePruner({ dualFamilyWeight: 0 })
         .analyze({ ...graph, channelSymmetry: undefined })
         .map((r) => [r.serviceId, r.finalScore!]),
     );
@@ -2975,8 +2979,8 @@ describe('TreePruner — the internal/external symmetry mask', () => {
     // `−victimWeight × (1 − symmetry) × log1p(selfAnomaly)`, so the term at weight 1 removes exactly the
     // base term of a component that failed the axiom, and exactly half of it from one that is balanced.
     const weight = 0.4;
-    const graph = build(new TreePruner({ victimWeight: weight }));
-    const pruner = new TreePruner({ victimWeight: weight });
+    const graph = build(new TreePruner({ victimWeight: weight, dualFamilyWeight: 0 }));
+    const pruner = new TreePruner({ victimWeight: weight, dualFamilyWeight: 0 });
     const results = new Map(pruner.analyze(graph).map((r) => [r.serviceId, r]));
 
     const baseOf = (id: string) => Math.log1p(graph.anomalyScores.get(id)!);
@@ -2995,8 +2999,8 @@ describe('TreePruner — the internal/external symmetry mask', () => {
     // anomaly in the case; at weight 1 its own-evidence term is cancelled while the source keeps half of
     // its own, and the ranking flips — which is the sentence "an external-only component is downstream of
     // something" expressed as a decision.
-    const before = scores(new TreePruner({ victimWeight: 0 }));
-    const after = scores(new TreePruner({ victimWeight: 1 }));
+    const before = scores(new TreePruner({ victimWeight: 0, dualFamilyWeight: 0 }));
+    const after = scores(new TreePruner({ victimWeight: 1, dualFamilyWeight: 0 }));
 
     expect(before.get(VICTIM)!).toBeGreaterThan(before.get(SOURCE)!);
     expect(after.get(SOURCE)!).toBeGreaterThan(after.get(VICTIM)!);
@@ -3025,7 +3029,7 @@ describe('TreePruner — the internal/external symmetry mask', () => {
     ]);
     const callGraph = makeCallGraph([SOURCE, VICTIM], [[VICTIM, SOURCE]]);
     const rankOf = (weight: number) => {
-      const pruner = new TreePruner({ victimWeight: weight });
+      const pruner = new TreePruner({ victimWeight: weight, dualFamilyWeight: 0 });
       const r = pruner.analyze(
         pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT }),
       );
