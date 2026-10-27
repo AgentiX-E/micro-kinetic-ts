@@ -1,7 +1,8 @@
 # The quiet truth — RE3-TrainTicket's labels invert the ranking's assumption
 
-**Status:** an AUDIT, not a mechanism. It explains, with one table, why five candidate terms were refused on
-this cell in one month, and it sets the prior for whatever comes next.
+**Status:** an AUDIT, not a mechanism, in two parts: §1–§5 read the top five, §6 re-reads the same cell at
+FLEET scale with the instrument §4 said was missing — and §6 CORRECTS §1's headline. The truthful version is
+"mid-pack, not quiet", and it is the stronger claim.
 
 **Owner of:** nothing yet. The term it argues for is *not* built, because the audit's own limit (§4) says the
 decisive statistic cannot be computed from the artifacts this repository ships.
@@ -88,3 +89,45 @@ that component on this cell is **11 of 14 sampled misses**, measured twice, agai
 
 It is not built here because its form needs the fleet-wide anomaly of every member (§4) and because this
 month's record says a term built without that instrument is a term measured on the wrong statistic.
+
+## 6. The fleet-scale correction, and it corrects THIS document
+
+§4 said the decisive statistic was not on the artifact. It is now: iteration 143 added `GT rank=<r> of <n>` to
+every failure block — the truth's 1-based position in the ranking the correctness checks are already counted
+from, and that ranking's length. One run at the shipped configuration (`40451250424`, nine cells, 606/735 to
+the case) answers the question this audit could only pose:
+
+| suite | sampled misses | median rank R | median candidates N | R / N |
+| --- | ---: | ---: | ---: | ---: |
+| OnlineBoutique RE1 | 12 | 5 | 10 | 0.50 |
+| OnlineBoutique RE2 | 12 | 2 | 9 | 0.22 |
+| OnlineBoutique RE3 | 7 | 4 | 10 | 0.40 |
+| SockShop RE1 | 5 | 5 | 14 | 0.36 |
+| SockShop RE2 | 5 | 3 | 12 | 0.25 |
+| SockShop RE3 | 13 | 3 | 14 | 0.21 |
+| TrainTicket RE1 | 16 | **2** | 64 | **0.03** |
+| TrainTicket RE2 | 16 | **9** | 68 | **0.13** |
+| **TrainTicket RE3** | 14 | **33** | **68** | **0.49** |
+
+**The correction.** The earlier section said the truth on this cell is the *quietest* candidate. At fleet scale
+that is not what the numbers say: the truth sits at **median rank 33 of 68** — the MIDDLE of the ranking — and
+**no sampled miss anywhere in the corpus has the truth dead last** (`R = N` occurs 0 times in 100 blocks). What
+the §1 measurement actually showed is narrower and is still true: the truth is below every *top-five* candidate
+in 11 of 14 misses, and the top five is what the block prints.
+
+The corrected statement is stronger for the purpose it serves. On the two other TrainTicket suites the same
+engine puts the truth at median rank **2** and **9**; on this one it puts it at **33**. The engine is not
+confused about the corpus or the graph — on one cell it ranks the answer as an average component, midway
+between the two ends, and the distance to rank 1 is **32 positions**. That is why every re-weighting failed:
+each moves candidates by a few places, and a lever would have to move one candidate 32 places without moving
+the 32 above it.
+
+**What it does not change.** The exchange rate in §5 stands, and so does the shape finding: a conjunctive
+internal∧external test reaches the truth 23 times of 30 where our magnitude ranking reaches it 15. But the
+mechanism is now the right one — the truth is *mid-pack*, not *quiet*, and a term has to explain why the
+middle of a 68-service ranking should be lifted over its top third.
+
+**And one more reading the instrument makes available**: `ABSENT` — the truth is not a candidate at all — occurs
+1, 1, 3, 0, 1, 0, 0, 0, 0 times by cell, i.e. **six of the 100 sampled misses are retrieval failures on Online
+Boutique and Sock Shop and none is on TrainTicket**. No reweighting addresses those six, and no reading of this
+corpus should average them with the 94.
