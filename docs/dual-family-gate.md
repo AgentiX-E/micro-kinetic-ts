@@ -102,7 +102,58 @@ census, and one line in the optimizer's inventory of fields it holds at the engi
 
 ## 6. The golden sweep
 
-*Filled by the runs named below; the tables are the measurement, not a claim.*
+Three arms, one commit (`bca8a37`), one input each, everything else shipped. Case-level counts, from each
+run's own loss census (which prints `cases / correct` per system and is the same number the published cells
+are built from):
 
-| gate | RE1 | RE2 | RE3 | 735 | FSE'26 Top@1 | run |
-| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| gate | weight | RE1 OB / SS / TT | **RE1** | RE2 OB / SS / TT | **RE2** | RE3 OB / SS / TT | **RE3** | **735** | run |
+| ---: | ---: | --- | ---: | --- | ---: | --- | ---: | ---: | --- |
+| **0** (shipped) | 0.25 | 105 / 117 / 101 | **323** | 77 / 85 / 69 | **231** | 22 / 18 / 15 | **55** | **609** | `40520127345` |
+| 0.25 | 0.25 | 103 / 117 / 98 | 318 | 80 / 86 / 71 | **237** | 23 / 20 / 15 | **58** | **613** | `40520163213` |
+| 0.25 | 0.10 | 103 / 117 / 98 | 318 | 78 / 86 / 70 | 234 | 22 / 18 / 15 | 55 | 607 | `40530891885` |
+| 0.50 | 0.25 | 98 / 115 / 92 | 305 | 79 / 85 / 74 | 238 | 24 / 17 / **17** | 58 | 601 | `40520169613` |
+
+**The fourth arm was run to separate the two knobs, and it did**: at the same population (gate 0.25) the RE1 cost
+is **−5 at both weights** while RE2 goes +3 (weight 0.10) versus +6 (0.25), RE3 0 versus +3, and FSE'26 Top@1
++1.7 versus **+3.1**. The price is set by the POPULATION and the benefit by the WEIGHT — which is the opposite of
+what the weight-only axis of iteration 144 did (it moved RE3 by 3 and RE1 not at all). A lever that improves its
+own exchange rate as it gets stronger is the shape worth keeping.**
+
+On the FSE'26 half — 1,422 cases, and the population whose inertness iteration 144 recorded — the same gate reads
+**Top@1 59.5% / Top@3 77.7% / Top@5 81.3%** against the shipped **56.4 / 69.7 / 72.1** (run `40527629997`): the
+term that was byte-identical at every *weight* moves **+3.1 / +8.0 / +9.2 pp** when its *population* is made
+selective. That is the largest single movement this project has recorded on that benchmark since its anchor was
+set — and it is the corpus where the membership had nothing to say before.
+
+**The gate works, and it is refused.** Every arm moves a population up — 0.25 takes RE2 **+6** and RE3 **+3**,
+0.50 takes RE2 **+7** and **RE3-TrainTicket from 15 to 17 of 30, the first movement that cell has ever shown in
+this campaign** — and every arm takes RE1 down (5 and 18). The standing rule is that no cell may move down, and
+RE1 is the cell this engine leads by 0.73 pp over the best published number; 318 of 375 is 84.8%, which is below
+`L0`'s 85.4%, i.e. the enrolment would trade a first place for a third place. Ships at **0**, which is the
+identity, so the nine cells are the ones iteration 144 published.
+
+The sweep is worth more than the enrolment would have been, because it prices the exchange rate that three
+refusals this month could only describe. A term that re-orders RE2 and RE3 at 1.7 : 1 against RE1 is not a bug
+to fix — it is the same quantity the register's `dropDeviationMode` and `victimWeight` rows measured, now with a
+second axis (the population) that moves the ratio in the *favourable* direction: the weight axis of iteration 144
+bought +3 RE3 for **0** RE1, and the population axis buys +9 (RE2+RE3) for −5. A lever that keeps the population
+axis and shrinks its price is the next question, and the sweep says it must come from the FORM (which members
+are paid) rather than from either magnitude.
+
+## 7. What the census measured about the mechanism, at the shipped gate
+
+The census reads the family's density per cell, which is what no artifact could say before:
+
+| cell | gate 0 | gate 0.25 | gate 0.50 | truth in family (gate 0) |
+| --- | ---: | ---: | ---: | ---: |
+| RE1 OB / SS / TT | 81.7% / 56.8% / 39.3% | 25.9% / 15.1% / 6.1% | 16.3% / 10.1% / 2.8% | 98.4% / 100% / 100% |
+| RE2 OB / SS / TT | 95.9% / 51.8% / 39.8% | 20.0% / 15.1% / 7.3% | 13.6% / 11.0% / 3.3% | 100% / 100% / 100% |
+| RE3 OB / SS / TT | 81.9% / 56.5% / 38.6% | 28.2% / 30.3% / 19.8% | 18.1% / 19.3% / 7.9% | 100% / 100% / 100% |
+
+**At the shipped gate the truth is in the family in 727 of the 729 cases whose truth is a candidate at all** —
+100% on eight of the nine cells and 122 of 124 on OnlineBoutique RE1, with the six `ABSENT` cases counted where
+they belong and not here — and the family still covers between 38.6% and 95.9% of the candidates. That is the whole mechanism in one
+line: the membership never fails to *include* the answer — it fails to *exclude* anything else, and a constant
+bonus paid to four candidates in ten, or nine in ten, cannot re-order a cell. The gate is what converts the
+membership from a description of the fleet into a statement about it, and the price table in §6 is what that
+conversion costs.

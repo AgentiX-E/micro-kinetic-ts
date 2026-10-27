@@ -748,3 +748,54 @@ Boutique and Sock Shop are untouched at every weight; TrainTicket absorbs all of
 internal evidence this engine does not exploit, and it sets the requirement for anything that tries again — a
 per-family normalisation (compare a node's internal shift against the fleet's internal shifts), which is the
 same requirement the self-time refusal named.
+
+## 2026-10-27 (2) — the membership's population: the mechanism measured, the lever priced, and refused
+
+**Nothing in the standings moved, and a number that had only been asserted is now printed.** The dual-family
+bonus of the previous section is a CONSTANT paid to a set, so it can only re-order a cell in which the set is a
+strict subset of the fleet; iteration 144 measured that split (SockShop +3, TrainTicket 0, FSE'26 byte-identical)
+and could not explain it. Every RCAEval cell now prints the set's density:
+
+```
+  [dual-family] family=7.6/9.2 (81.7%) truth=122/124 (98.4%) absent=1        ← OnlineBoutique RE1
+```
+
+At the shipped configuration the family covers **38.6% to 95.9% of the candidates** depending on the cell, and the
+truth is inside it in **727 of the 729** cases whose truth is a candidate at all. The membership never fails to
+include the answer; it fails to exclude anything else — which is the mechanism, measured rather than inferred.
+
+**The population is therefore the axis, and its price is measured.** A fleet-relative gate
+(`min(Sⁱ,Sᵉ) ≥ gate × max_w min(Sⁱ,Sᵉ)`, the construction `anomalyBreadthGate` uses) was swept on one commit
+(`bca8a37`), one input per arm:
+
+| gate / weight | RE1 | RE2 | RE3 | 735 | RE3-TrainTicket | FSE'26 Top@1 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **0 / 0.25** (shipped) | **323** | 231 | 55 | **609** | 15 of 30 | 56.4% |
+| 0.25 / 0.25 | 318 | **237** | **58** | **613** | 15 of 30 | **59.5%** |
+| 0.25 / 0.10 | 318 | 234 | 55 | 607 | 15 of 30 | 58.1% |
+| 0.50 / 0.25 | 305 | 238 | 58 | 601 | **17 of 30** | — |
+
+On the FSE'26 half the same gate reads **Top@1 59.5% / Top@3 77.7% / Top@5 81.3%** against the shipped
+**56.4 / 69.7 / 72.1** (run `40527629997`) — **+3.1 / +8.0 / +9.2 pp** on 1,422 cases, from a term that was
+byte-identical at every weight before its population was made relative. The corpus where the membership had
+nothing to say is the corpus where the population axis pays most.
+
+**Refused, on the standing rule.** 0.25 is the largest total this project has ever measured (613) and the first
+arm to move RE2 off 231; 0.50 is the first arm in eleven to move the blocking cell at all. Both take RE1 down, and
+318 of 375 is 84.8% — below `L0`'s published 85.4%, i.e. enrolling would trade a first place for a third. The gate
+ships at 0, the identity, and the nine cells are the ones the previous section published.
+
+**Competitor sweep, re-run this iteration:** nothing new since 2026-09-30. The youngest entries remain PSC-GRCA
+(`arXiv:2609.27069`, 22 Sep 2026, `Avg@5` 0.915 in-distribution / **0.747 cross-system**, prior-only arm 0.488,
+code + defect register on Zenodo) and the NeurIPS 2026 E&D retrieval-reranking decomposition
+(`arXiv:2609.36686`); the vendor's 89% Top-1 remains unverifiable and its own page says to re-run it. **The one
+thing worth re-reading in the new paper is its RE1 column-schema allegation** — "telemetry silently zeroed for
+most RE1 cases". Measured against this repository's own loader on the 125 OnlineBoutique RE1 cases: **0 cases with
+all-zero telemetry, 0 cases with no internal channel at all, 180 of 1,681 services external-only** (frontend-side
+components with workload/latency/error only). The allegation describes a reimplementation path, not the JSON
+corpus this engine reads; what does transfer is its **prior floor** — a telemetry-free ranker reads `Avg@5` 0.488
+on this benchmark, so every top-5-shaped claim here, ours included, must be read against 0.488 and not 0.137.
+
+**What this does not license.** The gate is not "almost working": it converts the membership into a real
+discriminator and pays 1.7 cases of RE1 for every case of RE2+RE3 it buys. A form that keeps the population axis
+and shrinks that price is the next question, and the sweep says it must change WHO is paid rather than how much.

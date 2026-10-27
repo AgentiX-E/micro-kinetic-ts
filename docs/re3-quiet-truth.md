@@ -195,3 +195,23 @@ OnlineBoutique RE1, 125 cases: **82% of the fleet is a member and the truth is a
 constant bonus paid to 82% of a cell cannot re-order it — which is exactly what the enrolment's own table says
 (the cell is 105 of 125 at weights 0, 0.10, 0.25 and 0.50 alike). The gate that makes the family fleet-relative
 is `docs/dual-family-gate.md`, and its golden sweep is that document's §6.
+
+## 9. The cell moved — once, at a price
+
+The gate of `docs/dual-family-gate.md` is a refusal at enrolment and a measurement for this document: at
+`dualFamilyGate = 0.50`, **RE3-TrainTicket goes from 15 to 17 of 30** — the first movement that cell has shown in
+this campaign, eleven arms after §6 measured it at median rank 33 of 68. It arrives with RE1 at 305 of 375
+(−18) and is therefore refused, but it is the first evidence that the position is reachable by re-weighting at
+all, and it locates the mechanism in the population rather than the magnitude:
+
+| arm | family on RE3-TT | truth in family | RE3-TT | RE1 |
+| --- | ---: | ---: | ---: | ---: |
+| gate 0 | 26.3 / 68.1 (38.6%) | 30/30 | 15 | **323** |
+| gate 0.25 | 13.5 / 68.1 (19.8%) | 28/30 | 15 | 318 |
+| gate 0.50 | 5.4 / 68.1 (7.9%) | 27/30 | **17** | 305 |
+
+Two of the three arms leave the cell at 15 while cutting the family to a fifth of the fleet, and the third moves
+it by two. The difference between them is not the family's size but *which* candidates it keeps: at 0.25 the
+truth is a member 28 times and still sits mid-pack; at 0.50 it is a member 27 times and the 27 non-members around
+it have lost their bonus. The lever that lifts the truth over the 32 above it has to change who is *paid*, which
+is why the weight axis could never do it.
