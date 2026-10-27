@@ -102,7 +102,7 @@ census, and one line in the optimizer's inventory of fields it holds at the engi
 
 ## 6. The golden sweep
 
-Three arms, one commit (`bca8a37`), one input each, everything else shipped. Case-level counts, from each
+Four arms, one commit (`bca8a37`), one input each, everything else shipped. Case-level counts, from each
 run's own loss census (which prints `cases / correct` per system and is the same number the published cells
 are built from):
 
