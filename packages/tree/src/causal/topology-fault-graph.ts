@@ -605,7 +605,24 @@ export function isDropDeviationMode(value: string): value is DropDeviationMode {
 }
 
 /**
- * The shipped drop-deviation mode: `bounded`, the form every published number was measured under.
+ * The shipped drop-deviation mode: `bounded`, the form every published number was measured under — and
+ * **`log` is REFUSED**, with its three arms measured.
+ *
+ * | arm | RE1 | RE2 | RE3 | 735 |
+ * | ---: | ---: | ---: | ---: | ---: |
+ * | `bounded` (shipped) | **323** | **231** | 52 | **606** |
+ * | `log` | 288 | **156** | 36 | **480** |
+ * | `log` + `metricRiseCeiling = 10` | 314 | 214 | 48 | 576 |
+ * | `metricRiseCeiling = 10` alone | 316 | 228 | **56** | 600 |
+ *
+ * On FSE'26, `log` reads Top@1 **51.5%** against 56.4% (run `40420987867`).
+ *
+ * `log` alone is the #193 failure REPRODUCED with a magnitude — **126 cases**, most of them on RE2, where a
+ * collapsing resource metric is the VICTIM's signature. The ceiling recovers **96 of the 126** and leaves a
+ * −30 residue that is a genuine loss rather than an explosion, so the pair is a smaller version of the same
+ * error rather than a repair. The ceiling ALONE is the only arm in three iterations to move the blocking
+ * suite up by BOUNDING a metric (RE3 52 → 56, all four in SockShop), and it costs RE1 seven cases against a
+ * four-case lead — the exchange rate `docs/drop-deviation-symmetry.md` §5 now states.
  */
 export const DEFAULT_DROP_DEVIATION_MODE: DropDeviationMode = 'bounded';
 
