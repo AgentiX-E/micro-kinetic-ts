@@ -162,6 +162,38 @@ export function computeChannelSymmetry(
 }
 
 /**
+ * The components whose anomaly is PRESENT in BOTH families — PRISM's shape test as a SET, not a score.
+ *
+ * ```
+ *   dual(v) = hasInternal(v) && Sⁱ(v) > 0 && Sᵉ(v) > 0
+ * ```
+ *
+ * This is the shape that reaches the blocking cell — PRISM's `min(Sⁱ,Sᵉ)` finds the truth 23 times of 30
+ * where this engine's magnitude ranking finds it 15 — imported as PRESENCE rather than as a number. The
+ * difference is the whole of iteration 140's refusal: a score brings its own z-scale into a ranking that
+ * fourteen terms already tune, so it re-weights everything; a 0/1 membership cannot claim more than the
+ * weight it is given and cannot explode.
+ *
+ * `Sⁱ` and `Sᵉ` are the same extremes the symmetry mask reads, from the same walk, so the set and the ratio
+ * cannot disagree about which channels moved.
+ *
+ * @param metrics - Per-service time series, keyed by service id.
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
+ */
+export function computeDualFamilyServices(
+  metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): Set<ServiceId> {
+  const dual = new Set<ServiceId>();
+  for (const [nodeId, e] of computeChannelExtremes(metrics, nodeIds, injectTimeMs)) {
+    if (e.hasInternal && e.internal > 0 && e.external > 0) dual.add(nodeId);
+  }
+  return dual;
+}
+
+/**
  * Compute the PRISM root-cause score for each graph member, max-normalised to
  * [0, 1].
  *

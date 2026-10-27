@@ -38,6 +38,7 @@
 import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -143,6 +144,8 @@ export interface AblationSignalOptions {
    * guess at.
    */
   readonly victimWeight: number;
+  /** The dual-family presence bonus, held at the shipped 0 by every row. */
+  readonly dualFamilyWeight: number;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly prismPooling: PrismPooling;
@@ -247,6 +250,8 @@ export interface AblationEngineOverrides {
   readonly selfTimeWeight?: number;
   /** Overrides `victimWeight` — the internal/external symmetry mask. */
   readonly victimWeight?: number;
+  /** Overrides `dualFamilyWeight` — the dual-family presence bonus. */
+  readonly dualFamilyWeight?: number;
   /** Overrides `metricRiseCeiling` — the ratio ceiling. */
   readonly metricRiseCeiling?: number;
   /** Overrides `dropDeviationMode` — how a drop becomes a deviation. */
@@ -295,6 +300,7 @@ export function buildAblationEngineOptions(
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
+      dualFamilyWeight: overrides.dualFamilyWeight ?? DEFAULT_DUAL_FAMILY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -339,6 +345,7 @@ export function formatAblationConfigLine(
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
+    `dualFamilyWeight=${signals.dualFamilyWeight} ` +
     `collapseDiscount=${topology.collapseDiscount} ` +
     `metricRiseCeiling=${topology.metricRiseCeiling} ` +
     `dropDeviationMode=${topology.dropDeviationMode} ` +

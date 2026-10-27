@@ -49,6 +49,7 @@ import {
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
@@ -268,6 +269,11 @@ export interface Fse26CliOptions {
    */
   readonly victimWeight: number;
   /**
+   * Weight on the dual-family presence bonus. Exposed here for the reason every term is: a shape measurable on
+   * one half only has an undecidable other half. The shipped value is the engine's 0.
+   */
+  readonly dualFamilyWeight: number;
+  /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
    * configuration rather than inventing one.
@@ -466,6 +472,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
+    dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
@@ -584,6 +591,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
     } else if (arg === '--victim-weight' && hasValue(argv, i + 1)) {
       opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
+    } else if (arg === '--dual-family-weight' && hasValue(argv, i + 1)) {
+      opts.dualFamilyWeight = parseWeight(argv[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
     } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

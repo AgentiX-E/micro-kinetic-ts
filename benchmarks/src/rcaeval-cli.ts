@@ -47,6 +47,7 @@ import { join } from 'node:path';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -195,6 +196,16 @@ export interface CliOptions {
    * under — so it travels in the packed `anomaly_knobs` block as `victim=<weight>`.
    */
   victimWeight: number;
+  /**
+   * Weight on the DUAL-FAMILY presence bonus — PRISM's shape test as a bounded 0/1 indicator rather than as an
+   * imported score (see `TreePrunerOptions.dualFamilyWeight`).
+   *
+   * The blocking cell's defect is a RANK distance: the truth sits at median rank 33 of 68 on RE3-TrainTicket
+   * while the same engine puts the same corpus's truth at rank 2 and 9 on the other two suites, so a lever has
+   * to lift one candidate 32 places without lifting the 32 above it. The only thing that has ever reached this
+   * cell is a SHAPE test, and a membership cannot claim more than its weight.
+   */
+  dualFamilyWeight: number;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -480,6 +491,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
+    dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -579,6 +591,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
     else if (args[i] === '--victim-weight' && hasValue(args, i + 1))
       opts.victimWeight = parseWeight(args[++i]!, DEFAULT_VICTIM_WEIGHT);
+    else if (args[i] === '--dual-family-weight' && hasValue(args, i + 1))
+      opts.dualFamilyWeight = parseWeight(args[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

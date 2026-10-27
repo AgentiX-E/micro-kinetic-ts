@@ -200,6 +200,16 @@ export interface RankingWeights {
    */
   readonly victimWeight?: number;
   /**
+   * Weight on the DUAL-FAMILY presence bonus — PRISM's shape test as a bounded 0/1 indicator:
+   *
+   *   finalScore(v) += dualFamilyWeight × 1[v has a moving channel in BOTH families]
+   *
+   * Imported as PRESENCE rather than as a score because the score form was measured in three variants and
+   * refused (`docs/prism-symmetry-mask.md`): each brought its own z-scale into a ranking fourteen terms already
+   * tune. Ships at 0, where the membership set is not built.
+   */
+  readonly dualFamilyWeight?: number;
+  /**
    * Self-time prior: rewards a service for the share of its OWN latency rise that no callee can
    * explain.
    *

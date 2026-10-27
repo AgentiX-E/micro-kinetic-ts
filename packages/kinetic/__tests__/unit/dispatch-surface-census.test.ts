@@ -279,6 +279,8 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // budget is full, and both are needed together — `log` without a ceiling is the #193 explosion.
     '--drop-deviation-mode',
     '--rise-ceiling',
+    // Iteration 144: PRISM's shape test imported as PRESENCE rather than as a score.
+    '--dual-family-weight',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -295,6 +297,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--victim-weight',
     '--drop-deviation-mode',
     '--rise-ceiling',
+    '--dual-family-weight',
   ],
 };
 
@@ -406,6 +409,12 @@ const KNOBS: Readonly<
   dropDeviationMode: {
     flag: '--drop-deviation-mode',
     owner: 'drop-deviation-symmetry.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  dualFamilyWeight: {
+    flag: '--dual-family-weight',
+    owner: 're3-quiet-truth.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -678,6 +687,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'selfTimeWeight',
   'stabilityWeight',
   'victimWeight',
+  'dualFamilyWeight',
   'dropDeviationMode',
   'metricRiseCeiling',
   'suppressZeroBaselineLatency',

@@ -55,6 +55,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   prismPooling:
     'which of PRISM\u2019s two combination functions its signal uses; the search tunes the PRISM WEIGHT only, and the pooling is a per-context CHOICE rather than a weight',
   stabilityWeight: 'the decisive-stability prior, solved outside this search space',
+  dualFamilyWeight:
+    'the dual-family presence bonus, shipped OFF and measured outside this search space: it is a 0/1 shape indicator whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
   victimWeight:
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:

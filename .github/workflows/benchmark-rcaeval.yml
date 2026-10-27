@@ -308,6 +308,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -491,6 +492,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -699,6 +701,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -891,6 +894,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1107,6 +1111,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1291,6 +1296,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1476,6 +1482,7 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)

@@ -75,6 +75,8 @@ export interface Fse26SignalOptions {
   readonly selfTimeWeight: number;
   /** Weight on the internal/external symmetry mask. Required for the same reason as the pool penalty. */
   readonly victimWeight: number;
+  /** Weight on the dual-family presence bonus. Required for the same reason as the pool penalty. */
+  readonly dualFamilyWeight: number;
   /**
    * Weight of the injection-anchored temporal prior. Required for the same reason as
    * every weight above: a PARTIAL passed through here would be a silent no-op if the
@@ -153,6 +155,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       stabilityWeight: opts.stabilityWeight,
       selfTimeWeight: opts.selfTimeWeight,
       victimWeight: opts.victimWeight,
+      dualFamilyWeight: opts.dualFamilyWeight,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       // The five the golden half could state alone until `docs/dispatch-surface-audit.md`'s Finding 6

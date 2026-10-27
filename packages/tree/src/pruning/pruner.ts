@@ -62,7 +62,11 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computeChannelSymmetry, computePrismScores } from './prism-signal.js';
+import {
+  computeChannelSymmetry,
+  computeDualFamilyServices,
+  computePrismScores,
+} from './prism-signal.js';
 import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -636,6 +640,23 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * shipped ranking is bit-identical by construction.
    */
   readonly victimWeight: number;
+  /**
+   * Weight on the DUAL-FAMILY presence bonus — PRISM's shape test as a bounded indicator.
+   *
+   *   finalScore(v) += dualFamilyWeight × 1[v has a moving channel in BOTH families]
+   *
+   * The blocking cell's defect is a RANK distance, not a sign: `docs/re3-quiet-truth.md` §6 measures the truth
+   * at **median rank 33 of 68** on RE3-TrainTicket while the same engine puts the same corpus's truth at rank
+   * 2 and rank 9 on the other two suites. A lever therefore has to lift one candidate 32 places without
+   * lifting the 32 above it, and every MAGNITUDE lever measured this month moved candidates by a few places.
+   *
+   * The one thing that reaches this cell is a SHAPE test — PRISM's `min(Sⁱ,Sᵉ)` finds the truth 23 of 30 —
+   * and the form matters: as a SCORE it brings an imported z-scale and re-weights everything (three forms
+   * refused, −10 to −37 on RE1). As a 0/1 indicator it can claim at most its own weight.
+   *
+   * Ships at {@link DEFAULT_DUAL_FAMILY_WEIGHT} = **0**, and at 0 the membership set is not built.
+   */
+  readonly dualFamilyWeight: number;
 }
 
 /**
@@ -661,6 +682,7 @@ export function toRankingWeights(
     | 'stabilityWeight'
     | 'selfTimeWeight'
     | 'victimWeight'
+    | 'dualFamilyWeight'
   >,
 ): RankingWeights {
   return {
@@ -678,6 +700,7 @@ export function toRankingWeights(
     stabilityWeight: options.stabilityWeight,
     selfTimeWeight: options.selfTimeWeight,
     victimWeight: options.victimWeight,
+    dualFamilyWeight: options.dualFamilyWeight,
   };
 }
 
@@ -824,6 +847,15 @@ export const DEFAULT_SELF_TIME_WEIGHT = 0;
  * not have.
  */
 export const DEFAULT_VICTIM_WEIGHT = 0;
+
+/**
+ * The shipped weight of the dual-family presence bonus — `0`, i.e. OFF until a dispatch measures it.
+ *
+ * The shape it encodes is the only one that has ever reached RE3-TrainTicket (PRISM's conjunctive form, 23 of
+ * 30 against this engine's 15), and the form is what this repository's record says to change: a score imports
+ * a scale, a membership does not. `docs/re3-quiet-truth.md` §6 holds the rank measurement that motivated it.
+ */
+export const DEFAULT_DUAL_FAMILY_WEIGHT = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.
@@ -1230,6 +1262,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
   victimWeight: DEFAULT_VICTIM_WEIGHT,
+  dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
 };
 
 /**
@@ -1561,6 +1594,13 @@ export class TreePruner {
         ? computeChannelSymmetry(metrics, new Set(callGraph.nodes.keys()), injectTimeMs)
         : undefined;
 
+    // The DUAL-FAMILY membership: the same walk as the symmetry above, read as presence instead of as a ratio.
+    // Built only when the weight is non-zero, so the shipped path is byte-identical by construction.
+    const dualFamilyServices =
+      this.options.dualFamilyWeight !== 0
+        ? computeDualFamilyServices(metrics, new Set(callGraph.nodes.keys()), injectTimeMs)
+        : undefined;
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -1588,6 +1628,7 @@ export class TreePruner {
       stabilityScores,
       selfTimeScores,
       channelSymmetry,
+      dualFamilyServices,
     };
   }
 
@@ -1660,6 +1701,7 @@ export class TreePruner {
       graph.stabilityScores,
       graph.selfTimeScores,
       graph.channelSymmetry,
+      graph.dualFamilyServices,
     );
 
     // ── The failed-edge direction term's GATE ────────────────────────────────
@@ -1709,6 +1751,7 @@ export class TreePruner {
         graph.stabilityScores,
         graph.selfTimeScores,
         graph.channelSymmetry,
+        graph.dualFamilyServices,
       ),
     );
   }
@@ -1965,6 +2008,7 @@ function performTreeRCA(
   stabilityScores?: ReadonlyMap<ServiceId, number>,
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
+  dualFamilyServices?: ReadonlySet<ServiceId>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -2307,6 +2351,9 @@ function performTreeRCA(
   // a case it can punish, which is why the lookup substitutes the symmetry 1 the map would have given a
   // component with no internal channel.
   const victimWeight = options.victimWeight;
+  // The dual-family bonus. A membership test rather than a value: the term is the weight or nothing, which is
+  // what keeps an imported SHAPE from becoming an imported SCALE.
+  const dualFamilyWeight = options.dualFamilyWeight;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -2347,6 +2394,17 @@ function performTreeRCA(
         if (map === undefined) return 'MAP_ABSENT';
         if (map.size === 0) return 'MAP_EMPTY';
         return map.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
+      };
+      // The SET counterpart, with the same three tiers. A membership is a different container from a map, and
+      // collapsing "no set" with "a set that does not hold this candidate" would report one absence for another
+      // — which is the whole reason `presenceOf` reads the map itself rather than a lookup result.
+      const presenceInSet = (
+        set: ReadonlySet<ServiceId> | undefined,
+        id: ServiceId,
+      ): TermSourcePresence => {
+        if (set === undefined) return 'MAP_ABSENT';
+        if (set.size === 0) return 'MAP_EMPTY';
+        return set.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
       };
       const onsetEntry = onsetSlopes.get(id);
       const collisionEntry = ratioContrib.get(id);
@@ -2454,6 +2512,12 @@ function performTreeRCA(
           (1 - (symmetryEntry ?? 1)) * Math.log1p(selfScores.get(id)!),
           { presence: presenceOf(channelSymmetry, id), source: 'channelSymmetry' },
         ),
+        // PRISM's shape test as a bounded indicator: the weight or nothing, never a magnitude. The one form of
+        // this axiom that cannot re-weight a ranking by an imported scale.
+        buildTerm('dualFamily', dualFamilyWeight, dualFamilyServices?.has(id) ? 1 : 0, {
+          presence: presenceInSet(dualFamilyServices, id),
+          source: 'dualFamilyServices',
+        }),
       ];
       termCache.set(id, t);
     }

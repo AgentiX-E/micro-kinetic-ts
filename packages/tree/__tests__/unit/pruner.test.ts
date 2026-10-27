@@ -1090,6 +1090,7 @@ describe('TreePruner', () => {
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
         victimWeight: 0.9,
+        dualFamilyWeight: 0.7,
       });
 
       expect(weights).toEqual({
@@ -1107,6 +1108,7 @@ describe('TreePruner', () => {
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
         victimWeight: 0.9,
+        dualFamilyWeight: 0.7,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1788,6 +1790,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
+      dualFamilyWeight: 0.7,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -2053,6 +2056,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
+      dualFamilyWeight: 0.7,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -2083,6 +2087,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
+      dualFamilyWeight: 0.7,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -2519,8 +2524,8 @@ describe('the score breakdown — the total IS its terms', () => {
   it('names the term set EXACTLY, so a term added to the formula cannot go missing from the breakdown', () => {
     // The identity above is satisfied by any array whose sum is the total, including one that silently DROPPED
     // a term from both sides — and that is the failure the identity alone cannot see. So the population is
-    // enumerated: these are the fifteen terms `finalScore(v)` is made of, in the formula's order, and a
-    // sixteenth added to the ranking weights without a line here fails this test rather than entering the
+    // enumerated: these are the sixteen terms `finalScore(v)` is made of, in the formula's order, and a
+    // seventeenth added to the ranking weights without a line here fails this test rather than entering the
     // total unaccounted for.
     expect(ranked()[0]!.terms!.map((t) => t.name)).toEqual([
       'selfAnomalyLog1p',
@@ -2538,6 +2543,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'stability',
       'selfTime',
       'victim',
+      'dualFamily',
     ]);
   });
 });
@@ -3027,5 +3033,102 @@ describe('TreePruner — the internal/external symmetry mask', () => {
     };
 
     expect(rankOf(0.2)).toEqual(rankOf(0));
+  });
+});
+
+describe('TreePruner — the dual-family presence bonus', () => {
+  // The audit `docs/re3-quiet-truth.md` §6 puts a number on the blocking cell's defect: the truth sits at
+  // MEDIAN RANK 33 of 68, i.e. the engine calls it an average component, while the same engine puts the same
+  // corpus's truth at rank 2 and rank 9 on the other two suites. Every MAGNITUDE lever failed there; the one
+  // thing that reaches the truth is a SHAPE test — PRISM's `min(Sⁱ,Sᵉ)`, 23 of 30 — and every attempt to
+  // import that shape as a SCORE failed too, because it brought its own z-scale into a tuned ranking.
+  //
+  // So the shape is imported as PRESENCE: a bounded 0/1 indicator that a component carries a moving channel
+  // in BOTH families, added at a small weight. It cannot explode, it cannot re-weight by an unbounded ratio,
+  // and it says exactly what the shape test says — this component is anomalous where a source is anomalous.
+  const DUAL = 'ts-consign-service';
+  const EXTERNAL_ONLY = 'ts-food-service';
+
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        DUAL,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 40, 40, 40, 40]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 30, 30, 30, 30]),
+        ],
+      ],
+      [
+        EXTERNAL_ONLY,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 60, 60, 60, 60]),
+        ],
+      ],
+    ]);
+    return [makeCallGraph([DUAL, EXTERNAL_ONLY], [[EXTERNAL_ONLY, DUAL]]), metrics];
+  };
+
+  const INJECT = 4 * 60000;
+
+  const build = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    return pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT });
+  };
+
+  it('marks the component with a moving channel in BOTH families, and only that one', () => {
+    const graph = build(new TreePruner({ dualFamilyWeight: 1 }));
+
+    expect(graph.dualFamilyServices?.has(DUAL)).toBe(true);
+    expect(graph.dualFamilyServices?.has(EXTERNAL_ONLY)).toBe(false);
+  });
+
+  it('builds NO set at weight 0 — the shipped path does not pay for a term it does not use', () => {
+    expect(build(new TreePruner({ dualFamilyWeight: 0 })).dualFamilyServices).toBeUndefined();
+  });
+
+  it('adds exactly the weight to the dual-family component and nothing to the other', () => {
+    // Bounded by construction: the value is 0 or 1, so the term can never claim more than its weight — the
+    // property every imported SCORE this month lacked.
+    const weight = 0.25;
+    const before = new Map(
+      new TreePruner({ dualFamilyWeight: 0 })
+        .analyze(build(new TreePruner({ dualFamilyWeight: 0 })))
+        .map((r) => [r.serviceId, r.finalScore!]),
+    );
+    const pruner = new TreePruner({ dualFamilyWeight: weight });
+    const after = new Map(pruner.analyze(build(pruner)).map((r) => [r.serviceId, r.finalScore!]));
+
+    expect(after.get(DUAL)! - before.get(DUAL)!).toBeCloseTo(weight, 10);
+    expect(after.get(EXTERNAL_ONLY)!).toBeCloseTo(before.get(EXTERNAL_ONLY)!, 12);
+  });
+
+  it('names the term in the breakdown with its weight already applied', () => {
+    const weight = 0.3;
+    const pruner = new TreePruner({ dualFamilyWeight: weight });
+    const results = pruner.analyze(build(pruner));
+    const dual = results
+      .find((r) => r.serviceId === DUAL)!
+      .terms!.find((t) => t.name === 'dualFamily')!;
+
+    expect(dual.contribution).toBeCloseTo(weight, 10);
+    // A present, non-zero term reports no CAUSE: `source` and `cause` exist to explain a zero, and a term that
+    // was paid has nothing to explain. The assertion is the convention's, taken from the self-time term beside it.
+    expect(dual.cause).toBeUndefined();
+    expect(dual.source).toBeUndefined();
+  });
+
+  it('is inert at weight 0 against a pruner that never mentions it', () => {
+    const zero = new TreePruner({ dualFamilyWeight: 0 });
+    const zeroScores = new Map(zero.analyze(build(zero)).map((r) => [r.serviceId, r.finalScore!]));
+    const graph = build(new TreePruner());
+    const absent = new Map(
+      new TreePruner()
+        .analyze({ ...graph, dualFamilyServices: undefined })
+        .map((r) => [r.serviceId, r.finalScore!]),
+    );
+
+    expect(zeroScores.get(DUAL)!).toBeCloseTo(absent.get(DUAL)!, 12);
+    expect(zeroScores.get(EXTERNAL_ONLY)!).toBeCloseTo(absent.get(EXTERNAL_ONLY)!, 12);
   });
 });

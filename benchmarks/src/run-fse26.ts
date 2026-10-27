@@ -161,6 +161,7 @@ async function main(): Promise<void> {
     stabilityWeight: opts.stabilityWeight,
     selfTimeWeight: opts.selfTimeWeight,
     victimWeight: opts.victimWeight,
+    dualFamilyWeight: opts.dualFamilyWeight,
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
     // The eight the mirror made reachable on this half. Carried on the config rather than left to the

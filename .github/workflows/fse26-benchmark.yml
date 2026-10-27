@@ -348,6 +348,9 @@ jobs:
                 victim_weight)
                   KNOB_ARGS+=(--victim-weight "$value")
                   ;;
+                dual_family_weight)
+                  KNOB_ARGS+=(--dual-family-weight "$value")
+                  ;;
                 drop_deviation)
                   KNOB_ARGS+=(--drop-deviation-mode "$value")
                   ;;

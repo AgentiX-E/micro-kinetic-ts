@@ -52,6 +52,8 @@ export interface RCAEvalSignalOptions {
   readonly selfTimeWeight: number;
   /** The internal/external symmetry mask — see `CliOptions.victimWeight`. */
   readonly victimWeight: number;
+  /** The dual-family presence bonus — see `CliOptions.dualFamilyWeight`. */
+  readonly dualFamilyWeight: number;
   /**
    * The per-edge latency pair — a WEIGHT and the RISE FLOOR it was measured with.
    *
@@ -186,6 +188,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       stabilityWeight: opts.stabilityWeight,
       selfTimeWeight: opts.selfTimeWeight,
       victimWeight: opts.victimWeight,
+      dualFamilyWeight: opts.dualFamilyWeight,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -272,6 +275,7 @@ export function formatSignalLine(opts: CliOptions): string {
     // omitted-when-default rule would render the measured arm and the shipped run identically.
     `selfTimeWeight=${opts.selfTimeWeight} ` +
     `victimWeight=${opts.victimWeight} ` +
+    `dualFamilyWeight=${opts.dualFamilyWeight} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

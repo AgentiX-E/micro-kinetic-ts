@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -49,6 +50,7 @@ describe('buildFse26EngineOptions', () => {
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: DEFAULT_VICTIM_WEIGHT,
+      dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

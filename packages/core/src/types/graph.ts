@@ -419,6 +419,17 @@ export interface FaultPropagationGraph {
    */
   readonly channelSymmetry?: ReadonlyMap<ServiceId, number>;
   /**
+   * Members whose anomaly is present in BOTH families — internal AND external — i.e. PRISM's shape test as a
+   * membership set. Feeds the (opt-in) `dualFamilyWeight` term.
+   *
+   * A SET rather than a score, and that is the design: iteration 140 measured PRISM's score as an additive
+   * term in three forms and refused all three for re-weighting a tuned ranking by an imported z-scale. A
+   * membership cannot claim more than the weight it is given.
+   *
+   * ABSENT when the weight is 0, so the shipped path does not build it.
+   */
+  readonly dualFamilyServices?: ReadonlySet<ServiceId>;
+  /**
    * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
    * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
    * LLM reranker so the model reasons over the actual exception identity, not
