@@ -658,6 +658,23 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * at RE1/RE2 byte-identical). At 0 — an ablation a dispatch can still state — the membership set is not built.
    */
   readonly dualFamilyWeight: number;
+  /**
+   * The share of the fleet's strongest dual signal a component must reach to be in the family.
+   *
+   *   m(v)    = hasInternal(v) ? min(Sⁱ(v), Sᵉ(v)) : 0
+   *   dual(v) = m(v) > 0 && m(v) ≥ dualFamilyGate × max_w m(w)
+   *
+   * The weight above says WHAT the shape is worth; this says WHO has it. A constant membership can only
+   * re-order a cell whose family is a strict subset of the fleet, and the enrolment's own numbers say that is
+   * the exception rather than the rule: RE3-SockShop moved (15 → 18) on 14 candidates, RE3-TrainTicket did not
+   * on 68, and FSE'26 was byte-identical at every weight. Making the family relative to its own maximum is how
+   * the same 0/1 term stays selective as the fleet grows, and it is the construction
+   * `anomalyBreadthGate` already uses — a share of the fleet maximum rather than an invented absolute floor.
+   *
+   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE} = **0**, which is the identity: `min > 0` holds exactly when both
+   * channels moved, so the shipped nine cells rank byte-identically with and without the flag.
+   */
+  readonly dualFamilyGate: number;
 }
 
 /**
@@ -877,6 +894,19 @@ export const DEFAULT_VICTIM_WEIGHT = 0;
  * the next mechanism starts to matter.
  */
 export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
+
+/**
+ * The share of the fleet's strongest dual signal a component must reach to be a MEMBER.
+ *
+ * The weight above buys a bonus; this chooses WHO is paid it. A membership is a constant, so a family that
+ * covers most of a cell cannot re-order that cell — and the enrolment measured exactly that split (SockShop
+ * 14 candidates: 15 → 18; TrainTicket 68: unchanged; FSE'26: byte-identical at every weight). The gate is the
+ * population's lever, on the construction `anomalyBreadthGate` uses: `min(Sⁱ,Sᵉ) ≥ gate × max_w min(Sⁱ,Sᵉ)`.
+ *
+ * Ships at **0**, the identity of the membership iteration 144 enrolled — `familyOf()` and `familyOf(0)` are
+ * the same set by construction, so a push that passes no flag ranks the nine cells byte-identically.
+ */
+export const DEFAULT_DUAL_FAMILY_GATE = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.
@@ -1284,6 +1314,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
   victimWeight: DEFAULT_VICTIM_WEIGHT,
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+  dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
 };
 
 /**
@@ -1619,7 +1650,12 @@ export class TreePruner {
     // Built only when the weight is non-zero, so the shipped path is byte-identical by construction.
     const dualFamilyServices =
       this.options.dualFamilyWeight !== 0
-        ? computeDualFamilyServices(metrics, new Set(callGraph.nodes.keys()), injectTimeMs)
+        ? computeDualFamilyServices(
+            metrics,
+            new Set(callGraph.nodes.keys()),
+            injectTimeMs,
+            this.options.dualFamilyGate,
+          )
         : undefined;
 
     return {

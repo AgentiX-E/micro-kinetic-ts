@@ -38,6 +38,7 @@
 import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -146,6 +147,15 @@ export interface AblationSignalOptions {
   readonly victimWeight: number;
   /** The dual-family presence bonus, held at the shipped 0 by every row. */
   readonly dualFamilyWeight: number;
+  /**
+   * The dual-family membership's population, held at the shipped 0 (the identity) by every row.
+   *
+   * Named for the reason the ceiling and the drop mode are: the reported-field partition requires every field
+   * the artifact can omit to be printed or exempted, and 0 is a fact about the configuration rather than an
+   * omission. No row VARIES it — the study's subject is Deng Yu's terms, and this knob selects WHO is paid a
+   * 0/1 bonus that is itself 0 in every row.
+   */
+  readonly dualFamilyGate: number;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly prismPooling: PrismPooling;
@@ -301,6 +311,7 @@ export function buildAblationEngineOptions(
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
       dualFamilyWeight: overrides.dualFamilyWeight ?? DEFAULT_DUAL_FAMILY_WEIGHT,
+      dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -345,7 +356,7 @@ export function formatAblationConfigLine(
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
-    `dualFamilyWeight=${signals.dualFamilyWeight} ` +
+    `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +
     `collapseDiscount=${topology.collapseDiscount} ` +
     `metricRiseCeiling=${topology.metricRiseCeiling} ` +
     `dropDeviationMode=${topology.dropDeviationMode} ` +

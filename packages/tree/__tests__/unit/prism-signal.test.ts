@@ -13,7 +13,9 @@
 
 import type { ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import {
+  computeChannelExtremes,
   computeChannelSymmetry,
+  computeDualFamilyServices,
   computePrismScores,
   DEFAULT_PRISM_POOLING,
   isPrismPooling,
@@ -242,5 +244,118 @@ describe('computeChannelSymmetry', () => {
       out: [makeSeries('cpu', [10, 10], [90, 90])],
     });
     expect([...computeChannelSymmetry(metrics, nodesOf('in'), INJECT_MS).keys()]).toEqual(['in']);
+  });
+});
+
+// ── computeDualFamilyServices ─────────────────────────────
+
+describe('computeDualFamilyServices', () => {
+  // PRISM's shape test as PRESENCE: `dual(v) = hasInternal(v) && Sⁱ(v) > 0 && Sᵉ(v) > 0`. Iteration 144
+  // enrolled it at weight 0.25 on a sweep with no cell down (RE3 52 → 55 at RE1/RE2 byte-identical), and it
+  // moved SockShop's RE3 cell (15 → 18) while leaving TrainTicket's at 15 of 30.
+  //
+  // The question this block pins is the one the enrolment could not answer: a membership is a CONSTANT bonus,
+  // so it can only re-order a cell whose family is a strict subset of the fleet. Where nearly every candidate
+  // carries a moving channel in both families the bonus is near-uniform and cannot re-order anything — which
+  // is exactly what FSE'26 measured (Top@1 byte-identical at every weight). The `gate` parameter is the
+  // membership's POPULATION: a component is a member only when its weaker channel reaches a share of the
+  // fleet's strongest dual signal, so the family stays a subset as the fleet grows.
+
+  // Constant baselines make `scale = |mean|`, so the PRISM z-score IS the relative change: 100 → 200 reads 1.
+  const STRONG = 'strong'; // Sⁱ = 1.0,   Sᵉ = 1.0 → min 1.0
+  const HALF = 'half'; //     Sⁱ = 0.5,   Sᵉ = 0.5 → min 0.5
+  const WEAK = 'weak'; //     Sⁱ = 0.1,   Sᵉ = 0.1 → min 0.1
+  const EXT_ONLY = 'ext-only'; // Sⁱ = 0, Sᵉ = 1.0 → min 0
+  const NO_EXTERNAL = 'no-external'; // Sⁱ = 1.0, no external series at all → min 0
+  const NO_INTERNAL = 'no-internal'; // no internal series at all, Sᵉ = 1.0 → min 0, hasInternal false
+
+  const fleet = (): Map<string, readonly TimeSeries[]> =>
+    metricsOf({
+      [STRONG]: [
+        makeSeries('cpu', [100, 100], [200, 200]),
+        makeSeries('latency', [100, 100], [200, 200]),
+      ],
+      [HALF]: [
+        makeSeries('cpu', [100, 100], [150, 150]),
+        makeSeries('latency', [100, 100], [150, 150]),
+      ],
+      [WEAK]: [
+        makeSeries('cpu', [100, 100], [110, 110]),
+        makeSeries('latency', [100, 100], [110, 110]),
+      ],
+      [EXT_ONLY]: [
+        makeSeries('cpu', [100, 100], [100, 100]),
+        makeSeries('latency', [100, 100], [200, 200]),
+      ],
+      [NO_EXTERNAL]: [makeSeries('cpu', [100, 100], [200, 200])],
+      // The other absence: telemetry that is external-only. It is not the same statement as "its internal
+      // channel did not move", and the strength map records the difference rather than flattening it.
+      [NO_INTERNAL]: [makeSeries('latency', [100, 100], [200, 200])],
+    });
+
+  const members = (...ids: string[]): Set<ServiceId> => nodesOf(...ids);
+  const familyOf = (gate?: number): string[] =>
+    [
+      ...computeDualFamilyServices(
+        fleet(),
+        members(STRONG, HALF, WEAK, EXT_ONLY, NO_EXTERNAL, NO_INTERNAL),
+        INJECT_MS,
+        ...(gate === undefined ? [] : [gate]),
+      ),
+    ].sort();
+
+  it("reads PRISM's own z-score, NOT the anomaly composition's log-ratio", () => {
+    // The statistic fence. `docs/re3-quiet-truth.md` §7 asserted that this engine's `Sⁱ`/`Sᵉ` were
+    // `log₁₀(1 + ratio)` over a max while PRISM's were z-scores of a mean shift, and made "the difference
+    // between those two statistics" the next measurement. The code never had that difference:
+    // `computeChannelExtremes` calls `deviationZScore`, which is PRISM's own scorer. This test is the VALUE
+    // that falsifies the prose, so the claim cannot come back: a constant baseline of 100 moved to 200 is
+    // z = 1 exactly, where `log₁₀(1 + 1)` would be 0.3010.
+    const extremes = computeChannelExtremes(fleet(), members(STRONG), INJECT_MS).get(STRONG);
+    expect(extremes).toEqual({ internal: 1, external: 1, hasInternal: true });
+  });
+
+  it('admits every component with a moving channel in BOTH families, and nothing else', () => {
+    expect(familyOf(0)).toEqual([HALF, STRONG, WEAK].sort());
+  });
+
+  it('ships as the identity of the constant membership: no gate means the set the weight was enrolled on', () => {
+    expect(familyOf()).toEqual(familyOf(0));
+  });
+
+  it('holds only the components within a factor of the fleet maximum, boundary inclusive', () => {
+    // min(Sⁱ,Sᵉ) = {1.0, 0.5, 0.1}, so the fleet maximum is 1.0 and the thresholds are the gates themselves.
+    expect(familyOf(0.5)).toEqual([HALF, STRONG].sort());
+    expect(familyOf(0.75)).toEqual([STRONG]);
+    expect(familyOf(1)).toEqual([STRONG]);
+  });
+
+  it('never admits a component that fails the axiom, whatever the gate', () => {
+    // The gate narrows the family; it cannot widen it past PRISM's own conjunction. An external-only victim
+    // has min = 0 and an internal-only survivor has min = 0 — at gate 0 because the conjunction fails, at
+    // gate > 0 because a zero can never clear a positive share of a positive maximum.
+    for (const gate of [0, 0.01, 0.5, 1]) {
+      expect(familyOf(gate)).not.toContain(EXT_ONLY);
+      expect(familyOf(gate)).not.toContain(NO_EXTERNAL);
+      expect(familyOf(gate)).not.toContain(NO_INTERNAL);
+    }
+  });
+
+  it('is EMPTY when no component carries a moving channel in both families', () => {
+    const metrics = metricsOf({
+      [EXT_ONLY]: [
+        makeSeries('cpu', [100, 100], [100, 100]),
+        makeSeries('latency', [100, 100], [200, 200]),
+      ],
+    });
+    for (const gate of [0, 0.5]) {
+      expect(computeDualFamilyServices(metrics, members(EXT_ONLY), INJECT_MS, gate).size).toBe(0);
+    }
+  });
+
+  it('refuses to answer without an injection instant, like the score it is read beside', () => {
+    const ids = members(STRONG, HALF);
+    expect(computeDualFamilyServices(fleet(), ids, 0).size).toBe(0);
+    expect(computeDualFamilyServices(fleet(), ids, 0, 0.5).size).toBe(0);
   });
 });

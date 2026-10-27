@@ -86,6 +86,11 @@ import {
   type LatencyRouteCensus,
   type LatencyRouteEntry,
 } from './directional-evidence.js';
+import {
+  accumulateDualFamilyCensus,
+  createDualFamilyCensus,
+  formatDualFamilyCensusLine,
+} from './dual-family-census.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
@@ -1374,6 +1379,11 @@ async function main(): Promise<void> {
 
     // Run each fault type separately
     const results = new Map<string, RunResult>();
+    // The dual-family census for this cell. Accumulated from the ranking the correctness checks count from, so
+    // it cannot disagree with the score about who was paid — see `dual-family-census.ts` for why the term's
+    // POPULATION has to be printed at all (a constant membership only re-orders a cell whose family is a
+    // strict subset, and no artifact said how large the family was where the cells did not move).
+    const dualFamily = createDualFamilyCensus();
     for (const [ft, ftCases] of byFaultType) {
       if (ftCases.length === 0) continue;
       const suite: BenchmarkSuite = {
@@ -1383,24 +1393,27 @@ async function main(): Promise<void> {
       };
       results.set(
         ft,
-        await runner.runSuite(
-          suite,
-          diagnoseDump === undefined
-            ? undefined
-            : (record) => {
-                diagnoseDump.record(
-                  groupKey,
-                  record.case.id,
-                  renderDiagnosedCase(record, {
-                    logSignalMode: opts.logSignalMode,
-                    useInjectTime: !opts.noInjectTime,
-                    fieldDecimals: opts.diagnoseDecimals,
-                  }),
-                );
-              },
-        ),
+        await runner.runSuite(suite, (record) => {
+          // Always on: the census costs one pass over an array the runner already built, and an instrument
+          // that only ran under a flag would be absent from exactly the acceptance runs that must explain a
+          // movement.
+          accumulateDualFamilyCensus(dualFamily, record);
+          if (diagnoseDump !== undefined) {
+            diagnoseDump.record(
+              groupKey,
+              record.case.id,
+              renderDiagnosedCase(record, {
+                logSignalMode: opts.logSignalMode,
+                useInjectTime: !opts.noInjectTime,
+                fieldDecimals: opts.diagnoseDecimals,
+              }),
+            );
+          }
+        }),
       );
     }
+    const dualFamilyLine = formatDualFamilyCensusLine(dualFamily);
+    if (dualFamilyLine !== undefined) console.log(dualFamilyLine);
 
     // ── Fusion-ceiling records for this group ──
     // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed

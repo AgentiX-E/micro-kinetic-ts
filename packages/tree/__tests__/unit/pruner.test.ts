@@ -3135,4 +3135,85 @@ describe('TreePruner — the dual-family presence bonus', () => {
     expect(zeroScores.get(DUAL)!).toBeCloseTo(absent.get(DUAL)!, 12);
     expect(zeroScores.get(EXTERNAL_ONLY)!).toBeCloseTo(absent.get(EXTERNAL_ONLY)!, 12);
   });
+
+  // ── The gate: the membership's POPULATION ────────────────
+  //
+  // A membership is a CONSTANT, so it can only re-order a cell in which the family is a strict subset of the
+  // fleet. On RE3-SockShop (14 candidates) it is one (15 → 18); on RE3-TrainTicket (68 candidates) and on
+  // FSE'26 it is not, and the bonus is near-uniform. `dualFamilyGate` makes the family selective at any fleet
+  // size: a component is a member only when its weaker channel reaches a share of the fleet's strongest dual
+  // signal — the same fleet-relative construction `anomalyBreadthGate` uses, and the identity at gate 0.
+  const STRONG_DUAL = 'ts-strong-dual';
+  const WEAK_DUAL = 'ts-weak-dual';
+
+  const makeGatedCase = (): [ServiceCallGraph, MetricMap] => {
+    // Constant baselines of 10 → `scale = |mean|`, so PRISM's z-score is the relative change: 10 → 40 reads 3
+    // and 10 → 15 reads 0.5. Fleet maximum of min(Sⁱ,Sᵉ) is therefore 3.
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        STRONG_DUAL,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 40, 40, 40, 40]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 40, 40, 40, 40]),
+        ],
+      ],
+      [
+        WEAK_DUAL,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 15, 15, 15, 15]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 15, 15, 15, 15]),
+        ],
+      ],
+    ]);
+    return [makeCallGraph([STRONG_DUAL, WEAK_DUAL], [[WEAK_DUAL, STRONG_DUAL]]), metrics];
+  };
+
+  const gatedGraph = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeGatedCase();
+    return pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT });
+  };
+
+  it('holds only the components within a factor of the fleet maximum, boundary inclusive', () => {
+    const familyOf = (gate: number) =>
+      gatedGraph(new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: gate }))
+        .dualFamilyServices;
+
+    expect([...(familyOf(0) ?? [])].sort()).toEqual([STRONG_DUAL, WEAK_DUAL].sort());
+    // min(Sⁱ,Sᵉ) is {3, 0.5}, so the threshold is 3 × gate: 0.1 keeps both (0.5 ≥ 0.3), and from 0.25 on
+    // (0.75 > 0.5) only the strong component is a member.
+    expect([...(familyOf(0.1) ?? [])].sort()).toEqual([STRONG_DUAL, WEAK_DUAL].sort());
+    expect([...(familyOf(0.25) ?? [])].sort()).toEqual([STRONG_DUAL]);
+    expect([...(familyOf(1) ?? [])].sort()).toEqual([STRONG_DUAL]);
+  });
+
+  it('ships at gate 0, which is the family the weight was enrolled on', () => {
+    const graph = gatedGraph(new TreePruner({ dualFamilyWeight: 0.25 }));
+    const explicitZero = gatedGraph(new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: 0 }));
+
+    expect([...(graph.dualFamilyServices ?? [])].sort()).toEqual(
+      [...(explicitZero.dualFamilyServices ?? [])].sort(),
+    );
+  });
+
+  it('pays the bonus only to the gated member — the ordering a constant membership cannot produce', () => {
+    // The measurement this test states as an identity: a constant bonus paid to EVERY member leaves their
+    // pair gap untouched (both sides move by the same weight), while a gated bonus moves one side only, and
+    // the gap widens by exactly the weight. That is the difference between a term that cannot re-order a
+    // cell and one that can.
+    const weight = 0.4;
+    const build4 = (gate: number) => {
+      const pruner = new TreePruner({ dualFamilyWeight: weight, dualFamilyGate: gate });
+      return new Map(pruner.analyze(gatedGraph(pruner)).map((r) => [r.serviceId, r.finalScore!]));
+    };
+    const control = (() => {
+      const pruner = new TreePruner({ dualFamilyWeight: 0, dualFamilyGate: 0 });
+      return new Map(pruner.analyze(gatedGraph(pruner)).map((r) => [r.serviceId, r.finalScore!]));
+    })();
+
+    const ungated = build4(0);
+    const gap = (s: Map<string, number>) => s.get(STRONG_DUAL)! - s.get(WEAK_DUAL)!;
+
+    expect(gap(ungated) - gap(control)).toBeCloseTo(0, 12);
+    expect(gap(build4(0.5)) - gap(control)).toBeCloseTo(weight, 10);
+  });
 });

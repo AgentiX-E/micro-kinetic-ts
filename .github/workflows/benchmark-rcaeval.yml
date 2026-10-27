@@ -119,7 +119,7 @@ on:
         default: ''
         type: string
       anomaly_knobs:
-        description: "The anomaly composition's three coefficients as a comma-separated name=value list: `trend=0.15,burst=0.1,cv=0.05` (empty = the runner's shipped 0.15/0.1/0.05). They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget: `topo_discount` was retired to make room, since it was measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25) and its release record is `docs/dispatch-forwarding.md`"
+        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `dualfam`, `dualfamgate` (ranking terms); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget: `topo_discount` was retired to make room, since it was measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25) and its release record is `docs/dispatch-forwarding.md`"
         required: false
         default: ''
         type: string
@@ -309,6 +309,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -493,6 +497,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -702,6 +710,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -895,6 +907,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1112,6 +1128,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1297,6 +1317,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1483,6 +1507,10 @@ jobs:
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
+              #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
+              #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
+              #   above it keeps only the components within that share of the fleet's strongest dual signal.
+              dualfamgate=*) RANKING_ARG+=(--dual-family-gate "${kv#dualfamgate=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)

@@ -49,6 +49,7 @@ import {
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
@@ -274,6 +275,15 @@ export interface Fse26CliOptions {
    */
   readonly dualFamilyWeight: number;
   /**
+   * The share of the fleet's strongest dual signal a component must reach to be a family member — see
+   * `TreePrunerOptions.dualFamilyGate`.
+   *
+   * A SHARE rather than a weight, and it travels in the packed `ranking_knobs` block as
+   * `dual_family_gate=<share>`: the knob that decides the membership's POPULATION is only measurable on both
+   * halves if both can state it, and the kill criterion is an AND over the two benchmarks.
+   */
+  readonly dualFamilyGate: number;
+  /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
    * configuration rather than inventing one.
@@ -473,6 +483,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+    dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
@@ -593,6 +604,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
     } else if (arg === '--dual-family-weight' && hasValue(argv, i + 1)) {
       opts.dualFamilyWeight = parseWeight(argv[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
+    } else if (arg === '--dual-family-gate' && hasValue(argv, i + 1)) {
+      opts.dualFamilyGate = parseUnitInterval(argv[++i]!, DEFAULT_DUAL_FAMILY_GATE);
     } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

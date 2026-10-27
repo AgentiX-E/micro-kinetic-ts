@@ -281,6 +281,12 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--rise-ceiling',
     // Iteration 144: PRISM's shape test imported as PRESENCE rather than as a score.
     '--dual-family-weight',
+    // Iteration 145: the membership's POPULATION. A membership is a constant, so it can only re-order a cell
+    // whose family is a strict subset of the fleet — 144 measured that split (SockShop 15 → 18 on 14
+    // candidates, TrainTicket unchanged on 68, FSE'26 byte-identical at every weight). The gate is the term
+    // that makes the family selective at any fleet size, and it travels here for the reason every other
+    // post-ceiling knob does: the golden half's 25-input budget is full.
+    '--dual-family-gate',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -298,6 +304,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--drop-deviation-mode',
     '--rise-ceiling',
     '--dual-family-weight',
+    '--dual-family-gate',
   ],
 };
 
@@ -414,6 +421,14 @@ const KNOBS: Readonly<
   },
   dualFamilyWeight: {
     flag: '--dual-family-weight',
+    owner: 're3-quiet-truth.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  dualFamilyGate: {
+    // The term's second axis, and the one its own enrolment exposed: WHO is paid the bonus, not how much.
+    // Owner is the audit the term came from, because the gate's numbers are that audit's §8.
+    flag: '--dual-family-gate',
     owner: 're3-quiet-truth.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
@@ -688,6 +703,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'stabilityWeight',
   'victimWeight',
   'dualFamilyWeight',
+  'dualFamilyGate',
   'dropDeviationMode',
   'metricRiseCeiling',
   'suppressZeroBaselineLatency',

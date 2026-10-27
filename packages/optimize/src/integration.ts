@@ -57,6 +57,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   stabilityWeight: 'the decisive-stability prior, solved outside this search space',
   dualFamilyWeight:
     'the dual-family presence bonus, shipped OFF and measured outside this search space: it is a 0/1 shape indicator whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
+  dualFamilyGate:
+    'the dual-family membership\u2019s population, shipped at 0 (the identity): it does not scale any term but selects WHO is paid the 0/1 bonus, so a search over weights could only move it by accident \u2014 a discrete population belongs to a dispatch, where its effect is one number per arm',
   victimWeight:
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:

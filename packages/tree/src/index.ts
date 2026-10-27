@@ -113,6 +113,7 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
 export {
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,

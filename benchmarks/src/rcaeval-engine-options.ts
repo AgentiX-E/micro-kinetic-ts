@@ -55,6 +55,13 @@ export interface RCAEvalSignalOptions {
   /** The dual-family presence bonus — see `CliOptions.dualFamilyWeight`. */
   readonly dualFamilyWeight: number;
   /**
+   * The dual-family membership's POPULATION — see `CliOptions.dualFamilyGate`.
+   *
+   * Required rather than optional for the reason every weight here is: the engine's default is 0, so a
+   * dropped key would run the ungated membership while the artifact reported a gated one.
+   */
+  readonly dualFamilyGate: number;
+  /**
    * The per-edge latency pair — a WEIGHT and the RISE FLOOR it was measured with.
    *
    * The two are one configuration rather than two settings: the floor is not safe on its own, and
@@ -189,6 +196,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       selfTimeWeight: opts.selfTimeWeight,
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
+      dualFamilyGate: opts.dualFamilyGate,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -276,6 +284,9 @@ export function formatSignalLine(opts: CliOptions): string {
     `selfTimeWeight=${opts.selfTimeWeight} ` +
     `victimWeight=${opts.victimWeight} ` +
     `dualFamilyWeight=${opts.dualFamilyWeight} ` +
+    // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the
+    // gated arm and the shipped run identically on the artifact that is supposed to attribute the difference.
+    `dualFamilyGate=${opts.dualFamilyGate} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

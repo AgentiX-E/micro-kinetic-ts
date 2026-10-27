@@ -169,3 +169,29 @@ PRISM computes it (23 of 30); as a membership over this engine's own deviations 
 TrainTicket's, and **that gap is the next measurement**: PRISM's `Sⁱ`/`Sᵉ` are z-scores of a mean shift, this
 engine's are `log₁₀(1 + ratio)` over a max — and the difference between those two statistics on the same
 channels is what separates 18 gains from 0.
+
+## 8. §7's last paragraph was wrong, and the correction is measured
+
+§7 closed with a named next measurement:
+
+> PRISM's `Sⁱ`/`Sᵉ` are z-scores of a mean shift, this engine's are `log₁₀(1 + ratio)` over a max — and the
+> difference between those two statistics on the same channels is what separates 18 gains from 0.
+
+**The sentence was false about the code.** `computeChannelExtremes` — the ONE walk the membership, the symmetry
+mask and `computePrismScores` all read — calls `deviationZScore`, which is the paper's own
+`S(P) = |mean_fault − mean_baseline| / scale`. There was never a difference between the two statistics, so no
+experiment could have separated "18 gains" from "0" on that axis. The claim is now a VALUE fence in
+`prism-signal.test.ts`: a constant baseline of 100 moved to 200 reads **exactly 1** on both channels, where
+`log₁₀(1 + ratio)` would read 0.3010.
+
+What actually separates the cells is **density**, and it is measured rather than inferred. The census of
+iteration 145 reads the term out of the ranking the correctness checks are counted from and prints, per cell:
+
+```
+  [dual-family] family=7.6/9.2 (81.7%) truth=122/124 (98.4%) absent=1
+```
+
+OnlineBoutique RE1, 125 cases: **82% of the fleet is a member and the truth is a member 98.4% of the time.** A
+constant bonus paid to 82% of a cell cannot re-order it — which is exactly what the enrolment's own table says
+(the cell is 105 of 125 at weights 0, 0.10, 0.25 and 0.50 alike). The gate that makes the family fleet-relative
+is `docs/dual-family-gate.md`, and its golden sweep is that document's §6.

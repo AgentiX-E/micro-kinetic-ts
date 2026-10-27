@@ -61,6 +61,11 @@ export default defineConfig({
         'src/fse26-report.ts',
         'src/fse26-diagnose-dump.ts',
         'src/fse26-diagnose-sink.ts',
+        // Added with the module: the dual-family census reads the term's POPULATION off the ranking the
+        // correctness checks count from. Its whole value is the distinction it draws — a paid member, a
+        // non-member, a `WEIGHT_ZERO` case and a retrieval failure are four different findings that render as
+        // the same absence — so every branch of it is measured here rather than trusted.
+        'src/dual-family-census.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',

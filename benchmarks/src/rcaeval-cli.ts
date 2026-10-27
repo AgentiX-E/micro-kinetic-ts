@@ -47,6 +47,7 @@ import { join } from 'node:path';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -206,6 +207,16 @@ export interface CliOptions {
    * cell is a SHAPE test, and a membership cannot claim more than its weight.
    */
   dualFamilyWeight: number;
+  /**
+   * The share of the fleet's strongest dual signal a component must reach to be a family member
+   * (see `TreePrunerOptions.dualFamilyGate`).
+   *
+   * The weight above buys a bonus; this chooses who is paid it. A membership is a constant, so a family that
+   * covers most of a cell cannot re-order that cell — measured as the split between RE3-SockShop (14
+   * candidates, 15 → 18) and RE3-TrainTicket (68, unchanged). Travels in the packed `anomaly_knobs` block as
+   * `dualfamgate=<share>` because the golden half's 25-input budget is full.
+   */
+  dualFamilyGate: number;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -492,6 +503,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+    dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -593,6 +605,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.victimWeight = parseWeight(args[++i]!, DEFAULT_VICTIM_WEIGHT);
     else if (args[i] === '--dual-family-weight' && hasValue(args, i + 1))
       opts.dualFamilyWeight = parseWeight(args[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
+    // A SHARE, so it takes the unit-interval parser rather than the weight parser: 1.5 is not a member
+    // share and a negative one is not a gate.
+    else if (args[i] === '--dual-family-gate' && hasValue(args, i + 1))
+      opts.dualFamilyGate = parseUnitInterval(args[++i]!, DEFAULT_DUAL_FAMILY_GATE);
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

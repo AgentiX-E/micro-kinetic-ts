@@ -175,20 +175,64 @@ export function computeChannelSymmetry(
  * weight it is given and cannot explode.
  *
  * `Sⁱ` and `Sᵉ` are the same extremes the symmetry mask reads, from the same walk, so the set and the ratio
- * cannot disagree about which channels moved.
+ * cannot disagree about which channels moved. **The statistic is PRISM's own**: `computeChannelExtremes` calls
+ * `deviationZScore`, the standardized mean shift the paper's `S(P)` defines. (An earlier revision of
+ * `docs/re3-quiet-truth.md` §7 claimed this engine used `log₁₀(1 + ratio)` while PRISM used a z-score, and
+ * made the difference the next measurement; the claim was false about the code, and
+ * `prism-signal.test.ts`'s "reads PRISM's own z-score" fence pins the value so it cannot come back.)
+ *
+ * ## The gate, and why the population is the lever
+ *
+ * A membership is a CONSTANT bonus, so it can only re-order a cell in which the family is a strict subset of
+ * the fleet: where nearly every candidate carries a moving channel in both families the bonus is near-uniform
+ * and cannot move anything. Iteration 144 measured exactly that split — RE3-SockShop (14 candidates) 15 → 18,
+ * while RE3-TrainTicket (68) stayed at 15 and FSE'26 Top@1 was byte-identical at every weight.
+ *
+ * `gate` is therefore the membership's POPULATION rather than its magnitude. A component is a member when its
+ * weaker channel reaches `gate` × the fleet's strongest `min(Sⁱ,Sᵉ)`:
+ *
+ * ```
+ *   m(v)   = hasInternal(v) ? min(Sⁱ(v), Sᵉ(v)) : 0
+ *   dual(v) = m(v) > 0 && m(v) ≥ gate · max_w m(w)
+ * ```
+ *
+ * At `gate = 0` this is the predicate above, to the case: `min > 0` holds exactly when both channels moved.
+ * At any positive gate a zero can never clear a positive share of a positive maximum, so the gate can only
+ * NARROW PRISM's conjunction — it cannot admit an external-only victim — and the family stays a strict subset
+ * of the fleet however large the fleet is. The threshold is fleet-relative for the reason
+ * `anomalyBreadthGate` is: an absolute floor would be a constant invented per corpus, and a relative one
+ * makes the same statement about a 14-service graph and a 69-service one.
  *
  * @param metrics - Per-service time series, keyed by service id.
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
+ * @param gate - Share of the fleet's strongest dual signal a component must reach, in [0, 1]; 0 = no gate
+ *   (`DEFAULT_DUAL_FAMILY_GATE`), which is the membership iteration 144 enrolled.
  */
 export function computeDualFamilyServices(
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
+  gate = 0,
 ): Set<ServiceId> {
   const dual = new Set<ServiceId>();
+  // The gate is read as `> 0` rather than `!== 0` because a NON-FINITE value must not be able to build a
+  // family with `NaN` thresholds in it: `NaN > 0` is false, so it takes the ungated path, which is the
+  // behaviour every shipped call site has. `parseUnitInterval` at the boundary refuses the value anyway.
+  const gated = gate > 0;
+  let fleetMax = 0;
+  const strengths = new Map<ServiceId, number>();
   for (const [nodeId, e] of computeChannelExtremes(metrics, nodeIds, injectTimeMs)) {
-    if (e.hasInternal && e.internal > 0 && e.external > 0) dual.add(nodeId);
+    // `hasInternal` gates the strength for the reason the axiom gates it: a component with no internal
+    // series and one whose internal series did not move both read `internal === 0`, and only the second is
+    // a measurement. A component with no internal channel cannot be a member at any gate.
+    const strength = e.hasInternal ? Math.min(e.internal, e.external) : 0;
+    strengths.set(nodeId, strength);
+    if (strength > fleetMax) fleetMax = strength;
+  }
+  const threshold = gated ? gate * fleetMax : 0;
+  for (const [nodeId, strength] of strengths) {
+    if (strength > 0 && strength >= threshold) dual.add(nodeId);
   }
   return dual;
 }

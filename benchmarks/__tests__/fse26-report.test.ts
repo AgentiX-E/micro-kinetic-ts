@@ -62,6 +62,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     selfTimeWeight: 0,
     victimWeight: 0,
     dualFamilyWeight: 0,
+    // The membership's POPULATION, at the identity: gate 0 is the family the weight above was enrolled on, so
+    // this fixture is still the published configuration rather than a configuration nobody ran.
+    dualFamilyGate: 0,
     temporalWeight: 0,
     onsetShape: 'earliness',
     // The eight the mirror made reachable on this half, all at their SHIPPED values — which is what makes
@@ -142,6 +145,7 @@ describe('FSE26 report — attribution', () => {
       'selfTimeWeight',
       'victimWeight',
       'dualFamilyWeight',
+      'dualFamilyGate',
       'temporalWeight',
       'onsetShape',
     ]);
@@ -191,7 +195,7 @@ describe('FSE26 report — the two renderings agree', () => {
         'anomalyBreadthGate=0.8 ' +
         'metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
-        'dualFamilyWeight=0 ' +
+        'dualFamilyWeight=0 dualFamilyGate=0 ' +
         'temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(

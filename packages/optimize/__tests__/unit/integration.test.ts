@@ -222,6 +222,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
     expect(Object.keys(HELD_AT_ENGINE_DEFAULT).sort()).toEqual([
       'decayBeta',
       'defaultTopK',
+      'dualFamilyGate',
       'dualFamilyWeight',
       'edgeLatency',
       'failedEdgeMinRecords',

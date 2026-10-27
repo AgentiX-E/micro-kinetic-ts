@@ -131,6 +131,8 @@ export interface FSE26RunConfig {
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus; `0` = the shipped configuration. */
   readonly dualFamilyWeight: number;
+  /** The dual-family membership's population; `0` = no gate, the membership the weight was enrolled on. */
+  readonly dualFamilyGate: number;
   /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */
   readonly temporalWeight: number;
   /** Which shape the prior reads the onsets in; inert while the weight is 0. */
@@ -324,6 +326,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'selfTimeWeight',
   'victimWeight',
   'dualFamilyWeight',
+  'dualFamilyGate',
   'temporalWeight',
   'onsetShape',
 ] as const;
@@ -436,6 +439,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // measured arm from the shipped run on the artifact.
   line += ` victimWeight=${config.victimWeight}`;
   line += ` dualFamilyWeight=${config.dualFamilyWeight}`;
+  // Unconditional: it ships at 0, and 0 is the identity of the membership above — so this field is the only
+  // thing that can distinguish a gated arm from the shipped run.
+  line += ` dualFamilyGate=${config.dualFamilyGate}`;
   // Both unconditional, and for a stronger reason than the pool term's: a SHAPE is not a
   // weight, so there is no "default 0" it could be omitted against — and the weight's
   // own default is about to become non-zero, at which point an omitted-when-default
