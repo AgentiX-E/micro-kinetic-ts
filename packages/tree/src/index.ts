@@ -184,13 +184,17 @@ export type {
 } from './pruning/ranking-signals.js';
 
 export {
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_PRISM_POOLING,
+  DUAL_FAMILY_GATE_MODES,
   PRISM_POOLINGS,
   computeChannelExtremes,
   computeChannelSymmetry,
   computeDualFamilyServices,
   computePrismScores,
+  isDualFamilyGateMode,
   isPrismPooling,
+  type DualFamilyGateMode,
 } from './pruning/prism-signal.js';
 export type { PrismPooling } from './pruning/prism-signal.js';
 

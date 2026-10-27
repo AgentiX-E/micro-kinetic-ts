@@ -48,6 +48,7 @@ import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -64,6 +65,8 @@ import {
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
+  type DualFamilyGateMode,
+  isDualFamilyGateMode,
   isOnsetShape,
 } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -217,6 +220,16 @@ export interface CliOptions {
    * `dualfamgate=<share>` because the golden half's 25-input budget is full.
    */
   dualFamilyGate: number;
+  /**
+   * WHICH fleet-relative comparison the gate applies — `min` (shipped) or `channel`
+   * (see `TreePrunerOptions.dualFamilyGateMode`).
+   *
+   * The distinction is a property of the FLEET: `max min(Sⁱ,Sᵉ)` can never exceed `min(max Sⁱ, max Sᵉ)` and on a
+   * fleet whose extremes live in different components it falls far below it, so the `min` bar is loose exactly
+   * where the fleet is heterogeneous. `channel` gives each family its own champion — PRISM's own per-family
+   * normalisation. Travels in the packed `anomaly_knobs` block as `dualfamgatemode=<min|channel>`.
+   */
+  dualFamilyGateMode: DualFamilyGateMode;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -504,6 +517,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+    dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -609,6 +623,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // share and a negative one is not a gate.
     else if (args[i] === '--dual-family-gate' && hasValue(args, i + 1))
       opts.dualFamilyGate = parseUnitInterval(args[++i]!, DEFAULT_DUAL_FAMILY_GATE);
+    else if (args[i] === '--dual-family-gate-mode' && hasValue(args, i + 1)) {
+      // The union's own guard, not a hand-written pair — the `--prism-pooling` rule. An unusable value falls
+      // back to the SHIPPED mode: a typo must reproduce a published configuration rather than invent one.
+      const mode = args[++i]!;
+      opts.dualFamilyGateMode = isDualFamilyGateMode(mode) ? mode : DEFAULT_DUAL_FAMILY_GATE_MODE;
+    }
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

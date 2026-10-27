@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -55,6 +56,7 @@ describe('buildFse26EngineOptions', () => {
       // Same rule as the weight above: read from the engine's own constant, and it must land in `signals`
       // because that is the object the pruner reads it from.
       dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+      dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

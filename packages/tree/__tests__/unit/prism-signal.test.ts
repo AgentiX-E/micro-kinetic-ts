@@ -18,6 +18,9 @@ import {
   computeDualFamilyServices,
   computePrismScores,
   DEFAULT_PRISM_POOLING,
+  DUAL_FAMILY_GATE_MODES,
+  type DualFamilyGateMode,
+  isDualFamilyGateMode,
   isPrismPooling,
   PRISM_POOLINGS,
 } from '@agentix-e/micro-kinetic-tree';
@@ -357,5 +360,98 @@ describe('computeDualFamilyServices', () => {
     const ids = members(STRONG, HALF);
     expect(computeDualFamilyServices(fleet(), ids, 0).size).toBe(0);
     expect(computeDualFamilyServices(fleet(), ids, 0, 0.5).size).toBe(0);
+  });
+});
+
+// ── computeDualFamilyServices: the gate's MODE ────────────
+
+describe('computeDualFamilyServices — gate mode', () => {
+  // Iteration 145 priced the population axis: gate 0.25 buys RE2 +6, RE3 +3 and FSE'26 +3.1 pp for RE1 −5,
+  // and the four arms showed the price is a property of the POPULATION while the benefit scales with the
+  // weight. The question this block opens is the one two earlier refusals named as a PREREQUISITE — "a
+  // per-family normalisation: compare a node's internal shift against the fleet's internal shifts"
+  // (`prism-symmetry-mask.md`, `self-time-share.md`).
+  //
+  // `min` compares a component's weaker channel against the fleet's best JOINT candidate. That bar collapses
+  // when the fleet's extremes live in DIFFERENT components: one service with a huge `cpu` z and another with a
+  // huge `latency` z leaves `max min` near the balanced middle. `channel` gives each family its own champion,
+  // so the statement becomes PRISM's own — strong in both families, measured against each family's scale.
+
+  // Sⁱ / Sᵉ are set directly by the fixtures below through constant baselines, so `z = |Δmean| / |mean|`.
+  const INT_CHAMP = 'internal-champion'; // 10 / 0.1
+  const EXT_CHAMP = 'external-champion'; //  0.1 / 10
+  const BALANCED = 'balanced'; //            3 / 3
+
+  const split = (): Map<string, readonly TimeSeries[]> =>
+    metricsOf({
+      [INT_CHAMP]: [
+        makeSeries('cpu', [100, 100], [1100, 1100]),
+        makeSeries('latency', [100, 100], [110, 110]),
+      ],
+      [EXT_CHAMP]: [
+        makeSeries('cpu', [100, 100], [110, 110]),
+        makeSeries('latency', [100, 100], [1100, 1100]),
+      ],
+      [BALANCED]: [
+        makeSeries('cpu', [100, 100], [400, 400]),
+        makeSeries('latency', [100, 100], [400, 400]),
+      ],
+    });
+
+  const ids = (): Set<ServiceId> => nodesOf(INT_CHAMP, EXT_CHAMP, BALANCED);
+  const family = (mode: DualFamilyGateMode, gate: number): string[] =>
+    [...computeDualFamilyServices(split(), ids(), INJECT_MS, gate, mode)].sort();
+
+  it('is the SAME membership at gate 0 in both modes — the identity is mode-independent', () => {
+    // `Sⁱ > 0 && Sᵉ > 0` is the shipped predicate, and both modes reduce to it at 0 because a zero can never
+    // clear a non-negative share of a positive maximum.
+    for (const mode of Object.keys(DUAL_FAMILY_GATE_MODES) as DualFamilyGateMode[]) {
+      expect(family(mode, 0)).toEqual([BALANCED, EXT_CHAMP, INT_CHAMP].sort());
+    }
+  });
+
+  it('min-mode sets its bar from the best JOINT candidate; channel-mode from each family’s champion', () => {
+    // max min = 3 (the balanced component), so `min` at 0.5 admits it and nothing else. Channel thresholds are
+    // 5 and 5 (the two champions' own values), which ADMIT NOTHING here: the balanced component moves 3 and 3.
+    expect(family('min', 0.5)).toEqual([BALANCED]);
+    expect(family('channel', 0.5)).toEqual([]);
+    expect(family('channel', 0.25)).toEqual([BALANCED]);
+  });
+
+  it('channel-mode is never WIDER than min-mode at the same gate on a split fleet', () => {
+    // The two bars are `gate · max min` and `(gate · max Sⁱ, gate · max Sᵉ)`; since `max min ≤ min(max Sⁱ,
+    // max Sᵉ)` the second pair can only exclude more. This is the property the mode buys and its price: a
+    // narrower family at the same number, so the two modes are swept on DIFFERENT gates rather than compared
+    // at one.
+    for (const gate of [0.1, 0.25, 0.5, 0.75]) {
+      const min = family('min', gate);
+      const channel = family('channel', gate);
+      expect(channel.filter((id) => !min.includes(id))).toEqual([]);
+    }
+  });
+
+  it('both modes keep PRISM’s conjunction: an external-only or internal-only component is never a member', () => {
+    const metrics = metricsOf({
+      extOnly: [
+        makeSeries('cpu', [100, 100], [100, 100]),
+        makeSeries('latency', [100, 100], [1100, 1100]),
+      ],
+      intOnly: [makeSeries('cpu', [100, 100], [1100, 1100])],
+      noInternalAtAll: [makeSeries('latency', [100, 100], [1100, 1100])],
+    });
+    const set = nodesOf('extOnly', 'intOnly', 'noInternalAtAll');
+    for (const mode of Object.keys(DUAL_FAMILY_GATE_MODES) as DualFamilyGateMode[]) {
+      for (const gate of [0, 0.1, 0.5]) {
+        expect(computeDualFamilyServices(metrics, set, INJECT_MS, gate, mode).size).toBe(0);
+      }
+    }
+  });
+
+  it('exposes the vocabulary and its guard, so a runner cannot parse a typo into a mode', () => {
+    expect(Object.keys(DUAL_FAMILY_GATE_MODES).sort()).toEqual(['channel', 'min']);
+    expect(isDualFamilyGateMode('channel')).toBe(true);
+    expect(isDualFamilyGateMode('min')).toBe(true);
+    expect(isDualFamilyGateMode('MIN')).toBe(false);
+    expect(isDualFamilyGateMode('toString')).toBe(false);
   });
 });

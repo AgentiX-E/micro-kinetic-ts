@@ -490,7 +490,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         'anomalyBreadthGate=0.8 ' +
         // The self-time term, named unconditionally for the same reason: it ships at 0, so a line that
         // printed only non-defaults would render a measured arm and the shipped run identically.
-        'selfTimeWeight=0 victimWeight=0 dualFamilyWeight=0.25 dualFamilyGate=0 ' +
+        'selfTimeWeight=0 victimWeight=0 dualFamilyWeight=0.25 dualFamilyGate=0 dualFamilyGateMode=min ' +
         'temporalWeight=0 onsetShape=earliness',
     );
   });

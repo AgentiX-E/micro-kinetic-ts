@@ -20,6 +20,7 @@
  */
 
 import type {
+  DualFamilyGateMode,
   FailedEdgeMode,
   LogSignalMode,
   OnsetShape,
@@ -82,6 +83,8 @@ export interface Fse26SignalOptions {
    * value is 0, which is exactly the value a silent no-op produces.
    */
   readonly dualFamilyGate: number;
+  /** Which fleet-relative comparison that gate applies. Required for the same reason as the gate itself. */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
   /**
    * Weight of the injection-anchored temporal prior. Required for the same reason as
    * every weight above: a PARTIAL passed through here would be a silent no-op if the
@@ -162,6 +165,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
       dualFamilyGate: opts.dualFamilyGate,
+      dualFamilyGateMode: opts.dualFamilyGateMode,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       // The five the golden half could state alone until `docs/dispatch-surface-audit.md`'s Finding 6

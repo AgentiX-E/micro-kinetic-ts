@@ -24,7 +24,12 @@ export interface FSE26Anchor {
 }
 
 import type { FaultFailedEdge } from '../../packages/core/src/index.js';
-import type { DropDeviationMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
+import type {
+  DropDeviationMode,
+  DualFamilyGateMode,
+  OnsetShape,
+  PrismPooling,
+} from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -133,6 +138,8 @@ export interface FSE26RunConfig {
   readonly dualFamilyWeight: number;
   /** The dual-family membership's population; `0` = no gate, the membership the weight was enrolled on. */
   readonly dualFamilyGate: number;
+  /** Which fleet-relative comparison that gate applies; `min` = the shipped configuration. */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
   /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */
   readonly temporalWeight: number;
   /** Which shape the prior reads the onsets in; inert while the weight is 0. */
@@ -327,6 +334,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'victimWeight',
   'dualFamilyWeight',
   'dualFamilyGate',
+  'dualFamilyGateMode',
   'temporalWeight',
   'onsetShape',
 ] as const;
@@ -442,6 +450,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // Unconditional: it ships at 0, and 0 is the identity of the membership above — so this field is the only
   // thing that can distinguish a gated arm from the shipped run.
   line += ` dualFamilyGate=${config.dualFamilyGate}`;
+  // Unconditional: the mode is inert at gate 0, so this field is the only thing that can say which comparison
+  // a gated arm actually applied.
+  line += ` dualFamilyGateMode=${config.dualFamilyGateMode}`;
   // Both unconditional, and for a stronger reason than the pool term's: a SHAPE is not a
   // weight, so there is no "default 0" it could be omitted against — and the weight's
   // own default is about to become non-zero, at which point an omitted-when-default

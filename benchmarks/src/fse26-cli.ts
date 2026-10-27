@@ -50,6 +50,7 @@ import {
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
@@ -74,7 +75,9 @@ import {
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
+  type DualFamilyGateMode,
   isDropDeviationMode,
+  isDualFamilyGateMode,
   isLogSignalMode,
   isOnsetShape,
   isPrismPooling,
@@ -284,6 +287,13 @@ export interface Fse26CliOptions {
    */
   readonly dualFamilyGate: number;
   /**
+   * Which fleet-relative comparison that gate applies — see `TreePrunerOptions.dualFamilyGateMode`.
+   *
+   * Travels in the packed `ranking_knobs` block as `dual_family_gate_mode=<min|channel>`; the kill criterion is
+   * an AND over two benchmarks, so an axis only one half can state has an undecidable other half.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
+  /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
    * configuration rather than inventing one.
@@ -484,6 +494,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+    dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
@@ -606,6 +617,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.dualFamilyWeight = parseWeight(argv[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
     } else if (arg === '--dual-family-gate' && hasValue(argv, i + 1)) {
       opts.dualFamilyGate = parseUnitInterval(argv[++i]!, DEFAULT_DUAL_FAMILY_GATE);
+    } else if (arg === '--dual-family-gate-mode' && hasValue(argv, i + 1)) {
+      const mode = argv[++i]!;
+      opts.dualFamilyGateMode = isDualFamilyGateMode(mode) ? mode : DEFAULT_DUAL_FAMILY_GATE_MODE;
     } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

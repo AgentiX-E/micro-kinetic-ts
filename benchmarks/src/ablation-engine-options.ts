@@ -35,10 +35,16 @@
  * @module benchmarks/ablation-engine-options
  */
 
-import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
+import type {
+  DualFamilyGateMode,
+  LogSignalMode,
+  OnsetShape,
+  PrismPooling,
+} from '../../packages/tree/src/index.js';
 import {
   DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -156,6 +162,13 @@ export interface AblationSignalOptions {
    * 0/1 bonus that is itself 0 in every row.
    */
   readonly dualFamilyGate: number;
+  /**
+   * Which fleet-relative comparison the gate applies, held at the shipped `min` by every row.
+   *
+   * Named on the constant rule: the reported-field partition requires every field the artifact can omit to be
+   * printed or exempted. No row VARIES it — the gate itself is 0 in every row, so its comparison cannot act.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly prismPooling: PrismPooling;
@@ -312,6 +325,7 @@ export function buildAblationEngineOptions(
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
       dualFamilyWeight: overrides.dualFamilyWeight ?? DEFAULT_DUAL_FAMILY_WEIGHT,
       dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+      dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -357,6 +371,7 @@ export function formatAblationConfigLine(
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
     `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +
+    `dualFamilyGateMode=${signals.dualFamilyGateMode} ` +
     `collapseDiscount=${topology.collapseDiscount} ` +
     `metricRiseCeiling=${topology.metricRiseCeiling} ` +
     `dropDeviationMode=${topology.dropDeviationMode} ` +

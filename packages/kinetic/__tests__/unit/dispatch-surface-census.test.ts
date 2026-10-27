@@ -287,6 +287,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // that makes the family selective at any fleet size, and it travels here for the reason every other
     // post-ceiling knob does: the golden half's 25-input budget is full.
     '--dual-family-gate',
+    // Iteration 146: the gate's OTHER axis — which fleet-relative comparison it applies. A MODE, not a number,
+    // so it is parsed by its union's own guard and travels beside the gate it qualifies.
+    '--dual-family-gate-mode',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -305,6 +308,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--rise-ceiling',
     '--dual-family-weight',
     '--dual-family-gate',
+    // Iteration 146: the gate's OTHER axis — which fleet-relative comparison it applies. A MODE, not a number,
+    // so it is parsed by its union's own guard and travels beside the gate it qualifies.
+    '--dual-family-gate-mode',
   ],
 };
 
@@ -430,6 +436,14 @@ const KNOBS: Readonly<
     // Owner is the audit the term came from, because the gate's numbers are that audit's §8.
     flag: '--dual-family-gate',
     owner: 're3-quiet-truth.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  dualFamilyGateMode: {
+    // The gate's own DENOMINATOR: the fleet's best joint candidate (`min`) or each family's champion
+    // (`channel`). Two statements about a fleet, so two values rather than a number.
+    flag: '--dual-family-gate-mode',
+    owner: 'dual-family-gate.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -704,6 +718,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'victimWeight',
   'dualFamilyWeight',
   'dualFamilyGate',
+  'dualFamilyGateMode',
   'dropDeviationMode',
   'metricRiseCeiling',
   'suppressZeroBaselineLatency',

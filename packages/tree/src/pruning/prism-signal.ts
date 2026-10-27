@@ -68,6 +68,15 @@ export type { PrismPooling } from '@agentix-e/micro-kinetic-core';
  * records as "unknown is not a measured zero" — so the flag travels beside the number rather than being
  * re-derived by every consumer.
  */
+/**
+ * Which fleet-relative comparison the dual-family gate applies — see {@link DUAL_FAMILY_GATE_MODES}.
+ *
+ * A string union rather than a boolean because the two members are different STATEMENTS about a fleet, not a
+ * switch on one: `min` asks "is this component's weaker family comparable to the best joint candidate's?", and
+ * `channel` asks PRISM's question — "is each of its families strong against that family's own champion?".
+ */
+export type DualFamilyGateMode = 'min' | 'channel';
+
 export interface ChannelExtremes {
   /** `S^I`: the largest internal deviation, 0 when none moved or none exist. */
   readonly internal: number;
@@ -162,6 +171,43 @@ export function computeChannelSymmetry(
 }
 
 /**
+ * How the gate compares a component against the fleet.
+ *
+ * `min` (shipped) is one number per component: `min(Sⁱ,Sᵉ)` against the fleet's best JOINT candidate. `channel`
+ * is PRISM's own per-family statement: `Sⁱ` against the fleet's strongest internal shift AND `Sᵉ` against its
+ * strongest external one.
+ *
+ * The two differ exactly when a fleet's extremes live in DIFFERENT components — one service with a huge `cpu`
+ * shift and another with a huge `latency` shift. `max min(Sⁱ,Sᵉ)` then collapses toward the balanced middle (it
+ * can never exceed `min(max Sⁱ, max Sᵉ)`, and on a split fleet it is far below it), so the `min` bar is LOOSE
+ * exactly where the fleet is heterogeneous. `channel` keeps each family's own champion as its bar, which is what
+ * two earlier refusals named as the precondition for retrying PRISM's axiom at all
+ * (`docs/prism-symmetry-mask.md`, `docs/self-time-share.md`).
+ *
+ * Exhaustive by construction: a new mode is a COMPILE error here until it is named, and the keys are the
+ * vocabulary a CLI parses against.
+ */
+export const DUAL_FAMILY_GATE_MODES: Readonly<Record<DualFamilyGateMode, true>> = {
+  min: true,
+  channel: true,
+};
+
+/** The comparison {@link computeDualFamilyServices} applies when its caller names none. */
+export const DEFAULT_DUAL_FAMILY_GATE_MODE: DualFamilyGateMode = 'min';
+
+/**
+ * Whether a raw argument names a gate mode.
+ *
+ * `hasOwnProperty.call` rather than `in`, the rule `isPrismPooling` records: a `Record` is an object, so the
+ * prototype chain makes `toString`, `constructor` and `__proto__` reachable and `in` would accept all three.
+ *
+ * @param value - The raw string, from a flag or a dispatch key.
+ */
+export function isDualFamilyGateMode(value: string): value is DualFamilyGateMode {
+  return Object.prototype.hasOwnProperty.call(DUAL_FAMILY_GATE_MODES, value);
+}
+
+/**
  * The components whose anomaly is PRESENT in BOTH families — PRISM's shape test as a SET, not a score.
  *
  * ```
@@ -208,21 +254,48 @@ export function computeChannelSymmetry(
  * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
  * @param gate - Share of the fleet's strongest dual signal a component must reach, in [0, 1]; 0 = no gate
  *   (`DEFAULT_DUAL_FAMILY_GATE`), which is the membership iteration 144 enrolled.
+ * @param mode - Which fleet-relative comparison the gate applies (`DUAL_FAMILY_GATE_MODES`); `min` is the
+ *   shipped one, `channel` compares each family against its own champion. Both are the identity at gate 0.
  */
 export function computeDualFamilyServices(
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
   gate = 0,
+  mode: DualFamilyGateMode = DEFAULT_DUAL_FAMILY_GATE_MODE,
 ): Set<ServiceId> {
   const dual = new Set<ServiceId>();
   // The gate is read as `> 0` rather than `!== 0` because a NON-FINITE value must not be able to build a
   // family with `NaN` thresholds in it: `NaN > 0` is false, so it takes the ungated path, which is the
   // behaviour every shipped call site has. `parseUnitInterval` at the boundary refuses the value anyway.
   const gated = gate > 0;
+  const extremes = computeChannelExtremes(metrics, nodeIds, injectTimeMs);
+
+  if (mode === 'channel') {
+    // Each family's own champion. Both maxima are taken over the FLEET, not over the dual members — the
+    // question is what this fleet's strongest internal and external shifts are, and a component with no
+    // internal telemetry contributes nothing to the first by construction.
+    let maxInternal = 0;
+    let maxExternal = 0;
+    for (const [, e] of extremes) {
+      if (e.internal > maxInternal) maxInternal = e.internal;
+      if (e.external > maxExternal) maxExternal = e.external;
+    }
+    const thresholdInternal = gated ? gate * maxInternal : 0;
+    const thresholdExternal = gated ? gate * maxExternal : 0;
+    for (const [nodeId, e] of extremes) {
+      // `> 0` AND `>= threshold`: at gate 0 the thresholds are 0, so the predicate is exactly PRISM's
+      // conjunction — which is what makes the mode a refinement of the membership rather than a new one.
+      if (!e.hasInternal) continue;
+      if (e.internal <= 0 || e.external <= 0) continue;
+      if (e.internal >= thresholdInternal && e.external >= thresholdExternal) dual.add(nodeId);
+    }
+    return dual;
+  }
+
   let fleetMax = 0;
   const strengths = new Map<ServiceId, number>();
-  for (const [nodeId, e] of computeChannelExtremes(metrics, nodeIds, injectTimeMs)) {
+  for (const [nodeId, e] of extremes) {
     // `hasInternal` gates the strength for the reason the axiom gates it: a component with no internal
     // series and one whose internal series did not move both read `internal === 0`, and only the second is
     // a measurement. A component with no internal channel cannot be a member at any gate.

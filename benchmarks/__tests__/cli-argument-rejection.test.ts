@@ -52,6 +52,7 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DROP_DEVIATION_MODES,
+  DUAL_FAMILY_GATE_MODES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   PRISM_POOLINGS,
@@ -135,6 +136,9 @@ const rcaevalAccepted = acceptedFlags(rcaevalSource, 'args');
  */
 const MODE_VALUES: Readonly<Record<string, string>> = {
   '--drop-deviation-mode': 'log',
+  // A mode flag whose vocabulary is a word: `1` is not a member of it, and the probe's job is to prove the
+  // option MOVES, so the value has to be one the parser can accept.
+  '--dual-family-gate-mode': 'channel',
 };
 
 function argvFor(one: AcceptedFlag): string[] {
@@ -390,6 +394,9 @@ describe('every option the golden runner forwards can be set from the command li
       ...Object.keys(LOG_SIGNAL_MODES),
       ...Object.keys(PRISM_POOLINGS),
       ...Object.keys(DROP_DEVIATION_MODES),
+      // The gate's comparison is a third word-vocabulary, and the probe set is built from the unions rather
+      // than maintained by hand — a member added to it extends this list by existing.
+      ...Object.keys(DUAL_FAMILY_GATE_MODES),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

@@ -63,9 +63,11 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import {
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   computeChannelSymmetry,
   computeDualFamilyServices,
   computePrismScores,
+  type DualFamilyGateMode,
 } from './prism-signal.js';
 import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
@@ -675,6 +677,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * channels moved, so the shipped nine cells rank byte-identically with and without the flag.
    */
   readonly dualFamilyGate: number;
+  /**
+   * WHICH fleet-relative comparison that gate applies — `min` (shipped) or `channel`.
+   *
+   *   min:      min(Sⁱ(v), Sᵉ(v)) ≥ gate × max_w min(Sⁱ(w), Sᵉ(w))
+   *   channel:  Sⁱ(v) ≥ gate × max_w Sⁱ(w)  AND  Sᵉ(v) ≥ gate × max_w Sᵉ(w)
+   *
+   * The difference is a property of the FLEET, not of the component: `max min` can never exceed
+   * `min(max Sⁱ, max Sᵉ)` and on a fleet whose extremes live in different components it falls far below it,
+   * so the `min` bar is loose exactly where the fleet is heterogeneous. `channel` gives each family its own
+   * champion — PRISM's own per-family normalisation, which `docs/prism-symmetry-mask.md` and
+   * `docs/self-time-share.md` both named as the precondition for a fourth attempt at the axiom.
+   *
+   * Both modes are the identity at gate 0, so this option cannot move a shipped cell on its own.
+   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE_MODE} = `min`.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
 }
 
 /**
@@ -894,6 +912,15 @@ export const DEFAULT_VICTIM_WEIGHT = 0;
  * the next mechanism starts to matter.
  */
 export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
+
+// Re-exported beside the option that consumes it: the two runners import this module directly rather than the
+// barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
+export {
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DUAL_FAMILY_GATE_MODES,
+  isDualFamilyGateMode,
+} from './prism-signal.js';
+export type { DualFamilyGateMode } from './prism-signal.js';
 
 /**
  * The share of the fleet's strongest dual signal a component must reach to be a MEMBER.
@@ -1315,6 +1342,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   victimWeight: DEFAULT_VICTIM_WEIGHT,
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
   dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+  dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
 };
 
 /**
@@ -1655,6 +1683,7 @@ export class TreePruner {
             new Set(callGraph.nodes.keys()),
             injectTimeMs,
             this.options.dualFamilyGate,
+            this.options.dualFamilyGateMode,
           )
         : undefined;
 

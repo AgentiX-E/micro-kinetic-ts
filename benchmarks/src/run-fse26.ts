@@ -163,6 +163,7 @@ async function main(): Promise<void> {
     victimWeight: opts.victimWeight,
     dualFamilyWeight: opts.dualFamilyWeight,
     dualFamilyGate: opts.dualFamilyGate,
+    dualFamilyGateMode: opts.dualFamilyGateMode,
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
     // The eight the mirror made reachable on this half. Carried on the config rather than left to the

@@ -223,6 +223,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'decayBeta',
       'defaultTopK',
       'dualFamilyGate',
+      'dualFamilyGateMode',
       'dualFamilyWeight',
       'edgeLatency',
       'failedEdgeMinRecords',

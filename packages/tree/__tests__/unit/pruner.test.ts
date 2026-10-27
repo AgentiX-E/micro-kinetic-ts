@@ -3195,6 +3195,61 @@ describe('TreePruner — the dual-family presence bonus', () => {
     );
   });
 
+  it('wires the gate MODE: on a SPLIT fleet the two modes hold different families', () => {
+    // `min` bars each component against the fleet's best JOINT candidate; `channel` against each family's own
+    // champion. The fixture is chosen so the two maxima live in DIFFERENT components — one service with a 10σ
+    // `cpu` shift, another with a 10σ `latency` shift — which is exactly the fleet shape that collapses
+    // `max min` toward the balanced middle. Constant baselines make `scale = |mean|`, so `z` is the relative
+    // change: 10 → 110 reads 10, 10 → 11 reads 0.1, 10 → 40 reads 3.
+    const SPLIT_INT = 'ts-split-internal';
+    const SPLIT_EXT = 'ts-split-external';
+    const BALANCED = 'ts-balanced';
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        SPLIT_INT,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 110, 110, 110, 110]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 11, 11, 11, 11]),
+        ],
+      ],
+      [
+        SPLIT_EXT,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 11, 11, 11, 11]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 110, 110, 110, 110]),
+        ],
+      ],
+      [
+        BALANCED,
+        [
+          makeTimeSeries('cpu', [10, 10, 10, 10, 40, 40, 40, 40]),
+          makeTimeSeries('latency-90', [10, 10, 10, 10, 40, 40, 40, 40]),
+        ],
+      ],
+    ]);
+    const callGraph = makeCallGraph([SPLIT_INT, SPLIT_EXT, BALANCED], [[BALANCED, SPLIT_INT]]);
+    const family = (mode: 'min' | 'channel', gate: number) => {
+      const pruner = new TreePruner({
+        dualFamilyWeight: 0.25,
+        dualFamilyGate: gate,
+        dualFamilyGateMode: mode,
+      });
+      return [
+        ...(pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT })
+          .dualFamilyServices ?? []),
+      ].sort();
+    };
+
+    // Identity at 0 in BOTH modes: the mode cannot move a shipped cell on its own.
+    expect(family('channel', 0)).toEqual([BALANCED, SPLIT_EXT, SPLIT_INT].sort());
+    expect(family('min', 0)).toEqual(family('channel', 0));
+    // At 0.5 the `min` bar is 0.5 × 3 = 1.5 (the balanced component's own min), and the channel bars are 5 and
+    // 5 — the two champions' values — which admit NOTHING. A mode the pruner never forwarded would leave these
+    // two identical, so this IS the wiring assertion.
+    expect(family('min', 0.5)).toEqual([BALANCED]);
+    expect(family('channel', 0.5)).toEqual([]);
+  });
+
   it('pays the bonus only to the gated member — the ordering a constant membership cannot produce', () => {
     // The measurement this test states as an identity: a constant bonus paid to EVERY member leaves their
     // pair gap untouched (both sides move by the same weight), while a gated bonus moves one side only, and

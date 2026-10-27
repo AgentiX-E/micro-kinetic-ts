@@ -30,6 +30,7 @@
 
 import type {
   DropDeviationMode,
+  DualFamilyGateMode,
   LogSignalMode,
   OnsetShape,
   PrismPooling,
@@ -61,6 +62,8 @@ export interface RCAEvalSignalOptions {
    * dropped key would run the ungated membership while the artifact reported a gated one.
    */
   readonly dualFamilyGate: number;
+  /** Which fleet-relative comparison that gate applies — see `CliOptions.dualFamilyGateMode`. */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
   /**
    * The per-edge latency pair — a WEIGHT and the RISE FLOOR it was measured with.
    *
@@ -197,6 +200,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
       dualFamilyGate: opts.dualFamilyGate,
+      dualFamilyGateMode: opts.dualFamilyGateMode,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -286,7 +290,7 @@ export function formatSignalLine(opts: CliOptions): string {
     `dualFamilyWeight=${opts.dualFamilyWeight} ` +
     // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the
     // gated arm and the shipped run identically on the artifact that is supposed to attribute the difference.
-    `dualFamilyGate=${opts.dualFamilyGate} ` +
+    `dualFamilyGate=${opts.dualFamilyGate} dualFamilyGateMode=${opts.dualFamilyGateMode} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }
