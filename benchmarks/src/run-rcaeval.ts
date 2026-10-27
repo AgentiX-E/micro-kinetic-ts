@@ -821,6 +821,10 @@ function printFailureDiagnostics(
       console.log(`    Expected: ${f.expectedService}  →  Predicted: ${f.actualTop ?? 'none'}`);
       console.log(
         `    GT anomaly=${d.gtAnomaly.toFixed(4)}  max=${d.maxAnomaly.toFixed(4)}  inGraph=${d.gtInGraph}  edges=${d.edges}`,
+        // Where the truth sits in the FULL ranking, beside how long that ranking is. A rank of `0` means the
+        // truth is not a candidate at all — a retrieval failure, which no reweighting can address — and the
+        // denominator is what turns "deep" into a distance.
+        `    GT rank=${d.gtRank === 0 ? 'ABSENT' : d.gtRank} of ${d.candidateCount}`,
       );
       if (d.gtMetric || (d.gtMetricHead?.length ?? 0) > 0) {
         console.log(

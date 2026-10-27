@@ -121,6 +121,19 @@ export interface FailedCase {
   readonly diag?: {
     readonly gtAnomaly: number;
     readonly maxAnomaly: number;
+    /**
+     * The truth's 1-based position in the FULL ranking, and how many candidates that ranking has.
+     *
+     * The two are what make a failure block answer the only question that decides whether a cell is winnable
+     * by the engine's own criterion: is the truth BELOW the candidates that beat it, or merely outside the
+     * printed top five? `gtAnomaly` and `maxAnomaly` bound the answer but cannot give it — a truth at rank 6
+     * of 64 and a truth at rank 64 of 64 print identical blocks today, and they call for opposite fixes.
+     *
+     * Measured on RE3-TrainTicket (`docs/re3-quiet-truth.md`): 11 of 14 sampled misses have the truth below
+     * EVERY candidate in the top five, and this pair is what says whether it is also below the rest.
+     */
+    readonly gtRank: number;
+    readonly candidateCount: number;
     readonly topK: readonly {
       readonly serviceId: string;
       readonly confidence: number;
@@ -866,6 +879,10 @@ export class BenchmarkRunner {
             diag: {
               gtAnomaly: gtAnomaly,
               maxAnomaly: maxAnomaly,
+              // `results` is the ranking the correctness checks above were counted from, so the rank and the
+              // verdict are two readings of ONE array rather than two passes over the engine.
+              gtRank: results.findIndex((r) => r.serviceId === benchCase.groundTruth.serviceId) + 1,
+              candidateCount: results.length,
               topK: topPredictions,
               gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
               edges: effectiveCallGraph.edges.length,
@@ -932,6 +949,11 @@ export class BenchmarkRunner {
           diag: {
             gtAnomaly: gtAnomaly,
             maxAnomaly: maxAnomaly,
+            // No ranking exists on this path — the engine threw — so the rank is 0 and the denominator 0,
+            // which the renderer prints as `ABSENT` rather than as a position. An errored case is not a
+            // retrieval failure and must not be counted as one.
+            gtRank: 0,
+            candidateCount: 0,
             topK: topPredictions,
             gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
             edges: effectiveCallGraph.edges.length,
