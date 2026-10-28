@@ -816,7 +816,8 @@ commit (`d83fb86`) and one input per arm:
 
 **No population down, and the blocking cell moved by four.** RE3-TrainTicket goes 15 → **19 of 30**, closing the
 PRISM deficit from 26.7 pp to **13.4 pp** — the first movement that cell has shown in twelve arms. The arm costs
-one case on one of the nine cells (Sock Shop RE1, 117 → 116) while seven rise and one holds.
+one case on one of the nine cells (Sock Shop RE1, 117 → 116) while **six rise and two hold**: +2 / −1 / +3 on RE1,
++3 / 0 / +6 on RE2 and +2 / 0 / +4 on RE3.
 
 **Why this works when three earlier imports of the same axiom did not.** PRISM additive (−10 RE1), conjunctive
 (−37) and the symmetry mask (−33) all imported a z-scale into a ranking that already carries fourteen prior terms.

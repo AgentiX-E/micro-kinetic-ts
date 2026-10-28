@@ -190,8 +190,8 @@ loss census:
 **ENROLLED.** `DEFAULT_DUAL_FAMILY_GATE = 0.25`, `DEFAULT_DUAL_FAMILY_GATE_MODE = 'channel'`: RE1 **327**
 (+4, 87.2%), RE2 **240** (+9, 88.9%), RE3 **61** (+6, 67.8%), 735 **628** (+19, 85.4%), FSE'26 Top@1 **60.5%**
 (+4.1 pp). **No population moves down**, which no other arm this month has managed; inside the populations the
-movement is `+2 / −1 / +3` on RE1, `+3 / 0 / +6` on RE2 and `+2 / 0 / +4` on RE3 — one cell loses a single case
-(Sock Shop RE1) while eight gain or hold.
+movement is `+2 / −1 / +3` on RE1, `+3 / 0 / +6` on RE2 and `+2 / 0 / +4` on RE3 — **six cells rise, two hold and
+one loses a single case** (Sock Shop RE1, 117 → 116).
 
 **The blocking cell moved by four.** RE3-TrainTicket reads **19 of 30 = 63.3%**, against PRISM's published 76.7%:
 the deficit is **13.4 pp** where it was 26.7 pp, and it is the first movement that cell has shown in twelve arms
