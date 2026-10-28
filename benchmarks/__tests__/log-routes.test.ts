@@ -40,6 +40,7 @@ import { logLineAdmittedByMode } from '../../packages/tree/src/pruning/ranking-s
 import {
   deriveLogRoute,
   formatLogRoutes,
+  LOG_ROUTE_TOP_CLASSES,
   logChannelVerdict,
   summarizeLogRoutes,
   type LogRouteCensus,
@@ -196,6 +197,144 @@ describe('the retained rows\u2019 own taxonomy, because "the gate admits none" h
   });
 });
 
+describe('the UNCLASSIFIED bucket, by class name — the headroom question, answered without guessing', () => {
+  // 8,482 of TrainTicket RE3's 12,313 retained rows are `unclassified`: they name an exception class the
+  // whitelist does not know and the propagated pattern does not match, and no mode except `all` admits them.
+  // Whether a whitelist extension has headroom is a question about WHICH CLASSES those rows name, and no artifact
+  // could answer it — the census counted the bucket and stopped. This is the missing half.
+  it('records the DEEPEST class of every unclassified row, and only those rows', () => {
+    const entry = deriveLogRoute(
+      [
+        // Unclassified: token-validation classes the whitelist does not carry (the TrainTicket shape).
+        row('ts-a', { message: 'org.springframework.security.MalformedJwtException: bad token' }),
+        row('ts-a', {
+          message: 'org.springframework.security.MalformedJwtException: bad token again',
+        }),
+        row('ts-a', { message: 'com.acme.TokenException: expired' }),
+        // A LOGIC row is another bucket; its class must not leak into this one.
+        row('ts-a', { message: 'java.lang.NullPointerException: nope', logic: true }),
+      ],
+      new Set(['ts-a']),
+      'count',
+      4,
+    );
+
+    expect([...entry.unclassifiedClasses.entries()].sort()).toEqual([
+      ['MalformedJwtException', 2],
+      ['TokenException', 1],
+    ]);
+    expect(entry.retainedByKind.logic).toBe(1);
+  });
+
+  it('reads the DEEPEST name, because a wrapper is every victim\u2019s signature', () => {
+    // The head class is what every downstream symptom shares; the fault's own class sits in the `Caused by:` tail.
+    // A census that read the HEAD would rank wrappers and say the bucket is homogeneous, which is the opposite of
+    // the question it is asked.
+    const entry = deriveLogRoute(
+      [
+        row('ts-a', {
+          message: 'ConnectException: refused\n\tat x\nCaused by: com.acme.BoomError: kaboom',
+        }),
+      ],
+      new Set(['ts-a']),
+      'count',
+      1,
+    );
+
+    expect([...entry.unclassifiedClasses.keys()]).toEqual(['BoomError']);
+  });
+
+  it('files a row that names no class in its deepest clause under a NAME, never by dropping it', () => {
+    // A bucket whose parts do not sum to its size is the defect this repository keeps finding: the row is
+    // unclassified because the class regex matched somewhere, and the census must account for it even when the
+    // `Caused by:` tail carries no class at all.
+    const entry = deriveLogRoute(
+      [row('ts-a', { message: 'java.lang.OutOfMemoryError at x, Caused by: nothing at all' })],
+      new Set(['ts-a']),
+      'count',
+      1,
+    );
+
+    expect(entry.retainedByKind.unclassified).toBe(1);
+    expect([...entry.unclassifiedClasses.entries()]).toEqual([['(unnamed)', 1]]);
+  });
+
+  it('treats a row with NO message as carrying no class, rather than throwing on it', () => {
+    // The assembly's `message` is optional: a row that never had one is `none` in the taxonomy and contributes
+    // nothing to the histogram. A census that dereferenced it would crash the run on a corpus this pipeline can
+    // really produce.
+    const bare = { ...row('ts-a'), message: undefined } as unknown as FaultLogEntry;
+    const entry = deriveLogRoute([bare], new Set(['ts-a']), 'count', 1);
+
+    expect(entry.retainedByKind.none).toBe(1);
+    expect(entry.unclassifiedClasses.size).toBe(0);
+  });
+
+  it('aggregates across cases into a bounded, deterministic top list', () => {
+    const one = deriveLogRoute(
+      [
+        row('ts-a', { message: 'MalformedJwtException: a' }),
+        row('ts-a', { message: 'MalformedJwtException: b' }),
+      ],
+      new Set(['ts-a']),
+      'count',
+      2,
+    );
+    const two = deriveLogRoute(
+      [
+        row('ts-a', { message: 'TokenException: c' }),
+        row('ts-a', { message: 'ConnectException: d' }),
+        row('ts-a', { message: 'ZoinksError: e' }),
+      ],
+      new Set(['ts-a']),
+      'count',
+      3,
+    );
+    const census = summarizeLogRoutes([one, two]);
+
+    // Count descending, then NAME ascending — a tie broken by insertion order would make the line depend on case
+    // order, and two runs of the same corpus would print different censuses.
+    expect(census.unclassifiedClasses).toEqual([
+      { name: 'MalformedJwtException', count: 2 },
+      { name: 'ConnectException', count: 1 },
+      { name: 'TokenException', count: 1 },
+      { name: 'ZoinksError', count: 1 },
+    ]);
+  });
+
+  it('bounds the list, so a pathological corpus cannot print a thousand names', () => {
+    const rows = Array.from({ length: 40 }, (_, i) =>
+      row('ts-a', { message: `Unique${i}Error: x` }),
+    );
+    const census = summarizeLogRoutes([
+      deriveLogRoute(rows, new Set(['ts-a']), 'count', rows.length),
+    ]);
+
+    expect(census.unclassifiedClasses.length).toBe(LOG_ROUTE_TOP_CLASSES);
+    expect(census.unclassifiedClasses[0]!.name).toBe('Unique0Error');
+  });
+
+  it('prints the classes on the artifact, and prints nothing when the bucket is empty', () => {
+    const census = summarizeLogRoutes([
+      deriveLogRoute(
+        [row('ts-a', { message: 'MalformedJwtException: a' })],
+        new Set(['ts-a']),
+        'count',
+        1,
+      ),
+    ]);
+    expect(
+      formatLogRoutes(census, 'TT').some(
+        (line) => line.includes('unclassified classes') && line.includes('MalformedJwtException'),
+      ),
+    ).toBe(true);
+    const empty = summarizeLogRoutes([deriveLogRoute([], new Set(['ts-a']), 'count', 0)]);
+    expect(formatLogRoutes(empty, 'TT').some((line) => line.includes('unclassified classes'))).toBe(
+      false,
+    );
+  });
+});
+
 describe('the log-route census, and the verdict its counts earn', () => {
   it('aggregates every level and names the mechanism, with exclusive strength-ordered arms', () => {
     const c = (over: Partial<LogRouteCensus> = {}): LogRouteCensus => ({
@@ -211,6 +350,9 @@ describe('the log-route census, and the verdict its counts earn', () => {
       casesAdmittingInGraph: 1,
       retainedByKind: { logic: 1, propagated: 0, unclassified: 0, none: 0 },
       flagDisagreements: 0,
+      // The unclassified bucket's COMPOSITION; empty here, because this block is about the four LEVELS and a
+      // class histogram would be a second fixture to keep true.
+      unclassifiedClasses: [],
       ...over,
     });
     // Arm 1: nothing was read at all — RE1's systems carry no `logs.csv`.

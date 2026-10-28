@@ -35,6 +35,7 @@
 import type { FaultLogEntry } from '../../packages/core/src/interfaces/rca-engine.js';
 import {
   classifyExceptionKind,
+  extractDeepestExceptionClass,
   type ExceptionKind,
 } from '../../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
 import {
@@ -95,6 +96,15 @@ export interface LogRouteEntry {
    * that reads it. The verdict names it as a DEFECT, above every corpus explanation, because that is what it is.
    */
   readonly flagDisagreements: number;
+  /**
+   * The UNCLASSIFIED rows' own class names, this case's contribution.
+   *
+   * The bucket's SIZE is a fact about the gate; its COMPOSITION is a fact about the corpus, and the second is what
+   * decides whether extending the whitelist has headroom. Read through the loader's own
+   * `extractDeepestExceptionClass`, so the census names the class a `Caused by:` chain ENDS at rather than the
+   * wrapper every victim shares.
+   */
+  readonly unclassifiedClasses: ReadonlyMap<string, number>;
 }
 
 /** The log channel's four levels over one population. */
@@ -117,7 +127,36 @@ export interface LogRouteCensus {
   readonly retainedByKind: Readonly<Record<ExceptionKind, number>>;
   /** Retained rows whose stored flag disagrees with the taxonomy — a pipeline DEFECT when non-zero. */
   readonly flagDisagreements: number;
+  /**
+   * The unclassified rows' class names over the population, count-descending then name-ascending, bounded by
+   * {@link LOG_ROUTE_TOP_CLASSES}.
+   */
+  readonly unclassifiedClasses: readonly UnclassifiedClassCount[];
 }
+
+/** One class name in the unclassified bucket, with the rows that named it. */
+export interface UnclassifiedClassCount {
+  readonly name: string;
+  readonly count: number;
+}
+
+/**
+ * How many distinct class names the census prints.
+ *
+ * Bounded because the line is read by a human and by a diff: a corpus with a thousand one-off names would bury the
+ * head of the distribution, which is the only part that decides the question.
+ */
+export const LOG_ROUTE_TOP_CLASSES = 8;
+
+/**
+ * What an unclassified row is filed under when even its deepest clause carries no class name.
+ *
+ * `classifyExceptionKind` only reaches `unclassified` when the class regex matched SOMEWHERE in the message, so
+ * this is rare — but a census that silently dropped the row would make its own counts disagree with
+ * `retainedByKind.unclassified`, and a bucket whose parts do not sum to its size is the defect this repository
+ * keeps finding. It is a NAME rather than a discard for that reason.
+ */
+const UNNAMED_CLASS = '(unnamed)';
 
 /**
  * One case's four levels counted.
@@ -138,6 +177,7 @@ export function deriveLogRoute(
   rowsRead: number,
 ): LogRouteEntry {
   const rows = logs ?? [];
+  const unclassifiedClasses = new Map<string, number>();
   let admitted = 0;
   let admittedInGraph = 0;
   let retained = 0;
@@ -153,9 +193,16 @@ export function deriveLogRoute(
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     retained += 1;
     // The taxonomy, from the LOADER's classifier — the same function its own `isLogicException` flag is built
-    // from, so the two cannot describe different rules.
-    const kind = classifyExceptionKind(log.message ?? '');
+    // from, so the two cannot describe different rules. The text is read ONCE: two `??` sites over one optional
+    // field is a second place for the same absence to be handled, and the second one would be the branch no input
+    // reaches (`unclassified` implies the class regex matched, which implies a message).
+    const text = log.message ?? '';
+    const kind = classifyExceptionKind(text);
     retainedByKind[kind] += 1;
+    if (kind === 'unclassified') {
+      const name = extractDeepestExceptionClass(text) ?? UNNAMED_CLASS;
+      unclassifiedClasses.set(name, (unclassifiedClasses.get(name) ?? 0) + 1);
+    }
     if ((log.isLogicException === true) !== (kind === 'logic')) flagDisagreements += 1;
     if (!logLineAdmittedByMode(mode, log)) continue;
     admitted += 1;
@@ -172,6 +219,7 @@ export function deriveLogRoute(
     emitters: emitters.size,
     retainedByKind,
     flagDisagreements,
+    unclassifiedClasses,
   };
 }
 
@@ -197,6 +245,7 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
     none: 0,
   };
   const emitters = new Set<string>();
+  const classCounts = new Map<string, number>();
   let casesRetaining = 0;
   let casesAdmitting = 0;
   let casesAdmittingInGraph = 0;
@@ -209,6 +258,9 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
     flagDisagreements += e.flagDisagreements;
     for (const kind of Object.keys(EXCEPTION_KINDS) as ExceptionKind[]) {
       retainedByKind[kind] += e.retainedByKind[kind];
+    }
+    for (const [name, count] of e.unclassifiedClasses) {
+      classCounts.set(name, (classCounts.get(name) ?? 0) + count);
     }
     emitters.add(`${e.mode}:${e.emitters}`);
     if (e.retained > 0) casesRetaining += 1;
@@ -231,6 +283,14 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
     casesAdmittingInGraph,
     retainedByKind,
     flagDisagreements,
+    unclassifiedClasses: [...classCounts.entries()]
+      // Count DESCENDING, then name ASCENDING: a tie broken by insertion order would make the line depend on the
+      // order the cases arrived in, and two runs of one corpus would print different censuses.
+      // The name arm has no `0`: the names are Map keys and therefore distinct, so an equality test would be a
+      // branch no input can reach — the shape this repository's coverage gate reports rather than tolerates.
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, LOG_ROUTE_TOP_CLASSES)
+      .map(([name, count]) => ({ name, count })),
   };
 }
 
@@ -308,6 +368,16 @@ export function formatLogRoutes(c: LogRouteCensus, label: string): string[] {
       `kinds: logic ${c.retainedByKind.logic} | propagated ${c.retainedByKind.propagated} | ` +
       `unclassified ${c.retainedByKind.unclassified} | none ${c.retainedByKind.none} | ` +
       `flag-disagreements ${c.flagDisagreements}`,
+    // The bucket's SIZE is a fact about the gate; its COMPOSITION is a fact about the corpus, and the second is
+    // what decides whether extending the whitelist has headroom. Printed only when the bucket has rows, so a
+    // corpus without one keeps a two-line census.
+    ...(c.unclassifiedClasses.length === 0
+      ? []
+      : [
+          `  unclassified classes: ${c.unclassifiedClasses
+            .map((one) => `${one.name}\u00d7${one.count}`)
+            .join(' | ')}`,
+        ]),
     `  VERDICT: ${logChannelVerdict(c)}`,
   ];
 }
