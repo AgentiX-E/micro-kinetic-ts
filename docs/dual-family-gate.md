@@ -214,3 +214,19 @@ of its truths (against 8.7% and 63.7% at 0.25), and the arms agree: RE3 falls 61
 stronger gate has started to exclude the answer. 0.25 is the smaller of the two values measured on the winning
 side, taken on the rule the breadth gate established: the smallest value that reaches the measured value leaves
 the most room before the next mechanism starts to matter.
+
+## 9. The gate's own scale, priced from the other side
+
+One arm, commit `5a661b8`, one input (`dualfamgate=0.15`), everything else shipped:
+
+| gate | RE1 OB / SS / TT | **RE1** | RE3 OB / SS / TT | **RE3** | RE3-TrainTicket |
+| ---: | --- | ---: | --- | ---: | ---: |
+| 0.15 | 107 / 116 / 104 | 327 | 24 / 18 / **15** | 57 | 15 of 30 |
+| **0.25** (shipped) | 107 / 116 / 104 | **327** | 24 / 18 / **19** | **61** | **19 of 30** |
+| 0.50 | 108 / 115 / 102 | 325 | 23 / 17 / 17 | 57 | 17 of 30 |
+
+RE1 is byte-identical at 0.15 and 0.25, and the blocking cell loses four cases when the family widens. **0.25 is a
+local optimum on both sides** — 0.15 / 0.25 / 0.50 read RE3 57 / 61 / 57 — which is the shape a working
+selectivity parameter has: too wide and the bonus dilutes, too narrow and it excludes the answer. The three points
+also explain the first two: at 0.15 the family covers 11–30% of a fleet and pays everyone, at 0.50 it keeps 49.2%
+of OnlineBoutique's truths and starts paying no one.

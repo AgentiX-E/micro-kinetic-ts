@@ -830,3 +830,23 @@ losing to.
 number is above ours, and the reconciliation is unchanged: PRISM's 76.7% is its own conjunctive magnitude read as
 a ranker on TrainTicket, ours is a full ranking over 90 cases. The next lever has to close that gap *inside* a
 configuration that already wins the other four populations.
+
+## 2026-10-28 (2) — two directions closed, standings unchanged
+
+**No arm this iteration moved a population**, and both of them were aimed at the cell that is still second.
+
+1. **The gate's scale.** `dualFamilyGate=0.15` reads RE1 327 (byte-identical) and RE3 **57** — the blocking cell
+   loses four cases when the family widens, so the enrolled 0.25 is a local optimum on both sides
+   (0.15 / 0.25 / 0.50 → RE3 57 / 61 / 57).
+2. **The log channel.** `log_signal_mode=all` admits every ERROR/FATAL row and reads RE3 **36** (−25): the flood
+   makes every service equally guilty. The census then says why — TrainTicket's 8,482 unclassified rows are
+   **three** classes (`MalformedJwtException×3366 | TokenException×3366 | HttpServerErrorException×1750`), i.e. the
+   platform's own JWT validation noise, while Online Boutique and Sock Shop carry 5,275 and 5,855 ADMITTED logic
+   rows in the same run. `docs/unclassified-bucket.md` owns the record.
+
+The route consequence is the point: the blocking cell's evidence was supposed to be in a channel the engine could
+not read. It is readable, the engine reads it, and it contains the platform talking to itself — so the remaining
+**13.4 pp** to PRISM on RE3-TrainTicket has to come from ordering the evidence the engine already has.
+
+Standing, unchanged from the 2026-10-28 enrolment: RE1 **327 = 87.20%**, RE2 **240 = 88.89%**, RE3 **61 = 67.78%**,
+735 **628 = 85.44%**, FSE'26 Top@1 **60.50%**.
