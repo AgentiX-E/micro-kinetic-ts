@@ -310,6 +310,22 @@ export interface CasePrediction {
    * `unmeasured` exists for everywhere else in these censuses.
    */
   readonly traceVote?: string | undefined;
+  /**
+   * Where that vote landed in the cell's per-node anomaly ranking: `1` is the largest anomaly in the cell.
+   *
+   * The decision above says WHAT the term chose; this says how LOUD the service it chose was. It exists because
+   * the first refinement built on the decision returned a null arm — `traceSkipsLeader`, which withholds the
+   * unit from the candidate holding the cell's largest self-anomaly, moved nothing on any of the nine cells
+   * (RE3 61 of 90 before and after) — and a null has two causes that call for opposite next moves: the mask
+   * never fired, or it fired and bought nothing. A vote at rank 1 is the only vote the mask can act on, so this
+   * rank is what tells the two apart.
+   *
+   * Measured over `faultGraph.anomalyScores` — the same map the pruner copies into its own `selfScores` — as
+   * `1 + |{v : anomaly(v) > anomaly(vote)}|`. Rank 1 therefore means "no service scored louder", which is the
+   * mask's condition; on rank-NORMALISED anomalies (`rankNormalization`, the shipped configuration) the values
+   * are distinct, so rank 1 identifies one service exactly as the pruner's `=== max` comparison does.
+   */
+  readonly traceVoteRank?: number | undefined;
 }
 
 /**
@@ -414,6 +430,31 @@ function traceVoteIn(scores: ReadonlyMap<string, number> | undefined): string | 
     vote = serviceId;
   }
   return vote;
+}
+
+/**
+ * The anomaly rank of one candidate, `1` being the loudest, or `undefined` when either side is unmeasured.
+ *
+ * `1 + |{v : anomaly(v) > anomaly(vote)}|`, counted with `>` rather than `>=` so a tie shares a rank instead of
+ * inventing an order — and over the whole map rather than a sorted copy, because the only question asked of it
+ * is "did anything score louder", which is a count and not a sort.
+ *
+ * @param scores - The graph's own per-node anomaly scores.
+ * @param id - The candidate to place, when the case produced a vote.
+ * @returns The rank, or `undefined` for no vote or no entry.
+ */
+function anomalyRankIn(
+  scores: ReadonlyMap<string, number> | undefined,
+  id: string | undefined,
+): number | undefined {
+  if (scores === undefined || id === undefined) return undefined;
+  const own = scores.get(id);
+  if (own === undefined) return undefined;
+  let rank = 1;
+  for (const score of scores.values()) {
+    if (score > own) rank += 1;
+  }
+  return rank;
 }
 
 function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): TruthEvidence {
@@ -712,6 +753,9 @@ export class BenchmarkRunner {
         const predTop1 = results[0]?.serviceId;
         // One search of the full ranking for both the truth's rank and its own evidence.
         const placement = truthPlacementIn(results, caseTruth);
+        // The vote and its standing, taken from ONE lookup so the two fields cannot describe different services:
+        // a rank read for a vote the record does not carry would be an answer about a candidate nobody named.
+        const traceVote = traceVoteIn(faultGraph.traceActivityScores);
         casePredictionRecords.push({
           caseId: benchCase.id,
           truth: caseTruth,
@@ -735,7 +779,10 @@ export class BenchmarkRunner {
           top1Terms: results[0]?.terms,
           // The trace term's DECISION on this case, when it made one: the unique service the rule chose. `0` is
           // the term's abstention, which is a fact about the case and not about the term's weight.
-          traceVote: traceVoteIn(faultGraph.traceActivityScores),
+          traceVote,
+          // And how loud that choice was, because the refinement that acts on the decision — the leader mask —
+          // can only act on a vote at rank 1, and its null arm cannot say whether it ever saw one.
+          traceVoteRank: anomalyRankIn(faultGraph.anomalyScores, traceVote),
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────

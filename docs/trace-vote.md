@@ -1,10 +1,11 @@
 # The trace vote — a binary term scored on its decisions, and the mask that withholds it from the leader
 
-**Status:** the term SHIPS ON for RE3 and OFF everywhere else, unchanged; `traceSkipsLeader` ships **`false`**, so
-this document's mechanism is opt-in until the nine cells price it. What lands here is the instrument that makes
-the pricing decidable, and one arm that already refutes the reading a reader would reach for first.
+**Status:** the term SHIPS ON for RE3 and OFF everywhere else, unchanged. `traceSkipsLeader` ships **`false`** and
+its arm is **REFUSED**: measured on all nine cells, the mask moves nothing at all. What lands here is the arm's
+numbers, the instrument that explains them, and the one question the arm cannot answer on its own.
 
-**Owner of:** `traceSkipsLeader`, the `[trace-vote]` census line, and `CasePrediction.traceVote`.
+**Owner of:** `traceSkipsLeader`, the `[trace-vote]` census line, `CasePrediction.traceVote` and
+`CasePrediction.traceVoteRank`.
 
 ---
 
@@ -94,13 +95,82 @@ sitting at ranks 2, 4, 7 and 13 — gains the gap it needs; on the fifteen right
 (and keeps its vote) or already loud (and loses a unit it did not need). The risk is the second half of that
 sentence, and the nine cells are the only way to price it.
 
+### 4.1 The arm: a measured null, on every system
+
+`anomaly_knobs=traceskipsleader=1`, dispatched on `aba38243` and read against the push-triggered run of the same
+commit (identical corpus, identical protocol, only the knob differs):
+
+| cell (default protocol) | shipped | `traceSkipsLeader = true` |
+| --- | ---: | ---: |
+| RE1 OnlineBoutique | 107 / 125 | 107 / 125 |
+| RE1 SockShop | 116 / 125 | 116 / 125 |
+| RE1 TrainTicket | 104 / 125 | 104 / 125 |
+| RE1 total | **327 / 375** | **327 / 375** |
+| RE2 OnlineBoutique | 80 / 90 | 80 / 90 |
+| RE2 SockShop | 85 / 90 | 85 / 90 |
+| RE2 TrainTicket | 75 / 90 | 75 / 90 |
+| RE2 total | **240 / 270** | **240 / 270** |
+| RE3 OnlineBoutique | 24 / 30 | 24 / 30 |
+| RE3 SockShop | 18 / 30 | 18 / 30 |
+| RE3 TrainTicket | 19 / 30 | 19 / 30 |
+| RE3 total | **61 / 90** | **61 / 90** |
+| three suites | **628 / 735 (85.4%)** | **628 / 735 (85.4%)** |
+
+**Not one case moves on any of the nine cells**, and the identity holds per SYSTEM rather than only in sum — 107/116/
+104, 80/85/75, 24/18/19, the same twelve numbers on both sides — so this is not a pair of compensating ±1s. It holds
+on the second and third invocations each job also runs (`--no-inject-time`, and `--no-inject-time
+--log-signal-mode novelty`: RE1 323, RE2 231, RE3 42, both sides). The `[trace-vote]` census is unchanged too
+(`votes=20 hits=15 … wrong=5 decisive=5` on TrainTicket), which is the shape the instrument was built to keep: it
+reports the rule's DECISION, and a mask changes who is paid, not what the rule chose.
+
+A null arm has two causes and they call for opposite next moves:
+
+1. **the mask never fires** — no vote ever lands on the candidate holding the cell's largest self-anomaly, so the
+   premise ("a loud candidate needs no corroboration") is never instantiated on this corpus, and the arm is not
+   evidence about the refinement at all;
+2. **it fires and buys nothing** — the premise holds and withholding the unit changes no ordering.
+
+The prediction in §4 assumed the second half was the risk. Nothing in the arm distinguishes them, and reading the
+null as a verdict on the refinement would be reading it as the second cause by default.
+
+### 4.2 The instrument that separates them: where the vote landed
+
+`CasePrediction.traceVoteRank` records the vote target's rank in the cell's per-node anomaly ordering —
+`1 + |{v : anomaly(v) > anomaly(vote)}|`, over `faultGraph.anomalyScores`, which is the very map the pruner copies
+into its own `selfScores`. Rank 1 therefore means "no service scored louder", which is exactly the condition the
+mask tests (`selfScores.get(id) === anomalyLeaderScore`); on rank-normalised anomalies (the shipped
+`rankNormalization`) the values are distinct, so the two definitions coincide rather than merely agree.
+
+The census counts them as a histogram instead of a mean, because a mean hides the shape that is the whole
+question — one vote at the maximum and nineteen at rank 30 has the same mean as twenty at rank 16:
+
+```
+[trace-vote] cases=30 votes=20 hits=15 (75.0%) | wrong=5 decisive=5 | atMax=… rank2-3=… rank4-10=… rank11+=…
+```
+
+Exclusive buckets, each carrying its own edges in the label so the line cannot be read as cumulative and the
+partition is visible on the artifact: `atMax + rank2-3 + rank4-10 + rank11+ = votes - unranked`. A vote whose rank
+was not measured is reported as `unranked=` and **not** folded into `rank11+` — "the vote went nowhere near the
+top" and "nobody measured where the vote went" are different findings, the rule every census here keeps.
+
+`atMax` is the field to read first, and it is read on the artifact rather than argued here: a zero closes cause 1
+(the mask's premise is not instantiated, the arm was never a test of the refinement, and the loudness claim in §4
+— "the voted service is the loud one" — was about the vote being louder than the TRUTH, not about it being the
+cell's maximum). A non-zero `atMax` with an unchanged cell is the other reading, and it means the refinement is
+real but worth nothing on this corpus. Writing either into this document before the dispatch would be exactly the
+defect these censuses exist to prevent, so the histogram is what the next run measures.
+
 ## 5. What this does not license
 
 - The mask does not improve the RULE. It is a precondition on **who may be paid**, not a better detector of
-  silent sources; if the sweep fails, the next question is the rule's own thresholds (`minPreCount 500` is an
-  absolute count, and TrainTicket's fleets differ by an order of magnitude in traffic).
+  silent sources. The arm being a null means the rule's own thresholds are the open question — `minPreCount 500` is
+  an absolute count, and TrainTicket's fleets differ by an order of magnitude in traffic, so "unique riser above an
+  absolute 500 spans" may be disqualifying exactly the services it was written for.
 - Nothing here says the term should be swept on weight. 1 and 2 are identical, and 0 costs ten cases; the axis is
   closed in both directions.
 - The census reports the rule's **decision**, not whether the term was paid: a masked vote is still a vote, so a
   cell run with the mask on will report the same `votes`/`hits` and a different score. That is deliberate — the
   instrument must not change when the mechanism does.
+- **A null arm is not a refutation of the premise.** It prices a mechanism that the census had not yet shown to be
+  reachable. The `atMax` count is the missing half, and until it is read the honest statement is "the mask is
+  worth 0 cases, for a reason the arm cannot name".
