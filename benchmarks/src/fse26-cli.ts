@@ -73,6 +73,7 @@ import {
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_WEIGHT,
+  DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
   type DualFamilyGateMode,
@@ -323,6 +324,14 @@ export interface Fse26CliOptions {
    */
   readonly traceWeight: number;
   /**
+   * Whether the trace vote is withheld from the anomaly leader — see `TreePrunerOptions.traceSkipsLeader`.
+   *
+   * Inert at the FSE'26 half's shipped `traceWeight = 0`, and forwarded anyway for the reason every inert knob
+   * is: the kill criterion is an AND over two benchmarks, so an axis only one half can state has an undecidable
+   * other half. Travels in the packed `ranking_knobs` block as `trace_skips_leader=1|0`.
+   */
+  readonly traceSkipsLeader: boolean;
+  /**
    * Weight on the trace-topology signal. `0` = off, the shipped value.
    *
    * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
@@ -503,6 +512,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     // Named rather than literal since iteration 98: a literal here and the constant in the fallbacks below
     // are two answers to one question, and only a census over BOTH sites can see them disagree.
     traceWeight: DEFAULT_TRACE_WEIGHT,
+    traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     prismWeight: DEFAULT_PRISM_WEIGHT,
@@ -678,6 +688,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--suppress-zero-baseline-latency') opts.suppressZeroBaselineLatency = true;
     else if (arg === '--no-suppress-zero-baseline-latency')
       opts.suppressZeroBaselineLatency = false;
+    else if (arg === '--trace-skips-leader') opts.traceSkipsLeader = true;
+    else if (arg === '--no-trace-skips-leader') opts.traceSkipsLeader = false;
     else if (arg === '--cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = true;
     else if (arg === '--no-cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = false;
     else {

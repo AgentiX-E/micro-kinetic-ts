@@ -119,7 +119,7 @@ on:
         default: ''
         type: string
       anomaly_knobs:
-        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `dualfam`, `dualfamgate`, `dualfamgatemode` (ranking terms); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget: `topo_discount` was retired to make room, since it was measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25) and its release record is `docs/dispatch-forwarding.md`"
+        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `dualfam`, `dualfamgate`, `dualfamgatemode`, `traceskipsleader` (ranking terms); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget: `topo_discount` was retired to make room, since it was measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25) and its release record is `docs/dispatch-forwarding.md`"
         required: false
         default: ''
         type: string
@@ -333,6 +333,15 @@ jobs:
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -524,6 +533,15 @@ jobs:
                   1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -742,6 +760,15 @@ jobs:
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -942,6 +969,15 @@ jobs:
                   1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -1168,6 +1204,15 @@ jobs:
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
                 esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
+                esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
           done
@@ -1360,6 +1405,15 @@ jobs:
                   1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac
@@ -1554,6 +1608,15 @@ jobs:
                   1) RANKING_ARG+=(--cap-trend-bonus-at-deviation) ;;
                   0) RANKING_ARG+=(--no-cap-trend-bonus-at-deviation) ;;
                   *) echo "::error::anomaly_knobs: trendcap takes 1 or 0, got '${kv#trendcap=}'"; exit 1 ;;
+                esac ;;
+              #   The trace vote's leader mask. Both poles, because `false` is the shipped state and an ablation
+              #   has to be able to name the control it is read against; inert at the `trace_weight = 0` the seven
+              #   non-RE3 cells run, which is why it costs nothing to state on any of them.
+              traceskipsleader=*)
+                case "${kv#traceskipsleader=}" in
+                  1) RANKING_ARG+=(--trace-skips-leader) ;;
+                  0) RANKING_ARG+=(--no-trace-skips-leader) ;;
+                  *) echo "::error::anomaly_knobs: traceskipsleader takes 1 or 0, got '${kv#traceskipsleader=}'"; exit 1 ;;
                 esac ;;
               *) echo "::error::anomaly_knobs: unknown key '$kv'"; exit 1 ;;
             esac

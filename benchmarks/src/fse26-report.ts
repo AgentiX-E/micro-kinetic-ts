@@ -155,6 +155,8 @@ export interface FSE26RunConfig {
    * default both before and after any change to it.
    */
   readonly traceWeight: number;
+  /** Whether the trace vote is withheld from the anomaly leader; `false` = the shipped configuration. */
+  readonly traceSkipsLeader: boolean;
   readonly topoWeight: number;
   readonly collisionWeight: number;
   readonly prismWeight: number;
@@ -466,6 +468,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // and none of these is.
   if (config.traceWeight !== 0) {
     line += ` traceWeight=${config.traceWeight}`;
+  }
+  // Unconditional: the mask is inert at traceWeight 0, so this field is the only thing that can distinguish a
+  // masked arm from the shipped run — the rule the ceiling and the drop mode established.
+  if (config.traceSkipsLeader) {
+    line += ` traceSkipsLeader=${config.traceSkipsLeader}`;
   }
   if (config.topoWeight !== 0) {
     line += ` topoWeight=${config.topoWeight}`;

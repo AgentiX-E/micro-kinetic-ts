@@ -91,6 +91,8 @@ export interface RCAEvalSignalOptions {
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
+  /** Whether the trace vote is withheld from the anomaly leader — see `CliOptions.traceSkipsLeader`. */
+  readonly traceSkipsLeader: boolean;
   readonly prismWeight: number;
   readonly prismPooling: PrismPooling;
 }
@@ -211,6 +213,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
+      traceSkipsLeader: opts.traceSkipsLeader,
       prismWeight: opts.prismWeight,
       prismPooling: opts.prismPooling,
     },
@@ -267,6 +270,9 @@ export function formatSignalLine(opts: CliOptions): string {
     `failedEdgeWeight=${opts.failedEdgeWeight} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
     `dropDeviationMode=${opts.dropDeviationMode} traceWeight=${opts.traceWeight} ` +
+    // Unconditional: the mask is inert at traceWeight 0, so this field is the only thing that can distinguish a
+    // masked arm from the shipped run on the seven cells where the term is off.
+    `traceSkipsLeader=${opts.traceSkipsLeader} ` +
     `prismWeight=${opts.prismWeight} prismPooling=${opts.prismPooling} ` +
     `rankNormalization=${opts.rankNormalization} ` +
     `anomalyNormalizeNodeThreshold=${opts.anomalyNormalizeNodeThreshold} ` +

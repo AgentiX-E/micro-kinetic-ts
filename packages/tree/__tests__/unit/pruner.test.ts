@@ -1394,6 +1394,77 @@ describe('TreePruner', () => {
     });
   });
 
+  describe('the trace vote and the anomaly LEADER (traceSkipsLeader)', () => {
+    // Iteration 148 measured the term's decisions on the blocking cell: on TrainTicket RE3 the vote is cast in 20
+    // of 30 cases, is right in 15 (75.0%), and in ALL FIVE wrong votes it became the top-1 — exactly the five
+    // cases the term-gap census charges `trace=+1.000` for. A removal arm then reads the pin as worth ten cases
+    // over the suite, so the term stays and the question becomes WHICH votes to keep.
+    //
+    // The rule this block opens is the one the term's own docstring states as its reason to exist: the fault
+    // left `ts-auth-service` with ONE deterministic signature — a rise in span count — because its metrics moved
+    // mildly. A candidate that is ALREADY the cell's largest anomaly needs no corroboration, and a vote landing
+    // on it is more often traffic re-routed toward a loud victim than a silent source. `traceSkipsLeader` is that
+    // precondition, on the candidate rather than on the case.
+    const callGraph = makeCallGraph(['LOUD', 'QUIET', 'OTHER'], [['OTHER', 'LOUD']]);
+    // LOUD rises ~3× and keeps it; QUIET rises ~1.2×; OTHER is flat.
+    const metrics = makeMetrics({
+      LOUD: [1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2],
+      QUIET: [1, 1, 1, 1, 1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
+      OTHER: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    });
+    const voteFor = (service: string) =>
+      new Map<string, { pre: number; post: number }>([[service, { pre: 500, post: 600 }]]);
+
+    const traceOf = (service: string, vote: Record<string, unknown>) =>
+      new TreePruner({ traceWeight: 1, ...vote }).buildFaultGraph(callGraph, metrics, {
+        traceActivity: voteFor(service),
+      }).traceActivityScores;
+
+    it('pays the vote to the loud candidate when the mask is off — the shipped behaviour', () => {
+      expect(traceOf('LOUD', {})?.get('LOUD')).toBe(1);
+    });
+
+    it('withholds the vote from the anomaly LEADER, and says which gate withheld it', () => {
+      // The mask is a MASK and not a weight: the term is zeroed by a named gate, so the breakdown reports
+      // `MASKED` with `mask: 'traceSkipsLeader'` rather than an unexplained zero.
+      const pruner = new TreePruner({ traceWeight: 1, traceSkipsLeader: true });
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { traceActivity: voteFor('LOUD') });
+
+      expect(graph.traceActivityScores?.get('LOUD')).toBe(1);
+      const terms = pruner.analyze(graph, 3).find((r) => r.serviceId === 'LOUD')!.terms!;
+      const trace = terms.find((t) => t.name === 'trace')!;
+      expect(trace.contribution).toBe(0);
+      expect(trace.cause).toBe('MASKED');
+      expect(trace.mask).toBe('traceSkipsLeader');
+    });
+
+    it('KEEPS the vote for a candidate that is not the leader — the silent source is the point', () => {
+      // The mask must not touch the case the term exists for: QUIET's only signature IS the span rise.
+      const pruner = new TreePruner({ traceWeight: 1, traceSkipsLeader: true });
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { traceActivity: voteFor('QUIET') });
+
+      const terms = pruner.analyze(graph, 3).find((r) => r.serviceId === 'QUIET')!.terms!;
+      expect(terms.find((t) => t.name === 'trace')!.contribution).toBe(1);
+    });
+
+    it('changes nothing at weight 0, the shipped weight on every suite but RE3', () => {
+      const withMask = new TreePruner({ traceSkipsLeader: true }).buildFaultGraph(
+        callGraph,
+        metrics,
+        {
+          traceActivity: voteFor('LOUD'),
+        },
+      );
+      const without = new TreePruner().buildFaultGraph(callGraph, metrics, {
+        traceActivity: voteFor('LOUD'),
+      });
+
+      expect([...(withMask.traceActivityScores ?? [])]).toEqual([
+        ...(without.traceActivityScores ?? []),
+      ]);
+    });
+  });
+
   describe('collision-energy signal ranking (opt-in)', () => {
     const callGraph = makeCallGraph(
       ['A', 'B', 'C'],

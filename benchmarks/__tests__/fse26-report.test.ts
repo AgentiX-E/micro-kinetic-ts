@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_TRACE_SKIPS_LEADER,
 } from '../../packages/tree/src/index.js';
 
 import type { FSE26RunConfig } from '../src/fse26-report.js';
@@ -72,6 +73,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // The comparison the gate applies; `min` is the shipped one, so this fixture is still the published
     // configuration rather than a configuration nobody ran.
     dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+    // The trace vote's leader mask, at the shipped `false`: inert at the FSE'26 half's `traceWeight = 0`, and
+    // named anyway so the artifact can distinguish a masked arm from the shipped run.
+    traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     temporalWeight: 0,
     onsetShape: 'earliness',
     // The eight the mirror made reachable on this half, all at their SHIPPED values — which is what makes

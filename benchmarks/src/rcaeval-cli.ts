@@ -93,6 +93,7 @@ import {
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+  DEFAULT_TRACE_SKIPS_LEADER,
   isDropDeviationMode,
   isLogSignalMode,
   isPrismPooling,
@@ -402,6 +403,16 @@ export interface CliOptions {
    */
   capTrendBonusAtDeviation: boolean;
   /**
+   * Whether the trace vote is withheld from the cell's anomaly LEADER — see
+   * `TreePrunerOptions.traceSkipsLeader`.
+   *
+   * The vote is right three times in four on the blocking cell (`[trace-vote] votes=20 hits=15`), ALL five wrong
+   * votes became the top-1, and removing the term costs ten cases — so the refinement is WHO is paid, not how
+   * much. Inert at `traceWeight = 0`, so a suite without the pin cannot see it. Travels in the packed
+   * `anomaly_knobs` block as `traceskipsleader=1|0`.
+   */
+  traceSkipsLeader: boolean;
+  /**
    * Whether a DEMAND metric (`workload` — how much work a service was HANDED) may be a node's decisive
    * evidence. Shipped `true` since iteration 127, on the measurement `docs/rcaeval-local-harness.md` carries:
    * the family is decisive for 4.0% of ground truths against 12.5% of bystanders, and removing it takes
@@ -566,6 +577,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
     capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
+    traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
     anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
@@ -773,6 +785,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.capTrendBonusAtDeviation = true;
     } else if (args[i] === '--no-cap-trend-bonus-at-deviation') {
       opts.capTrendBonusAtDeviation = false;
+    } else if (args[i] === '--trace-skips-leader') {
+      opts.traceSkipsLeader = true;
+    } else if (args[i] === '--no-trace-skips-leader') {
+      opts.traceSkipsLeader = false;
     } else if (args[i] === '--fusion-ceiling' && hasValue(args, i + 1)) {
       opts.fusionCeiling = args[++i]!;
     } else if (args[i] === '--routing-probe' && hasValue(args, i + 1)) {

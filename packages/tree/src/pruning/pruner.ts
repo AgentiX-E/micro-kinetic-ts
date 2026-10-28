@@ -421,6 +421,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly traceWeight: number;
   /**
+   * Whether the trace vote is WITHHELD from the candidate that already holds the cell's largest self-anomaly.
+   *
+   * The term exists for a source the magnitude ranking cannot see — the `ts-auth-service` case it was written
+   * for moved its metrics mildly and emitted no error anywhere, and its ONE signature was a rise in span count.
+   * A candidate that is already the loudest needs no corroboration, and a vote landing on it is more often
+   * traffic RE-ROUTED toward a loud victim than a silent source.
+   *
+   * Measured on TrainTicket RE3 (iteration 148, `[trace-vote] cases=30 votes=20 hits=15 (75.0%) ... wrong=5
+   * decisive=5`): the vote is right three times in four, and **all five wrong votes became the top-1** — the
+   * exact five cases the term-gap census charges `trace=+1.000` for. A removal arm reads the pin as worth **+10
+   * cases** over the suite (61 → 51), so the term stays and this mask is the question: keep the 15, drop the 5.
+   *
+   * Inert at `traceWeight = 0`, which is the shipped weight on every suite but RE3.
+   */
+  readonly traceSkipsLeader: boolean;
+  /**
    * Weight of the PRISM graph-free signal: reward a node that is anomalous in
    * BOTH its internal (cpu/memory/disk/socket) AND external (latency/error/
    * throughput) properties.
@@ -1092,6 +1108,15 @@ export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
 export const DEFAULT_TRACE_WEIGHT = 0.0;
 
 /**
+ * The shipped value of {@link TreePrunerOptions.traceSkipsLeader}, which is `false`.
+ *
+ * Opt-in because it was never the term's premise: the gate was written for a SILENT source and measured on one,
+ * and the leader mask is a refinement of WHO the vote may be paid to that has to earn its place on the nine
+ * cells like every other lever this campaign has priced.
+ */
+export const DEFAULT_TRACE_SKIPS_LEADER = false;
+
+/**
  * The shipped defaults of the ranking knobs that had **no name**, and the reason they now have one.
  *
  * `DEFAULT_LOG_WEIGHT`, `DEFAULT_LOG_SIGNAL_MODE` and `DEFAULT_TRACE_WEIGHT` were extracted one at a
@@ -1320,6 +1345,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
   traceWeight: DEFAULT_TRACE_WEIGHT,
+  traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
   prismWeight: DEFAULT_PRISM_WEIGHT,
   prismPooling: DEFAULT_PRISM_POOLING,
   failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
@@ -2447,6 +2473,14 @@ function performTreeRCA(
   // same score, and the two agree until one of them is edited — at which point the artifact reports a
   // decomposition of a number it did not come from. Here the total cannot disagree with its terms, and the
   // term order is the formula's own, so the floating-point sum is unchanged to the last bit.
+  // The trace vote's leader mask, and the maximum it compares against — computed ONCE, from the same map the
+  // base term reads, so "the loudest candidate" cannot mean two different things inside one ranking.
+  const traceSkipsLeader = options.traceSkipsLeader;
+  let anomalyLeaderScore = Number.NEGATIVE_INFINITY;
+  for (const score of selfScores.values()) {
+    if (score > anomalyLeaderScore) anomalyLeaderScore = score;
+  }
+
   const termCache = new Map<ServiceId, readonly ScoreTerm[]>();
   const termsOf = (id: ServiceId): readonly ScoreTerm[] => {
     let t = termCache.get(id);
@@ -2489,6 +2523,10 @@ function performTreeRCA(
       const logEntry = logScores?.get(id);
       const riseEntry = riseScores?.get(id);
       const traceEntry = traceActivityScores?.get(id);
+      // A vote the leader mask withholds. `(traceEntry ?? 0) > 0` first, so a candidate the rule never voted for
+      // is not reported as a candidate a gate withheld from.
+      const traceSkipped =
+        traceSkipsLeader && (traceEntry ?? 0) > 0 && selfScores.get(id) === anomalyLeaderScore;
       const prismEntry = prismScores?.get(id);
       const failedEdgeEntry = failedEdgeScores?.get(id);
       const latEntry = edgeLatencyScores?.get(id);
@@ -2547,9 +2585,19 @@ function performTreeRCA(
           masked: riseValue !== 2 * (riseRaw - 0.5),
           mask: 'logicExceptionGate',
         }),
-        buildTerm('trace', traceWeight, traceEntry ?? 0, {
+        // The vote, and the ONE precondition that can withhold it from a CANDIDATE rather than from a case. The
+        // case-level gate decides whether the corpus is SILENT; this decides whether a loud candidate is the one
+        // that should be paid for being loud. `selfScores.get(id) === anomalyLeaderScore` is an exact comparison
+        // because the leader's score IS one of the values the maximum was taken over.
+        //
+        // The gate zeroes the VALUE and the flag records that it did — the shape the `rise` term established:
+        // `buildTerm` derives its contribution from the value, so a flag alone would report `MASKED` over a
+        // non-zero contribution, which is a cause the classification could never reach.
+        buildTerm('trace', traceWeight, traceSkipped ? 0 : (traceEntry ?? 0), {
           presence: presenceOf(traceActivityScores, id),
           source: 'traceActivityScores',
+          masked: traceSkipped,
+          mask: 'traceSkipsLeader',
         }),
         buildTerm('prism', prismWeight, prismEntry ?? 0, {
           presence: presenceOf(prismScores, id),

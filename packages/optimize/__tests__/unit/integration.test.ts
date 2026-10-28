@@ -240,6 +240,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'selfTimeWeight',
       'stabilityWeight',
       'topoDiscount',
+      'traceSkipsLeader',
       'useTwoHopDecay',
       'victimWeight',
     ]);

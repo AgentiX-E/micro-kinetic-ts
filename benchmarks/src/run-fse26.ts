@@ -170,6 +170,7 @@ async function main(): Promise<void> {
     // line's default so that the JSON artifact records them too: the line may OMIT a default, and a
     // reader of the JSON must not have to know that an absent key means the shipped value.
     traceWeight: opts.traceWeight,
+    traceSkipsLeader: opts.traceSkipsLeader,
     topoWeight: opts.topoWeight,
     collisionWeight: opts.collisionWeight,
     prismWeight: opts.prismWeight,

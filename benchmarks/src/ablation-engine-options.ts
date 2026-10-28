@@ -57,6 +57,7 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_VICTIM_WEIGHT,
   type DropDeviationMode,
 } from '../../packages/tree/src/index.js';
@@ -122,6 +123,14 @@ export interface AblationSignalOptions {
   readonly logWeight: number;
   readonly riseWeight: number;
   readonly traceWeight: number;
+  /**
+   * The trace vote's leader mask, held at the shipped `false` by every row.
+   *
+   * Named on the constant rule: the reported-field partition requires every field the artifact can omit to be
+   * printed or exempted, and `false` is a fact about the configuration rather than an omission. No row VARIES it —
+   * the study's subject is Deng Yu's terms, and this is a precondition on one of them.
+   */
+  readonly traceSkipsLeader: boolean;
   readonly prismWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly latWeight: number;
@@ -309,6 +318,7 @@ export function buildAblationEngineOptions(
       logWeight: flags.logSignal ? 1.0 : 0.0,
       riseWeight: flags.riseSignal ? 1.0 : 0.0,
       traceWeight: flags.traceSignal ? 1.0 : 0.0,
+      traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
       prismWeight: overrides.prismWeight ?? (flags.prismSignal ? 1.0 : 0.0),
       // The terms the study holds at the shipped value unless a row overrides them, named from their owners
       // so the artifact can state them. Passing them is value-identical to inheriting them, and that is the
@@ -365,6 +375,7 @@ export function formatAblationConfigLine(
     `collisionWeight=${signals.collisionWeight} topoWeight=${signals.topoWeight} ` +
     `logWeight=${signals.logWeight} logSignalMode=${signals.logSignalMode} ` +
     `riseWeight=${signals.riseWeight} traceWeight=${signals.traceWeight} ` +
+    `traceSkipsLeader=${signals.traceSkipsLeader} ` +
     `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +

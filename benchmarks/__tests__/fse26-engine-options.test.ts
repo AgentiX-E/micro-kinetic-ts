@@ -26,6 +26,7 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
@@ -57,6 +58,9 @@ describe('buildFse26EngineOptions', () => {
       // because that is the object the pruner reads it from.
       dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
       dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+      // Same rule as its neighbours: read from the engine's own constant, and it must land in `signals` because
+      // that is the object the pruner reads it from.
+      traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

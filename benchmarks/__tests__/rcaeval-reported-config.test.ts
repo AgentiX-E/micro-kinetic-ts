@@ -479,7 +479,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
-        'traceWeight=0 prismWeight=0 prismPooling=additive ' +
+        'traceWeight=0 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
         'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
         'suppressZeroBaselineLatency=false capTrendBonusAtDeviation=false ' +

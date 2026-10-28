@@ -272,6 +272,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
+    '--trace-skips-leader',
     // Iteration 140: the internal/external symmetry mask. A ranking WEIGHT rather than a composition
     // coefficient, packed here for the reason the self-time term is: the golden half's input budget is full.
     '--victim-weight',
@@ -303,6 +304,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--self-time-weight',
     '--suppress-zero-baseline-latency',
     '--cap-trend-bonus-at-deviation',
+    '--trace-skips-leader',
     '--victim-weight',
     '--drop-deviation-mode',
     '--rise-ceiling',
@@ -416,6 +418,15 @@ const KNOBS: Readonly<
   capTrendBonusAtDeviation: {
     flag: '--cap-trend-bonus-at-deviation',
     owner: 'zero-baseline-transport.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  traceSkipsLeader: {
+    // The trace vote's leader mask. A PRECONDITION on one binary term rather than a value: it decides whether the
+    // unit is paid to a candidate that is already the cell's largest anomaly, measured on the blocking cell
+    // (`[trace-vote] votes=20 hits=15 ... wrong=5 decisive=5`) and opt-in until the nine cells price it.
+    flag: '--trace-skips-leader',
+    owner: 'trace-vote.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -727,6 +738,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'temporalWeight',
   'topoWeight',
   'traceWeight',
+  'traceSkipsLeader',
 ];
 
 /**
@@ -809,6 +821,9 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--no-suppress-zero-baseline-latency',
   // Iteration 139: the NEGATIVE pole of the trend-bonus ceiling, same shape as the guard above.
   '--no-cap-trend-bonus-at-deviation',
+  // Iteration 148: the NEGATIVE pole of the trace vote's leader mask. `traceskipsleader=1|0` reaches both poles
+  // through the packed block, so the negated flag opens no state the input does not.
+  '--no-trace-skips-leader',
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',

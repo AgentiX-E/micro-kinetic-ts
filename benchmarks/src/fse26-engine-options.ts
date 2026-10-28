@@ -110,6 +110,8 @@ export interface Fse26SignalOptions {
    * here is how this repo published one 24.2pp off the best-measured value.
    */
   readonly traceWeight: number;
+  /** Whether the trace vote is withheld from the anomaly leader. Required for the same reason as the weight. */
+  readonly traceSkipsLeader: boolean;
   readonly topoWeight: number;
   readonly collisionWeight: number;
   readonly prismWeight: number;
@@ -173,6 +175,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       // document's own split records: these are consumed by the pruner's first constructor argument, and a
       // value placed in the wrong object is a silent no-op rather than an error.
       traceWeight: opts.traceWeight,
+      traceSkipsLeader: opts.traceSkipsLeader,
       topoWeight: opts.topoWeight,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,

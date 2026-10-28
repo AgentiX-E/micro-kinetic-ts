@@ -65,6 +65,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:
     'the self-time prior, shipped OFF and measured outside this search space: it is a transport-causality term whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
+  traceSkipsLeader:
+    'the trace vote\u2019s leader mask, shipped false: it withholds a BINARY unit from one named candidate rather than scaling any term, so a weight search could only move it by accident \u2014 a discrete precondition belongs to a dispatch',
   failedEdgeWeight:
     "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
