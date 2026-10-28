@@ -1,8 +1,9 @@
 # The trace vote — a binary term scored on its decisions, and the mask that withholds it from the leader
 
 **Status:** the term SHIPS ON for RE3 and OFF everywhere else, unchanged. `traceSkipsLeader` ships **`false`** and
-its arm is **REFUSED**: measured on all nine cells, the mask moves nothing at all. What lands here is the arm's
-numbers, the instrument that explains them, and the one question the arm cannot answer on its own.
+its arm is **REFUSED**: measured on all nine cells the mask moves nothing at all, and the rank census shows why —
+the two votes it can act on are both votes for the TRUTH. What lands here is the arm's numbers, the three
+instruments that explain them, and the disagreement between this document's own prediction and its measurement.
 
 **Owner of:** `traceSkipsLeader`, the `[trace-vote]` census line, `CasePrediction.traceVote` and
 `CasePrediction.traceVoteRank`.
@@ -95,6 +96,11 @@ sitting at ranks 2, 4, 7 and 13 — gains the gap it needs; on the fifteen right
 (and keeps its vote) or already loud (and loses a unit it did not need). The risk is the second half of that
 sentence, and the nine cells are the only way to price it.
 
+**Measured verdict: the first half is false.** The votes that landed on the cell maximum were 2 and both were
+RIGHT (§4.3); the "loud vote" the prediction was about does not appear among the five that are wrong. The
+prediction stays in the document rather than being quietly replaced, because the second half of it — the risk — is
+the half that turned out to be the whole story.
+
 ### 4.1 The arm: a measured null, on every system
 
 `anomaly_knobs=traceskipsleader=1`, dispatched on `aba38243` and read against the push-triggered run of the same
@@ -155,33 +161,46 @@ are about the same cases. A vote whose rank was not measured is reported as `unr
 `rank11+` — "the vote went nowhere near the top" and "nobody measured where the vote went" are different findings,
 the rule every census here keeps.
 
-### 4.3 What it read on its first run: the vote is a TAIL pick
+### 4.3 What it read on its first run: the vote is a TAIL pick, and the loud ones are RIGHT
 
-`cff0bf5`, same corpus and protocol as the arm above:
+`cff0bf5` (ranks) and `9aa71bc` (the same ranks with their hits), same corpus and protocol as the arm above:
 
 ```
 RE3 OnlineBoutique  votes=1  hits=0  decisive=1 | atMax=0/0 rank2-3=1/0 rank4-10=0/0 rank11+=0/0
 RE3 SockShop        votes=0  (abstains on all 30)
-RE3 TrainTicket     votes=20 hits=15 decisive=5 | atMax=2/0 rank2-3=0/0 rank4-10=3/0 rank11+=15/15
+RE3 TrainTicket     votes=20 hits=15 decisive=5 | atMax=2/2 rank2-3=0/0 rank4-10=3/0 rank11+=15/13
 ```
 
 **Fifteen of TrainTicket's twenty votes went to a service ranked 11th or worse by the cell's own anomaly** — the
 rule does what it was written for, and it does it far more often than the "loud candidate" reading of §4 assumed.
-Only **two votes in the entire suite** landed on the cell maximum, so the mask's population on this corpus is 2
-cases out of 30, not the five the prediction was about. The arm is therefore explained without being defended: the
-mechanism it priced fires on at most two cases, and on those two it moved nothing.
+Only **two votes in the entire suite** landed on the cell maximum, so the mask's population on this corpus is 2 of
+20 votes, not the five the prediction was about.
 
-The joint table is the hypothesis the marginals cannot settle. Five non-tail votes (`atMax 2/0`, `rank2-3 0/0`,
-`rank4-10 3/0`) against five wrong ones is a coincidence two marginals will produce whether or not they describe
-the same cases: fifteen tail votes and fifteen hits are equally consistent with "the tail is 15/15 and the near-top
-is 0/4" and with "the tail is 12/15 and three near-top votes were right". The line therefore prints **`votes/hits`
-per bucket** from this commit on, and the readback that follows is the one that can say it.
+The joint table then decided the question, and it went AGAINST the hypothesis the marginals suggested:
 
-If it does say it, the refinement it proposes is **not** the mask's: the vote would not need the leader withheld, it
-would need to be **confined to the tail** — a rank precondition rather than a leader exception, and one that follows
-from the term's own premise rather than from a special case of it. That is a proposal a census can make and an arm
-has to decide, so it is not enrolled here: `traceTailOnly` is the next thing this axis owes, and this document
-records the order of those two steps rather than collapsing them.
+| bucket | votes | hits | share |
+| --- | ---: | ---: | ---: |
+| `atMax` (rank 1) | 2 | **2** | **100%** |
+| `rank2-3` | 0 | 0 | — |
+| `rank4-10` | 3 | **0** | **0%** |
+| `rank11+` | 15 | 13 | 86.7% |
+
+Three things follow, and the first is a refutation of this document's own §4:
+
+1. **The two loudest votes are both CORRECT.** The premise the mask was built on — "a vote landing on the cell's
+   largest anomaly is more often re-routed traffic than a silent source" — is false on the two cases this corpus
+   offers, 2 of 2. The mask was therefore never merely inert: it withheld a unit from the TRUTH twice, and the cell
+   did not move because the truth held its top-1 place on other terms. A mechanism that fires twice, both times
+   against the answer, and prices at zero is refused with a reason rather than with an absence.
+2. **`traceTailOnly` is dead before it was built.** The non-tail votes are 2/2 and 0/3; confining the vote to the
+   tail would keep the three rank-4-10 misses (no change) and withhold the two correct units (a loss in principle,
+   zero on this cell). The hypothesis that a rank precondition would filter the wrong votes is measured and rejected
+   — which is why the census prints hits per bucket instead of letting a reader act on two matching totals.
+3. **The errors are not rank-structured at all.** 3 wrong in `rank4-10`, 2 wrong in `rank11+`, 0 wrong at `atMax`:
+   loudness does not separate the votes the term gets wrong, so the next question on this axis is not "which
+   candidates may be paid" but "**what distinguishes the five risers that are victims from the fifteen that are
+   sources**" — a question about the rule's own evidence (self-time vs propagated rise, failed-edge direction), not
+   about its recipient.
 
 ## 5. What this does not license
 
@@ -194,6 +213,9 @@ records the order of those two steps rather than collapsing them.
 - The census reports the rule's **decision**, not whether the term was paid: a masked vote is still a vote, so a
   cell run with the mask on will report the same `votes`/`hits` and a different score. That is deliberate — the
   instrument must not change when the mechanism does.
-- **A null arm is not a refutation of the premise.** It prices a mechanism that the census had not yet shown to be
-  reachable. The `atMax` count is the missing half, and until it is read the honest statement is "the mask is
-  worth 0 cases, for a reason the arm cannot name".
+- **A null arm is not a refutation of the premise — a count is.** The `atMax` bucket was the missing half and it was
+  read: 2 votes, 2 of them right. The premise ("a vote on the loud candidate is re-routed traffic") is refuted for
+  the two cases this corpus offers, and the mask is refused on that rather than on its silence.
+- **Two matching totals are not a table.** The five-non-tail/five-wrong coincidence would have licensed
+  `traceTailOnly`; the joint distribution says the non-tail votes are 2 of 2 correct and 0 of 3 wrong, which kills
+  it. The buckets print `votes/hits` for exactly this reason, and any future count on this axis has to as well.
