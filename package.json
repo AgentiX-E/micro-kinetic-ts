@@ -25,6 +25,7 @@
     "lint:eslint": "eslint packages/*/src/ benchmarks/src/ integration-tests/src/",
     "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts' 'integration-tests/src/**/*.ts' 'benchmarks/*.ts' 'benchmarks/src/**/*.ts' 'benchmarks/__tests__/**/*.ts'",
     "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts' 'integration-tests/src/**/*.ts' 'benchmarks/*.ts' 'benchmarks/src/**/*.ts' 'benchmarks/__tests__/**/*.ts'",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "clean": "nx run-many --target=clean --all",
     "benchmark": "tsx benchmarks/src/run-all.ts",
     "changeset": "changeset",

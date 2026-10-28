@@ -92,7 +92,10 @@ describe('the term-gap census', () => {
     // the term because the winner had no entry to subtract. A `failedEdge` the winner was never charged is a term
     // that was already doing its job.
     const census = createTermGapCensus();
-    accumulateTermGap(census, caseWith([term('lat', 0.4), term('failedEdge', 0.4)], [term('lat', 0.5)]));
+    accumulateTermGap(
+      census,
+      caseWith([term('lat', 0.4), term('failedEdge', 0.4)], [term('lat', 0.5)]),
+    );
 
     // Read through the map rather than as a literal: 0.5 − 0.4 is not binary-exact, and the assertion is about
     // WHICH SIDE the gap went, not about the fourth decimal of a subtraction.
