@@ -799,3 +799,33 @@ on this benchmark, so every top-5-shaped claim here, ours included, must be read
 **What this does not license.** The gate is not "almost working": it converts the membership into a real
 discriminator and pays 1.7 cases of RE1 for every case of RE2+RE3 it buys. A form that keeps the population axis
 and shrinks that price is the next question, and the sweep says it must change WHO is paid rather than how much.
+
+## 2026-10-28 — ENROLLED: the per-family gate, and 735 at 628
+
+**The standings move for the first time since the anomaly composition was last swept.** `dualFamilyGate = 0.25`
+with `dualFamilyGateMode = 'channel'` — PRISM's axiom compared against each family's own champion — reads, on one
+commit (`d83fb86`) and one input per arm:
+
+| population | was | **now** | published / reproduced | standing |
+| --- | ---: | ---: | --- | --- |
+| **RE1** (375) | 323 = 86.13% | **327 = 87.20%** | `L0` 85.4% (`arXiv:2610.05009`) | **first, +1.80 pp** |
+| **RE2** (270) | 231 = 85.56% | **240 = 88.89%** | 0.88 SS / 0.78 OB Top-1 | **first on both published cells** |
+| **RE3** (90) | 55 = 61.11% | **61 = 67.78%** | PRISM conjunctive 76.7% (RE3-TT) | second; **TT 63.3%** (was 50.0) |
+| **735** | 609 = 82.86% | **628 = 85.44%** | PRISM 68% published / 78.9% reimplemented | **first among reproducible results** |
+| **FSE'26 Top@1** | 56.40% | **60.50%** (860/1422) | 37% (`RCABench`) | **first, +23.5 pp** |
+
+**No population down, and the blocking cell moved by four.** RE3-TrainTicket goes 15 → **19 of 30**, closing the
+PRISM deficit from 26.7 pp to **13.4 pp** — the first movement that cell has shown in twelve arms. The arm costs
+one case on one of the nine cells (Sock Shop RE1, 117 → 116) while seven rise and one holds.
+
+**Why this works when three earlier imports of the same axiom did not.** PRISM additive (−10 RE1), conjunctive
+(−37) and the symmetry mask (−33) all imported a z-scale into a ranking that already carries fourteen prior terms.
+This one imports a SHAPE and then makes its population relative to the fleet — and the census shows the mechanism
+is EXCLUSION: at the enrolled gate the family covers 1.5–11.4% of a fleet and keeps the truth only 63.7–88.9% of
+the time, and the cells still go up, because the candidates it removes are the loud neighbours the truth was
+losing to.
+
+**What this does not license.** RE3 remains a second place by 13.4 pp on the one cell a competitor's published
+number is above ours, and the reconciliation is unchanged: PRISM's 76.7% is its own conjunctive magnitude read as
+a ranker on TrainTicket, ours is a full ranking over 90 cases. The next lever has to close that gap *inside* a
+configuration that already wins the other four populations.

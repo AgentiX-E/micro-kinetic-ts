@@ -210,8 +210,13 @@ all, and it locates the mechanism in the population rather than the magnitude:
 | gate 0.25 | 13.5 / 68.1 (19.8%) | 28/30 | 15 | 318 |
 | gate 0.50 | 5.4 / 68.1 (7.9%) | 27/30 | **17** | 305 |
 
-Two of the three arms leave the cell at 15 while cutting the family to a fifth of the fleet, and the third moves
-it by two. The difference between them is not the family's size but *which* candidates it keeps: at 0.25 the
+**And the fourth arm moved it by four, at no population's expense**: `channel` mode at gate 0.25 reads
+RE3-TrainTicket **19 of 30 = 63.3%** while RE1, RE2 and 735 all rise (`docs/dual-family-gate.md` §8), which is the
+enrolment this document's argument was pointing at — a gate that selects on SHAPE per family rather than on a
+joint magnitude.
+
+Two of the three `min` arms leave the cell at 15 while cutting the family to a fifth of the fleet, and the third
+moves it by two. The difference between them is not the family's size but *which* candidates it keeps: at 0.25 the
 truth is a member 28 times and still sits mid-pack; at 0.50 it is a member 27 times and the 27 non-members around
 it have lost their bonus. The lever that lifts the truth over the 32 above it has to change who is *paid*, which
 is why the weight axis could never do it.

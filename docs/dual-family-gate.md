@@ -157,3 +157,60 @@ line: the membership never fails to *include* the answer — it fails to *exclud
 bonus paid to four candidates in ten, or nine in ten, cannot re-order a cell. The gate is what converts the
 membership from a description of the fleet into a statement about it, and the price table in §6 is what that
 conversion costs.
+
+## 8. The denominator: per-family normalisation — ENROLLED, no population down
+
+§6 priced the `min` gate and refused it: it buys RE2 and RE3 by paying RE1. The reason it *had* to pay is
+structural, and it is the reason two earlier refusals named a per-family normalisation as the precondition for
+trying PRISM's axiom again (`docs/prism-symmetry-mask.md`, `docs/self-time-share.md`):
+
+```
+  max min(Sⁱ,Sᵉ)  ≤  min( max Sⁱ , max Sᵉ )
+```
+
+with equality only when ONE component is the champion of both families. On a real fleet the extremes live in
+different services — one with a huge `cpu` shift, another with a huge `latency` shift — so `max min` collapses
+toward the balanced middle and the `min` bar goes LOOSE exactly where the fleet is heterogeneous. `channel` gives
+each family its own champion:
+
+```
+  dual(v) = hasInternal(v) ∧ Sⁱ(v) ≥ gate · max_w Sⁱ(w) ∧ Sᵉ(v) ≥ gate · max_w Sᵉ(w)
+```
+
+Three arms, one commit (`d83fb86`), one input each, everything else shipped. Case-level counts from each run's own
+loss census:
+
+| arm | RE1 OB / SS / TT | **RE1** | RE2 OB / SS / TT | **RE2** | RE3 OB / SS / TT | **RE3** | **735** | FSE'26 Top@1 |
+| --- | --- | ---: | --- | ---: | --- | ---: | ---: | ---: |
+| `min`, gate 0 (145's shipped) | 105 / 117 / 101 | 323 | 77 / 85 / 69 | 231 | 22 / 18 / 15 | 55 | 609 | 56.4% |
+| `min`, gate 0.25 (`40520163213`) | 103 / 117 / 98 | 318 | 80 / 86 / 71 | 237 | 23 / 20 / 15 | 58 | 613 | 59.5% |
+| **`channel`, gate 0.25** (`40605425605`) | **107** / 116 / **104** | **327** | **80 / 85 / 75** | **240** | **24** / 18 / **19** | **61** | **628** | **60.5%** |
+| `channel`, gate 0.50 (`40605428520`) | 108 / 115 / 102 | 325 | — | — | 23 / 17 / 17 | 57 | — | — |
+
+**ENROLLED.** `DEFAULT_DUAL_FAMILY_GATE = 0.25`, `DEFAULT_DUAL_FAMILY_GATE_MODE = 'channel'`: RE1 **327**
+(+4, 87.2%), RE2 **240** (+9, 88.9%), RE3 **61** (+6, 67.8%), 735 **628** (+19, 85.4%), FSE'26 Top@1 **60.5%**
+(+4.1 pp). **No population moves down**, which no other arm this month has managed; inside the populations the
+movement is `+2 / −1 / +3` on RE1, `+3 / 0 / +6` on RE2 and `+2 / 0 / +4` on RE3 — one cell loses a single case
+(Sock Shop RE1) while eight gain or hold.
+
+**The blocking cell moved by four.** RE3-TrainTicket reads **19 of 30 = 63.3%**, against PRISM's published 76.7%:
+the deficit is **13.4 pp** where it was 26.7 pp, and it is the first movement that cell has shown in twelve arms
+(`docs/re3-quiet-truth.md` §9).
+
+The censuses are why, and they invert the premise the term was built on:
+
+| cell (gate 0.25, `channel`) | family / fleet | truth in family |
+| --- | ---: | ---: |
+| RE1 OB / SS / TT | 8.7% / 6.7% / 1.5% | 63.7% / 82.4% / 65.6% |
+| RE3 OB / SS / TT | 11.4% / 9.3% / 4.7% | 88.9% / 46.7% / 73.3% |
+
+The membership keeps the truth **less** often than the `min` gate did (63.7% against 80.6% on RE1-OB) and the
+cells go **up**. A shape term earns its weight by excluding the competitors it was never about, not by certifying
+the answer — the opposite of every "reward evidence" reading this campaign has tried, and only visible because the
+census prints both numbers.
+
+**Why 0.25 and not 0.50.** At 0.50 the family covers 5.6% of OnlineBoutique's RE1 fleet and keeps only **49.2%**
+of its truths (against 8.7% and 63.7% at 0.25), and the arms agree: RE3 falls 61 → 57 and RE1 327 → 325. The
+stronger gate has started to exclude the answer. 0.25 is the smaller of the two values measured on the winning
+side, taken on the rule the breadth gate established: the smallest value that reaches the measured value leaves
+the most room before the next mechanism starts to matter.

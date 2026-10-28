@@ -63,6 +63,7 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import {
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   computeChannelSymmetry,
   computeDualFamilyServices,
@@ -673,8 +674,10 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the same 0/1 term stays selective as the fleet grows, and it is the construction
    * `anomalyBreadthGate` already uses — a share of the fleet maximum rather than an invented absolute floor.
    *
-   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE} = **0**, which is the identity: `min > 0` holds exactly when both
-   * channels moved, so the shipped nine cells rank byte-identically with and without the flag.
+   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE} = **0.25** in `channel` mode, ENROLLED in iteration 146: the same
+   * gate in `min` mode bought RE2 +6 / RE3 +3 for RE1 −5 and was refused, while `channel` bought RE1 +4, RE2 +9,
+   * RE3 +6 and FSE'26 +4.1 pp — the first arm of this campaign that costs no population anything. `0` remains a
+   * legal value and is the predicate iteration 144 enrolled, which is what an ablation states.
    */
   readonly dualFamilyGate: number;
   /**
@@ -690,7 +693,7 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `docs/self-time-share.md` both named as the precondition for a fourth attempt at the axiom.
    *
    * Both modes are the identity at gate 0, so this option cannot move a shipped cell on its own.
-   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE_MODE} = `min`.
+   * Ships at {@link DEFAULT_DUAL_FAMILY_GATE_MODE} = `channel`, the enrolment of iteration 146.
    */
   readonly dualFamilyGateMode: DualFamilyGateMode;
 }
@@ -916,24 +919,12 @@ export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
 export {
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DUAL_FAMILY_GATE_MODES,
   isDualFamilyGateMode,
 } from './prism-signal.js';
 export type { DualFamilyGateMode } from './prism-signal.js';
-
-/**
- * The share of the fleet's strongest dual signal a component must reach to be a MEMBER.
- *
- * The weight above buys a bonus; this chooses WHO is paid it. A membership is a constant, so a family that
- * covers most of a cell cannot re-order that cell — and the enrolment measured exactly that split (SockShop
- * 14 candidates: 15 → 18; TrainTicket 68: unchanged; FSE'26: byte-identical at every weight). The gate is the
- * population's lever, on the construction `anomalyBreadthGate` uses: `min(Sⁱ,Sᵉ) ≥ gate × max_w min(Sⁱ,Sᵉ)`.
- *
- * Ships at **0**, the identity of the membership iteration 144 enrolled — `familyOf()` and `familyOf(0)` are
- * the same set by construction, so a push that passes no flag ranks the nine cells byte-identically.
- */
-export const DEFAULT_DUAL_FAMILY_GATE = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.

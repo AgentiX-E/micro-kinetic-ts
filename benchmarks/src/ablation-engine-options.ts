@@ -154,7 +154,7 @@ export interface AblationSignalOptions {
   /** The dual-family presence bonus, held at the shipped 0 by every row. */
   readonly dualFamilyWeight: number;
   /**
-   * The dual-family membership's population, held at the shipped 0 (the identity) by every row.
+   * The dual-family membership's population, held at the shipped 0.25 by every row.
    *
    * Named for the reason the ceiling and the drop mode are: the reported-field partition requires every field
    * the artifact can omit to be printed or exempted, and 0 is a fact about the configuration rather than an
@@ -163,7 +163,7 @@ export interface AblationSignalOptions {
    */
   readonly dualFamilyGate: number;
   /**
-   * Which fleet-relative comparison the gate applies, held at the shipped `min` by every row.
+   * Which fleet-relative comparison the gate applies, held at the shipped `channel` by every row.
    *
    * Named on the constant rule: the reported-field partition requires every field the artifact can omit to be
    * printed or exempted. No row VARIES it — the gate itself is 0 in every row, so its comparison cannot act.

@@ -8,6 +8,8 @@ import type {
 } from '@agentix-e/micro-kinetic-core';
 import {
   classifyTermZero,
+  DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -3174,9 +3176,11 @@ describe('TreePruner — the dual-family presence bonus', () => {
   };
 
   it('holds only the components within a factor of the fleet maximum, boundary inclusive', () => {
+    // `min`, stated: this test is about the GATE's own scale, and the shipped mode is `channel` now.
     const familyOf = (gate: number) =>
-      gatedGraph(new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: gate }))
-        .dualFamilyServices;
+      gatedGraph(
+        new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: gate, dualFamilyGateMode: 'min' }),
+      ).dualFamilyServices;
 
     expect([...(familyOf(0) ?? [])].sort()).toEqual([STRONG_DUAL, WEAK_DUAL].sort());
     // min(Sⁱ,Sᵉ) is {3, 0.5}, so the threshold is 3 × gate: 0.1 keeps both (0.5 ≥ 0.3), and from 0.25 on
@@ -3186,12 +3190,28 @@ describe('TreePruner — the dual-family presence bonus', () => {
     expect([...(familyOf(1) ?? [])].sort()).toEqual([STRONG_DUAL]);
   });
 
-  it('ships at gate 0, which is the family the weight was enrolled on', () => {
-    const graph = gatedGraph(new TreePruner({ dualFamilyWeight: 0.25 }));
-    const explicitZero = gatedGraph(new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: 0 }));
+  it('ships the ENROLLED pair (gate 0.25, `channel`) — read from the constants, not from literals', () => {
+    // The enrolment of iteration 146. A pruner that named neither option must be the same run as one that named
+    // both shipped values; a literal here would be a second owner of a published configuration.
+    const implicit = gatedGraph(new TreePruner({ dualFamilyWeight: 0.25 }));
+    const explicit = gatedGraph(
+      new TreePruner({
+        dualFamilyWeight: 0.25,
+        dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+        dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+      }),
+    );
 
-    expect([...(graph.dualFamilyServices ?? [])].sort()).toEqual(
-      [...(explicitZero.dualFamilyServices ?? [])].sort(),
+    expect([...(implicit.dualFamilyServices ?? [])].sort()).toEqual(
+      [...(explicit.dualFamilyServices ?? [])].sort(),
+    );
+    // And the 144 predicate is still reachable, which is what an ablation states: gate 0 in `min` mode is
+    // `min > 0`, i.e. every component whose two families both moved.
+    const original = gatedGraph(
+      new TreePruner({ dualFamilyWeight: 0.25, dualFamilyGate: 0, dualFamilyGateMode: 'min' }),
+    );
+    expect([...(original.dualFamilyServices ?? [])].sort()).toEqual(
+      [STRONG_DUAL, WEAK_DUAL].sort(),
     );
   });
 
@@ -3257,11 +3277,19 @@ describe('TreePruner — the dual-family presence bonus', () => {
     // cell and one that can.
     const weight = 0.4;
     const build4 = (gate: number) => {
-      const pruner = new TreePruner({ dualFamilyWeight: weight, dualFamilyGate: gate });
+      const pruner = new TreePruner({
+        dualFamilyWeight: weight,
+        dualFamilyGate: gate,
+        dualFamilyGateMode: 'min',
+      });
       return new Map(pruner.analyze(gatedGraph(pruner)).map((r) => [r.serviceId, r.finalScore!]));
     };
     const control = (() => {
-      const pruner = new TreePruner({ dualFamilyWeight: 0, dualFamilyGate: 0 });
+      const pruner = new TreePruner({
+        dualFamilyWeight: 0,
+        dualFamilyGate: 0,
+        dualFamilyGateMode: 'min',
+      });
       return new Map(pruner.analyze(gatedGraph(pruner)).map((r) => [r.serviceId, r.finalScore!]));
     })();
 

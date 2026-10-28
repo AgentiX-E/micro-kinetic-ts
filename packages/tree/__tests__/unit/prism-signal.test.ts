@@ -17,6 +17,7 @@ import {
   computeChannelSymmetry,
   computeDualFamilyServices,
   computePrismScores,
+  DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_PRISM_POOLING,
   DUAL_FAMILY_GATE_MODES,
   type DualFamilyGateMode,
@@ -322,8 +323,11 @@ describe('computeDualFamilyServices', () => {
     expect(familyOf(0)).toEqual([HALF, STRONG, WEAK].sort());
   });
 
-  it('ships as the identity of the constant membership: no gate means the set the weight was enrolled on', () => {
-    expect(familyOf()).toEqual(familyOf(0));
+  it('defaults to the ENROLLED gate, and gate 0 is still the membership iteration 144 enrolled', () => {
+    // The function's default is the shipped constant rather than a literal, so a direct caller receives the
+    // family the engine ships. `0` remains the 144 predicate — `min > 0` — and is what an ablation states.
+    expect(familyOf()).toEqual(familyOf(DEFAULT_DUAL_FAMILY_GATE));
+    expect(familyOf(0)).toEqual([HALF, STRONG, WEAK].sort());
   });
 
   it('holds only the components within a factor of the fleet maximum, boundary inclusive', () => {

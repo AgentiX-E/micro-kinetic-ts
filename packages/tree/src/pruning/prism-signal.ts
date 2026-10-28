@@ -192,8 +192,39 @@ export const DUAL_FAMILY_GATE_MODES: Readonly<Record<DualFamilyGateMode, true>> 
   channel: true,
 };
 
-/** The comparison {@link computeDualFamilyServices} applies when its caller names none. */
-export const DEFAULT_DUAL_FAMILY_GATE_MODE: DualFamilyGateMode = 'min';
+/**
+ * The share of the fleet's strongest dual signal a component must reach to be a MEMBER.
+ *
+ * The weight bought by `dualFamilyWeight` is a CONSTANT, so it can only re-order a cell in which the family is a
+ * strict subset of the fleet. Iteration 145 measured that split (SockShop 14 candidates: 15 → 18; TrainTicket 68:
+ * unchanged; FSE'26 byte-identical at every weight) and priced the gate in `min` mode at RE1 −5 for RE2 +6 / RE3
+ * +3 — a trade no rule of this project allows.
+ *
+ * ENROLLED at **0.25** in iteration 146, in `channel` mode (its own default), where the same number reads
+ * RE1 **327** (was 323), RE2 **240** (was 231), RE3 **61** (was 55) and 735 **628** (was 609), with FSE'26 Top@1
+ * **60.5%** (was 56.4%). The arms at 0.25 and 0.50 put 0.25 ahead on every population measured, so the smaller
+ * value leaves the most room before the next mechanism starts to matter — the rule the breadth gate established.
+ *
+ * A SHARE of the fleet's own maximum rather than an absolute floor, for the reason `anomalyBreadthGate` is: a
+ * constant would have to be re-invented per corpus. `0` remains a legal value and is the predicate iteration 144
+ * enrolled (`min > 0`, i.e. both families moved at all), which is what an ablation states.
+ */
+export const DEFAULT_DUAL_FAMILY_GATE = 0.25;
+
+/**
+ * The comparison {@link computeDualFamilyServices} applies when its caller names none — ENROLLED at `channel`.
+ *
+ * Iteration 146 measured the two modes on the same commit and the same gates. `min` bought RE2 +6 / RE3 +3 for
+ * RE1 −5 and was refused; `channel` at 0.25 bought **RE1 +4 / RE2 +9 / RE3 +6** — 735 from 609 to **628** — and
+ * took FSE'26 Top@1 from 56.4% to **60.5%** (+4.1 pp), with no population down. The same gate in `min` mode on
+ * the same corpora read 318 / 237 / 58 / 613 and 59.5%, so the mode is the difference between a term that trades
+ * one cell for another and one that does not trade at all.
+ *
+ * `channel` is also the statement PRISM's axiom actually makes: each family is compared against that family's own
+ * strongest shift. At equal gate it is never WIDER than `min` (the proof is the inequality in
+ * {@link DUAL_FAMILY_GATE_MODES}), which is why the sweep ran it at 0.25 rather than at `min`'s gate.
+ */
+export const DEFAULT_DUAL_FAMILY_GATE_MODE: DualFamilyGateMode = 'channel';
 
 /**
  * Whether a raw argument names a gate mode.
@@ -252,8 +283,10 @@ export function isDualFamilyGateMode(value: string): value is DualFamilyGateMode
  * @param metrics - Per-service time series, keyed by service id.
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
- * @param gate - Share of the fleet's strongest dual signal a component must reach, in [0, 1]; 0 = no gate
- *   (`DEFAULT_DUAL_FAMILY_GATE`), which is the membership iteration 144 enrolled.
+ * @param gate - Share of the fleet's strongest dual signal a component must reach, in [0, 1]. The default is
+ *   `DEFAULT_DUAL_FAMILY_GATE` — the ENROLLED 0.25 — rather than a literal, so a direct caller receives the
+ *   family the engine ships; `0` remains the predicate iteration 144 enrolled (`min > 0`), and is what an
+ *   ablation states.
  * @param mode - Which fleet-relative comparison the gate applies (`DUAL_FAMILY_GATE_MODES`); `min` is the
  *   shipped one, `channel` compares each family against its own champion. Both are the identity at gate 0.
  */
@@ -261,7 +294,7 @@ export function computeDualFamilyServices(
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
-  gate = 0,
+  gate = DEFAULT_DUAL_FAMILY_GATE,
   mode: DualFamilyGateMode = DEFAULT_DUAL_FAMILY_GATE_MODE,
 ): Set<ServiceId> {
   const dual = new Set<ServiceId>();

@@ -18,7 +18,11 @@ import { describe, expect, it } from 'vitest';
 
 // The threshold's default, READ from its owner rather than restated: a test that hard-coded 20 would keep
 // passing after the engine's default moved, and the line it guards would then describe a run nobody made.
-import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
+import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
+} from '../../packages/tree/src/index.js';
 
 import type { FSE26RunConfig } from '../src/fse26-report.js';
 import {
@@ -64,10 +68,10 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     dualFamilyWeight: 0,
     // The membership's POPULATION, at the identity: gate 0 is the family the weight above was enrolled on, so
     // this fixture is still the published configuration rather than a configuration nobody ran.
-    dualFamilyGate: 0,
+    dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
     // The comparison the gate applies; `min` is the shipped one, so this fixture is still the published
     // configuration rather than a configuration nobody ran.
-    dualFamilyGateMode: 'min',
+    dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
     temporalWeight: 0,
     onsetShape: 'earliness',
     // The eight the mirror made reachable on this half, all at their SHIPPED values — which is what makes
@@ -199,7 +203,8 @@ describe('FSE26 report — the two renderings agree', () => {
         'anomalyBreadthGate=0.8 ' +
         'metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
-        'dualFamilyWeight=0 dualFamilyGate=0 dualFamilyGateMode=min ' +
+        `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
+        `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
         'temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(

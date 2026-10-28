@@ -227,7 +227,7 @@ export interface CliOptions {
    * The distinction is a property of the FLEET: `max min(Sⁱ,Sᵉ)` can never exceed `min(max Sⁱ, max Sᵉ)` and on a
    * fleet whose extremes live in different components it falls far below it, so the `min` bar is loose exactly
    * where the fleet is heterogeneous. `channel` gives each family its own champion — PRISM's own per-family
-   * normalisation. Travels in the packed `anomaly_knobs` block as `dualfamgatemode=<min|channel>`.
+   * normalisation. Travels in the packed `anomaly_knobs` block as `dualfamgatemode=<min|channel>`; ships at `channel`.
    */
   dualFamilyGateMode: DualFamilyGateMode;
   /**
