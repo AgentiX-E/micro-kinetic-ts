@@ -40,6 +40,10 @@ describe('the trace-vote census', () => {
       mid: 0,
       tail: 0,
       unranked: 1,
+      hitsAtMaximum: 0,
+      hitsNearTop: 0,
+      hitsMid: 0,
+      hitsTail: 0,
     });
   });
 
@@ -109,13 +113,34 @@ describe('the trace-vote census', () => {
     expect(census.nearTop).toBe(0);
     expect(census.mid).toBe(0);
     expect(census.tail).toBe(0);
-    expect(formatTraceVoteLine(census)).toContain('atMax=1');
+    expect(formatTraceVoteLine(census)).toContain('atMax=1/1');
+  });
+
+  it('reports votes AND hits per bucket, because two marginals are not a table', () => {
+    // The reading the histogram cannot support on its own: "five of twenty votes were wrong" and "five votes were
+    // near the top" are the same two numbers whether or not they describe the same five cases. Counting the hits
+    // INSIDE each bucket is what lets the artifact say "the wrong votes are the loud ones" — or refute it —
+    // instead of leaving a reader to notice that two totals happen to match.
+    const census = createTraceVoteCensus();
+    accumulateTraceVote(census, prediction({ traceVote: 'ts-src', traceVoteRank: 1 }));
+    accumulateTraceVote(
+      census,
+      prediction({ traceVote: 'ts-other', top1: 'ts-other', correct: false, traceVoteRank: 1 }),
+    );
+    accumulateTraceVote(census, prediction({ traceVote: 'ts-src', traceVoteRank: 30 }));
+
+    expect(census.atMaximum).toBe(2);
+    expect(census.hitsAtMaximum).toBe(1);
+    expect(census.tail).toBe(1);
+    expect(census.hitsTail).toBe(1);
+    expect(formatTraceVoteLine(census)).toContain('atMax=2/1 rank2-3=0/0 rank4-10=0/0 rank11+=1/1');
   });
 
   it('partitions the votes by anomaly rank without losing one: 1 | 2-3 | 4-10 | 11+', () => {
     // A partition rather than a mean, deliberately: a mean rank hides the shape (one vote at the maximum and
     // nineteen at rank 30 has the same mean as twenty at rank 16) and the shape is the whole question. The
-    // edges are the ones a reader already uses — the maximum, a shortlist of three, a top-ten.
+    // edges are the ones a reader already uses — the maximum, a shortlist of three, a top-ten. Every vote here is
+    // for `ts-other` against a `ts-src` truth, so each bucket also prints its own hits: all zero.
     const census = createTraceVoteCensus();
     for (const rank of [1, 2, 3, 4, 10, 11, 40]) {
       accumulateTraceVote(census, prediction({ traceVote: 'ts-other', traceVoteRank: rank }));
@@ -127,7 +152,7 @@ describe('the trace-vote census', () => {
     expect(census.mid).toBe(2);
     expect(census.tail).toBe(2);
     expect(census.atMaximum + census.nearTop + census.mid + census.tail).toBe(census.votes);
-    expect(formatTraceVoteLine(census)).toContain('atMax=1 rank2-3=2 rank4-10=2 rank11+=2');
+    expect(formatTraceVoteLine(census)).toContain('atMax=1/0 rank2-3=2/0 rank4-10=2/0 rank11+=2/0');
   });
 
   it('reports a vote whose rank was never measured as unranked, not as a tail vote', () => {

@@ -145,20 +145,43 @@ The census counts them as a histogram instead of a mean, because a mean hides th
 question — one vote at the maximum and nineteen at rank 30 has the same mean as twenty at rank 16:
 
 ```
-[trace-vote] cases=30 votes=20 hits=15 (75.0%) | wrong=5 decisive=5 | atMax=… rank2-3=… rank4-10=… rank11+=…
+[trace-vote] cases=30 votes=20 hits=15 (75.0%) | wrong=5 decisive=5 | atMax=2/0 rank2-3=0/0 rank4-10=3/0 rank11+=15/15
 ```
 
 Exclusive buckets, each carrying its own edges in the label so the line cannot be read as cumulative and the
-partition is visible on the artifact: `atMax + rank2-3 + rank4-10 + rank11+ = votes - unranked`. A vote whose rank
-was not measured is reported as `unranked=` and **not** folded into `rank11+` — "the vote went nowhere near the
-top" and "nobody measured where the vote went" are different findings, the rule every census here keeps.
+partition is visible on the artifact: `atMax + rank2-3 + rank4-10 + rank11+ = votes - unranked`. Every bucket
+prints **`votes/hits`**, so the artifact carries the joint distribution and not two marginals a reader has to hope
+are about the same cases. A vote whose rank was not measured is reported as `unranked=` and **not** folded into
+`rank11+` — "the vote went nowhere near the top" and "nobody measured where the vote went" are different findings,
+the rule every census here keeps.
 
-`atMax` is the field to read first, and it is read on the artifact rather than argued here: a zero closes cause 1
-(the mask's premise is not instantiated, the arm was never a test of the refinement, and the loudness claim in §4
-— "the voted service is the loud one" — was about the vote being louder than the TRUTH, not about it being the
-cell's maximum). A non-zero `atMax` with an unchanged cell is the other reading, and it means the refinement is
-real but worth nothing on this corpus. Writing either into this document before the dispatch would be exactly the
-defect these censuses exist to prevent, so the histogram is what the next run measures.
+### 4.3 What it read on its first run: the vote is a TAIL pick
+
+`cff0bf5`, same corpus and protocol as the arm above:
+
+```
+RE3 OnlineBoutique  votes=1  hits=0  decisive=1 | atMax=0/0 rank2-3=1/0 rank4-10=0/0 rank11+=0/0
+RE3 SockShop        votes=0  (abstains on all 30)
+RE3 TrainTicket     votes=20 hits=15 decisive=5 | atMax=2/0 rank2-3=0/0 rank4-10=3/0 rank11+=15/15
+```
+
+**Fifteen of TrainTicket's twenty votes went to a service ranked 11th or worse by the cell's own anomaly** — the
+rule does what it was written for, and it does it far more often than the "loud candidate" reading of §4 assumed.
+Only **two votes in the entire suite** landed on the cell maximum, so the mask's population on this corpus is 2
+cases out of 30, not the five the prediction was about. The arm is therefore explained without being defended: the
+mechanism it priced fires on at most two cases, and on those two it moved nothing.
+
+The joint table is the hypothesis the marginals cannot settle. Five non-tail votes (`atMax 2/0`, `rank2-3 0/0`,
+`rank4-10 3/0`) against five wrong ones is a coincidence two marginals will produce whether or not they describe
+the same cases: fifteen tail votes and fifteen hits are equally consistent with "the tail is 15/15 and the near-top
+is 0/4" and with "the tail is 12/15 and three near-top votes were right". The line therefore prints **`votes/hits`
+per bucket** from this commit on, and the readback that follows is the one that can say it.
+
+If it does say it, the refinement it proposes is **not** the mask's: the vote would not need the leader withheld, it
+would need to be **confined to the tail** — a rank precondition rather than a leader exception, and one that follows
+from the term's own premise rather than from a special case of it. That is a proposal a census can make and an arm
+has to decide, so it is not enrolled here: `traceTailOnly` is the next thing this axis owes, and this document
+records the order of those two steps rather than collapsing them.
 
 ## 5. What this does not license
 

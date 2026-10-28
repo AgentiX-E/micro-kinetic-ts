@@ -86,7 +86,28 @@ export interface TraceVoteCensus {
   tail: number;
   /** Votes whose target's rank was not measured — held apart from {@link tail} rather than folded into it. */
   unranked: number;
+  /** Of {@link atMaximum}, how many were the ground truth. */
+  hitsAtMaximum: number;
+  /** Of {@link nearTop}, how many were the ground truth. */
+  hitsNearTop: number;
+  /** Of {@link mid}, how many were the ground truth. */
+  hitsMid: number;
+  /** Of {@link tail}, how many were the ground truth. */
+  hitsTail: number;
 }
+
+/** The bucket a vote's rank falls in, as the census field that counts it. */
+type RankBucket = 'atMaximum' | 'nearTop' | 'mid' | 'tail';
+
+/** Where each bucket's HITS are counted. One table, so a bucket cannot gain votes from one place and hits from another. */
+const HITS_OF: Readonly<
+  Record<RankBucket, 'hitsAtMaximum' | 'hitsNearTop' | 'hitsMid' | 'hitsTail'>
+> = {
+  atMaximum: 'hitsAtMaximum',
+  nearTop: 'hitsNearTop',
+  mid: 'hitsMid',
+  tail: 'hitsTail',
+};
 
 /**
  * A census with nothing in it.
@@ -105,6 +126,10 @@ export function createTraceVoteCensus(): TraceVoteCensus {
     mid: 0,
     tail: 0,
     unranked: 0,
+    hitsAtMaximum: 0,
+    hitsNearTop: 0,
+    hitsMid: 0,
+    hitsTail: 0,
   };
 }
 
@@ -123,15 +148,28 @@ export function accumulateTraceVote(census: TraceVoteCensus, prediction: CasePre
   }
   census.votes += 1;
   const rank = prediction.traceVoteRank;
-  if (rank === undefined) census.unranked += 1;
-  else if (rank <= 1) census.atMaximum += 1;
-  else if (rank <= RANK_BUCKETS.nearTop) census.nearTop += 1;
-  else if (rank <= RANK_BUCKETS.mid) census.mid += 1;
-  else census.tail += 1;
+  const bucket: RankBucket | undefined =
+    rank === undefined
+      ? undefined
+      : rank <= 1
+        ? 'atMaximum'
+        : rank <= RANK_BUCKETS.nearTop
+          ? 'nearTop'
+          : rank <= RANK_BUCKETS.mid
+            ? 'mid'
+            : 'tail';
+  if (bucket === undefined) census.unranked += 1;
   if (vote === prediction.truth) {
     census.hits += 1;
+    // Inside the bucket as well as in the total, so the artifact carries the JOINT distribution rather than two
+    // marginals a reader has to hope are about the same cases.
+    if (bucket !== undefined) {
+      census[bucket] += 1;
+      census[HITS_OF[bucket]] += 1;
+    }
     return;
   }
+  if (bucket !== undefined) census[bucket] += 1;
   // A wrong vote is only DECISIVE when it is also the case's top-1: a vote the ranking overruled went to the
   // wrong service without deciding anything, which is a different finding and a much smaller one.
   if (vote === prediction.top1) census.decisive += 1;
@@ -154,12 +192,15 @@ export function formatTraceVoteLine(census: TraceVoteCensus): string | undefined
     // Where the votes went, printed only for votes that were actually RANKED: a cell whose votes all lack a rank
     // gains `unranked=` alone rather than four zeros that describe a measurement nobody took. Exclusive buckets
     // with their own edges in the labels, so the line cannot be read as cumulative and the partition is visible
-    // on the artifact: `atMax + rank2-3 + rank4-10 + rank11+ = votes - unranked`.
+    // on the artifact: `atMax + rank2-3 + rank4-10 + rank11+ = votes - unranked`. Each bucket prints `votes/hits`,
+    // because a bucket's size and the cell's hit count are two marginals of a table nobody printed.
     const ranked = census.votes - census.unranked;
     if (ranked > 0) {
       parts.push(
-        `atMax=${census.atMaximum} rank2-3=${census.nearTop} ` +
-          `rank4-10=${census.mid} rank11+=${census.tail}`,
+        `atMax=${census.atMaximum}/${census.hitsAtMaximum} ` +
+          `rank2-3=${census.nearTop}/${census.hitsNearTop} ` +
+          `rank4-10=${census.mid}/${census.hitsMid} ` +
+          `rank11+=${census.tail}/${census.hitsTail}`,
       );
     }
     if (census.unranked > 0) parts.push(`unranked=${census.unranked}`);
