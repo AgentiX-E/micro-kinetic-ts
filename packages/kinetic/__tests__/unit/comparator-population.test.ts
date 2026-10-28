@@ -107,6 +107,12 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
   'benchmarks/src/fse26-report.ts': [
     { signature: 'a[0] < b[0]', population: '`perFaultType.entries()`, a Map' },
   ],
+  'benchmarks/src/log-route.ts': [
+    // The unclassified-class histogram's tie-break. Its keys ARE Map keys, so they are distinct and the two-arm
+    // `? -1 : 1` never claims an order between equals here — recorded rather than exempted, because the census's
+    // own rule is that every `? -1 : 1` site states the list it sorts.
+    { signature: 'a[0] < b[0]', population: '`classCounts.entries()`, a Map keyed by class name' },
+  ],
   'benchmarks/src/fse26-separator.ts': [
     { signature: 'a.row.faultType < b.row.faultType', population: '`byType.entries()`, a Map' },
     { signature: 'a.name < b.name', population: '`candidates`, one per signal' },
