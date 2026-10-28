@@ -66,6 +66,10 @@ export default defineConfig({
         // non-member, a `WEIGHT_ZERO` case and a retrieval failure are four different findings that render as
         // the same absence — so every branch of it is measured here rather than trusted.
         'src/dual-family-census.ts',
+        // Added with the module: the term-gap census subtracts the two sides of every miss, term by term, and its
+        // whole value is the four distinctions it draws — a cost, a help, an unmeasured side, and a name paid to
+        // one side only. Every branch is measured rather than trusted.
+        'src/term-gap-census.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',

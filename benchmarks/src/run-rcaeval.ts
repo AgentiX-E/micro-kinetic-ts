@@ -95,6 +95,7 @@ import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
 import { buildMetricRows } from './rcaeval-metric-rows.js';
+import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
 // The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
 // cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
 // empty map differ in everything a fix would depend on.
@@ -1414,6 +1415,19 @@ async function main(): Promise<void> {
     }
     const dualFamilyLine = formatDualFamilyCensusLine(dualFamily);
     if (dualFamilyLine !== undefined) console.log(dualFamilyLine);
+
+    // The term-gap census for this cell: which ranking TERM the misses were lost on. The dual-family census above
+    // says how wide one membership was; this says which term would have to change to win the case back, summed
+    // over the cell. Both are read off the same `casePredictions` the correctness count comes from.
+    //
+    // The reason it has to exist at all: the failure blocks print the ANOMALY that lost and never the TERM that
+    // lost it, and a rank-2 miss and a rank-40 miss can have identical anomaly breakdowns.
+    const termGap = createTermGapCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) accumulateTermGap(termGap, p);
+    }
+    const termGapLine = formatTermGapLine(termGap);
+    if (termGapLine !== undefined) console.log(termGapLine);
 
     // ── Fusion-ceiling records for this group ──
     // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed

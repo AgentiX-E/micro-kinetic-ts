@@ -107,6 +107,15 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
   'benchmarks/src/fse26-report.ts': [
     { signature: 'a[0] < b[0]', population: '`perFaultType.entries()`, a Map' },
   ],
+  'benchmarks/src/term-gap-census.ts': [
+    // The term-gap census's per-list ordering. Its keys are `Map` keys (term names), so they are distinct and the
+    // two-arm tie-break never claims an order between equals — recorded rather than exempted, because the census's
+    // own rule is that every `? -1 : 1` site states the list it sorts.
+    {
+      signature: 'a.name < b.name',
+      population: '`census.gaps.entries()`, a Map keyed by term name',
+    },
+  ],
   'benchmarks/src/log-route.ts': [
     // The unclassified-class histogram's tie-break. Its keys ARE Map keys, so they are distinct and the two-arm
     // `? -1 : 1` never claims an order between equals here — recorded rather than exempted, because the census's
