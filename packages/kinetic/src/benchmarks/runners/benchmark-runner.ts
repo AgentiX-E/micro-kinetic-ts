@@ -294,6 +294,22 @@ export interface CasePrediction {
    * would put a second candidate's scores under a name that promises they belong to the first.
    */
   readonly top1Terms?: readonly ScoreTerm[] | undefined;
+  /**
+   * The service the TRACE-ACTIVITY term voted for on this case, or `undefined` when it abstained.
+   *
+   * The term pays a BINARY unit to the unique service whose span count rose while its peers held or fell
+   * (`minPreCount` 500, `riseThreshold` 1.15). It is the only ranking term whose value is a decision rather than
+   * a magnitude, and it is pinned ON for RE3 alone — where the term-gap census of iteration 148 reads it as the
+   * single largest cost on the blocking cell (+1.000 on 5 of TrainTicket's 11 misses) while a removal arm reads
+   * the pin as worth **+10 cases** over the whole suite. Both are true, and the resolution is not a weight: it is
+   * WHICH votes are wrong, which no artifact could say because the diagnostics printed the highest-ratio service
+   * rather than the one the rule actually chose.
+   *
+   * Recorded from the graph's own `traceActivityScores`, so it cannot disagree with the contribution, and absent
+   * when the term was off (`traceWeight === 0`) because then no vote exists to report — the distinction
+   * `unmeasured` exists for everywhere else in these censuses.
+   */
+  readonly traceVote?: string | undefined;
 }
 
 /**
@@ -381,6 +397,25 @@ export interface ScoreTerm {
  * @param at - The truth's 0-based index in `ranking`. MUST be `>= 0`, i.e. the truth IS in the ranking.
  * @returns The evidence recorded for the truth at that index.
  */
+/**
+ * The service the trace-activity rule voted for, when it voted at all.
+ *
+ * The scores are `0` or `1` per service and the rule is defined to award the unit to a UNIQUE riser — zero or
+ * several candidates stay neutral — so a second `1` would be a defect in the producer rather than a tie to break.
+ * A caller that finds one reads the vote; a caller that finds none reads `undefined` and reports an abstention.
+ *
+ * @param scores - The graph's own per-service trace-activity scores.
+ */
+function traceVoteIn(scores: ReadonlyMap<string, number> | undefined): string | undefined {
+  let vote: string | undefined;
+  for (const [serviceId, score] of scores ?? []) {
+    if (score <= 0) continue;
+    if (vote !== undefined) return undefined;
+    vote = serviceId;
+  }
+  return vote;
+}
+
 function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): TruthEvidence {
   const hit = ranking[at]!;
   const metric = (name: string): number | undefined =>
@@ -698,6 +733,9 @@ export class BenchmarkRunner {
           // And the winner's breakdown, so the two sides of the gap are recorded where both are still in
           // hand. Without it the census can say a case was lost and not what it was lost to.
           top1Terms: results[0]?.terms,
+          // The trace term's DECISION on this case, when it made one: the unique service the rule chose. `0` is
+          // the term's abstention, which is a fact about the case and not about the term's weight.
+          traceVote: traceVoteIn(faultGraph.traceActivityScores),
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────

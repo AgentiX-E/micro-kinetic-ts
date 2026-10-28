@@ -70,6 +70,9 @@ export default defineConfig({
         // whole value is the four distinctions it draws — a cost, a help, an unmeasured side, and a name paid to
         // one side only. Every branch is measured rather than trusted.
         'src/term-gap-census.ts',
+        // Added with the module: the trace vote is the only binary term in the formula, and its census is what
+        // separates a wrong vote the ranking overruled from one that decided the case.
+        'src/trace-vote-census.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',

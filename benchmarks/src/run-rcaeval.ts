@@ -96,6 +96,11 @@ import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
 import { buildMetricRows } from './rcaeval-metric-rows.js';
 import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
+import {
+  accumulateTraceVote,
+  createTraceVoteCensus,
+  formatTraceVoteLine,
+} from './trace-vote-census.js';
 // The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
 // cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
 // empty map differ in everything a fix would depend on.
@@ -1428,6 +1433,17 @@ async function main(): Promise<void> {
     }
     const termGapLine = formatTermGapLine(termGap);
     if (termGapLine !== undefined) console.log(termGapLine);
+
+    // The ONE binary term's decisions, scored. `trace` is pinned on for RE3 alone, the term-gap census reads it as
+    // the largest cost on the blocking cell, and a removal arm reads the pin as worth ten cases over the suite —
+    // so the open question is which VOTES are wrong, which no artifact printed: the failure block shows the
+    // highest-ratio service, and the rule usually disqualifies it on `pre >= 500`.
+    const traceVote = createTraceVoteCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) accumulateTraceVote(traceVote, p);
+    }
+    const traceVoteLine = formatTraceVoteLine(traceVote);
+    if (traceVoteLine !== undefined) console.log(traceVoteLine);
 
     // ── Fusion-ceiling records for this group ──
     // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed
