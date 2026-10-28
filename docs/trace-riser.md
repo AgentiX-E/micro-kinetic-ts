@@ -1,8 +1,10 @@
 # The trace riser — why the rule did not choose the truth, asked of the candidate instead of the ranking
 
-**Status:** the instrument ships ON, unconditionally, on every cell. No ranking change. The refinement it is built
-to decide (`traceRiseFloor`, a materiality guard on the rise) is **proposed**, not enrolled: a census proposes and
-an arm decides.
+**Status:** the instrument ships ON, unconditionally, on every cell. No ranking change. `traceRiseFloor`, the
+materiality guard the prediction proposed, is **refused by the run that measured it** (§6) — it would have cost
+more of the term's wins than the five cases it was aimed at are worth. What the run leaves standing is a different
+axis: **scale-relative significance** (`[trace-z]`), measured in units of each count's own fluctuation rather than
+as a percentage, and not built here.
 
 **Owner of:** `CasePrediction.traceRiser`, the `[trace-riser]` census (one line per vote plus one total), and
 `riserVectorOf`.
@@ -91,13 +93,59 @@ If instead the misses are `truth-rise<1.15`, the rule's concept does not apply t
 on the mechanism rather than on a threshold. Both outcomes are decidable from one run, which is the only reason to
 print the attribution rather than argue about it.
 
-## 6. What this does not license
+## 6. What it read: the truth FELL, and the floor is dead before it was built
 
-- **It does not enrol anything.** The floor is a proposal; the nine cells decide it. Every refinement this axis
-  has produced so far (`traceSkipsLeader`, `traceTailOnly`) was killed by measurement, and the prediction above is
-  written down precisely so that this one can be too.
-- **`failedIn`/`failedOut` are not yet read by any term.** They are recorded here because a source/victim split is
-  the shape the evidence has; whether the split holds is what the run says, and a term built on a vector nobody
-  measured is the defect this file exists to avoid.
-- **A hit is not evidence for the vector.** The 15 correct votes say the rise rule works; they say nothing about
-  whether failure direction predicts the 5 it misses.
+Run `40735156264`, commit `8469cf2`, RE3 — the only suite where the term is on:
+
+```
+RE3 OnlineBoutique  votes=1  hits=0  | truth-pre<500=1 truth-rise<1.15=0 truth-qualified=0
+RE3 SockShop        votes=0  (abstains on all 30)
+RE3 TrainTicket     votes=20 hits=15 | truth-pre<500=0 truth-rise<1.15=5 truth-qualified=0
+```
+
+The five wrong votes, verbatim, because every claim below is a reading of these five lines:
+
+```
+ts-route-service_f2_2  vote=ts-order-other-service pre= 1846 growth=1.16 || truth=ts-route-service pre=12027 growth=0.91
+ts-route-service_f2_3  vote=ts-station-service     pre=22497 growth=1.24 || truth=ts-route-service pre=12261 growth=0.94
+ts-route-service_f3_5  vote=ts-station-service     pre=31957 growth=1.47 || truth=ts-route-service pre=12516 growth=0.82
+ts-route-service_f4_2  vote=ts-station-service     pre=29769 growth=1.24 || truth=ts-route-service pre=12006 growth=0.93
+ts-route-service_f4_3  vote=ts-station-service     pre=35463 growth=1.17 || truth=ts-route-service pre=12114 growth=0.92
+```
+
+All fifteen hits, by contrast, are **one service**: `ts-auth-service` at `pre = 1745–1895`, `growth = 1.17–2.22`.
+
+**Finding 1 — the prediction is refuted on its first half, and the invariant held.** `truth-pre<500 = 0` on
+TrainTicket: not one wrong vote was excluded by the absolute volume floor. The one case that was is Online
+Boutique's `emailservice` at `pre = 122` — a different cell, and its only vote. `truth-qualified = 0` on both
+cells, so this census and the rule still agree about what the rule accepts.
+
+**Finding 2 — all five misses are `truth-rise<1.15`, and the truth's count went DOWN.** 0.82–0.94 on
+`pre ≈ 12 000`, i.e. 700–2 200 spans that the fault removed. The rule's premise — _a source does MORE work per
+request_ — is false on exactly the cases it misses: on TrainTicket's route faults the source does **less**. This
+is the register's own `trace (source ratio < 1)` channel, now counted instead of mentioned: **5 of 5**.
+
+**Finding 3 — `traceRiseFloor` is dead, and the reason is the shape of the two populations.** The misses' absolute
+gains are `+295, +5 399, +7 145, +6 029, +15 020`; eight of the fifteen hits gain only `+309 … +389`. A materiality
+floor high enough to exclude the misses would exclude most of the term's wins, because the misses are not small
+rises at all — they are **large services with modest ratios**, while the hits are small services with large ones.
+
+**What that leaves.** The separating axis is neither rank nor materiality: it is **scale-relative significance**. A
+ratio threshold means different things at different volumes — at 1 800 spans a 17% rise is ~300 spans, at 12 000 a
+7% fall is ~840 — so it is loud for small services and deaf for large ones, and `minPreCount = 500` is a crude
+absolute patch on exactly that deafness. Measuring a count change in units of its own fluctuation (σ ≈ √count on
+independent spans, the Gaussian fluctuation law of the kinetic limit, with the fleet's own drift removed first)
+puts both populations on one axis. That is the next instrument (`[trace-z]`) and it is not built here.
+
+## 7. What this does not license
+
+- **It does not enrol anything.** `traceRiseFloor` was proposed by a census and killed by the run that measured it,
+  before an arm was ever dispatched — which is the outcome the prediction was written down to make possible.
+- **`failedIn`/`failedOut` are not yet read by any term**, and on this corpus they are nearly silent: `+0` on all
+  twenty TrainTicket votes and on the Online Boutique one. A direction term built on a vector that reads zero
+  everywhere would be a term that cannot fire, and that is now a measurement rather than an assumption.
+- **A hit is not evidence for the vector.** The 15 correct votes say the rise rule works on one service; they say
+  nothing about whether failure direction predicts the 5 it misses.
+- **The five misses are not five independent findings.** They are five route-service cases from three fault types
+  (`f2` twice, `f3` once, `f4` twice) and share one mechanism; a rule fitted to them is a rule about route, and the
+  next instrument has to show the axis generalises before any weight moves.
