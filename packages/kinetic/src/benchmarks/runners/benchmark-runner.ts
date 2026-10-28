@@ -29,6 +29,8 @@ import type { BenchmarkCase, BenchmarkSuite } from '../loaders/types.js';
 
 import { toFaultGraphOptions } from './fault-graph-options.js';
 import { computeAvgAtK, computeTA } from './metrics.js';
+import type { RiserVector } from './riser-vector.js';
+import { riserVectorOf } from './riser-vector.js';
 import { caseWeightedMean } from './suite-accuracy.js';
 
 import type { TrainingExample } from '../../signals/weight-calibrator.js';
@@ -326,7 +328,38 @@ export interface CasePrediction {
    * are distinct, so rank 1 identifies one service exactly as the pruner's `=== max` comparison does.
    */
   readonly traceVoteRank?: number | undefined;
+  /**
+   * The evidence that stood BESIDE the rise, for the vote and for the truth.
+   *
+   * `traceVote` says what the rule chose and `traceVoteRank` how loud it was; neither can say why the rule did not
+   * choose the truth. On TrainTicket RE3 it votes 20 of 30 and is right 15, and all five wrong votes became the
+   * top-1 — while the rank histogram kills every rank-shaped explanation (`atMax=2/2`: the two loudest votes are
+   * both correct). What is left is a property of the CANDIDATE: a riser that is a SOURCE does more work per
+   * request, a riser that is a VICTIM is re-routed traffic or a retry storm, and the two differ in the direction
+   * of the failures beside them and in the size of the rise itself.
+   *
+   * Recorded for the truth as well as the vote, because the question is a COMPARISON and one side alone cannot
+   * answer it. Absent when the term cast no vote — there is no candidate to describe — and the truth's side is
+   * absent when the case carries no span counts at all, which is a different statement from a truth that emitted
+   * no spans (see `riserVectorOf`).
+   */
+  readonly traceRiser?: TraceRiserEvidence | undefined;
 }
+
+/**
+ * The two sides of one trace vote: the candidate the rule chose, and the ground truth it did not.
+ *
+ * A pair rather than two fields on {@link CasePrediction} so the two cannot be recorded apart — a vote described
+ * without the truth beside it is a vector nobody compares, which is the state this iteration exists to end.
+ */
+export interface TraceRiserEvidence {
+  /** The winning candidate's rise and failure direction. */
+  readonly vote: RiserVector | undefined;
+  /** The ground truth's, or `undefined` when the truth appears in no span of a case that does carry spans. */
+  readonly truth: RiserVector | undefined;
+}
+
+export type { RiserVector } from './riser-vector.js';
 
 /**
  * The ground truth's own score and the evidence the engine recorded for it, in the engine's own terms.
@@ -783,6 +816,17 @@ export class BenchmarkRunner {
           // And how loud that choice was, because the refinement that acts on the decision — the leader mask —
           // can only act on a vote at rank 1, and its null arm cannot say whether it ever saw one.
           traceVoteRank: anomalyRankIn(faultGraph.anomalyScores, traceVote),
+          // And the evidence that stood BESIDE the rise, for both sides of the decision. Absent without a vote:
+          // the vectors describe a candidate, and a case the rule stayed silent on has none. The truth's own
+          // side is taken from the SAME case input the rule reads, so the comparison the census prints is
+          // between two services on one file rather than between a measurement and an inference.
+          traceRiser:
+            traceVote === undefined
+              ? undefined
+              : {
+                  vote: riserVectorOf(traceVote, benchCase),
+                  truth: riserVectorOf(caseTruth, benchCase),
+                },
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────

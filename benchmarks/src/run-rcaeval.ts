@@ -95,6 +95,12 @@ import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
 import { buildMetricRows } from './rcaeval-metric-rows.js';
+import {
+  accumulateRiser,
+  createRiserCensus,
+  formatRiserCaseLine,
+  formatRiserCensusLine,
+} from './riser-census.js';
 import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
 import {
   accumulateTraceVote,
@@ -1444,6 +1450,24 @@ async function main(): Promise<void> {
     }
     const traceVoteLine = formatTraceVoteLine(traceVote);
     if (traceVoteLine !== undefined) console.log(traceVoteLine);
+
+    // The vote's CANDIDATE, described: the evidence that stood beside the rise, for the vote and for the truth,
+    // plus the attribution of every wrong vote to the guard in the rule that excluded the truth. The census above
+    // scores the decisions; this one explains the wrong ones, which is the question the rank histogram left open
+    // after it killed the mask and the tail-only refinement on the same cell.
+    //
+    // One line per vote, printed for EVERY suite: a cell where the term never votes prints nothing, so the absence
+    // is visible as the absence of the family rather than as a zero somebody has to interpret.
+    const riser = createRiserCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) {
+        const line = formatRiserCaseLine(p);
+        if (line !== undefined) console.log(line);
+        accumulateRiser(riser, p);
+      }
+    }
+    const riserLine = formatRiserCensusLine(riser);
+    if (riserLine !== undefined) console.log(riserLine);
 
     // ── Fusion-ceiling records for this group ──
     // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed

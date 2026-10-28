@@ -73,6 +73,11 @@ export default defineConfig({
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
         'src/trace-vote-census.ts',
+        // Added with the module: the riser census describes the CANDIDATE the trace rule chose and the truth it did
+        // not, and attributes every wrong vote to the guard that excluded the truth. Its whole value is the four
+        // exclusive buckets and the invariant among them (`truth-qualified` must be zero), so every branch is
+        // measured rather than trusted.
+        'src/riser-census.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',
