@@ -503,6 +503,51 @@ orders of magnitude. And its **source is not a paper**: it is a CNCF post with n
 accuracy, so it joins §0c's Project Arena and §0g's Alibaba benchmark in the file's *"publicly stated, not
 reproducible as a number"* class rather than in any table.
 
+### 0i. Two 2026 arrivals on our OWN family that the 2026-10-28 survey added — one with a number, one with a theorem
+
+**1. `TORAI` — `Proc. ACM Softw. Eng. 3, FSE, Article FSE130` (July 2026), DOI `10.1145/3808137`,
+`arXiv:2604.13522`.** Pham, Ha, Xiuzhen Zhang (RMIT) and Hongyu Zhang (Chongqing). *Multi-source Root Cause
+Analysis for Blind Spots in Microservice Service Call Graph.* Read from the ACM record and the arXiv PDF on
+2026-10-28; artifact `figshare 10.6084/m9.figshare.31938495.v1`.
+
+- **The claim is an `Avg@5` and it must be read as one**: **Train-Ticket `Avg@5` 0.89** against `CausalRCA`
+  0.43 and `CIRCA` 0.46, and **Sock Shop at 100% blind spots `Avg@5` 0.94** from metrics and logs alone. That is
+  the **third** reference on this list whose headline is a Top-5 convention (§0a entry 3, §0f entry 1), so **no
+  gap over our `AC@1` can be read from it in either direction** — and this repository's loss is 98.8%
+  reranking, which a Top-5 metric cannot see.
+- **Its mechanism is the one our register has been circling from the other side.** The pipeline is
+  `SeverityScorer` → **GMM clustering of services by severity symptom** → **localised `Ψ-PC` causal discovery
+  inside each cluster** → rank aggregation → median/IQR hypothesis testing. The stated reason for the clustering
+  step is *"clustering prevents causal dilution: running causal discovery on thousands of metrics degrades
+  performance"*. **That is our `GT rank = 33 of 68` problem named by someone else**: a lever that must move one
+  candidate 32 places without moving the 32 above it is a lever fighting a global ranking, and every re-weighting
+  this repository tried on RE3-TrainTicket failed for exactly that reason.
+- **One design choice of theirs is the inverse of ours and worth recording as such**: a missing modality
+  **imputes a score of 0**. Our censuses treat absent as *absent* and refuse to fold it into zero
+  (`trace-riser.md` §3 is the latest statement). Their choice is safe where ours would not be, because they
+  cluster rather than rank globally — a zero inside a cluster of noisy services does not have to be
+  distinguishable from a measurement. Reading the two side by side is the argument for *where* an imputation is
+  admissible.
+
+**2. `BRCD` — `ICML 2026` Spotlight, poster 65359.** *Root Cause Analysis of Failures in Microservices via
+Bayesian Root Cause Discovery.* **Read from a SECONDARY summary on 2026-10-28, not from the poster or a
+preprint** — the primary has not been fetched, and this entry is written to say so rather than to be quoted. As
+summarised: it drops the full-causal-graph requirement, using a **pre-learned PARTIAL graph** with uniform DAG
+sampling and Bayesian inference, and claims the **first statistical consistency guarantee in non-parametric
+root-cause analysis**, evaluated on synthetic benchmarks and Online Boutique with SOTA accuracy under few-shot
+conditions.
+
+- **Filed as a DIRECTION rather than as a number**, for the reason above: no metric, no population and no
+  artifact were verified, so nothing here is a gap in either direction.
+- What it shares with `TORAI` is the 2026 consensus this repository should note without adopting blindly: **the
+  full service call graph is not a reliable input** — `TORAI` removes it, `BRCD` relaxes it to a partial graph.
+  Our engine still ranks on the graph it is handed, and the node set is what makes `RETRIEVAL 10.3%` of RE3's
+  misses unreachable at all. That is the quantity to watch if this direction is ever taken up.
+
+**Neither moves a cell, a rank or a standing.** §0a's entries and §2's leaderboard are unchanged, and the
+`AC@1` column still has no competitor on our population except §0b's.
+
+
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
