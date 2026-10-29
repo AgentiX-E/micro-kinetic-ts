@@ -36,7 +36,7 @@ the same place from the population side, which is why the two are one law with t
 
 Every artefact token `sota-comparison.md` names — an `arXiv:` identifier, a `github.com/OWNER/REPO` URL, an
 `OWNER.github.io/…` project page, a `10.…/zenodo.…` DOI, or a backticked `OWNER/REPO` that is not a path into
-this repository — is **24 tokens as of 2026-10-14**, and the fence in
+this repository — is the table below, one row each, and the fence in
 `packages/kinetic/__tests__/unit/sota-population-claims.test.ts` requires every one of them to have exactly one
 row here. (The prose in `competitor-artefact-availability.md` said 22 while the tree it described named 23; the
 one it was short of, and the project page added here, are both recorded rather than quietly counted again.)
@@ -70,7 +70,7 @@ one it was short of, and the project page added here, are both recorded rather t
 | `arXiv:2606.05636` | **OTHER** | `StableRCA`'s **77%** is Top-1 on **Sock-Shop `[soc, 2022]`** — a standalone corpus its own text lists **separately from RCAEval**, among *"five datasets across retail services, microservices, manufacturing, and physical systems"* (ProRCA, Sock-Shop, RCAEval, CausalMan, CausalChambers). **It is not RE1-SS** and its own text states no case count, so `77%` is not a number of ours and no gap may be read against our 92.8% | 2026-10-14, arXiv HTML full text |
 | `arXiv:2608.25661` | **OTHER** | `OpsHarness`'s **59.0%** is *"top-1 accuracy on average across **four backbones**"* over **OpenRCA**, **RCAEval** *and* an industrial deployment. **RCAEval IS in the mix** — so our corpus is a COMPONENT of the figure and the figure is still not ours: a cross-backbone average over three populations with no per-population number. Below our 78.75% in any case | 2026-10-14, arXiv HTML full text |
 | `arXiv:2610.08622` | **OTHER** | **RESOLVED 2026-10-19 from the paper's own abstract, and the number it reports is not an accuracy at all.** `E4` is *"Agentic RCA for Internet-Scale Services Using Constrained Creativity"*, and its own abstract says it *"achieves up to 62% BETTER accuracy compared to state-of-the-art solutions"* on *"a mix of synthetic and real-world workloads"*. **That `62%` is a RELATIVE improvement over an unnamed baseline, not an absolute top-1 on any corpus** — so there was never a number here to compare with ours, and the record's earlier reading of it as a `62%` accuracy was a misreading of a ratio. Its population is Internet-scale production services with no published case set, so it is neither our corpus nor a measurable one. | 2026-10-19, the paper's own abstract (`arXiv:2610.08622` abs page) |
-
+| `10.11772/j.issn.1001-9081.2026060665` | **OTHER** | `MICA` — *Journal of Computer Applications* 2026; cross-modal attention over metrics/logs/traces, transfer-entropy-weighted causal graph, mixed-expert modality routing, counterfactual validation of the candidate. Evaluated on **GAIA and the standalone TrainTicket corpus, not RCAEval**, and every figure it states is a **delta against MicroRank / SwissLog / MicroRCA / DiagFusion / MicroCause / Sage on those two corpora** — no absolute Top-1 is stated in either abstract, and the two language versions of that abstract assign the SAME six numbers to DIFFERENT metrics — the Chinese text calls them Top-1 and MRR gains, the English calls them MRR and RCL@3 | 2026-10-29, the publisher's own article page (both language abstracts); the full text's per-system table was not reached |
 ## What the verdicts change, stated rather than implied
 
 **One standing moves.** `arXiv:2610.05009` was the only `UNVERIFIED` row whose resolution could change a RANK,
@@ -104,7 +104,7 @@ negative and only one of them is a finding.
 ## What this document does not cover, stated rather than implied
 
 - **It is not an availability inventory.** Whether an artefact RESOLVES, and what it carries, is owned by
-  `docs/competitor-artefact-availability.md` — the same 24 tokens, the other question.
+  `docs/competitor-artefact-availability.md` — the same tokens, the other question.
 - **It does not resolve the three `UNVERIFIED` rows it still holds.** Each names the artefact that would, and
   reading them is work this document schedules rather than performs.
 - **It does not fence the references' AFFILIATIONS.** The fifth entry's institution was stated in five places

@@ -581,6 +581,43 @@ conditions.
 `AC@1` column still has no competitor on our population except §0b's.
 
 
+### 0f. THE 2026-10-29 SURVEY — one new peer-reviewed method, on a population that is not ours, and nothing above us
+
+Four searches this iteration (competitors, evaluation sets, the kinetic-theory literature, and the reference list
+itself) produced **one reference this document had never named**, and it moves no number:
+
+**MICA**, *A multimodal-interaction and causality-aware approach to microservice fault diagnosis*
+(`10.11772/j.issn.1001-9081.2026060665`, *Journal of Computer Applications*, 2026). Cross-modal attention across
+metrics, logs and traces, a **transfer-entropy**-weighted causal graph, a mixed-expert router for modality
+weighting, and counterfactual validation of the candidate source. It reports Top-1 gains over MicroRank,
+SwissLog, MicroRCA, DiagFusion, MicroCause and Sage on **GAIA and the classic TrainTicket corpus** — the standalone
+benchmark, **not RCAEval** — and every figure it states is a **delta against those six baselines on those two
+corpora**. Its verdict is therefore **`OTHER`**: it names a population that is not one of ours, and **no gap may be
+read from it in either direction**.
+
+**And it cannot be read as a Top-1 claim at all, for a reason that is about the paper rather than about us.** No
+absolute accuracy appears in either abstract; every number is a delta; and **the two language versions of that one
+abstract assign the same six numbers to different metrics** — the Chinese calls them `Top-1` and `MRR` gains, the
+English calls them `MRR` and `RCL@3`. A reference whose own two abstracts disagree about which metric its numbers
+belong to is not quotable on any axis, and the row records the disagreement rather than picking the version that
+would read better.
+
+Two parts of it are worth reading rather than citing, and neither is a number:
+
+1. **Transfer entropy as an EDGE weight.** Our `collision` and `topo` terms are both at weight 0, and both are
+   attempts at the same question — which edge carries the fault — so a fourth formulation of that question is a
+   candidate for the axis the register already holds open, not a new term. What MICA adds is that the weight is
+   estimated from the series rather than from the graph's structure, which is the difference between our
+   `topoSource` (structural) and this (statistical).
+2. **Counterfactual validation of the candidate.** It re-runs the diagnosis with the candidate removed and keeps
+   it only if the symptom disappears. This is the one form of `ablation` this repository has never had **inside
+   the engine** — every ablation here is offline, over a corpus — and it is the natural consumer of the same
+   per-case evidence the censuses now print.
+
+**Nothing else moved.** No reference on a population of ours was found that is not already inventoried; the only
+figure above us on the 735 remains the vendor's **89%** (§0a entry 1), which ships no per-case results and cannot
+be reproduced here; and the row for MICA is in `docs/sota-populations.md`.
+
 ## 1. Our result — re-anchored 2026-10-29 on run `40792623427` at `ea47db5` (identical to `3d054ad`'s cells)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
