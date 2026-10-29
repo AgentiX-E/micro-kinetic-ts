@@ -16,7 +16,14 @@
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"]
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/__tests__/**/*",
+        "{projectRoot}/*.ts",
+        "{projectRoot}/tsconfig.json",
+        "{workspaceRoot}/tsconfig.base.json",
+        "{workspaceRoot}/tsconfig.workspace.json"
+      ]
     },
     "test": {
       "dependsOn": ["build"],

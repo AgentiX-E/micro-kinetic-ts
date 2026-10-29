@@ -80,6 +80,22 @@ function cliConfig(project: string): string {
 
 const WORKSPACE_CONFIG = 'tsconfig.workspace.json';
 const PROJECT = 'benchmarks';
+
+/**
+ * The directories nx gives a `typecheck` target to, read from the tree's manifests.
+ *
+ * Module-level because two blocks below need the same population, and a second copy would be free to
+ * disagree with the first about which projects are legs.
+ *
+ * @returns Project directories, repository-relative, sorted.
+ */
+function legDirectories(): string[] {
+  const packages = readdirSync(path.join(REPO, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => `packages/${entry.name}`);
+  return [...packages, 'benchmarks', 'integration-tests'].sort();
+}
+
 /** One file from each of the trees in dispute, so every assertion below has a named subject. */
 const BENCHMARK_TEST = `${PROJECT}/__tests__/fse26-diagnose-analyze.test.ts`;
 const BENCHMARK_SOURCE = `${PROJECT}/src/fse26-diagnose-analyze.ts`;
@@ -195,14 +211,6 @@ describe('no TypeScript file in this repository is read by no compiler', () => {
     return found;
   }
 
-  /** The directories nx gives a `typecheck` target to, read from the tree's manifests. */
-  function legDirectories(): string[] {
-    const packages = readdirSync(path.join(REPO, 'packages'), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => `packages/${entry.name}`);
-    return [...packages, 'benchmarks', 'integration-tests'].sort();
-  }
-
   /**
    * Every config `pnpm typecheck` compiles.
    *
@@ -275,5 +283,118 @@ describe('no TypeScript file in this repository is read by no compiler', () => {
     for (const script of scripts) expect(workspace, script).toContain(script);
     // And the root config, which is what replaced the deprecated workspace file this fence found.
     expect(workspace).toContain('vitest.config.ts');
+  });
+});
+
+/**
+ * A leg that compiles a file its CACHE KEY cannot see is a leg that reports the previous tree.
+ *
+ * **Why this fence exists.** Measured 2026-10-29: `nx.json`'s `typecheck` target declared its inputs as the
+ * project's `src` tree plus its `tsconfig.json` — and nothing else. A commit whose only defect was a bad
+ * cast inside `benchmarks/__tests__/fse26-cli.test.ts` therefore left the hash unchanged, `nx` replayed a
+ * cached success, and **`pnpm verify` exited 0 on a tree that CI rejected** (`error TS2352`, run
+ * `40896401099`). The compiler's own file list is the population a typecheck leg covers, so the property
+ * enforced here is stated against that list rather than against a pattern somebody hoped was wide enough:
+ * **every file a leg compiles is matched by at least one of the input globs its cache key is built from.**
+ *
+ * The reverse direction is asserted too, because the two targets fail differently: a `test` leg whose inputs
+ * miss the sources would replay a suite over a changed engine.
+ */
+describe('every file a leg compiles is inside the cache key that gates it', () => {
+  /** The glob vocabulary `nx.json` uses. A pattern outside it fails {@link matcher} rather than being guessed. */
+  function matcher(glob: string): RegExp {
+    let out = '';
+    for (let i = 0; i < glob.length; i++) {
+      const char = glob[i]!;
+      if (char === '*') {
+        if (glob[i + 1] === '*') {
+          // `/**/x` swallows the separator, `/x` matches at the root too; a trailing `/**` matches anything.
+          if (glob[i + 2] === '/') {
+            out += '(?:.*/)?';
+            i += 2;
+          } else {
+            out += '.*';
+            i += 1;
+          }
+        } else {
+          out += '[^/]*';
+        }
+      } else if ('\\^$.|?+()[]{}'.includes(char)) {
+        out += `\\${char}`;
+      } else {
+        out += char;
+      }
+    }
+    return new RegExp(`^${out}$`);
+  }
+
+  it('matches the vocabulary it claims to, so the matcher is fenced before it is trusted', () => {
+    // Three patterns and two refusals each. Without this the fence above could be satisfied by a matcher
+    // that accepts everything — the same defect as a glob list that accepts everything.
+    expect(matcher('src/**/*').test('src/a.ts')).toBe(true);
+    expect(matcher('src/**/*').test('src/deep/a.ts')).toBe(true);
+    expect(matcher('src/**/*').test('__tests__/a.ts')).toBe(false);
+    expect(matcher('*.ts').test('vitest.config.ts')).toBe(true);
+    expect(matcher('*.ts').test('src/a.ts')).toBe(false);
+    expect(matcher('__tests__/**/*').test('__tests__/unit/a.test.ts')).toBe(true);
+  });
+
+  const nxConfig = (): {
+    targetDefaults: Record<string, { inputs?: string[] }>;
+  } =>
+    JSON.parse(readFileSync(path.join(REPO, 'nx.json'), 'utf-8')) as {
+      targetDefaults: Record<string, { inputs?: string[] }>;
+    };
+
+  it('declares inputs for both cacheable gates, and they are globs rather than a file list', () => {
+    const { targetDefaults } = nxConfig();
+    for (const target of ['typecheck', 'test']) {
+      const inputs = targetDefaults[target]?.inputs ?? [];
+      expect(inputs.length, `${target} declares no inputs`).toBeGreaterThan(0);
+      expect(
+        inputs.some((input) => input.includes('*')),
+        `${target}'s inputs are not globs`,
+      ).toBe(true);
+    }
+  });
+
+  it('covers every file each project leg compiles, and names the ones it does not', () => {
+    const { targetDefaults } = nxConfig();
+    const inputs = targetDefaults['typecheck']?.inputs ?? [];
+    const substituted = inputs.map((input) => input.split('{projectRoot}/').join(''));
+    const problems: string[] = [];
+
+    for (const dir of legDirectories()) {
+      const manifest = path.join(REPO, dir, 'package.json');
+      if (!existsSync(manifest)) continue;
+      const parsed = JSON.parse(readFileSync(manifest, 'utf-8')) as {
+        scripts?: Record<string, string>;
+      };
+      if (parsed.scripts?.['typecheck'] === undefined) continue;
+
+      for (const file of compiledFiles(`${dir}/tsconfig.json`)) {
+        // A file outside the project (`packages/tree` compiles `../kinetic/src/signals`) is not the input
+        // list's job: `dependsOn: ["^build"]` puts the DEPENDENCY's build output in this target's hash, so a
+        // change there already invalidates the key.
+        if (!file.startsWith(`${dir}/`)) continue;
+        const inside = file.slice(dir.length + 1);
+        if (!substituted.some((glob) => matcher(glob).test(inside))) {
+          problems.push(`${dir}: ${inside}`);
+        }
+      }
+    }
+
+    expect(problems, `compiled but outside the cache key: ${problems.join(', ')}`).toEqual([]);
+  });
+
+  it('has the suite leg see BOTH halves, so neither engine nor test edit replays a stale verdict', () => {
+    const { targetDefaults } = nxConfig();
+    const inputs = (targetDefaults['test']?.inputs ?? []).map((input) =>
+      input.split('{projectRoot}/').join(''),
+    );
+    // Named explicitly: these two are the halves a change alternates between, and a key that sees only one
+    // of them is the defect this whole block is about.
+    expect(inputs.some((glob) => matcher(glob).test('src/index.ts'))).toBe(true);
+    expect(inputs.some((glob) => matcher(glob).test('__tests__/unit/a.test.ts'))).toBe(true);
   });
 });

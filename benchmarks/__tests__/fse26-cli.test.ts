@@ -660,7 +660,7 @@ describe("the FSE'26 half's two mode flags", () => {
     // ranking signal, not a fault-graph setting, and placing it in `topology` would be the silent no-op the
     // two-object split exists to make visible.
     const signals = buildFse26EngineOptions(parseFSE26Args(['--dual-family-gate-mode', 'neither']))
-      .signals as Record<string, unknown>;
+      .signals as unknown as Record<string, unknown>;
     expect(signals.dualFamilyGateMode).toBe(DEFAULT_DUAL_FAMILY_GATE_MODE);
   });
 });
