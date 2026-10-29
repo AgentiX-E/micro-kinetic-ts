@@ -781,3 +781,74 @@ of nine cells read `NO-POINTS ... (0 usable)` — inviting a reader to conclude 
 failed, when nothing had arrived to measure. The count is now scoped to the two **cross-view** levels, which are the
 only ones whose claim is about usability.
 
+
+---
+
+## 9. How many CLASSES the benchmark has — the ledger's own answer, and the floor under every published number
+
+**Added in iteration 153. Owner of no new script: the instrument is the loss census that every run already writes.**
+
+`arXiv:2609.27069` (2026-09-22) audits RCAEval and reports two properties that "condition any result on it". Its
+first is a claim about the *label space*, and it re-prices every accuracy ever printed on this corpus, ours
+included:
+
+> RCAEval injects faults into only five services per system while exposing 12 to 70 in telemetry, and the headline
+> metric is Avg@5: a ranker reading no telemetry at all places the true culprit in the top five on 99.7 percent of
+> held-out incidents, scoring Avg@5 0.488. That prior, not the uniform-random 0.137, is the honest
+> in-distribution floor, and it collapses to 0.192 across systems.
+
+**This repository's own artifact confirms it, and the confirmation is exact rather than approximate.** The loss
+census records one row per case with its ground truth, so the label space is readable from the 735 rows of run
+`40803879406` at `24dc3bc` — no new instrument, no new dispatch:
+
+| cell | n | distinct truths | the label distribution | majority-class Top-1 floor | ours | gap | candidates exposed (median) |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 85.6% | +65.6 | 10 |
+| RE1:SockShop | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 92.8% | +72.8 | 14 |
+| RE1:TrainTicket | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 83.2% | +63.2 | 64 |
+| RE2:OnlineBoutique | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 88.9% | +68.9 | 9 |
+| RE2:SockShop | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 94.4% | +74.4 | 13 |
+| RE2:TrainTicket | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 83.3% | +63.3 | 68 |
+| RE3:OnlineBoutique | 30 | 4 | 15 / 9 / 3 / 3 | **50.0%** | 80.0% | +30.0 | 9 |
+| RE3:SockShop | 30 | 3 | 12 / 9 / 9 | **40.0%** | 60.0% | +20.0 | 13 |
+| RE3:TrainTicket | 30 | 2 | 15 / 15 | **50.0%** | 63.3% | +13.3 | 68 |
+| **735** | 735 | — | per-cell priors | **23.27%** | **85.44%** | +62.17 | — |
+
+Three findings, and the first two are not the paper's:
+
+1. **RE1 and RE2 are five-way and perfectly BALANCED.** Every one of those six cells has exactly 5 truths at
+   exactly equal frequency (25 each on RE1, 18 each on RE2). So on 645 of the 735 cases — 87.8% of the corpus — a
+   prior buys **nothing** over chance: the majority floor and the uniform floor are the same 20%. This is the
+   strongest validity statement this corpus can make in our favour, and it is a property of the *dataset*, not of
+   our ranking: on those cells the task is genuinely 5-way, and 20% is the price of not reading the telemetry.
+2. **RE3 is neither balanced nor five-way, and that is where the honest floor is high.** TrainTicket exposes two
+   truths at 15 each, SockShop three at 12/9/9, OnlineBoutique four at 15/9/3/3. A constant answer therefore
+   scores **50.0 / 40.0 / 50.0%** on the three cells that carry our weakest numbers — so `RE3:SockShop 60.0%` is
+   +20.0 over a prior, not +60, and `RE3:TrainTicket 63.3%` is +13.3. **Those two cells cannot carry a SOTA claim
+   on their own**, and any competitor number on them inherits the same floor.
+3. **`Avg@5` is degenerate on this corpus, and this is arithmetic rather than opinion.** Every cell has at most 5
+   distinct truths, so a *constant* top-5 naming the cell's five truths scores Avg@5 **100.0% on all 735 cases**.
+   The paper's 99.7 / 0.488 is the version of that number a ranker who does not know the label set can reach; with
+   the label set known it is 1.000. A metric with a 1.000 ceiling reachable without reading any telemetry cannot
+   rank two methods, which is why this repository reports **Top-1**, whose per-cell floors are the column above.
+
+**The cross-system collapse the paper reports is also visible in our label sets**, and the mechanism is the one it
+names: the three systems' truth sets are disjoint (OnlineBoutique's five, SockShop's five, TrainTicket's five share
+no service name), so a prior fitted on one system scores 0 on another — `0.192` against `0.488`. Our own artifacts
+say the same thing from the other side: the trace term's fifteen hits on RE3-TrainTicket are *all*
+`ts-auth-service`, i.e. one of that cell's two truths, and its five misses are all the other one. A term that
+recovers the prior within a cell, and nothing across cells, is exactly what a prior-driven benchmark rewards.
+
+### 9.1 What this does not license
+
+- **It does not lower any published number.** 85.44% Top-1 on 735 cases stands, and the floors above are beside it
+  rather than subtracted from it. A 5-way problem still has to be solved by reading telemetry, and 20% is what
+  comes for free.
+- **It does not say RE3 is small.** It says RE3 is *prior-heavy*: 90 cases over 2–4 truths with an imbalanced
+  distribution. That is a property to report, not an excuse — and it is why the RE3 row of every comparison table
+  in this repository should carry its floor in the same line from now on.
+- **It says nothing against `Avg@5` as a metric in general.** It says `Avg@5` on a corpus whose label set has five
+  members cannot separate methods, which is a property of this corpus's label cardinality.
+- **The floors are conventions, not measurements of a method.** "Majority class" is the strongest constant
+  predictor on a Top-1 metric; a competitor's `Avg@5 0.488` is the strongest constant top-5 a *blind* predictor
+  reaches. Both are computed from the ledger, and the ledger is a dataset fact.

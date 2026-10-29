@@ -618,6 +618,30 @@ Two parts of it are worth reading rather than citing, and neither is a number:
 figure above us on the 735 remains the vendor's **89%** (§0a entry 1), which ships no per-case results and cannot
 be reproduced here; and the row for MICA is in `docs/sota-populations.md`.
 
+## 0g. The floor under every number in this document — added 2026-10-29
+
+Every figure below is **Top-1 accuracy on a corpus whose label space has two to five members per cell**, and that
+is not an incidental property: it re-prices the comparison in both directions. The label distribution was read
+from this repository's own 735 loss-census rows and is tabulated in
+`docs/benchmark-corpus-completeness.md` §9. Three consequences apply to every row of every table in this document:
+
+| cells | label space | strongest constant Top-1 | what it means for the comparison |
+| --- | --- | ---: | --- |
+| RE1 ×3, RE2 ×3 (645 cases) | 5 truths, **perfectly balanced** | 20.0% | a prior buys nothing over chance; the task is genuinely 5-way |
+| RE3:TrainTicket (30) | 2 truths (15 / 15) | **50.0%** | a constant answer scores half the cell |
+| RE3:SockShop (30) | 3 truths (12 / 9 / 9) | **40.0%** | — |
+| RE3:OnlineBoutique (30) | 4 truths (15 / 9 / 3 / 3) | **50.0%** | — |
+| whole corpus (735) | per-cell priors | **23.27%** | — |
+
+So a competitor's Top-1 on RE3 must be read against 40–50%, not against 0%; and any `Avg@5` on this corpus must be
+read against a ceiling of **100%**, because a constant top-5 holding a cell's truths covers all 735 cases — which
+is why this repository's headline metric is Top-1 and why an `Avg@5` figure in a comparison row is annotated
+rather than ranked.
+
+This does not lower our published 85.44% and does not raise a competitor's: it states the floor each number was
+measured above. The two RE3 cells with the largest headline gap to the leaders (SockShop, TrainTicket) are exactly
+the two whose floors are highest, and that coincidence is the reason this section exists.
+
 ## 1. Our result — re-anchored 2026-10-29 on run `40792623427` at `ea47db5` (identical to `3d054ad`'s cells)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
