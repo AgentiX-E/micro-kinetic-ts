@@ -76,9 +76,52 @@ The corpus's own gap is what makes a floor findable at all. Over both RE3 cells'
 non-source share measured is `4.3` and the smallest source share is `10.7` — a 2.5× empty interval. A floor
 inside it is a statement about the data; a floor outside it is a fitted constant.
 
+## 3a. The upper bound, resolved from the loss census
+
+The bound was not left to the next arm. The run that produced the sweep also wrote a loss census, and that record
+carries each case's full ranking — so "hands the case back to the rest of the ranking" is answerable case by case
+without changing the rule:
+
+| case | vote | share | truth's rank | after withdrawing the unit |
+| --- | --- | --- | --- | --- |
+| `re3tt_ts-route-service_f2_3` | `ts-station-service` | 1.25 | **2 / 68** | truth promoted → **win** |
+| `re3tt_ts-route-service_f4_2` | `ts-station-service` | 1.28 | **2 / 68** | truth promoted → **win** |
+| `re3tt_ts-route-service_f2_2` | `ts-order-other-service` | 1.26 | 13 / 68 | unchanged |
+| `re3tt_ts-route-service_f3_5` | `ts-station-service` | 1.85 | 6 / 68 | unchanged |
+| `re3tt_ts-route-service_f4_3` | `ts-station-service` | 1.26 | 20 / 68 | unchanged |
+| `re3ob_emailservice_f4_1` | `checkoutservice` | 1.15 | 2 / 9 | **unresolved** — 9 nodes is below the rank-normalisation threshold of 20, so a unit is not the whole gap |
+
+Two cases are won by arithmetic, three cannot move, and one is undecidable from the record because an
+un-normalised score is not bounded by 1. So the floor's expected value is **+2 cases on RE3's 90**, with a third
+possible — and the term's own ablation row becomes the clean reading it could not be before: 15 votes, 15 hits, no
+debit.
+
+The two winning rows share a shape worth naming, because it inverts the term's premise: on a `ts-route-service`
+fault the truth **falls** (0.91–0.94) and the fleet is flat (0.79–0.99), so the unique riser is not a silent
+source at all — it is re-routed traffic, and the vote was paying for the victim's signature. The fifteen hits have
+the opposite shape: the truth holds its counts while the fleet loses 92% of its spans.
+
+## 3b. What shipped
+
+`minFleetShare = 2` is now a default of the trace rule (`DEFAULT_TRACE_ACTIVITY_OPTIONS`), the fourth threshold
+beside `minPreCount`, `minPostCount` and `riseThreshold`, and `0` disables it. It is inert on RE1 and RE2 for two
+independent reasons — the term's weight is 0 there *and* the corpus supplies no span counts at all
+(`[trace-vote] cases=125 votes=0 abstained=125` on RE1, the same on RE2) — so the shipped nine cells can only move
+on the two RE3 cells where the vote exists.
+
+`2` is the smallest integer above the largest measured miss (1.85) and far below the smallest measured hit (10.56);
+every value in `[2, 10]` classifies all twenty-one votes identically and the four-floor sweep returned
+byte-identical counts. The value is an interpolation across a 5.7× gap, not a fit to the sample — which is the
+distinction the sweep exists to make checkable.
+
+The estimator is not restated: `traceFleetDrift` lives in `packages/tree` and `traceSignificanceOf` — the
+`[trace-z]` instrument — calls it, so the artifact printed beside a vote cannot report a baseline the rule never
+saw.
+
 ## 4. What this does not license
 
-- **It enrols nothing.** The rule is untouched, and the census reads only `traceRiser.vote.growth` and
+- **It was a census before it was a rule.** The rule changed only after the sweep returned identical counts at four
+  floors *and* the loss census resolved the upper bound; the census reads `traceRiser.vote.growth` and
   `traceSignificance.drift`, both of which the runner already recorded for other instruments.
 - **It is not a new term.** The trace term keeps its binary form; this asks where its single decision should be
   allowed to stand, not how much it should be worth.
@@ -88,6 +131,9 @@ inside it is a statement about the data; a floor outside it is a fitted constant
 - **A share is not a direction.** `share` says the candidate's work moved differently from everyone else's; it
   does not say the fault moved it. On this corpus the failure-direction vector is `+0` on all twenty votes, so
   the attribution still rests on the metric axis.
+- **A fleet of one cannot vote.** The median of a single member is that member, so the quotient is 1 and the vote
+  is withheld by the arithmetic rather than by a special case — a rise with no fleet around it is a claim about a
+  baseline that does not exist. This is not a tuned constant and there is no population floor beside it.
 
 ## 5. Where the numbers come from
 

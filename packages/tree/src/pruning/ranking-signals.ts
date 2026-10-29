@@ -1072,7 +1072,7 @@ export function computeDeepestExceptions(
  * The signal's job is to name the UNIQUE silent-source service with high
  * confidence, and stay NEUTRAL (empty map) otherwise — a false positive on a
  * route/latency fault (whose GT does not rise) is worse than no signal, since
- * the other causal priors already rank such cases. The three thresholds are
+ * the other causal priors already rank such cases. The four thresholds are
  * tuned against the measured TrainTicket RE3 span counts (see the signal's
  * documentation for the empirical basis).
  */
@@ -1096,6 +1096,38 @@ export interface TraceActivityOptions {
    * Default 1.15.
    */
   readonly riseThreshold: number;
+  /**
+   * Minimum `growth / drift` — how many times the FLEET's own median move the
+   * candidate has to rise — for the vote to be cast. Default 2; `0` disables
+   * the test, so `growth / drift >= 0` holds always.
+   *
+   * A rise is evidence only against a baseline, and until this option existed
+   * the only baseline was the absolute threshold above. That made the vote deaf
+   * to the one thing the measured corpus actually separates on: the fleet's own
+   * move. On the twenty-one TrainTicket/OnlineBoutique RE3 votes the rise does
+   * NOT separate the hits from the misses — 1.16 appears on both sides — while
+   * the fleet's median move does, by a factor of more than five:
+   *
+   * - 15 hits: `growth` 1.17–2.22 with the fleet at `drift` 0.05–0.11, so the
+   *   candidate rose 10.6–38.2 times the fleet's median. Every service around
+   *   it collapsed; this one did more work per request. That is the signature.
+   * - 6 misses: `growth` 1.15–1.47 with the fleet at 0.79–1.04, so the quotient
+   *   is 1.15–1.85. Nothing distinguishes the candidate from ordinary churn —
+   *   the "unique riser" is the ordinary spread of a busy fleet.
+   *
+   * The second population is not hypothetical: four of the five TrainTicket
+   * misses are `ts-station-service` on route faults, and two of those six cases
+   * had the truth at rank 2, i.e. the wrong vote was the ONLY thing between the
+   * engine and a correct answer. A term that charges a full unit for a rise the
+   * fleet also made is charging for noise.
+   *
+   * `2` is the smallest integer above the largest measured miss (1.85) and well
+   * below the smallest measured hit (10.56); every value in [2, 10] classifies
+   * all twenty-one votes identically, and a four-floor sweep at
+   * 2/3/5/8 returned byte-identical vote counts. The value is therefore an
+   * interpolation across a 5.7× gap, not a fit to the sample.
+   */
+  readonly minFleetShare: number;
 }
 
 /** Default thresholds for {@link computeTraceActivityScores}. */
@@ -1103,6 +1135,7 @@ export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
   minPreCount: 500,
   minPostCount: 1,
   riseThreshold: 1.15,
+  minFleetShare: 2,
 };
 
 /**
@@ -1142,6 +1175,23 @@ export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
  * `{candidate: 1}` only when EXACTLY ONE candidate exists, otherwise an empty
  * map (neutral). This is the binary dual of {@link gatedRiseContribution}'s
  * three-state gate: here a single high-confidence vote, not a graded reward.
+ *
+ * The unique candidate must then also clear `minFleetShare`: its growth divided
+ * by the FLEET's median growth (`drift`, the unweighted median of `post / pre`
+ * over every measured member — the same estimator the `[trace-z]` instrument
+ * reports) must be at least the configured factor. This is the third term of
+ * one test rather than a second mechanism: "did it rise" (absolute),
+ * "did anything else rise" (uniqueness), "did it rise more than the fleet"
+ * (contrast). Uniqueness alone is the weak form of the third — it asks only
+ * whether a second service crossed a FIXED threshold, which on a churning fleet
+ * is a coin flip, and the measurement says exactly that: the five TrainTicket
+ * route misses all have a unique riser and all have it wrong.
+ *
+ * The contrast is skipped when `drift` is not positive, which happens only when
+ * at least half the measured fleet emitted nothing after the injection. The
+ * quotient has no rate to divide by there, and a service that rose while the
+ * fleet went to zero is the one case where the absolute rise is all the
+ * evidence there is. No vote in the measured corpus takes this arm.
  *
  * ## Silent-source condition
  *
@@ -1188,21 +1238,24 @@ export function computeTraceActivityScores(
   const scores = new Map<ServiceId, number>();
   if (!counts || counts.size === 0 || nodeIds.size === 0) return scores;
 
-  const { minPreCount, minPostCount, riseThreshold } = {
+  const { minPreCount, minPostCount, riseThreshold, minFleetShare } = {
     ...DEFAULT_TRACE_ACTIVITY_OPTIONS,
     ...options,
   };
 
   let candidate: ServiceId | undefined;
   let candidateCount = 0;
+  let candidateGrowth = 0;
   for (const nodeId of nodeIds) {
     const c = counts.get(nodeId);
     if (!c) continue;
     if (c.pre < minPreCount || c.post < minPostCount) continue;
     if (c.pre <= 0) continue;
-    if (c.post / c.pre < riseThreshold) continue;
+    const growth = c.post / c.pre;
+    if (growth < riseThreshold) continue;
     candidateCount++;
     candidate = nodeId;
+    candidateGrowth = growth;
   }
 
   // Only a UNIQUE qualifying riser is a confident silent-source vote; zero or
@@ -1217,8 +1270,57 @@ export function computeTraceActivityScores(
   // loader), so the silent wrong-value source still receives the vote.
   if (logicExceptionServices.size > 0) return scores;
 
+  // CONTRAST gate: a rise is evidence only against the fleet that did not rise.
+  // `drift` is the unweighted median of `post / pre` over the measured members,
+  // which is the estimator the `[trace-z]` instrument reports for the same
+  // case, so the two cannot disagree about what the fleet did. A candidate that
+  // rose no more than the fleet's median move is ordinary churn wearing the
+  // rise's clothes, and the measured corpus has six of those.
+  const drift = traceFleetDrift(counts, nodeIds);
+  if (drift > 0 && candidateGrowth / drift < minFleetShare) return scores;
+
   scores.set(candidate, 1);
   return scores;
+}
+
+/**
+ * The fleet's common-mode drift: the unweighted median of `post / pre` over
+ * every graph member that emitted a span before the injection.
+ *
+ * One observation per SERVICE and not per span, so a single service's deviation
+ * — however large that service is — moves the estimate by one vote. A volume
+ * ratio (`Σpost / Σpre`) would let the fault's own service, which on TrainTicket
+ * carries a large share of the fleet's spans, absorb its own fall into the
+ * denominator.
+ *
+ * The population and both exclusions are the ones the `[trace-z]` instrument
+ * applies, and this function is that instrument's estimator rather than a copy
+ * of it: `traceSignificanceOf` calls it, so the vote and the artifact printed
+ * beside it cannot disagree about what the fleet did. A service the graph does
+ * not carry cannot be ranked, so measuring it here would let an unrankable
+ * service move every ranked one's baseline; and `post / 0` is not a level of
+ * anything, so a member without a baseline carries no estimate to vote with.
+ *
+ * @param counts - Per-service pre/post span counts; absent or empty means no
+ *   trace file was read.
+ * @param nodeIds - Services present in the call graph.
+ * @returns The median ratio, or `NaN` when no member carries a pre-injection
+ *   baseline. `NaN` rather than `0`: a fleet with no rate and a fleet that
+ *   stopped are different findings, and only the second is a level.
+ */
+export function traceFleetDrift(
+  counts: ReadonlyMap<ServiceId, TraceActivityCounts> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): number {
+  if (counts === undefined) return Number.NaN;
+  const ratios: number[] = [];
+  for (const nodeId of nodeIds) {
+    const c = counts.get(nodeId);
+    if (c === undefined || c.pre <= 0) continue;
+    ratios.push(c.post / c.pre);
+  }
+  if (ratios.length === 0) return Number.NaN;
+  return medianOfRange(Float64Array.from(ratios), 0, ratios.length);
 }
 
 /**

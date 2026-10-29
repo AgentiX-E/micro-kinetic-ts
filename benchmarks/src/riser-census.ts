@@ -24,15 +24,23 @@
  *
  * ## The attribution, and the invariant in it
  *
- * The rule's candidate test is three conditions in a fixed order: `pre >= minPreCount`, then `post/pre >=
- * riseThreshold`, then uniqueness (and a case-level `logicExceptionServices` gate). A wrong vote means the truth
- * failed one of the first two — if the truth had passed both it would have been a candidate, so either it would
- * have been the vote (a hit) or there would have been two candidates and no vote at all.
+ * The rule has two stages. A service is a CANDIDATE iff `pre >= minPreCount`, `post/pre >= riseThreshold` (and it
+ * emitted a baseline at all); a vote is cast iff EXACTLY ONE candidate exists, the case is silent (no self-caused
+ * logic exception anywhere in the graph), and the candidate out-rises the fleet's median by `minFleetShare`. A
+ * wrong vote therefore means the truth failed one of the first two conditions — if the truth had passed both it
+ * would have been a candidate, so either it would have been the vote (a hit) or there would have been two
+ * candidates and no vote at all.
  *
- * The census therefore walks the SAME two guards in the SAME order, and prints a bucket for each, plus
- * `truth-qualified`: wrong votes whose truth met both. That bucket **must be zero**, and printing it is how the
- * two implementations stay tied — a non-zero value would mean the rule and this census disagree about what the
- * rule accepts, which is a defect in one of them and not a finding about the corpus.
+ * The census walks the SAME two guards in the SAME order, and prints a bucket for each, plus `truth-qualified`:
+ * wrong votes whose truth met both. That bucket **must be zero**, and printing it is how the two implementations
+ * stay tied — a non-zero value would mean the rule and this census disagree about what the rule accepts, which is
+ * a defect in one of them and not a finding about the corpus.
+ *
+ * The fleet contrast deliberately does NOT get a bucket here, and the reason is structural rather than an
+ * omission: it is a test on the CANDIDATE, so it can only remove a vote, never explain a wrong one. A wrong vote
+ * already means the truth was not a candidate, and a truth that is not a candidate never reaches the contrast.
+ * Filing such cases under a fourth bucket would move cases out of an invariant that must stay zero into a bucket
+ * that cannot be violated — the census would stop being able to detect the disagreement it exists to detect.
  *
  * The thresholds are imported rather than written into the labels, so a change to the rule's own default cannot
  * leave this artifact naming a number the rule no longer uses.

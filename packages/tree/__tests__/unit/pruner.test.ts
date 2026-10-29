@@ -1337,9 +1337,13 @@ describe('TreePruner', () => {
       B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
       C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
     });
-    // A is the UNIQUE significant span-count riser (pre 500, post 600 → 1.2×).
+    // A is the UNIQUE significant span-count riser (pre 500, post 600 → 1.2×), and the fleet COLLAPSES around it
+    // (B and C fall to a tenth of their pre-injection counts): the rule's third test reads the candidate against
+    // the fleet's median move, so the fixture has to carry the fleet it is judged against.
     const traceActivity = new Map<string, { pre: number; post: number }>([
       ['A', { pre: 500, post: 600 }],
+      ['B', { pre: 1000, post: 100 }],
+      ['C', { pre: 1000, post: 100 }],
     ]);
 
     it('emits a vote for the unique riser when the case is silent (no logic exception)', () => {
@@ -1412,8 +1416,18 @@ describe('TreePruner', () => {
       QUIET: [1, 1, 1, 1, 1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
       OTHER: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     });
-    const voteFor = (service: string) =>
-      new Map<string, { pre: number; post: number }>([[service, { pre: 500, post: 600 }]]);
+    const voteFor = (service: string) => {
+      // The fleet COLLAPSES around the voted service. A lone measurement has no fleet to be contrasted with — the
+      // median of one member is that member, so the quotient is 1 — and the rule requires the candidate to
+      // out-rise the fleet's median move, so a single-entry map casts no vote at all.
+      const entries: Array<[string, { pre: number; post: number }]> = [
+        [service, { pre: 500, post: 600 }],
+      ];
+      for (const other of ['LOUD', 'QUIET', 'OTHER']) {
+        if (other !== service) entries.push([other, { pre: 1000, post: 100 }]);
+      }
+      return new Map<string, { pre: number; post: number }>(entries);
+    };
 
     const traceOf = (service: string, vote: Record<string, unknown>) =>
       new TreePruner({ traceWeight: 1, ...vote }).buildFaultGraph(callGraph, metrics, {

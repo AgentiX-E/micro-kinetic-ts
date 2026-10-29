@@ -52,6 +52,7 @@
  */
 
 import type { TraceActivityCounts } from '@agentix-e/micro-kinetic-core';
+import { traceFleetDrift } from '@agentix-e/micro-kinetic-tree';
 
 /** One service's count change, normalised by its own fluctuation. */
 export interface ServiceSignificance {
@@ -116,15 +117,18 @@ export function traceSignificanceOf(input: TraceSignificanceInput): TraceSignifi
   // it here would report a significance no term could spend, and counting it in the drift would let an unrankable
   // service move every ranked one's baseline. A zero baseline is excluded for a different reason: `post / 0` is not
   // a level of anything, so such a service carries no estimate to vote with.
-  const measured: { service: string; pre: number; post: number; ratio: number }[] = [];
+  const measured: { service: string; pre: number; post: number }[] = [];
   for (const nodeId of input.nodeIds) {
     const c = counts.get(nodeId);
     if (c === undefined || c.pre <= 0) continue;
-    measured.push({ service: nodeId, pre: c.pre, post: c.post, ratio: c.post / c.pre });
+    measured.push({ service: nodeId, pre: c.pre, post: c.post });
   }
   if (measured.length === 0) return undefined;
 
-  const drift = median(measured.map((m) => m.ratio));
+  // The estimator is `packages/tree`'s, and that is a correctness requirement rather than a refactor: the trace
+  // VOTE gates on the same quotient, so a second median here would let this artifact print a baseline the rule
+  // never saw — and the census that reads this line to explain a wrong vote would be explaining the wrong number.
+  const drift = traceFleetDrift(counts, input.nodeIds);
   // A zero drift means the median service emitted nothing after the injection: the axis has no rate to normalise
   // against, and every `z` would be `0 / 0`. Absent rather than zero, because "no rate" and "no deviation" are
   // different findings and only the second is a level.
@@ -147,20 +151,6 @@ export function traceSignificanceOf(input: TraceSignificanceInput): TraceSignifi
   let louder = 0;
   for (const e of entries) if (Math.abs(e.z) > Math.abs(truth.z)) louder += 1;
   return { drift, ranked: entries, truth, truthRank: 1 + louder };
-}
-
-/**
- * The median of a sample, by the textbook convention: an even sample averages its two middle members.
- *
- * @param values - A non-empty sample.
- * @returns The median.
- */
-function median(values: readonly number[]): number {
-  const ordered = [...values].sort((a, b) => a - b);
-  const middle = ordered.length >> 1;
-  if (ordered.length % 2 === 1) return ordered[middle] as number;
-  // Both are defined: the caller guarantees a non-empty sample, and an even one has at least two members.
-  return (((ordered[middle - 1] as number) + (ordered[middle] as number)) / 2) as number;
 }
 
 /**

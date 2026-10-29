@@ -34,13 +34,19 @@
  * Four are simulated instead, and the decision is read off the pair `withdrawn` against `surrendered`: a floor that
  * withdraws votes and gives up none of them is free, and the widest gap between the highest non-source share
  * (4.3 on this corpus) and the lowest source share (10.7) is where a floor should sit. This census produces that
- * arithmetic; it enrols nothing, and the term's own rule is untouched.
+ * arithmetic, and the four floors came back byte-identical — `withdrawn=5 surrendered=0` on TrainTicket and
+ * `withdrawn=1 surrendered=0` on OnlineBoutique at 2, 3, 5 and 8 alike — which is what made the floor shippable:
+ * the choice inside the interval is not a fit, because there is no interval left to fit.
  *
  * ## What it does not claim
  *
  * `withdrawn` is an UPPER bound on what a floor can win. Withdrawing the unit does not make a case correct — it
  * hands the case back to the rest of the ranking, which may or may not name the truth. The bound is the honest
- * statement available from the record, and the arm that flips the mode is what measures the cases.
+ * statement available from the record, and it was resolved from the LOSS CENSUS rather than from a second
+ * instrument: of the six withdrawn votes, the truth stood at rank 2 of 68 on two TrainTicket cases, so withdrawing
+ * the unit promotes it — and stayed at rank 6, 13 and 20 on the other three and at rank 2 of 9 on the
+ * OnlineBoutique case, where the fleet is un-normalised at nine nodes and a unit does not move the order. Two to
+ * three cases, then, and the arm that flips the mode is what measures which.
  *
  * @module benchmarks/trace-share-census
  */
@@ -54,6 +60,10 @@ import type { CasePrediction } from '../../packages/kinetic/src/benchmarks/runne
  * to 10.7 (the smallest source share), so this sweep brackets the empty interval from below, from inside, and from
  * above: `2` is below every miss and above nothing, `5` sits inside the gap, `8` sits inside it too, and `3` is a
  * step between. Four points, one interval — a reader can see whether a choice inside it is stable or lucky.
+ *
+ * `2` is now the SHIPPED floor (`DEFAULT_TRACE_ACTIVITY_OPTIONS.minFleetShare`) and the sweep is kept: the
+ * instrument's value is that it can still report what a floor this corpus has never been asked about would do, and
+ * a census that hard-coded its own shipped value could not say whether that value was load-bearing.
  */
 export const TRACE_SHARE_FLOORS: readonly number[] = [2, 3, 5, 8];
 

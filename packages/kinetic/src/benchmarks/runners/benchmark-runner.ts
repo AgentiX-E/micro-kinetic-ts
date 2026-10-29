@@ -302,12 +302,13 @@ export interface CasePrediction {
    * The service the TRACE-ACTIVITY term voted for on this case, or `undefined` when it abstained.
    *
    * The term pays a BINARY unit to the unique service whose span count rose while its peers held or fell
-   * (`minPreCount` 500, `riseThreshold` 1.15). It is the only ranking term whose value is a decision rather than
-   * a magnitude, and it is pinned ON for RE3 alone — where the term-gap census of iteration 148 reads it as the
-   * single largest cost on the blocking cell (+1.000 on 5 of TrainTicket's 11 misses) while a removal arm reads
-   * the pin as worth **+10 cases** over the whole suite. Both are true, and the resolution is not a weight: it is
-   * WHICH votes are wrong, which no artifact could say because the diagnostics printed the highest-ratio service
-   * rather than the one the rule actually chose.
+   * (`minPreCount` 500, `riseThreshold` 1.15, and `minFleetShare` 2 — the candidate must out-rise the fleet's
+   * median move, which is what removes the five route-fault votes on a flat fleet). It is the only ranking term
+   * whose value is a decision rather than a magnitude, and it is pinned ON for RE3 alone — where the term-gap
+   * census of iteration 148 reads it as the single largest cost on the blocking cell (+1.000 on 5 of
+   * TrainTicket's 11 misses) while a removal arm reads the pin as worth **+10 cases** over the whole suite. Both
+   * are true, and the resolution is not a weight: it is WHICH votes are wrong, which no artifact could say
+   * because the diagnostics printed the highest-ratio service rather than the one the rule actually chose.
    *
    * Recorded from the graph's own `traceActivityScores`, so it cannot disagree with the contribution, and absent
    * when the term was off (`traceWeight === 0`) because then no vote exists to report — the distinction

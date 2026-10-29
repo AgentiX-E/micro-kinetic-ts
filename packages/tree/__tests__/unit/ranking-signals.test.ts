@@ -27,6 +27,7 @@ import {
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   rankNormalizeScores,
+  traceFleetDrift,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -1173,13 +1174,35 @@ describe('computeTraceActivityScores', () => {
     return new Map(entries);
   }
 
+  /**
+   * A case whose fleet COLLAPSED while the riser rose: `b` and `c` fall to a
+   * tenth of their pre-injection counts, so the fleet's median ratio is 0.10 and
+   * the riser's quotient is its growth × 10.
+   *
+   * The shape is not decoration. Every measured vote on the blocking cell has
+   * this shape, and the six measured misses are exactly its complement (a flat
+   * fleet plus a mildly rising service), so a fixture with a flat fleet and a
+   * 1.15 riser would be a case the corpus does not contain and whose
+   * classification the measurement cannot settle.
+   */
+  function collapsedFleet(
+    riser: [string, { pre: number; post: number }],
+  ): Map<ServiceId, { pre: number; post: number }> {
+    return countsOf(riser, ['b', { pre: 1000, post: 100 }], ['c', { pre: 1000, post: 100 }]);
+  }
+
   it('returns an empty map for undefined or empty counts', () => {
     expect(computeTraceActivityScores(undefined, nodes).size).toBe(0);
     expect(computeTraceActivityScores(new Map(), nodes).size).toBe(0);
   });
 
   it('returns {svc: 1} for exactly one qualifying candidate (pre>=500, post>=1, ratio>=1.15)', () => {
-    const counts = countsOf(['a', { pre: 500, post: 575 }]); // ratio 1.15
+    // The fleet has to be in the fixture because the rule has a third test: the
+    // candidate must out-rise the fleet's median by `minFleetShare`. Every
+    // measured vote has the fleet collapsing around the riser (drift 0.05–0.11
+    // under the fifteen hits), so that is the shape these fixtures carry —
+    // `b` and `c` fall to a tenth of their pre-injection counts.
+    const counts = collapsedFleet(['a', { pre: 500, post: 575 }]); // ratio 1.15
     const scores = computeTraceActivityScores(counts, nodes);
 
     expect(scores.get('a')).toBe(1);
@@ -1240,7 +1263,7 @@ describe('computeTraceActivityScores', () => {
 
   it('honours custom options overriding the defaults', () => {
     // Default riseThreshold 1.15 rejects ratio 1.0; a custom threshold accepts it.
-    const counts = countsOf(['a', { pre: 2, post: 2 }]); // ratio 1.0, pre < 500
+    const counts = collapsedFleet(['a', { pre: 2, post: 2 }]); // ratio 1.0, pre < 500
     const scores = computeTraceActivityScores(counts, nodes, {
       minPreCount: 1,
       minPostCount: 1,
@@ -1255,7 +1278,7 @@ describe('computeTraceActivityScores', () => {
     // A silent-source fault leaves no self-caused logic exception behind, so
     // the trace-activity signal is the ONLY lever and may vote for the unique
     // significant riser.
-    const counts = countsOf(['a', { pre: 500, post: 575 }]); // ratio 1.15
+    const counts = collapsedFleet(['a', { pre: 500, post: 575 }]); // ratio 1.15
     const scores = computeTraceActivityScores(counts, nodes, undefined, new Set());
 
     expect(scores.get('a')).toBe(1);
@@ -1283,8 +1306,10 @@ describe('computeTraceActivityScores', () => {
 
   it('suppresses the vote when the UNIQUE riser ITSELF threw a logic exception', () => {
     // A riser that threw a self-caused logic exception is not silent — the log
-    // signal already ranks it — so the detector defers.
-    const counts = countsOf(['a', { pre: 500, post: 575 }]); // unique riser
+    // signal already ranks it — so the detector defers. The fleet collapses
+    // here, so the vote would otherwise be cast and the thrower is the ONLY
+    // reason it is withheld.
+    const counts = collapsedFleet(['a', { pre: 500, post: 575 }]); // unique riser
     const scores = computeTraceActivityScores(
       counts,
       nodes,
@@ -1310,11 +1335,193 @@ describe('computeTraceActivityScores', () => {
   it('defaults the thrower set to empty (backward-compatible behaviour)', () => {
     // Callers that omit the thrower set keep the silent-source vote, so
     // existing behaviour is unchanged unless the caller opts into the gate.
-    const counts = countsOf(['a', { pre: 500, post: 575 }]);
+    const counts = collapsedFleet(['a', { pre: 500, post: 575 }]);
     const scores = computeTraceActivityScores(counts, nodes);
 
     expect(scores.get('a')).toBe(1);
     expect(scores.size).toBe(1);
+  });
+});
+
+describe('computeTraceActivityScores — the fleet contrast', () => {
+  // The third test of one rule, not a second mechanism: "did it rise"
+  // (absolute), "did anything else rise" (uniqueness), "did it rise MORE than
+  // the fleet" (contrast). These two fixtures are the two populations the
+  // corpus measures, and they differ ONLY in the fleet: the rise is 1.20 and
+  // 1.15 respectively, which the absolute threshold cannot separate — 1.16
+  // appears on both sides of the measured split.
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('withholds the vote on a mild rise in a FLAT fleet and casts it in a COLLAPSING one', () => {
+    // Measured miss (OnlineBoutique `emailservice_f4_1`): the candidate grew
+    // 1.20 while the fleet's median moved 1.04, so the quotient is 1.15 — the
+    // rise is the ordinary spread of a busy fleet, and the vote cost the case.
+    const flat = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 1200 }],
+      ['b', { pre: 1000, post: 1040 }],
+      ['c', { pre: 1000, post: 1040 }],
+    ]);
+    expect(computeTraceActivityScores(flat, nodes).size).toBe(0);
+
+    // Measured hits (TrainTicket `ts-auth-service` f1–f4): the candidate grew
+    // 1.16–1.22 while the fleet fell to 0.05–0.11 of its pre-injection count,
+    // so the quotient is 10.6–38.2. Same rise, opposite verdict — because the
+    // contrast, not the rise, is what separates the two.
+    const collapsing = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 1200 }],
+      ['b', { pre: 1000, post: 100 }],
+      ['c', { pre: 1000, post: 100 }],
+    ]);
+    expect(computeTraceActivityScores(collapsing, nodes).get('a')).toBe(1);
+  });
+
+  it('is inclusive at the floor and exclusive just below it', () => {
+    // growth 1.25 over a fleet at 0.25 is a quotient of exactly 5, and both
+    // operands are exact in binary, so the boundary is not a rounding story.
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 800, post: 1000 }], // 1.25
+      ['b', { pre: 1000, post: 250 }], // 0.25
+      ['c', { pre: 1000, post: 250 }], // 0.25
+    ]);
+    expect(computeTraceActivityScores(counts, nodes, { minFleetShare: 5 }).get('a')).toBe(1);
+    expect(computeTraceActivityScores(counts, nodes, { minFleetShare: 5.5 }).size).toBe(0);
+  });
+
+  it('takes `minFleetShare: 0` as the negative pole: the contrast test is off', () => {
+    // The floor is the only option here that can be switched off, because 0 is
+    // the identity of a "at least this many times" test and every quotient is
+    // ≥ 0 by construction. The arm exists so a dispatch can measure the rule
+    // without it — and so this file can show the flat-fleet vote the pre-floor
+    // rule cast.
+    const flat = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 1200 }],
+      ['b', { pre: 1000, post: 1040 }],
+      ['c', { pre: 1000, post: 1040 }],
+    ]);
+    expect(computeTraceActivityScores(flat, nodes, { minFleetShare: 0 }).get('a')).toBe(1);
+  });
+
+  it('averages its two middle members on an even fleet', () => {
+    // A two-member fleet has one middle PAIR, and the convention has to be the
+    // textbook one (the mean of the pair) rather than either neighbour: the
+    // ratios are 1.25 and 0.75, so the median is 1.00 and the quotient 1.25.
+    // Taking the lower member would make the quotient 1.67, which the 1.5 floor
+    // would accept; taking the upper would make it 1.00, which the 1.2 floor
+    // would refuse. Both floors are asserted so neither shortcut survives.
+    const pair = new Set<ServiceId>(['a', 'b']);
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 800, post: 1000 }], // 1.25
+      ['b', { pre: 1000, post: 750 }], // 0.75
+    ]);
+    expect(computeTraceActivityScores(counts, pair, { minFleetShare: 1.5 }).size).toBe(0);
+    expect(computeTraceActivityScores(counts, pair, { minFleetShare: 1.2 }).get('a')).toBe(1);
+  });
+
+  it('excludes a member with no pre-injection baseline from the fleet', () => {
+    // `post / 0` is not a level of anything: including it would put an Infinity
+    // into the median and move every other member's baseline to it — here from
+    // 0.25 (quotient 5, a vote) to 0.75 (quotient 1.67, withheld).
+    const four = new Set<ServiceId>(['a', 'b', 'c', 'd']);
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 800, post: 1000 }], // 1.25
+      ['b', { pre: 0, post: 9999 }], // no baseline: excluded from the fleet
+      ['c', { pre: 1000, post: 250 }], // 0.25
+      ['d', { pre: 1000, post: 250 }], // 0.25
+    ]);
+    expect(computeTraceActivityScores(counts, four).get('a')).toBe(1);
+  });
+
+  it('reads the fleet from the GRAPHED members only', () => {
+    // A service the graph does not carry cannot be ranked, so it must not move
+    // the baseline every ranked service is judged against. Here `z` is measured
+    // but absent from the graph: counting it would move the median from 0.25 to
+    // the middle PAIR of (0.25, 0.25, 1.25, 50) — 0.75 — and withhold the vote.
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 800, post: 1000 }], // 1.25
+      ['b', { pre: 1000, post: 250 }], // 0.25
+      ['c', { pre: 1000, post: 250 }], // 0.25
+      ['z', { pre: 100, post: 5000 }], // 50, not a graph member
+    ]);
+    expect(computeTraceActivityScores(counts, nodes).get('a')).toBe(1);
+  });
+
+  it('cannot vote when the fleet is the candidate alone', () => {
+    // A fleet of one is trivially at its own median, so the quotient is 1 and
+    // the vote is withheld by the arithmetic rather than by a special case.
+    // That is the right answer: a rise with no fleet around it is a claim about
+    // a baseline that does not exist.
+    const alone = new Set<ServiceId>(['a']);
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 500, post: 575 }],
+    ]);
+    expect(computeTraceActivityScores(counts, alone).size).toBe(0);
+  });
+});
+
+describe('traceFleetDrift', () => {
+  // The estimator itself, tested at its own level rather than through the vote:
+  // `packages/kinetic`'s `[trace-z]` instrument reports this same number, so a
+  // convention that changed here would move a published artifact and the vote
+  // that reads it at once, and the census explaining a wrong vote would be
+  // explaining a baseline the rule never saw.
+  const nodeIds = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('takes the middle member of an odd fleet', () => {
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 100 }], // 0.10
+      ['b', { pre: 1000, post: 200 }], // 0.20
+      ['c', { pre: 1000, post: 5000 }], // 5.00
+    ]);
+    expect(traceFleetDrift(counts, nodeIds)).toBeCloseTo(0.2, 12);
+  });
+
+  it('averages the two middle members of an even fleet', () => {
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 0 }], // 0.00
+      ['b', { pre: 1000, post: 800 }], // 0.80
+      ['c', { pre: 1000, post: 1000 }], // 1.00
+      ['d', { pre: 1000, post: 3000 }], // 3.00
+    ]);
+    const four = new Set<ServiceId>(['a', 'b', 'c', 'd']);
+    // (0.8 + 1.0) / 2, not either neighbour.
+    expect(traceFleetDrift(counts, four)).toBeCloseTo(0.9, 12);
+  });
+
+  it('is one vote per SERVICE: a large service cannot carry the median', () => {
+    // The volume ratio (`Σpost / Σpre`) would be 0.55 here — `a` alone holds
+    // 10 000 of the fleet's 11 000 pre-injection spans — while the median of
+    // the two per-service ratios is 1.00. The fault is usually the large
+    // service, so a span-weighted estimator would let it define its own
+    // baseline.
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 10000, post: 1000 }], // 0.10, and 91% of the volume
+      ['b', { pre: 500, post: 400 }], // 0.80
+      ['c', { pre: 500, post: 600 }], // 1.20
+    ]);
+    expect(traceFleetDrift(counts, nodeIds)).toBeCloseTo(0.8, 12);
+  });
+
+  it('is `NaN` when nothing can be measured', () => {
+    // `NaN` rather than 0: "no rate" and "no change" are different findings, and
+    // a caller that treated the first as the second would divide by zero.
+    expect(Number.isNaN(traceFleetDrift(undefined, nodeIds))).toBe(true);
+    expect(Number.isNaN(traceFleetDrift(new Map(), nodeIds))).toBe(true);
+    // Every member has no baseline, or no member is in the graph at all.
+    const baseless = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 0, post: 10 }],
+    ]);
+    expect(Number.isNaN(traceFleetDrift(baseless, nodeIds))).toBe(true);
+    expect(Number.isNaN(traceFleetDrift(baseless, new Set<ServiceId>()))).toBe(true);
+  });
+
+  it('ignores a member the graph does not carry, even when it has a baseline', () => {
+    const counts = new Map<ServiceId, { pre: number; post: number }>([
+      ['a', { pre: 1000, post: 100 }], // 0.10
+      ['b', { pre: 1000, post: 200 }], // 0.20
+      ['c', { pre: 1000, post: 5000 }], // 5.00
+      ['z', { pre: 1000, post: 9000 }], // 9.00, not a graph member
+    ]);
+    expect(traceFleetDrift(counts, nodeIds)).toBeCloseTo(0.2, 12);
   });
 });
 

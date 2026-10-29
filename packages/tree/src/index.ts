@@ -174,6 +174,10 @@ export {
   // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of
   // the admission test would be free to disagree with the map it is trying to explain.
   logLineAdmittedByMode,
+  // The trace vote's fleet baseline, exported because the `[trace-z]` instrument in `packages/kinetic` reports the
+  // SAME quantity: a vote that read one median while the artifact beside it printed another would be two answers
+  // to one question, and the census that explains a wrong vote would be explaining a number the rule never saw.
+  traceFleetDrift,
 } from './pruning/ranking-signals.js';
 export type {
   FailedEdgeMode,
