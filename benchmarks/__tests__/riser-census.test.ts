@@ -158,7 +158,7 @@ describe('the riser census', () => {
 describe('the per-case line', () => {
   it('prints the vote vector and, on a miss, the truth beside it', () => {
     expect(formatRiserCaseLine(miss())).toBe(
-      '[trace-riser] c1 MISS vote=ts-other pre=1770 growth=1.40 failedIn=+0 failedOut=+18 ' +
+      '[trace-riser] c1 MISS vote=ts-other pre=1770 growth=1.40 drift=- share=- failedIn=+0 failedOut=+18 ' +
         '|| truth=ts-src pre=310 growth=1.62 failedIn=+3 failedOut=+0',
     );
   });
@@ -166,7 +166,7 @@ describe('the per-case line', () => {
   it('prints the vector ONCE on a hit, because the two sides are the same measurement', () => {
     // Printing it twice would read as two independent readings of two services that happen to agree.
     expect(formatRiserCaseLine(miss({ traceVote: 'ts-src', top1: 'ts-src', correct: true }))).toBe(
-      '[trace-riser] c1 HIT vote=ts-src pre=1770 growth=1.40 failedIn=+0 failedOut=+18',
+      '[trace-riser] c1 HIT vote=ts-src pre=1770 growth=1.40 drift=- share=- failedIn=+0 failedOut=+18',
     );
   });
 
@@ -177,7 +177,9 @@ describe('the per-case line', () => {
           traceRiser: { vote: { service: 'ts-other', pre: 0, post: 40 }, truth: undefined },
         }),
       ),
-    ).toBe('[trace-riser] c1 MISS vote=ts-other pre=0 growth=- failedIn=- failedOut=-');
+    ).toBe(
+      '[trace-riser] c1 MISS vote=ts-other pre=0 growth=- drift=- share=- failedIn=- failedOut=-',
+    );
   });
 
   it('says nothing at all for a case with no vote', () => {
@@ -200,7 +202,7 @@ describe('the per-case line', () => {
     });
 
     expect(line).toBe(
-      '[trace-riser] c2 MISS vote=ts-other pre=- growth=- failedIn=- failedOut=- ' +
+      '[trace-riser] c2 MISS vote=ts-other pre=- growth=- drift=- share=- failedIn=- failedOut=- ' +
         '|| truth=ts-src pre=1200 growth=1.58 failedIn=- failedOut=-',
     );
   });
@@ -218,7 +220,49 @@ describe('the per-case line', () => {
           },
         }),
       ),
-    ).toBe('[trace-riser] c1 HIT vote=ts-src pre=1770 growth=1.40 failedIn=- failedOut=-');
+    ).toBe(
+      '[trace-riser] c1 HIT vote=ts-src pre=1770 growth=1.40 drift=- share=- failedIn=- failedOut=-',
+    );
+  });
+
+  it('prints the FLEET drift and the share beside the rise, because the rise alone cannot be read', () => {
+    // The reading of iteration 152 in one line: 1.52 on a fleet that fell to 8% is a 19x share gain, and 1.16 on a
+    // fleet that held is 1.26. Same column of rise values, opposite statements.
+    const line = formatRiserCaseLine({
+      caseId: 'c3',
+      truth: 'ts-auth-service',
+      top1: 'ts-auth-service',
+      correct: true,
+      traceVote: 'ts-auth-service',
+      traceRiser: {
+        vote: { service: 'ts-auth-service', pre: 1800, post: 2736, growth: 1.52 },
+        truth: { service: 'ts-auth-service', pre: 1800, post: 2736, growth: 1.52 },
+      },
+      traceSignificance: { drift: 0.08, ranked: [] },
+    });
+
+    expect(line).toBe(
+      '[trace-riser] c3 HIT vote=ts-auth-service pre=1800 growth=1.52 drift=0.08 share=19.00 failedIn=- failedOut=-',
+    );
+  });
+
+  it('prints the share as `-` when the rise exists but the fleet has no drift to divide by', () => {
+    const line = formatRiserCaseLine({
+      caseId: 'c4',
+      truth: 'ts-src',
+      top1: 'ts-src',
+      correct: true,
+      traceVote: 'ts-src',
+      traceRiser: {
+        vote: { service: 'ts-src', pre: 100, post: 150, growth: 1.5 },
+        truth: undefined,
+      },
+      traceSignificance: { drift: 0, ranked: [] },
+    });
+
+    // A fleet that emitted nothing after the injection is not a yardstick, so the quotient does not exist — and it
+    // must not be printed as `0.00`, which would read as "the share collapsed".
+    expect(line).toContain('growth=1.50 drift=0.00 share=-');
   });
 
   it('keeps a negative failure count negative if a malformed record carries one', () => {
@@ -233,6 +277,8 @@ describe('the per-case line', () => {
           },
         }),
       ),
-    ).toBe('[trace-riser] c1 MISS vote=ts-other pre=1770 growth=1.40 failedIn=-1 failedOut=-');
+    ).toBe(
+      '[trace-riser] c1 MISS vote=ts-other pre=1770 growth=1.40 drift=- share=- failedIn=-1 failedOut=-',
+    );
   });
 });

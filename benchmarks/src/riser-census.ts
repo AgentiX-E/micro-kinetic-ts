@@ -16,7 +16,11 @@
  *   request, and a riser that is a VICTIM is re-routed traffic or a retry storm.
  *
  * So this census prints the evidence the rule had beside the rise and did not read, for the vote AND for the
- * truth, and then attributes every wrong vote to the guard that excluded the truth.
+ * truth, and then attributes every wrong vote to the guard that excluded the truth. Since iteration 152 the vote's
+ * segment also carries the FLEET's drift and the quotient `growth / drift`: the reading that came back is that the
+ * two populations differ in the fleet's move (0.05-0.11 under the hits, 0.79-0.99 under the misses) and not in
+ * the rise (1.16-2.22 against 1.16-1.47), so a line that printed the rise alone would be printing the one number
+ * that does not separate them.
  *
  * ## The attribution, and the invariant in it
  *
@@ -42,6 +46,7 @@ import type {
   CasePrediction,
   RiserVector,
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import { shareOf } from './trace-share-census.js';
 
 /** How one wrong vote's truth was excluded by the rule, in the rule's own order. */
 export interface RiserCensus {
@@ -140,11 +145,21 @@ export function formatRiserCaseLine(prediction: CasePrediction): string | undefi
   if (vote === undefined) return undefined;
   const verdict = vote === prediction.truth ? 'HIT' : 'MISS';
   const voted = prediction.traceRiser?.vote;
+  // The FLEET's own move beside the candidate's, because the rise alone cannot be read: 1.16 is a real rise on a
+  // fleet that lost 92% of its spans and noise on a fleet that held. `share` is the quotient, and it is what
+  // `trace-share-census` counts; printing both here keeps ONE line per vote rather than two artifacts that a
+  // reader has to join by case id.
+  const drift = prediction.traceSignificance?.drift;
+  const share =
+    drift === undefined || voted?.growth === undefined
+      ? undefined
+      : shareOf({ growth: voted.growth, drift });
+  const fleet = `drift=${ratio(drift)} share=${ratio(share)}`;
   const parts = [
     `[trace-riser] ${prediction.caseId} ${verdict} vote=${vote}`,
     voted === undefined
-      ? 'pre=- growth=- failedIn=- failedOut=-'
-      : `pre=${voted.pre} growth=${ratio(voted.growth)} ` +
+      ? `pre=- growth=- ${fleet} failedIn=- failedOut=-`
+      : `pre=${voted.pre} growth=${ratio(voted.growth)} ${fleet} ` +
         `failedIn=${signed(voted.failedIn)} failedOut=${signed(voted.failedOut)}`,
   ];
   const truth = prediction.traceRiser?.truth;

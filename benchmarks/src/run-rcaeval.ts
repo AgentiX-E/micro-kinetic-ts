@@ -103,6 +103,11 @@ import {
 } from './riser-census.js';
 import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
 import {
+  accumulateTraceShare,
+  createTraceShareCensus,
+  formatTraceShareCensusLine,
+} from './trace-share-census.js';
+import {
   accumulateTraceVote,
   createTraceVoteCensus,
   formatTraceVoteLine,
@@ -1474,6 +1479,19 @@ async function main(): Promise<void> {
     }
     const riserLine = formatRiserCensusLine(riser);
     if (riserLine !== undefined) console.log(riserLine);
+
+    // The axis the five refusals leave standing. Every refused refinement was a threshold on the RISE, and the
+    // riser census shows why they all failed: the hits and the misses carry the SAME rise (1.16-2.22 against
+    // 1.16-1.47) and differ in what the FLEET did (drift 0.05-0.11 against 0.79-0.99). A rise is a statement about
+    // a service only next to the system's own move, so this census counts the votes that four floors on the
+    // quotient `growth / drift` would keep, withdraw and give up. It enrols nothing: the decision is `withdrawn`
+    // against `surrendered`, and the arm that flips the mode is what converts that arithmetic into cases.
+    const share = createTraceShareCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) accumulateTraceShare(share, p);
+    }
+    const shareLine = formatTraceShareCensusLine(share);
+    if (shareLine !== undefined) console.log(shareLine);
 
     // The axis the four refused refinements leave standing. The riser census says WHY the truth was not a
     // candidate — on TrainTicket's five misses it fell (`growth` 0.82-0.94 on `pre ≈ 12 000`), so the rule's premise

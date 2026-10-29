@@ -78,6 +78,7 @@ export default defineConfig({
         // exclusive buckets and the invariant among them (`truth-qualified` must be zero), so every branch is
         // measured rather than trusted.
         'src/riser-census.ts',
+        'src/trace-share-census.ts',
         // Added with the module: the scale-free census normalises a count change by its own Poisson fluctuation and
         // simulates two selectors over the same population. Its whole value is the three distinctions it draws — a
         // loud truth that is not the loudest, an abstention that WITHDRaws a wrong unit against one that SURRENDERS
