@@ -809,10 +809,10 @@ census records one row per case with its ground truth, so the label space is rea
 | RE2:OnlineBoutique | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 88.9% | +68.9 | 9 |
 | RE2:SockShop | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 94.4% | +74.4 | 13 |
 | RE2:TrainTicket | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 83.3% | +63.3 | 68 |
-| RE3:OnlineBoutique | 30 | 4 | 15 / 9 / 3 / 3 | **50.0%** | 80.0% | +30.0 | 9 |
+| RE3:OnlineBoutique | 30 | 4 | 15 / 9 / 3 / 3 | **50.0%** | 83.3% | +33.3 | 9 |
 | RE3:SockShop | 30 | 3 | 12 / 9 / 9 | **40.0%** | 60.0% | +20.0 | 13 |
-| RE3:TrainTicket | 30 | 2 | 15 / 15 | **50.0%** | 63.3% | +13.3 | 68 |
-| **735** | 735 | — | per-cell priors | **23.27%** | **85.44%** | +62.17 | — |
+| RE3:TrainTicket | 30 | 2 | 15 / 15 | **50.0%** | 70.0% | +20.0 | 68 |
+| **735** | 735 | — | per-cell priors | **23.27%** | **85.85%** | +62.58 | — |
 
 Three findings, and the first two are not the paper's:
 
@@ -824,7 +824,7 @@ Three findings, and the first two are not the paper's:
 2. **RE3 is neither balanced nor five-way, and that is where the honest floor is high.** TrainTicket exposes two
    truths at 15 each, SockShop three at 12/9/9, OnlineBoutique four at 15/9/3/3. A constant answer therefore
    scores **50.0 / 40.0 / 50.0%** on the three cells that carry our weakest numbers — so `RE3:SockShop 60.0%` is
-   +20.0 over a prior, not +60, and `RE3:TrainTicket 63.3%` is +13.3. **Those two cells cannot carry a SOTA claim
+   +20.0 over a prior, not +60, and `RE3:TrainTicket 70.0%` is +20.0. **Those two cells cannot carry a SOTA claim
    on their own**, and any competitor number on them inherits the same floor.
 3. **`Avg@5` is degenerate on this corpus, and this is arithmetic rather than opinion.** Every cell has at most 5
    distinct truths, so a *constant* top-5 naming the cell's five truths scores Avg@5 **100.0% on all 735 cases**.
@@ -841,7 +841,7 @@ recovers the prior within a cell, and nothing across cells, is exactly what a pr
 
 ### 9.1 What this does not license
 
-- **It does not lower any published number.** 85.44% Top-1 on 735 cases stands, and the floors above are beside it
+- **It does not lower any published number.** 85.85% Top-1 on 735 cases stands, and the floors above are beside it
   rather than subtracted from it. A 5-way problem still has to be solved by reading telemetry, and 20% is what
   comes for free.
 - **It does not say RE3 is small.** It says RE3 is *prior-heavy*: 90 cases over 2–4 truths with an imbalanced

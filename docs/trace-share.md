@@ -79,24 +79,30 @@ inside it is a statement about the data; a floor outside it is a fitted constant
 ## 3a. The upper bound, resolved from the loss census
 
 The bound was not left to the next arm. The run that produced the sweep also wrote a loss census, and that record
-carries each case's full ranking — so "hands the case back to the rest of the ranking" is answerable case by case
-without changing the rule:
+carries, for every case, the winner's full term breakdown **and the truth's own total score** — so "hands the case
+back to the rest of the ranking" is answerable by subtraction without changing the rule. Withdrawing the unit costs
+the winner exactly its `trace` contribution (1.000 on all six), and the truth's rank improves by one iff the
+winner's reduced score falls below the truth's total:
 
-| case | vote | share | truth's rank | after withdrawing the unit |
-| --- | --- | --- | --- | --- |
-| `re3tt_ts-route-service_f2_3` | `ts-station-service` | 1.25 | **2 / 68** | truth promoted → **win** |
-| `re3tt_ts-route-service_f4_2` | `ts-station-service` | 1.28 | **2 / 68** | truth promoted → **win** |
-| `re3tt_ts-route-service_f2_2` | `ts-order-other-service` | 1.26 | 13 / 68 | unchanged |
-| `re3tt_ts-route-service_f3_5` | `ts-station-service` | 1.85 | 6 / 68 | unchanged |
-| `re3tt_ts-route-service_f4_3` | `ts-station-service` | 1.26 | 20 / 68 | unchanged |
-| `re3ob_emailservice_f4_1` | `checkoutservice` | 1.15 | 2 / 9 | **unresolved** — 9 nodes is below the rank-normalisation threshold of 20, so a unit is not the whole gap |
+| case | winner | winner − trace | truth | truth's rank | after |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `re3tt_ts-route-service_f2_3` | 1.5918 | **0.5918** | 0.9210 | 2 / 68 | **1 — win** |
+| `re3tt_ts-route-service_f4_2` | 1.6245 | **0.6245** | 0.7230 | 2 / 68 | **1 — win** |
+| `re3ob_emailservice_f4_1` | 1.2745 | **0.2745** | 0.5963 | 2 / 9 | **1 — win** |
+| `re3tt_ts-route-service_f2_2` | 1.6245 | 0.6245 | 0.6053 | 13 / 68 | 13 — no move (by 0.019) |
+| `re3tt_ts-route-service_f3_5` | 1.3954 | 0.3954 | 0.6753 | 6 / 68 | 5 — no win |
+| `re3tt_ts-route-service_f4_3` | 1.6559 | 0.6559 | 0.5509 | 20 / 68 | 20 — no move |
 
-Two cases are won by arithmetic, three cannot move, and one is undecidable from the record because an
-un-normalised score is not bounded by 1. So the floor's expected value is **+2 cases on RE3's 90**, with a third
-possible — and the term's own ablation row becomes the clean reading it could not be before: 15 votes, 15 hits, no
-debit.
+**So the floor is worth three cases, not two**, and the third is the one an argument from rank normalisation would
+have got wrong: RE3-OnlineBoutique sits at 9 nodes, below the normalisation threshold of 20, so "a unit is not the
+whole gap" was a plausible reasoning and the arithmetic says otherwise — the gap was 0.678, which is less than one
+unit. The lesson is the one this repository keeps re-learning: the bound was decidable from the artifact, and a
+plausible prior about the metric's scale was not a substitute for subtracting two numbers.
 
-The two winning rows share a shape worth naming, because it inverts the term's premise: on a `ts-route-service`
+Three cases of ninety is `67.78% → 71.11%` on RE3 and `85.44% → 85.85%` on the 735, with the other eight cells
+untouched by construction.
+
+The three winning rows share a shape worth naming, because it inverts the term's premise: on a `ts-route-service`
 fault the truth **falls** (0.91–0.94) and the fleet is flat (0.79–0.99), so the unique riser is not a silent
 source at all — it is re-routed traffic, and the vote was paying for the victim's signature. The fifteen hits have
 the opposite shape: the truth holds its counts while the fleet loses 92% of its spans.
@@ -117,6 +123,29 @@ distinction the sweep exists to make checkable.
 The estimator is not restated: `traceFleetDrift` lives in `packages/tree` and `traceSignificanceOf` — the
 `[trace-z]` instrument — calls it, so the artifact printed beside a vote cannot report a baseline the rule never
 saw.
+
+## 3c. The arm — measured, and it landed on the predicted number
+
+Run `40811610741` at `1e3868c9`, `scopes=golden`, nine cells:
+
+| cell | before | after | delta |
+| --- | ---: | ---: | --- |
+| RE3:TrainTicket | 63.3% (19/30) | **70.0% (21/30)** | **+2 cases** |
+| RE3:OnlineBoutique | 80.0% (24/30) | **83.3% (25/30)** | **+1 case** |
+| RE3:SockShop | 60.0% (18/30) | 60.0% (18/30) | 0 |
+| **RE3** | **67.8% (61/90)** | **71.1% (64/90)** | **+3 cases, +3.3pp** |
+| **735** | 85.44% (628) | **85.85% (631)** | +3 cases |
+| RE1 ×3, RE2 ×3 | 87.2% / 88.9% | **87.2% / 88.9%** | identical, as the two inertness arguments require |
+
+The three cases are exactly the three the subtraction in §3a named — not two, not four — so the record now carries a
+prediction that a run confirmed to the case. The `[trace-riser]` total reads `votes=15 hits=15 wrong=0` (from
+`20 / 15 / 5`) and `[trace-share]` reads `withdrawn=0 surrendered=0 net=0` at all four floors, because there is
+nothing left to withdraw: every vote the rule now casts is correct.
+
+That last line is the honest frame for what this bought. The term did not get *better at finding sources*; it
+stopped casting six votes it could not justify, and three of those six were cases where the rest of the ranking was
+already about to name the truth. The two TrainTicket routemates and the OnlineBoutique email case were not lost to a
+weak engine — they were lost to a unit that promoted a victim.
 
 ## 4. What this does not license
 

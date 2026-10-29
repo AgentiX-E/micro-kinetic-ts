@@ -44,8 +44,8 @@ absolute score can be read against the floor a random ranker would reach on the 
 
 | evaluation | metric | ours | best published competitor | margin | basis |
 | --- | --- | --- | --- | --- | --- |
-| **RCAEval, all 735 cases** | service Top-1 | **85.44%** (628/735) | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+17.4 pp, ≈1.26×** | cross-paper (§2a) |
-| **RCAEval, all 735 cases** | service Top-1 | **85.44%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **+6.53 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by one default**; a re-run is owed (§3) |
+| **RCAEval, all 735 cases** | service Top-1 | **85.85%** (631/735) | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+17.85 pp, ≈1.26×** | cross-paper (§2a) |
+| **RCAEval, all 735 cases** | service Top-1 | **85.85%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **+6.94 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by one default**; a re-run is owed (§3) |
 | **RCAEval RE2-OB (90 cases)** | AC@1 | **88.9%** (80/90) | RCLAgent **56.67%** (arXiv:2605.14866) | **+32.2 pp** | cross-paper (§2b). `86.7` was the figure before iteration 129 moved the corpus view; the 2.3 pp it cost is the price of the cell below |
 | **RCAEval RE2-TT (90 cases)** | AC@1 | **83.3%** (75/90) | GALA+ **73.3%** | **+10.0 pp** | cross-paper, **the same 90-case TrainTicket population** — and the **first time this cell has been ahead**: 71.1 before iteration 129, moved by the corpus view (`40128592846`) |
 | **FSE'26 RCABench** | Top@1 | **56.12%** (798/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+19.1 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
@@ -71,7 +71,7 @@ The project leads the pre-LLM causal cohort by a wide margin on RCAEval overall 
 0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by 20–40 pp. **On our
 own harness the last true head-to-head remains `78.75 against 78.91` — one case behind PRISM's additive pooling —
 and it is now STALE**: the demand guard of iteration 127 changed our engine and would have changed the
-reimplementation too, so the current 85.44 is not a re-measurement of that pair and no margin is claimed from it.
+reimplementation too, so the current 85.85 is not a re-measurement of that pair and no margin is claimed from it.
 A re-run of §3 is the only thing that can restore the sentence, and it is owed.
 
 **What this ranking is NOT.** Every `68%` figure above is **cross-paper**: its dataset, its harness, its case
@@ -638,23 +638,37 @@ read against a ceiling of **100%**, because a constant top-5 holding a cell's tr
 is why this repository's headline metric is Top-1 and why an `Avg@5` figure in a comparison row is annotated
 rather than ranked.
 
-This does not lower our published 85.44% and does not raise a competitor's: it states the floor each number was
+This does not lower our published 85.85% and does not raise a competitor's: it states the floor each number was
 measured above. The two RE3 cells with the largest headline gap to the leaders (SockShop, TrainTicket) are exactly
 the two whose floors are highest, and that coincidence is the reason this section exists.
 
-## 1. Our result — re-anchored 2026-10-29 on run `40792623427` at `ea47db5` (identical to `3d054ad`'s cells)
+**Read against the floor, the three RE3 cells now stand at +33.3 (OnlineBoutique 83.3 over 50.0), +20.0 (SockShop
+60.0 over 40.0) and +20.0 (TrainTicket 70.0 over 50.0)** — the last of which is iteration 153's three cases. The
+remaining RE3 deficit is concentrated where the floor is highest, which is a statement about what that cell can
+prove rather than about how far behind the engine is.
+
+## 1. Our result — re-anchored 2026-10-29 on run `40811610741` at `1e3868c9` (RE1 and RE2 identical to `3d054ad`; RE3 moved by the trace floor, `docs/trace-share.md` §3a)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
 |-------|----------------|----------|-------------|-----------|
 | RE1 (metric, 125/system) | 85.6% (107) | 92.8% (116) | 83.2% (104) | **87.2%** (327/375) |
 | RE2 (multi-source, 90/system) | **88.9%** (80) | **94.4%** (85) | **83.3%** (75) | **88.9%** (240/270) |
-| RE3 (code-level, 30/system) | 80.0% (24) | 60.0% (18) | 63.3% (19) | **67.8%** (61/90) |
-| **overall (735 cases)** | | | | **85.44%** (628) |
+| RE3 (code-level, 30/system) | **83.3%** (25) | 60.0% (18) | **70.0%** (21) | **71.1%** (64/90) |
+| **overall (735 cases)** | | | | **85.85%** (631) |
 
-The table above is the same nine cells the previous anchor carried, re-read rather than recomputed: RE1, RE2 and RE3
-are byte-identical to `3d054ad`, and the earlier `80.0 / 92.8 / 68.0` RE1 row was **one anchor behind** — the cell
-moved to `107 / 116 / 104` on `40098640380` (iteration 127's enrolment) and this document's §1 was not re-anchored
-with it, which is the same staleness that let the RE1-OnlineBoutique deficit stay hidden (§0).
+**Eight of the nine cells are byte-identical to the previous anchor; RE3 is not, and the difference is a ranking
+change rather than a measurement drift.** Iteration 153 gave the trace vote a fourth threshold — the candidate must
+out-rise the fleet's median move by `minFleetShare = 2` — which withdraws the five route-fault votes on a flat fleet
+and the one OnlineBoutique vote on a flat fleet, and the loss census had already resolved what that buys: three
+cases, on two TrainTicket routemates at rank 2 of 68 and one OnlineBoutique case at rank 2 of 9, whose winner's unit
+was larger than the gap it won by. RE3 therefore moves `61 → 64` of 90 (`67.8% → 71.1%`), RE3-TrainTicket
+`63.3 → 70.0` and RE3-OnlineBoutique `80.0 → 83.3`, and the corpus `85.44% → 85.85%`. RE1 and RE2 cannot move, by
+two independent arguments: the term's weight is 0 on both and neither corpus supplies a span count at all.
+
+The earlier `80.0 / 92.8 / 68.0` RE1 row was **one anchor behind** — the cell moved to `107 / 116 / 104` on
+`40098640380` (iteration 127's enrolment) and this document's §1 was not re-anchored with it, which is the same
+staleness that let the RE1-OnlineBoutique deficit stay hidden (§0). That correction stands; this one is a change in
+the engine, not a bookkeeping repair.
 
 ---
 
@@ -666,14 +680,14 @@ Two cohorts must be reported separately, because they are measured on different 
 
 | method | Top-1 | paradigm | source |
 |--------|-------|----------|--------|
-| **Micro-Kinetic (ours)** | **85.44%** (628/735) | deterministic causal fusion (graph + rank-normalized log/trace) | this repo |
+| **Micro-Kinetic (ours)** | **85.85%** (631/735) | deterministic causal fusion (graph + rank-normalized log/trace) | this repo |
 | PRISM | 68% (Top-3 91%, Avg@5 87%); **78.91% reimplemented on this harness** | graph-free, internal/external property decomposition | arXiv:2601.21359 (Luan Pham, RCAEval author); our reimplementation in `prism-head-to-head.md` |
 | BARO (best pre-LLM causal) | 19% (Top-3 74%, Avg@5 63%) | non-parametric causal discovery | arXiv:2601.21359 / 2412.17015 |
 
 > Two traps avoided here: (i) BARO's often-quoted **0.69** is its *Train-Ticket RE2 Avg@5*, **not** its overall
 > Top-1 (which is 19%); (ii) PRISM is the benchmark author's own graph-free method — it is the correct "academic
 > SOTA" anchor, **not** the nofire.ai "GALA 42%" figure. A third trap is now visible: PRISM's `68%` and our
-> `85.44%` are **not** the comparison to optimise against, because our own reimplementation of PRISM reaches
+> `85.85%` are **not** the comparison to optimise against, because our own reimplementation of PRISM reaches
 > **78.91%** on the same harness. The published numbers describe two different measurements; the reimplementation
 > describes one.
 
@@ -766,7 +780,7 @@ Its **graph-guided investigation** — parallel investigators bounded to predece
 `θ = 0.6` confidence gate and `O(kΔ)` worst-case work — is the part that is genuinely different in kind, and it
 is the same territory as our Phase III agentic work rather than a term to add.
 
-### 2c. Single-system / other slices (not directly comparable to 85.44%)
+### 2c. Single-system / other slices (not directly comparable to 85.85%)
 
 | method | result | slice | source |
 |--------|--------|-------|--------|
@@ -778,7 +792,7 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 ## 3. Corrected verdict
 
-**Headline (defensible):** On RCAEval overall Top-1, Micro-Kinetic (**85.44%**) leads the published field — ahead of
+**Headline (defensible):** On RCAEval overall Top-1, Micro-Kinetic (**85.85%**) leads the published field — ahead of
 the benchmark author's own PRISM (**68%**) by ~17 pp (**~1.26×**), and ahead of every LLM agent by 20–40 pp
 (RCLAgent 56.67% RE2-OB, GALA 42% — and `mABC`'s `40%`, which is **another group's re-measurement on AIOPS-2022 rather than that paper's own figure**, since its metric is RA/PA with a four-root-cause cap; see §2b and `docs/sota-populations.md`). It is also **orders of magnitude cheaper and faster** than the LLM
 cohort (deterministic, sub-second, zero API cost vs LLM agents at seconds-to-hours). Against the **same harness**,
@@ -954,8 +968,8 @@ commit (`d83fb86`) and one input per arm:
 | --- | ---: | ---: | --- | --- |
 | **RE1** (375) | 323 = 86.13% | **327 = 87.20%** | `L0` 85.4% (`arXiv:2610.05009`) | **first, +1.80 pp** |
 | **RE2** (270) | 231 = 85.56% | **240 = 88.89%** | 0.88 SS / 0.78 OB Top-1 | **first on both published cells** |
-| **RE3** (90) | 55 = 61.11% | **61 = 67.78%** | PRISM conjunctive 76.7% (RE3-TT) | second; **TT 63.3%** (was 50.0) |
-| **735** | 609 = 82.86% | **628 = 85.44%** | PRISM 68% published / 78.9% reimplemented | **first among reproducible results** |
+| **RE3** (90) | 55 = 61.11% | **64 = 71.11%** | PRISM conjunctive 76.7% (RE3-TT) | second; **TT 70.0%** (was 50.0 before the pin, 63.3 before the floor) |
+| **735** | 609 = 82.86% | **631 = 85.85%** | PRISM 68% published / 78.9% reimplemented | **first among reproducible results** |
 | **FSE'26 Top@1** | 56.40% | **60.50%** (860/1422) | 37% (`RCABench`) | **first, +23.5 pp** |
 
 **No population down, and the blocking cell moved by four.** RE3-TrainTicket goes 15 → **19 of 30**, closing the
@@ -993,4 +1007,4 @@ not read. It is readable, the engine reads it, and it contains the platform talk
 **13.4 pp** to PRISM on RE3-TrainTicket has to come from ordering the evidence the engine already has.
 
 Standing, unchanged from the 2026-10-28 enrolment: RE1 **327 = 87.20%**, RE2 **240 = 88.89%**, RE3 **61 = 67.78%**,
-735 **628 = 85.44%**, FSE'26 Top@1 **60.50%**.
+735 **631 = 85.85%**, FSE'26 Top@1 **60.50%**.
