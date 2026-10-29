@@ -93,18 +93,18 @@ and one test file.
 
 `AC@1`, per suite and per system:
 
-| suite | system       | ρ = 0 (shipped) | ρ = 0.5 `external` | Δ     | ρ = 0.5 `all` | Δ      |
-| ----- | ------------ | --------------: | -----------------: | ----: | ------------: | -----: |
-| RE1   | OnlineBoutique |        **85.6%** |         **87.2%** | **+1.6** |         87.2% |   +1.6 |
-| RE1   | SockShop     |           92.8% |              93.6% |   +0.8 |         92.8% |    0.0 |
-| RE1   | TrainTicket  |           83.2% |              77.6% |   −5.6 |         69.6% |  −13.6 |
-| RE2   | OnlineBoutique |          93.3% |              90.0% |   −3.3 |         90.0% |   −3.3 |
-| RE2   | SockShop     |           94.4% |              94.4% |    0.0 |         94.4% |    0.0 |
-| RE2   | TrainTicket  |           83.3% |              81.1% |   −2.2 |         78.9% |   −4.4 |
-| RE3   | OnlineBoutique |          88.9% |              88.9% |    0.0 |         88.9% |    0.0 |
-| RE3   | SockShop     |      **63.6%** |         **63.6%** |    0.0 |     **53.6%** | −10.0 |
-| RE3   | TrainTicket  |           71.0% |              71.0% |    0.0 |         71.0% |    0.0 |
-| —     | suite mean   |  87.2 / 88.9 / 71.1 |  86.1 / 88.5 / 71.1 | −1.1 / −0.4 / 0.0 | 83.2 / 87.8 / 66.7 | −4.0 / −1.1 / −4.4 |
+| suite | system         |    ρ = 0 (shipped) | ρ = 0.5 `external` |                 Δ |      ρ = 0.5 `all` |                  Δ |
+| ----- | -------------- | -----------------: | -----------------: | ----------------: | -----------------: | -----------------: |
+| RE1   | OnlineBoutique |          **85.6%** |          **87.2%** |          **+1.6** |              87.2% |               +1.6 |
+| RE1   | SockShop       |              92.8% |              93.6% |              +0.8 |              92.8% |                0.0 |
+| RE1   | TrainTicket    |              83.2% |              77.6% |              −5.6 |              69.6% |              −13.6 |
+| RE2   | OnlineBoutique |              93.3% |              90.0% |              −3.3 |              90.0% |               −3.3 |
+| RE2   | SockShop       |              94.4% |              94.4% |               0.0 |              94.4% |                0.0 |
+| RE2   | TrainTicket    |              83.3% |              81.1% |              −2.2 |              78.9% |               −4.4 |
+| RE3   | OnlineBoutique |              88.9% |              88.9% |               0.0 |              88.9% |                0.0 |
+| RE3   | SockShop       |          **63.6%** |          **63.6%** |               0.0 |          **53.6%** |              −10.0 |
+| RE3   | TrainTicket    |              71.0% |              71.0% |               0.0 |              71.0% |                0.0 |
+| —     | suite mean     | 87.2 / 88.9 / 71.1 | 86.1 / 88.5 / 71.1 | −1.1 / −0.4 / 0.0 | 83.2 / 87.8 / 66.7 | −4.0 / −1.1 / −4.4 |
 
 FSE'26, 1422 cases: **60.5% → 60.5%** Top@1 (Top@3 79.0 → 79.0, Top@5 82.2 → 82.2). The arm is **exactly
 inert** there — not "within noise", the same three numbers to the tenth.
@@ -127,6 +127,17 @@ destructive.
 
 Consequence: **the default stays ρ = 0**, the axis stays opt-in, and it is registered as measured-and-refused
 rather than left open. What a next arm would have to change is stated in §6.
+
+> **Superseded on the mechanism, and re-measured on the same cells — iteration 158, `docs/anomaly-space.md`.**
+> The paragraph above names the scale correctly and draws the wrong conclusion from it. TrainTicket's rank
+> surface is not a property of the CELL, it is a property of the GRAPH BUILDER (`anomalyNormalizeNodeThreshold`),
+> and the operator is extensive: `explained(v)` adds a callee's anomaly into a caller's, so the subtraction that
+> inverts it is only defined on a deviation. The deduction now reads `rawAnomalyScores` and returns through the
+> graph's own `anomalyNormalization`, and the cell that refused the axis reads **RE3:TrainTicket 71.0 → 78.1
+> (+7.1 pp)** at ρ = 1 with **RE1:TrainTicket −5.6 → −1.6** and **RE2:TrainTicket −2.2 → −1.1**. All three suite
+> means are up at that weight (87.7 / 89.3 / 72.2 against 87.2 / 88.9 / 71.1). The `all`-scope reading above
+> replicates exactly (RE3:SockShop 63.6 → 53.6), so the two questions — which channels, and which space — are
+> independent, and this document's scope conclusion stands.
 
 ## 6. What a next arm would have to change, and what is still unmeasured
 
