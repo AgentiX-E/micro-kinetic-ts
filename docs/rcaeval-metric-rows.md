@@ -82,3 +82,24 @@ the defect.
 
 `benchmarks` **1414/1414**; new module at 100% statements/branches/functions/lines; repository
 **4837/4837**; `zsh .git/check_fences.sh` → FENCES CLEAR.
+
+---
+
+## The ceiling on the `Avg@5` row — added 2026-10-29
+
+The four rows this document repaired are not equally informative on this corpus, and iteration 153 measured why:
+RCAEval exposes **2–5 distinct ground truths per cell** against 9–68 candidate services
+(`benchmark-corpus-completeness.md` §9). Since every cell's label set fits inside a top-5, a **constant** top-5
+naming those truths scores `Avg@5 = 100.0%` on all 735 cases without reading any telemetry — and the table shows it:
+the RE3 rows print `Avg@5 100.0%` on two of three cells and `86.0%` on the twelve-system fold, against `AC@1` of
+`83.3 / 60.0 / 70.0` on the same run.
+
+**So the `Avg@5` row must be read against its ceiling, not against zero.** It is still printed — hiding a row this
+document restored would be the same defect in the other direction — but no `Avg@5` cell may be quoted as a margin
+over a competitor unless that competitor is measured on the same cases and the same top-5 budget, because both
+numbers are close to a saturated ceiling and the distance between them is a fraction of a fraction. `AC@1` is the
+row that carries the ranking claim, its floors per cell are in §9, and `LA` equals it by definition.
+
+`arXiv:2609.27069` reaches the same conclusion from the other side and is the reason this note exists: a ranker
+reading no telemetry reaches `Avg@5 0.488` on held-out incidents in-distribution (99.7% top-5) and `0.192` across
+systems, and it calls that prior — not uniform-random `0.137` — the honest floor.
