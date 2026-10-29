@@ -58,8 +58,15 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js';
-import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
+import type {
+  TopoDiscountScope,
+  TopologyFaultGraphConfig,
+} from '../causal/topology-fault-graph.js';
+import {
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
+  buildTopologyFaultGraph,
+  isResponseChannel,
+} from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import {
@@ -305,27 +312,45 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly topoWeight: number;
   /**
-   * Multiplicative discount on a node's own anomaly, by how much of it its CALLEES explain.
+   * Deduction on a node's own anomaly, by how much of it its CALLEES explain.
    *
-   *   anomaly'(v) = anomaly(v) × (1 − topoDiscount × (1 − topoSource(v)))
+   *   explained(v) = max over callees c of propWeight(v→c) × anomaly(c)
+   *   anomaly'(v)  = max(0, anomaly(v) − topoDiscount × explained(v))
    *
-   * `topoSource(v) = 1` for a node no anomalous callee explains, so a source keeps ALL of its anomaly;
-   * `topoSource(v) = 0` is a node entirely explained by what it calls, which keeps `1 − topoDiscount`.
+   * `explained(v)` is zero for a node none of whose callees is anomalous, so a source keeps ALL of its
+   * anomaly; a node whose anomaly is entirely accounted for by what it calls falls to zero at
+   * `topoDiscount = 1`.
    *
-   * **This is the additive `topoWeight`'s scale-free form, and the difference was measured rather than
-   * argued.** The additive term is bounded by [0, 1] while the score it is added to is raw on
-   * OnlineBoutique (order 1–3) and rank-normalised on TrainTicket (63–69 nodes trip
-   * `anomalyNormalizeNodeThreshold`, so the anomaly is a rank with steps of **1/63 = 0.0159**). At
-   * `topoWeight = 0.1` the same term is 3% of one cell's score scale and **six rank steps** of another's:
-   * RE1-OnlineBoutique gained 3.2 pp and RE1-TrainTicket lost **46.4 pp** on run `40167961908`.
+   * **The form is a DEDUCTION, not a ratio, and that is what makes it scale-free.** Its relative effect
+   * is `topoDiscount × explained(v) / anomaly(v)`, a ratio of two quantities on the same scale, so it
+   * transfers between OnlineBoutique's raw deviation (order 1–3) and TrainTicket's rank-normalised one
+   * (63–69 nodes trip `anomalyNormalizeNodeThreshold`, so the anomaly is a rank with steps of
+   * **1/63 = 0.0159**) without a constant tuned per suite. The ADDITIVE `topoWeight` above has that
+   * defect in the other direction: at `topoWeight = 0.1` its term is 3% of one cell's score scale and six
+   * rank steps of another's, and RE1-TrainTicket lost **46.4 pp** on run `40167961908`.
    *
-   * A RATIO has no such problem — it says "an explained node keeps 70% of its anomaly" and means the
-   * same thing on both scales — which is why the suppression this project wants is expressed here as a
-   * discount rather than as a bonus.
+   * **The earlier form was a ratio and it was refused twice.** `anomaly × (1 − ρ·(1 − topoSource))`
+   * applies the discount to the node's WHOLE anomaly, so on RE3/SockShop it deducted the callee-origin's
+   * own `cpu` anomaly by the caller's response anomaly and lost cases at every weight (RE1 83.47 → 68.53
+   * at ρ = 0.25, `docs/dispatch-forwarding.md` §7; RE3/SockShop −2.5 pp at ρ = 0.25 on this corpus).
+   * Restricting the deduction to {@link isResponseChannel} channels — the only ones a callee can explain
+   * — removes that: RE3/SockShop is unmoved at ρ = 0.25 and 0.5 while RE1/OnlineBoutique gains, and
+   * `docs/topo-discount-scope.md` records the sweep.
    *
    * Default: 0 (off; bit-identical to the shipped ranking).
    */
   readonly topoDiscount: number;
+  /**
+   * Which channels {@link topoDiscount} is allowed to act on — see {@link TopoDiscountScope}.
+   *
+   * `external` (the default) restricts the deduction on BOTH sides to {@link isResponseChannel} channels:
+   * only a response anomaly at a callee may explain, and only a response anomaly at the caller may be
+   * deducted. `all` is the ablation arm, and it is the form that was refused.
+   *
+   * Read only when `topoDiscount > 0`; at the shipped weight of 0 the map is not built at all, so the two
+   * scopes are indistinguishable on every published number by construction rather than by agreement.
+   */
+  readonly topoDiscountScope: TopoDiscountScope;
   /**
    * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
    * log volume is highest.
@@ -1341,6 +1366,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   collisionWeight: DEFAULT_COLLISION_WEIGHT,
   topoWeight: DEFAULT_TOPO_WEIGHT,
   topoDiscount: DEFAULT_TOPO_DISCOUNT,
+  topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
@@ -1860,31 +1886,60 @@ export class TreePruner {
   }
 
   /**
-   * The per-node anomaly the ranking reads, after the topological discount.
+   * The per-node anomaly the ranking reads, after the topological deduction.
    *
-   *   anomaly'(v) = anomaly(v) × (1 − rho × (1 − topoSource(v)))
+   *   explained(v) = max over callees c with propWeight(v→c) > 0 of propWeight(v→c) × anomaly(c)
+   *   anomaly'(v)  = max(0, anomaly(v) − rho × explained(v))
    *
-   * A source — no anomalous callee — keeps its anomaly entire; a node that is entirely explained by
-   * what it calls keeps `1 − rho` of it. The multiplier is in [1−rho, 1], i.e. a RATIO, which is why it
-   * transfers between a raw score scale and a rank-normalised one where an additive term does not (see
-   * {@link RCAEngineOptions.topoDiscount}).
+   * applied only where {@link TopoDiscountScope} allows: under `external` both the explaining callee and
+   * the deducted caller must carry a {@link isResponseChannel} dominant metric, because a response is the
+   * only thing a call boundary transmits. A source — no anomalous callee, or an internal anomaly no
+   * callee can produce — keeps its anomaly entire.
    *
    * `rho = 0` — the shipped value — returns the graph's own map unchanged, so the shipped configuration
    * is bit-identical by construction: no copy, no float rounding, no comparison to defend.
    *
-   * @param graph - The graph whose anomalies are to be discounted.
+   * @param graph - The graph whose anomalies are to be deducted.
    * @returns The map the ranking should read.
    */
   private discountedAnomalies(graph: FaultPropagationGraph): ReadonlyMap<ServiceId, number> {
     const rho = this.options.topoDiscount;
     if (rho === 0) return graph.anomalyScores;
     invariantRange(rho, 0, 1, 'topoDiscount');
-    const topo = graph.topoScores;
-    if (topo === undefined) return graph.anomalyScores;
+    const scope = this.options.topoDiscountScope;
+    // One predicate for BOTH sides of the deduction: the channel a callee may explain through and the
+    // channel a caller may be deducted on are the same question, and two predicates would be free to
+    // disagree about which channels cross a call boundary.
+    const explicable = (nodeId: ServiceId): boolean => {
+      if (scope === 'all') return true;
+      const dominant = graph.dominantMetrics?.get(nodeId);
+      return dominant !== undefined && isResponseChannel(dominant.label);
+    };
+    const explained = new Map<ServiceId, number>();
+    const edges = graph.callGraph.edges;
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i]!;
+      if (!explicable(edge.to)) continue;
+      // No `?? 0` on the weight: `buildEdgeWeightMap` refuses a vector whose length differs from the edge
+      // count, and this method is reached only through `analyze`, which runs that pass first. A default
+      // here would be a branch no graph can take — and the fence that makes it so is asserted in the
+      // discount's own suite rather than trusted.
+      const weight = graph.propagationWeights[i]!;
+      if (!(weight > 0)) continue;
+      // A callee CAN be an edge endpoint and carry no anomaly at all — a node with no telemetry explains
+      // nothing — so this default is reachable and stays.
+      const calleeAnomaly = graph.anomalyScores.get(edge.to) ?? 0;
+      if (!(calleeAnomaly > 0)) continue;
+      const value = weight * calleeAnomaly;
+      if (value > (explained.get(edge.from) ?? 0)) explained.set(edge.from, value);
+    }
     const discounted = new Map<ServiceId, number>();
     for (const [nodeId, anomaly] of graph.anomalyScores) {
-      const source = topo.get(nodeId) ?? 1;
-      discounted.set(nodeId, anomaly * (1 - rho * (1 - source)));
+      const deduction = explicable(nodeId) ? rho * (explained.get(nodeId) ?? 0) : 0;
+      // Written as a branch rather than `Math.max(0, …)` so a fully explained node reads exactly `0`
+      // instead of `-0`, which the ranking's tie-break would see as a different value from a node whose
+      // anomaly genuinely was zero.
+      discounted.set(nodeId, deduction >= anomaly ? 0 : anomaly - deduction);
     }
     return discounted;
   }

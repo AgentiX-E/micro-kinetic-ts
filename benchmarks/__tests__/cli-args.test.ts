@@ -18,7 +18,10 @@ import {
   MAX_FIELD_DECIMALS,
   SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
-import { DEFAULT_TRACE_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TRACE_WEIGHT,
+} from '../../packages/tree/src/index.js';
 
 import {
   parseFieldDecimals,
@@ -72,6 +75,24 @@ describe('parseUnitInterval', () => {
     expect(() => parseRCAEvalArgs(['--topo-discount', '--trace-weight', '0.5'])).toThrow(
       /--topo-discount/,
     );
+  });
+
+  it('binds --topo-discount-scope on both halves, and refuses what is not a scope', () => {
+    // The second half of the deduction's axis. A malformed value falls back to the SHIPPED scope on the rule
+    // every mode flag here follows — a typo reproduces a published corpus instead of inventing one — and a
+    // flag left without a value is reported at the flag rather than swallowing the next one.
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'all']).topoDiscountScope).toBe('all');
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'external']).topoDiscountScope).toBe(
+      'external',
+    );
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'all']).topoDiscount).toBe(0);
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'everything']).topoDiscountScope).toBe(
+      DEFAULT_TOPO_DISCOUNT_SCOPE,
+    );
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'ALL']).topoDiscountScope).toBe(
+      DEFAULT_TOPO_DISCOUNT_SCOPE,
+    );
+    expect(() => parseRCAEvalArgs(['--topo-discount-scope'])).toThrow(/--topo-discount-scope/);
   });
 });
 

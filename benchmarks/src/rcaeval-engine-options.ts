@@ -35,6 +35,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
@@ -87,8 +88,10 @@ export interface RCAEvalSignalOptions {
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
-  /** Multiplicative topological discount (0 = off). */
+  /** Topological deduction strength (0 = off). */
   readonly topoDiscount: number;
+  /** Which channels the topological deduction may act on — see `TopoDiscountScope`. */
+  readonly topoDiscountScope: TopoDiscountScope;
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
@@ -220,6 +223,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
+      topoDiscountScope: opts.topoDiscountScope,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
@@ -271,7 +275,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
 export function formatSignalLine(opts: CliOptions): string {
   return (
     `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} ` +
-    `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} ` +
+    `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} topoDiscountScope=${opts.topoDiscountScope} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} ` +
     // The three the golden half inherited in silence until this line named them.
     `latWeight=${opts.latWeight} latMinRise=${opts.latMinRise} ` +
     `poolMetricPenaltyWeight=${opts.poolMetricPenaltyWeight} ` +

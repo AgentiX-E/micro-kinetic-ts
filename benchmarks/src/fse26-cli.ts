@@ -38,6 +38,7 @@ import type {
   DropDeviationMode,
   FailedEdgeMode,
   LogSignalMode,
+  TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -74,6 +75,8 @@ import {
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRACE_WEIGHT,
@@ -85,6 +88,7 @@ import {
   isLogSignalMode,
   isOnsetShape,
   isPrismPooling,
+  isTopoDiscountScope,
   type OnsetShape,
   type PrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -343,6 +347,24 @@ export interface Fse26CliOptions {
    */
   readonly topoWeight: number;
   /**
+   * Topological deduction strength — the amount of a node's own anomaly its CALLEES may deduct.
+   *
+   *   explained(v) = max over callees c of propWeight(v→c) × anomaly(c)
+   *   anomaly'(v)  = max(0, anomaly(v) − topoDiscount × explained(v))
+   *
+   * `0` is the shipped value and the ablation's own zero: the map is not built at all, so a bare dispatch
+   * reproduces a published corpus by construction. The form and its two refused predecessors are recorded
+   * on `TreePrunerOptions.topoDiscount`; `docs/topo-discount-scope.md` carries the sweep.
+   */
+  readonly topoDiscount: number;
+  /**
+   * Which channels {@link topoDiscount} may act on — `external` restricts both sides to response channels.
+   *
+   * Printed only when the weight is non-zero, because a scope combined with a zero deduction is not part of
+   * the configuration: the map is never built, so the two values are indistinguishable by construction.
+   */
+  readonly topoDiscountScope: TopoDiscountScope;
+  /**
    * Weight on the collision (co-occurrence) term. `0` = off, the shipped value.
    *
    * The Deng-Yu collision source is the term's name; its contribution on the golden corpus is `0.0000` on
@@ -523,6 +545,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     traceWeight: DEFAULT_TRACE_WEIGHT,
     traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     topoWeight: DEFAULT_TOPO_WEIGHT,
+    topoDiscount: DEFAULT_TOPO_DISCOUNT,
+    topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     prismWeight: DEFAULT_PRISM_WEIGHT,
     prismPooling: DEFAULT_PRISM_POOLING,
@@ -657,7 +681,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.traceWeight = parseWeight(argv[++i]!, DEFAULT_TRACE_WEIGHT);
     else if (arg === '--topo-weight' && hasValue(argv, i + 1))
       opts.topoWeight = parseWeight(argv[++i]!, DEFAULT_TOPO_WEIGHT);
-    else if (arg === '--collision-weight' && hasValue(argv, i + 1))
+    else if (arg === '--topo-discount' && hasValue(argv, i + 1))
+      // The golden half's `parseUnitInterval` rule, so one malformed argument cannot become two different
+      // configurations on the two halves of the same suite.
+      opts.topoDiscount = parseUnitInterval(argv[++i]!, DEFAULT_TOPO_DISCOUNT);
+    else if (arg === '--topo-discount-scope' && hasValue(argv, i + 1)) {
+      const scope = argv[++i]!;
+      opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
+    } else if (arg === '--collision-weight' && hasValue(argv, i + 1))
       opts.collisionWeight = parseWeight(argv[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (arg === '--prism-weight' && hasValue(argv, i + 1))
       opts.prismWeight = parseWeight(argv[++i]!, DEFAULT_PRISM_WEIGHT);

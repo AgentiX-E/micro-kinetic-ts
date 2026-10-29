@@ -15,11 +15,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
 import {
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
   ONSET_SHAPES,
 } from '../../packages/tree/src/index.js';
 
@@ -433,6 +435,15 @@ const MIRRORED_KNOBS: readonly {
 }[] = [
   { option: 'traceWeight', flag: '--trace-weight', value: '1', bucket: 'signals', expected: 1 },
   { option: 'topoWeight', flag: '--topo-weight', value: '0.25', bucket: 'signals', expected: 0.25 },
+  // Iteration 190's weight. It joins this table because it is a weight the pruner reads from `signals`, which
+  // is the one thing this table exists to prove about a mirrored knob.
+  {
+    option: 'topoDiscount',
+    flag: '--topo-discount',
+    value: '0.5',
+    bucket: 'signals',
+    expected: 0.5,
+  },
   {
     option: 'collisionWeight',
     flag: '--collision-weight',
@@ -491,6 +502,28 @@ function argvOf(row: (typeof MIRRORED_KNOBS)[number], value = row.value): string
   return value === '' ? [row.flag] : [row.flag, value];
 }
 
+describe('the topological deduction pair', () => {
+  it('parses the scope, refusing any value that is not one of the two', () => {
+    // The scope is a MODE, not a number, so it is parsed by its union's own guard on the rule every mode flag
+    // on this surface follows: a typo reproduces the shipped configuration rather than inventing one.
+    expect(parseFSE26Args(['--topo-discount-scope', 'all']).topoDiscountScope).toBe('all');
+    expect(parseFSE26Args(['--topo-discount-scope', 'external']).topoDiscountScope).toBe(
+      'external',
+    );
+    expect(parseFSE26Args(['--topo-discount-scope', 'none']).topoDiscountScope).toBe(
+      DEFAULT_TOPO_DISCOUNT_SCOPE,
+    );
+  });
+
+  it('ships both at the values a bare dispatch resolves to', () => {
+    // Bit-identity on the shipped configuration is the promise the whole axis rests on: the deduction is 0, so
+    // no published number moved by adding it.
+    const opts = parseFSE26Args([]);
+    expect(opts.topoDiscount).toBe(0);
+    expect(opts.topoDiscountScope).toBe(DEFAULT_TOPO_DISCOUNT_SCOPE);
+  });
+});
+
 describe("the FSE'26 half reaches the eight knobs the golden half could state alone", () => {
   it('accepts each one, and lands it on the engine in the argument that owns it', () => {
     // The failure this replaces is loud rather than quiet on this runner — an unrecognised flag is a
@@ -528,27 +561,44 @@ describe("the FSE'26 half reaches the eight knobs the golden half could state al
     // A fallback is a second statement of the default, so it is a place the two halves can silently part.
     // The value-taking rows get a value neither parser can read; the two switches take none, so their
     // only malformed form is the NEGATED pole, which every runner here spells as its own flag.
+    // Rows are looked up BY NAME rather than by position. The table grows every time an axis is reopened —
+    // `topoDiscount` is the most recent — and a positional lookup turns each addition into a silent re-read
+    // of a different knob, which is a test that keeps passing while measuring nothing.
+    const rowOf = (option: string): (typeof MIRRORED_KNOBS)[number] => {
+      const found = MIRRORED_KNOBS.find((candidate) => candidate.option === option);
+      if (found === undefined) throw new Error(`no mirrored row named ${option}`);
+      return found;
+    };
     const negatives: readonly {
       row: (typeof MIRRORED_KNOBS)[number];
       bad: string;
       negated: string;
     }[] = [
-      { row: MIRRORED_KNOBS[0]!, bad: '1O', negated: '--no-trace-weight' },
-      { row: MIRRORED_KNOBS[1]!, bad: '-1', negated: '--no-topo-weight' },
-      { row: MIRRORED_KNOBS[2]!, bad: 'abc', negated: '--no-collision-weight' },
-      { row: MIRRORED_KNOBS[3]!, bad: '', negated: '--no-prism-weight' },
-      { row: MIRRORED_KNOBS[4]!, bad: 'not-a-pooling', negated: '--no-prism-pooling' },
-      { row: MIRRORED_KNOBS[5]!, bad: 'Infinity', negated: '--no-collapse-discount' },
+      { row: rowOf('traceWeight'), bad: '1O', negated: '--no-trace-weight' },
+      { row: rowOf('topoWeight'), bad: '-1', negated: '--no-topo-weight' },
+      { row: rowOf('topoDiscount'), bad: '-0.5', negated: '--no-topo-discount' },
+      { row: rowOf('collisionWeight'), bad: 'abc', negated: '--no-collision-weight' },
+      { row: rowOf('prismWeight'), bad: '', negated: '--no-prism-weight' },
+      { row: rowOf('prismPooling'), bad: 'not-a-pooling', negated: '--no-prism-pooling' },
+      { row: rowOf('collapseDiscount'), bad: 'Infinity', negated: '--no-collapse-discount' },
     ];
-    for (const { row, bad } of negatives) {
+    for (const { row, bad, negated } of negatives) {
       const mine = engineValue(buildFse26EngineOptions(parseFSE26Args([row.flag, bad])), row);
       const golden = engineValue(buildRCAEvalEngineOptions(parseRCAEvalArgs([row.flag, bad])), row);
       expect(mine, `${row.option}: the runners disagree about a malformed '${bad}'`).toEqual(
         golden,
       );
+      // A value-taking knob has no negated pole: `--no-x` means "off" only for the switches, and reading it
+      // as a zero weight here would turn a typo into a different experiment that still runs. Both halves
+      // must refuse the spelling rather than resolve it.
+      expect(() => parseFSE26Args([negated]), `${negated} was read as a value`).toThrow();
+      expect(() => parseRCAEvalArgs([negated]), `${negated} was read as a value`).toThrow();
     }
-    // And the switches' shipped pole, which is the value a run that says nothing is measured at.
-    for (const row of MIRRORED_KNOBS.slice(6)) {
+    // And the switches' shipped pole, which is the value a run that says nothing is measured at. Selected
+    // by TYPE, because "the switch rows" is a claim about what they hold, not about where they sit.
+    for (const row of MIRRORED_KNOBS.filter(
+      (candidate) => typeof candidate.expected === 'boolean',
+    )) {
       const mine = engineValue(buildFse26EngineOptions(parseFSE26Args([])), row);
       const golden = engineValue(buildRCAEvalEngineOptions(parseRCAEvalArgs([])), row);
       expect(mine, `${row.option}: shipped default`).toEqual(false);
@@ -563,5 +613,54 @@ describe("the FSE'26 half reaches the eight knobs the golden half could state al
     for (const row of MIRRORED_KNOBS) {
       expect(() => parseFSE26Args([`--not${row.flag}`]), `--not${row.flag} was accepted`).toThrow();
     }
+  });
+});
+
+describe("the FSE'26 half's two mode flags", () => {
+  it('accepts the closed set, forwards it to the fault graph, and REFUSES anything else', () => {
+    // These two sit on the topology object rather than in `signals`, and they are MODES with a closed set
+    // rather than weights with a fallback — so the wrong spelling has to be an error, not the default. The
+    // distinction is the whole reason this block exists: an unrecognised mode that silently reproduced the
+    // shipped configuration would turn a typo into an experiment that runs and reports a number.
+    const modes: readonly { flag: string; values: readonly string[] }[] = [
+      { flag: '--drop-deviation-mode', values: ['bounded', 'log'] },
+      { flag: '--baseline-anchor', values: ['whole-file', 'pre-injection'] },
+    ];
+    for (const { flag, values } of modes) {
+      const field = flag.slice(2).replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+      for (const value of values) {
+        const parsed = parseFSE26Args([flag, value]);
+        expect(
+          (parsed as unknown as Record<string, unknown>)[field],
+          `${flag} ${value} did not parse`,
+        ).toBe(value);
+        const topology = buildFse26EngineOptions(parsed).topology as Record<string, unknown>;
+        expect(topology[field], `${flag} ${value} did not reach the fault graph`).toBe(value);
+      }
+      expect(() => parseFSE26Args([flag, 'neither']), `${flag} accepted 'neither'`).toThrow(
+        /expects/,
+      );
+      // A mode flag with no value at all is a stray token, not a value: the branch above is guarded on
+      // `hasValue`, so the flag alone falls through to the same refusal every unknown argument gets.
+      expect(() => parseFSE26Args([flag]), `${flag} with no value was accepted`).toThrow();
+    }
+  });
+
+  it('lets the OTHER modes fall back instead — the two rules are not interchangeable', () => {
+    // The two above throw on an unknown value; the gate mode does not, and it must not start. The
+    // difference is measured-versus-published: `bounded|log` and `whole-file|pre-injection` are both
+    // published configurations, so a typo between them is a silent re-pairing of the experiment, while an
+    // unknown gate mode has no published arm to be confused with and reading it as the shipped one is the
+    // only outcome that cannot invent a configuration nobody ran.
+    expect(parseFSE26Args(['--dual-family-gate-mode', 'neither']).dualFamilyGateMode).toBe(
+      DEFAULT_DUAL_FAMILY_GATE_MODE,
+    );
+    // …and the same malformed value reaches the ENGINE as the shipped mode, not as the typo. Read from
+    // `signals`, which is the object the pruner's first constructor argument owns — the gate mode is a
+    // ranking signal, not a fault-graph setting, and placing it in `topology` would be the silent no-op the
+    // two-object split exists to make visible.
+    const signals = buildFse26EngineOptions(parseFSE26Args(['--dual-family-gate-mode', 'neither']))
+      .signals as Record<string, unknown>;
+    expect(signals.dualFamilyGateMode).toBe(DEFAULT_DUAL_FAMILY_GATE_MODE);
   });
 });

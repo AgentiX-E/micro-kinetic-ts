@@ -25,6 +25,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  TopoDiscountScope,
   TopologyFaultGraphConfig,
 } from '../../packages/tree/src/index.js';
 
@@ -113,6 +114,10 @@ export interface Fse26SignalOptions {
   /** Whether the trace vote is withheld from the anomaly leader. Required for the same reason as the weight. */
   readonly traceSkipsLeader: boolean;
   readonly topoWeight: number;
+  /** Topological deduction strength (0 = off) — see `TreePrunerOptions.topoDiscount`. */
+  readonly topoDiscount: number;
+  /** Which channels the deduction may act on — see `TopoDiscountScope`. */
+  readonly topoDiscountScope: TopoDiscountScope;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   readonly prismPooling: PrismPooling;
@@ -177,6 +182,8 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       traceWeight: opts.traceWeight,
       traceSkipsLeader: opts.traceSkipsLeader,
       topoWeight: opts.topoWeight,
+      topoDiscount: opts.topoDiscount,
+      topoDiscountScope: opts.topoDiscountScope,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,
       prismPooling: opts.prismPooling,

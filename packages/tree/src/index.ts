@@ -89,6 +89,7 @@ export {
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
   // The stationarity guard's two constants and its ONE statistic, exported together because a census that
@@ -96,12 +97,15 @@ export {
   // definition of "stationary", which is the defect `docs/baseline-anchor.md` §7b exists to prevent.
   MIN_STATIONARY_PRE_SAMPLES,
   PRE_WINDOW_GUARDS,
+  TOPO_DISCOUNT_SCOPES,
   isBaselineAnchor,
   isDemandMetric,
   isDropDeviationMode,
   // The transport family, exported on the same rule as the demand family: the term that credits a
   // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
   isLatencyMetric,
+  isResponseChannel,
+  isTopoDiscountScope,
   judgePreWindowDrift,
   preWindowDrift,
   probePreInjectionWindow,
@@ -120,6 +124,7 @@ export type {
   MetricDiagnosticOutcome,
   PreWindowGuard,
   PreWindowProbe,
+  TopoDiscountScope,
   TopologyFaultGraphConfig,
 } from './causal/topology-fault-graph.js';
 

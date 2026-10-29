@@ -296,6 +296,12 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // composition because it re-defines the `max`, `min` and baseline every coefficient in that object is
     // computed from — a run that re-anchored the window without saying so would print an unattributable score.
     '--baseline-anchor',
+    // Iteration 190: the topological deduction and the channels it may act on. Packed for the reason every
+    // post-ceiling knob is — the golden half's 25-input budget is full — and it returns here after its
+    // predecessor was retired from the same budget: the ratio form was refused at every weight, the
+    // deduction-of-response-channels form is the successor that made the same weight admissible.
+    '--topo-discount',
+    '--topo-discount-scope',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -322,6 +328,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // injection. It belongs to the anomaly composition because it re-defines the same `max`, `min` and
     // `baselineMean` the composition is computed from; it is a WINDOW, not a weight.
     '--baseline-anchor',
+    // Iteration 190: the topological deduction and its channel scope, packed into the GOLDEN half's input for
+    // the reason every post-ceiling knob is here — this workflow is at 25/25.
+    '--topo-discount',
+    '--topo-discount-scope',
   ],
 };
 
@@ -516,14 +526,23 @@ const KNOBS: Readonly<
   },
   topoDiscount: {
     flag: '--topo-discount',
-    owner: 'topological-source-direction.md',
-    // THE INPUT WAS RETIRED, and the flag survives: the discount was measured at two values on all 735
-    // cases and refused (RE1 83.47 → 68.53 at ρ = 0.25, three of TrainTicket's five injected services to
-    // exactly zero), so its dispatch slot went to the anomaly composition, which is the only thing that
-    // can move RE1 at all. The flag stays because the successor measure — a relative explanation that
-    // cannot be won by having no out-edges — will be re-tested through the same plumbing.
-    fse26: null,
-    rcaeval: null,
+    // The owner changed with the FORM. The ratio form was refused (RE1 83.47 → 68.53 at ρ = 0.25, three of
+    // TrainTicket's five injected services to exactly zero) and its input was retired to the 25-input budget;
+    // the successor is a DEDUCTION of the anomaly a callee can account for, restricted to the response
+    // channels a call boundary carries. That restriction is what makes the same weight admissible, so the
+    // document that owns the value is the one that owns the restriction.
+    owner: 'topo-discount-scope.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'topodiscount',
+  },
+  topoDiscountScope: {
+    flag: '--topo-discount-scope',
+    owner: 'topo-discount-scope.md',
+    // A knob of its own rather than a second meaning for the weight: the weight says HOW MUCH of an explained
+    // anomaly is deducted, the scope says WHICH anomalies a callee may explain, and `all` exists so the
+    // scope's contribution can be measured against the form that was refused.
+    fse26: 'ranking_knobs',
+    rcaeval: 'toposcope',
   },
   traceWeight: {
     flag: '--trace-weight',
@@ -757,6 +776,8 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'suppressIdleTransients',
   'suppressNearZeroBaselineRise',
   'temporalWeight',
+  'topoDiscount',
+  'topoDiscountScope',
   'topoWeight',
   'traceWeight',
   'traceSkipsLeader',
@@ -848,9 +869,11 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',
-  // Retired, not refused: the discount's input became the anomaly composition's when the 25-input budget
-  // ran out, and the flag remains on the runner for the successor measure's re-test. See `topoDiscount`.
-  '--topo-discount',
+  // `--topo-discount` USED TO BE HERE and is not any more: it was retired to the 25-input budget after being
+  // refused at two weights in the ratio form, and the successor measure — a deduction of the response
+  // channels a callee can actually explain — is dispatchable on both halves as `topodiscount`/`topo_scope`.
+  // Removing it is the direction the list may move in without a new flag, and the non-vacuity floor below is
+  // what keeps that removal from emptying the section.
 ];
 
 /**

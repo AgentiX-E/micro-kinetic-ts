@@ -30,6 +30,7 @@ import type {
   DualFamilyGateMode,
   OnsetShape,
   PrismPooling,
+  TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
 
 /**
@@ -159,6 +160,13 @@ export interface FSE26RunConfig {
   /** Whether the trace vote is withheld from the anomaly leader; `false` = the shipped configuration. */
   readonly traceSkipsLeader: boolean;
   readonly topoWeight: number;
+  /**
+   * Topological deduction strength. Printed only when non-zero, and its scope nested under it: the deduction
+   * map is not built at `0`, so a scope alone is not a configuration the engine can distinguish.
+   */
+  readonly topoDiscount: number;
+  /** Which channels the deduction may act on — see `TopoDiscountScope`. */
+  readonly topoDiscountScope: TopoDiscountScope;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   /**
@@ -481,6 +489,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   if (config.topoWeight !== 0) {
     line += ` topoWeight=${config.topoWeight}`;
+  }
+  if (config.topoDiscount !== 0) {
+    line += ` topoDiscount=${config.topoDiscount}`;
+    // Nested under the weight, on `prismPooling`'s rule: a scope combined with a zero deduction is not part
+    // of the configuration, so printing it would report a difference the engine cannot have.
+    line += ` topoDiscountScope=${config.topoDiscountScope}`;
   }
   if (config.collisionWeight !== 0) {
     line += ` collisionWeight=${config.collisionWeight}`;

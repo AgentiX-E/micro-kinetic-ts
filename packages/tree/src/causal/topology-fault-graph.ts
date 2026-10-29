@@ -1444,6 +1444,75 @@ export function isLatencyMetric(label: string): boolean {
 }
 
 /**
+ * Whether a metric label names a **response** channel — one whose movement at a callee can be inherited by
+ * its caller, and therefore the only kind of channel a callee's anomaly is able to explain.
+ *
+ * The distinction is physical rather than statistical. A caller's response time CONTAINS its callees'
+ * response time, and a caller's error rate contains the errors its failed calls produced, so a rise in
+ * either is ambiguous between "this component is the origin" and "what this component calls is the
+ * origin". A CPU, memory, disk or socket reading is a property of the component's OWN machine and is not
+ * transmitted across a call boundary, so it is never explained by a callee. A demand reading
+ * (`workload`, `load`) is what was HANDED to the component — the opposite direction — and is the same
+ * class {@link isDemandMetric} excludes from decisive evidence.
+ *
+ * This is the axis the topological discount needed and did not have. The signal
+ * ({@link computeTopoSourceScores}) computed one anomaly per node across every channel, so discounting a
+ * caller by what its callees explain also discounted a callee-origin's own resource anomaly — which is why
+ * the discount measured on RCAEval RE3/SockShop moved the wrong way while the same weight helped
+ * RE1/OnlineBoutique. `docs/topo-discount-scope.md` records both readings.
+ *
+ * @param label - The metric label as the converter wrote it.
+ * @returns Whether the channel is a boundary-observable response.
+ */
+export function isResponseChannel(label: string): boolean {
+  const lower = label.toLowerCase();
+  return (
+    isLatencyMetric(lower) ||
+    lower === 'delay' ||
+    lower === 'error' ||
+    lower === 'loss' ||
+    lower === 'socket'
+  );
+}
+
+/**
+ * Which channels the topological discount is allowed to act on.
+ *
+ * - `external` (default): only {@link isResponseChannel} channels participate on either side of the
+ *   deduction — a callee explains its caller through its response, and only a response anomaly at the
+ *   caller is deducted.
+ * - `all`: every channel participates. This is the ablation arm: it is the form the discount had when its
+ *   only definition was "anomaly minus explained anomaly", and it is kept reachable so the scope's own
+ *   contribution can be measured against it rather than asserted.
+ */
+export type TopoDiscountScope = 'all' | 'external';
+
+/** The reachable values of {@link TopoDiscountScope}, as a lookup so a parser cannot invent a third. */
+export const TOPO_DISCOUNT_SCOPES: Readonly<Record<TopoDiscountScope, true>> = {
+  all: true,
+  external: true,
+};
+
+/**
+ * The shipped {@link TopoDiscountScope}.
+ *
+ * `external` rather than `all` because the internal half of the deduction is what the measurement
+ * refused: at the same weight `all` costs RE3/SockShop two cases while `external` costs none, and the
+ * difference is exactly the callee-origin whose own `cpu` was being deducted by a caller's anomaly.
+ */
+export const DEFAULT_TOPO_DISCOUNT_SCOPE: TopoDiscountScope = 'external';
+
+/**
+ * Whether a string names a {@link TopoDiscountScope}.
+ *
+ * @param value - Candidate value, as a CLI or a workflow input would carry it.
+ * @returns Whether it is one of the two scopes.
+ */
+export function isTopoDiscountScope(value: string): value is TopoDiscountScope {
+  return Object.prototype.hasOwnProperty.call(TOPO_DISCOUNT_SCOPES, value);
+}
+
+/**
  * The fault family a metric LABEL names, or `undefined` when the label names none.
  *
  * Definitional, and deliberately tiny: a label that measures response time names `DELAY`, one that

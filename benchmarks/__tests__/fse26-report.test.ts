@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
 } from '../../packages/tree/src/index.js';
 
@@ -82,6 +83,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // this fixture the published configuration rather than a configuration nobody ran.
     traceWeight: 0,
     topoWeight: 0,
+    topoDiscount: 0,
+    topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     collisionWeight: 0,
     prismWeight: 0,
     prismPooling: 'additive',
@@ -526,6 +529,10 @@ describe('summariseFailedEdgeCoverage', () => {
         token: 'suppressNearZeroBaselineRise=true',
         shipped: 'suppressNearZeroBaselineRise',
       },
+      // Iteration 190's pair. The WEIGHT rides the same omit-when-default rule — it ships at 0 — and the
+      // SCOPE is nested under it, because a scope combined with a zero deduction is not a configuration the
+      // engine can distinguish: the map is never built.
+      { patch: { topoDiscount: 0.5 }, token: 'topoDiscount=0.5', shipped: 'topoDiscount' },
     ];
     for (const { patch, token, shipped } of rows) {
       expect(
@@ -548,5 +555,31 @@ describe('summariseFailedEdgeCoverage', () => {
     // …and the shipped pooling stays off even once the weight is on, so an ablation of the pooling alone
     // is visible while the shipped pairing keeps the line it always had.
     expect(formatFSE26ConfigLine(makeConfig({ prismWeight: 0.125 }))).not.toContain('prismPooling');
+  });
+
+  it('prints the four guard poles, including the one whose shipped value is the silent pole', () => {
+    // These four sit outside the mirror: three ship `false` and print only when an arm flips them, and the
+    // demand guard ships `true` and prints only when an arm turns it OFF. The last one is the reason this
+    // block exists at all — "print what is non-default" and "print what is true" are different rules, and a
+    // line that printed `suppressDemandMetrics=true` for the shipped run would claim an ablation nobody ran.
+    const offPoles: readonly { patch: Partial<FSE26RunConfig>; token: string }[] = [
+      { patch: { traceSkipsLeader: true }, token: 'traceSkipsLeader=true' },
+      { patch: { suppressZeroBaselineLatency: true }, token: 'suppressZeroBaselineLatency=true' },
+      { patch: { capTrendBonusAtDeviation: true }, token: 'capTrendBonusAtDeviation=true' },
+    ];
+    for (const { patch, token } of offPoles) {
+      const field = token.split('=')[0]!;
+      expect(
+        formatFSE26ConfigLine(makeConfig()),
+        `${field} printed at its shipped pole`,
+      ).not.toContain(field);
+      expect(formatFSE26ConfigLine(makeConfig(patch)), `${token} missing`).toContain(token);
+    }
+    // The inverted one. Its shipped pole prints NOTHING, and the ablation's pole prints the `false`.
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('suppressDemandMetrics');
+    expect(
+      formatFSE26ConfigLine(makeConfig({ suppressDemandMetrics: false })),
+      'an arm that turns the demand guard off must say so',
+    ).toContain('suppressDemandMetrics=false');
   });
 });

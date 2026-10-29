@@ -173,6 +173,8 @@ async function main(): Promise<void> {
     traceWeight: opts.traceWeight,
     traceSkipsLeader: opts.traceSkipsLeader,
     topoWeight: opts.topoWeight,
+    topoDiscount: opts.topoDiscount,
+    topoDiscountScope: opts.topoDiscountScope,
     collisionWeight: opts.collisionWeight,
     prismWeight: opts.prismWeight,
     prismPooling: opts.prismPooling,

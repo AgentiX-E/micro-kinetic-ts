@@ -72,7 +72,9 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
   topoDiscount:
-    'the multiplicative topological discount, off at 0 and not searched: its scale-free form is recorded in docs/dispatch-forwarding.md §5, and a term whose additive sibling ships at weight 0 has no business being a search axis',
+    'the topological deduction, off at 0 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and a term whose additive sibling ships at weight 0 has no business being a search axis',
+  topoDiscountScope:
+    'the deduction QUANTITY rather than a number: `all` and `external` are two physical claims about which channels cross a call boundary, so it is a dispatch axis and not a fusion coefficient the search can interpolate',
 };
 
 /**

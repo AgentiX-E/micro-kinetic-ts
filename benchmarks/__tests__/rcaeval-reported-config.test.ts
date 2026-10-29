@@ -481,7 +481,12 @@ describe('the RCAEval configuration line carries the configuration that produced
     // unconditionally on the same rule as every field above: it ships at `whole-file`, so a line that omitted
     // defaults would render the shipped run and an arm that re-anchored every metric byte-identically.
     expect(formatSignalLine(shipped)).toBe(
-      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 logWeight=1 ' +
+      // Iteration 190 added `topoDiscountScope` here, and it is the one field on this line whose presence
+      // CHANGES the shipped artifact rather than annotating it: the deduction is inert at weight 0, so the two
+      // scopes are indistinguishable by construction and an omitted-when-default rule would render the shipped
+      // run and the ablation arm byte-identically — the exact defect every field above exists to prevent.
+      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 ' +
+        'topoDiscountScope=external logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +

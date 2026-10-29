@@ -44,6 +44,11 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import type { TopoDiscountScope } from '../../packages/tree/src/causal/topology-fault-graph.js';
+import {
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
+  isTopoDiscountScope,
+} from '../../packages/tree/src/causal/topology-fault-graph.js';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
@@ -284,8 +289,16 @@ export interface CliOptions {
   collisionWeight: number;
   /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
   topoWeight: number;
-  /** Multiplicative topological discount (0 = off; see `RCAEngineOptions.topoDiscount`). */
+  /** Topological deduction strength (0 = off; see `TreePrunerOptions.topoDiscount`). */
   topoDiscount: number;
+  /**
+   * Which channels the topological deduction may act on (see `TopoDiscountScope`).
+   *
+   * A field of its own rather than a second meaning for the weight, because the two answer different
+   * questions and a run that changes one must still be able to say which the other was: the weight says HOW
+   * MUCH of an explained anomaly is deducted, the scope says WHICH anomalies a callee is allowed to explain.
+   */
+  topoDiscountScope: TopoDiscountScope;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
   /**
@@ -554,6 +567,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
+    topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
     // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
@@ -706,7 +720,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.topoWeight = parseWeight(args[++i]!, DEFAULT_TOPO_WEIGHT);
     else if (args[i] === '--topo-discount' && hasValue(args, i + 1))
       opts.topoDiscount = parseUnitInterval(args[++i]!);
-    else if (args[i] === '--log-weight' && hasValue(args, i + 1))
+    else if (args[i] === '--topo-discount-scope' && hasValue(args, i + 1)) {
+      // Falls back to the SHIPPED scope on an unusable value, on the rule every mode flag here follows: a
+      // typo must reproduce a published corpus rather than invent one.
+      const scope = args[++i]!;
+      opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
+    } else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
       // configuration this runner never described and never recorded.

@@ -26,6 +26,8 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -70,6 +72,10 @@ describe('buildFse26EngineOptions', () => {
       // `rcaeval-engine-options.ts` records having been built to prevent.
       traceWeight: 0,
       topoWeight: 0,
+      // The deduction pair. Both are read from `signals` by the pruner, so both have to land there — and the
+      // weight is 0, which is exactly why a silent drop would be invisible and why the row exists.
+      topoDiscount: DEFAULT_TOPO_DISCOUNT,
+      topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
       collisionWeight: 0,
       prismWeight: 0,
       prismPooling: DEFAULT_PRISM_POOLING,

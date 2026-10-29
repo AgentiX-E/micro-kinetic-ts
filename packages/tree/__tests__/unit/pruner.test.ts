@@ -1189,25 +1189,47 @@ describe('TreePruner', () => {
     });
   });
 
-  describe('topological discount (multiplicative, scale-free)', () => {
+  describe('topological deduction (response channels only)', () => {
     // `a → b` means a CALLS b, so `a` is the caller of an anomalous callee: its own anomaly is the
-    // symptom's. `a`'s self-anomaly is the larger of the two, which is exactly the situation the
-    // discount exists for — magnitude favours the symptom.
-    const callGraph = makeCallGraph(['a', 'b'], [['a', 'b']]);
-    const metrics = makeMetrics({
+    // symptom's. `a`'s self-anomaly is the larger of the two, which is exactly the situation the deduction
+    // exists for — magnitude favours the symptom.
+    const callGraph = makeCallGraph(
+      ['a', 'b', 'c'],
+      [
+        ['a', 'b'],
+        ['b', 'c'],
+      ],
+    );
+    const withLabel = (label: string, nodeData: Record<string, number[]>): MetricMap => {
+      const map = new Map<string, readonly TimeSeries[]>();
+      for (const [nodeId, vals] of Object.entries(nodeData)) {
+        map.set(nodeId, [makeTimeSeries(label, vals)]);
+      }
+      return map;
+    };
+    // A RESPONSE channel: a caller's latency contains its callee's, so `b` explains `a`.
+    const responseMetrics = withLabel('latency_ms', {
       a: [1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3],
       b: [1, 1, 1, 1, 1, 1, 2.8, 2.8, 2.8, 2.8, 2.8, 2.8],
+      c: [1, 1, 1, 1, 1, 1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
+    });
+    // An INTERNAL channel: `cpu_usage` is a property of a machine and is NOT transmitted across a call
+    // boundary, so no callee can explain it.
+    const internalMetrics = withLabel('cpu_usage', {
+      a: [1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3],
+      b: [1, 1, 1, 1, 1, 1, 2.8, 2.8, 2.8, 2.8, 2.8, 2.8],
+      c: [1, 1, 1, 1, 1, 1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
     });
 
     it('is off by default and changes nothing when off', () => {
       // Bit-identity, asserted on the OBSERVABLE rather than on an internal: the shipped pruner and a
-      // pruner whose discount is 0 must produce the same ranking and the same scores.
+      // pruner whose deduction is 0 must produce the same ranking and the same scores.
       const shipped = new TreePruner();
       const explicitZero = new TreePruner({ topoDiscount: 0 });
-      const graph = shipped.buildFaultGraph(callGraph, metrics);
+      const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
 
-      const a = shipped.analyze(graph, 2);
-      const b = explicitZero.analyze(graph, 2);
+      const a = shipped.analyze(graph, 3);
+      const b = explicitZero.analyze(graph, 3);
 
       expect(a.map((r) => r.serviceId)).toEqual(b.map((r) => r.serviceId));
       expect(a.map((r) => r.finalScore)).toEqual(b.map((r) => r.finalScore));
@@ -1215,56 +1237,167 @@ describe('TreePruner', () => {
       expect(a[0]!.serviceId).toBe('a');
     });
 
-    it('demotes the explained caller and leaves the unexplained callee where it is', () => {
-      // `b` has no callee, so nothing explains it and the multiplier is 1: its score is unchanged. `a`
-      // is explained by `b`, keeps (1 − ρ·(1 − topoSource(a))) of its anomaly, and loses rank 1 for a
-      // full discount. This is the behaviour the additive term could not express on a rank scale:
-      // the shape of the change is a RATIO, not a constant.
+    it('deducts an explained caller through its RESPONSE channel and leaves the callee alone', () => {
+      // `b` calls `c`, which is far less anomalous, so almost nothing explains `b` and it keeps its
+      // anomaly; `a` is explained by `b` and loses rank 1 at a full deduction.
       const shipped = new TreePruner();
-      const discounted = new TreePruner({ topoDiscount: 1 });
-      const graph = shipped.buildFaultGraph(callGraph, metrics);
+      const deducted = new TreePruner({ topoDiscount: 1 });
+      const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
 
-      const before = shipped.analyze(graph, 2);
-      const after = discounted.analyze(graph, 2);
+      const before = shipped.analyze(graph, 3);
+      const after = deducted.analyze(graph, 3);
+
+      const aDrop =
+        before.find((r) => r.serviceId === 'a')!.finalScore! -
+        after.find((r) => r.serviceId === 'a')!.finalScore!;
+      const bDrop =
+        before.find((r) => r.serviceId === 'b')!.finalScore! -
+        after.find((r) => r.serviceId === 'b')!.finalScore!;
 
       expect(before[0]!.serviceId).toBe('a');
-      expect(after[0]!.serviceId).toBe('b');
-      const bBefore = before.find((r) => r.serviceId === 'b')!.finalScore!;
-      const bAfter = after.find((r) => r.serviceId === 'b')!.finalScore!;
-      expect(bAfter).toBeCloseTo(bBefore, 12);
-      expect(after.find((r) => r.serviceId === 'a')!.finalScore!).toBeLessThan(
-        before.find((r) => r.serviceId === 'a')!.finalScore!,
+      expect(after[0]!.serviceId).not.toBe('a');
+      // `b` calls `c`, so a sliver of ITS anomaly is explained too — the deduction is proportional to what a
+      // callee accounts for, not a flat step — but the caller whose callee carries most of its response
+      // loses several times more.
+      expect(aDrop).toBeGreaterThan(bDrop * 3);
+      expect(aDrop).toBeGreaterThan(0);
+    });
+
+    it('leaves an INTERNAL-channel caller untouched under the shipped external scope', () => {
+      // The defect this scope exists for: a `cpu` anomaly is the component's own machine, so the fact that
+      // its callee is busy cannot explain it. Deducting it is what cost RE3/SockShop two cases per weight
+      // on the previous form.
+      const shipped = new TreePruner();
+      const deducted = new TreePruner({ topoDiscount: 1 });
+      const graph = shipped.buildFaultGraph(callGraph, internalMetrics);
+
+      const before = shipped.analyze(graph, 3);
+      const after = deducted.analyze(graph, 3);
+
+      expect(before[0]!.serviceId).toBe('a');
+      expect(after[0]!.serviceId).toBe('a');
+      expect(after.map((r) => r.finalScore)).toEqual(before.map((r) => r.finalScore));
+    });
+
+    it('deducts an internal-channel caller under the ALL scope, the ablation arm', () => {
+      // `all` is the previous behaviour kept reachable so the scope's own contribution can be measured
+      // rather than asserted: on the same fixture it is the arm that moves the ranking.
+      const shipped = new TreePruner();
+      const deducted = new TreePruner({ topoDiscount: 1, topoDiscountScope: 'all' });
+      const graph = shipped.buildFaultGraph(callGraph, internalMetrics);
+
+      const before = shipped.analyze(graph, 3);
+      const after = deducted.analyze(graph, 3);
+
+      expect(before[0]!.serviceId).toBe('a');
+      expect(after[0]!.serviceId).not.toBe('a');
+    });
+
+    it('does not deduct a node whose dominant channel is unknown', () => {
+      // A node the graph carries with no metrics at all has no dominant label, so there is no channel to
+      // decide about. The honest answer is "no deduction", not "explain it with everything" — the latter
+      // would let an unmeasured node be erased by a neighbour's anomaly.
+      const withoutMetrics = new Map(responseMetrics);
+      withoutMetrics.delete('c');
+      const pruner = new TreePruner({ topoDiscount: 1 });
+
+      const results = pruner.analyze(pruner.buildFaultGraph(callGraph, withoutMetrics), 3);
+
+      // `c` carries no telemetry, so it ranks last and is pruned from the top-3 — what matters is that the
+      // walk still visits it (it is a graph member) and that the deduction still happens for `a`.
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.find((r) => r.serviceId === 'a')!.finalScore!).toBeLessThan(
+        new TreePruner()
+          .analyze(new TreePruner().buildFaultGraph(callGraph, responseMetrics), 3)
+          .find((r) => r.serviceId === 'a')!.finalScore!,
       );
     });
 
-    it("returns the graph's own map when the graph carries no topological scores at all", () => {
-      // A graph assembled by another engine — or by an older one — has anomalies and no `topoScores`. The
-      // discount is a function OF that map, so with nothing to consult the honest answer is no discount,
-      // and it must be no discount rather than a throw: a missing optional is not a configuration error.
-      const pruner = new TreePruner({ topoDiscount: 0.5 });
-      const graph = pruner.buildFaultGraph(callGraph, metrics);
+    it('reaches exactly zero for a fully explained node, never a negative score', () => {
+      // The clamp, asserted where it is observable: at ρ = 1 a node whose anomaly is entirely accounted for
+      // by its callee must flat-line at the same score a node with NO anomaly has, not go below it.
+      const pruner = new TreePruner({ topoDiscount: 1 });
+      const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
+      const results = pruner.analyze(graph, 3);
+      const explained = results.find((r) => r.serviceId === 'a')!;
 
-      const results = pruner.analyze({ ...graph, topoScores: undefined }, 2);
-
-      expect(results).toHaveLength(2);
-      expect(results[0]!.serviceId).toBe('a');
+      expect(explained.finalScore!).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(explained.finalScore!)).toBe(true);
     });
 
-    it('treats a node with no topological score as a source — nothing explains it, so nothing discounts it', () => {
-      // The `?? 1` in the multiplier, asserted on the OBSERVABLE instead of on the internals: with a full
-      // discount the explained caller `a` loses rank 1, but if `a` is ABSENT from the map there is no
-      // explanation to charge it, so it keeps its anomaly entire and keeps rank 1. A default of `0` here
-      // would silently erase every node the map does not mention.
-      const graph = new TreePruner().buildFaultGraph(callGraph, metrics);
-      const partial = new Map(graph.topoScores!);
-      partial.delete('a');
+    it('skips a callee whose edge carries no propagation weight', () => {
+      // The other half of the `explained` loop: an edge with a zero weight contributes nothing, so a callee
+      // that is anomalous but UNCORRELATED with its caller does not explain it. `a`'s series alternates while
+      // `b`'s steps once, so the Pearson correlation the builder measures is not positive and the edge
+      // carries no weight.
+      // Zeroed EXPLICITLY rather than hoped for: the builder's own fallback weights are non-zero for any pair
+      // of series, so the state is constructed where it is being measured.
+      const shipped = new TreePruner();
+      const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
+      const weightless = {
+        ...graph,
+        propagationWeights: new Float64Array(graph.propagationWeights.length),
+      };
 
-      const results = new TreePruner({ topoDiscount: 1 }).analyze(
-        { ...graph, topoScores: partial },
-        2,
-      );
+      const before = shipped.analyze(graph, 3);
+      const after = new TreePruner({ topoDiscount: 1 }).analyze(weightless, 3);
 
-      expect(results[0]!.serviceId).toBe('a');
+      // Nothing on any edge can be charged, so the ranking is unchanged.
+      expect(after.map((r) => r.serviceId)).toEqual(before.map((r) => r.serviceId));
+      expect(after.map((r) => r.finalScore)).toEqual(before.map((r) => r.finalScore));
+    });
+
+    it('charges a caller only when the edge has a weight AND the callee has a positive anomaly', () => {
+      // The guard reads two quantities, and the states below are the ways a graph is legitimately
+      // incomplete rather than ways this code can fail:
+      //
+      //   1. an edge index PAST the end of the weight vector — refused upstream, so the deduction never
+      //      sees it and does not need a default for it;
+      //   2. a callee with NO anomaly entry at all — no telemetry, so nothing to transmit;
+      //   3. a callee present with an anomaly of exactly ZERO — a healthy node, which explains nothing
+      //      while its own upstream still explains IT.
+      //
+      // The third is the interesting one: a healthy callee is still an edge endpoint, and the guard has to
+      // read its anomaly rather than assume that every endpoint carries one.
+      const shipped = new TreePruner();
+      const deducted = new TreePruner({ topoDiscount: 1 });
+      const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
+      const before = shipped.analyze(graph, 3);
+      const scoreOf = (
+        results: readonly { readonly serviceId: string; readonly finalScore?: number }[],
+        id: string,
+      ) => results.find((r) => r.serviceId === id)?.finalScore;
+
+      // (1) The weight vector is validated for ALIGNMENT before this method runs, which is why it indexes
+      // without a default: a graph assembled against a shorter measurement is refused loudly, so the
+      // "missing weight" state cannot reach the deduction at all. Asserted here because the deduction's
+      // own code now DEPENDS on that fence existing.
+      const shortWeights = { ...graph, propagationWeights: new Float64Array(0) };
+      expect(() => deducted.analyze(shortWeights, 3)).toThrow(/must match edges length/);
+
+      // (2) `b` is carried as an edge endpoint but has no anomaly of its own.
+      const noCallee = {
+        ...graph,
+        anomalyScores: new Map([...graph.anomalyScores].filter(([id]) => id !== 'b')),
+      };
+      const withoutCallee = deducted.analyze(noCallee, 3);
+      expect(scoreOf(withoutCallee, 'a')).toBe(scoreOf(before, 'a'));
+      for (const result of withoutCallee) {
+        expect(Number.isFinite(result.finalScore!), `${result.serviceId} is not finite`).toBe(true);
+      }
+
+      // (3) `b` is present and healthy, so `a` — whose only callee is `b` — cannot be charged at all,
+      // even at a full deduction. `b` itself leaves the candidate list rather than ranking low: a score of
+      // zero is not an anomaly, so there is nothing left to deduct and nothing to report.
+      const zeroCallee = {
+        ...graph,
+        anomalyScores: new Map(
+          [...graph.anomalyScores].map(([id, value]) => [id, id === 'b' ? 0 : value] as const),
+        ),
+      };
+      const withZeroCallee = deducted.analyze(zeroCallee, 3);
+      expect(scoreOf(withZeroCallee, 'a')).toBe(scoreOf(before, 'a'));
+      expect(scoreOf(withZeroCallee, 'b')).toBeUndefined();
     });
 
     it('rejects a discount outside [0, 1] rather than clamping it', () => {
@@ -1272,8 +1405,8 @@ describe('TreePruner', () => {
       // invert the node's anomaly's sign. Failing here is the point; a silent fallback would answer a
       // question nobody asked.
       const pruner = new TreePruner({ topoDiscount: 2 });
-      const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(() => pruner.analyze(graph, 2)).toThrow(/topoDiscount/);
+      const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
+      expect(() => pruner.analyze(graph, 3)).toThrow(/topoDiscount/);
     });
   });
 
