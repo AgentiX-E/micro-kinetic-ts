@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  BASELINE_ANCHORS,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -139,6 +140,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // A mode flag whose vocabulary is a word: `1` is not a member of it, and the probe's job is to prove the
   // option MOVES, so the value has to be one the parser can accept.
   '--dual-family-gate-mode': 'channel',
+  // Iteration 187: the deviation window's ANCHOR. A word, for the same reason, and the value here is the one
+  // the parser would otherwise default to — the probe asserts the option MOVES, not that it changes the
+  // score, and `whole-file` is the only value that keeps this fence a fence on every other flag.
+  '--baseline-anchor': 'whole-file',
 };
 
 function argvFor(one: AcceptedFlag): string[] {
@@ -397,6 +402,9 @@ describe('every option the golden runner forwards can be set from the command li
       // The gate's comparison is a third word-vocabulary, and the probe set is built from the unions rather
       // than maintained by hand — a member added to it extends this list by existing.
       ...Object.keys(DUAL_FAMILY_GATE_MODES),
+      // Iteration 187: the deviation window's anchor, the fourth word-vocabulary on this chain. Both members
+      // are probed, and both must MOVE the option — the arm and the shipped value are one word apart.
+      ...Object.keys(BASELINE_ANCHORS),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

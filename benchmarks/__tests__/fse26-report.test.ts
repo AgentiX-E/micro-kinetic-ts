@@ -86,6 +86,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     prismWeight: 0,
     prismPooling: 'additive',
     collapseDiscount: 0,
+    baselineAnchor: 'whole-file',
     dropDeviationMode: 'bounded',
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
@@ -145,6 +146,10 @@ describe('FSE26 report — attribution', () => {
       'dropMetrics',
       'metricRiseCeiling',
       'dropDeviationMode',
+      // Iteration 187: the deviation window's anchor postdates those runs too, and it is the field that decides
+      // whether every metric on a case is measured against the level the service actually ran at — so an
+      // artifact that omitted it could not be compared with one that carried it.
+      'baselineAnchor',
       'metricFleetBaseline',
       'failedEdgeWeight',
       'failedEdgeMode',
@@ -206,6 +211,10 @@ describe('FSE26 report — the two renderings agree', () => {
         'anomalyTrendWeight=0.15 anomalyBurstWeight=0 anomalyCvWeight=0.05 anomalyBreadthWeight=0.05 ' +
         'anomalyBreadthGate=0.8 ' +
         'metricRiseCeiling=0 dropDeviationMode=bounded ' +
+        // Iteration 187, on the same unconditional rule and for a sharper reason: the shipped anchor is
+        // `whole-file`, so an omitted-when-default field would render the shipped run and a run that measured
+        // every metric against the pre-injection segment byte-identically — the exact confusion the line is for.
+        'baselineAnchor=whole-file ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
         `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +

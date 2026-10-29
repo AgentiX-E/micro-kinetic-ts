@@ -29,6 +29,7 @@
  */
 
 import type {
+  BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
   LogSignalMode,
@@ -118,6 +119,15 @@ export interface RCAEvalTopologyOptions {
   readonly metricRiseCeiling: number;
   /** How a metric's drop becomes a deviation (`bounded` = shipped, `log` = symmetric). */
   readonly dropDeviationMode: DropDeviationMode;
+  /**
+   * Which WINDOW the deviation is measured between (`whole-file` = shipped, `pre-injection` = the
+   * post-injection excursion over the pre-injection level).
+   *
+   * Beside the drop mode because the two answer the same question at different depths: the mode decides how a
+   * direction becomes a number, the window decides which samples that number is measured on. Both are
+   * arguments to `TopologyFaultGraphConfig`, i.e. to the graph's construction rather than to the ranking.
+   */
+  readonly baselineAnchor: BaselineAnchor;
   readonly rankNormalization: boolean;
   /**
    * The node count at or above which `rankNormalization` runs at all.
@@ -221,6 +231,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       collapseDiscount: opts.collapseDiscount,
       metricRiseCeiling: opts.metricRiseCeiling,
       dropDeviationMode: opts.dropDeviationMode,
+      baselineAnchor: opts.baselineAnchor,
       rankNormalization: opts.rankNormalization,
       anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       suppressIdleTransients: opts.suppressIdleTransients,
@@ -269,7 +280,8 @@ export function formatSignalLine(opts: CliOptions): string {
     // the defect this line exists to prevent, one term over.
     `failedEdgeWeight=${opts.failedEdgeWeight} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
-    `dropDeviationMode=${opts.dropDeviationMode} traceWeight=${opts.traceWeight} ` +
+    `dropDeviationMode=${opts.dropDeviationMode} baselineAnchor=${opts.baselineAnchor} ` +
+    `traceWeight=${opts.traceWeight} ` +
     // Unconditional: the mask is inert at traceWeight 0, so this field is the only thing that can distinguish a
     // masked arm from the shipped run on the seven cells where the term is off.
     `traceSkipsLeader=${opts.traceSkipsLeader} ` +

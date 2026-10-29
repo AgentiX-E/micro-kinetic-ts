@@ -68,11 +68,13 @@ export { DEFAULT_RANK_NORMALIZATION } from './causal/topology-fault-graph.js';
 // and `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` is what keeps the list from growing
 // back one instance at a time.
 export {
+  BASELINE_ANCHORS,
   DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
   DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_BASELINE_ANCHOR,
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
@@ -88,6 +90,7 @@ export {
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
+  isBaselineAnchor,
   isDemandMetric,
   isDropDeviationMode,
   // The transport family, exported on the same rule as the demand family: the term that credits a
@@ -100,6 +103,7 @@ export {
 // the type. It is also the home of the scoring ablation switches, which a
 // benchmark harness has to be able to describe.
 export type {
+  BaselineAnchor,
   DropDeviationMode,
   MetricBreakdown,
   MetricDiagnostic,

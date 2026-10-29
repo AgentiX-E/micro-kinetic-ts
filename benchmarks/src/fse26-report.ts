@@ -25,6 +25,7 @@ export interface FSE26Anchor {
 
 import type { FaultFailedEdge } from '../../packages/core/src/index.js';
 import type {
+  BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
   OnsetShape,
@@ -170,6 +171,8 @@ export interface FSE26RunConfig {
   readonly collapseDiscount: number;
   /** How a metric's drop becomes a deviation; `bounded` is the shipped value. */
   readonly dropDeviationMode: DropDeviationMode;
+  /** Which WINDOW the deviation is measured between; `whole-file` is the shipped value. */
+  readonly baselineAnchor: BaselineAnchor;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level; `false` is the shipped value. */
@@ -324,6 +327,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'dropMetrics',
   'metricRiseCeiling',
   'dropDeviationMode',
+  'baselineAnchor',
   'metricFleetBaseline',
   'failedEdgeWeight',
   'failedEdgeMode',
@@ -402,6 +406,7 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // looking unreported and force an exemption that then contradicts the printed name.
   line += ` metricRiseCeiling=${config.metricRiseCeiling}`;
   line += ` dropDeviationMode=${config.dropDeviationMode}`;
+  line += ` baselineAnchor=${config.baselineAnchor}`;
   if (config.metricFleetBaseline) {
     line += ' fleetBaseline=true';
   }

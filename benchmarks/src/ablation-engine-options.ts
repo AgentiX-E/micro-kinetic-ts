@@ -36,12 +36,14 @@
  */
 
 import type {
+  BaselineAnchor,
   DualFamilyGateMode,
   LogSignalMode,
   OnsetShape,
   PrismPooling,
 } from '../../packages/tree/src/index.js';
 import {
+  DEFAULT_BASELINE_ANCHOR,
   DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -207,6 +209,18 @@ export interface AblationTopologyOptions {
   readonly metricRiseCeiling: number;
   /** How a metric's DROP becomes a deviation, held at the shipped `bounded`. */
   readonly dropDeviationMode: DropDeviationMode;
+  /**
+   * Which SEGMENT of the series a metric's deviation is measured against, held at the shipped `whole-file`.
+   *
+   * Named on the constant rule every field of this object follows: the reported-field partition requires a
+   * field the artifact can omit to be either printed or exempted, and this one cannot be exempted while its
+   * two siblings (`metricRiseCeiling`, `dropDeviationMode`) are printed — all three describe one object.
+   *
+   * Unlike its siblings it is not merely a constant: the arm it enables re-anchors EVERY metric on EVERY
+   * case, so a row of this battery can vary it and a reader of the artifact has to be able to tell that row
+   * from the shipped one.
+   */
+  readonly baselineAnchor: BaselineAnchor;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -289,6 +303,15 @@ export interface AblationEngineOverrides {
   /** Overrides `dropDeviationMode` — how a drop becomes a deviation. */
   readonly dropDeviationMode?: DropDeviationMode;
   /**
+   * Overrides `baselineAnchor` — which segment of the series the deviation is measured against.
+   *
+   * The second non-numeric override here, and non-numeric for the same reason as `prismPooling`: the axis is
+   * a WINDOW rather than a magnitude. It is inert on a series with no warm-up (every sample then lies inside
+   * one segment, so both anchors find the same `max`/`min`/baseline), which is why a row that varies it must
+   * be read per case rather than as a cell-level delta alone.
+   */
+  readonly baselineAnchor?: BaselineAnchor;
+  /**
    * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
    *
    * The one override here that is not a number, and the reason the record is not called
@@ -351,6 +374,7 @@ export function buildAblationEngineOptions(
       suppressDemandMetrics: flags.suppressDemandMetrics,
       metricRiseCeiling: overrides.metricRiseCeiling ?? DEFAULT_METRIC_RISE_CEILING,
       dropDeviationMode: overrides.dropDeviationMode ?? DEFAULT_DROP_DEVIATION_MODE,
+      baselineAnchor: overrides.baselineAnchor ?? DEFAULT_BASELINE_ANCHOR,
     },
   };
 }
@@ -386,6 +410,7 @@ export function formatAblationConfigLine(
     `collapseDiscount=${topology.collapseDiscount} ` +
     `metricRiseCeiling=${topology.metricRiseCeiling} ` +
     `dropDeviationMode=${topology.dropDeviationMode} ` +
+    `baselineAnchor=${topology.baselineAnchor} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
     `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +

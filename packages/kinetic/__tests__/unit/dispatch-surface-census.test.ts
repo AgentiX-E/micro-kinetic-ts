@@ -291,6 +291,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 146: the gate's OTHER axis — which fleet-relative comparison it applies. A MODE, not a number,
     // so it is parsed by its union's own guard and travels beside the gate it qualifies.
     '--dual-family-gate-mode',
+    // Iteration 187: the deviation window's ANCHOR. Packed for the reason every post-ceiling knob is: the
+    // golden half's 25-input budget is full. It is a WINDOW rather than a weight, and it belongs to the
+    // composition because it re-defines the `max`, `min` and baseline every coefficient in that object is
+    // computed from — a run that re-anchored the window without saying so would print an unattributable score.
+    '--baseline-anchor',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -313,6 +318,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 146: the gate's OTHER axis — which fleet-relative comparison it applies. A MODE, not a number,
     // so it is parsed by its union's own guard and travels beside the gate it qualifies.
     '--dual-family-gate-mode',
+    // Iteration 187: WHERE the deviation window is anchored — the whole series, or the segment before the
+    // injection. It belongs to the anomaly composition because it re-defines the same `max`, `min` and
+    // `baselineMean` the composition is computed from; it is a WINDOW, not a weight.
+    '--baseline-anchor',
   ],
 };
 
@@ -433,6 +442,14 @@ const KNOBS: Readonly<
   dropDeviationMode: {
     flag: '--drop-deviation-mode',
     owner: 'drop-deviation-symmetry.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  baselineAnchor: {
+    // The WINDOW the deviation is measured between, one depth below the drop mode's own axis: the mode
+    // decides how a direction becomes a number, this decides which samples that number is measured on.
+    flag: '--baseline-anchor',
+    owner: 'baseline-anchor.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -708,6 +725,10 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'anomalyCvWeight',
   'anomalyTrendWeight',
   'anomalyNormalizeNodeThreshold',
+  // The deviation's WINDOW. Stated on both halves because the kill criterion is an AND: an anchor only the
+  // golden half could name would leave the FSE'26 side of that AND undecidable, which is the defect this
+  // list was created to make impossible.
+  'baselineAnchor',
   'collapseDiscount',
   'collisionWeight',
   // Iteration 124: the direction term's weight became a golden input, so the arm the FSE'26 half has been able

@@ -72,6 +72,7 @@ import {
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 import type {
+  BaselineAnchor,
   DropDeviationMode,
   LogSignalMode,
   PrismPooling,
@@ -83,6 +84,7 @@ import {
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
   DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_BASELINE_ANCHOR,
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
@@ -94,6 +96,7 @@ import {
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TRACE_SKIPS_LEADER,
+  isBaselineAnchor,
   isDropDeviationMode,
   isLogSignalMode,
   isPrismPooling,
@@ -355,6 +358,16 @@ export interface CliOptions {
    */
   dropDeviationMode: DropDeviationMode;
   /**
+   * Which WINDOW a metric's deviation is measured between (`whole-file` = shipped, `pre-injection` = the
+   * post-injection excursion over the pre-injection level).
+   *
+   * Not a lever and not a weight: the formula is untouched, and what moves is the pair of segments the same
+   * `log10(1 + ratio)` reads. `docs/baseline-anchor.md` records the defect it addresses — a series that opens
+   * with a container warm-up has its baseline AND its maximum taken from that warm-up — and the arm that
+   * measured it on the nine cells.
+   */
+  baselineAnchor: BaselineAnchor;
+  /**
    * Rank-based anomaly-score normalization on large topologies. Robust to a
    * single near-zero-baseline outlier that would otherwise stretch the min-max
    * range. SHIPPED ON (`DEFAULT_RANK_NORMALIZATION`) — the register keeps the axis on, and this
@@ -551,6 +564,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
     dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
+    baselineAnchor: DEFAULT_BASELINE_ANCHOR,
     // Named rather than a literal, and this site is WHY the census exists: `traceWeight` had a constant and
     // a guarded description while the field default the no-flag path resolves to still wrote `0`. The
     // fallback below and this default are two answers to one question, and a guard that reads only the
@@ -745,6 +759,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       const raw = args[++i]!;
       if (isDropDeviationMode(raw)) opts.dropDeviationMode = raw;
       else throw new Error(`--drop-deviation-mode expects bounded|log, got '${raw}'`);
+    } else if (args[i] === '--baseline-anchor' && hasValue(args, i + 1)) {
+      // Through the guard that owns the union, for the reason the line above states: a value the engine
+      // cannot name is refused rather than becoming the shipped window under a dispatch that asked for
+      // something else.
+      const raw = args[++i]!;
+      if (isBaselineAnchor(raw)) opts.baselineAnchor = raw;
+      else throw new Error(`--baseline-anchor expects whole-file|pre-injection, got '${raw}'`);
     } else if (args[i] === '--rank-normalization') {
       opts.rankNormalization = true;
     } else if (args[i] === '--no-rank-normalization') {

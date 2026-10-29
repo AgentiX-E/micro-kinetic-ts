@@ -474,11 +474,18 @@ describe('the RCAEval configuration line carries the configuration that produced
     // that rescaled every graph. **The acceptance is the nine cells plus the FIELD, never this string**: the
     // line gained one field by design and the cells must be unmoved, which is checked on the run rather
     // than argued here.
+    //
+    // …and once more in iteration 187, when the deviation window's ANCHOR became dispatchable. It sits beside
+    // `dropDeviationMode` because the two describe the same object from two sides — that one picks which
+    // DIRECTION can speak, this one picks the SEGMENT the directions are measured against — and it is printed
+    // unconditionally on the same rule as every field above: it ships at `whole-file`, so a line that omitted
+    // defaults would render the shipped run and an arm that re-anchored every metric byte-identically.
     expect(formatSignalLine(shipped)).toBe(
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
+        'baselineAnchor=whole-file ' +
         'traceWeight=0 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
         'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +

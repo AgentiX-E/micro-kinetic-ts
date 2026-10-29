@@ -224,6 +224,11 @@ describe('buildFse26EngineOptions', () => {
       // that a value the parser never touched still REACHES the builder, which is what this test is for.
       suppressDemandMetrics: true,
       dropDeviationMode: 'bounded',
+      // Iteration 187: the deviation window's anchor, at its shipped value on a dispatch that says nothing
+      // about it. It travels beside the drop mode because the two answer the same question from two sides —
+      // which DIRECTION may speak, and which SEGMENT it is measured against — and a field the mapping
+      // remembered to omit would read exactly like the shipped pole here.
+      baselineAnchor: 'whole-file',
       // The anomaly composition, at its shipped values on a dispatch that says nothing about them. The breadth
       // term is the interesting one: it ships OFF, and this assertion is what makes "OFF" a value that reaches
       // the builder rather than a field the mapping remembered to omit.

@@ -199,6 +199,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       // would be a silent revert to the engine's default with nothing failing.
       collapseDiscount: opts.collapseDiscount,
       dropDeviationMode: opts.dropDeviationMode,
+      baselineAnchor: opts.baselineAnchor,
       anomalyTrendWeight: opts.anomalyTrendWeight,
       anomalyBurstWeight: opts.anomalyBurstWeight,
       anomalyCvWeight: opts.anomalyCvWeight,

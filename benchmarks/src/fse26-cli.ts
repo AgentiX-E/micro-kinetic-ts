@@ -34,6 +34,7 @@ import { join } from 'node:path';
 import { DEFAULT_DIAGNOSE_LIMIT } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
+  BaselineAnchor,
   DropDeviationMode,
   FailedEdgeMode,
   LogSignalMode,
@@ -45,6 +46,7 @@ import {
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_ANOMALY_CV_WEIGHT,
   DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_BASELINE_ANCHOR,
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
@@ -77,6 +79,7 @@ import {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
   type DualFamilyGateMode,
+  isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
   isLogSignalMode,
@@ -380,6 +383,12 @@ export interface Fse26CliOptions {
    */
   readonly dropDeviationMode: DropDeviationMode;
   /**
+   * Which WINDOW the deviation is measured between — see `CliOptions.baselineAnchor` in the RCAEval runner,
+   * where the defect it addresses is measured. Here because the kill criterion is an AND over the two
+   * benchmarks: an option only one half can state has an undecidable other half.
+   */
+  readonly baselineAnchor: BaselineAnchor;
+  /**
    * The anomaly composition's four coefficients — see `CliOptions.anomalyTrendWeight` in the RCAEval
    * runner, where they are measured. Exposed here so the kill criterion, which is an AND over the two
    * benchmarks, can be evaluated: a candidate that moves one half and not the other is undecidable.
@@ -519,6 +528,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     prismPooling: DEFAULT_PRISM_POOLING,
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
     dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
+    baselineAnchor: DEFAULT_BASELINE_ANCHOR,
     anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
     anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
@@ -678,6 +688,10 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const raw = argv[++i]!;
       if (isDropDeviationMode(raw)) opts.dropDeviationMode = raw;
       else throw new Error(`--drop-deviation-mode expects bounded|log, got '${raw}'`);
+    } else if (arg === '--baseline-anchor' && hasValue(argv, i + 1)) {
+      const raw = argv[++i]!;
+      if (isBaselineAnchor(raw)) opts.baselineAnchor = raw;
+      else throw new Error(`--baseline-anchor expects whole-file|pre-injection, got '${raw}'`);
     } else if (arg === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
     else if (arg === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
     else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;

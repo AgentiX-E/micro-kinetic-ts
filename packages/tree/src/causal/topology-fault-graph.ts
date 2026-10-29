@@ -87,6 +87,33 @@ export interface TopologyFaultGraphConfig {
    */
   readonly baselineStrategy: 'auto' | 'q25' | 'sliding-window';
   /**
+   * Which WINDOW the deviation is measured between. `whole-file` (default) uses one baseline and one
+   * excursion from every sample; `pre-injection` splits the series at `injectTimeMs` and measures the
+   * post-injection excursion against the pre-injection level.
+   *
+   * **The defect `pre-injection` addresses, and why it is a WINDOW rather than a lever.** `whole-file`
+   * answers one question — "what is the largest excursion anywhere in this file, relative to a level
+   * somewhere in it?" — and on a series that opens with a container WARM-UP plateau both halves of that
+   * question are answered by the warm-up. SockShop's `carts` runs at 30% cpu for its first minute and then
+   * at 3.5%; the crash-victim branch of {@link computeRobustBaseline} reads the first five samples as the
+   * pre-crash level, so the baseline becomes 30 and the genuine post-injection excursion (3.5 → 15) is
+   * divided by 30 and disappears. `whole-file` also takes `max` over the whole file, so the warm-up's 30
+   * is that maximum and `riseRatio` is `|30 − 30| / 30 ≈ 0`. Both halves of the measurement are the
+   * warm-up, and the service they belong to is the one that was faulted.
+   *
+   * With `injectTimeMs` known, the two windows are the definition rather than an inference: the level the
+   * service held BEFORE the fault, and the excursion it made AFTER it. The pre-injection level is the
+   * segment's MEDIAN — a level, not an extreme — which is also why the low-quantile bias of
+   * {@link baselineStrategy} is not carried over: that bias compensates for not knowing which samples are
+   * pre-fault, and `pre-injection` knows.
+   *
+   * Falls back to `whole-file` wherever the boundary cannot be placed: `injectTimeMs <= 0` (unknown), no
+   * sample at or after it, or either side shorter than `max(3, ⌈n/10⌉)` — the same tenth-of-the-series
+   * floor the zero-baseline and transient guards use. The fallback is stated rather than tolerated, because
+   * an estimator that silently halves the series is a different estimator wearing this one's name.
+   */
+  readonly baselineAnchor: BaselineAnchor;
+  /**
    * Correlation method for cross-service propagation weight.
    *
    * - `spearman`: rank-based, robust to non-linear relationships (default)
@@ -605,6 +632,37 @@ export function isDropDeviationMode(value: string): value is DropDeviationMode {
 }
 
 /**
+ * Which WINDOW a metric's deviation is measured between — see
+ * {@link TopologyFaultGraphConfig.baselineAnchor}.
+ *
+ * - `whole-file`: one baseline and one excursion, both taken from every sample in the file (shipped).
+ * - `pre-injection`: the baseline is the level of the PRE-injection segment and the excursion is the
+ *   POST-injection segment, with `injectTimeMs` as the boundary.
+ */
+export type BaselineAnchor = 'whole-file' | 'pre-injection';
+
+/**
+ * Every baseline anchor, as a `Record` over the union.
+ *
+ * Exhaustive by construction: a new member of {@link BaselineAnchor} is a COMPILE error here until it is
+ * named — the rule {@link DROP_DEVIATION_MODES} and the other mode records follow, because a list of names
+ * cannot be checked against a union and a record can.
+ */
+export const BASELINE_ANCHORS: Readonly<Record<BaselineAnchor, true>> = {
+  'whole-file': true,
+  'pre-injection': true,
+};
+
+/**
+ * Whether a raw argument names a baseline anchor.
+ *
+ * @param value - A raw CLI value.
+ */
+export function isBaselineAnchor(value: string): value is BaselineAnchor {
+  return Object.prototype.hasOwnProperty.call(BASELINE_ANCHORS, value);
+}
+
+/**
  * The shipped drop-deviation mode: `bounded`, the form every published number was measured under — and
  * **`log` is REFUSED**, with its three arms measured.
  *
@@ -625,6 +683,15 @@ export function isDropDeviationMode(value: string): value is DropDeviationMode {
  * four-case lead — the exchange rate `docs/drop-deviation-symmetry.md` §5 now states.
  */
 export const DEFAULT_DROP_DEVIATION_MODE: DropDeviationMode = 'bounded';
+
+/**
+ * The shipped baseline anchor: `whole-file`, the window every published number was measured under.
+ *
+ * `pre-injection` is a WINDOW correction and not a re-pricing of the formula, so it can be read without a
+ * weight: with the boundary placed, the deviation is the post-injection excursion over the pre-injection
+ * level, and `docs/baseline-anchor.md` records the arm that reads it on the nine cells.
+ */
+export const DEFAULT_BASELINE_ANCHOR: BaselineAnchor = 'whole-file';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.metricRiseCeiling}, which is `0` = unbounded.
@@ -738,6 +805,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   defaultWeight: 0.05,
   useTemporalCausality: true,
   baselineStrategy: 'auto',
+  baselineAnchor: DEFAULT_BASELINE_ANCHOR, // one window for the whole file (shipped behaviour)
   correlationMethod: 'pearson',
   adaptiveDecay: true,
   usePropagationVelocity: true,
@@ -1583,8 +1651,19 @@ function computeAnomalyFeatures(
     // #193 RE3 OnlineBoutique regression, paymentservice 2.19 > adservice 1.84).
     // The event/idle guard above removes the degenerate drop-to-zero case
     // (min < max × 0.001), so the remaining drops are bounded and safe.
-    const riseRatio = Math.abs(max - baselineMean) / baselineMean;
-    const dropRatio = Math.abs(baselineMean - min) / baselineMean;
+    // The WINDOW both ratios are measured between. `whole-file` hands the two lines below the three numbers
+    // the shipped estimator already produced, so the shipped path is bit-identical by construction.
+    // `pre-injection` splits the series at the injection time and returns `undefined` wherever the boundary
+    // cannot be placed, which is what keeps the fallback a stated width rather than an accident.
+    const anchored =
+      cfg.baselineAnchor === 'pre-injection'
+        ? preInjectionWindow(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0)
+        : undefined;
+    const deviationBaseline = anchored?.baseline ?? baselineMean;
+    const deviationMax = anchored?.max ?? max;
+    const deviationMin = anchored?.min ?? min;
+    const riseRatio = Math.abs(deviationMax - deviationBaseline) / deviationBaseline;
+    const dropRatio = Math.abs(deviationBaseline - deviationMin) / deviationBaseline;
     // Direction-aware deviation (collapseDiscount): discount the DROP
     // component so a traffic-loss collapse (symptom) does not out-rank an
     // equivalent RISE (source). See the `collapseDiscount` config doc. With
@@ -1691,7 +1770,10 @@ function computeAnomalyFeatures(
       burst: burstBonus,
       riseRatio,
       dropRatio,
-      baselineMean,
+      // The level the two ratios above were actually divided by — which is the window's answer, not the
+      // inference's, when the anchor placed a boundary. A record echoing `baselineMean` here would report a
+      // level the score never used and could no longer justify the window it ran under.
+      baselineMean: deviationBaseline,
       collapseDiscount,
     };
     metricDiagnostics.push({ label: ts.label, outcome: 'kept', score: featureScore, breakdown });
@@ -2196,6 +2278,63 @@ function pearsonCorrelation(xs: Float64Array, ys: Float64Array, n: number): numb
 }
 
 // ── Baseline Strategy Selection ────────────────────────────
+
+/**
+ * The window a metric's deviation is measured between, once the injection time is known.
+ *
+ * Two segments and nothing else: every sample BEFORE `injectTimeMs` answers "what level did this service
+ * hold?", and every sample at or after it answers "what did the metric do?". The baseline is the pre-segment
+ * MEDIAN, which is the one estimator that survives both shapes this corpus contains — a start-up plateau of
+ * a few dozen samples inside a pre-segment of hundreds cannot move a median, while it moves a `max` by the
+ * plateau's whole height and a mean by its share.
+ *
+ * `undefined` means the boundary cannot be placed, and there are exactly three ways for that to happen:
+ * the injection time is unknown (`<= 0`, the graph builder's own default), no sample reaches it, or either
+ * side is narrower than `max(3, ⌈n/10⌉)` — the tenth-of-the-series floor the zero-baseline and transient
+ * guards already use, so a "pre-window" of two samples is refused by a rule rather than by a taste.
+ *
+ * A non-positive baseline is also refused: a level of zero is not a denominator, and `post / 0` is not a
+ * level of anything. The caller keeps the shipped window in all four cases, which is what makes this an
+ * option rather than a silent change of estimator.
+ *
+ * @param values - The metric's samples, in timestamp order.
+ * @param timestamps - The sample timestamps (Unix ms), aligned with `values`.
+ * @param injectTimeMs - Fault injection time in Unix ms (`<= 0` = unknown).
+ * @returns The baseline and the post-injection extremes, or `undefined` when no boundary can be placed.
+ * @internal
+ */
+function preInjectionWindow(
+  values: Float64Array,
+  timestamps: readonly number[],
+  injectTimeMs: number,
+): { baseline: number; max: number; min: number } | undefined {
+  if (!(injectTimeMs > 0)) return undefined;
+
+  const n = Math.min(values.length, timestamps.length);
+  let split = -1;
+  for (let i = 0; i < n; i++) {
+    if (timestamps[i]! >= injectTimeMs) {
+      split = i;
+      break;
+    }
+  }
+  if (split < 0) return undefined;
+
+  const floorWidth = Math.max(3, Math.ceil(n * 0.1));
+  if (split < floorWidth || n - split < floorWidth) return undefined;
+
+  const baseline = medianOfRange(values, 0, split);
+  if (!(baseline > 0)) return undefined;
+
+  let max = -Infinity;
+  let min = Infinity;
+  for (let i = split; i < n; i++) {
+    const v = values[i]!;
+    if (v > max) max = v;
+    if (v < min) min = v;
+  }
+  return { baseline, max, min };
+}
 
 /**
  * Auto-detect the optimal baseline strategy from metric distribution.
