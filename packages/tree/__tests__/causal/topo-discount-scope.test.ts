@@ -96,6 +96,10 @@ describe('the shipped scope', () => {
 });
 
 describe('the deduction formula, fenced at the source', () => {
+  // The formula lives in its own module since iteration 158, because it turned out to be a function of the
+  // anomaly map and the edges and of nothing else — and because its SPACE had to become an explicit argument
+  // once the rank surface was measured to change its verdict.
+  const deduction = readFileSync(resolve(HERE, '../../src/causal/topo-deduction.ts'), 'utf8');
   const pruner = readFileSync(resolve(HERE, '../../src/pruning/pruner.ts'), 'utf8');
 
   it('is a subtraction of the explained anomaly, not a ratio of the node’s own', () => {
@@ -103,14 +107,28 @@ describe('the deduction formula, fenced at the source', () => {
     // internal anomaly because the node's CALLER carries a response anomaly, which is physically backwards.
     // Re-introducing it would compile, pass every behavioural test on a single-channel fixture, and only show
     // up as a corpus regression — so the shape is pinned here.
-    expect(pruner).not.toMatch(/1\s*-\s*rho\s*\*\s*\(\s*1\s*-/);
-    expect(pruner).toMatch(/anomaly\s*-\s*deduction/);
+    expect(deduction).not.toMatch(/1\s*-\s*rho\s*\*\s*\(\s*1\s*-/);
+    expect(deduction).toMatch(/anomaly\s*-\s*chargeable/);
+    // The cap goes on the EXPLAINED quantity, inside the weight: `rho × min(a, e)`. Clamping the result
+    // instead (`max(0, a − rho·e)`) bounds nothing, and it is the form that zeroed TrainTicket's cells.
+    expect(deduction).toMatch(/rho\s*\*\s*Math\.min\(anomaly,/);
+    expect(deduction).not.toMatch(/Math\.max\(0,/);
+  });
+
+  it('takes its input from the DEVIATION map and returns through the graph’s own transform', () => {
+    // The defect iteration 157 could not see from inside its own tests: the operator is extensive and the
+    // reported anomaly is a rank above `anomalyNormalizeNodeThreshold`, so the relative deduction was
+    // `rho·w·(n−1)/k` — proportional to how many services the fleet has. Pinned at the call site because a
+    // one-word edit (`anomalyScores`) puts it back, and only a nine-cell dispatch would notice.
+    expect(pruner).toMatch(/anomalies:\s*graph\.rawAnomalyScores/);
+    expect(pruner).not.toMatch(/anomalies:\s*graph\.anomalyScores/);
+    expect(pruner).toMatch(/applyAnomalyNormalization\(deducted,\s*graph\.anomalyNormalization\)/);
   });
 
   it('decides both sides of the deduction with ONE predicate', () => {
     // The explaining callee and the deducted caller answer the same question — does this channel cross a call
     // boundary — and two predicates would be free to disagree about which channels do.
-    expect(pruner).toMatch(/const explicable = \(nodeId: ServiceId\): boolean =>/);
-    expect(pruner).toMatch(/isResponseChannel\(dominant\.label\)/);
+    expect(deduction).toMatch(/const explicable = \(nodeId: ServiceId\): boolean =>/);
+    expect(deduction).toMatch(/isResponseChannel\(dominant\.label\)/);
   });
 });

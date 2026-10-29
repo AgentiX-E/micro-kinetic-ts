@@ -63,6 +63,9 @@ function recordOf(memberIndexes: readonly number[], weight = 0.25): DiagnosedCas
       callGraph: benchCase.callGraph,
       propagationWeights: new Float64Array(benchCase.callGraph.edges.length),
       anomalyScores: new Map(ids.map((id) => [id, 1])),
+      // Every node carries the same anomaly, so no transform could change it: `'none'` is exact.
+      rawAnomalyScores: new Map(ids.map((id) => [id, 1])),
+      anomalyNormalization: 'none',
       anomalyOnsetTimes: new Map(ids.map((id) => [id, 0])),
       detectedCycles: [],
       totalCycleContribution: 0,

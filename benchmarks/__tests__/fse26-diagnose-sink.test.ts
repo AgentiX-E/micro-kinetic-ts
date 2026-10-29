@@ -37,10 +37,15 @@ function recordOf(overrides: Partial<DiagnosedCaseRecord> = {}): DiagnosedCaseRe
   const benchCase = generator.generateRCAEvalCase('cpu', 3);
   const callGraph = benchCase.callGraph;
   const ids = [...callGraph.nodes.keys()];
+  // The deviation-space map and the reported map are the SAME object here, and truthfully so: nothing
+  // in this fixture normalises, which is what `anomalyNormalization: 'none'` states.
+  const anomalyScores = new Map(ids.map((id, index) => [id, 0.9 - index * 0.1]));
   const graph: FaultPropagationGraph = {
     callGraph,
     propagationWeights: new Float64Array(callGraph.edges.length),
-    anomalyScores: new Map(ids.map((id, index) => [id, 0.9 - index * 0.1])),
+    anomalyScores,
+    rawAnomalyScores: anomalyScores,
+    anomalyNormalization: 'none',
     anomalyOnsetTimes: new Map(ids.map((id) => [id, 0])),
     detectedCycles: [],
     totalCycleContribution: 0,

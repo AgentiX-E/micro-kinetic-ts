@@ -128,6 +128,9 @@ describe('Graph types - FaultPropagationGraph', () => {
       callGraph,
       propagationWeights: new Float64Array([0.5, 0.3]),
       anomalyScores,
+      // This engine normalises nothing, so the reported map IS the deviation map.
+      rawAnomalyScores: anomalyScores,
+      anomalyNormalization: 'none',
       anomalyOnsetTimes: new Map<ServiceId, number>(),
       dominantMetrics: new Map<
         ServiceId,

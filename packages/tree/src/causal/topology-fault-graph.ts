@@ -42,6 +42,7 @@
  */
 
 import type {
+  AnomalyNormalization,
   CallEdge,
   MetricDiagnostic,
   MetricDiagnosticOutcome,
@@ -1009,6 +1010,28 @@ function computeAdaptiveDecay(nodeCount: number): number {
 export interface TopologyFaultGraphResult {
   /** Per-service anomaly scores (0-1). */
   readonly anomalyScores: Map<ServiceId, number>;
+  /**
+   * The same anomalies in DEVIATION space — before step 1b rescaled them.
+   *
+   * Identical in value to {@link anomalyScores} whenever {@link anomalyNormalization} is `'none'`, which
+   * is every graph below `anomalyNormalizeNodeThreshold` (OnlineBoutique 12–14, SockShop 12–14) and
+   * every graph whose scores had no range to amplify.
+   *
+   * It exists because an EXTENSIVE operator — one that adds a callee's anomaly into a caller's, or
+   * subtracts it back out — is defined on a deviation and not on a rank. See
+   * `deductExplainedAnomalies`, whose result is expressed in this space and mapped back by
+   * {@link anomalyNormalization}.
+   */
+  readonly rawAnomalyScores: ReadonlyMap<ServiceId, number>;
+  /**
+   * Which transform separates {@link rawAnomalyScores} from {@link anomalyScores}.
+   *
+   * `'none'` — no transform ran; the two maps hold the same values. `'rank'` — `rankNormalizeScores`
+   * ran; a score is `k/(n−1)` and carries an ORDER but no magnitude. `'minmax'` — the affine rescale
+   * ran, so a score is a deviation divided by the fleet's widest one: still extensive, in units of
+   * that width.
+   */
+  readonly anomalyNormalization: AnomalyNormalization;
   /** Per-service anomaly onset indices (earliest anomalous data point). */
   readonly anomalyOnsetTimes: Map<ServiceId, number>;
   /**
@@ -1061,6 +1084,15 @@ export interface TopologyFaultGraphResult {
 }
 
 /**
+ * Which transform step 1b applied to the anomaly map, and therefore which space a score is in.
+ *
+ * Re-exported from the core contract rather than declared here: the field it annotates is on
+ * `FaultPropagationGraph`, which every engine shares, and two structurally identical unions would be
+ * free to drift the moment a third space is added.
+ */
+export type { AnomalyNormalization };
+
+/**
  * Rank-normalize a per-service anomaly score map to a uniform [0, 1] spread.
  *
  * Each entry is mapped to its AVERAGE rank (0-indexed, ties averaged) divided
@@ -1096,6 +1128,51 @@ export function rankNormalizeScores(
     }
     i = j + 1;
   }
+  return result;
+}
+
+/**
+ * The width of a score map's range — `-Infinity` for an empty map (`max − min` with no entries), which
+ * is below every epsilon and therefore never rescales.
+ *
+ * Extracted because the decision "is there a range worth amplifying" is made in two places (the graph
+ * builder, and the topological deduction's return to the space the ranking reads) and a second copy of
+ * the comparison would be free to drift from the first.
+ */
+export function scoreRange(scores: ReadonlyMap<ServiceId, number>): number {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const score of scores.values()) {
+    if (score < min) min = score;
+    if (score > max) max = score;
+  }
+  return max - min;
+}
+
+/** Below this width a rescaling is amplifying float noise rather than signal. */
+export const MIN_MAX_NORMALIZE_RANGE = 1e-10;
+
+/**
+ * Min-max rescale a score map onto [0, 1] — the `rankNormalization = false` arm of step 1b.
+ *
+ * A map with no range (every score identical, or empty) is returned as a shallow copy: there is no
+ * signal to amplify, and dividing by a zero width would be the alternative.
+ *
+ * This was an inline block in `buildTopologyFaultGraph` until the topological deduction needed to
+ * return its result to the SAME space it took its input from, at which point a second copy of the
+ * transform would have been a second definition of "what space is this".
+ */
+export function minMaxNormalizeScores(
+  scores: ReadonlyMap<ServiceId, number>,
+): Map<ServiceId, number> {
+  const range = scoreRange(scores);
+  if (!(range > MIN_MAX_NORMALIZE_RANGE)) return new Map(scores);
+  let min = Infinity;
+  for (const score of scores.values()) {
+    if (score < min) min = score;
+  }
+  const result = new Map<ServiceId, number>();
+  for (const [id, score] of scores) result.set(id, (score - min) / range);
   return result;
 }
 
@@ -1284,6 +1361,18 @@ export function buildTopologyFaultGraph(
     }
   }
 
+  // ── Step 1a′: keep the DEVIATION, which the steps below are about to rescale ───
+  //
+  // Every transform in step 1b is monotone and therefore preserves ORDER, which is why the ranking
+  // signals can be defined on the rescaled map without loss. Two things in the engine are not
+  // order-only, though: the anomaly's MAGNITUDE enters `log1p` and the additive terms through
+  // `finalScore`, and any operator that treats the anomaly as an extensive quantity — a sum over
+  // callees, a deduction of what they explain — is defined on the deviation, not on a rank. Keeping
+  // the deviation is what lets such an operator run in the space its algebra is valid in and be
+  // mapped back afterwards, instead of being silently re-defined by the population's size.
+  const rawAnomalyScores = new Map(anomalyScores);
+  let anomalyNormalization: AnomalyNormalization = 'none';
+
   // ── Step 1b: Score normalization for large topologies ───
   // On topologies with many services (e.g. TrainTicket, 80+ nodes) the
   // raw deviation-based anomaly scores cluster near zero because the
@@ -1304,18 +1393,18 @@ export function buildTopologyFaultGraph(
       for (const [sid, score] of ranked) {
         anomalyScores.set(sid, score);
       }
+      anomalyNormalization = 'rank';
     } else {
-      let minScore = Infinity;
-      let maxScore = -Infinity;
-      for (const score of anomalyScores.values()) {
-        if (score < minScore) minScore = score;
-        if (score > maxScore) maxScore = score;
-      }
-      const range = maxScore - minScore;
-      if (range > 1e-10) {
-        for (const [sid, score] of anomalyScores) {
-          anomalyScores.set(sid, (score - minScore) / range);
+      // `minMaxNormalizeScores` is the identity when there is no range to amplify (every score
+      // identical), and in that case NO transform ran — so the flag settles on `none` and a reader of
+      // the flag is never told about a rescaling that did not happen. The test is the same one the
+      // function makes internally, read through the same helper rather than through a second copy.
+      if (scoreRange(anomalyScores) > MIN_MAX_NORMALIZE_RANGE) {
+        const rescaled = minMaxNormalizeScores(anomalyScores);
+        for (const [sid, score] of rescaled) {
+          anomalyScores.set(sid, score);
         }
+        anomalyNormalization = 'minmax';
       }
       // range ≈ 0 → all scores identical; no signal to amplify, skip.
     }
@@ -1350,6 +1439,8 @@ export function buildTopologyFaultGraph(
 
   return {
     anomalyScores,
+    rawAnomalyScores,
+    anomalyNormalization,
     anomalyOnsetTimes,
     postInjectOnsetDelays,
     dominantMetrics,

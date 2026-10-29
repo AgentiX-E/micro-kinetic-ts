@@ -203,7 +203,11 @@ describe('no TypeScript file in this repository is read by no compiler', () => {
     for (const entry of readdirSync(dir)) {
       if (SKIP.has(entry)) continue;
       const full = path.join(dir, entry);
-      if (statSync(full).isDirectory()) everyTypeScriptFile(full, found);
+      // Same live-tree caveat as `configsOnDisk`: a fixture directory elsewhere in the repo can disappear
+      // between the listing and the stat while projects run in parallel.
+      const stats = statSync(full, { throwIfNoEntry: false });
+      if (stats === undefined) continue;
+      if (stats.isDirectory()) everyTypeScriptFile(full, found);
       else if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
         found.push(path.relative(REPO, full).split(path.sep).join('/'));
       }

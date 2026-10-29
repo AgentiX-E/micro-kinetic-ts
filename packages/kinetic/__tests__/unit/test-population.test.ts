@@ -58,7 +58,14 @@ function configsOnDisk(dir = repoRoot, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (SKIP.has(entry)) continue;
     const full = resolve(dir, entry);
-    if (statSync(full).isDirectory()) {
+    // `throwIfNoEntry: false` because this walks a LIVE tree: `packages/causal/__tests__/unit/static-topology`
+    // builds `packages/causal/__fixtures__/topology-test` and removes it in `afterAll`, and the root-level run
+    // executes projects in parallel — so an entry listed by `readdirSync` can be gone by the time it is
+    // stat'ed. That is a fact about a concurrent run, not a missing config, and the walk has no business
+    // turning it into a failure. Measured as a real failure: `ENOENT ... topology-test` on the 2026-10-30 run.
+    const stats = statSync(full, { throwIfNoEntry: false });
+    if (stats === undefined) continue;
+    if (stats.isDirectory()) {
       configsOnDisk(full, found);
       continue;
     }

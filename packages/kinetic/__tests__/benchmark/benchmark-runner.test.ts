@@ -47,6 +47,10 @@ function createMockEngine(): IRCAEngine {
       anomalyScores: new Map(
         [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
       ),
+      rawAnomalyScores: new Map(
+        [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
+      ),
+      anomalyNormalization: 'none' as const,
       anomalyOnsetTimes: new Map(
         [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 2 : 5]),
       ),
@@ -741,6 +745,8 @@ describe('BenchmarkRunner', () => {
           callGraph: { nodes: new Map(), edges: [], systemLoad: 0 },
           propagationWeights: new Float64Array(0),
           anomalyScores: new Map(),
+          rawAnomalyScores: new Map(),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -779,6 +785,8 @@ describe('BenchmarkRunner', () => {
           },
           propagationWeights: new Float64Array(0),
           anomalyScores: new Map(),
+          rawAnomalyScores: new Map(),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -815,6 +823,10 @@ describe('BenchmarkRunner', () => {
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_2' ? 0.9 : 0.1]),
           ),
+          rawAnomalyScores: new Map(
+            [...callGraph.nodes.keys()].map((id) => [id, id === 'service_2' ? 0.9 : 0.1]),
+          ),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -873,6 +885,10 @@ describe('BenchmarkRunner', () => {
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
           ),
+          rawAnomalyScores: new Map(
+            [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
+          ),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -937,6 +953,10 @@ describe('RCA Engine Integration', () => {
         anomalyScores: new Map(
           [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
         ),
+        rawAnomalyScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
+        ),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,
@@ -1014,6 +1034,8 @@ describe('RCA Engine Integration', () => {
           callGraph,
           propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
           anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -1056,6 +1078,8 @@ describe('RCA Engine Integration', () => {
           callGraph,
           propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
           anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -1099,6 +1123,8 @@ describe('RCA Engine Integration', () => {
           callGraph,
           propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
           anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyNormalization: 'none' as const,
           anomalyOnsetTimes: new Map(),
           detectedCycles: [],
           totalCycleContribution: 0,
@@ -1149,6 +1175,10 @@ describe('RCA Engine Integration', () => {
         anomalyScores: new Map(
           [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
         ),
+        rawAnomalyScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
+        ),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         logScores: new Map(
           [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 1 : 0]),
@@ -1236,6 +1266,8 @@ describe('RCA Engine Integration', () => {
         callGraph,
         propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
         anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,
@@ -1340,6 +1372,8 @@ describe('RCA Engine Integration', () => {
         callGraph,
         propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
         anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,
@@ -1425,6 +1459,8 @@ describe('RCA Engine Integration', () => {
         callGraph,
         propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
         anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.9])),
+        rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.9])),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,
@@ -1768,6 +1804,8 @@ function createScriptedEngine(options: {
         callGraph,
         propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
         anomalyScores: new Map(ids.map((id) => [id, id === options.serviceId ? 0.9 : 0.1])),
+        rawAnomalyScores: new Map(ids.map((id) => [id, id === options.serviceId ? 0.9 : 0.1])),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(ids.map((id) => [id, 2])),
         // The optional ranking signals are POPULATED here. `createMockEngine`
         // omits all of them, so the `?.` arms that read them from a graph that
@@ -2344,6 +2382,8 @@ describe('BenchmarkRunner — the per-case diagnostic hook', () => {
         callGraph,
         propagationWeights: new Float64Array(callGraph.edges.length),
         anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+        rawAnomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,
@@ -2413,6 +2453,8 @@ describe('BenchmarkRunner — the per-case diagnostic hook', () => {
         callGraph: { nodes: new Map(), edges: [], systemLoad: 0 },
         propagationWeights: new Float64Array(0),
         anomalyScores: new Map(),
+        rawAnomalyScores: new Map(),
+        anomalyNormalization: 'none' as const,
         anomalyOnsetTimes: new Map(),
         detectedCycles: [],
         totalCycleContribution: 0,

@@ -127,6 +127,18 @@ export type {
   TopoDiscountScope,
   TopologyFaultGraphConfig,
 } from './causal/topology-fault-graph.js';
+// The topological deduction is public as a FUNCTION, not only as an option, because its space is an
+// argument: a consumer that normalises the anomaly itself has to be able to deduct in deviation space
+// and map the result back, and the two halves of that round trip are separable problems.
+export {
+  applyAnomalyNormalization,
+  deductExplainedAnomalies,
+  type TopoDeductionInput,
+} from './causal/topo-deduction.js';
+// `minMaxNormalizeScores` and `scoreRange` are public for the same reason `rankNormalizeScores` is:
+// they define what space a score is in, and the graph's `anomalyNormalization` names which of them ran.
+export { minMaxNormalizeScores, scoreRange } from './causal/topology-fault-graph.js';
+export type { AnomalyNormalization } from './causal/topology-fault-graph.js';
 
 // Pruning
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';

@@ -171,6 +171,13 @@ export interface MetricDiagnostic {
 }
 
 /**
+ * Which transform separates a graph's reported anomalies from their deviations.
+ *
+ * See {@link FaultPropagationGraph.anomalyNormalization}.
+ */
+export type AnomalyNormalization = 'none' | 'rank' | 'minmax';
+
+/**
  * Fault propagation graph — the core data structure for collision tree RCA.
  *
  * This is built from a ServiceCallGraph by annotating edges with
@@ -183,6 +190,24 @@ export interface FaultPropagationGraph {
   readonly propagationWeights: Float64Array;
   /** Per-node anomaly scores (0-1, where 1 = fully anomalous) */
   readonly anomalyScores: ReadonlyMap<ServiceId, number>;
+  /**
+   * The same anomalies in DEVIATION space — before any normalisation rescaled them.
+   *
+   * A builder that does not normalise reports the same map it reports as `anomalyScores`; a builder
+   * that does keeps the pre-transform values here. It exists because an EXTENSIVE operator — one that
+   * adds a callee's anomaly into a caller's, or subtracts it back out — is defined on a deviation and
+   * not on a rank, and such an operator must be able to find the space its algebra is valid in rather
+   * than infer it from the population's size.
+   */
+  readonly rawAnomalyScores: ReadonlyMap<ServiceId, number>;
+  /**
+   * Which transform separates {@link rawAnomalyScores} from {@link anomalyScores}.
+   *
+   * `'none'` — no transform ran. `'rank'` — the scores are average ranks scaled to [0, 1], so they
+   * carry an order and no magnitude. `'minmax'` — an affine rescale, so they are still extensive, in
+   * units of the fleet's widest deviation.
+   */
+  readonly anomalyNormalization: AnomalyNormalization;
   /**
    * Per-node anomaly ONSET indices — the earliest data-point index (in the
    * service's own time series) where its metric deviated from normal. Used

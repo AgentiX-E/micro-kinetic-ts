@@ -46,6 +46,9 @@ function graphOf(
     callGraph,
     propagationWeights: new Float64Array(0),
     anomalyScores: new Map(ids.map((id) => [id, 0.9])),
+    // Uniform anomalies and no normalisation: the deviation map IS the reported map.
+    rawAnomalyScores: new Map(ids.map((id) => [id, 0.9])),
+    anomalyNormalization: 'none',
     anomalyOnsetTimes: new Map(ids.map((id) => [id, 0])),
     detectedCycles: [],
     totalCycleContribution: 0,

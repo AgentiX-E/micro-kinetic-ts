@@ -43,10 +43,15 @@ function graphOf(
   overrides: Partial<FaultPropagationGraph> = {},
 ): FaultPropagationGraph {
   const ids = [...callGraph.nodes.keys()];
+  // No normalisation runs in this fixture, so the reported map IS the deviation map — stated in the
+  // field rather than inferred by a reader.
+  const anomalyScores = new Map(ids.map((id, index) => [id, 1 - index * 0.1]));
   return {
     callGraph,
     propagationWeights: new Float64Array(callGraph.edges.length),
-    anomalyScores: new Map(ids.map((id, index) => [id, 1 - index * 0.1])),
+    anomalyScores,
+    rawAnomalyScores: anomalyScores,
+    anomalyNormalization: 'none',
     anomalyOnsetTimes: new Map(ids.map((id) => [id, 0])),
     detectedCycles: [],
     totalCycleContribution: 0,

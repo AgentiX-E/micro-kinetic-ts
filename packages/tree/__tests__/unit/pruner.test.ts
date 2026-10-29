@@ -7,6 +7,7 @@ import type {
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   classifyTermZero,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -1375,10 +1376,15 @@ describe('TreePruner', () => {
       const shortWeights = { ...graph, propagationWeights: new Float64Array(0) };
       expect(() => deducted.analyze(shortWeights, 3)).toThrow(/must match edges length/);
 
-      // (2) `b` is carried as an edge endpoint but has no anomaly of its own.
+      // (2) `b` is carried as an edge endpoint but has no anomaly of its own. Both maps lose it together,
+      // because a graph's two anomaly maps describe the SAME services: `rawAnomalyScores` is what
+      // `anomalyScores` was before step 1b rescaled it, so a node cannot be missing from one and present
+      // in the other. (The builder guarantees it; a fixture that broke it would be measuring a graph the
+      // engine cannot produce.)
       const noCallee = {
         ...graph,
         anomalyScores: new Map([...graph.anomalyScores].filter(([id]) => id !== 'b')),
+        rawAnomalyScores: new Map([...graph.rawAnomalyScores].filter(([id]) => id !== 'b')),
       };
       const withoutCallee = deducted.analyze(noCallee, 3);
       expect(scoreOf(withoutCallee, 'a')).toBe(scoreOf(before, 'a'));
@@ -1394,6 +1400,9 @@ describe('TreePruner', () => {
         anomalyScores: new Map(
           [...graph.anomalyScores].map(([id, value]) => [id, id === 'b' ? 0 : value] as const),
         ),
+        rawAnomalyScores: new Map(
+          [...graph.rawAnomalyScores].map(([id, value]) => [id, id === 'b' ? 0 : value] as const),
+        ),
       };
       const withZeroCallee = deducted.analyze(zeroCallee, 3);
       expect(scoreOf(withZeroCallee, 'a')).toBe(scoreOf(before, 'a'));
@@ -1407,6 +1416,79 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ topoDiscount: 2 });
       const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
       expect(() => pruner.analyze(graph, 3)).toThrow(/topoDiscount/);
+    });
+
+    it('runs the deduction in DEVIATION space, so its cost does not scale with the fleet', () => {
+      // The end-to-end half of `topo-deduction-space.test.ts`, asserted on what @1/@3/@5 read. A
+      // 24-service fleet trips `ANOMALY_NORMALIZE_NODE_THRESHOLD` (20), so `anomalyScores` there is a RANK
+      // with steps of 1/23 while a 19-service fleet's is a deviation. Iteration 157's call site subtracted
+      // a rank-scaled quantity from the first one, so the deduction overtook `rho·w·(n−1)` services
+      // instead of the one the physics names — the mechanism behind RE1:TrainTicket's −5.6 pp.
+      const fleet = (n: number) => {
+        const ids = Array.from({ length: n }, (_, i) => `s${i}`);
+        const nodes = new Map(ids.map((id) => [id, makeNode(id)]));
+        // `from` CALLS `to`, so the chain runs s1 → s0: every service calls its PREDECESSOR, which puts
+        // the biggest anomaly at the DEEPEST node. That is the case the deduction exists for — a victim
+        // (s1) whose own anomaly is inherited from the callee it calls (s0).
+        const edges = ids.slice(1).map((id, i) => makeEdge(id, ids[i]!));
+        const metrics = new Map<string, readonly TimeSeries[]>();
+        ids.forEach((id, i) => {
+          // One source, one victim that inherits from it, and a floor clustered within 2% of itself —
+          // the shape a measured fleet has, and the shape whose rank image is dense.
+          const tail = i === 0 ? 3 : i === 1 ? 2.4 : 1.1 + 0.001 * i;
+          metrics.set(id, [
+            makeTimeSeries('latency_p99', [1, 1, 1, 1, 1, 1, tail, tail, tail, tail, tail, tail]),
+          ]);
+        });
+        return { callGraph: { nodes, edges, systemLoad: 0.3 } as ServiceCallGraph, metrics };
+      };
+      const selfTerm = (
+        results: readonly {
+          readonly serviceId: string;
+          readonly terms?: readonly { name: string; contribution: number }[];
+        }[],
+        id: string,
+      ): number =>
+        results.find((r) => r.serviceId === id)!.terms!.find((t) => t.name === 'selfAnomalyLog1p')!
+          .contribution;
+      const positionOf = (results: readonly { readonly serviceId: string }[], id: string): number =>
+        results.findIndex((r) => r.serviceId === id);
+
+      for (const n of [19, 24]) {
+        const { callGraph: fleetCallGraph, metrics: fleetMetrics } = fleet(n);
+        const shipped = new TreePruner();
+        const graph = shipped.buildFaultGraph(fleetCallGraph, fleetMetrics);
+        const before = shipped.analyze(graph, n);
+        const half = new TreePruner({ topoDiscount: 0.5 }).analyze(graph, n);
+
+        // (a) The victim is a contender to begin with — top three, which is where @1/@3 can see it —
+        // and half of an explanation does not move it at either fleet size: the floor is far below it,
+        // so the deduction changes a quantity without changing an order. Its ABSOLUTE position is not
+        // asserted because the two spaces order the fleet differently for reasons of their own; what the
+        // deduction may not do is change it.
+        const beforePosition = positionOf(before, 's1');
+        expect(beforePosition, `n=${n}`).toBeGreaterThanOrEqual(0);
+        expect(beforePosition, `n=${n}`).toBeLessThanOrEqual(2);
+        expect(positionOf(half, 's1'), `n=${n}`).toBe(beforePosition);
+        // (b) In RANK space the value IS the position, so the term the ranking reads must be identical —
+        // and this is the assertion the old call site failed, because it deducted 0.5 of a whole rank
+        // step from a number whose steps are 1/23.
+        if (n >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
+          expect(graph.anomalyNormalization).toBe('rank');
+          expect(selfTerm(half, 's1'), `n=${n}`).toBeCloseTo(selfTerm(before, 's1'), 12);
+        }
+        // (c) …and the operator is LIVE here, which the full deduction shows: at rho = 1 the inherited
+        // anomaly is gone, so the victim either falls or leaves the candidate list entirely (a service
+        // with no anomaly left has nothing to report).
+        const fullPosition = positionOf(
+          new TreePruner({ topoDiscount: 1 }).analyze(graph, n),
+          's1',
+        );
+        expect(
+          fullPosition === -1 || fullPosition > beforePosition,
+          `n=${n}: victim at ${fullPosition}, was ${beforePosition}`,
+        ).toBe(true);
+      }
     });
   });
 

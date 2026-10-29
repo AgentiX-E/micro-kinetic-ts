@@ -58,6 +58,7 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
+import { applyAnomalyNormalization, deductExplainedAnomalies } from '../causal/topo-deduction.js';
 import type {
   TopoDiscountScope,
   TopologyFaultGraphConfig,
@@ -65,7 +66,6 @@ import type {
 import {
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   buildTopologyFaultGraph,
-  isResponseChannel,
 } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
@@ -321,13 +321,18 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * anomaly; a node whose anomaly is entirely accounted for by what it calls falls to zero at
    * `topoDiscount = 1`.
    *
-   * **The form is a DEDUCTION, not a ratio, and that is what makes it scale-free.** Its relative effect
-   * is `topoDiscount × explained(v) / anomaly(v)`, a ratio of two quantities on the same scale, so it
-   * transfers between OnlineBoutique's raw deviation (order 1–3) and TrainTicket's rank-normalised one
-   * (63–69 nodes trip `anomalyNormalizeNodeThreshold`, so the anomaly is a rank with steps of
-   * **1/63 = 0.0159**) without a constant tuned per suite. The ADDITIVE `topoWeight` above has that
-   * defect in the other direction: at `topoWeight = 0.1` its term is 3% of one cell's score scale and six
-   * rank steps of another's, and RE1-TrainTicket lost **46.4 pp** on run `40167961908`.
+   * **The form is a DEDUCTION, not a ratio, and that removed ONE defect and exposed another.** Its
+   * relative effect is `topoDiscount × explained(v) / anomaly(v)`, a ratio of two quantities on the same
+   * scale, which fixes the ratio form's inversion (a callee's own `cpu` anomaly is no longer deducted by
+   * its caller's response). What it does NOT fix is the SPACE: the subtraction is extensive, and the
+   * engine's graph builder rank-normalises the anomaly above `anomalyNormalizeNodeThreshold`, so on
+   * TrainTicket `a = k/(n−1)` and the relative effect becomes `rho·w·(n−1)/k` — **linear in the
+   * population**. Measured on run `40896889186`: the same weight read +1.6 pp on RE1:OnlineBoutique and
+   * −5.6 pp on RE1:TrainTicket, with DELAY 64.0 → 56.0 and LOSS 52.0 → 32.0. The deduction therefore
+   * runs on {@link deductedAnomalies}'s deviation-space input (`FaultPropagationGraph.rawAnomalyScores`)
+   * and returns through the graph's own `anomalyNormalization`. The ADDITIVE `topoWeight` above has a
+   * related defect in the other direction: at `topoWeight = 0.1` its term is 3% of one cell's score scale
+   * and six rank steps of another's, and RE1-TrainTicket lost **46.4 pp** on run `40167961908`.
    *
    * **The earlier form was a ratio and it was refused twice.** `anomaly × (1 − ρ·(1 − topoSource))`
    * applies the discount to the node's WHOLE anomaly, so on RE3/SockShop it deducted the callee-origin's
@@ -1474,6 +1479,10 @@ export class TreePruner {
     });
     const {
       anomalyScores,
+      // Kept because the topological deduction is an EXTENSIVE operator and the anomaly above is a
+      // rank on any graph the builder normalised — see `discountedAnomalies`.
+      rawAnomalyScores,
+      anomalyNormalization,
       anomalyOnsetTimes,
       postInjectOnsetDelays,
       dominantMetrics,
@@ -1734,6 +1743,8 @@ export class TreePruner {
       callGraph: topologyGraph,
       propagationWeights,
       anomalyScores,
+      rawAnomalyScores,
+      anomalyNormalization,
       anomalyOnsetTimes,
       postInjectOnsetDelays,
       dominantMetrics,
@@ -1889,12 +1900,17 @@ export class TreePruner {
    * The per-node anomaly the ranking reads, after the topological deduction.
    *
    *   explained(v) = max over callees c with propWeight(v→c) > 0 of propWeight(v→c) × anomaly(c)
-   *   anomaly'(v)  = max(0, anomaly(v) − rho × explained(v))
+   *   anomaly'(v)  = anomaly(v) − rho × min(anomaly(v), explained(v))
    *
    * applied only where {@link TopoDiscountScope} allows: under `external` both the explaining callee and
    * the deducted caller must carry a {@link isResponseChannel} dominant metric, because a response is the
    * only thing a call boundary transmits. A source — no anomalous callee, or an internal anomaly no
    * callee can produce — keeps its anomaly entire.
+   *
+   * The operator itself lives in `deductExplainedAnomalies` because it is a function of the anomaly map
+   * and the edges and of NOTHING else — which is what makes its space an explicit argument rather than
+   * an accident of what the graph happens to report. This method's job is only the round trip: deduct in
+   * deviation space, return in the graph's own space.
    *
    * `rho = 0` — the shipped value — returns the graph's own map unchanged, so the shipped configuration
    * is bit-identical by construction: no copy, no float rounding, no comparison to defend.
@@ -1904,44 +1920,31 @@ export class TreePruner {
    */
   private discountedAnomalies(graph: FaultPropagationGraph): ReadonlyMap<ServiceId, number> {
     const rho = this.options.topoDiscount;
+    // At the shipped weight the map is not built at all, so the ranking is bit-identical to the one
+    // that existed before this axis did — no copy, no re-normalisation, the same object.
     if (rho === 0) return graph.anomalyScores;
-    invariantRange(rho, 0, 1, 'topoDiscount');
-    const scope = this.options.topoDiscountScope;
-    // One predicate for BOTH sides of the deduction: the channel a callee may explain through and the
-    // channel a caller may be deducted on are the same question, and two predicates would be free to
-    // disagree about which channels cross a call boundary.
-    const explicable = (nodeId: ServiceId): boolean => {
-      if (scope === 'all') return true;
-      const dominant = graph.dominantMetrics?.get(nodeId);
-      return dominant !== undefined && isResponseChannel(dominant.label);
-    };
-    const explained = new Map<ServiceId, number>();
-    const edges = graph.callGraph.edges;
-    for (let i = 0; i < edges.length; i++) {
-      const edge = edges[i]!;
-      if (!explicable(edge.to)) continue;
-      // No `?? 0` on the weight: `buildEdgeWeightMap` refuses a vector whose length differs from the edge
-      // count, and this method is reached only through `analyze`, which runs that pass first. A default
-      // here would be a branch no graph can take — and the fence that makes it so is asserted in the
-      // discount's own suite rather than trusted.
-      const weight = graph.propagationWeights[i]!;
-      if (!(weight > 0)) continue;
-      // A callee CAN be an edge endpoint and carry no anomaly at all — a node with no telemetry explains
-      // nothing — so this default is reachable and stays.
-      const calleeAnomaly = graph.anomalyScores.get(edge.to) ?? 0;
-      if (!(calleeAnomaly > 0)) continue;
-      const value = weight * calleeAnomaly;
-      if (value > (explained.get(edge.from) ?? 0)) explained.set(edge.from, value);
-    }
-    const discounted = new Map<ServiceId, number>();
-    for (const [nodeId, anomaly] of graph.anomalyScores) {
-      const deduction = explicable(nodeId) ? rho * (explained.get(nodeId) ?? 0) : 0;
-      // Written as a branch rather than `Math.max(0, …)` so a fully explained node reads exactly `0`
-      // instead of `-0`, which the ranking's tie-break would see as a different value from a node whose
-      // anomaly genuinely was zero.
-      discounted.set(nodeId, deduction >= anomaly ? 0 : anomaly - deduction);
-    }
-    return discounted;
+    // ── The operator runs in DEVIATION space, and that is the whole of iteration 158 ─────────────
+    //
+    // `explained` adds a callee's anomaly into a caller's, so the subtraction that undoes it is an
+    // EXTENSIVE operation, and the anomaly the engine reports is not an extensive quantity on every
+    // suite: step 1b of the graph builder rank-normalises it above `anomalyNormalizeNodeThreshold`, so
+    // TrainTicket's scores are ranks with steps of 1/(n−1) while OnlineBoutique's are deviations of
+    // order 1–3. Deducting on the rank surface makes the relative effect `rho·w·(n−1)/k` — linear in
+    // the fleet's size — which is why the same weight that read +1.6 pp on RE1:OnlineBoutique cost
+    // RE1:TrainTicket 5.6 pp on run `40896889186`. The deduction now runs on `rawAnomalyScores` and the
+    // result is returned through the SAME transform the builder applied, so the ranking keeps reading
+    // one space while the operator works in another.
+    const deducted = deductExplainedAnomalies(
+      {
+        anomalies: graph.rawAnomalyScores,
+        edges: graph.callGraph.edges,
+        propagationWeights: graph.propagationWeights,
+        dominantMetrics: graph.dominantMetrics,
+      },
+      rho,
+      this.options.topoDiscountScope,
+    );
+    return applyAnomalyNormalization(deducted, graph.anomalyNormalization);
   }
 
   /**
