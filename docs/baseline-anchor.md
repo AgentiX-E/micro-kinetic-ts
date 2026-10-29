@@ -187,25 +187,97 @@ also rising; it can only stop the truth from being scored as a drop.
 
 ## 6. What this does NOT license
 
-- **Five golden cells are unmeasured.** RE1-SS, RE1-TT, RE2-OB, RE2-SS and RE2-TT, plus RE3-OB and
-  RE3-TT, are not in this sandbox's corpus. The two cells measured here are 155 of the 735 cases — 21%.
-  The arm is dispatched to all nine before any enrolment, and the acceptance is **per cell**: RE1-OB's
-  one-for-one swap is what "no regression" looks like at this size, so a cell that loses two cases must
-  be read case by case rather than averaged. The RE1-OB detail, since it is the only cell where the arm
-  moved anything: `currencyservice_loss_5` is lost (top-1 becomes `productcatalogservice`) and
-  `productcatalogservice_disk_5` is won, one each way, and the four cells are identical at the case level.
-- **The regression hypothesis is specific and testable.** A crash-victim series anchors its baseline to
-  the first five samples' upper quartile; on a warm-up that is the warm-up. The prediction is therefore
-  that RE1/RE2 losses, if any, are `mem`/`cpu` cases whose series opens high — not spread across types.
-  A loss outside that population would falsify the mechanism rather than the arm, and it would have to
-  be explained before the number is used.
+- **Three cells regress, and the axis is therefore not enrolled.** All nine are now measured (§7):
+  RE1-SS `116 → 119`, RE3-TT `21 → 25`, RE3-SS `18 → 19` against RE2-TT `75 → 72`, RE2-OB `80 → 79`
+  and RE3-OB `25 → 24`. The corpus total improves by three cases; `RE2:TrainTicket` loses three on its
+  own. A cell regression is refused on measurement even when the total improves, so the default stays
+  `whole-file` and this document's title stays "an axis", not "a default".
+- **The regression hypothesis was half wrong, and the half that survived is the sharper one.** It
+  predicted losses inside the warm-up population — `mem`/`cpu` series that open high. What the nine
+  cells show is that the concentration is on injection **index**: five of the ten losses are `_1`
+  cases, and on RE2-TT *all five* of the arm's moves are `_1` (four losses, one gain), while the
+  families are `disk`×3, `loss`×2, `delay`, `cpu` and three RE3 `f*` cases. The index is the variable
+  because the *first* injection is the one whose pre-injection window is the container's own ramp: the
+  anchored baseline becomes the ramp's median instead of a plateau, which deflates the truth's rise
+  exactly where the whole-file window was already right. What that predicts is a **stationarity test on
+  the pre-window**, not a family mask, and until that test exists the losses cannot be separated from
+  the rescues.
 - **It does not compose with `dropdev=log`.** The drop arm's explosion was measured against the
   whole-file window; re-anchoring moves the denominator of every ratio in that arm, so its numbers
   cannot be carried over. If the pair is ever proposed, it is a new measurement of four cells, not two.
 - **`pre-injection` is not a default candidate on this evidence.** It ships OFF, and §4's +1 case is one
   case, of which the axis alone owns **zero**. Enrolling it means the nine-cell dispatch, not this table.
 
-## 7. How to re-measure
+## 7. The nine-cell measurement — three arms, and the two mechanisms priced apart
+
+The two-cell reading in §4 was the arm as far as this sandbox reaches. The nine-cell dispatch is the
+measurement, and it needed a third arm: a branch at the parent of the log clause (`control/pre-clause-187`,
+`e79c0b61`), so that the window's price is not a difference of totals over a change that landed beside it.
+
+| cell | pre-clause `e79c0b61` | control (clause, `whole-file`) | anchored | Δ anchor |
+| --- | ---: | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 105 | 107 | 107 | 0 |
+| RE1:SockShop | 117 | 116 | **119** | **+3** |
+| RE1:TrainTicket | 101 | 104 | 104 | 0 |
+| RE2:OnlineBoutique | 80 | 80 | 79 | −1 |
+| RE2:SockShop | 85 | 85 | 85 | 0 |
+| RE2:TrainTicket | 75 | 75 | 72 | **−3** |
+| RE3:OnlineBoutique | 25 | 25 | 24 | −1 |
+| RE3:SockShop | 18 | 18 | 19 | +1 |
+| RE3:TrainTicket | 21 | 21 | **25** | **+4** |
+| **735** | **627** | **631** | **634** | **+3** |
+
+| move | gains | losses | net |
+| --- | ---: | ---: | ---: |
+| the log clause (`pre → control`) | 11 | 7 | +4 |
+| **this axis** (`control → anchored`) | **13** | **10** | **+3** |
+| both | 24 | 17 | +7 |
+
+**The two move-sets do not intersect.** Not one of the 735 cases is moved by both mechanisms, so the
+effects are additive on the nose: `627 + 4 + 3 = 634`. That is the first time this project has been able
+to state a two-change iteration that way, and it is what the third arm was for — one arm would have
+split +7 between a vocabulary and a window by assertion, which is the same error as quoting §4a's pair
+total for the axis.
+
+The shape of the axis' own ledger is the part that matters for what comes next:
+
+| | gains (13) | losses (10) |
+| --- | --- | --- |
+| truth's rank before | 2 ×6, 3 ×3, 4, 7, 13, **20** | 1 ×10 |
+| truth's rank after | 1 ×13 | 2 ×6, 3 ×3, 4 ×1 |
+| Δ on the truth's own score | median **+0.164**, max +0.484 | median **−0.016**, min −0.113 |
+| injection index | 1 ×2, 2 ×3, 3 ×2, 4 ×4, 5 ×2 | **1 ×5**, 2 ×2, 3 ×1, 5 ×2 |
+
+Four deep rescues (`ts-route-service_f4_3` 20 → 1, `f2_2` 13 → 1, `f2_1` 7 → 1, `f1_3` 4 → 1) bought
+with ten one-step demotions whose median cost to the truth's own score is `0.016`. On Top@1 that is +3.
+On a rank-sensitive metric it would be a large win, and the project does not report one — so the +3 is
+the number and the asymmetry is an argument, not a result.
+
+### 7a. FSE'26, where the clause cannot reach
+
+| arm | Top@1 | Top@3 | Top@5 |
+| --- | ---: | ---: | ---: |
+| pre-clause `e79c0b61` | 60.478% | 79.044% | 82.208% |
+| control (clause, `whole-file`) | 60.478% | 79.044% | 82.208% |
+| **anchored** | **61.181%** | **79.606%** | **82.630%** |
+
+`+10` cases of 1422, and the clause's row is identical to the pre-clause row to sixteen digits because
+`PROPAGATED_EXCEPTION_PATTERN` is reachable from `rcaeval-loader.ts` only — the clause is not "neutral"
+on this suite, it is absent from it. The gains are `HTTPResponseDelay +4`, `HTTPRequestReplaceMethod +4`,
+`HTTPResponseReplaceCode +2` and four single cases; the losses are `HTTPRequestDelay −1`,
+`NetworkCorrupt −1`, a four-case cell (`HTTPResponsePatchBody 3 → 2`) and a **one-case** cell
+(`DNSRandom 1 → 0`, which prints as −100.0 pp and means nothing).
+
+### 7b. What the run did not instrument
+
+The anchor falls back per series — short window, non-positive baseline, a side narrower than
+`max(3, ⌈0.1n⌉)` — and no artifact says how often. "This cell did not move" therefore cannot yet be told
+apart from "the guard refused the anchor on every series in this cell", which is the whole question on
+RE2:SockShop and RE1:OnlineBoutique. A `[baseline-anchor] anchored=<n> refused=<n> reasons=…` line per
+cell is a precondition for any further work on the window, and no tuning of this axis is admissible
+before it exists.
+
+## 8. How to re-measure
 
 ```bash
 # golden half, one input, everything else shipped
