@@ -106,52 +106,91 @@ invalid on" and "the engine is space-free", and only the first is what this iter
 
 ## 6. The nine cells and FSE'26
 
-`AC@1`, per suite and system, one commit (`9075e05`), four arms dispatched together. Runs, in the
-table's column order: control `40964201475`; ρ = 0.5 `external` `40964215103`; ρ = 1.0 `external`
-`40964228925`; ρ = 0.5 `all` `40964244129`. Every arm differs from the control in the single flag the
-column names, and nothing else changed between them.
+Reported in **cases**, not percentages, because a case count is what the artifact carries and it is the
+only form in which a one-case difference is not mistaken for a rounding error. One commit (`9075e05`),
+four arms dispatched together: control `40964201475`; ρ = 0.5 `external` `40964215103`; ρ = 1.0
+`external` `40964228925`; ρ = 0.5 `all` `40964244129`. Every arm differs from the control in the single
+flag the column names, and nothing else changed between them.
 
-| suite | system         |              ρ = 0 | ρ = 0.5 `external` |                     Δ |     ρ = 1.0 `external` |                      Δ |      ρ = 0.5 `all` |                  Δ |
-| ----- | -------------- | -----------------: | -----------------: | --------------------: | ---------------------: | ---------------------: | -----------------: | -----------------: |
-| RE1   | OnlineBoutique |              85.6% |              87.2% |                  +1.6 |              **88.0%** |               **+2.4** |              87.2% |               +1.6 |
-| RE1   | SockShop       |              92.8% |              93.6% |                  +0.8 |                  93.6% |                   +0.8 |              92.8% |                0.0 |
-| RE1   | TrainTicket    |              83.2% |              80.8% |                  −2.4 |                  81.6% |                   −1.6 |              80.8% |               −2.4 |
-| RE2   | OnlineBoutique |              93.3% |              88.9% |                  −4.4 |                  91.1% |                   −2.2 |              88.9% |               −4.4 |
-| RE2   | SockShop       |              94.4% |              94.4% |                   0.0 |                  94.4% |                    0.0 |              94.4% |                0.0 |
-| RE2   | TrainTicket    |              83.3% |              82.2% |                  −1.1 |                  82.2% |                   −1.1 |              82.2% |               −1.1 |
-| RE3   | OnlineBoutique |              88.9% |              88.9% |                   0.0 |                  88.9% |                    0.0 |              88.9% |                0.0 |
-| RE3   | SockShop       |              63.6% |              63.6% |                   0.0 |                  61.1% |                   −2.5 |          **53.6%** |          **−10.0** |
-| RE3   | TrainTicket    |              71.0% |              74.5% |                  +3.5 |              **78.1%** |               **+7.1** |              78.1% |               +7.1 |
-| —     | suite means    | 87.2 / 88.9 / 71.1 | 87.2 / 88.5 / 72.2 | 0.0 / −0.4 / **+1.1** | **87.7 / 89.3 / 72.2** | **+0.5 / +0.4 / +1.1** | 86.9 / 88.5 / 68.9 | −0.3 / −0.4 / −2.2 |
+| suite | system         |       ρ = 0 | ρ = 0.5 `external` |     Δ | ρ = 1.0 `external` |      Δ | ρ = 0.5 `all` |      Δ |
+| ----- | -------------- | ----------: | -----------------: | ----: | -----------------: | -----: | ------------: | -----: |
+| RE1   | OnlineBoutique |     107/125 |            109/125 |    +2 |        **110/125** |     +3 |       109/125 |     +2 |
+| RE1   | SockShop       |     116/125 |            117/125 |    +1 |            117/125 |     +1 |       116/125 |      0 |
+| RE1   | TrainTicket    |     104/125 |            101/125 |    −3 |            102/125 |     −2 |       101/125 |     −3 |
+| RE2   | OnlineBoutique |       80/90 |              80/90 |     0 |          **82/90** |     +2 |         80/90 |      0 |
+| RE2   | SockShop       |       85/90 |              85/90 |     0 |              85/90 |      0 |         85/90 |      0 |
+| RE2   | TrainTicket    |       75/90 |              74/90 |    −1 |              74/90 |     −1 |         74/90 |     −1 |
+| RE3   | OnlineBoutique |       25/30 |              25/30 |     0 |              25/30 |      0 |         25/30 |      0 |
+| RE3   | SockShop       |       18/30 |              18/30 |     0 |              17/30 |     −1 |     **14/30** |     −4 |
+| RE3   | TrainTicket    |       21/30 |              22/30 |    +1 |          **23/30** |     +2 |         23/30 |     +2 |
+| —     | **total**      | **631/735** |        **631/735** | **0** |        **635/735** | **+4** |   **627/735** | **−4** |
+
+The same numbers as case-level `AC@1`: ρ = 0 reads 85.6 / 92.8 / 83.2, 88.9 / 94.4 / 83.3, 83.3 / 60.0 /
+70.0; ρ = 1 reads 88.0 / 93.6 / 81.6, 91.1 / 94.4 / 82.2, 83.3 / 56.7 / 76.7. The harness's published cell
+`AVERAGE` is a different quantity **by design** — the unweighted mean over fault types
+(`docs/accuracy-aggregation.md`) — and the two agree on RE1 and RE2 (equal counts per type) and do not on
+RE3, where the published column reads 88.9 / 63.6 / 71.0 (ρ = 0) and 88.9 / 61.1 / 78.1 (ρ = 1).
+
+**The control is the shipped configuration, cell for cell.** The ρ = 0 arm is not a new baseline: it
+reproduces the last shipped run (`40868666421`, `topoDiscount = 0` on `0e2d714`) on all nine cells and
+all 735 cases — 107 / 116 / 104 / 80 / 85 / 75 / 25 / 18 / 21, total 631. That identity is the assertion
+that the fix is **inert when the flag is off**, and it is what makes the other three columns comparable
+to a published number rather than to a fresh control.
 
 FSE'26, 1422 cases: **60.5% → 60.5%** Top@1, 79.0 → 79.0 Top@3, 82.2 → 82.2 Top@5, inert to the tenth —
 its fleets are 3–13 services, so step 1b never runs and there is no space to get wrong.
 
-**What the space was worth, against the same weight in the old space (iteration 157, run `40896889186`):**
+### 6.1 Erratum: what the first revision of this table said, and why it was wrong
 
-| cell               |              ρ = 0 | ρ = 0.5, rank space (157) | ρ = 0.5, deviation space (this) |         recovered |
-| ------------------ | -----------------: | ------------------------: | ------------------------------: | ----------------: |
-| RE1 TrainTicket    |              83.2% |                     77.6% |                           80.8% |       **+3.2 pp** |
-| RE2 TrainTicket    |              83.3% |                     81.1% |                           82.2% |       **+1.1 pp** |
-| RE3 TrainTicket    |              71.0% |                     71.0% |                       **74.5%** |       **+3.5 pp** |
-| RE1 OnlineBoutique |              85.6% |                     87.2% |                           87.2% |               0.0 |
-| RE3 SockShop       |              63.6% |                     63.6% |                           63.6% |               0.0 |
-| suite means        | 87.2 / 88.9 / 71.1 |        86.1 / 88.5 / 71.1 |          **87.2 / 88.5 / 72.2** | +1.1 / 0.0 / +1.1 |
+The first revision reported ρ = 0 **OnlineBoutique/RE2 as 93.3%** and therefore a **−4.4 pp** cost at
+ρ = 0.5 and a **−2.2 pp** cost at ρ = 1, and read that as "the one cell with no counterpart gain". The
+arm reads **80/90 = 88.9%**, and the ρ = 1 arm reads **82/90 = 91.1%**: the sign is **+2.2 pp**, not
+−2.2, and the cell is one of the five that IMPROVE. Two defects produced one wrong number:
+
+- **93.3 was SockShop's reading, in OnlineBoutique's row.** The ρ = 0 column had been assembled from
+  the report text rather than re-read from the arm, and 93.3% is SockShop/RE2 in the ρ = 0.5 arm of the
+  iteration before. Nothing about the operator changed — a transcription produced a phantom regression,
+  and the phantom then became a reason to hold the default ("the cell with no counterpart gain").
+- **A second convention made the error invisible.** The published cell `AVERAGE` is the unweighted mean
+  over fault types (`docs/accuracy-aggregation.md`), while the loss census is case-level; the two agree
+  on RE1 and RE2 and differ by up to **5.6 pp** on RE3 (88.9% against 83.3% for OnlineBoutique, 63.6%
+  against 60.0% for SockShop). Every value in that column was therefore a plausible cell reading, and a
+  wrong one could not be spotted by looking at its neighbours — only by re-reading the arm.
+
+Both are now fenced by form rather than by care: the table above is case counts, which cannot be
+transcribed from a percentage, and the census that carries them is the artifact `run-rcaeval.ts` uploads
+next to the report.
+
+**What the space was worth, at a FIXED weight — the comparison the fix is actually about** (iteration
+157, run `40896889186`, same ρ = 0.5 `external`, old rank space):
+
+| cell               | rank space (157) | deviation space (this) | Δ cases |            Δ |
+| ------------------ | ---------------: | ---------------------: | ------: | -----------: |
+| RE1 TrainTicket    |           97/125 |                101/125 |      +4 |      +3.2 pp |
+| RE2 TrainTicket    |            73/90 |                  74/90 |      +1 |      +1.1 pp |
+| RE3 TrainTicket    |            21/30 |                  22/30 |      +1 |      +3.3 pp |
+| RE1 OnlineBoutique |          109/125 |                109/125 |       0 |            0 |
+| RE2 OnlineBoutique |            81/90 |                  80/90 |      −1 |      −1.1 pp |
+| all other cells    |                — |                      — |       0 |            0 |
+| **total**          |      **626/735** |            **631/735** |  **+5** | **+0.68 pp** |
 
 Three readings.
 
-1. **The cell the axis was refused on is now the cell it wins on.** RE3:TrainTicket reads **+7.1 pp** at
-   ρ = 1, the largest single-cell gain this project has recorded, and it is the same cell that lost
-   5.6 pp in the previous iteration with the same operator and a different input space.
-2. **At ρ = 1 no suite is down** — 87.7 / 89.3 / 72.2 against 87.2 / 88.9 / 71.1 — which is the first
-   configuration in this project's record where all three suite means improve together. Four CELLS are
-   still down (RE1:TrainTicket −1.6, RE2:OnlineBoutique −2.2, RE2:TrainTicket −1.1, RE3:SockShop −2.5),
-   which is why the default has not moved: the project's bar for adoption has been "no cell down", and
-   this arm does not meet it yet.
-3. **The scope finding replicates exactly.** `all` still costs RE3:SockShop **10.0 pp** (63.6 → 53.6) and
-   buys nothing at this ρ, which is the same 10 pp that a 30-case local slice predicted in the previous
-   iteration. The two questions — which channels, and which space — are independent, and both are now
-   measured on the same commit.
+1. **At the weight that ships, the fix is worth +5 cases and costs one.** The old space at ρ = 0.5 sat
+   five cases BELOW the no-deduction configuration (626 against 631): the operator was net destructive,
+   on three TrainTicket-family cells. Moving it to its own algebra recovers all five and leaves a single
+   −1 (RE2:OnlineBoutique), so the deduction at 0.5 is now exactly neutral against off — the honest
+   description of a term whose axis is unadopted rather than of a term that hurts.
+2. **Raising the weight still does not meet the bar, and now for a different reason.** ρ = 1 buys **+4
+   cases** over shipped (635/735, 86.4% case-level) and is the highest total this project has recorded, but
+   three cells give up one or two cases each (RE1:TrainTicket −2, RE2:TrainTicket −1, RE3:SockShop −1),
+   so "no cell down" is still unmet and `topoDiscount` stays 0. What changed is the argument: it is no
+   longer "the operator is wrong", it is "the operator is right and its weight still costs three cells a
+   case apiece" — a statement about the TERM's coverage of response channels, not about its space.
+3. **The scope finding replicates in cases as well as in points.** `all` costs RE3:SockShop **4 of 30
+   cases** (18 → 14) and buys one on TrainTicket, which is the same ~10 pp a 30-case local slice
+   predicted. The two questions — which channels, and which space — are independent, and both are now
+   measured on one commit against a control that matches the shipped run exactly.
 
 ## 7. Fences
 
@@ -179,7 +218,17 @@ read `rawAnomalyScores`, return through `applyAnomalyNormalization`.
 
 - **ρ = 0 is still the shipped default.** The axis is opt-in until the nine cells and FSE'26 say what
   the adopted value is; the local instrument cannot see the space at all (both local suites are below
-  the threshold), so it can only confirm the cap is inert and no cell moved.
+  the threshold), so it can only confirm the cap is inert and no cell moved. What the fix changes at
+  that weight is nothing — asserted, not assumed: the ρ = 0 arm reproduces the shipped run on all 735
+  cases (§6).
+- **A per-cell uncertainty.** The corpus is deterministic, so a one-case difference is real and not
+  noise; but every one of these jobs also runs a second pass (`--no-inject-time`, which sets the
+  anchor to `injectTimeMs: 0` = unknown) and that pass is not a repeat of the first. It moves
+  RE1:OnlineBoutique by 1.6 pp and RE2:TrainTicket by 6.6 pp, and it **collapses RE3:TrainTicket from
+  21/30 to 2/30**, with 27 of the 28 misses classified DEEP and, on all 28, `selfAnomalyLog1p` as the
+  winner's largest per-term advantage. So RE3:TrainTicket's published number is a statement about a
+  run that HAS an anchor, and the unanchored reading is 6.7%. No document in this project reports an
+  interval, and every "±1 case" reading in §6 is a composition claim rather than a significance one.
 - **`'minmax'` as a space.** The `rankNormalization = false` arm is measured only for reconstruction, not
   against the corpus: every dispatch runs the shipped `rankNormalization = true`.
 - **The slope argument, quantified.** "Rank is not affine" is a property of the transform; how much it
