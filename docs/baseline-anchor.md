@@ -282,6 +282,43 @@ RE2:SockShop and RE1:OnlineBoutique. A `[baseline-anchor] anchored=<n> refused=<
 cell is a precondition for any further work on the window, and no tuning of this axis is admissible
 before it exists.
 
+### 7c. The second value — the window gated on the level it rests on
+
+The ten losses' concentration on injection index 1 is a statement about the PRE-SEGMENT, not about a fault
+family: the first injection of a run is the one whose pre-window is the container's own ramp, so its median
+is a level the service never held. That is a condition the segment can be asked about directly, and
+`pre-injection-stationary` is the same window with one extra refusal:
+
+```
+drift = |median(second half of the pre-segment) − median(first half)| / |median(pre-segment)|
+anchors iff  drift is defined  ∧  drift ≤ DEFAULT_MAX_PRE_WINDOW_DRIFT (0.25)
+             ∧  the pre-segment holds ≥ MIN_STATIONARY_PRE_SAMPLES (6) samples
+```
+
+Three decisions are in those two lines, and each has a reason that is not a taste:
+
+- **Both halves are medians**, the same estimator the baseline uses. A guard that judged a median with a
+  mean would refuse windows the baseline reads correctly, and vice versa.
+- **The denominator is the segment's own median**, so `0.25` means "a quarter of the level". Against the
+  mean a single start-up spike deflates the statistic and a real ramp reads as flat.
+- **Length is a separate condition from shape.** Six samples is three per half, and below that the guard
+  refuses a window whose halves *agree*, because two-sample halves agree by accident far more often than a
+  hundred-sample halves do.
+
+The 30-case cell that carries the axis' deepest rescue is the local check, and it reads as a guard should:
+
+| arm | hits | moves against `whole-file` |
+| --- | ---: | --- |
+| `whole-file` (shipped) | 18/30 | — |
+| `pre-injection` | 19/30 | **+3 / −2** (`carts_f3_4` 2→1, `orders_f3_2` 2→1, `orders_f4_2` 3→1 / `carts_f1_2` 1→3, `carts_f3_3` 1→2) |
+| `pre-injection-stationary` | 19/30 | **+2 / −1** (`carts_f4_2` 2→1, `orders_f3_2` 2→1 / `carts_f3_3` 1→2) |
+
+**Same total, one loss instead of two, and the loss it avoids is the one the unguarded arm created**
+(`carts_f1_2` 1→3). It also gives up the `carts_f3_4` gain, which was the swap half of that pair — so the
+guard is doing what it says on this cell: it refuses the anchoring on the cases where the anchoring was a
+wash and keeps the two rescues that were not. It does **not** fix `carts_f3_3`, whose loss survives the
+guard, and one cell of thirty is not the enrolment evidence — the nine-cell dispatch is.
+
 ## 8. How to re-measure
 
 ```bash

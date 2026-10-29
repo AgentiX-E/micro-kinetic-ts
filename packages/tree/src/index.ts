@@ -78,6 +78,7 @@ export {
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_MAX_PRE_WINDOW_DRIFT,
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
   // The demand guard: an ENROLMENT, not an opt-in, and the only member of its family list is `workload`.
@@ -90,12 +91,17 @@ export {
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
+  // The stationarity guard's two constants and its ONE statistic, exported together because a census that
+  // counts refusals must read the same number the engine refuses on — a re-derived drift is a second
+  // definition of "stationary", which is the defect `docs/baseline-anchor.md` §7b exists to prevent.
+  MIN_STATIONARY_PRE_SAMPLES,
   isBaselineAnchor,
   isDemandMetric,
   isDropDeviationMode,
   // The transport family, exported on the same rule as the demand family: the term that credits a
   // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
   isLatencyMetric,
+  preWindowDrift,
 } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a

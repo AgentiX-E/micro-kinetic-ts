@@ -638,8 +638,14 @@ export function isDropDeviationMode(value: string): value is DropDeviationMode {
  * - `whole-file`: one baseline and one excursion, both taken from every sample in the file (shipped).
  * - `pre-injection`: the baseline is the level of the PRE-injection segment and the excursion is the
  *   POST-injection segment, with `injectTimeMs` as the boundary.
+ * - `pre-injection-stationary`: the same window, refused when the pre-segment is not a LEVEL — its own two
+ *   halves disagree by more than {@link DEFAULT_MAX_PRE_WINDOW_DRIFT}, or it is narrower than
+ *   {@link MIN_STATIONARY_PRE_SAMPLES} and cannot be halved at all. The cell that asked for it is
+ *   RE2:TrainTicket, whose five moves under `pre-injection` are all injection **index 1** cases: the first
+ *   fault of a run is the one whose pre-window is the container's own ramp, so the anchored baseline is a
+ *   level the service never held.
  */
-export type BaselineAnchor = 'whole-file' | 'pre-injection';
+export type BaselineAnchor = 'whole-file' | 'pre-injection' | 'pre-injection-stationary';
 
 /**
  * Every baseline anchor, as a `Record` over the union.
@@ -651,7 +657,30 @@ export type BaselineAnchor = 'whole-file' | 'pre-injection';
 export const BASELINE_ANCHORS: Readonly<Record<BaselineAnchor, true>> = {
   'whole-file': true,
   'pre-injection': true,
+  'pre-injection-stationary': true,
 };
+
+/**
+ * The largest relative disagreement between the pre-segment's two halves that still counts as a LEVEL.
+ *
+ * `0.25` is the shipped value of the `pre-injection-stationary` guard and it is chosen from the corpus
+ * rather than from taste: a container's start-up ramp moves the two half-medians by `0.6–2.0` of the
+ * pre-segment's own level (a 1 → 30 climb across thirty samples reads `≈ 0.97`), while every stationary
+ * pre-segment in the golden half reads below `0.05`. The interval is therefore wide and empty, the point
+ * sits inside it, and a `.25` that was load-bearing would be visible as a case moving at two floors —
+ * which is why the guard reports its own refusals instead of silently refusing.
+ */
+export const DEFAULT_MAX_PRE_WINDOW_DRIFT = 0.25;
+
+/**
+ * The narrowest pre-segment the stationarity guard will certify, in samples.
+ *
+ * Six is three per half, and three is the smallest population whose median is not one of its own
+ * endpoints. Below it the guard refuses a window whose halves happen to agree, because two-sample halves
+ * agree by accident far more often than a hundred-sample halves do — a condition about LENGTH, kept
+ * separate from the condition about SHAPE so the two cannot mask each other.
+ */
+export const MIN_STATIONARY_PRE_SAMPLES = 6;
 
 /**
  * Whether a raw argument names a baseline anchor.
@@ -1655,10 +1684,19 @@ function computeAnomalyFeatures(
     // the shipped estimator already produced, so the shipped path is bit-identical by construction.
     // `pre-injection` splits the series at the injection time and returns `undefined` wherever the boundary
     // cannot be placed, which is what keeps the fallback a stated width rather than an accident.
+    // The guarded value carries the same window as `pre-injection` plus ONE extra condition — the segment
+    // must certify itself as a level — so the two arms differ by a refusal and not by an estimator.
     const anchored =
-      cfg.baselineAnchor === 'pre-injection'
-        ? preInjectionWindow(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0)
-        : undefined;
+      cfg.baselineAnchor === 'whole-file'
+        ? undefined
+        : preInjectionWindow(
+            ts.values,
+            ts.timestamps,
+            cfg.injectTimeMs ?? 0,
+            cfg.baselineAnchor === 'pre-injection-stationary'
+              ? DEFAULT_MAX_PRE_WINDOW_DRIFT
+              : undefined,
+          );
     const deviationBaseline = anchored?.baseline ?? baselineMean;
     const deviationMax = anchored?.max ?? max;
     const deviationMin = anchored?.min ?? min;
@@ -2280,6 +2318,74 @@ function pearsonCorrelation(xs: Float64Array, ys: Float64Array, n: number): numb
 // ── Baseline Strategy Selection ────────────────────────────
 
 /**
+ * Where the series is split by the injection time: the index of the first sample at or after `t₀`.
+ *
+ * One function rather than the same five lines in three callers, because the split is the boundary every
+ * window question is asked about and a second copy of it can only disagree with the first.
+ *
+ * @param values - The metric's samples, in timestamp order.
+ * @param timestamps - The sample timestamps (Unix ms), aligned with `values`.
+ * @param injectTimeMs - Fault injection time in Unix ms (`<= 0` = unknown).
+ * @returns The split index and the aligned length, or `undefined` when no sample reaches `t₀`.
+ * @internal
+ */
+function preSplitIndex(
+  values: Float64Array,
+  timestamps: readonly number[],
+  injectTimeMs: number,
+): { split: number; n: number } | undefined {
+  if (!(injectTimeMs > 0)) return undefined;
+  const n = Math.min(values.length, timestamps.length);
+  for (let i = 0; i < n; i++) {
+    if (timestamps[i]! >= injectTimeMs) return { split: i, n };
+  }
+  return undefined;
+}
+
+/**
+ * How far the PRE-injection segment moved between its own first and second half, relative to its level.
+ *
+ * This is the statistic the `pre-injection-stationary` guard is built on, and it is a property of the
+ * segment rather than of the deviation: a level that is still climbing is not a level, whatever estimator
+ * reads it. Both halves are summarised by their MEDIAN, which is the same estimator the baseline itself
+ * uses — a guard that judged a median with a mean would refuse windows the baseline would have read
+ * correctly, and vice versa.
+ *
+ * `undefined` means the segment cannot be judged, in exactly three ways: no sample reaches `t₀`, the
+ * pre-segment is narrower than {@link MIN_STATIONARY_PRE_SAMPLES}, or its level is not positive (a level of
+ * zero is not a denominator). A caller that wants a boolean has one: `drift !== undefined && drift <= max`.
+ *
+ * **The denominator is the segment's OWN median**, not its first half and not its mean. Against the mean, a
+ * single start-up spike inflates the denominator and a real ramp reads as flat; against the first half, the
+ * statistic becomes a ratio of two levels rather than a fraction of one, and the "0.25" in the config would
+ * stop meaning a quarter of the level.
+ *
+ * @param values - The metric's samples, in timestamp order.
+ * @param timestamps - The sample timestamps (Unix ms), aligned with `values`.
+ * @param injectTimeMs - Fault injection time in Unix ms (`<= 0` = unknown).
+ * @returns `|median(second half) − median(first half)| / |median(pre-segment)|`, or `undefined`.
+ */
+export function preWindowDrift(
+  values: Float64Array,
+  timestamps: readonly number[],
+  injectTimeMs: number,
+): number | undefined {
+  const boundary = preSplitIndex(values, timestamps, injectTimeMs);
+  if (boundary === undefined) return undefined;
+  const { split } = boundary;
+  if (split < MIN_STATIONARY_PRE_SAMPLES) return undefined;
+
+  const half = Math.floor(split / 2);
+  const first = medianOfRange(values, 0, half);
+  const second = medianOfRange(values, half, split);
+  const level = Math.abs(medianOfRange(values, 0, split));
+  if (!(level > 0)) return undefined;
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return undefined;
+
+  return Math.abs(second - first) / level;
+}
+
+/**
  * The window a metric's deviation is measured between, once the injection time is known.
  *
  * Two segments and nothing else: every sample BEFORE `injectTimeMs` answers "what level did this service
@@ -2307,24 +2413,26 @@ function preInjectionWindow(
   values: Float64Array,
   timestamps: readonly number[],
   injectTimeMs: number,
+  maxPreWindowDrift?: number,
 ): { baseline: number; max: number; min: number } | undefined {
-  if (!(injectTimeMs > 0)) return undefined;
-
-  const n = Math.min(values.length, timestamps.length);
-  let split = -1;
-  for (let i = 0; i < n; i++) {
-    if (timestamps[i]! >= injectTimeMs) {
-      split = i;
-      break;
-    }
-  }
-  if (split < 0) return undefined;
+  const boundary = preSplitIndex(values, timestamps, injectTimeMs);
+  if (boundary === undefined) return undefined;
+  const { split, n } = boundary;
 
   const floorWidth = Math.max(3, Math.ceil(n * 0.1));
   if (split < floorWidth || n - split < floorWidth) return undefined;
 
   const baseline = medianOfRange(values, 0, split);
   if (!(baseline > 0)) return undefined;
+
+  // The stationarity condition, and it is deliberately a condition on the SEGMENT rather than on the
+  // estimator: a median of a ramp is a number the service never held, so a window that cannot certify its
+  // own level is refused whole rather than repaired. `undefined` from `preWindowDrift` means the segment is
+  // too short to halve, which is a refusal too — a two-sample half is not evidence of anything.
+  if (maxPreWindowDrift !== undefined) {
+    const drift = preWindowDrift(values, timestamps, injectTimeMs);
+    if (drift === undefined || !(drift <= maxPreWindowDrift)) return undefined;
+  }
 
   let max = -Infinity;
   let min = Infinity;
