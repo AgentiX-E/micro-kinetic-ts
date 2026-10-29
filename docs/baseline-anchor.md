@@ -273,14 +273,12 @@ on this suite, it is absent from it. The gains are `HTTPResponseDelay +4`, `HTTP
 `NetworkCorrupt −1`, a four-case cell (`HTTPResponsePatchBody 3 → 2`) and a **one-case** cell
 (`DNSRandom 1 → 0`, which prints as −100.0 pp and means nothing).
 
-### 7b. What the run did not instrument
+### 7b. What the run did not instrument — and now does
 
 The anchor falls back per series — short window, non-positive baseline, a side narrower than
-`max(3, ⌈0.1n⌉)` — and no artifact says how often. "This cell did not move" therefore cannot yet be told
-apart from "the guard refused the anchor on every series in this cell", which is the whole question on
-RE2:SockShop and RE1:OnlineBoutique. A `[baseline-anchor] anchored=<n> refused=<n> reasons=…` line per
-cell is a precondition for any further work on the window, and no tuning of this axis is admissible
-before it exists.
+`max(3, ⌈0.1n⌉)` — and no artifact said how often. "This cell did not move" could not be told apart from
+"the guard refused the anchor on every series in this cell", which is the whole question on RE2:SockShop.
+**That counter now exists** (§8), it took two tries to build, and its first reading changed the next axis.
 
 ### 7c. The second value — the window gated on the level it rests on
 
@@ -344,16 +342,155 @@ median(first half)`) and the guard throws the sign away. A declining pre-segment
 at 30 and settles to 3.5, which is this axis' founding case — and a rising one are both "non-stationary"
 to the current test, and the corpus says they must be separated before either value can be a default.
 
-## 8. How to re-measure
+## 8. The census, and what it says about the guard's own population
+
+§7b recorded a counter as owed; §8 is that counter, its first reading on 735 cases, and the arm the
+reading produced.
+
+### 8a. One function, two callers
+
+`probePreInjectionWindow(values, timestamps, t₀, guard)` answers "would a window be placed here, and if
+not, why" — and it is what the engine calls to place the window. The benchmark's `anchor-census` module
+calls the same function on the same `TimeSeries` the engine receives, so a refusal counted in an artifact
+is a refusal that happened. Nothing here re-derives the comparison: `judgePreWindowDrift` owns
+`|drift| ≤ tolerance` and `drift ≤ tolerance`, and a source-shape fence fails if a second copy appears.
+
+Six reasons, one per mechanism that can refuse:
+
+| reason | mechanism | whose property |
+| --- | --- | --- |
+| `no-injection-time` | `t₀ ≤ 0`, the graph builder's default | the case |
+| `no-boundary` | no sample reaches `t₀` | the case |
+| `narrow-segment` | a side narrower than `max(3, ⌈n/10⌉)` | the series |
+| `non-positive-baseline` | a level of zero is not a denominator | the series |
+| `undecidable-drift` | the pre-segment is too short to halve | the series |
+| `drift` | the guard read the drift and refused it | the guard |
+
+The first four are **guard-independent** and are reported as `unplaceable`, because merging them with the
+last two is what made the old single bit useless: "this cell has short series" and "this cell is a corpus
+of ramps" are different repairs.
+
+One defect was found by reading the artifact's own output rather than by a test: `drift` was
+`number | undefined`, and `JSON.stringify` **drops** an undefined property, so the field vanished from
+exactly the series whose drift could not be read — a well-formed file with a field silently missing.
+It is now `number | null` at the point of writing, and a test round-trips the record to prove the key
+survives for a series whose reading does not exist.
+
+### 8b. What the corpus actually contains
+
+735 cases, 90 990 series, on the unguarded arm (the census is a property of the series, so this table is
+the same under every value):
+
+| cell | series | placeable | level | rising | settling |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 6 800 | 6 243 | 6 060 (97.1%) | 108 (1.7%) | 75 (1.2%) |
+| RE1:SockShop | 7 370 | 6 750 | 6 430 (95.3%) | 212 (3.1%) | 108 (1.6%) |
+| RE1:TrainTicket | 26 694 | 24 114 | 22 878 (94.9%) | 815 (3.4%) | 421 (1.7%) |
+| RE2:OnlineBoutique | 6 603 | 5 848 | 5 804 (99.2%) | 36 (0.6%) | 8 (0.1%) |
+| RE2:SockShop | 6 895 | 6 303 | 6 020 (95.5%) | 127 (2.0%) | 156 (2.5%) |
+| RE2:TrainTicket | 32 592 | 31 144 | 29 154 (93.6%) | 1 535 (4.9%) | 455 (1.5%) |
+| RE3:OnlineBoutique | 2 110 | 1 920 | 1 838 (95.7%) | 73 (3.8%) | 9 (0.5%) |
+| RE3:SockShop | 2 491 | 2 220 | 2 002 (90.2%) | 177 (8.0%) | 41 (1.8%) |
+| RE3:TrainTicket | 9 455 | 8 687 | 7 334 (84.4%) | **1 097 (12.6%)** | 256 (2.9%) |
+
+**The guard's reach varies by a factor of 21 across cells** — 0.6% of RE2:OnlineBoutique's series are
+rising against 12.6% of RE3:TrainTicket's — and no threshold can be right at both ends. That is a
+measurement, and it is the first time this project has been able to state it: before this instrument, a
+cell where the guard refused nothing and a cell where it refused everything were the same artifact.
+
+### 8c. The fourth value — `pre-injection-non-rising`, and it ties
+
+`|drift| ≤ 0.25` refuses both shapes; `drift ≤ 0.25` refuses only the rising one. Both were dispatched on
+all nine cells and on FSE'26 at the same commit as the census:
+
+| arm | RE1-OB | RE1-SS | RE1-TT | RE2-OB | RE2-SS | RE2-TT | RE3-OB | RE3-SS | RE3-TT | 735 | FSE'26 Top@1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `whole-file` (shipped) | 107 | 116 | 104 | 80 | 85 | 75 | 25 | 18 | 21 | **631** | 60.478% (860) |
+| `pre-injection` | 107 | **119** | 104 | 79 | 85 | 72 | 24 | 19 | **25** | **634** | **61.181% (870)** |
+| `pre-injection-stationary` | 107 | **118** | 104 | 79 | 85 | **73** | **25** | 19 | **25** | **635** | 60.759% (864) |
+| `pre-injection-non-rising` | 107 | **118** | 104 | 79 | 85 | **73** | 24 | **20** | **25** | **635** | 60.900% (866) |
+
+Two properties hold before any reading. **The census is inert**: dispatched at `pre-injection` the
+instrumented build returns `634` and every cell matches §7's arm case for case, so the instrument
+measures and does not perturb. **The two guarded values tie at 635 and are not the same arm**: they agree
+on seven cells and swap one each on RE3:OnlineBoutique (25 vs 24) and RE3:SockShop (19 vs 20), and
+`stationary → non-rising` is `+4 / −4` at the case level.
+
+Locally, on the two cells this sandbox assembles, RE3:SockShop is the sharpest reading — `18 / 19 / 19 / 20`
+for the four values, i.e. the signed guard is the only one that gains a case over the unguarded arm *and*
+keeps the founding case. RE1:OnlineBoutique is `107 / 107 / 107 / 107` with one-for-one swaps in every arm.
+
+### 8d. The sign was worth zero, and the reason is that each half buys a different case
+
+`stationary → non-rising` closes `+4 / −4`, and the four gains and four losses name the two sub-mechanisms:
+
+| case | `stationary` | `non-rising` | what the case needs |
+| --- | ---: | ---: | --- |
+| `re3ss_carts_f4_2` | **1** | 3 | the SETTLING refusal — its truth's `cpu` opens at 30 and settles to 3.5, `drift = −0.82` |
+| `re3ss_carts_f1_2` | **1** | 3 | the SETTLING refusal |
+| `re2tt_ts-travel-service_cpu_1` | **1** | 2 | the SETTLING refusal |
+| `re3ob_cartservice_f1_1` | **1** | 2 | the SETTLING refusal |
+| `re3ss_orders_f4_3` | 2 | **1** | the RISING allowance |
+| `re3ss_orders_f4_2` | 2 | **1** | the RISING allowance |
+| `re3ss_carts_f3_4` | 2 | **1** | the RISING allowance |
+| `re2tt_ts-order-service_mem_1` | 2 | **1** | the RISING allowance |
+
+So the two guard kinds are not two thresholds on one phenomenon: refusing a settling pre-segment buys four
+cases and loses four, and the signed guard simply moves the trade. **A single threshold on a single
+statistic cannot have both halves**, which is why the value ties rather than wins — and the tie is the
+measurement that closes the "sign is the missing discriminator" hypothesis §188 left open.
+
+On FSE'26 the order is the opposite of the golden half's: `870` unguarded, `866` signed, `864` symmetric.
+Refusing any pre-segment costs that suite, and the signed guard costs less than the symmetric one
+(`HTTPRequestReplaceMethod −4` in both, `HTTPResponseDelay −4` in both, offset by `HTTPRequestDelay +2`,
+`JVMMemoryStress +1`, `ContainerKill +1` in the signed arm).
+
+### 8e. What DOES separate the axis' gains from its losses
+
+The 23 moves of the unguarded arm (§7.4) were re-read through the census, and the pre-window is not the
+discriminator:
+
+| feature (median) | gains (13) | losses (10) | all 735 |
+| --- | ---: | ---: | ---: |
+| placeable series / series | 0.915 | 0.930 | 0.918 |
+| rising share of placeable | 0.054 | 0.029 | 0.019 |
+| settling share of placeable | 0.014 | 0.004 | 0.005 |
+| max \|drift\| in the case | 1.004 | 0.993 | 0.640 |
+| **candidate pool** | **15** | **39** | **13** |
+
+The truth's own drift sign is the same in both populations — gains `{level 4, settling 8, rising 1}`,
+losses `{level 4, settling 6}` — so no test on the truth's pre-window can tell them apart. The candidate
+pool can: **a loss is nearly three times as likely in a large graph as in a small one** (median 39 against
+15), which is the arithmetic of a one-step demotion. With 39 candidates, a perturbation of the truth's
+score by `0.016` (the measured median) reorders it; with 15, it often does not. The axis' losses are
+therefore a property of the RANKING's density and not of the window's admissibility.
+
+That is the next lever, and it is not this axis: it is `rankNormalization` and the score-gap distribution
+at the top of a large graph.
+
+### 8f. Verdict
+
+`baselineAnchor` ships at `whole-file`. The four values are priced — `631 / 634 / 635 / 635` on 735 cases,
+`860 / 870 / 864 / 866` on FSE'26 — and **no value clears the per-cell bar**: every anchored arm regresses
+RE2:OnlineBoutique `80 → 79`, and every guarded one regresses RE2:TrainTicket `75 → 73`. The unguarded
+arm is the best on FSE'26 and second on the golden half; the guarded arms are the opposite. A default
+cannot be the argmax of one corpus and the loser of the other, so the default stays where every published
+number was measured.
+
+## 9. How to re-measure
 
 ```bash
 # golden half, one input, everything else shipped
 gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection
 # ... or the guarded value, which is the same input with a different value — never a second knob
 gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection-stationary
+gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection-non-rising
 # FSE'26 half
 gh workflow run fse26-benchmark.yml -f ranking_knobs=baseline_anchor=pre-injection
 gh workflow run fse26-benchmark.yml -f ranking_knobs=baseline_anchor=pre-injection-stationary
+gh workflow run fse26-benchmark.yml -f ranking_knobs=baseline_anchor=pre-injection-non-rising
+# any of the four, and the census rides in the loss-census artifact either way
+gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection --ref master
 # locally, on an assembled corpus
 pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir <dir> --suite re3 --system ss \
   --baseline-anchor pre-injection --diagnose-dump /tmp/dump.json

@@ -192,6 +192,20 @@ describe('deriveAnchorCensus — the truth column, and the reasons a reader will
     expect(Object.keys(census.unplaceable).sort()).toEqual([...ANCHOR_REFUSALS].sort());
   });
 
+  it('survives JSON with every key present, including a drift it could not read', () => {
+    // `JSON.stringify` drops an undefined property, so a `number | undefined` drift would vanish from the
+    // artifact for exactly the series whose pre-segment is too short to halve — a well-formed file with a field
+    // silently missing, which is the failure mode the latency census' fence names.
+    const census = deriveAnchorCensus(mixedCase('svc-b'), 'pre-injection');
+    const back = JSON.parse(JSON.stringify(census)) as typeof census;
+
+    expect(back.truth.map((t) => 'drift' in t)).toEqual([true, true, true]);
+    // The settling series reads a number, and the two it cannot read — a five-sample pre-segment and a series
+    // with no boundary — read `null` IN THE FILE rather than vanishing from it.
+    expect(back.truth.map((t) => t.drift)).toEqual([expect.any(Number), null, null]);
+    expect(back.truth[0]!.drift!).toBeLessThan(-0.25);
+  });
+
   it('is JSON-safe, because the loss census writes it as one line per case', () => {
     const census = deriveAnchorCensus(mixedCase(), 'pre-injection');
 

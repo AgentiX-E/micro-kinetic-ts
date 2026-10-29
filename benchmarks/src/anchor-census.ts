@@ -56,8 +56,15 @@ export interface AnchorTruthEntry {
   readonly anchored: boolean;
   /** Which reading of the drift placed it, which mechanism refused it, or that the configuration asks nothing. */
   readonly outcome: AnchorOutcome;
-  /** The signed drift, when the segment is long enough to halve. */
-  readonly drift: number | undefined;
+  /**
+   * The signed drift, or `null` when the segment is too short to halve.
+   *
+   * `null` rather than `undefined` because this record is WRITTEN AS JSON, and `JSON.stringify` DROPS an
+   * undefined property: an artifact would then lose the key for exactly the series whose drift could not be
+   * read, and a reader would see a well-formed file with a field silently missing. That is the same failure the
+   * latency census' fence names, caught here by the first analysis that read the field back.
+   */
+  readonly drift: number | null;
 }
 
 /** One case's census. */
@@ -231,7 +238,9 @@ export function deriveAnchorCensus(input: AnchorCensusInput, anchor: BaselineAnc
           label: metric.label,
           anchored: placed,
           outcome: anchor === 'whole-file' ? 'no-window-by-config' : placed ? 'placed' : reason,
-          drift,
+          // `?? null` at the point of writing, because this record is serialised: `undefined` would be dropped
+          // and the field would be missing for exactly the series whose drift could not be read.
+          drift: drift ?? null,
         });
       }
     }
