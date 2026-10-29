@@ -276,6 +276,21 @@ describe('isLogicExceptionMessage', () => {
       ),
     ).toBe(false);
   });
+
+  it('rejects the Node dialect of the same empty-value failure', () => {
+    // SockShop's `front-end` is Node and reports the wrong-value symptom as an argument-type error on an
+    // ABSENT body. It is the same event the Java clauses above name, so it is the same verdict — and the
+    // contrast below is the boundary: a property read off `undefined` stays a self-caused bug, because the
+    // value it read was whichever field the service asked for, not the payload it was handed.
+    expect(
+      isLogicExceptionMessage(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received undefined',
+      ),
+    ).toBe(false);
+    expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(
+      true,
+    );
+  });
 });
 
 describe('isHttpExceptionMessage', () => {
@@ -363,6 +378,45 @@ describe('isPropagatedExceptionMessage', () => {
       isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: abc-123'),
     ).toBe(false);
   });
+
+  it('flags the Node dialect of the SAME event — an argument that arrived EMPTY', () => {
+    // SockShop's `front-end` is Node, and its wrong-value symptom is the JS spelling of `For input
+    // string: ""`: the body it was handed is `undefined`, so the first thing that touches it throws on the
+    // ARGUMENT TYPE. Measured in the corpus: 21 rows over three `orders_f4_*` cases, all of them this
+    // class, and `front-end` is the only service that emits a logic exception at all — which is how the
+    // entry point collected a full log unit for a fault two hops downstream.
+    expect(
+      isPropagatedExceptionMessage(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string or an instance of Buffer or Uint8Array. Received undefined',
+      ),
+    ).toBe(true);
+    // `null` is the same absence under a different name.
+    expect(
+      isPropagatedExceptionMessage(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string. Received null',
+      ),
+    ).toBe(true);
+    // A stack trace after the marker does not change the verdict, exactly as it does not for the Java form.
+    expect(
+      isPropagatedExceptionMessage(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string. Received undefined\n    at new NodeError (node:internal/errors:399:5)',
+      ),
+    ).toBe(true);
+  });
+
+  it('does NOT flag the Node argument error when the argument was PRESENT and merely wrong', () => {
+    // The discriminator is the EMPTY payload, not the exception class: `Received a number` is a genuine
+    // bad-argument bug in the service that reported it, and suppressing it would delete the signature of
+    // whatever code-level fault produced it. Same rule as `For input string: "42a"` above.
+    expect(
+      isPropagatedExceptionMessage(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string. Received a number',
+      ),
+    ).toBe(false);
+    expect(isPropagatedExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(
+      false,
+    );
+  });
 });
 
 describe('classifyExceptionKind', () => {
@@ -381,6 +435,12 @@ describe('classifyExceptionKind', () => {
     );
     expect(classifyExceptionKind('NumberFormatException: For input string: ""')).toBe('propagated');
     expect(classifyExceptionKind('Cannot parse empty string')).toBe('propagated');
+    // The Node dialect, end to end: the same event, the class that would otherwise win on `TypeError`.
+    expect(
+      classifyExceptionKind(
+        'TypeError [ERR_INVALID_ARG_TYPE]: The "chunk" argument must be of type string. Received undefined',
+      ),
+    ).toBe('propagated');
   });
 
   it('classifies out-of-whitelist exception names as "unclassified" (the semantic gap)', () => {

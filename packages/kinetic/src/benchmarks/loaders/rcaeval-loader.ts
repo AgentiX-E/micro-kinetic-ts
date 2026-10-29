@@ -395,9 +395,25 @@ const LOGIC_EXCEPTION_PATTERN =
  * (`]` `)` `}`) / end-of-input — while a NON-empty parse failure (e.g.
  * `For input string: "42a"` or `Invalid UUID string: abc-123`, a genuine
  * bad-argument bug) has an alphanumeric value and is NOT flagged.
+ *
+ * ## The Node dialect, which is the same rule and not a second one
+ *
+ * Not every service in the corpus is a JVM: SockShop's `front-end` is Node, and it reports the SAME event —
+ * "the payload I was handed was absent" — through its own vocabulary: `TypeError [ERR_INVALID_ARG_TYPE]`
+ * with `Received undefined`. Measured in the corpus, that clause is the whole difference between the entry
+ * point collecting a full log unit on three `orders_f4_*` cases and collecting none: `front-end` was the
+ * ONLY service in those cases emitting a whitelisted exception (7 rows each), every one of them this
+ * class, while the truth emitted only business text. A vocabulary that names the Java spelling of an empty
+ * payload and not the JavaScript one asks the same question of two services and answers it differently
+ * because of the language they are written in.
+ *
+ * The discriminator is unchanged, which is why the clause is narrow rather than a class exclusion: the
+ * payload must be ABSENT (`Received undefined` / `Received null`). `Received a number` is a value that was
+ * present and wrong, and a property read off `undefined` is the service asking the wrong question about a
+ * record it did receive — both stay self-caused, and the tests pin both directions.
  */
 const PROPAGATED_EXCEPTION_PATTERN =
-  /(?:Invalid UUID string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|For input string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|Cannot parse\s+empty)/i;
+  /(?:Invalid UUID string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|For input string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|Cannot parse\s+empty|ERR_INVALID_ARG_TYPE[^\n]*Received\s+(?:undefined|null)\b)/i;
 
 /**
  * Determine whether a log message is a PROPAGATED parse failure — a wrapper
