@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { deriveAnchorCensus } from '../src/anchor-census.js';
 import type { LatencyRouteEntry } from '../src/directional-evidence.js';
 import {
   classifyDeepEvidence,
@@ -61,6 +62,10 @@ const record = (over: Partial<LossRecord> = {}): LossRecord => ({
   truthInGraph: true,
   truthRank: 2,
   latencySupply: NO_SUPPLY,
+  anchorCensus: deriveAnchorCensus(
+    { metrics: new Map(), injectTime: 0, truth: 'orders' },
+    'pre-injection',
+  ),
   ...over,
 });
 

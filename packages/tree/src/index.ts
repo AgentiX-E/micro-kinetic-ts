@@ -95,13 +95,16 @@ export {
   // counts refusals must read the same number the engine refuses on — a re-derived drift is a second
   // definition of "stationary", which is the defect `docs/baseline-anchor.md` §7b exists to prevent.
   MIN_STATIONARY_PRE_SAMPLES,
+  PRE_WINDOW_GUARDS,
   isBaselineAnchor,
   isDemandMetric,
   isDropDeviationMode,
   // The transport family, exported on the same rule as the demand family: the term that credits a
   // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
   isLatencyMetric,
+  judgePreWindowDrift,
   preWindowDrift,
+  probePreInjectionWindow,
 } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
@@ -109,11 +112,14 @@ export {
 // the type. It is also the home of the scoring ablation switches, which a
 // benchmark harness has to be able to describe.
 export type {
+  AnchorRefusal,
   BaselineAnchor,
   DropDeviationMode,
   MetricBreakdown,
   MetricDiagnostic,
   MetricDiagnosticOutcome,
+  PreWindowGuard,
+  PreWindowProbe,
   TopologyFaultGraphConfig,
 } from './causal/topology-fault-graph.js';
 

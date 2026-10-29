@@ -644,8 +644,15 @@ export function isDropDeviationMode(value: string): value is DropDeviationMode {
  *   RE2:TrainTicket, whose five moves under `pre-injection` are all injection **index 1** cases: the first
  *   fault of a run is the one whose pre-window is the container's own ramp, so the anchored baseline is a
  *   level the service never held.
+ * - `pre-injection-non-rising`: the same window, refused only when the pre-segment is still CLIMBING. The
+ *   nine-cell measurement of the stationary value is `+5/−4` here and `−6` on FSE'26, and the two suites are
+ *   not disagreeing about the corpus so much as about the SIGN the statistic throws away: a median of a
+ *   rising segment UNDER-estimates the level at `t₀` (which manufactures a rise, the unbounded side of the
+ *   deviation), while a median of a settling one OVER-estimates it (which suppresses a rise, and the drop
+ *   side is capped at `log10(2)` either way). Both are non-stationary; only the first is the defect.
  */
-export type BaselineAnchor = 'whole-file' | 'pre-injection' | 'pre-injection-stationary';
+export type BaselineAnchor =
+  'whole-file' | 'pre-injection' | 'pre-injection-stationary' | 'pre-injection-non-rising';
 
 /**
  * Every baseline anchor, as a `Record` over the union.
@@ -658,6 +665,7 @@ export const BASELINE_ANCHORS: Readonly<Record<BaselineAnchor, true>> = {
   'whole-file': true,
   'pre-injection': true,
   'pre-injection-stationary': true,
+  'pre-injection-non-rising': true,
 };
 
 /**
@@ -681,6 +689,100 @@ export const DEFAULT_MAX_PRE_WINDOW_DRIFT = 0.25;
  * separate from the condition about SHAPE so the two cannot mask each other.
  */
 export const MIN_STATIONARY_PRE_SAMPLES = 6;
+
+/**
+ * What a pre-segment has to be before its median may serve as a baseline.
+ *
+ * Two KINDS rather than two thresholds of one kind, because they are predicates on different functions of the
+ * same statistic: `stationary` reads `|drift|` and `non-rising` reads `drift`. One tolerance is shared by both,
+ * and that is deliberate — the statistic is the same quantity in the same units, so a second constant would be
+ * a second number with no measurement behind it.
+ */
+export interface PreWindowGuard {
+  /** Which reading of {@link preWindowDrift} the tolerance bounds. */
+  readonly kind: 'stationary' | 'non-rising';
+  /** The largest reading that still counts as a level: `|drift|` for `stationary`, `drift` for `non-rising`. */
+  readonly tolerance: number;
+}
+
+/**
+ * The guard each anchor declares, as a `Record` over the union — so a new value is a COMPILE error here until
+ * it says which window condition it enforces, the rule {@link DROP_DEVIATION_MODES} follows one level up.
+ *
+ * `undefined` means "no condition", which is what `whole-file` and `pre-injection` are: the first does not
+ * place a window at all, and the second places it wherever a boundary exists. Declaring them explicitly rather
+ * than leaving them out of the record is the point — a value that is unguarded on purpose and a value nobody
+ * remembered to guard are the same absence otherwise.
+ */
+export const PRE_WINDOW_GUARDS: Readonly<Record<BaselineAnchor, PreWindowGuard | undefined>> = {
+  'whole-file': undefined,
+  'pre-injection': undefined,
+  'pre-injection-stationary': { kind: 'stationary', tolerance: DEFAULT_MAX_PRE_WINDOW_DRIFT },
+  'pre-injection-non-rising': { kind: 'non-rising', tolerance: DEFAULT_MAX_PRE_WINDOW_DRIFT },
+};
+
+/**
+ * Why an anchored window was NOT placed — one value per mechanism that can refuse it.
+ *
+ * The reasons are the instrument §187.7 owed. The arm can refuse a series silently in five different ways,
+ * and without a reason code "this cell did not move" cannot be told apart from "every series in this cell was
+ * refused" — a distinction that is the whole question on RE2:SockShop.
+ */
+export type AnchorRefusal =
+  /** `injectTimeMs <= 0`: the injection time is unknown, which is the graph builder's own default. */
+  | 'no-injection-time'
+  /** No sample reaches `t₀`: the injection is after the file ends. */
+  | 'no-boundary'
+  /** A side narrower than `max(3, ⌈n/10⌉)`: the floor the zero-baseline and transient guards already use. */
+  | 'narrow-segment'
+  /** A baseline of zero, which is not a denominator. */
+  | 'non-positive-baseline'
+  /** A guard was configured and the pre-segment is too short to halve, so the drift cannot be read at all. */
+  | 'undecidable-drift'
+  /** The drift was read and the guard refused it. */
+  | 'drift';
+
+/**
+ * What the probing call decided, and why — one record per series, placed or refused.
+ *
+ * **`drift` is reported on both variants.** A census that only counted refusals could not say how far over the
+ * tolerance a refused segment was, and one that only reported refusals would be blind to the placed windows
+ * that moved a case. The field is `undefined` only when the segment cannot be halved at all.
+ */
+export type PreWindowProbe =
+  | {
+      readonly placed: true;
+      readonly baseline: number;
+      readonly max: number;
+      readonly min: number;
+      readonly drift: number | undefined;
+    }
+  | { readonly placed: false; readonly reason: AnchorRefusal; readonly drift: number | undefined };
+
+/**
+ * Whether a drift reading satisfies a guard.
+ *
+ * The predicate lives here, beside the statistic and the constant it is compared against, because there are
+ * now TWO callers that must agree: the engine, which places the window, and the benchmark's census, which
+ * counts what the engine would do. A second copy of `drift <= tolerance` in a benchmark file is a boundary
+ * that moves without the engine's moving — the same defect `docs/term-gap.md` was written about.
+ *
+ * `undefined` drift means the segment cannot be halved, and it is refused under every guard: a two-sample half
+ * is not evidence of anything. No guard at all admits everything, which is what `pre-injection` means.
+ *
+ * @param drift - The signed reading from {@link preWindowDrift}, or `undefined` when it cannot be measured.
+ * @param guard - The condition to test, or `undefined` for none.
+ */
+export function judgePreWindowDrift(
+  drift: number | undefined,
+  guard: PreWindowGuard | undefined,
+): boolean {
+  if (guard === undefined) return true;
+  if (drift === undefined) return false;
+  return guard.kind === 'stationary'
+    ? Math.abs(drift) <= guard.tolerance
+    : drift <= guard.tolerance;
+}
 
 /**
  * Whether a raw argument names a baseline anchor.
@@ -1693,9 +1795,7 @@ function computeAnomalyFeatures(
             ts.values,
             ts.timestamps,
             cfg.injectTimeMs ?? 0,
-            cfg.baselineAnchor === 'pre-injection-stationary'
-              ? DEFAULT_MAX_PRE_WINDOW_DRIFT
-              : undefined,
+            PRE_WINDOW_GUARDS[cfg.baselineAnchor],
           );
     const deviationBaseline = anchored?.baseline ?? baselineMean;
     const deviationMax = anchored?.max ?? max;
@@ -2343,7 +2443,7 @@ function preSplitIndex(
 }
 
 /**
- * How far the PRE-injection segment moved between its own first and second half, relative to its level.
+ * How far the PRE-injection segment moved between its own first and second half, SIGNED, relative to its level.
  *
  * This is the statistic the `pre-injection-stationary` guard is built on, and it is a property of the
  * segment rather than of the deviation: a level that is still climbing is not a level, whatever estimator
@@ -2360,10 +2460,18 @@ function preSplitIndex(
  * statistic becomes a ratio of two levels rather than a fraction of one, and the "0.25" in the config would
  * stop meaning a quarter of the level.
  *
+ * **The sign is not decoration.** `median(second half) − median(first half)` is positive when the segment is
+ * still climbing and negative when it opened high and settled, and the two shapes want opposite decisions:
+ * a median of a RISING segment under-estimates the level at `t₀` — so the post-injection samples look like a
+ * rise on their own, and a rise is the unbounded side of the deviation — while a median of a SETTLING segment
+ * over-estimates it, which suppresses the truth's rise against a drop side that is capped at `log10(2)`
+ * regardless. `|drift|` cannot tell those apart; `drift` can, and that reading is
+ * {@link PreWindowGuard.kind} `non-rising`.
+ *
  * @param values - The metric's samples, in timestamp order.
  * @param timestamps - The sample timestamps (Unix ms), aligned with `values`.
  * @param injectTimeMs - Fault injection time in Unix ms (`<= 0` = unknown).
- * @returns `|median(second half) − median(first half)| / |median(pre-segment)|`, or `undefined`.
+ * @returns `(median(second half) − median(first half)) / |median(pre-segment)|`, or `undefined`.
  */
 export function preWindowDrift(
   values: Float64Array,
@@ -2382,11 +2490,11 @@ export function preWindowDrift(
   if (!(level > 0)) return undefined;
   if (!Number.isFinite(first) || !Number.isFinite(second)) return undefined;
 
-  return Math.abs(second - first) / level;
+  return (second - first) / level;
 }
 
 /**
- * The window a metric's deviation is measured between, once the injection time is known.
+ * The window a metric's deviation would be measured over, plus the reason when there is none.
  *
  * Two segments and nothing else: every sample BEFORE `injectTimeMs` answers "what level did this service
  * hold?", and every sample at or after it answers "what did the metric do?". The baseline is the pre-segment
@@ -2394,44 +2502,59 @@ export function preWindowDrift(
  * a few dozen samples inside a pre-segment of hundreds cannot move a median, while it moves a `max` by the
  * plateau's whole height and a mean by its share.
  *
- * `undefined` means the boundary cannot be placed, and there are exactly three ways for that to happen:
- * the injection time is unknown (`<= 0`, the graph builder's own default), no sample reaches it, or either
- * side is narrower than `max(3, ⌈n/10⌉)` — the tenth-of-the-series floor the zero-baseline and transient
- * guards already use, so a "pre-window" of two samples is refused by a rule rather than by a taste.
+ * **The refusal is part of the answer, and that is the change.** This function used to return `undefined` and
+ * nothing else, which made six different failures one bit: the anchored arm can decline a series because the
+ * injection time is unknown, because no sample reaches it, because a side is narrower than `max(3, ⌈n/10⌉)`,
+ * because the baseline is not positive, because the pre-segment is too short to halve, or because a guard
+ * refused the drift it read. A cell that did not move then could not be told apart from a cell where every
+ * series was refused, and on RE2:SockShop that distinction is the whole question.
  *
- * A non-positive baseline is also refused: a level of zero is not a denominator, and `post / 0` is not a
- * level of anything. The caller keeps the shipped window in all four cases, which is what makes this an
- * option rather than a silent change of estimator.
+ * A non-positive baseline is refused because a level of zero is not a denominator and `post / 0` is not a
+ * level of anything; a narrow side is refused by the tenth-of-the-series floor the zero-baseline and transient
+ * guards already use, so a "pre-window" of two samples fails a rule rather than a taste. The caller keeps the
+ * shipped window in every refusal, which is what makes this an option rather than a silent change of
+ * estimator — and the refusal is COUNTED, which is what makes the option measurable.
  *
  * @param values - The metric's samples, in timestamp order.
  * @param timestamps - The sample timestamps (Unix ms), aligned with `values`.
  * @param injectTimeMs - Fault injection time in Unix ms (`<= 0` = unknown).
- * @returns The baseline and the post-injection extremes, or `undefined` when no boundary can be placed.
- * @internal
+ * @param guard - The condition the pre-segment must meet, or `undefined` for none.
+ * @returns A placed window with its drift, or a refusal with its reason and the same drift when readable.
  */
-function preInjectionWindow(
+export function probePreInjectionWindow(
   values: Float64Array,
   timestamps: readonly number[],
   injectTimeMs: number,
-  maxPreWindowDrift?: number,
-): { baseline: number; max: number; min: number } | undefined {
+  guard?: PreWindowGuard,
+): PreWindowProbe {
   const boundary = preSplitIndex(values, timestamps, injectTimeMs);
-  if (boundary === undefined) return undefined;
+  if (boundary === undefined) {
+    return {
+      placed: false,
+      reason: injectTimeMs > 0 ? 'no-boundary' : 'no-injection-time',
+      drift: undefined,
+    };
+  }
   const { split, n } = boundary;
 
   const floorWidth = Math.max(3, Math.ceil(n * 0.1));
-  if (split < floorWidth || n - split < floorWidth) return undefined;
+  if (split < floorWidth || n - split < floorWidth) {
+    return { placed: false, reason: 'narrow-segment', drift: undefined };
+  }
 
   const baseline = medianOfRange(values, 0, split);
-  if (!(baseline > 0)) return undefined;
+  if (!(baseline > 0)) {
+    return { placed: false, reason: 'non-positive-baseline', drift: undefined };
+  }
 
-  // The stationarity condition, and it is deliberately a condition on the SEGMENT rather than on the
-  // estimator: a median of a ramp is a number the service never held, so a window that cannot certify its
-  // own level is refused whole rather than repaired. `undefined` from `preWindowDrift` means the segment is
-  // too short to halve, which is a refusal too — a two-sample half is not evidence of anything.
-  if (maxPreWindowDrift !== undefined) {
-    const drift = preWindowDrift(values, timestamps, injectTimeMs);
-    if (drift === undefined || !(drift <= maxPreWindowDrift)) return undefined;
+  // The guard, and it is deliberately a condition on the SEGMENT rather than on the estimator: a median of a
+  // ramp is a number the service never held, so a window that cannot certify its own level is refused whole
+  // rather than repaired. `undefined` from `preWindowDrift` means the segment is too short to halve, and
+  // `undecidable-drift` says so — a census that read that refusal as `drift` could not tell a corpus of short
+  // series from a corpus of ramps.
+  const drift = preWindowDrift(values, timestamps, injectTimeMs);
+  if (!judgePreWindowDrift(drift, guard)) {
+    return { placed: false, reason: drift === undefined ? 'undecidable-drift' : 'drift', drift };
   }
 
   let max = -Infinity;
@@ -2441,7 +2564,24 @@ function preInjectionWindow(
     if (v > max) max = v;
     if (v < min) min = v;
   }
-  return { baseline, max, min };
+  return { placed: true, baseline, max, min, drift };
+}
+
+/**
+ * The window itself, for the one caller that only needs the three numbers.
+ *
+ * A wrapper and not a second implementation: the refusal REASONS and the placed window both come from
+ * {@link probePreInjectionWindow}, so the engine's decision and the census' count are the same call. A caller
+ * that wants to know WHY a series was refused asks the probe; a caller that only wants to score asks this.
+ */
+function preInjectionWindow(
+  values: Float64Array,
+  timestamps: readonly number[],
+  injectTimeMs: number,
+  guard?: PreWindowGuard,
+): { baseline: number; max: number; min: number } | undefined {
+  const probe = probePreInjectionWindow(values, timestamps, injectTimeMs, guard);
+  return probe.placed ? { baseline: probe.baseline, max: probe.max, min: probe.min } : undefined;
 }
 
 /**

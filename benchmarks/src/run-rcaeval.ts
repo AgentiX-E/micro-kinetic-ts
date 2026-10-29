@@ -72,6 +72,7 @@ import { discoverCaseMetas } from './case-corpus-walk.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import { deriveAnchorCensus } from './anchor-census.js';
 // The mode union, from the package that OWNS it — the same guard the CLI accepts its flag with and the same
 // function the log census asks about admission, so one value means one thing along the whole chain.
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
@@ -1605,6 +1606,13 @@ async function main(): Promise<void> {
           // after the line that set its entry, so there is no arm to write for an absent supply — and an absent
           // supply would mean the corpus owner never ran, which its own type cannot express.
           latencySupply: stats.latencyRouteByCaseId.get(c.id)!,
+          // …and what the WINDOW did to the same case, taken on the series the engine received rather than on
+          // the corpus rows: the loader reshapes a series before the engine sees it, so a census over
+          // `metrics.json` measures a different object and cannot stand in for this one.
+          anchorCensus: deriveAnchorCensus(
+            { metrics: c.metrics, injectTime: c.injectTime, truth: c.groundTruth.serviceId },
+            opts.baselineAnchor,
+          ),
         });
       }
     }

@@ -23,6 +23,7 @@
  * @module benchmarks/loss-census
  */
 
+import type { AnchorCensus } from './anchor-census.js';
 import type { LatencyRouteEntry } from './directional-evidence.js';
 
 /**
@@ -161,6 +162,18 @@ export interface LossRecord {
    * depend on `packages/kinetic`; inside one package a second declaration of one shape is an owner with none.
    */
   readonly latencySupply: LatencyRouteEntry;
+  /**
+   * What the anchored window did to THIS case's series — placed, refused, and why.
+   *
+   * The instrument §187.7 owed and §188.5 proved could not be built against the corpus rows: the loader aligns
+   * and reshapes a series before the engine sees it, so a census over `metrics.json` measures a different
+   * object. This one is taken on the series the ENGINE receives, through the engine's own
+   * `probePreInjectionWindow` and `judgePreWindowDrift`, so a refusal counted here is a refusal that happened.
+   *
+   * REQUIRED, on the rule `latencySupply` follows: an absent census would mean the instrument did not run, and
+   * an optional field would file "no window was placed" and "nobody counted" as the same record.
+   */
+  readonly anchorCensus: AnchorCensus;
 }
 
 /**

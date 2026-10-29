@@ -163,6 +163,11 @@ export default defineConfig({
         // leaving it out of this list would be the allow-list's own hole a seventh time;
         // `__tests__/coverage-scope.test.ts` diffs the list against what the tests import, in both directions.
         'src/case-corpus-walk.ts',
+        // Added with the module: the WINDOW's own census, i.e. the instrument `docs/baseline-anchor.md` §7b
+        // recorded as owed and §8.5 proved could not be built against the corpus rows. It is the first module in
+        // this list whose whole subject is a REFUSAL — so its uncovered branches would be the refusals nobody
+        // exercised, which is precisely the state the module exists to make impossible.
+        'src/anchor-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
