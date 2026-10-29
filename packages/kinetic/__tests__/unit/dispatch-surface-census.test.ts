@@ -1289,6 +1289,57 @@ describe('the dispatch surface has one owner per knob', () => {
     );
   });
 
+  it('emits a packed input’s key from EVERY copy of the block, not from one of them', () => {
+    // Measured, in iteration 187, on a real dispatch: the packed `anomaly_knobs` block is COPY-PASTED once
+    // per job — seven times, because the golden half runs RE1/RE2/RE3 each with three log-mode variants — and
+    // a key added to the first copy alone passes every assertion above, because `reaches()` asks whether the
+    // file contains the flag somewhere. The dispatch then fails at run time with
+    // `anomaly_knobs: unknown key 'anchor=pre-injection'` on exactly the jobs whose copy was missed, which is
+    // the worst shape of failure available: a green suite and a red run.
+    //
+    // So the unit of the claim is the COPY. Every loop that expands the input must name every flag the input
+    // can emit, and the count of loops is asserted non-trivially so a workflow that lost its blocks entirely
+    // cannot pass by having none to check.
+    const loopHeader = (input: string): string =>
+      `for kv in $(echo "\${{ inputs.${input} }}" | tr ',' ' ')`;
+    const bodies = (yml: string, input: string): string[] => {
+      const header = loopHeader(input);
+      const spans: string[] = [];
+      let at = yml.indexOf(header);
+      while (at !== -1) {
+        // The loop's own terminator, at the indentation the step uses. Search from the header so a nested
+        // `case … esac` inside the body cannot end the span early.
+        const rest = yml.slice(at);
+        const end = rest.search(/\n\s{10}done\b/);
+        if (end === -1) throw new Error(`unterminated ${input} loop at byte ${at}`);
+        spans.push(rest.slice(0, end));
+        at = yml.indexOf(header, at + header.length);
+      }
+      return spans;
+    };
+    const rcaevalYmlForLoops = readFileSync(RCAEVAL_WORKFLOW, 'utf8');
+    const loops = bodies(rcaevalYmlForLoops, 'anomaly_knobs');
+    // Seven today. The number is not the invariant; that every copy agrees with the register is.
+    expect(loops.length).toBeGreaterThanOrEqual(2);
+    for (const [index, body] of loops.entries()) {
+      for (const flag of SHARED_INPUTS['anomaly_knobs']!) {
+        expect(body.includes(flag), `anomaly_knobs copy ${index + 1} cannot emit ${flag}`).toBe(
+          true,
+        );
+      }
+    }
+    // The FSE'26 half has ONE block and its own input name; asserted the same way so a second copy added
+    // there later fails here rather than at dispatch.
+    const fse26Loops = bodies(readFileSync(FSE26_WORKFLOW, 'utf8'), 'ranking_knobs');
+    for (const [index, body] of fse26Loops.entries()) {
+      for (const flag of SHARED_INPUTS['ranking_knobs']!) {
+        expect(body.includes(flag), `ranking_knobs copy ${index + 1} cannot emit ${flag}`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
   it('records the flags RCAEval accepts but cannot dispatch, as an exact set', () => {
     const unreachable = [...rcaevalFlags.keys()]
       .filter((flag) => {

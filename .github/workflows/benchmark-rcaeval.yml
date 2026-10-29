@@ -523,6 +523,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
@@ -749,6 +753,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
@@ -959,6 +967,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
@@ -1193,6 +1205,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
@@ -1395,6 +1411,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
@@ -1598,6 +1618,10 @@ jobs:
               #   candidate, `channel` against each family's own champion.
               dualfamgatemode=*) RANKING_ARG+=(--dual-family-gate-mode "${kv#dualfamgatemode=}") ;;
               dropdev=*) RANKING_ARG+=(--drop-deviation-mode "${kv#dropdev=}") ;;
+              #   Which WINDOW the deviation is measured between. Beside `dropdev` because the two answer
+              #   one question at two depths: the mode decides how a direction becomes a number, the anchor
+              #   decides which samples that number is measured on.
+              anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
                 # Both poles, because the flag is a GUARD: `0` is the shipped state and has to stay
