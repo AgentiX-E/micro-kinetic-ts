@@ -32,6 +32,8 @@ import { computeAvgAtK, computeTA } from './metrics.js';
 import type { RiserVector } from './riser-vector.js';
 import { riserVectorOf } from './riser-vector.js';
 import { caseWeightedMean } from './suite-accuracy.js';
+import type { TraceSignificance } from './trace-significance.js';
+import { traceSignificanceOf } from './trace-significance.js';
 
 import type { TrainingExample } from '../../signals/weight-calibrator.js';
 import { WeightCalibrator } from '../../signals/weight-calibrator.js';
@@ -344,6 +346,18 @@ export interface CasePrediction {
    * no spans (see `riserVectorOf`).
    */
   readonly traceRiser?: TraceRiserEvidence | undefined;
+  /**
+   * The scale-free axis: every graph member's count change in units of its own Poisson fluctuation.
+   *
+   * Recorded for EVERY case that carries a trace file, not only for the cases the rule voted on. That population
+   * difference is the point: the rule is silent on ten of TrainTicket RE3's thirty cases, and an axis measured
+   * only where the rule spoke could not say whether a selector built on it would have spoken there.
+   *
+   * Absent when the case has no span counts, or when no graph member carried a pre-injection baseline. See
+   * `traceSignificanceOf` for the normalisation — the drift is the unweighted median of the per-service ratios,
+   * which is what keeps a fault in the fleet's largest service from normalising itself away.
+   */
+  readonly traceSignificance?: TraceSignificance | undefined;
 }
 
 /**
@@ -360,6 +374,7 @@ export interface TraceRiserEvidence {
 }
 
 export type { RiserVector } from './riser-vector.js';
+export type { ServiceSignificance, TraceSignificance } from './trace-significance.js';
 
 /**
  * The ground truth's own score and the evidence the engine recorded for it, in the engine's own terms.
@@ -827,6 +842,18 @@ export class BenchmarkRunner {
                   vote: riserVectorOf(traceVote, benchCase),
                   truth: riserVectorOf(caseTruth, benchCase),
                 },
+          // And the axis the four refused refinements leave standing: the count change of EVERY graph member in
+          // units of its own fluctuation, with the fleet's common-mode drift divided out. Computed for every case
+          // that carries a trace file rather than only for the cases the rule voted on, because the question the
+          // next arm has to answer is whether a selector on this axis would have spoken on the cases the rule left
+          // silent — and a population that contains only the votes cannot answer it. The node set is the graph the
+          // engine RANKED (`effectiveCallGraph`), the same set `computeTraceActivityScores` was handed, so this
+          // measurement and the rule are about one population.
+          traceSignificance: traceSignificanceOf({
+            traceActivity: benchCase.traceActivity,
+            nodeIds: new Set(effectiveCallGraph.nodes.keys()),
+            truth: caseTruth,
+          }),
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────

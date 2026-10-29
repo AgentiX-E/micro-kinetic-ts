@@ -107,6 +107,12 @@ import {
   createTraceVoteCensus,
   formatTraceVoteLine,
 } from './trace-vote-census.js';
+import {
+  accumulateTraceZ,
+  createTraceZCensus,
+  formatTraceZCaseLine,
+  formatTraceZCensusLine,
+} from './trace-z-census.js';
 // The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
 // cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
 // empty map differ in everything a fix would depend on.
@@ -1468,6 +1474,26 @@ async function main(): Promise<void> {
     }
     const riserLine = formatRiserCensusLine(riser);
     if (riserLine !== undefined) console.log(riserLine);
+
+    // The axis the four refused refinements leave standing. The riser census says WHY the truth was not a
+    // candidate — on TrainTicket's five misses it fell (`growth` 0.82-0.94 on `pre ≈ 12 000`), so the rule's premise
+    // ("a source does MORE work") is what excluded it. This census measures the change on an axis where a fall and a
+    // rise are the same size of event: the count difference in units of its own Poisson fluctuation, with the
+    // fleet's common-mode drift divided out. It also simulates two selectors over the same population, so the next
+    // arm is decided from a reading rather than proposed from a mechanism.
+    //
+    // Printed for EVERY case with a measurable axis, not only for the cases the rule voted on: the ten cases where
+    // the rule stays silent are half of what a replacement selector would have to decide.
+    let traceZ = createTraceZCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) {
+        const line = formatTraceZCaseLine(p);
+        if (line !== undefined) console.log(line);
+        traceZ = accumulateTraceZ(traceZ, p);
+      }
+    }
+    const traceZLine = formatTraceZCensusLine(traceZ);
+    if (traceZLine !== undefined) console.log(traceZLine);
 
     // ── Fusion-ceiling records for this group ──
     // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed
