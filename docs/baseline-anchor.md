@@ -245,8 +245,13 @@ The shape of the axis' own ledger is the part that matters for what comes next:
 | --- | --- | --- |
 | truth's rank before | 2 ×6, 3 ×3, 4, 7, 13, **20** | 1 ×10 |
 | truth's rank after | 1 ×13 | 2 ×6, 3 ×3, 4 ×1 |
-| Δ on the truth's own score | median **+0.164**, max +0.484 | median **−0.016**, min −0.113 |
+| Δ on the truth's `finalScore` | median **+0.164**, max +0.484 | median **−0.016**, min −0.113 |
 | injection index | 1 ×2, 2 ×3, 3 ×2, 4 ×4, 5 ×2 | **1 ×5**, 2 ×2, 3 ×1, 5 ×2 |
+
+`finalScore` is a sum whose self-anomaly term is the truth's **rank fraction inside the pool**
+(`rankNormalization` is on), so a delta on it is a rank effect as much as a magnitude effect — which is
+the right thing to read here, because Top@1 is a rank count and the table's third row exists to show
+that the two populations sit on opposite sides of zero with very different amplitude.
 
 Four deep rescues (`ts-route-service_f4_3` 20 → 1, `f2_2` 13 → 1, `f2_1` 7 → 1, `f1_3` 4 → 1) bought
 with ten one-step demotions whose median cost to the truth's own score is `0.016`. On Top@1 that is +3.
