@@ -319,13 +319,41 @@ guard is doing what it says on this cell: it refuses the anchoring on the cases 
 wash and keeps the two rescues that were not. It does **not** fix `carts_f3_3`, whose loss survives the
 guard, and one cell of thirty is not the enrolment evidence — the nine-cell dispatch is.
 
+**Measured on all nine cells and on FSE'26, the guard is worth +1 case on the golden half and −6 on
+FSE'26, so it is a third VALUE and not a new default:**
+
+| arm | RE1-OB | RE1-SS | RE1-TT | RE2-OB | RE2-SS | RE2-TT | RE3-OB | RE3-SS | RE3-TT | 735 | FSE'26 Top@1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `whole-file` (shipped) | 107 | 116 | 104 | 80 | 85 | 75 | 25 | 18 | 21 | **631** | 60.478% |
+| `pre-injection` | 107 | **119** | 104 | 79 | 85 | 72 | 24 | **19** | **25** | **634** | **61.181%** |
+| `pre-injection-stationary` | 107 | **118** | 104 | 79 | 85 | **73** | **25** | **19** | **25** | **635** | 60.759% |
+
+Against the unguarded arm the guard is `+5 / −4` on the golden half and it recovers exactly the losses it
+was built for — **both remaining RE2:TrainTicket `_1` cases** (`ts-order-service_disk_1` 2→1,
+`ts-travel-service_cpu_1` 2→1) and the RE3:OnlineBoutique loss (`cartservice_f1_1` 2→1) — while giving back
+four of the unguarded arm's near-swaps (`carts_f3_4` 1→2, `orders_f4_2` 1→2, `re2tt_order-service_mem_1`
+1→2, and a new one, `re1ss_user_mem_5` 1→2). On FSE'26 it is the other way round: `864` cases against the
+unguarded arm's `870`, closing `HTTPRequestDelay +2`, `NetworkCorrupt +1` and two single cases against
+`HTTPRequestReplaceMethod −4`, `HTTPResponseDelay −4` and three singles.
+
+**The two suites disagree, and that is the result.** The stationarity condition is the right discriminator
+for the golden half's first-injection losses and the wrong one for FSE'26's transport faults, where the
+anchoring is doing real work on pre-segments that are *also* non-stationary. So the condition cannot be
+"stationary" alone: the statistic already computes a SIGNED difference (`median(second half) −
+median(first half)`) and the guard throws the sign away. A declining pre-segment — the container that opens
+at 30 and settles to 3.5, which is this axis' founding case — and a rising one are both "non-stationary"
+to the current test, and the corpus says they must be separated before either value can be a default.
+
 ## 8. How to re-measure
 
 ```bash
 # golden half, one input, everything else shipped
 gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection
+# ... or the guarded value, which is the same input with a different value — never a second knob
+gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=anchor=pre-injection-stationary
 # FSE'26 half
 gh workflow run fse26-benchmark.yml -f ranking_knobs=baseline_anchor=pre-injection
+gh workflow run fse26-benchmark.yml -f ranking_knobs=baseline_anchor=pre-injection-stationary
 # locally, on an assembled corpus
 pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir <dir> --suite re3 --system ss \
   --baseline-anchor pre-injection --diagnose-dump /tmp/dump.json
