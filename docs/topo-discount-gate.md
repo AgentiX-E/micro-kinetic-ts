@@ -263,9 +263,19 @@ engine does; it changes what the project knows about what it does.
 
 The next arm is not a fourth gate value. §6.3 says the gate's net is one fault type; §6.4 says its two
 residual failures are a direction problem (a `delay` on the path, a `cpu` at the source) that containment
-cannot express. The operator that reads the SELF channel instead — `victimWeight`, PRISM's axiom as a mask,
-shipped at 0 with `channelSymmetry` already computed — is the one whose subject is that distinction, and it
-is the arm this document hands over to.
+cannot express.
+
+**Correction to this section as it was first written (2026-10-30).** It named the SELF channel — `victimWeight`,
+PRISM's axiom as a mask, shipped at 0 with `channelSymmetry` already computed — as the arm to run next. That
+arm was already measured and refused in iteration 140: `docs/prism-symmetry-mask.md` §4 records `victim = 0.05`
+taking RE1-TT from 101 to **68** and FSE'26 Top@1 from 56.4 % to 55.0 %, and §5 closes the PRISM family in
+three forms. Re-running a closed axis would have been a grid, not a mechanism.
+
+What §6.4 actually owes is the instrument it names at the end of the paragraph above, and it is built:
+`docs/topo-share.md` publishes the operator's own `min(a, e)/a` on the truth's evidence row, in deviation
+space, with the gate that judged it. The next gate is chosen from that distribution rather than from a
+four-point grid — and the tail this knob cannot reach is stated there as arithmetic: a share of 1 is zeroed at
+`rho = 1` under every `gate ≤ 1`, which is why the no-evidence count is 12 at every gate against 6 shipped.
 
 ### 6.6 The fourth arm is still not run, and it is still named
 

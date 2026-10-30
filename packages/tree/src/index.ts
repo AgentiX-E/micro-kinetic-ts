@@ -134,6 +134,7 @@ export {
   applyAnomalyNormalization,
   deductExplainedAnomalies,
   type TopoDeductionInput,
+  type TopoDeductionResult,
 } from './causal/topo-deduction.js';
 // `minMaxNormalizeScores` and `scoreRange` are public for the same reason `rankNormalizeScores` is:
 // they define what space a score is in, and the graph's `anomalyNormalization` names which of them ran.

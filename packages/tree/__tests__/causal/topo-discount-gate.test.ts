@@ -52,7 +52,7 @@ const deduct = (
   rho: number,
   scope: TopoDiscountScope = 'external',
   gate = 0,
-): Map<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate);
+): ReadonlyMap<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate).discounted;
 
 describe('the gate, which decides WHICH nodes the deduction may move', () => {
   it('is zero as shipped, so the published nine cells cannot move by construction', () => {
@@ -75,8 +75,13 @@ describe('the gate, which decides WHICH nodes the deduction may move', () => {
       [inputOf({ a: 2, b: 1, c: 0.6 }, [edge('a', 'b'), edge('a', 'c')], 1), 0.25, 'external'],
     ];
     for (const [input, rho, scope] of cases) {
-      const withoutGate = deductExplainedAnomalies(input, rho, scope, 0);
-      const threeArg = deductExplainedAnomalies(input, rho, scope, DEFAULT_TOPO_DISCOUNT_GATE);
+      const withoutGate = deductExplainedAnomalies(input, rho, scope, 0).discounted;
+      const threeArg = deductExplainedAnomalies(
+        input,
+        rho,
+        scope,
+        DEFAULT_TOPO_DISCOUNT_GATE,
+      ).discounted;
       expect([...threeArg.entries()].sort()).toEqual([...withoutGate.entries()].sort());
     }
   });

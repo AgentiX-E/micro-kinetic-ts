@@ -117,11 +117,14 @@ describe('the deduction formula, fenced at the source', () => {
     expect(deduction).toMatch(/const capped = Math\.min\(anomaly,/);
     expect(deduction).toMatch(/rho \* capped/);
     expect(deduction).not.toMatch(/Math\.max\(0,/);
-    // The gate compares against `gate × anomaly` rather than dividing by `anomaly`, which is not
-    // guaranteed positive: a division would answer `NaN` on a silent node and switch the deduction off
-    // for it while the configuration line still reported it on.
+    // The GATE compares against `gate × anomaly` rather than dividing by `anomaly`, which is not
+    // guaranteed positive: a division there would answer `NaN` on a silent node and switch the deduction
+    // off for it while the configuration line still reported it on. The division does exist now — the
+    // SHARE is a ratio — so the fence pins both halves: the ratio is guarded by `anomaly > 0` on the same
+    // line, and the comparison is not written as one.
     expect(deduction).toMatch(/capped >= gate \* anomaly/);
-    expect(deduction).not.toMatch(/capped \/ anomaly/);
+    expect(deduction).not.toMatch(/gate \* anomaly\s*\//);
+    expect(deduction).toMatch(/if \(anomaly > 0\) share\.set\(nodeId, capped \/ anomaly\);/);
   });
 
   it('takes its input from the DEVIATION map and returns through the graph’s own transform', () => {
@@ -131,7 +134,14 @@ describe('the deduction formula, fenced at the source', () => {
     // one-word edit (`anomalyScores`) puts it back, and only a nine-cell dispatch would notice.
     expect(pruner).toMatch(/anomalies:\s*graph\.rawAnomalyScores/);
     expect(pruner).not.toMatch(/anomalies:\s*graph\.anomalyScores/);
-    expect(pruner).toMatch(/applyAnomalyNormalization\(deducted,\s*graph\.anomalyNormalization\)/);
+    expect(pruner).toMatch(
+      /applyAnomalyNormalization\(deducted\.discounted,\s*graph\.anomalyNormalization\)/,
+    );
+    // The SHARE is not mapped through that transform, and that is the point of the instrument: a share
+    // read back from a rank surface is a fraction of a step count, not of an anomaly (§3 of
+    // `docs/topo-share.md`). Pinned here because the one-word edit that would do it —
+    // `applyAnomalyNormalization(deducted.share, …)` — compiles and returns a plausible number.
+    expect(pruner).not.toMatch(/applyAnomalyNormalization\(deducted\.share/);
   });
 
   it('decides both sides of the deduction with ONE predicate', () => {

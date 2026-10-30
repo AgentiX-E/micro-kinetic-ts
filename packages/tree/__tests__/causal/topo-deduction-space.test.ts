@@ -47,7 +47,7 @@ const deduct = (
   rho: number,
   scope: TopoDiscountScope = 'external',
   gate = 0,
-): Map<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate);
+): ReadonlyMap<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate).discounted;
 
 describe('the deduction in deviation space', () => {
   it('leaves a node with nothing anomalous to call entirely alone', () => {

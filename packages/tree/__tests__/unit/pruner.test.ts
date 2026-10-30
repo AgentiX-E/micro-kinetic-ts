@@ -19,6 +19,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   isPrismPooling,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
@@ -1327,6 +1328,91 @@ describe('TreePruner', () => {
 
       expect(explained.finalScore!).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(explained.finalScore!)).toBe(true);
+    });
+
+    it('reports the share the gate read, so a case can be explained without re-running the arm', () => {
+      // The instrument iteration 195 owed and this iteration built: the deduction's own reading of how much
+      // of a candidate its callees accounted for, on the candidate's evidence row rather than in a place a
+      // reader has to reconstruct. Without it the only way to know whether a gate charged a case is to run
+      // the grid and watch the cell move, which cannot distinguish "the gate refused it" from "something
+      // else moved" and cannot be read at all on a case the deduction removed from the ranking.
+      const pruner = new TreePruner({ topoDiscount: 1 });
+      const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
+      const row = pruner
+        .analyze(graph, 3)
+        .find((r) => r.serviceId === 'a')!
+        .evidenceMetrics.find((m) => m.metric === 'topo_share')!;
+
+      expect(row).toBeDefined();
+      // A caller whose callee carries most of its rise is explained by most of it — the exact fraction is
+      // the operator's business and `topo-deduction-share.test.ts` pins it arithmetically; what this test
+      // exists for is that the number travels, is a fraction, and is the gate's own threshold.
+      expect(row.value).toBeGreaterThan(0);
+      expect(row.value).toBeLessThanOrEqual(1);
+      expect(row.threshold).toBe(DEFAULT_TOPO_DISCOUNT_GATE);
+    });
+
+    it('carries no share row when the deduction never ran, because nothing was measured', () => {
+      // The shipped weight is the arm the published nine cells were read on, and a row reporting a zero
+      // share there would describe a measurement no run made — the distinction `INPUT_MAP_ABSENT` exists to
+      // preserve for optional sources, applied to an optional INSTRUMENT.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
+      for (const result of pruner.analyze(graph, 3)) {
+        expect(result.evidenceMetrics.some((m) => m.metric === 'topo_share')).toBe(false);
+      }
+    });
+
+    it('records the gate beside the share, and a refused node keeps its score but not its silence', () => {
+      // A share is a reading and the gate is a verdict, so the two travel together: 0.62 is charged at a
+      // gate of 0.5 and refused at 0.75, and a row carrying only the value would be legible only next to the
+      // run's configuration line. The refused node below is the assertion that a refusal is still REPORTED:
+      // its score is the undeducted one and its share is on record, which is what lets a reader see that the
+      // threshold — rather than the corpus — is what spared it.
+      const shipped = new TreePruner();
+      const gated = new TreePruner({ topoDiscount: 1, topoDiscountGate: 1 });
+      const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
+      const before = shipped.analyze(graph, 3);
+      const after = gated.analyze(graph, 3);
+
+      const row = after
+        .find((r) => r.serviceId === 'a')!
+        .evidenceMetrics.find((m) => m.metric === 'topo_share')!;
+      expect(row.threshold).toBe(1);
+      // A gate at the boundary charges only a node that is WHOLLY explained, and `a` is not: its callee
+      // accounts for a fraction. So it keeps the shipped score while its share stays on record.
+      expect(row.value).toBeLessThan(1);
+      expect(after.find((r) => r.serviceId === 'a')!.finalScore!).toBe(
+        before.find((r) => r.serviceId === 'a')!.finalScore!,
+      );
+      // …and the ungated arm on the same graph does charge it, so the equality above is the gate's doing.
+      expect(
+        new TreePruner({ topoDiscount: 1 }).analyze(graph, 3).find((r) => r.serviceId === 'a')!
+          .finalScore!,
+      ).toBeLessThan(before.find((r) => r.serviceId === 'a')!.finalScore!);
+    });
+
+    it('omits the share row for a node the scope never looked at', () => {
+      // `cpu` is the component's own machine, so under `external` scope the operator never considers `a`:
+      // no share exists for it and no row is written. This is the difference between "the scope excludes
+      // this node" and "its callees explained nothing", which is the whole reason the absence is an absence
+      // rather than a zero.
+      const pruner = new TreePruner({ topoDiscount: 1 });
+      const graph = pruner.buildFaultGraph(callGraph, internalMetrics);
+      const results = pruner.analyze(graph, 3);
+      expect(
+        results
+          .find((r) => r.serviceId === 'a')!
+          .evidenceMetrics.some((m) => m.metric === 'topo_share'),
+      ).toBe(false);
+      // The `all` scope admits it, so the row appears — the absence above belongs to the configuration.
+      const allScope = new TreePruner({ topoDiscount: 1, topoDiscountScope: 'all' });
+      expect(
+        allScope
+          .analyze(allScope.buildFaultGraph(callGraph, internalMetrics), 3)
+          .find((r) => r.serviceId === 'a')!
+          .evidenceMetrics.some((m) => m.metric === 'topo_share'),
+      ).toBe(true);
     });
 
     it('skips a callee whose edge carries no propagation weight', () => {

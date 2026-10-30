@@ -248,6 +248,17 @@ export interface TruthEvidence {
   readonly viaTreeSearch: boolean;
   /** How many evidence metrics the engine recorded for the truth. */
   readonly metricCount: number;
+  /**
+   * The share of the truth's own anomaly its callees accounted for, when the topological deduction ran and
+   * considered the truth.
+   *
+   * The reading an arm of `topoDiscountGate` cannot be chosen without: the gate's question is a ratio, and
+   * the artifact otherwise carries only the anomaly that ratio produced — which is the same value at every
+   * gate for a case whose share sits above the grid's top, and says nothing about WHICH gate would spare it.
+   */
+  readonly topoShare?: number | undefined;
+  /** The gate `topoShare` was compared with, so the pair can be judged without the run's configuration line. */
+  readonly topoGate?: number | undefined;
 }
 
 /**

@@ -411,6 +411,32 @@ export interface TruthEvidence {
   readonly viaTreeSearch: boolean;
   /** How many evidence metrics the engine recorded for the truth. Zero is a fact, not a missing measurement. */
   readonly metricCount: number;
+  /**
+   * The share of the truth's own anomaly its callees accounted for, as the topological deduction measured it.
+   *
+   * Present only when the deduction ran (`topoDiscount ≠ 0`) AND the truth was a subject it considered: a
+   * node the deduction's scope never looked at has no share, and this field stays absent rather than
+   * reporting a zero it did not measure.
+   *
+   * ## Why the truth needs this and its post-deduction score cannot supply it
+   *
+   * The deduction's gate asks "was this node mostly explained by what it calls", and the artifact records
+   * only the ANOMALY that decision produced. Iteration 195 could not choose the next gate from its own
+   * artifacts for exactly that reason: the one case that blocked the arm sat at the same post-deduction
+   * anomaly at every gate, so the reading said "no gate reaches it" without saying whether that was because
+   * its share was above the grid's top or because something else had moved. The share is that missing
+   * quantity, and it is also the only reading available on a truth the deduction removed from the candidate
+   * pool entirely — such a node has no score at all, because a fully explained one is not a candidate.
+   */
+  readonly topoShare?: number | undefined;
+  /**
+   * The gate the share was compared with, in [0, 1].
+   *
+   * Recorded beside the value rather than left to the run's configuration line because a share means nothing
+   * without it: 0.62 is charged at a gate of 0.5 and refused at 0.75. The pair is the operator's whole
+   * statement about this candidate — "how much was explained" and "what had to be explained to count".
+   */
+  readonly topoGate?: number | undefined;
 }
 
 /**
@@ -511,6 +537,10 @@ function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): Truth
   const metric = (name: string): number | undefined =>
     hit.evidenceMetrics.find((m) => m.metric === name)?.value;
   const threshold = hit.evidenceMetrics.find((m) => m.metric === 'rca_score')?.threshold;
+  // The deduction's own row, when the engine wrote one. Its threshold is the run's gate, so the value and
+  // the cut that judged it are read from the SAME row — a gate taken from the configuration instead would
+  // be a second source for the number that decided, and the two could disagree after a configuration change.
+  const topo = hit.evidenceMetrics.find((m) => m.metric === 'topo_share');
   return {
     rcaScore: metric('rca_score'),
     rcaThreshold: threshold,
@@ -522,6 +552,9 @@ function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): Truth
     depth: hit.propagationDepth,
     viaTreeSearch: hit.viaTreeSearch,
     metricCount: hit.evidenceMetrics.length,
+    // Absent rather than zero when the engine wrote no row: a deduction that did not run and a deduction
+    // that found nothing to explain are different facts about different objects.
+    ...(topo === undefined ? {} : { topoShare: topo.value, topoGate: topo.threshold }),
   };
 }
 

@@ -85,6 +85,16 @@
  * default that had to be defended against the published cells would be a change, and this one is
  * inert by construction — no branch that can be reached, no float that can round.
  *
+ * ## The share, which is what the gate reads and what the artifact could not say
+ *
+ * The gate's question is a ratio, so the operator returns the ratio beside the result
+ * ({@link TopoDeductionResult}): `share(v) = min(a, e) / a`, capped at 1, for every node the scope let it
+ * consider and whose anomaly is positive. It is a property of the NODE, not of the configuration — the same
+ * share comes back at every gate — because the gate decides *whether* to charge and the share says *how
+ * much* was explained. Reporting it is what turns "run a grid and see which cells move" into "read why this
+ * case moved", and it is the only quantity that can be read on a case the deduction REMOVED from the
+ * candidate pool, since such a node has no post-deduction score to report at all.
+ *
  * @module causal/topo-deduction
  */
 
@@ -117,6 +127,52 @@ export interface TopoDeductionInput {
 }
 
 /**
+ * What the operator decided, per node — the deduction's result AND the quantity its gate reads.
+ *
+ * ## Why the share travels with the result rather than being recoverable from it
+ *
+ * `discounted` is a single number per node, and a reader holding only it cannot say whether the node was
+ * left alone because nothing explained it, because the scope excluded it, because the gate refused it, or
+ * because `rho` was 0. Those are four different facts about four different objects — a corpus, a
+ * configuration, a threshold, a weight — and an artifact that records only the post-deduction anomaly files
+ * all four as the same reading. Iteration 195 hit exactly that wall: the one cell the gate could not repair
+ * needed the pre-deduction anomaly of a single case, and no artifact carried it, so the next arm had to be
+ * chosen by running a grid and watching cells move instead of by reading a mechanism.
+ *
+ * `share` is therefore the operator's own answer to its own gate's question, in the space the operator works
+ * in: `min(a, e) / a`, capped at 1, for every node the scope let it consider and whose anomaly is positive.
+ *
+ * ## The two absences, which are not a zero
+ *
+ * A node the scope never considered has NO entry: `external` scope declining to explain a `cpu` reading is a
+ * fact about the configuration, and a 0 would report it as a fact about the corpus ("its callees explained
+ * nothing"). A node with no anomaly has no entry either, because a fraction of nothing is not a quantity.
+ * Both absences are therefore reportable as absences, which is what lets a consumer distinguish a threshold
+ * that refused a measured share from a subject the operator never looked at.
+ */
+export interface TopoDeductionResult {
+  /** The anomaly map the ranking should read, in the same space as the input. */
+  readonly discounted: ReadonlyMap<ServiceId, number>;
+  /** `min(anomaly, explained) / anomaly` for every node the operator considered with `anomaly > 0`. */
+  readonly share: ReadonlyMap<ServiceId, number>;
+}
+
+/**
+ * What the deduction measured, and the threshold this run judged it against.
+ *
+ * The two travel together because a share without its gate cannot be read: 0.62 is "charged" at a gate of
+ * 0.5 and "refused" at 0.75, so an artifact carrying only the value would need the run's configuration line
+ * to interpret its own evidence — and a record that needs an outside document to be legible is the defect
+ * `truthEvidence` exists to avoid for the self-anomaly term.
+ */
+export interface TopoDeductionAudit {
+  /** The share, in DEVIATION space, as {@link deductExplainedAnomalies} computed it. */
+  readonly share: ReadonlyMap<ServiceId, number>;
+  /** The gate the share was compared with, so the record can be judged against the cut that produced it. */
+  readonly gate: number;
+}
+
+/**
  * Deduct what a node's callees explain about its own anomaly.
  *
  * @param input - Anomalies in deviation space, the edges, and their weights.
@@ -127,7 +183,8 @@ export interface TopoDeductionInput {
  *   behaviour; a larger value leaves a mostly-unexplained node entirely alone. Required rather than
  *   defaulted, on the rule the engine's other shipped values follow: a parameter whose callers can
  *   omit it is a parameter that silently takes a value nobody declared.
- * @returns A new map in the SAME space as `input.anomalies`; the input is untouched.
+ * @returns The discounted map and the share it was discounted by, both in the SAME space as
+ *   `input.anomalies`; the input is untouched.
  * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, or if the weight vector is not
  *   aligned with the edges.
  */
@@ -136,7 +193,7 @@ export function deductExplainedAnomalies(
   rho: number,
   scope: TopoDiscountScope,
   gate: number,
-): Map<ServiceId, number> {
+): TopoDeductionResult {
   // `invariantFinite` first: `invariantRange` cannot see NaN — `NaN < 0` and `NaN > 1` are both false,
   // so a NaN weight would pass a range check and poison every anomaly downstream.
   invariantFinite(rho, 'topoDiscount');
@@ -182,6 +239,10 @@ export function deductExplainedAnomalies(
   }
 
   const discounted = new Map<ServiceId, number>();
+  // The share the gate reads, recorded as it is computed rather than re-derived by a consumer: `capped`
+  // already holds the capped explanation, and a second division outside this loop would be a second answer
+  // to the same question — the shape this repository's analyzer exists to find.
+  const share = new Map<ServiceId, number>();
   for (const [nodeId, anomaly] of input.anomalies) {
     if (!explicable(nodeId)) {
       discounted.set(nodeId, anomaly);
@@ -208,8 +269,14 @@ export function deductExplainedAnomalies(
     // genuinely was zero. The clamp that matters is on the EXPLAINED side, above: with `chargeable ≤ rho·a`
     // the subtraction cannot go negative except by float error at `rho = 1`, which the branch absorbs.
     discounted.set(nodeId, chargeable >= anomaly ? 0 : anomaly - chargeable);
+    // Recorded for every node the operator considered with something to explain, INCLUDING one the gate
+    // refused: the gate's refusal is a decision about a share, and a record that only carried the share of
+    // the nodes that were charged could not say whether a threshold was above or below a given node's value
+    // — which is the one question the instrument exists to answer. A non-positive anomaly is skipped rather
+    // than filed as 0, because a fraction of nothing is not a quantity and the 0 would read as a measurement.
+    if (anomaly > 0) share.set(nodeId, capped / anomaly);
   }
-  return discounted;
+  return { discounted, share };
 }
 
 /**

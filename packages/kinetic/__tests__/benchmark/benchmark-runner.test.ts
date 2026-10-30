@@ -1348,7 +1348,12 @@ describe('RCA Engine Integration', () => {
         confidence: 0.4,
         finalScore: 0.02,
         rank: 2,
-        evidenceMetrics: [{ metric: 'rca_score', value: 0.02, threshold: 0.1 }],
+        // Two rows, because the deduction ran on this case: its own share and the gate that judged it. The
+        // pair is what an arm of `topoDiscountGate` is chosen from, and the record carries both or neither.
+        evidenceMetrics: [
+          { metric: 'rca_score', value: 0.02, threshold: 0.1 },
+          { metric: 'topo_share', value: 0.62, threshold: 0.5 },
+        ],
         propagationDepth: 3,
         propagationErrorBound: 0.05,
         viaTreeSearch: false,
@@ -1419,7 +1424,16 @@ describe('RCA Engine Integration', () => {
     expect(hit.truthEvidence!.finalScore).toBe(0.02);
     expect(hit.truthEvidence!.depth).toBe(3);
     expect(hit.truthEvidence!.viaTreeSearch).toBe(false);
-    expect(hit.truthEvidence!.metricCount).toBe(1);
+    expect(hit.truthEvidence!.metricCount).toBe(2);
+    // The deduction's reading travels as a VALUE AND A CUT, from one row: a share of 0.62 is charged at a
+    // gate of 0.5 and refused at 0.75, so a record carrying the fraction alone would need the run's
+    // configuration line to say what the engine decided — and would be unreadable on its own.
+    expect(hit.truthEvidence!.topoShare).toBe(0.62);
+    expect(hit.truthEvidence!.topoGate).toBe(0.5);
+    // A result the deduction never wrote a row for leaves BOTH fields absent, which is the difference between
+    // "the operator did not consider this node" and "it considered it and nothing explained it" (a share of 0).
+    expect(byId.get('ev-leader')!.truthEvidence!.topoShare).toBeUndefined();
+    expect(byId.get('ev-leader')!.truthEvidence!.topoGate).toBeUndefined();
     // A metric the engine did NOT record stays ABSENT rather than defaulting to zero, so a reader can tell
     // "the engine reported nothing" from "the engine reported zero" — the difference the census's third class
     // exists for.

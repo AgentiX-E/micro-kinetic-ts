@@ -58,6 +58,7 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
+import type { TopoDeductionAudit } from '../causal/topo-deduction.js';
 import { applyAnomalyNormalization, deductExplainedAnomalies } from '../causal/topo-deduction.js';
 import type {
   TopoDiscountScope,
@@ -1873,8 +1874,12 @@ export class TreePruner {
     invariantPositiveInt(k, 'topK');
 
     // The anomaly map the ranking reads. `topoDiscount = 0` returns the graph's own map, so the shipped
-    // configuration is bit-identical by construction rather than by test.
-    const anomalyScores = this.discountedAnomalies(graph);
+    // configuration is bit-identical by construction rather than by test. The audit is the share the
+    // deduction measured and the gate this run judged it against — absent at `topoDiscount = 0`, because
+    // nothing was measured and an evidence row reporting a zero share would be a reading of a run that
+    // never looked.
+    const deduction = this.discountedAnomalies(graph);
+    const anomalyScores = deduction.scores;
 
     // Prune ALL cycles — significant and insignificant alike. Breaking the
     // weakest edge in every cycle keeps dense topologies analyzable; throwing
@@ -1909,6 +1914,7 @@ export class TreePruner {
       graph.selfTimeScores,
       graph.channelSymmetry,
       graph.dualFamilyServices,
+      deduction.audit,
     );
 
     // ── The failed-edge direction term's GATE ────────────────────────────────
@@ -1959,6 +1965,7 @@ export class TreePruner {
         graph.selfTimeScores,
         graph.channelSymmetry,
         graph.dualFamilyServices,
+        deduction.audit,
       ),
     );
   }
@@ -1983,13 +1990,17 @@ export class TreePruner {
    * is bit-identical by construction: no copy, no float rounding, no comparison to defend.
    *
    * @param graph - The graph whose anomalies are to be deducted.
-   * @returns The map the ranking should read.
+   * @returns The map the ranking should read, and the audit the evidence records — the audit is absent
+   *   at `topoDiscount = 0`, where the operator never ran.
    */
-  private discountedAnomalies(graph: FaultPropagationGraph): ReadonlyMap<ServiceId, number> {
+  private discountedAnomalies(graph: FaultPropagationGraph): {
+    readonly scores: ReadonlyMap<ServiceId, number>;
+    readonly audit?: TopoDeductionAudit;
+  } {
     const rho = this.options.topoDiscount;
     // At the shipped weight the map is not built at all, so the ranking is bit-identical to the one
     // that existed before this axis did — no copy, no re-normalisation, the same object.
-    if (rho === 0) return graph.anomalyScores;
+    if (rho === 0) return { scores: graph.anomalyScores };
     // ── The operator runs in DEVIATION space, and that is the whole of iteration 158 ─────────────
     //
     // `explained` adds a callee's anomaly into a caller's, so the subtraction that undoes it is an
@@ -2012,7 +2023,13 @@ export class TreePruner {
       this.options.topoDiscountScope,
       this.options.topoDiscountGate,
     );
-    return applyAnomalyNormalization(deducted, graph.anomalyNormalization);
+    // The share is reported in the space the operator computed it in and NOT mapped through the
+    // normalisation below: `rankNormalizeScores` would turn it into a rank share, which is a different
+    // quantity with a different meaning (a fraction of a step count rather than a fraction of an anomaly).
+    return {
+      scores: applyAnomalyNormalization(deducted.discounted, graph.anomalyNormalization),
+      audit: { share: deducted.share, gate: this.options.topoDiscountGate },
+    };
   }
 
   /**
@@ -2238,6 +2255,7 @@ function performTreeRCA(
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
   dualFamilyServices?: ReadonlySet<ServiceId>,
+  topoAudit?: TopoDeductionAudit,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -2826,6 +2844,22 @@ function performTreeRCA(
         { metric: 'rca_score', value: node.score, threshold: 0.1 },
         ...(cResult
           ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }]
+          : []),
+        // The deduction's own decision about THIS candidate, when the deduction ran at all. It is an
+        // evidence row rather than a score term because it is not part of `finalScore` — it is the reading
+        // that explains why the anomaly above moved — and `threshold` is the run's gate, so the row carries
+        // the cut that judged it instead of leaving a reader to look one up in the configuration line.
+        //
+        // Present only for a candidate the operator CONSIDERED: a node the scope never looked at has no
+        // share, and writing 0 would report a configuration fact as a measurement of the corpus.
+        ...(topoAudit !== undefined && topoAudit.share.has(node.serviceId)
+          ? [
+              {
+                metric: 'topo_share',
+                value: topoAudit.share.get(node.serviceId)!,
+                threshold: topoAudit.gate,
+              },
+            ]
           : []),
       ],
       propagationDepth: node.depth,

@@ -1,9 +1,10 @@
 # Micro-Kinetic on RCAEval — Corrected SOTA Calibration (v3.2)
 
 > **Revision history.**
+>
 > - v1 claimed "~1.84× academic SOTA" against a nofire.ai third-party table — **strawman, retracted**.
 > - v2 calibrated against primary LLM-agent sources (RCLAgent 56.67%, GALA 42%) — correct but **incomplete**: it
->   missed the parallel *non-LLM* 2026 frontier.
+>   missed the parallel _non-LLM_ 2026 frontier.
 > - **v3** adds the two methods that matter most: **PRISM** (arXiv:2601.21359, the RCAEval author's own
 >   graph-free method, **68% Top-1**) and **StableRCA** (arXiv:2606.05636, **77% SockShop**), plus the ORCA-bench
 >   production-readiness result. The honest margin is now **~1.16× vs the benchmark author's own SOTA**, not 1.84×.
@@ -23,15 +24,15 @@
 > contributes `+1.298` and **RE1 and RE3 contribute exactly 0.000** — no figure below was adjusted by hand.
 
 > - **v3.3 (2026-10-29)** re-anchors §1 and §2a on run `40792623427` at `ea47db5`, whose nine cells are byte-identical to `3d054ad`: RE1 **85.6 / 92.8 / 83.2**, RE2 **88.9 / 94.4 / 83.3**, RE3 **80.0 / 60.0 / 63.3**, overall **85.44%**. The `78.75%` this document carried was the `80709c2`-era fold and had survived two enrolments; the correction is not cosmetic, because it also **reveals a cell we are behind on**: `arXiv:2610.05009` publishes per-system `AC@1` and its OnlineBoutique is **88.0** against our **85.6** (§0, §0a entry 5).
->
+
 **Metric.** All figures are service-level **AC@1 / Recall@1 / Top-1** (top-1 localization of the root-cause
-*service/component*), the RCAEval protocol. Where a method reports a *different* metric or subset, that is stated
+_service/component_), the RCAEval protocol. Where a method reports a _different_ metric or subset, that is stated
 explicitly — cross-metric comparison is the single largest source of false "SOTA" claims in this field.
 
 **And the benchmark's own published table is NOT in this metric.** Verified against the framework's repository
-(2026-10-09): its reproduction script prints **`Avg@5`** per fault type with an `AVERAGE` column — *"BARO
+(2026-10-09): its reproduction script prints **`Avg@5`** per fault type with an `AVERAGE` column — _"BARO
 achieves Avg@5 of 0.72, 0.99, 1, 0.83, 0.64, and 0.8 for CPU, MEM, DISK, SOCKET, DELAY, LOSS, and AVERAGE on the
-Train Ticket dataset"* — and **TraceRCA's often-quoted "0.77" is an `Average@5`**, not a Top-1. So the framework's
+Train Ticket dataset"_ — and **TraceRCA's often-quoted "0.77" is an `Average@5`**, not a Top-1. So the framework's
 **15 reproducible baselines have no published Top-1 number at all**, and any comparison of our AC@1 against a
 number from its tables would be cross-metric. Two instruments the framework has since added make that comparison
 honest and cheap, and neither is in our harness yet: **`--report-chance`** (prints `Chance@5` and `Lift@5` "so an
@@ -42,16 +43,16 @@ absolute score can be read against the floor a random ranker would reach on the 
 
 ## 0. STANDING — where this project sits, on three published evaluations
 
-| evaluation | metric | ours | best published competitor | margin | basis |
-| --- | --- | --- | --- | --- | --- |
-| **RCAEval, all 735 cases** | service Top-1 | **85.85%** (631/735) | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+17.85 pp, ≈1.26×** | cross-paper (§2a) |
-| **RCAEval, all 735 cases** | service Top-1 | **85.85%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **+6.94 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by one default**; a re-run is owed (§3) |
-| **RCAEval RE2-OB (90 cases)** | AC@1 | **88.9%** (80/90) | RCLAgent **56.67%** (arXiv:2605.14866) | **+32.2 pp** | cross-paper (§2b). `86.7` was the figure before iteration 129 moved the corpus view; the 2.3 pp it cost is the price of the cell below |
-| **RCAEval RE2-TT (90 cases)** | AC@1 | **83.3%** (75/90) | GALA+ **73.3%** | **+10.0 pp** | cross-paper, **the same 90-case TrainTicket population** — and the **first time this cell has been ahead**: 71.1 before iteration 129, moved by the corpus view (`40128592846`) |
-| **FSE'26 RCABench** | Top@1 | **56.12%** (798/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+19.1 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
-| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 85.6%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +7.6 pp** | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b) |
-| **RCAEval RE1 (375 cases)** | service Top-1 | **87.20%** (327/375) | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)** | **+1.80 / +4.40 pp** | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5). Re-anchored 2026-10-29 on run `40792623427` at `ea47db5`: the cell has been 327 since iteration 127 and the row's `313` was one run stale. **But the OVERALL figure was hiding a per-system deficit** — the same paper's Table 5 reports `AC@1` per system and we are BEHIND on OnlineBoutique; the row beneath this one is that cell |
-| **RCAEval RE1-OB (125 cases)** | service Top-1 | **85.6%** (107/125) | `arXiv:2610.05009` **88.0%** (`L2+L3` / `L1+L2+L3`) and **86.4%** (`L0`) | **−2.4 / −0.8 pp — THE ONE CELL WHERE A PUBLISHED REFERENCE IS ABOVE US ON OUR OWN POPULATION** | cross-paper, the same 125 cases; read 2026-10-29 from that paper's per-system Table 5 (§0a entry 5). Three cases of 125. Named rather than averaged away: every earlier reading of this reference compared OVERALL figures, where we lead by 1.80 pp |
+| evaluation                              | metric        | ours                  | best published competitor                                                | margin                                                                                                                                                                                                                                                                                                         | basis                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------- | ------------- | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **RCAEval, all 735 cases**              | service Top-1 | **85.85%** (631/735)  | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method)     | **+17.85 pp, ≈1.26×**                                                                                                                                                                                                                                                                                          | cross-paper (§2a)                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **RCAEval, all 735 cases**              | service Top-1 | **85.85%**            | PRISM **78.91%** — _our own reimplementation, identical harness_         | **+6.94 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by one default**; a re-run is owed (§3)                                                                                                                                                                                                                                                                                                                                                                             |
+| **RCAEval RE2-OB (90 cases)**           | AC@1          | **88.9%** (80/90)     | RCLAgent **56.67%** (arXiv:2605.14866)                                   | **+32.2 pp**                                                                                                                                                                                                                                                                                                   | cross-paper (§2b). `86.7` was the figure before iteration 129 moved the corpus view; the 2.3 pp it cost is the price of the cell below                                                                                                                                                                                                                                                                                                      |
+| **RCAEval RE2-TT (90 cases)**           | AC@1          | **83.3%** (75/90)     | GALA+ **73.3%**                                                          | **+10.0 pp**                                                                                                                                                                                                                                                                                                   | cross-paper, **the same 90-case TrainTicket population** — and the **first time this cell has been ahead**: 71.1 before iteration 129, moved by the corpus view (`40128592846`)                                                                                                                                                                                                                                                             |
+| **FSE'26 RCABench**                     | Top@1         | **56.12%** (798/1422) | field avg **21%**, best **37%** (arXiv:2510.04711)                       | **+19.1 pp over the best**                                                                                                                                                                                                                                                                                     | cross-paper, and the benchmark is a _different_ fault set — see the caveat below                                                                                                                                                                                                                                                                                                                                                            |
+| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 85.6%**     | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771)                               | **+3.8 / +7.6 pp**                                                                                                                                                                                                                                                                                             | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b)                                                                                                                                                                                                                                                                                                               |
+| **RCAEval RE1 (375 cases)**             | service Top-1 | **87.20%** (327/375)  | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)**                       | **+1.80 / +4.40 pp**                                                                                                                                                                                                                                                                                           | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5). Re-anchored 2026-10-29 on run `40792623427` at `ea47db5`: the cell has been 327 since iteration 127 and the row's `313` was one run stale. **But the OVERALL figure was hiding a per-system deficit** — the same paper's Table 5 reports `AC@1` per system and we are BEHIND on OnlineBoutique; the row beneath this one is that cell |
+| **RCAEval RE1-OB (125 cases)**          | service Top-1 | **85.6%** (107/125)   | `arXiv:2610.05009` **88.0%** (`L2+L3` / `L1+L2+L3`) and **86.4%** (`L0`) | **−2.4 / −0.8 pp — THE ONE CELL WHERE A PUBLISHED REFERENCE IS ABOVE US ON OUR OWN POPULATION**                                                                                                                                                                                                                | cross-paper, the same 125 cases; read 2026-10-29 from that paper's per-system Table 5 (§0a entry 5). Three cases of 125. Named rather than averaged away: every earlier reading of this reference compared OVERALL figures, where we lead by 1.80 pp                                                                                                                                                                                        |
 
 **Ranking: first on RCAEval's 735 overall, first on FSE'26, first on RE2-OnlineBoutique, first on RE2-TrainTicket,
 first on RE1 overall and first on RE1-SockShop and RE1-TrainTicket — and SECOND on one cell, RE1-OnlineBoutique,
@@ -90,14 +91,14 @@ is above us or beside us on some figure, and **none** is comparable to a service
 
 **Which population each one reports on is owned by `docs/sota-populations.md`, and this section no longer restates
 it.** That is iteration 101's repair, and the fifth entry is what forced it: for three iterations it was filed as
-*"CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED"* while its number sat in the standing table and in
+_"CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED"_ while its number sat in the standing table and in
 `SOTA_LANDSCAPE_VERIFICATION.md` §1.16, and the two artefacts that settle a population — the paper's own full text
 and its own project page — were never read, because two searches had reached its **abstract** and the population
 is in neither the abstract nor any index of it. **A shape match is not a population**: `375 = 3 × 125` was RE1's
 signature and the metric was `top-1` rather than `Avg@5`, and that is the strongest thing a case COUNT and a
 metric NAME can establish between them. The reading is done now and the entry says what it found.
 
-**And the entry the 2026-10-13 note called *"the seventh"* is not an item of this list at all — it is
+**And the entry the 2026-10-13 note called _"the seventh"_ is not an item of this list at all — it is
 `arXiv:2608.08968` (GALA+, ASE'26), which §2b-ii owns.** It was described here by an ORDINAL rather than by its
 own name, and an ordinal is a count by another spelling — the heading's count disagreed with the list, and both
 disagreed with two later sections. The ordinal is replaced by the reference, and the list is now the only place
@@ -128,21 +129,21 @@ rather than another member of this one.
    pipeline (multi-signal retrieval, then an LLM reranker with optional domain knowledge) matching or beating
    **the framework's 15 baselines** by up to **+12 pp top@1** with no causal graph and no labelled data, and by
    **+7 to +18 pp** when the true cause is guaranteed in the pool and a system-description document is supplied.
-   **Its baseline cohort is the framework's 15, not this engine** — so `arXiv:2609.36686` is above us on *a*
-   top-1 and comparable to *none* of ours. **NOT OUR POPULATION** — it reports on RCAEval *and* on WADI / SWaT /
+   **Its baseline cohort is the framework's 15, not this engine** — so `arXiv:2609.36686` is above us on _a_
+   top-1 and comparable to _none_ of ours. **NOT OUR POPULATION** — it reports on RCAEval _and_ on WADI / SWaT /
    HVAC, and the `+12 pp` it is most quoted for is a **CPS** margin; what is comparable is the decomposition, not
    a gap. The row is in `docs/sota-populations.md`. **And its headline margin is not on our benchmark family at all**: the survey of 2026-10-12
    reached the paper's own data description, which audits **RCAEval** (microservices) alongside **WADI / SWaT /
-   HVAC** (cyber-physical systems) and states that retrieval is *"nearly solved"* in microservices while the
-   *"retrieval ceiling"* in the CPS systems caps a magnitude-only retriever at **35–64%** — so the `+12 pp` it is
+   HVAC** (cyber-physical systems) and states that retrieval is _"nearly solved"_ in microservices while the
+   _"retrieval ceiling"_ in the CPS systems caps a magnitude-only retriever at **35–64%** — so the `+12 pp` it is
    most quoted for is a **CPS** margin, and its RCAEval contribution is the decomposition, not a gap over us. **Two things verified 2026-10-10 that sharpen it in opposite directions, and a third that closes the plan this
    entry used to imply.** Its own abstract says the code is available at `github.com/cruiseresearchgroup/DecompRCA`, and **that URL does not resolve** — GitHub returns 404 for it and a repository search returns nothing — so this deficit cannot be closed by running it (`docs/competitor-artefact-availability.md`). And an
    **independent review** of the paper records that the abstract's `+12`-point margins sit on **14 / 36 / 48
    scenarios with error bars from `n=3` run-to-run spread rather than scenario-level intervals** — WADI's +12 pp
-   is about **1.7 scenarios** — so the headline margin is fragile where the *decomposition* is not.
+   is about **1.7 scenarios** — so the headline margin is fragile where the _decomposition_ is not.
    **And it supplies the instrument this repository then built**: `Retrieval@K` against `Rerank@1`, i.e. the
    decomposition of a top-1 miss into "the cause was never retrieved" and "it was retrieved and ranked too low".
-   Its claim that microservice retrieval is *"nearly solved at 98–100%"* is now **reproduced on our corpus by our
+   Its claim that microservice retrieval is _"nearly solved at 98–100%"_ is now **reproduced on our corpus by our
    own census**: the truth is in the ranked pool on **99.73% / 99.63% / 100.00%** of RE1 / RE2 / RE3, and our
    loss is **98.8% reranking** (`docs/loss-decomposition.md` §4).
 5. **`Rethinking Tool Design for Agentic RCA: A Controlled Empirical Study`** (`arXiv:2610.05009`, Yu Luo,
@@ -151,9 +152,9 @@ rather than another member of this one.
    `L0` no-predefined-tools reference and **82.8%** for its `L3` diagnostic-tool layer, over **375 failure cases
    from three microservice systems** with `Qwen3.7-Plus`, and a further four-model comparison on a shared subset.
 
-   **ITS POPULATION IS RESOLVED AS OF 2026-10-14, AND IT IS OURS.** The paper's own full text evaluates *"the
-   three RCAEval diagnostic environments"* and its own project page —
-   `luoyu100.github.io/projects/toolrca/project` — names *"RCAEval RE1 failure cases (375)"*. So `375 = 3 × 125`
+   **ITS POPULATION IS RESOLVED AS OF 2026-10-14, AND IT IS OURS.** The paper's own full text evaluates _"the
+   three RCAEval diagnostic environments"_ and its own project page —
+   `luoyu100.github.io/projects/toolrca/project` — names _"RCAEval RE1 failure cases (375)"_. So `375 = 3 × 125`
    is RCAEval's **RE1** (OnlineBoutique, SockShop, TrainTicket), the metric is service `top-1`, and
    **`arXiv:2610.05009` is the first reference to exceed our RE1 80.27% on a population we can name — by 5.13pp
    at `L0` (85.4 against 80.27) and by 2.53pp at `L3` (82.8 against 80.27).** The gap is quoted here rather than
@@ -169,8 +170,8 @@ rather than another member of this one.
    engine over the same case set.
 
    **What the resolution cost, and the law it produced.** Two earlier passes searched this paper and reported
-   *"the same abstract"*, and a third-party reading recorded that its numbers are *"on NAMED benchmarks"* with the
-   population *"nameable from the body"* — so the record wrote down that the answer was one read away and did not
+   _"the same abstract"_, and a third-party reading recorded that its numbers are _"on NAMED benchmarks"_ with the
+   population _"nameable from the body"_ — so the record wrote down that the answer was one read away and did not
    take the read. The register's law 10 says **a paper's own artefact statement is the authority on whether its
    artefact is public**; the corollary carried here is the same one iteration 99 found for artefacts, one surface
    over, and it is now a law: **the artefact that states a paper's population is its own full text or its own
@@ -186,8 +187,8 @@ rather than another member of this one.
 
    **What makes it worth naming beyond the number**: its central finding is that **higher-level diagnostic tools
    REDUCE localization accuracy** (L3 82.8% against L0 85.4%) while improving fault-type identification and
-   halving the time. That is an **independent corroboration of this repository's own ledger pattern** — *every
-   tool wired as a SCORE measures negative; every credited gain is STRUCTURAL* — arriving from a group with no
+   halving the time. That is an **independent corroboration of this repository's own ledger pattern** — _every
+   tool wired as a SCORE measures negative; every credited gain is STRUCTURAL_ — arriving from a group with no
    connection to us, on the same benchmark family. **Two independent measurements of "more machinery, lower
    top-1" is the strongest evidence either has.**
 
@@ -195,11 +196,11 @@ rather than another member of this one.
    reading assumed.** The paper publishes `AC@1` per system, not only overall, and the three cells are three
    different stories:
 
-   | system | its `L0` | its best configuration | ours (RE1, run `40792623427`) | margin |
-   | --- | ---: | ---: | ---: | --- |
-   | OnlineBoutique | 86.4 | **88.0** (`L2+L3`, `L1+L2+L3`) | **85.6** (107/125) | **−0.8 against `L0`, −2.4 against its best** |
-   | SockShop | **90.9** | 90.9 (`L0`) | **92.8** (116/125) | **+1.9** |
-   | TrainTicket | 78.9 | 79.2 (`L1+L3`) | **83.2** (104/125) | **+4.0** |
+   | system         | its `L0` |         its best configuration | ours (RE1, run `40792623427`) | margin                                       |
+   | -------------- | -------: | -----------------------------: | ----------------------------: | -------------------------------------------- |
+   | OnlineBoutique |     86.4 | **88.0** (`L2+L3`, `L1+L2+L3`) |            **85.6** (107/125) | **−0.8 against `L0`, −2.4 against its best** |
+   | SockShop       | **90.9** |                    90.9 (`L0`) |            **92.8** (116/125) | **+1.9**                                     |
+   | TrainTicket    |     78.9 |                 79.2 (`L1+L3`) |            **83.2** (104/125) | **+4.0**                                     |
 
    Three consequences. (i) **RE1-OnlineBoutique is the one cell where a published reference is above us on a
    population we can name**, and it has been invisible because every prior reading of this reference compared the
@@ -216,29 +217,29 @@ rather than another member of this one.
    **v3.3**, and the RE1-OnlineBoutique row is added because a standing that averages three systems cannot state
    which one it loses on.
 
-6. **E4** — *Agentic RCA for Internet-Scale Services Using Constrained Creativity* (**`arXiv:2610.08622`**,
+6. **E4** — _Agentic RCA for Internet-Scale Services Using Constrained Creativity_ (**`arXiv:2610.08622`**,
    submitted 2026-10-09). An agentic troubleshooter that emits **loop-free data-flow programs in a restricted,
    high-level DSL** rather than free-form code, and reports **"up to 62% better accuracy compared to
-   state-of-the-art solutions"** on *"a mix of synthetic and real-world workloads"*, with **up to 12× reduced
+   state-of-the-art solutions"** on _"a mix of synthetic and real-world workloads"_, with **up to 12× reduced
    cost**.
 
    **It is named and no gap is quoted, because the claim has no denominator.** **NOT OUR POPULATION**, resolved
-   2026-10-19 from the paper's own abstract — *"on a mix of synthetic and real-world workloads, E4 achieves up to
-   62% better accuracy compared to state-of-the-art solutions"*: no benchmark, no case set, and a **RELATIVE** gain
+   2026-10-19 from the paper's own abstract — _"on a mix of synthetic and real-world workloads, E4 achieves up to
+   62% better accuracy compared to state-of-the-art solutions"_: no benchmark, no case set, and a **RELATIVE** gain
    against an unnamed baseline. So the `62%` is not a percentage of anything we can count, not a top-1, and not on a
    population we can name (`docs/sota-populations.md`). It is nameable for the same reason the fifth entry was
-   until 2026-10-14: it is *above us by the authors' own claim* and silent about what it is above. **Its design
+   until 2026-10-14: it is _above us by the authors' own claim_ and silent about what it is above. **Its design
    point is the one worth borrowing, twice over**: restricting an agent to a **verifiable operator language instead
    of arbitrary code** is the same instinct as this repository's preference for an instrument that is a pure
-   function; it is the second independent arrival at *"more expressive machinery, lower accuracy"* on this list;
+   function; it is the second independent arrival at _"more expressive machinery, lower accuracy"_ on this list;
    and — with `RCLAgent`'s per-span argument — it is a **third** independent reason to build the per-case
    discriminator over a bounded, checkable vocabulary, which is the register's last open axis.
 
 **AND, FOUND 2026-10-30, ONE THAT IS POPULATION UNVERIFIED FOR THE MIRROR-IMAGE REASON — it matches us on
 every field a number can be filed by, and still cannot be filed: 94.7% Top-1 on "the RCAEval benchmark (735 failure
 cases, 12-64 services)"** — S. Hussain and H. C. Panjwani,
-*Decentralized Root Cause Analysis for Cloud-Native Microservices — Experience with Distributed PageRank in
-Production*, **DSN-S 2026**, pp. 50–56, DOI `10.1109/DSN-S70715.2026.00023`. The method is gossip-based
+_Decentralized Root Cause Analysis for Cloud-Native Microservices — Experience with Distributed PageRank in
+Production_, **DSN-S 2026**, pp. 50–56, DOI `10.1109/DSN-S70715.2026.00023`. The method is gossip-based
 **distributed Personalized PageRank**, one sidecar agent per service, and the reported standing is **94.7%
 Top-1, "statistically indistinguishable from centralized PageRank at 94.1%"**.
 
@@ -272,8 +273,8 @@ statement rather than a cross-paper one.** Three things had to line up, and they
 
 1. **The metric.** It reports **top-1 accuracy** — not `Avg@5`, which is what every other above-us reference
    reports and the reason none of them could be compared to a service Top-1.
-2. **The population.** Its README states *"Sock Shop and Online Boutique have the same five faults (CPU, memory,
-   disk, delay, packet loss), each injected five times into five services: **125 cases per dataset**."* That is
+2. **The population.** Its README states _"Sock Shop and Online Boutique have the same five faults (CPU, memory,
+   disk, delay, packet loss), each injected five times into five services: **125 cases per dataset**."_ That is
    RCAEval's own RE1-OB and RE1-SS, verified against the benchmark's published table (`RE1-OB 125`, fault types
    `cpu, mem, disk, delay, loss`). Same systems, same faults, same 125 cases each — not a similar corpus, the
    same one.
@@ -281,8 +282,8 @@ statement rather than a cross-paper one.** Three things had to line up, and they
    **0.78** (strongest baseline 0.71). Against our **92.8%** and **80.0%** that is **+3.8 pp** and **+2.0 pp**,
    and it is the strongest second-place method that exists on those two cells.
 
-**And its own README records an ablation that matters more than its number.** It states: *"A plain sink graph,
-with the shared latent removed, picks the same top-1 service on all 125 cases of each dataset."* The paper's
+**And its own README records an ablation that matters more than its number.** It states: _"A plain sink graph,
+with the shared latent removed, picks the same top-1 service on all 125 cases of each dataset."_ The paper's
 central contribution is handling **unobserved confounders** through a deep causal model — and on the microservice
 data, removing the shared latent and collapsing the graph to a sink changes **nothing**. That is the same
 finding this repository's ledger records about its own terms (**a tool wired as a score measures negative; the
@@ -311,17 +312,17 @@ scenario scripts, the answer keys and the scoring code under MIT, so this is a c
      **90 cases**, which is RCAEval RE2's own signature (`6 fault types × 15`) on exactly the two systems
      `§2b` already compares. The paper names both systems.
    - **The case-level identity does not follow.** Nothing in the abstract or the numbers establishes that its 90
-     TrainTicket cases are *the same* 90 as ours, and this document's head-to-head standard is the *identical
-     corpus* (`§0a`'s own `78.91 vs 78.75` over the 735). So the deficit below is a **named risk, not a
+     TrainTicket cases are _the same_ 90 as ours, and this document's head-to-head standard is the _identical
+     corpus_ (`§0a`'s own `78.91 vs 78.75` over the 735). So the deficit below is a **named risk, not a
      measurement**.
    - **And it is above us on that cell.** `73.33% (66/90)` against our published `71.1% (64/90)` is **−2.2 pp**,
      and it is the **first published competitor number on any TrainTicket cell in this document** — `§2b` is
-     titled *"where all LLM agents report"* and carried only OnlineBoutique, which made the absence of a TT row
+     titled _"where all LLM agents report"_ and carried only OnlineBoutique, which made the absence of a TT row
      read as an absence of a TT number. That reading was wrong.
 
    **What follows, and what does not.** No gap is claimed either way until two things happen: **confirm the case
    set from the paper's own dataset section, and find an artefact that carries the method** — the only GALA
-   artefact is `github.com/EvanTian233/GALA-for-RCA`, and its README withholds the implementation — so this entry is a motivation for the standing reproducible-baseline item rather than a plan inside it. What *is* claimable, because it needs
+   artefact is `github.com/EvanTian233/GALA-for-RCA`, and its README withholds the implementation — so this entry is a motivation for the standing reproducible-baseline item rather than a plan inside it. What _is_ claimable, because it needs
    no case-level identity: the published `AC@1` of the strongest external number on the `§2b` slice moves from
    RCLAgent's `56.67%` to **`74.44%`**, so our lead there is **`+12.2 pp` against `74.44%`, not `+30.0 pp`
    against `56.67%`** — and the `GALA 42.22%` row in `§2b` is the **prior** paper (`arXiv:2508.12472`) and must
@@ -330,11 +331,10 @@ scenario scripts, the answer keys and the scoring code under MIT, so this is a c
    **Why it is not in `§0b`.** `§0b` admits exactly one reference — RCA-DCM — and its admission test is that the
    population is **verified from the source's own text**, not inferred from a count. GALA+ clears the metric and
    the size and not the case set, so it sits here with the number recorded and the comparison **not runnable**:
-`github.com/EvanTian233/GALA-for-RCA` resolves and is MIT, and its README withholds the implementation under its
-industrial partner's agreement.
+   `github.com/EvanTian233/GALA-for-RCA` resolves and is MIT, and its README withholds the implementation under its
+   industrial partner's agreement.
    **§2b-ii carries the full treatment**, including the third-party referee reading that disputes the metric's
    interpretation and the one part of the method that is worth borrowing.
-
 
 ### 0c. A NEW PUBLIC BENCHMARK — small, vendor-authored, and REPRODUCIBLE
 
@@ -345,10 +345,10 @@ as open source** (`edgedelta/project-arena`).
 
 **It is recorded here for three reasons and excluded from our numbers for two.** Recorded: it is **public and
 reproducible**, which the vendor's own 89% is not; it is a **second** independently published instrument for this
-problem, which matters because the repository's largest unexecuted comparison is *running someone else's harness*;
+problem, which matters because the repository's largest unexecuted comparison is _running someone else's harness_;
 and its headline result — **11 of 12** shared scenarios localized correctly by the vendor against **9 of 12** by
 the comparator — is **vendor-authored with the vendor competing**, which is exactly the population caveat §0a
-applies to a *number*.
+applies to a _number_.
 
 Excluded: **21 scenarios is not a population we can compare a 68-service Top-1 to** (our smallest cell is 90 and
 the corpus is 735), and its unit is a **whole incident report scored by a model**, not a service ranked first. It
@@ -357,35 +357,35 @@ cannot be said of this repository's own standing.
 
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 
-**OpsHarness**, *From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis*
+**OpsHarness**, _From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis_
 (**`arXiv:2608.25661`**, Huang et al.; surfaced 2026-08-26 on HF Daily Papers; found by this iteration's survey
 on 2026-10-12). **59.0% top-1 accuracy**, reported as **+63.4%** over a bare general agent and **4.02×** over
-baseline RCA agents, *"across two public benchmarks and an industrial deployment"*.
+baseline RCA agents, _"across two public benchmarks and an industrial deployment"_.
 
 **It is filed here, and not in either list above, because it is the first reference this document cannot place on
 EITHER side of our own number.** A 59.0% is **below** our 78.75%, so §0a's contract ("a number we cannot beat must
-be named") does not reach it. But it is not §0b's kind either — §0b is *below us **and comparable***, which
+be named") does not reach it. But it is not §0b's kind either — §0b is _below us **and comparable**_, which
 requires a metric and a population, and this one names **three populations in one sentence** and **no
 per-population figure**: the two benchmarks are now READ from its own text — **OpenRCA and RCAEval** — plus an
 industrial deployment nobody else can run, and the 59.0% is an average **across four backbones**. So **one of the
 three populations is ours and the figure is still not**: 59.0% against our 78.75% would be a cross-population
 comparison of exactly the kind §0a exists to prevent, and the direction of the error is not knowable from an
-average over four models. **The 2026-10-14 pass replaced this entry's own sentence** — *"two benchmarks it does not
-name … one of the two unnamed benchmarks could be RCAEval"* — with the names and the fact, which is a correction
+average over four models. **The 2026-10-14 pass replaced this entry's own sentence** — _"two benchmarks it does not
+name … one of the two unnamed benchmarks could be RCAEval"_ — with the names and the fact, which is a correction
 of our prose rather than of theirs, and `docs/sota-populations.md` now carries the row.
 
 **So no gap is quoted in either direction, and the standing is unchanged.** What is recorded is the **technique**,
 because it is the most directly borrowable thing on this list:
 
-> *"During evolution, OpsHarness contrasts successful and failed trajectories, converts their evidence into atomic
+> _"During evolution, OpsHarness contrasts successful and failed trajectories, converts their evidence into atomic
 > proposals, and admits updates only through a dual-gate verification process designed to prevent overfitting and
-> regression."*
+> regression."_
 
 That is **the shape of this repository's own kill criterion** — a change is admitted only if it moves the target
 AND regresses nothing (`RCAEval golden 9-cell byte-identical` **and** `FSE'26 zero regressed fault types`) —
 arrived at independently, by a group with no connection to us, and reported as the mechanism that makes
-accumulating experience *safe* rather than as a filter bolted on afterwards. Two independent arrivals at one gate
-is the strongest evidence either has, exactly as §0a's fifth entry is for *"more machinery, lower top-1"*.
+accumulating experience _safe_ rather than as a filter bolted on afterwards. Two independent arrivals at one gate
+is the strongest evidence either has, exactly as §0a's fifth entry is for _"more machinery, lower top-1"_.
 
 The paper's other claim is the one worth acting on: it finds that a **general-purpose agent now often beats a
 purpose-built RCA agent**, so the remaining gap lives in the **harness** rather than the model. This repository's
@@ -398,7 +398,7 @@ criterion already is.
 **A "new" reference that is already on the list is an inventory failure, not a discovery.** The 2026-10-12 survey
 reached the paper in §0a entry 4 — the NeurIPS 2026 Evaluations & Datasets decomposition — a **second time**, from a
 press summary that carries neither its **arXiv identifier**, nor its authors (**Luan Pham** among them, the author
-of RCAEval *and* of PRISM), nor that its own statement points at a code URL — `github.com/cruiseresearchgroup/DecompRCA`
+of RCAEval _and_ of PRISM), nor that its own statement points at a code URL — `github.com/cruiseresearchgroup/DecompRCA`
 — which **does not resolve**. All
 three were already in entry 4, which is the entry that calls it "the most dangerous of the four" for exactly those
 reasons. The same survey also re-opened the **RE1 column-schema allegation as "owed"**, which entry 3 records as
@@ -412,15 +412,15 @@ group as `arXiv:2510.04711`, the FSE'26 propagation benchmark this repository le
 carrying **step-wise causal** annotations, the first cross-system RCA benchmark of that shape. Across **11 frontier
 LLMs**: recovering the exact root-cause set succeeds on **20.7%** of cases on average; relaxed, an agent identifies
 at least one correct root-cause service in **76.0%** of cases but grounds that service in a **verified propagation
-path** in only **61.5%** — the failure they name *"ungrounded diagnosis"*.
+path** in only **61.5%** — the failure they name _"ungrounded diagnosis"_.
 
 **That is this repository's loss decomposition, measured by another instrument on another population.** Our census
 reads **96.6% of the deep misses as having had local evidence** — ORDERING ALONE, with the truth inside the ranked
 pool on **99.73 / 99.63 / 100.00%** of the three suites — and `PAVE`'s 76.0% against 61.5% is that same gap stated
-as *"found the service, did not place it"*. **No gap is quoted from it**: its metric is exact-set recovery over a
+as _"found the service, did not place it"_. **No gap is quoted from it**: its metric is exact-set recovery over a
 step-wise annotation, its population is 500 instances of a corpus that is not ours, and its 20.7% is **below** our
 78.75% in any case. It is named for what it corroborates, and for a second reason — it is the **third independent
-arrival this month** at *"the failure is in placing the cause, not in finding it"*, alongside §0a entry 4's
+arrival this month** at _"the failure is in placing the cause, not in finding it"_, alongside §0a entry 4's
 decomposition and our own census. Three arrivals from three groups, with three instruments, is the strongest form
 this claim has had.
 
@@ -441,13 +441,13 @@ Both were checked against §0a before being recorded here, and **neither appears
 which is the rule §0e's correction cost: grep the file for a reference BEFORE recording a survey's find as new.
 
 **1. `TA-RCD` — a topology-guided metric-selection method evaluated on the PUBLIC RCAEval benchmark.** D. R.
-Mathews, M. Verma, P. Aggarwal, J. Lakshmi (v1 2025-09-05, **v2 2026-10-09**): *Efficient Fault Localization in a
-Cloud Stack Using End-to-End Application Service Topology.* On RCAEval it claims **metric-level `AC@5` +18% and
+Mathews, M. Verma, P. Aggarwal, J. Lakshmi (v1 2025-09-05, **v2 2026-10-09**): _Efficient Fault Localization in a
+Cloud Stack Using End-to-End Application Service Topology._ On RCAEval it claims **metric-level `AC@5` +18% and
 `Avg@5` +19%** over the strongest baseline, and in a controlled testbed `AC@5` at least 2× and `AC@3` at least 4×
 over standard RCD.
 
 - **It reports no Top-1.** Its metrics are `AC@5` / `AC@3` / `Avg@5` — the framework's own convention rather than
-  ours — so **no gap over us can be read from it**, and it is the *second* reference on this list whose headline is
+  ours — so **no gap over us can be read from it**, and it is the _second_ reference on this list whose headline is
   a Top-5 convention (§0a entry 3 is the first). A Top-5 metric cannot see a reranking defect at all, and this
   repository's loss is **98.8% reranking**, which is why its gains concentrate at `K ≥ 3` and ours cannot.
 - **Its mechanism is the nearest published relative of the register's open discriminator**: a per-case signal
@@ -455,23 +455,23 @@ over standard RCD.
   from the one whose free read closed the latency channel's routing question
   (`latency-channel-views.md` §7.9), and it is the natural place to look next.
 
-**2. `EviRCA` — the two-stage architecture, on OpenRCA, with a large margin.** *arXiv:2609.19825*, *Decoupling
-Evidence Extraction from Reasoning for Microservice Root-Cause Analysis*: on **OpenRCA** (Bank 136 / Telecom 51 /
+**2. `EviRCA` — the two-stage architecture, on OpenRCA, with a large margin.** _arXiv:2609.19825_, _Decoupling
+Evidence Extraction from Reasoning for Microservice Root-Cause Analysis_: on **OpenRCA** (Bank 136 / Telecom 51 /
 Market 148 = **335 cases**) it reports **Correct 43.9% / Partial 56.2%** with `deepseek-v4-pro` (40.6 / 54.4 with
 `qwen3.7-plus`) against **RCA-Agent 13.1 / 20.8** and **Oracle Sampling 14.6 / 22.1**.
 
 - **A different benchmark, a different metric and a different population**, so it is not a gap over us either — but
-  it is a **fourth independent arrival at this repository's architecture** (*stage one puts the evidence on the
-  table, stage two discriminates among distractors* is our retriever plus reranker; *evidence extraction versus
-  reasoning* is our retrieval-versus-reranking split), and it names **GALA** and its `SURE-Score`, which §0a already
+  it is a **fourth independent arrival at this repository's architecture** (_stage one puts the evidence on the
+  table, stage two discriminates among distractors_ is our retriever plus reranker; _evidence extraction versus
+  reasoning_ is our retrieval-versus-reranking split), and it names **GALA** and its `SURE-Score`, which §0a already
   carries — so the two are one lineage rather than two references.
 - **Its stage-two failure mode is the one §7.9 of the latency document has just measured on ourselves**: it reports
-  the correct cause being demoted below *collateral* signals — an elevated co-located neighbour, an earlier
+  the correct cause being demoted below _collateral_ signals — an elevated co-located neighbour, an earlier
   transient, a downstream rule — which is the same victim-versus-source pattern our loss census attributes.
 
 **Neither moves a cell, a rank or a standing**, and §0a's entries are unchanged. The entry that does bear on us
-is methodological and comes from outside this family: a 2026-08 preprint, *There Is No Neutral Harness: Modern LLM
-Leaderboards Are Manufactured by Config-Fragile Items*, measured that **the same weights on the same 3 679 items
+is methodological and comes from outside this family: a 2026-08 preprint, _There Is No Neutral Harness: Modern LLM
+Leaderboards Are Manufactured by Config-Fragile Items_, measured that **the same weights on the same 3 679 items
 score 31% and 89% under two equally defensible evaluation configurations, with 85% of a model's correct answers
 flippable by another one**. That is the general form of the rule this repository already enforces on itself — **an
 artifact must carry the configuration that produced it** — and it is why a cell whose corpus is inferred counts as a
@@ -479,8 +479,8 @@ cell measured under an unnamed rule.
 
 ### 0g. A THIRD PUBLIC BENCHMARK — and the one whose unit is not a ranked service list
 
-**Alibaba Cloud's `RCA Benchmark`**, released open source as *"the industry's first open source root cause analysis
-benchmark system for Agentic Ops"*: an e-commerce microservice architecture on Kubernetes with **40+ business
+**Alibaba Cloud's `RCA Benchmark`**, released open source as _"the industry's first open source root cause analysis
+benchmark system for Agentic Ops"_: an e-commerce microservice architecture on Kubernetes with **40+ business
 services and call chains up to 7 layers deep**, real-simulation rather than synthetic, exposing **seven categories
 of observation data** (metrics, logs, traces, alerts, resource topology, Kubernetes events, profiling).
 
@@ -488,14 +488,14 @@ of observation data** (metrics, logs, traces, alerts, resource topology, Kuberne
 compliance samples** over **40+ failure types in 6 categories**, injected through four channels, gated by a
 four-layer admission check, classified into four difficulty levels (L1–L4, with L2–L3 the stated focus), and
 reserved non-public samples held back to prevent contamination. §0c's Project Arena has 21 scenarios and its own
-author calls it a rubric over one incident report; this one has a corpus. So *"the field has no public benchmark"*
+author calls it a rubric over one incident report; this one has a corpus. So _"the field has no public benchmark"_
 is now unavailable in a second, stronger sense.
 
 **And it cannot be placed on our leaderboard in either direction, because its unit is not our unit.** Its ground
 truth is **four-layered** — failure type, normalized entity, causal propagation chain, key evidence edge zone — and
 its score is a **weighted composite over root-cause identification, boundary demarcation and procedure at 40 / 30 /
-30**, with *"nearly 70% of scores [resting] on deterministic quantization computation based on failure type
-topology semantics distance and entity topology distance"*. That is a **different scoring FRAME**, not a different
+30**, with _"nearly 70% of scores [resting] on deterministic quantization computation based on failure type
+topology semantics distance and entity topology distance"_. That is a **different scoring FRAME**, not a different
 metric of the same quantity: 78.75% Top-1 over a labelled service list and a composite over an
 identification/boundary/procedure triple share no denominator, so no gap can be quoted and the direction of any
 error is unknown. It joins §0d's OpsHarness in the file that exists for exactly this case.
@@ -503,7 +503,7 @@ error is unknown. It joins §0d's OpsHarness in the file that exists for exactly
 **What is worth acting on is its `boundary demarcation` and `causal propagation chain` layers, and they are the
 first external instrument that would reward the thing this repository measures but does not claim.** The `collision`
 term, the trace-topology signal and the loss census's victim-versus-source attribution are all attempts to get the
-*propagation boundary* right; a benchmark that scores it at 30% of the total is the first one where that work has a
+_propagation boundary_ right; a benchmark that scores it at 30% of the total is the first one where that work has a
 published denominator. Recorded as a **candidate instrument** — reproducing it is a separate decision with its own
 cost — and it also names the gap in OUR corpus: RCAEval's label is a **list of acceptable roots** with no
 propagation chain and no evidence-edge zone, so no result published on RCAEval, ours included, can be scored on
@@ -513,13 +513,13 @@ either of those two layers.
 `arXiv:2609.27069` — Buljić's controlled audit of RCAEval, surfaced again by this iteration's survey — is already on
 this repository's record in **§3** of this document, in `docs/benchmark-corpus-completeness.md`, in
 `docs/loss-decomposition.md` §1, and as `scripts/audit_input_schema.py`, which was built from its second finding
-(*"a non-uniform column schema that silently zeroes telemetry for 250 of 375 RE1 cases"*). The survey found it, the
+(_"a non-uniform column schema that silently zeroes telemetry for 250 of 375 RE1 cases"_). The survey found it, the
 grep found it first, and nothing was re-derived. **Standing unchanged.**
 
 ### 0h. An INDUSTRY architecture with no number — and the one mechanism it names that this repository has already measured against
 
-**Atlassian's automated RCA framework**, published through the **CNCF** as *"Automating root cause analysis at
-scale: multi-signal correlation for cloud-native incident response"* (2026-08-24). Not on this repository's
+**Atlassian's automated RCA framework**, published through the **CNCF** as _"Automating root cause analysis at
+scale: multi-signal correlation for cloud-native incident response"_ (2026-08-24). Not on this repository's
 record until now, and it is filed as a **third class of reference**: neither a competitor with a number nor a
 benchmark, but a **published production architecture** whose design choices are nameable and checkable against
 ours.
@@ -528,12 +528,12 @@ ours.
 report is a pipeline:
 
 1. **Scope the search by topology** — an OpenTelemetry-derived service map, built from span parent/child
-   relationships, restricts the incident to the call-path subgraph (hundreds of services → tens). *Our
-   equivalent is the fault graph's own node set, and it is why the pool size is a per-case quantity.*
+   relationships, restricts the incident to the call-path subgraph (hundreds of services → tens). _Our
+   equivalent is the fault graph's own node set, and it is why the pool size is a per-case quantity._
 2. **Detect per signal, then NORMALISE.** Metrics (RED: rate/error/duration) via MAD and percentile bands;
    traces via structural anomalies (unexpected exceptions, novel propagation patterns, span latency spikes);
-   logs via **embedding-based clustering** for novel error clusters. Then *"each detector emits the same event
-   schema, so the correlation engine can reason across signals without caring which detector produced them."*
+   logs via **embedding-based clustering** for novel error clusters. Then _"each detector emits the same event
+   schema, so the correlation engine can reason across signals without caring which detector produced them."_
    **This is the step this repository's register shows is where the ranking is lost.** Our 159 reranking misses
    are decided by terms whose contributions are in different UNITS — `selfAnomalyLog1p` on a rank grid of
    `0.0083` steps at 68 nodes, against `trace`/`log` contributing exactly `{0, 1}`. A normalised event schema is
@@ -541,13 +541,13 @@ report is a pipeline:
    actionable for us rather than merely comparable.
 3. **Temporal correlation** — a sliding window (typically ±5 min) with an **exponential-decay temporal cohesion
    score**, so tightly clustered anomalies outrank dispersed ones, plus **sequence fingerprinting** to collapse
-   repeated failure chains into one bundle with a replay count. *Our `temporal` term is this idea at weight `0`,
+   repeated failure chains into one bundle with a replay count. _Our `temporal` term is this idea at weight `0`,
    and `docs/fse26-onset-verdict.md` closed every onset shape with **no admissible weight on either shape** —
-   so the temporal axis is not a gap in our implementation but a measured non-lever on our corpus.*
+   so the temporal axis is not a gap in our implementation but a measured non-lever on our corpus._
 4. **Direction by graph traversal** — start at the **sink node** (highest anomaly severity) and walk UPSTREAM
    with bounded BFS, scoring each candidate path by anomaly severity, dependency strength and **temporal
-   distance from the sink**; *"if Service A depends on Service B, and B's anomaly appears earlier in time, B is
-   more likely to be the origin."* **This is the mechanism our record refutes on this benchmark family, and it
+   distance from the sink**; _"if Service A depends on Service B, and B's anomaly appears earlier in time, B is
+   more likely to be the origin."_ **This is the mechanism our record refutes on this benchmark family, and it
    was refuted by measurement rather than taste**: `docs/fse26-separator-verdict.md` pairs the two populations
    and finds the graph's direction **separates per population and REVERSES between them** — source → winner in
    49 of 65 decisive replace-code pairs (AUC 0.732, stable in all five folds) against winner → source in 8–32
@@ -560,14 +560,14 @@ foundation-published statement of the same pipeline shape** this repository impl
 out loud what our own artifacts measure: that the hard part is not detection but **making heterogeneous signals
 comparable** — a point it makes by normalising, and we make by measuring that our terms' scales differ by two
 orders of magnitude. And its **source is not a paper**: it is a CNCF post with no code, no dataset and no
-accuracy, so it joins §0c's Project Arena and §0g's Alibaba benchmark in the file's *"publicly stated, not
-reproducible as a number"* class rather than in any table.
+accuracy, so it joins §0c's Project Arena and §0g's Alibaba benchmark in the file's _"publicly stated, not
+reproducible as a number"_ class rather than in any table.
 
 ### 0i. Two 2026 arrivals on our OWN family that the 2026-10-28 survey added — one with a number, one with a theorem
 
 **1. `TORAI` — `Proc. ACM Softw. Eng. 3, FSE, Article FSE130` (July 2026), DOI `10.1145/3808137`,
-`arXiv:2604.13522`.** Pham, Ha, Xiuzhen Zhang (RMIT) and Hongyu Zhang (Chongqing). *Multi-source Root Cause
-Analysis for Blind Spots in Microservice Service Call Graph.* Read from the ACM record and the arXiv PDF on
+`arXiv:2604.13522`.** Pham, Ha, Xiuzhen Zhang (RMIT) and Hongyu Zhang (Chongqing). _Multi-source Root Cause
+Analysis for Blind Spots in Microservice Service Call Graph._ Read from the ACM record and the arXiv PDF on
 2026-10-28; artifact `figshare 10.6084/m9.figshare.31938495.v1`.
 
 - **The claim is an `Avg@5` and it must be read as one**: **Train-Ticket `Avg@5` 0.89** against `CausalRCA`
@@ -578,19 +578,19 @@ Analysis for Blind Spots in Microservice Service Call Graph.* Read from the ACM 
 - **Its mechanism is the one our register has been circling from the other side.** The pipeline is
   `SeverityScorer` → **GMM clustering of services by severity symptom** → **localised `Ψ-PC` causal discovery
   inside each cluster** → rank aggregation → median/IQR hypothesis testing. The stated reason for the clustering
-  step is *"clustering prevents causal dilution: running causal discovery on thousands of metrics degrades
-  performance"*. **That is our `GT rank = 33 of 68` problem named by someone else**: a lever that must move one
+  step is _"clustering prevents causal dilution: running causal discovery on thousands of metrics degrades
+  performance"_. **That is our `GT rank = 33 of 68` problem named by someone else**: a lever that must move one
   candidate 32 places without moving the 32 above it is a lever fighting a global ranking, and every re-weighting
   this repository tried on RE3-TrainTicket failed for exactly that reason.
 - **One design choice of theirs is the inverse of ours and worth recording as such**: a missing modality
-  **imputes a score of 0**. Our censuses treat absent as *absent* and refuse to fold it into zero
+  **imputes a score of 0**. Our censuses treat absent as _absent_ and refuse to fold it into zero
   (`trace-riser.md` §3 is the latest statement). Their choice is safe where ours would not be, because they
   cluster rather than rank globally — a zero inside a cluster of noisy services does not have to be
-  distinguishable from a measurement. Reading the two side by side is the argument for *where* an imputation is
+  distinguishable from a measurement. Reading the two side by side is the argument for _where_ an imputation is
   admissible.
 
-**2. `BRCD` — `ICML 2026` Spotlight, poster 65359.** *Root Cause Analysis of Failures in Microservices via
-Bayesian Root Cause Discovery.* **Read from a SECONDARY summary on 2026-10-28, not from the poster or a
+**2. `BRCD` — `ICML 2026` Spotlight, poster 65359.** _Root Cause Analysis of Failures in Microservices via
+Bayesian Root Cause Discovery._ **Read from a SECONDARY summary on 2026-10-28, not from the poster or a
 preprint** — the primary has not been fetched, and this entry is written to say so rather than to be quoted. As
 summarised: it drops the full-causal-graph requirement, using a **pre-learned PARTIAL graph** with uniform DAG
 sampling and Bayesian inference, and claims the **first statistical consistency guarantee in non-parametric
@@ -607,14 +607,13 @@ conditions.
 **Neither moves a cell, a rank or a standing.** §0a's entries and §2's leaderboard are unchanged, and the
 `AC@1` column still has no competitor on our population except §0b's.
 
-
 ### 0f. THE 2026-10-29 SURVEY — one new peer-reviewed method, on a population that is not ours, and nothing above us
 
 Four searches this iteration (competitors, evaluation sets, the kinetic-theory literature, and the reference list
 itself) produced **one reference this document had never named**, and it moves no number:
 
-**MICA**, *A multimodal-interaction and causality-aware approach to microservice fault diagnosis*
-(`10.11772/j.issn.1001-9081.2026060665`, *Journal of Computer Applications*, 2026). Cross-modal attention across
+**MICA**, _A multimodal-interaction and causality-aware approach to microservice fault diagnosis_
+(`10.11772/j.issn.1001-9081.2026060665`, _Journal of Computer Applications_, 2026). Cross-modal attention across
 metrics, logs and traces, a **transfer-entropy**-weighted causal graph, a mixed-expert router for modality
 weighting, and counterfactual validation of the candidate source. It reports Top-1 gains over MicroRank,
 SwissLog, MicroRCA, DiagFusion, MicroCause and Sage on **GAIA and the classic TrainTicket corpus** — the standalone
@@ -652,13 +651,13 @@ is not an incidental property: it re-prices the comparison in both directions. T
 from this repository's own 735 loss-census rows and is tabulated in
 `docs/benchmark-corpus-completeness.md` §9. Three consequences apply to every row of every table in this document:
 
-| cells | label space | strongest constant Top-1 | what it means for the comparison |
-| --- | --- | ---: | --- |
-| RE1 ×3, RE2 ×3 (645 cases) | 5 truths, **perfectly balanced** | 20.0% | a prior buys nothing over chance; the task is genuinely 5-way |
-| RE3:TrainTicket (30) | 2 truths (15 / 15) | **50.0%** | a constant answer scores half the cell |
-| RE3:SockShop (30) | 3 truths (12 / 9 / 9) | **40.0%** | — |
-| RE3:OnlineBoutique (30) | 4 truths (15 / 9 / 3 / 3) | **50.0%** | — |
-| whole corpus (735) | per-cell priors | **23.27%** | — |
+| cells                      | label space                      | strongest constant Top-1 | what it means for the comparison                              |
+| -------------------------- | -------------------------------- | -----------------------: | ------------------------------------------------------------- |
+| RE1 ×3, RE2 ×3 (645 cases) | 5 truths, **perfectly balanced** |                    20.0% | a prior buys nothing over chance; the task is genuinely 5-way |
+| RE3:TrainTicket (30)       | 2 truths (15 / 15)               |                **50.0%** | a constant answer scores half the cell                        |
+| RE3:SockShop (30)          | 3 truths (12 / 9 / 9)            |                **40.0%** | —                                                             |
+| RE3:OnlineBoutique (30)    | 4 truths (15 / 9 / 3 / 3)        |                **50.0%** | —                                                             |
+| whole corpus (735)         | per-cell priors                  |               **23.27%** | —                                                             |
 
 So a competitor's Top-1 on RE3 must be read against 40–50%, not against 0%; and any `Avg@5` on this corpus must be
 read against a ceiling of **100%**, because a constant top-5 holding a cell's truths covers all 735 cases — which
@@ -676,12 +675,12 @@ prove rather than about how far behind the engine is.
 
 ## 1. Our result — re-anchored 2026-10-29 on run `40811610741` at `1e3868c9` (RE1 and RE2 identical to `3d054ad`; RE3 moved by the trace floor, `docs/trace-share.md` §3a)
 
-| suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
-|-------|----------------|----------|-------------|-----------|
-| RE1 (metric, 125/system) | 85.6% (107) | 92.8% (116) | 83.2% (104) | **87.2%** (327/375) |
+| suite                         | OnlineBoutique | SockShop       | TrainTicket    | suite avg           |
+| ----------------------------- | -------------- | -------------- | -------------- | ------------------- |
+| RE1 (metric, 125/system)      | 85.6% (107)    | 92.8% (116)    | 83.2% (104)    | **87.2%** (327/375) |
 | RE2 (multi-source, 90/system) | **88.9%** (80) | **94.4%** (85) | **83.3%** (75) | **88.9%** (240/270) |
-| RE3 (code-level, 30/system) | **83.3%** (25) | 60.0% (18) | **70.0%** (21) | **71.1%** (64/90) |
-| **overall (735 cases)** | | | | **85.85%** (631) |
+| RE3 (code-level, 30/system)   | **83.3%** (25) | 60.0% (18)     | **70.0%** (21) | **71.1%** (64/90)   |
+| **overall (735 cases)**       |                |                |                | **85.85%** (631)    |
 
 **Eight of the nine cells are byte-identical to the previous anchor; RE3 is not, and the difference is a ranking
 change rather than a measurement drift.** Iteration 153 gave the trace vote a fourth threshold — the candidate must
@@ -705,13 +704,13 @@ Two cohorts must be reported separately, because they are measured on different 
 
 ### 2a. Full-benchmark (all 9 subsets = 735 cases)
 
-| method | Top-1 | paradigm | source |
-|--------|-------|----------|--------|
-| **Micro-Kinetic (ours)** | **85.85%** (631/735) | deterministic causal fusion (graph + rank-normalized log/trace) | this repo |
-| PRISM | 68% (Top-3 91%, Avg@5 87%); **78.91% reimplemented on this harness** | graph-free, internal/external property decomposition | arXiv:2601.21359 (Luan Pham, RCAEval author); our reimplementation in `prism-head-to-head.md` |
-| BARO (best pre-LLM causal) | 19% (Top-3 74%, Avg@5 63%) | non-parametric causal discovery | arXiv:2601.21359 / 2412.17015 |
+| method                     | Top-1                                                                | paradigm                                                        | source                                                                                        |
+| -------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Micro-Kinetic (ours)**   | **85.85%** (631/735)                                                 | deterministic causal fusion (graph + rank-normalized log/trace) | this repo                                                                                     |
+| PRISM                      | 68% (Top-3 91%, Avg@5 87%); **78.91% reimplemented on this harness** | graph-free, internal/external property decomposition            | arXiv:2601.21359 (Luan Pham, RCAEval author); our reimplementation in `prism-head-to-head.md` |
+| BARO (best pre-LLM causal) | 19% (Top-3 74%, Avg@5 63%)                                           | non-parametric causal discovery                                 | arXiv:2601.21359 / 2412.17015                                                                 |
 
-> Two traps avoided here: (i) BARO's often-quoted **0.69** is its *Train-Ticket RE2 Avg@5*, **not** its overall
+> Two traps avoided here: (i) BARO's often-quoted **0.69** is its _Train-Ticket RE2 Avg@5_, **not** its overall
 > Top-1 (which is 19%); (ii) PRISM is the benchmark author's own graph-free method — it is the correct "academic
 > SOTA" anchor, **not** the nofire.ai "GALA 42%" figure. A third trap is now visible: PRISM's `68%` and our
 > `85.85%` are **not** the comparison to optimise against, because our own reimplementation of PRISM reaches
@@ -720,15 +719,15 @@ Two cohorts must be reported separately, because they are measured on different 
 
 ### 2b. RE2-OB subset (90 cases) — where all LLM agents report
 
-| method | AC@1 / R@1 | paradigm | source |
-|--------|-----------|----------|--------|
-| **Micro-Kinetic (ours)** | **86.7%** | deterministic | this repo |
-| RCLAgent (Qwen-3.6-Plus) | 56.67% | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
-| RCLAgent (Claude-3.5-Sonnet) | 52.31% | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
-| GALA | 42.22% (45.59% R@1) | LLM agentic ReAct | arXiv:2508.12472 |
-| mABC | 39.98% **— NOT OUR POPULATION, and not the paper's own figure** | LLM multi-agent | arXiv:2404.12135 |
-| RCAgent | 25.32% **— NOT OUR POPULATION, and not the paper's own figure** | LLM ReAct + tools | arXiv:2310.16340 |
-| OpenRCA | ~15% | LLM | ICLR'25 |
+| method                       | AC@1 / R@1                                                      | paradigm                             | source           |
+| ---------------------------- | --------------------------------------------------------------- | ------------------------------------ | ---------------- |
+| **Micro-Kinetic (ours)**     | **86.7%**                                                       | deterministic                        | this repo        |
+| RCLAgent (Qwen-3.6-Plus)     | 56.67%                                                          | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
+| RCLAgent (Claude-3.5-Sonnet) | 52.31%                                                          | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
+| GALA                         | 42.22% (45.59% R@1)                                             | LLM agentic ReAct                    | arXiv:2508.12472 |
+| mABC                         | 39.98% **— NOT OUR POPULATION, and not the paper's own figure** | LLM multi-agent                      | arXiv:2404.12135 |
+| RCAgent                      | 25.32% **— NOT OUR POPULATION, and not the paper's own figure** | LLM ReAct + tools                    | arXiv:2310.16340 |
+| OpenRCA                      | ~15%                                                            | LLM                                  | ICLR'25          |
 
 > **The rows above whose populations this table ASSERTED and our record had never read are now all read, and they
 > did not resolve the same way.** `RCAgent` is `OTHER` (2026-10-15): its own full text evaluates **161 Flink jobs from
@@ -741,9 +740,9 @@ Two cohorts must be reported separately, because they are measured on different 
 > `+30.0pp` beside it is like-for-like rather than cross-corpus — with the qualification that its own headline
 > metrics are `MRR / R@1 / R@3 / R@5 / R@10` (69.73 / 73.24% MRR on AIOPS-2022 for two backbones), and that an
 > independent 2026 leaderboard re-running it over **all nine subsets** reports `10%` top-1 against PRISM's `68%`.
-> `GALA`'s row *is* read: its own text evidences the 90-case RE2-OB population. **No
+> `GALA`'s row _is_ read: its own text evidences the 90-case RE2-OB population. **No
 > number in this table changes**; what changes is that a reader can now tell which of them rest on a reading and
-> which on our own heading — and that the heading's *"where all LLM agents report"* is now a claim every row of it
+> which on our own heading — and that the heading's _"where all LLM agents report"_ is now a claim every row of it
 > can support on a reading.
 
 ### 2b-ii. GALA+ (ASE'26) — a reference we had CITATION-only, and the first published number on RE2-TrainTicket
@@ -752,10 +751,10 @@ Two cohorts must be reported separately, because they are measured on different 
 already in `sota-roadmap-2026.md`'s reference list — **and nowhere else**, so the number it reports had never
 been read. It has now been read, and it changes two standings.
 
-| population | GALA+ AC@1 | GALA+ AC@3 | ours (published) | Δ | ours (it.95 candidate) | Δ |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| OnlineBoutique RE2 (90 cases) | 74.44% | 98.89% | **86.7%** | **+12.2pp** | 86.7% | +12.2pp |
-| **TrainTicket RE2 (90 cases)** | **73.33%** | 85.56% | 71.1% | **−2.2pp** | **73.3%** | **0.0pp** |
+| population                     | GALA+ AC@1 | GALA+ AC@3 | ours (published) |           Δ | ours (it.95 candidate) |         Δ |
+| ------------------------------ | ---------: | ---------: | ---------------: | ----------: | ---------------------: | --------: |
+| OnlineBoutique RE2 (90 cases)  |     74.44% |     98.89% |        **86.7%** | **+12.2pp** |                  86.7% |   +12.2pp |
+| **TrainTicket RE2 (90 cases)** | **73.33%** |     85.56% |            71.1% |  **−2.2pp** |              **73.3%** | **0.0pp** |
 
 **The population is 90 cases on both systems, and that is read off GALA+'s own AC@3 rather than assumed**:
 `98.89% = 89/90` and `85.56% = 77/90`. RCAEval's RE2 is 90 cases per system (6 fault types × 15), which is the
@@ -769,7 +768,7 @@ same population size and the same suite name.
    56.67% to being measured against 74.44%: **+12.2pp, not +30.0pp.** The old table's `GALA 42.22%` row is the
    PRIOR paper's number and must not be quoted as this method's.
 2. **On RE2-TrainTicket we were BEHIND, and this is the first published competitor number on any TrainTicket
-   cell in this document.** §2b is titled *"where all LLM agents report"* and carries only OnlineBoutique; the
+   cell in this document.** §2b is titled _"where all LLM agents report"_ and carries only OnlineBoutique; the
    implicit reading was that no competitor reports TrainTicket. That reading was wrong. GALA+ reports **73.33%
    (66/90)** against our published **71.1% (64/90)** — a **two-case deficit**, and the deficit is on the one
    system where our own register says the ranking signal is starved of trace and log evidence.
@@ -781,7 +780,7 @@ same population size and the same suite name.
    the one that now decides a standing, not a preference.
 
 **What is NOT claimed, and the repository's own standard is why.** This is a **paper-versus-paper** comparison,
-not a head-to-head: the head-to-head in `§0a` is `78.91 vs 78.75` over the *identical 735 cases*, and nothing
+not a head-to-head: the head-to-head in `§0a` is `78.91 vs 78.75` over the _identical 735 cases_, and nothing
 here establishes that GALA+'s 90 TrainTicket cases are the same 90 as ours. Two things must happen before the
 `−2.2pp` is treated as a measured deficit rather than a named risk: **confirm the case set from the paper's own
 dataset section, and obtain an artefact that carries the method** — `docs/competitor-artefact-availability.md`
@@ -792,8 +791,8 @@ risk rather than becoming a measurement.
 
 **A third-party reading is recorded with it, because it bears on the metric.** A published referee report on
 this paper (`pith.science`, T0 AI review, 2026-08-14) accepts the architecture and the ablations and disputes
-the headline: *"its headline accuracy claim overstates diagnosis quality because the ranking metric ignores
-failure-mode match"*. That is the same distinction our own `§0d` draws about composite scoring — a Top-1 over a
+the headline: _"its headline accuracy claim overstates diagnosis quality because the ranking metric ignores
+failure-mode match"_. That is the same distinction our own `§0d` draws about composite scoring — a Top-1 over a
 labelled service list is not a diagnosis — and it means the `73.33%` is a Top-1 number, comparable to ours as a
 Top-1 and to nothing else.
 
@@ -809,11 +808,11 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 ### 2c. Single-system / other slices (not directly comparable to 85.85%)
 
-| method | result | slice | source |
-|--------|--------|-------|--------|
-| StableRCA | 77% Top-1 | **Sock-Shop `[soc, 2022]` — a corpus its own text lists SEPARATELY from RCAEval**, and not RE1-SS; no case count is stated, so no gap can be read against our 92.8% | arXiv:2606.05636 |
-| MARLIN | 61.1% PR@1 | OnlineBoutique | sota2.com, Mar 2026 |
-| DynaCausal | avg AC@1 0.63 | mixed public benchmarks (not RCAEval-only) | arXiv:2510.22613 |
+| method     | result        | slice                                                                                                                                                               | source              |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| StableRCA  | 77% Top-1     | **Sock-Shop `[soc, 2022]` — a corpus its own text lists SEPARATELY from RCAEval**, and not RE1-SS; no case count is stated, so no gap can be read against our 92.8% | arXiv:2606.05636    |
+| MARLIN     | 61.1% PR@1    | OnlineBoutique                                                                                                                                                      | sota2.com, Mar 2026 |
+| DynaCausal | avg AC@1 0.63 | mixed public benchmarks (not RCAEval-only)                                                                                                                          | arXiv:2510.22613    |
 
 ---
 
@@ -830,14 +829,14 @@ however, we are level with PRISM rather than ahead — see gap 1.
 competitor is the benchmark author's own method, and the correct margin is **~11 pp**, not ~35 pp.
 
 **The decisive new signal — PRISM's internal/external asymmetry.** PRISM's entire contribution is a clean,
-graph-free principle that we have **not** tried and that is *not* among our 11 falsified directions:
+graph-free principle that we have **not** tried and that is _not_ among our 11 falsified directions:
 
 > Root causes show anomalies in **both internal properties** (config/resource state: cpu, mem, disk) **and
 > external properties** (interface: response latency, error rate, throughput); **affected components show
 > anomalies only in external properties**, because faults propagate through observable interfaces, never through
 > internal state.
 
-This is a *different* dimension from everything we falsified (label semantics, drop/rise shape, topology
+This is a _different_ dimension from everything we falsified (label semantics, drop/rise shape, topology
 direction, collision, temporal, LLM class-name). It directly targets our RE3 "error-value" losses (SS 45% / TT
 51.1%), where a fan-in crash source's **internal** drop (dev ≈0.30) is out-scored by a victim's **external**
 near-zero rise (dev ≈1.5). See `docs/sota-roadmap-2026.md` P2.
@@ -847,8 +846,8 @@ become one case:**
 
 1. **The head-to-head is run, and it is a tie — not a win.** `docs/prism-head-to-head.md`: PRISM's additive
    pooling **78.91%** vs ours **78.75%** on the identical 735 cases. So we do **not** lead the best method we can
-   actually reproduce; we are level with it, and `≈1.16×` is a statement about *published* numbers only. This is
-   the gap that matters, and it is open *in the sense that it has not been closed in our favour* — the previous
+   actually reproduce; we are level with it, and `≈1.16×` is a statement about _published_ numbers only. This is
+   the gap that matters, and it is open _in the sense that it has not been closed in our favour_ — the previous
    version of this document read it as 1.5 pp, which was mostly a corpus mismatch (v3.2's revision note).
 2. **A 0.16 pp gap is below the benchmark's own resolution.** Gap 5: RCAEval's 735 labels were produced by a
    single engineer with no inter-annotator agreement study. A one-case difference is not a measurable lead in
@@ -856,7 +855,7 @@ become one case:**
    margin we do not yet have on any suite except RE2-SS.
 3. **Cross-benchmark generalization unproven.** RCLAgent also reports AIOPS-2022 (65.15%) and Aug-TrainTicket
    (82.35%). We have loaders (`aiops2025-loader.ts`, `rca100-loader.ts`) but **no measured numbers** — note these
-   are the *AgenticOpsEval* datasets (AIOps2025 400 cases + RCA100 103 cases), which are distinct from RCLAgent's
+   are the _AgenticOpsEval_ datasets (AIOps2025 400 cases + RCA100 103 cases), which are distinct from RCLAgent's
    "AIOPS 2022".
 4. **The field is moving to harder benchmarks.** FSE'26 (arXiv:2510.04711): 11 SOTA models avg Top@1 0.21 / best
    0.37 on a fault-propagation-aware benchmark. ORCA-bench (arXiv:2607.28545): frontier LLM agents 25.3% Medium /
@@ -871,7 +870,7 @@ become one case:**
    one table over. On the comparable reading the cell is **15 of 30 = 50.0%** against **23 of 30 = 76.7%**.
 6. **Validity threat to every number (ours included).** pith.science review: RCAEval's 735 root-cause labels were
    produced by a single 5-year engineer with no inter-annotator consistency check. A ceiling on the benchmark's
-   own ground truth is a ceiling on *everyone's* headline number. **And no error rate for those labels is
+   own ground truth is a ceiling on _everyone's_ headline number. **And no error rate for those labels is
    published**, so a **0.16 pp** difference cannot be attributed to either engine: gap 2's target is the right
    one, and no arithmetic here can substitute for it.
 
@@ -881,12 +880,12 @@ Three publications from the last two months bear on this comparison and none of 
 nine cells, for three different reasons. They are recorded with the reason, because a claim that is silently
 dropped is indistinguishable from a claim that was never checked.
 
-| claim | what it reports | why it is not in the table |
-| --- | --- | --- |
-| **TA-RCD** (arXiv v2, 9 Oct 2026) | on RCAEval: "metric-level AC@5 +18% and Avg@5 +19% over the strongest baseline" | **metric-level**, not service-level, and relative to a baseline rather than absolute. A metric-level number cannot be compared with an `AC@1` over services, and no per-cell table is published |
-| **arXiv:2608.21310** (trajectory study, RCABench) | a defence prototype raises Acc@1 by **3.5–35.1 pp** across ten framework/backbone configurations | **RCABench**, not RCAEval's nine cells; and the delta is against agent frameworks, not against a ranking engine |
+| claim                                                          | what it reports                                                                                                                                                                     | why it is not in the table                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TA-RCD** (arXiv v2, 9 Oct 2026)                              | on RCAEval: "metric-level AC@5 +18% and Avg@5 +19% over the strongest baseline"                                                                                                     | **metric-level**, not service-level, and relative to a baseline rather than absolute. A metric-level number cannot be compared with an `AC@1` over services, and no per-cell table is published                                                                                                    |
+| **arXiv:2608.21310** (trajectory study, RCABench)              | a defence prototype raises Acc@1 by **3.5–35.1 pp** across ten framework/backbone configurations                                                                                    | **RCABench**, not RCAEval's nine cells; and the delta is against agent frameworks, not against a ranking engine                                                                                                                                                                                    |
 | **DeltaRCA** (ASE'26, DOI `10.1145/3832783.3837424`, Oct 2026) | **63% Top-1 / 79% Top-3** on "two microservice benchmarks with 200 injected fault cases", by left-shifting: an LLM agent reads the CODE CHANGE to weight a spectrum-based localiser | a different corpus (200 cases, not RCAEval's 735), no per-cell table on our systems, and the mechanism needs a change history the benchmark does not ship. Recorded because the DIRECTION is the one this engine cannot take on RE3 — the fault's semantics live in the diff, not in the telemetry |
-| **arXiv:2609.36771** (deep causal models) | **0.88 Sock Shop / 0.78 Online Boutique** Top-1, no call graph | the closest thing to a like-for-like comparator, and it is **below** this engine's RE1 cells (92.8 / 82.4 `AC@1`) — placed as a reference in `docs/anomaly-composition.md` rather than as a row here, because the two runs do not share a harness |
+| **arXiv:2609.36771** (deep causal models)                      | **0.88 Sock Shop / 0.78 Online Boutique** Top-1, no call graph                                                                                                                      | the closest thing to a like-for-like comparator, and it is **below** this engine's RE1 cells (92.8 / 82.4 `AC@1`) — placed as a reference in `docs/anomaly-composition.md` rather than as a row here, because the two runs do not share a harness                                                  |
 
 The one number that has been stable all year is the one this record keeps returning to: **`L0` at 85.4% on
 RE1's 375 cases** (arXiv:2610.05009), a Python reference setting rather than an agent.
@@ -895,13 +894,13 @@ RE1's 375 cases** (arXiv:2610.05009), a Python reference setting rather than an 
 
 Nine cells at the shipped configuration after iteration 137 (`docs/anomaly-composition.md` §6):
 
-| population | this engine | best published | standing |
-| --- | ---: | ---: | --- |
-| **RE1** (375) | **323 = 86.13%** | `L0` 85.4% (`arXiv:2610.05009`) | **FIRST — +0.73 pp**, the cell that was one case short |
-| **RE2** (270) | **231 = 85.56%** | `arXiv:2609.36771` 0.88 SS / 0.78 OB Top-1 | **first on both cells it publishes** (98.9 / 86.7 vs 88 / 78) |
-| **RE3** (90) | **52 = 57.78%** | PRISM `conjunctive` 76.7% on RE3-TT | **second** — the one cell with a real deficit, 25.6 pp |
-| **735** | **606 = 82.45%** | vendor 89% (NOFire, unverifiable) | second to a claim that ships no per-case results |
-| **FSE'26** Top@1 | **56.40%** (802/1422) | 37% (`RCABench`, arXiv:2608.21310's own anchor) | **first, +19.4 pp** |
+| population       |           this engine |                                  best published | standing                                                      |
+| ---------------- | --------------------: | ----------------------------------------------: | ------------------------------------------------------------- |
+| **RE1** (375)    |      **323 = 86.13%** |                 `L0` 85.4% (`arXiv:2610.05009`) | **FIRST — +0.73 pp**, the cell that was one case short        |
+| **RE2** (270)    |      **231 = 85.56%** |      `arXiv:2609.36771` 0.88 SS / 0.78 OB Top-1 | **first on both cells it publishes** (98.9 / 86.7 vs 88 / 78) |
+| **RE3** (90)     |       **52 = 57.78%** |             PRISM `conjunctive` 76.7% on RE3-TT | **second** — the one cell with a real deficit, 25.6 pp        |
+| **735**          |      **606 = 82.45%** |               vendor 89% (NOFire, unverifiable) | second to a claim that ships no per-case results              |
+| **FSE'26** Top@1 | **56.40%** (802/1422) | 37% (`RCABench`, arXiv:2608.21310's own anchor) | **first, +19.4 pp**                                           |
 
 The move is `burst 0.10 → 0`, and the honest label on it is not "a new technique": it is the composition being
 re-swept after the breadth enrolment showed that the burst bonus had been standing in for breadth. Six
@@ -920,11 +919,11 @@ The competitor whose published per-cell number is above ours is PRISM (`arXiv:26
 own method), and it is now the only one. Three forms of its internal/external axiom have been built and measured
 on the nine cells at the shipped configuration of everything else:
 
-| form | best arm | RE3-TT | cost | verdict |
-| --- | --- | ---: | ---: | --- |
-| additive score (`prismWeight`) | `additive 0.50` | 15 → 18 of 30 | RE1 **−10** (fold **+12**) | refused |
-| conjunctive score (`prismPooling`) | `conjunctive 0.75` | **15 → 24 of 30** | RE1 **−37** | refused |
-| symmetry mask (`victimWeight`) | `victim 0.05` | 15 → 15 of 30 | RE1 **−33**, FSE'26 Top@1 −1.4 pp | refused |
+| form                               | best arm           |            RE3-TT |                              cost | verdict |
+| ---------------------------------- | ------------------ | ----------------: | --------------------------------: | ------- |
+| additive score (`prismWeight`)     | `additive 0.50`    |     15 → 18 of 30 |        RE1 **−10** (fold **+12**) | refused |
+| conjunctive score (`prismPooling`) | `conjunctive 0.75` | **15 → 24 of 30** |                       RE1 **−37** | refused |
+| symmetry mask (`victimWeight`)     | `victim 0.05`      |     15 → 15 of 30 | RE1 **−33**, FSE'26 Top@1 −1.4 pp | refused |
 
 All three read the same underlying quantity — a z-score mean shift whose scale is each channel's own units —
 so each re-weights a ranking that already carries eleven priors by an amount no other term controls. Online
@@ -953,12 +952,12 @@ include the answer; it fails to exclude anything else — which is the mechanism
 (`min(Sⁱ,Sᵉ) ≥ gate × max_w min(Sⁱ,Sᵉ)`, the construction `anomalyBreadthGate` uses) was swept on one commit
 (`bca8a37`), one input per arm:
 
-| gate / weight | RE1 | RE2 | RE3 | 735 | RE3-TrainTicket | FSE'26 Top@1 |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **0 / 0.25** (shipped) | **323** | 231 | 55 | **609** | 15 of 30 | 56.4% |
-| 0.25 / 0.25 | 318 | **237** | **58** | **613** | 15 of 30 | **59.5%** |
-| 0.25 / 0.10 | 318 | 234 | 55 | 607 | 15 of 30 | 58.1% |
-| 0.50 / 0.25 | 305 | 238 | 58 | 601 | **17 of 30** | — |
+|          gate / weight |     RE1 |     RE2 |    RE3 |     735 | RE3-TrainTicket | FSE'26 Top@1 |
+| ---------------------: | ------: | ------: | -----: | ------: | --------------: | -----------: |
+| **0 / 0.25** (shipped) | **323** |     231 |     55 | **609** |        15 of 30 |        56.4% |
+|            0.25 / 0.25 |     318 | **237** | **58** | **613** |        15 of 30 |    **59.5%** |
+|            0.25 / 0.10 |     318 |     234 |     55 |     607 |        15 of 30 |        58.1% |
+|            0.50 / 0.25 |     305 |     238 |     58 |     601 |    **17 of 30** |            — |
 
 On the FSE'26 half the same gate reads **Top@1 59.5% / Top@3 77.7% / Top@5 81.3%** against the shipped
 **56.4 / 69.7 / 72.1** (run `40527629997`) — **+3.1 / +8.0 / +9.2 pp** on 1,422 cases, from a term that was
@@ -991,13 +990,13 @@ and shrinks that price is the next question, and the sweep says it must change W
 with `dualFamilyGateMode = 'channel'` — PRISM's axiom compared against each family's own champion — reads, on one
 commit (`d83fb86`) and one input per arm:
 
-| population | was | **now** | published / reproduced | standing |
-| --- | ---: | ---: | --- | --- |
-| **RE1** (375) | 323 = 86.13% | **327 = 87.20%** | `L0` 85.4% (`arXiv:2610.05009`) | **first, +1.80 pp** |
-| **RE2** (270) | 231 = 85.56% | **240 = 88.89%** | 0.88 SS / 0.78 OB Top-1 | **first on both published cells** |
-| **RE3** (90) | 55 = 61.11% | **64 = 71.11%** | PRISM conjunctive 76.7% (RE3-TT) | second; **TT 70.0%** (was 50.0 before the pin, 63.3 before the floor) |
-| **735** | 609 = 82.86% | **631 = 85.85%** | PRISM 68% published / 78.9% reimplemented | **first among reproducible results** |
-| **FSE'26 Top@1** | 56.40% | **60.50%** (860/1422) | 37% (`RCABench`) | **first, +23.5 pp** |
+| population       |          was |               **now** | published / reproduced                    | standing                                                              |
+| ---------------- | -----------: | --------------------: | ----------------------------------------- | --------------------------------------------------------------------- |
+| **RE1** (375)    | 323 = 86.13% |      **327 = 87.20%** | `L0` 85.4% (`arXiv:2610.05009`)           | **first, +1.80 pp**                                                   |
+| **RE2** (270)    | 231 = 85.56% |      **240 = 88.89%** | 0.88 SS / 0.78 OB Top-1                   | **first on both published cells**                                     |
+| **RE3** (90)     |  55 = 61.11% |       **64 = 71.11%** | PRISM conjunctive 76.7% (RE3-TT)          | second; **TT 70.0%** (was 50.0 before the pin, 63.3 before the floor) |
+| **735**          | 609 = 82.86% |      **631 = 85.85%** | PRISM 68% published / 78.9% reimplemented | **first among reproducible results**                                  |
+| **FSE'26 Top@1** |       56.40% | **60.50%** (860/1422) | 37% (`RCABench`)                          | **first, +23.5 pp**                                                   |
 
 **No population down, and the blocking cell moved by four.** RE3-TrainTicket goes 15 → **19 of 30**, closing the
 PRISM deficit from 26.7 pp to **13.4 pp** — the first movement that cell has shown in twelve arms. The arm costs
@@ -1013,7 +1012,7 @@ losing to.
 
 **What this does not license.** RE3 remains a second place by 13.4 pp on the one cell a competitor's published
 number is above ours, and the reconciliation is unchanged: PRISM's 76.7% is its own conjunctive magnitude read as
-a ranker on TrainTicket, ours is a full ranking over 90 cases. The next lever has to close that gap *inside* a
+a ranker on TrainTicket, ours is a full ranking over 90 cases. The next lever has to close that gap _inside_ a
 configuration that already wins the other four populations.
 
 ## 2026-10-28 (2) — two directions closed, standings unchanged
@@ -1035,3 +1034,46 @@ not read. It is readable, the engine reads it, and it contains the platform talk
 
 Standing, unchanged from the 2026-10-28 enrolment: RE1 **327 = 87.20%**, RE2 **240 = 88.89%**, RE3 **61 = 67.78%**,
 735 **631 = 85.85%**, FSE'26 Top@1 **60.50%**.
+
+## 2026-10-30 (2) — the gate read back on nine cells: 639, one cell down, and the one figure on this page that did not add up
+
+Four arms on the golden nine cells, one input each, every other weight at its shipped value: `topodiscount=1`
+at `topodiscountgate ∈ {0, 0.25, 0.5, 0.75}`. The control is the push-triggered golden run `41007505748`, and it
+reproduces the published census **case for case** before any result below is read.
+
+| cell                | shipped (`rho = 0`) | `rho = 1`, gate 0 | gate 0.25 | **gate 0.5** | gate 0.75 |
+| ------------------- | ------------------: | ----------------: | --------: | -----------: | --------: |
+| RE1 OnlineBoutique  |                 107 |               110 |       110 |      **110** |       109 |
+| RE1 SockShop        |                 116 |               117 |       117 |      **117** |       117 |
+| RE1 TrainTicket     |                 104 |               102 |       104 |      **104** |       105 |
+| RE2 OnlineBoutique  |                  80 |                82 |        82 |       **82** |        82 |
+| RE2 SockShop        |                  85 |                85 |        85 |       **86** |        86 |
+| RE2 TrainTicket     |                  75 |                74 |        74 |       **74** |        74 |
+| RE3 OnlineBoutique  |                  25 |                25 |        25 |       **25** |        25 |
+| RE3 SockShop        |                  18 |                17 |        17 |       **18** |        18 |
+| RE3 TrainTicket     |                  21 |                23 |        23 |       **23** |        23 |
+| **total**           |             **631** |           **635** |   **637** |      **639** |   **639** |
+| cells below shipped |                   — |                 3 |         2 |        **1** |         1 |
+
+**Standing under the best arm** (`gate = 0.5`, run `41007636232`): RE1 **331 = 88.27%**, RE2 **242 = 89.63%**,
+RE3 **66 = 73.33%**, 735 **639 = 86.94%**. On the cell every earlier section names as the deficit, RE3-TrainTicket
+moves **21 → 23 of 30 = 76.67%**, which is the `23 of 30` `docs/prism-symmetry-mask.md` §1 records for PRISM's
+conjunctive form: **parity on that cell under this arm, against the 26.7 pp deficit §2026-10-26 stated.**
+
+**It is not enrolled**, and the reason is one case. RE2-TrainTicket reads **74 against 75 published at every gate
+on the grid**, so the arm fails the same "no cell down" bar its parent failed, and the shipped configuration
+stays at 631. The blocking case (`ts-travel-service_cpu_1`, rank 1 → 3) has a post-deduction anomaly that is
+bit-identical at all four gates, which is a reading of the deduction's OUTPUT; the deduction's DECISION is a
+ratio it did not publish. `docs/topo-share.md` is the instrument that publishes it, and choosing the next gate
+from it is the outstanding step.
+
+**The correction.** The standing line of §2026-10-28 (2) reads RE3 **61** beside 735 **631**; 327 + 240 + 61 is
+**628**, and this iteration's control run measures RE3 at **64** (25 / 18 / 21). The cell figures and the total
+have to add up, and the interior figure was a leftover from the 628 configuration rather than a measurement of
+the 631 one. 631 = 327 + 240 + 64.
+
+**Competitive standing, unchanged in kind.** The 735 fold at 639 is **86.94%**, which is 2.06 pp below the
+vendor's **89%** — a figure that ships no per-case results and cannot be reproduced from this repository — and
+7.76 pp below the DSN-S 2026 `94.7%`, whose population is still `POPULATION UNVERIFIED` for the reason §0a
+gives (a bare PageRank at 94.1% cannot share a corpus with the benchmark author's own 68%). The gate takes the
+gap to the verifiable references from 3.15 pp (631 = 85.85%) to **2.06 pp** without closing it.
