@@ -68,6 +68,7 @@ import {
   DEFAULT_PRISM_POOLING,
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
@@ -280,6 +281,12 @@ export interface Fse26CliOptions {
    * 0, and at 0 the symmetry map is not even built.
    */
   readonly victimWeight: number;
+  /**
+   * Weight on the BASE term — the candidate's own anomaly. Exposed here for the reason every term is: a
+   * coefficient measurable on one half only has an undecidable other half, and this one moves BOTH halves'
+   * scores at once.
+   */
+  readonly selfAnomalyWeight: number;
   /**
    * Weight on the dual-family presence bonus. Exposed here for the reason every term is: a shape measurable on
    * one half only has an undecidable other half. The shipped value is the engine's 0.
@@ -531,6 +538,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
@@ -655,6 +663,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
       // selecting the ablation — the rule every weight on this parser follows.
       opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    } else if (arg === '--self-anomaly-weight' && hasValue(argv, i + 1)) {
+      opts.selfAnomalyWeight = parseWeight(argv[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);
     } else if (arg === '--victim-weight' && hasValue(argv, i + 1)) {
       opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
     } else if (arg === '--dual-family-weight' && hasValue(argv, i + 1)) {

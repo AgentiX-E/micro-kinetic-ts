@@ -308,6 +308,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -519,6 +522,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -755,6 +761,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -975,6 +984,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -1219,6 +1231,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -1431,6 +1446,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything
@@ -1644,6 +1662,9 @@ jobs:
               gate=*) RANKING_ARG+=(--anomaly-breadth-gate "${kv#gate=}") ;;
               selftime=*) RANKING_ARG+=(--self-time-weight "${kv#selftime=}") ;;
               victim=*) RANKING_ARG+=(--victim-weight "${kv#victim=}") ;;
+              #   The BASE term's coefficient. It ships at 1, so 0 is its ablation and any other
+              #   value says how much of the score the anomaly itself should carry.
+              selfanom=*) RANKING_ARG+=(--self-anomaly-weight "${kv#selfanom=}") ;;
               dualfam=*) RANKING_ARG+=(--dual-family-weight "${kv#dualfam=}") ;;
               #   The membership's POPULATION. `gate=*` is the anomaly breadth gate, so this one needs its
               #   own unambiguous key: a `0` here is the identity (the family 144 enrolled), and anything

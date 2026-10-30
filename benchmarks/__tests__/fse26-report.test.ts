@@ -68,6 +68,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     selfTimeWeight: 0,
     victimWeight: 0,
     dualFamilyWeight: 0,
+    // The base term's coefficient, at the shipped 1: this fixture stays the published configuration, and the
+    // field is present so `missingReportedConfigFields` is answering about the line rather than about the fixture.
+    selfAnomalyWeight: 1,
     // The membership's POPULATION, at the identity: gate 0 is the family the weight above was enrolled on, so
     // this fixture is still the published configuration rather than a configuration nobody ran.
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
@@ -164,6 +167,7 @@ describe('FSE26 report — attribution', () => {
       'selfTimeWeight',
       'victimWeight',
       'dualFamilyWeight',
+      'selfAnomalyWeight',
       'dualFamilyGate',
       'dualFamilyGateMode',
       'temporalWeight',
@@ -221,7 +225,7 @@ describe('FSE26 report — the two renderings agree', () => {
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
         `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
-        'temporalWeight=0 onsetShape=earliness',
+        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

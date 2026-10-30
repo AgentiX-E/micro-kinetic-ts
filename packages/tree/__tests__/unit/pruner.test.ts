@@ -16,6 +16,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   isPrismPooling,
@@ -1079,6 +1080,7 @@ describe('TreePruner', () => {
       // We assert via a fresh pruner's defaults instead — the helper is pure
       // over an options object, so construct one directly.
       const weights = toRankingWeights({
+        selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
         sourceWeight: 0.1,
         temporalWeight: 0.2,
         collisionWeight: 0.3,
@@ -1097,6 +1099,7 @@ describe('TreePruner', () => {
       });
 
       expect(weights).toEqual({
+        selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
         sourceWeight: 0.1,
         temporalWeight: 0.2,
         collisionWeight: 0.3,
@@ -2078,6 +2081,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // tunes against, so a signal missing from it is invisible to tuning — and
     // an omission there is silent, because the engine's own option keeps working.
     const weights = toRankingWeights({
+      selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
       sourceWeight: 0,
       temporalWeight: 0,
       collisionWeight: 0,
@@ -2344,6 +2348,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
     // test that spread the engine's private options would stop compiling (and had
     // already stopped saying anything about which values it checked).
     const weights: RankingWeights = toRankingWeights({
+      selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
       sourceWeight: 0,
       temporalWeight: 0,
       collisionWeight: 0,
@@ -2375,6 +2380,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       logWeight: 1,
     };
     const weights = toRankingWeights({
+      selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
       sourceWeight: 0,
       temporalWeight: 0,
       collisionWeight: 0,
@@ -3598,5 +3604,120 @@ describe('TreePruner — the dual-family presence bonus', () => {
 
     expect(gap(ungated) - gap(control)).toBeCloseTo(0, 12);
     expect(gap(build4(0.5)) - gap(control)).toBeCloseTo(weight, 10);
+  });
+});
+
+/**
+ * The base term's weight is a DECLARED quantity, and this is the file that prices it.
+ *
+ * `selfAnomalyLog1p` was the one term whose weight was written into the formula as a literal `1`. That made it
+ * the only term in the sum that no ablation could state — including at 0 — so the single largest contribution to
+ * every score was also the one quantity whose marginal value the campaign had never measured. The four
+ * assertions below are what a weight has to satisfy before a dispatch may sweep it: a default that is
+ * bit-identical to the literal, a linear response, a zero that reports ITSELF as the cause, and a projection the
+ * optimizer can persist.
+ */
+describe('the base term’s weight — the one quantity the formula used to write itself', () => {
+  /**
+   * A two-node fleet where BOTH nodes are scored: `A` calls `B`, `B` rises hard, and `A` rises a little, so
+   * neither is pruned out and the two base terms differ.
+   */
+  const arm = (options: ConstructorParameters<typeof TreePruner>[0] = {}) => {
+    const pruner = new TreePruner({ defaultTopK: 4, ...options });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      makeMetrics({ A: [1, 1, 1, 1, 1.4], B: [1, 1, 1, 4, 4] }),
+    );
+    const results = pruner.analyze(graph, 4);
+    const termOf = (id: string) =>
+      results.find((r) => r.serviceId === id)!.terms!.find((t) => t.name === 'selfAnomalyLog1p')!;
+    return {
+      graph,
+      results,
+      anomaly: new Map(results.map((r) => [r.serviceId, graph.anomalyScores.get(r.serviceId)!])),
+      finalScore: new Map(results.map((r) => [r.serviceId, r.finalScore!])),
+      termOf,
+    };
+  };
+
+  it('ships at one, so a caller that names nothing gets the score the literal produced', () => {
+    // The constant is the STATEMENT of the default; the equalities below are what make naming it in the formula
+    // safe, because a default is only bit-identical if the multiply is by exactly the literal it replaced.
+    expect(DEFAULT_SELF_ANOMALY_WEIGHT).toBe(1);
+    const implicit = arm();
+    const explicit = arm({ selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT });
+    expect(implicit.results.length).toBeGreaterThanOrEqual(2);
+    for (const { serviceId } of implicit.results) {
+      expect(explicit.termOf(serviceId).contribution).toBe(implicit.termOf(serviceId).contribution);
+      expect(explicit.finalScore.get(serviceId)).toBe(implicit.finalScore.get(serviceId));
+      expect(implicit.termOf(serviceId).contribution).toBe(
+        Math.log1p(implicit.anomaly.get(serviceId)!),
+      );
+    }
+  });
+
+  it('responds LINEARLY in the weight, and to the weight alone', () => {
+    // Linear response is what makes a sweep readable as a price rather than as a re-parameterisation: at weight
+    // w the contribution is w·log1p(a) for every candidate, so a cell that moves between two arms moved because
+    // the base term's share changed and for no other reason.
+    const one = arm();
+    for (const w of [0.5, 2, 3.25]) {
+      const other = arm({ selfAnomalyWeight: w });
+      for (const { serviceId } of one.results) {
+        expect(other.termOf(serviceId).contribution).toBeCloseTo(
+          w * Math.log1p(other.anomaly.get(serviceId)!),
+          12,
+        );
+        // The delta on the SCORE is exactly the delta on the term: nothing else in the sum reads the weight.
+        expect(other.finalScore.get(serviceId)! - one.finalScore.get(serviceId)!).toBeCloseTo(
+          other.termOf(serviceId).contribution - one.termOf(serviceId).contribution,
+          12,
+        );
+      }
+    }
+  });
+
+  it('reports WEIGHT_ZERO at zero — the one cause the term could not previously produce', () => {
+    // `classifyTermZero` answers the SHARPEST cause first, and a zero weight forces the zero on its own and
+    // licenses no inference about the corpus. The regression this guards is the mirror of the one the
+    // neighbouring test guards: filing a deliberate ablation as a graph fact would send a reader to a map that
+    // is present and correct.
+    const off = arm({ selfAnomalyWeight: 0 });
+    const shipped = arm();
+    expect(off.results.length).toBeGreaterThanOrEqual(2);
+    for (const { serviceId } of off.results) {
+      const t = off.termOf(serviceId);
+      expect(t.contribution).toBe(0);
+      expect(t.cause).toBe('WEIGHT_ZERO');
+      expect(t.source).toBeUndefined();
+    }
+    // And the arm is not the shipped one: a sweep whose 0 arm equalled its 1 arm would price nothing.
+    const b = off.results[0]!.serviceId;
+    expect(off.finalScore.get(b)).not.toBe(shipped.finalScore.get(b));
+  });
+
+  it('is carried by `toRankingWeights`, so the L2 search can persist it', () => {
+    // The offline optimizer round-trips through this function. A field the formula reads but this projection
+    // drops is a weight the search cannot move and a reader cannot see — the defect
+    // `rank-normalization-default-audit.md` records for a value with three owners.
+    const weights = toRankingWeights({
+      selfAnomalyWeight: 0.75,
+      sourceWeight: 1,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+      failedEdgeWeight: 3,
+      latWeight: 0.56,
+      poolMetricPenaltyWeight: 0.07,
+      stabilityWeight: 0.007,
+      selfTimeWeight: 0,
+      victimWeight: 0,
+      dualFamilyWeight: 0.25,
+    });
+    expect(weights.selfAnomalyWeight).toBe(0.75);
   });
 });

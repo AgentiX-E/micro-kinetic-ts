@@ -504,7 +504,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         // printed only non-defaults would render a measured arm and the shipped run identically.
         'selfTimeWeight=0 victimWeight=0 dualFamilyWeight=0.25 dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
-        'temporalWeight=0 onsetShape=earliness',
+        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1',
     );
   });
 

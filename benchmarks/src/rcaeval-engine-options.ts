@@ -46,6 +46,14 @@ export interface RCAEvalSignalOptions {
   readonly onsetShape: OnsetShape;
   readonly stabilityWeight: number;
   /**
+   * The BASE term's coefficient — see `CliOptions.selfAnomalyWeight`.
+   *
+   * Required for the reason every weight here is, and for one more: this is the coefficient every published
+   * score is built on, so a runner that inherited the engine's default by omission would still produce the right
+   * number today and an unattributable one the day the constant moves.
+   */
+  readonly selfAnomalyWeight: number;
+  /**
    * The SELF-TIME prior: the share of a service's own latency rise that no callee can explain.
    *
    * Required here for the reason every other weight is: the engine's default is 0, and a runner that
@@ -211,6 +219,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       stabilityWeight: opts.stabilityWeight,
+      selfAnomalyWeight: opts.selfAnomalyWeight,
       selfTimeWeight: opts.selfTimeWeight,
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
@@ -313,6 +322,9 @@ export function formatSignalLine(opts: CliOptions): string {
     // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the
     // gated arm and the shipped run identically on the artifact that is supposed to attribute the difference.
     `dualFamilyGate=${opts.dualFamilyGate} dualFamilyGateMode=${opts.dualFamilyGateMode} ` +
-    `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
+    `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape} ` +
+    // APPENDED, not inserted: every byte before this one is what the artifacts already carry, and the field is
+    // unconditional on the failed-edge rule because 1 is a value a dispatch can ablate.
+    `selfAnomalyWeight=${opts.selfAnomalyWeight}`
   );
 }

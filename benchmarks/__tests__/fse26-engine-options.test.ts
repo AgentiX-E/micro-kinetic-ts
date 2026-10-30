@@ -23,6 +23,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -55,6 +56,9 @@ describe('buildFse26EngineOptions', () => {
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: DEFAULT_VICTIM_WEIGHT,
+      // The base term's coefficient, on the same rule as every weight here: read from the engine's own
+      // constant, and it must land in `signals` because that is the object the pruner reads it from.
+      selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
       dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
       // Same rule as the weight above: read from the engine's own constant, and it must land in `signals`
       // because that is the object the pruner reads it from.

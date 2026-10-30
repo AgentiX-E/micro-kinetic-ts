@@ -63,6 +63,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_WEIGHT,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -200,6 +201,16 @@ export interface CliOptions {
    * outranking the truth's `cpu` (14.35×) because a caller's response time contains its callees'.
    */
   selfTimeWeight: number;
+  /**
+   * Weight on the BASE term — the candidate's own anomaly, `log1p(anomaly(v))` (see
+   * `TreePrunerOptions.selfAnomalyWeight`).
+   *
+   * The one coefficient in the score that is a quantity of the model rather than a prior over it, and until it
+   * was named here it was the one coefficient no arm could state. It travels in the packed `anomaly_knobs`
+   * block as `selfanom=<weight>` for the same reason `victim` and `selftime` do: the golden half's 25-input
+   * budget is full.
+   */
+  selfAnomalyWeight: number;
   /**
    * Weight on the internal/external SYMMETRY MASK — PRISM's axiom as a bounded discount on a candidate's
    * own evidence (see `TreePrunerOptions.victimWeight`).
@@ -551,6 +562,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
@@ -655,6 +667,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
     else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    else if (args[i] === '--self-anomaly-weight' && hasValue(args, i + 1))
+      opts.selfAnomalyWeight = parseWeight(args[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);
     else if (args[i] === '--victim-weight' && hasValue(args, i + 1))
       opts.victimWeight = parseWeight(args[++i]!, DEFAULT_VICTIM_WEIGHT);
     else if (args[i] === '--dual-family-weight' && hasValue(args, i + 1))

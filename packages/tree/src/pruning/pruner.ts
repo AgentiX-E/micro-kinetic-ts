@@ -199,6 +199,24 @@ function buildTerm(
  * Extends the core RCAEngineOptions with pruner-specific settings.
  */
 export interface TreePrunerOptions extends RCAEngineOptions {
+  /**
+   * Weight of the BASE term — the candidate's own anomaly.
+   *
+   *   finalScore(v) = selfAnomalyWeight × log1p(anomaly(v)) + Σ (the priors below)
+   *
+   * This is the only term that is a quantity of the model rather than a prior over it: `anomaly(v)` is the
+   * extensive deviation the collision picture assigns to a service, and every other term is a correction
+   * applied to it. Until this field existed the coefficient was the literal `1` written into the formula, which
+   * made the largest single contribution to every score the one weight no ablation could state — not even at 0.
+   *
+   * Default {@link DEFAULT_SELF_ANOMALY_WEIGHT} = **1**, i.e. bit-identical to the literal. A value other than 1
+   * is a measurement, not a tuning: `docs/base-term-price.md` holds the sweep and the reading.
+   *
+   * Required, not optional, on the same rule as the pool penalty and the stability prior: the score term reads
+   * it without a fallback, because an `?? 1` on a field the constructor always fills is a branch no run can
+   * take and one that would read as a measurement of the ablation if it ever did.
+   */
+  readonly selfAnomalyWeight: number;
   /** 1-hop decay factor α ∈ (0, 1]. Default: 0.8 */
   readonly decayAlpha: number;
   /** 2-hop coupling coefficient β ∈ [0, 1]. Default: 0.3 */
@@ -753,6 +771,7 @@ export interface TreePrunerOptions extends RCAEngineOptions {
 export function toRankingWeights(
   options: Pick<
     TreePrunerOptions,
+    | 'selfAnomalyWeight'
     | 'sourceWeight'
     | 'temporalWeight'
     | 'collisionWeight'
@@ -771,6 +790,7 @@ export function toRankingWeights(
   >,
 ): RankingWeights {
   return {
+    selfAnomalyWeight: options.selfAnomalyWeight,
     sourceWeight: options.sourceWeight,
     temporalWeight: options.temporalWeight,
     collisionWeight: options.collisionWeight,
@@ -891,6 +911,21 @@ export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
  * never become the default, and neither can any value nobody has run.
  */
 export const DEFAULT_STABILITY_WEIGHT = 0.007352;
+
+/**
+ * The shipped weight of the BASE term — the candidate's own anomaly.
+ *
+ * **1**, i.e. the coefficient the formula carried as a literal for as long as the term has existed. It is
+ * named here so that the one contribution every score is built on can be ABLATED, including at 0, which the
+ * literal could not state.
+ *
+ * The value is not a tuning result and must not become one without a run: at 1 the term is the quantity the
+ * kinetic model defines, and `docs/base-term-price.md` is where a sweep's readings are recorded. What the
+ * constant buys immediately is that the three readers of a configuration — the engine, the two benchmark
+ * runners and the artifact's own line — can disagree about it in a way a test can see, which the literal
+ * made impossible.
+ */
+export const DEFAULT_SELF_ANOMALY_WEIGHT = 1;
 
 /**
  * The shipped weight of the self-time term.
@@ -1365,6 +1400,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   useTwoHopDecay: false,
   maxCycles: 10_000,
   enableCollisionAggregation: true,
+  selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
   sourceWeight: 0.0,
   temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
   onsetShape: DEFAULT_ONSET_SHAPE,
@@ -2503,6 +2539,7 @@ function performTreeRCA(
   // The decisive-stability term. Its map is ABSENT for a service the engine could not decompose,
   // which is why the lookup keeps a neutral fallback: `undefined` is not a measured bonus of zero.
   const stabilityWeight = options.stabilityWeight;
+  const selfAnomalyWeight = options.selfAnomalyWeight;
   // The self-time term. Its map is ABSENT when the case carries no usable latency channel (or when a
   // candidate has an undecidable callee), so the lookup keeps the neutral 0 — the same rule the other
   // sparse maps follow: a missing measurement is not a measured zero, and this term only ever rewards.
@@ -2602,10 +2639,12 @@ function performTreeRCA(
         // 1.0, and `log(1.0) === 0` would collapse the base term to zero for the STRONGEST signal while
         // `log(0) === -Infinity` would destroy a zero-anomaly service.
         //
-        // It has no configurable weight (the 1 is the formula's own) and no optional source, so its zero is
-        // always a genuinely zero anomaly: `WEIGHT_ZERO` is unreachable by construction and the two absence
-        // causes are declared impossible because `selfScores` carries every scored node.
-        buildTerm('selfAnomalyLog1p', 1, Math.log1p(selfScores.get(id)!), {
+        // The weight is a declared constant now rather than the formula's own `1`, and that is what lets the
+        // base term be ABLATED: at 0 this term reports `WEIGHT_ZERO` (the sharpest cause, and the only one the
+        // literal could never produce), at 1 the sum is bit-identical to the literal. Its source is not
+        // optional — `selfScores` carries every scored node — so the two absence causes stay unreachable by
+        // construction, which the neighbouring test asserts for this term by name.
+        buildTerm('selfAnomalyLog1p', selfAnomalyWeight, Math.log1p(selfScores.get(id)!), {
           presence: 'PRESENT',
           source: 'selfScores',
         }),

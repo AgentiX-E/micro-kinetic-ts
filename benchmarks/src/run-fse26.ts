@@ -143,6 +143,7 @@ async function main(): Promise<void> {
   // while the line kept it, leaving two artifacts 24.2pp apart with byte-equal
   // `config` blocks.
   const runConfig: FSE26RunConfig = {
+    selfAnomalyWeight: opts.selfAnomalyWeight,
     logWeight: opts.logWeight,
     logSignalMode: opts.logMode,
     rankNormalization: opts.rankNormalization,

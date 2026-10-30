@@ -138,6 +138,12 @@ export interface FSE26RunConfig {
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus; `0` = the shipped configuration. */
   readonly dualFamilyWeight: number;
+  /**
+   * Weight on the BASE term — the candidate's own anomaly. `1` is the shipped configuration and is the value
+   * the formula carried as a literal before it was named; printed unconditionally so that an arm which
+   * ablates it cannot produce the shipped run's line.
+   */
+  readonly selfAnomalyWeight: number;
   /** The dual-family membership's population; `0` = no gate, the membership the weight was enrolled on. */
   readonly dualFamilyGate: number;
   /** Which fleet-relative comparison that gate applies; `min` = the shipped configuration. */
@@ -347,6 +353,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'selfTimeWeight',
   'victimWeight',
   'dualFamilyWeight',
+  'selfAnomalyWeight',
   'dualFamilyGate',
   'dualFamilyGateMode',
   'temporalWeight',
@@ -474,6 +481,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // field would render the shipped run and its ablation byte-identically.
   line += ` temporalWeight=${config.temporalWeight}`;
   line += ` onsetShape=${config.onsetShape}`;
+  // APPENDED after the unconditional prefix rather than inserted among the weights: every byte before this one
+  // is what the published artifacts already carry. Unconditional, because 1 is the shipped value and 0 is its
+  // ablation — an omitted-when-default rule would render the arm and the control identically on the artifact
+  // that is supposed to attribute the difference.
+  line += ` selfAnomalyWeight=${config.selfAnomalyWeight}`;
   // The eight the mirror made reachable on this half, each on the `omit when it holds its default` rule
   // every weight above follows — which is sound here for the reason it is unsound for `latWeight`: all
   // eight defaults are zero or false, so an omission reads as the default rather than as a value nobody

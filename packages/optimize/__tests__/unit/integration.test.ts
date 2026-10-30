@@ -237,6 +237,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'onsetShape',
       'poolMetricPenaltyWeight',
       'prismPooling',
+      'selfAnomalyWeight',
       'selfTimeWeight',
       'stabilityWeight',
       'topoDiscount',

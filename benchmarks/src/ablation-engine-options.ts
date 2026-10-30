@@ -56,6 +56,7 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -164,6 +165,8 @@ export interface AblationSignalOptions {
   readonly victimWeight: number;
   /** The dual-family presence bonus, held at the shipped 0 by every row. */
   readonly dualFamilyWeight: number;
+  /** The BASE term's coefficient; `1` is the shipped configuration. */
+  readonly selfAnomalyWeight: number;
   /**
    * The dual-family membership's population, held at the shipped 0.25 by every row.
    *
@@ -296,6 +299,8 @@ export interface AblationEngineOverrides {
   readonly selfTimeWeight?: number;
   /** Overrides `victimWeight` — the internal/external symmetry mask. */
   readonly victimWeight?: number;
+  /** Overrides `selfAnomalyWeight` — the base term's coefficient. */
+  readonly selfAnomalyWeight?: number;
   /** Overrides `dualFamilyWeight` — the dual-family presence bonus. */
   readonly dualFamilyWeight?: number;
   /** Overrides `metricRiseCeiling` — the ratio ceiling. */
@@ -356,6 +361,7 @@ export function buildAblationEngineOptions(
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
+      selfAnomalyWeight: overrides.selfAnomalyWeight ?? DEFAULT_SELF_ANOMALY_WEIGHT,
       dualFamilyWeight: overrides.dualFamilyWeight ?? DEFAULT_DUAL_FAMILY_WEIGHT,
       dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
       dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -404,6 +410,7 @@ export function formatAblationConfigLine(
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
+    `selfAnomalyWeight=${signals.selfAnomalyWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
     `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +
     `dualFamilyGateMode=${signals.dualFamilyGateMode} ` +

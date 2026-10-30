@@ -47,6 +47,10 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   onsetShape: 'the temporal shape; the search tunes temporalWeight, not its shape',
   logSignalMode: 'which log lines count; the search tunes the log WEIGHT only',
   edgeLatency: 'whether the latency term reads per-edge durations at all',
+  selfAnomalyWeight:
+    "the BASE term's coefficient, held at the engine's 1: it is the UNIT the other weights are expressed " +
+    'against, so a search that moved it would make every coefficient it reports relative to a moving scale ' +
+    'and none of them identifiable. Its value is a dispatch question (docs/base-term-price.md)',
   latWeight:
     'the largest shipped ranking weight, solved by an FSE-26 screen and held OUT of this search space',
   latMinRise:

@@ -32,10 +32,23 @@
  *                 − poolMetricPenaltyWeight × poolMetricScore(v)
  *                 + stabilityWeight × stabilityScore(v)
  *                 + selfTimeWeight  × selfTimeShare(v)
+ *                 + selfAnomalyWeight × log1p(anomaly(v))
  *
- * All weights are dimensionless and default to 0 (signal disabled).
+ * All weights are dimensionless and default to 0 (signal disabled) — except `selfAnomalyWeight`,
+ * whose default of 1 is the base term's own coefficient rather than a prior's.
  */
 export interface RankingWeights {
+  /**
+   * BASE term: the candidate's own anomaly, `log1p(anomaly(v))` — the one quantity in the sum that
+   * comes straight out of the kinetic model rather than out of a prior over it. Default 1, which is
+   * the value the formula used to carry as a literal.
+   *
+   * OPTIONAL for the same reason `traceWeight` and `prismWeight` are: this interface is the
+   * optimizer's search-space contract, and a search that predates the field must still describe a
+   * configuration. The engine's own option of the same name is required, so the score term reads it
+   * without a fallback.
+   */
+  readonly selfAnomalyWeight?: number;
   /**
    * LOCAL source-likelihood prior: the fraction of a node's causal
    * neighbours whose index-based anomaly onset is LATER than its own.

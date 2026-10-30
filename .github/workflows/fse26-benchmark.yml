@@ -357,6 +357,11 @@ jobs:
                 victim_weight)
                   KNOB_ARGS+=(--victim-weight "$value")
                   ;;
+                # The BASE term's coefficient — the one weight the formula used to carry as a literal, and
+                # therefore the one no arm could state. It ships at 1; 0 is its ablation.
+                self_anomaly_weight)
+                  KNOB_ARGS+=(--self-anomaly-weight "$value")
+                  ;;
                 dual_family_weight)
                   KNOB_ARGS+=(--dual-family-weight "$value")
                   ;;

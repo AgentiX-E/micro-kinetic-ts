@@ -276,6 +276,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 140: the internal/external symmetry mask. A ranking WEIGHT rather than a composition
     // coefficient, packed here for the reason the self-time term is: the golden half's input budget is full.
     '--victim-weight',
+    // Iteration 191: the BASE term's coefficient. Packed for the reason every post-ceiling knob is — the golden
+    // half's 25-input budget is full — and it is the one weight in the sum that the formula used to carry as a
+    // literal, so before this arm existed the term could not be ablated at all.
+    '--self-anomaly-weight',
     // Iteration 141: the DROP-deviation pair. Both travel in the packed block because the golden half's input
     // budget is full, and both are needed together — `log` without a ceiling is the #193 explosion.
     '--drop-deviation-mode',
@@ -317,6 +321,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--cap-trend-bonus-at-deviation',
     '--trace-skips-leader',
     '--victim-weight',
+    // The base term's coefficient. It belongs to this block rather than to an input of its own for the reason
+    // every entry here does — the golden half's input budget is full — and `reaches()` checks it against the
+    // workflow's own `case` arm, so a key dropped from the block fails here rather than at dispatch time.
+    '--self-anomaly-weight',
     '--drop-deviation-mode',
     '--rise-ceiling',
     '--dual-family-weight',
@@ -460,6 +468,16 @@ const KNOBS: Readonly<
     // decides how a direction becomes a number, this decides which samples that number is measured on.
     flag: '--baseline-anchor',
     owner: 'baseline-anchor.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  selfAnomalyWeight: {
+    // The BASE term's coefficient — the one weight the formula used to carry as a literal, and therefore the
+    // only term in the sum no arm could state. A dispatch can now ask for its ablation (0) or for any other
+    // share of the score the anomaly itself should carry, on both halves, because `base-term-price.md`'s
+    // reading is an AND over them.
+    flag: '--self-anomaly-weight',
+    owner: 'base-term-price.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -764,6 +782,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'prismWeight',
   'rankNormalization',
   'capTrendBonusAtDeviation',
+  'selfAnomalyWeight',
   'selfTimeWeight',
   'stabilityWeight',
   'victimWeight',
