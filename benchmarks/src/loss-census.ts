@@ -23,6 +23,8 @@
  * @module benchmarks/loss-census
  */
 
+import type { ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+
 import type { AnchorCensus } from './anchor-census.js';
 import type { LatencyRouteEntry } from './directional-evidence.js';
 
@@ -162,6 +164,16 @@ export interface LossRecord {
    * depend on `packages/kinetic`; inside one package a second declaration of one shape is an owner with none.
    */
   readonly latencySupply: LatencyRouteEntry;
+  /**
+   * Where the winner sat relative to the truth in THIS case's call graph — see {@link classifyWinnerRelation}.
+   *
+   * Optional because it is a fact about the winner, and a case the engine answered correctly has no loss to
+   * direct; a record read back from an artifact written before the field existed also has none, which is a
+   * different absence and is reported as `unstated` rather than folded into `unrelated`.
+   */
+  readonly winnerRelation?: WinnerRelation | undefined;
+  /** The hop count {@link winnerRelation} holds at, or absent with it. */
+  readonly winnerHops?: number | undefined;
   /**
    * What the anchored window did to THIS case's series — placed, refused, and why.
    *
@@ -778,5 +790,268 @@ export function formatTermZeroes(summary: TermZeroSummary): readonly string[] {
   flush();
   if (summary.rows.length === 0)
     lines.push('    none — every term contributed something on every miss');
+  return lines;
+}
+
+/**
+ * Where the winner SAT relative to the truth, in the call graph — the direction of a loss.
+ *
+ * ## Why this is a third instrument rather than a fourth column
+ *
+ * The two instruments above ask *why* a case was missed: whether the truth was reachable, and if so what the
+ * winner won on. Neither asks **which way the answer pointed**, and on the enrolled configuration that is the
+ * dominant structure of what remains: of the 94 misses, 31 sit at rank two and a single shape accounts for the
+ * largest group — a node that CALLS everything and is called by nothing
+ * (`ts-admin-travel-service`, `front-end`), ranked above the thing it is observing.
+ *
+ * `docs/topo-share.md` §11 attributes those cases by NAME, which is the defect this instrument removes: a
+ * service id does not carry its edge direction, so "nine observers and twenty-two callees" was a reading of
+ * identifiers rather than of edges. `Blast Radius Bench` publishes the same quantity as a first-class metric —
+ * a **reversed-causality count**, "how many edges the model inverted, claiming a downstream victim caused an
+ * upstream service" — and calls it the single most diagnostic error in incident reasoning
+ * (`docs/benchmark-corpus-completeness.md` §11).
+ *
+ * ## The four values, and the one that is not a direction
+ *
+ * A call edge is `caller → callee` (the caller depends on the callee) and a fault at a callee propagates to its
+ * caller. So for a miss with truth `t` and winner `w`:
+ *
+ * - `caller` — `w` reaches `t`: **`w` is a victim of `t`**, and the ranking blamed the symptom. Reversed
+ *   causality, the error the metric is named for.
+ * - `callee` — `t` reaches `w`: the ranking blamed something the truth DEPENDS ON, which the truth's own fault
+ *   cannot have caused. The opposite inversion, and a different repair.
+ * - `unrelated` — neither reaches the other: no topological operator can reach these, and filing them with the
+ *   other two would credit a direction fix with cases about scoring.
+ * - `self` — `w` IS `t`. Only a correct case, and present so the function is total.
+ */
+export type WinnerRelation = 'self' | 'caller' | 'callee' | 'unrelated';
+
+/** A relation and the distance it holds at, in call edges. */
+export interface WinnerDirection {
+  /** Which way the winner sits relative to the truth. */
+  readonly relation: WinnerRelation;
+  /**
+   * The shortest path length: from the winner down to the truth for `caller`, from the truth down to the
+   * winner for `callee`. `0` for `self` and for `unrelated`, which are not distances.
+   */
+  readonly hops: number;
+}
+
+/**
+ * The shortest number of call edges from `from` to `to`, or `undefined` when `to` is unreachable.
+ *
+ * Breadth-first and bounded by the node set, which is what makes it safe on a graph with cycles: a depth-first
+ * walk would not terminate on `a → b → a`, and the shortest path is also the one a repair has to cross.
+ *
+ * @param graph - The case's call graph. Only `edges` is read.
+ * @param from - The source node.
+ * @param to - The target node.
+ * @returns The hop count, or `undefined` when no directed path exists.
+ */
+function hopsBetween(
+  graph: Pick<ServiceCallGraph, 'edges'>,
+  from: string,
+  to: string,
+): number | undefined {
+  if (from === to) return 0;
+  // Built per call rather than cached: a case's graph is walked ONCE, and a cache keyed on a graph object would
+  // be a second lifetime to reason about for a saving of one O(E) pass over at most a few hundred edges.
+  const next = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const at = next.get(edge.from);
+    if (at === undefined) next.set(edge.from, [edge.to]);
+    else at.push(edge.to);
+  }
+  const seen = new Set<string>([from]);
+  let frontier: string[] = [from];
+  for (let hops = 1; frontier.length > 0; hops++) {
+    const following: string[] = [];
+    for (const node of frontier) {
+      for (const child of next.get(node) ?? []) {
+        if (child === to) return hops;
+        if (seen.has(child)) continue;
+        seen.add(child);
+        following.push(child);
+      }
+    }
+    frontier = following;
+  }
+  return undefined;
+}
+
+/**
+ * Classify where the winner sits relative to the truth, from the case's own call graph.
+ *
+ * A pair inside a cycle reaches both ways and has no direction. That is resolved rather than reported as a tie:
+ * the NEARER side wins, and an exact tie reads `caller`, because the counter exists to measure the
+ * reversed-causality error and a genuinely undecidable pair is at least a candidate for it. Reporting such a
+ * pair as `unrelated` would understate the error the metric is about.
+ *
+ * @param graph - The case's call graph, as the pipeline constructed it.
+ * @param truth - Ground-truth service id.
+ * @param winner - The engine's top-1 prediction.
+ * @returns The relation and its hop count. Total on every input, including a node absent from the graph.
+ */
+export function classifyWinnerRelation(
+  graph: Pick<ServiceCallGraph, 'edges'>,
+  truth: string,
+  winner: string,
+): WinnerDirection {
+  if (truth === winner) return { relation: 'self', hops: 0 };
+  // `up` is the direction the causality is REVERSED in: the winner is called by the truth's fault, i.e. it is
+  // a victim that a call chain connects back to the cause.
+  const up = hopsBetween(graph, winner, truth);
+  const down = hopsBetween(graph, truth, winner);
+  if (up === undefined && down === undefined) return { relation: 'unrelated', hops: 0 };
+  if (down === undefined) return { relation: 'caller', hops: up! };
+  if (up === undefined) return { relation: 'callee', hops: down };
+  // Both directions exist, so the pair is in a cycle. The nearer side, and `caller` on an exact tie.
+  return up <= down ? { relation: 'caller', hops: up } : { relation: 'callee', hops: down };
+}
+
+/** One cell's winner directions, over its misses. */
+export interface WinnerDirectionRow {
+  /** Suite name, as the case id declared it. */
+  readonly suite: string;
+  /** System name. */
+  readonly system: string;
+  /** Cases in the group, correct ones included, because the misses are a share of them. */
+  readonly cases: number;
+  /** Cases the ranking answered correctly. */
+  readonly correct: number;
+  /** Cases it did not: the denominator every column below is a count of. */
+  readonly misses: number;
+  /** Misses whose winner CALLS the truth — a victim blamed for its cause. */
+  readonly caller: number;
+  /** Of those, how many are one hop away: the only ones a one-edge repair can reach. */
+  readonly directCaller: number;
+  /** Misses whose winner is a dependency OF the truth. */
+  readonly callee: number;
+  /** Misses with no directed path either way, which no topological operator can reach. */
+  readonly unrelated: number;
+  /**
+   * Misses this instrument cannot place: no prediction was produced, or the record predates the field.
+   *
+   * Its own column rather than a default, on the rule {@link DeepEvidenceClass} states: a record that did not
+   * look must not read as a measurement of `unrelated`.
+   */
+  readonly unstated: number;
+}
+
+/**
+ * Count the directions of every miss, per cell.
+ *
+ * Reads the fields the record already carries rather than walking a graph: the classification happens where the
+ * graph exists, and a second walk here would be a second answer to a question the record has answered.
+ *
+ * @param records - The census rows, one per case.
+ * @returns One row per cell, ordered by suite then system.
+ */
+export function summarizeWinnerDirection(records: readonly LossRecord[]): WinnerDirectionRow[] {
+  const groups = new Map<string, LossRecord[]>();
+  for (const r of records) {
+    const at = groups.get(r.cell);
+    if (at === undefined) groups.set(r.cell, [r]);
+    else at.push(r);
+  }
+  const rows: WinnerDirectionRow[] = [];
+  for (const cell of [...groups.keys()].sort()) {
+    const members = groups.get(cell)!;
+    const [suite, system] = splitCell(cell);
+    let correct = 0;
+    let caller = 0;
+    let directCaller = 0;
+    let callee = 0;
+    let unrelated = 0;
+    let unstated = 0;
+    for (const m of members) {
+      if (m.correct) {
+        correct++;
+        continue;
+      }
+      // The winner's ABSENCE is checked before the field that classifies it: a record with no prediction has no
+      // winner to place, whatever a neighbouring field says — and that ordering is the assertion.
+      if (m.predicted === undefined || m.winnerRelation === undefined) {
+        unstated++;
+        continue;
+      }
+      switch (m.winnerRelation) {
+        case 'caller':
+          caller++;
+          if (m.winnerHops === 1) directCaller++;
+          break;
+        case 'callee':
+          callee++;
+          break;
+        case 'unrelated':
+          unrelated++;
+          break;
+        case 'self':
+          // A `self` relation on a case that is not correct is a contradiction: the winner IS the truth. Counted
+          // as unstated rather than silently as a direction, because it means the two fields disagree and no
+          // reading of either is trustworthy.
+          unstated++;
+          break;
+      }
+    }
+    rows.push({
+      suite,
+      system,
+      cases: members.length,
+      correct,
+      misses: members.length - correct,
+      caller,
+      directCaller,
+      callee,
+      unrelated,
+      unstated,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Render the direction census.
+ *
+ * @param rows - The output of {@link summarizeWinnerDirection}.
+ * @returns The report lines, in the shape the other census reports use.
+ */
+export function formatWinnerDirection(rows: readonly WinnerDirectionRow[]): string[] {
+  if (rows.length === 0) {
+    return ['no misses to place: nothing to census, and saying so beats printing a zero.'];
+  }
+  const lines = [
+    '  winner direction — of the misses, was the winner a VICTIM of the truth (reversed causality), a',
+    '  DEPENDENCY of it, or neither? `direct` is the one-hop part of `reversed`, which is all a one-edge',
+    '  repair can reach.',
+    `  ${'cell'.padEnd(22)} ${'cases'.padStart(6)} ${'misses'.padStart(7)} ${'reversed'.padStart(9)} ` +
+      `${'direct'.padStart(7)} ${'depend'.padStart(7)} ${'neither'.padStart(8)} ${'unstated'.padStart(9)}   reversed`,
+  ];
+  let cases = 0;
+  let misses = 0;
+  let caller = 0;
+  let direct = 0;
+  let callee = 0;
+  let unrelated = 0;
+  let unstated = 0;
+  for (const r of rows) {
+    lines.push(
+      `  ${`${r.suite}:${r.system}`.padEnd(22)} ${String(r.cases).padStart(6)} ${String(r.misses).padStart(7)} ` +
+        `${String(r.caller).padStart(9)} ${String(r.directCaller).padStart(7)} ${String(r.callee).padStart(7)} ` +
+        `${String(r.unrelated).padStart(8)} ${String(r.unstated).padStart(9)}   ${pct(r.caller, r.misses)}`,
+    );
+    cases += r.cases;
+    misses += r.misses;
+    caller += r.caller;
+    direct += r.directCaller;
+    callee += r.callee;
+    unrelated += r.unrelated;
+    unstated += r.unstated;
+  }
+  lines.push(
+    `  ${'ALL'.padEnd(22)} ${String(cases).padStart(6)} ${String(misses).padStart(7)} ` +
+      `${String(caller).padStart(9)} ${String(direct).padStart(7)} ${String(callee).padStart(7)} ` +
+      `${String(unrelated).padStart(8)} ${String(unstated).padStart(9)}   ${pct(caller, misses)}`,
+  );
   return lines;
 }

@@ -130,11 +130,14 @@ import {
   type LogRouteEntry,
 } from './log-route.js';
 import {
+  classifyWinnerRelation,
   formatLossReport,
   formatRankingLadder,
   formatTermZeroes,
+  formatWinnerDirection,
   summarizeLoss,
   summarizeTermZeroes,
+  summarizeWinnerDirection,
   type LossRecord,
 } from './loss-census.js';
 import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
@@ -1579,6 +1582,13 @@ async function main(): Promise<void> {
       const cell = `${suiteName}:${systemName}`;
       for (const c of stats.cases) {
         const ep = engineByCaseId.get(c.id);
+        // The direction of this case's answer, when there is an answer to direct: a correct case has no loss,
+        // and a case that produced no prediction has nothing to place. Computed here because THIS is where the
+        // graph is, and stored because the census is read after the run.
+        const direction =
+          ep?.top1 === undefined || ep.top1 === c.groundTruth.serviceId
+            ? undefined
+            : classifyWinnerRelation(c.callGraph, c.groundTruth.serviceId, ep.top1);
         lossRecords.push({
           caseId: c.id,
           cell,
@@ -1613,6 +1623,10 @@ async function main(): Promise<void> {
             { metrics: c.metrics, injectTime: c.injectTime, truth: c.groundTruth.serviceId },
             opts.baselineAnchor,
           ),
+          // …and WHICH WAY the answer pointed, read off this case's own graph rather than off the service ids.
+          ...(direction === undefined
+            ? {}
+            : { winnerRelation: direction.relation, winnerHops: direction.hops }),
         });
       }
     }
@@ -1657,6 +1671,10 @@ async function main(): Promise<void> {
     );
     console.log('════════════════════════════════════════════════════════════');
     for (const line of formatLossReport(rows)) console.log(line);
+    // The third instrument, appended after the first two: those say WHY a case was missed and this says which
+    // WAY the answer pointed, which is the axis the next population-level claim is about.
+    for (const line of formatWinnerDirection(summarizeWinnerDirection(lossRecords)))
+      console.log(line);
     // The separation §6.5 refuses to make from a contributions table: a zero is the same number whether the
     // weight is zero, the graph field is missing, or the evidence is absent, and only the producer knows
     // which. Printed for the truth's side, because the loss is about the truth.

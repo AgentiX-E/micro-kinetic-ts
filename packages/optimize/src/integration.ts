@@ -76,11 +76,13 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
   topoDiscount:
-    'the topological deduction, off at 0 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and a term whose additive sibling ships at weight 0 has no business being a search axis',
+    'the topological deduction, shipped ON at 1 since iteration 163 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and its weight is a dispatch question whose answer the occupancy of the candidate pool decides rather than a fusion coefficient a continuous search can interpolate',
   topoDiscountScope:
     'the deduction QUANTITY rather than a number: `all` and `external` are two physical claims about which channels cross a call boundary, so it is a dispatch axis and not a fusion coefficient the search can interpolate',
   topoDiscountGate:
-    'a SUPPORT CONDITION on the deduction rather than a weight: it decides which nodes the operator may charge at all, so it belongs to the same dispatch axis as the weight and the scope above — and at weight 0 it is not read, so a search that moved it would be tuning a field the run cannot consult',
+    'a SUPPORT CONDITION on the deduction rather than a weight: it decides which nodes the operator may charge at all, so it belongs to the same dispatch axis as the weight and the scope above',
+  topoClosure:
+    'the deduction’s AGGREGATION rather than a number: `max` and `sum` are two claims about the request shape of a fan-out (one branch, or all of them), so it is a dispatch axis like the scope above — a continuous search has nothing to interpolate between two named operators',
 };
 
 /**

@@ -295,6 +295,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 146: the gate's OTHER axis — which fleet-relative comparison it applies. A MODE, not a number,
     // so it is parsed by its union's own guard and travels beside the gate it qualifies.
     '--dual-family-gate-mode',
+    // Iteration 164: the deduction's CLOSURE — the fourth field of a family that reached this block one member
+    // per iteration. Packed for the reason the family's first three are: the golden half's 25-input budget is
+    // full. A WORD rather than a number, so it travels through the block's own `case` guard.
+    '--topo-closure',
     // Iteration 187: the deviation window's ANCHOR. Packed for the reason every post-ceiling knob is: the
     // golden half's 25-input budget is full. It is a WINDOW rather than a weight, and it belongs to the
     // composition because it re-defines the `max`, `min` and baseline every coefficient in that object is
@@ -347,6 +351,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--topo-discount-scope',
     // Iteration 195: the gate, for the reason the two above are here.
     '--topo-discount-gate',
+    // Iteration 164: the deduction's CLOSURE, the family's fourth and last field. It travels in THIS block for
+    // the reason the three above do — the golden half is at 25/25 — and it is the one member of the family that
+    // is a WORD rather than a number, so the block's `case` arm guards it against a third name.
+    '--topo-closure',
   ],
 };
 
@@ -579,6 +587,17 @@ const KNOBS: Readonly<
     owner: 'topo-discount-gate.md',
     fse26: 'ranking_knobs',
     rcaeval: 'topodiscountgate',
+  },
+  topoClosure: {
+    flag: '--topo-closure',
+    // Its own document, because the question is not the deduction's weight, gate or scope: those ask HOW MUCH,
+    // WHETHER and THROUGH WHICH CHANNEL, and this asks HOW the explanations are added up. `docs/topo-share.md`
+    // §11 named the population that makes it a question — a node that calls everything and is called by
+    // nothing, whose anomaly is an aggregate of its fan-out — and `topo-closure.md` owns the operator, its
+    // relation to the influx balance, and the ablation the two closures are measured on.
+    owner: 'topo-closure.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'topoclosure',
   },
   traceWeight: {
     flag: '--trace-weight',
@@ -816,6 +835,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'topoDiscount',
   'topoDiscountScope',
   'topoDiscountGate',
+  'topoClosure',
   'topoWeight',
   'traceWeight',
   'traceSkipsLeader',

@@ -67,7 +67,7 @@ const deduct = (
   rho: number,
   scope: TopoDiscountScope = 'external',
   gate = 0,
-) => deductExplainedAnomalies(input, rho, scope, gate);
+) => deductExplainedAnomalies(input, rho, scope, gate, 'max');
 
 describe('the share the gate reads', () => {
   it('reports the fraction of a node its callees account for, and 0 on one nothing explains', () => {

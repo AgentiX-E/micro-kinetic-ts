@@ -52,7 +52,8 @@ const deduct = (
   rho: number,
   scope: TopoDiscountScope = 'external',
   gate = 0,
-): ReadonlyMap<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate).discounted;
+): ReadonlyMap<ServiceId, number> =>
+  deductExplainedAnomalies(input, rho, scope, gate, 'max').discounted;
 
 describe('the gate, which decides WHICH nodes the deduction may move', () => {
   it('ships at the boundary, so the published nine cells are the FILTER reading', () => {
@@ -78,12 +79,13 @@ describe('the gate, which decides WHICH nodes the deduction may move', () => {
       [inputOf({ a: 2, b: 1, c: 0.6 }, [edge('a', 'b'), edge('a', 'c')], 1), 0.25, 'external'],
     ];
     for (const [input, rho, scope] of cases) {
-      const atZero = deductExplainedAnomalies(input, rho, scope, 0).discounted;
+      const atZero = deductExplainedAnomalies(input, rho, scope, 0, 'max').discounted;
       const atShipped = deductExplainedAnomalies(
         input,
         rho,
         scope,
         DEFAULT_TOPO_DISCOUNT_GATE,
+        'max',
       ).discounted;
       for (const [id, anomaly] of input.anomalies) {
         expect(atShipped.get(id) ?? anomaly).toBeGreaterThanOrEqual(atZero.get(id) ?? anomaly);

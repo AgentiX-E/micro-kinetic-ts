@@ -3,11 +3,15 @@
  *
  * ## The operator
  *
- *     explained(v) = max over callees c with weight(v→c) > 0 of weight(v→c) × anomaly(c)
+ *     explained(v) = ⊕ over callees c with weight(v→c) > 0 of weight(v→c) × anomaly(c)
  *     charged(v)   = min(anomaly(v), explained(v)) >= gate × anomaly(v)
  *                    ? rho × min(anomaly(v), explained(v))
  *                    : 0
  *     anomaly′(v)  = anomaly(v) − charged(v)
+ *
+ * `⊕` is {@link TopoClosure}: a MAXIMUM when a caller's request takes one branch of its fan-out, and a SUM
+ * when it fans out and waits for every branch. It ships as the maximum, which is what every published
+ * population was measured under; `docs/topo-closure.md` is the ablation.
  *
  * A node that calls nothing anomalous keeps all of its anomaly; a node whose anomaly is entirely
  * accounted for by what it calls loses `rho` of it and no more; and a node whose anomaly is only
@@ -127,6 +131,61 @@ export interface TopoDeductionInput {
 }
 
 /**
+ * How a caller's explanation is AGGREGATED over its callees.
+ *
+ * ## Why this is a choice rather than a constant
+ *
+ * The operator has defined `explained` as a maximum since iteration 158, with the reason written beside it:
+ * "the caller's traffic splits across its callees, so the fractions do not compose into a total". That
+ * sentence describes a caller whose request takes ONE branch — the traffic splits, so at most one callee is
+ * on the path of any given request, and the worst of them is the explanation.
+ *
+ * It is false for a caller whose request fans OUT and waits for every branch. Such a caller's anomaly is the
+ * INFLUX from all of its callees at once: `sum`. The two shapes coexist in one fleet (a checkout service fans
+ * out; a frontend route takes one branch), and which one a node is cannot be read from the graph, so the
+ * aggregation is held as a named choice and measured rather than assumed.
+ *
+ * `max` is the shipped value and every published number on the golden nine cells was read under it. `sum` is
+ * the ablation `docs/topo-closure.md` measures, and the reason it is admissible at all is {@link
+ * TopoDeductionResult}: the explanation stays capped at the whole inside `min(a, e)`, and the gate still
+ * decides WHETHER a node is charged, so the two closures are one operator with two readings rather than two
+ * operators.
+ */
+export type TopoClosure = 'max' | 'sum';
+
+/** The reachable values of {@link TopoClosure}, as a lookup so a parser cannot invent a third. */
+export const TOPO_CLOSURES: Readonly<Record<TopoClosure, true>> = { max: true, sum: true };
+
+/**
+ * The shipped {@link TopoClosure}.
+ *
+ * `max` rather than `sum` because that is what the published populations were measured under, and a default
+ * that changed underneath them would make every artifact in `docs/` describe a configuration nobody ran.
+ */
+export const DEFAULT_TOPO_CLOSURE: TopoClosure = 'max';
+
+/**
+ * Whether a string names a {@link TopoClosure}.
+ *
+ * @param value - The string to test.
+ * @returns True when it is one of {@link TOPO_CLOSURES}'s keys.
+ */
+export function isTopoClosure(value: string): value is TopoClosure {
+  return Object.prototype.hasOwnProperty.call(TOPO_CLOSURES, value);
+}
+
+/** Fold one callee's contribution into a caller's explanation by taking the largest. @internal */
+function keepLargest(into: Map<ServiceId, number>, from: ServiceId, value: number): void {
+  const current = into.get(from);
+  into.set(from, current === undefined ? value : Math.max(current, value));
+}
+
+/** Fold one callee's contribution into a caller's explanation by adding it. @internal */
+function accumulate(into: Map<ServiceId, number>, from: ServiceId, value: number): void {
+  into.set(from, (into.get(from) ?? 0) + value);
+}
+
+/**
  * What the operator decided, per node — the deduction's result AND the quantity its gate reads.
  *
  * ## Why the share travels with the result rather than being recoverable from it
@@ -183,16 +242,20 @@ export interface TopoDeductionAudit {
  *   behaviour; a larger value leaves a mostly-unexplained node entirely alone. Required rather than
  *   defaulted, on the rule the engine's other shipped values follow: a parameter whose callers can
  *   omit it is a parameter that silently takes a value nobody declared.
+ * @param closure - How a caller's explanation is aggregated over its callees — see {@link TopoClosure}.
+ *   Required for the reason `gate` is: the two readings differ on exactly the nodes this operator's subject
+ *   is about, so a caller that omitted it would be running an arm it did not name.
  * @returns The discounted map and the share it was discounted by, both in the SAME space as
  *   `input.anomalies`; the input is untouched.
  * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, or if the weight vector is not
- *   aligned with the edges.
+ *   aligned with the edges, or if `closure` is not a reachable value.
  */
 export function deductExplainedAnomalies(
   input: TopoDeductionInput,
   rho: number,
   scope: TopoDiscountScope,
   gate: number,
+  closure: TopoClosure,
 ): TopoDeductionResult {
   // `invariantFinite` first: `invariantRange` cannot see NaN — `NaN < 0` and `NaN > 1` are both false,
   // so a NaN weight would pass a range check and poison every anomaly downstream.
@@ -203,6 +266,13 @@ export function deductExplainedAnomalies(
   // switches itself off while the configuration line reports it on.
   invariantFinite(gate, 'topoDiscountGate');
   invariantRange(gate, 0, 1, 'topoDiscountGate');
+  // The closure is checked for the reason the two numbers above are: the type is a union, and this function
+  // is public. A string from a config file would otherwise fall through to whichever branch happened to be
+  // `else` — and the artifact's `signals:` line would then report a closure the run did not use.
+  invariant(
+    isTopoClosure(closure),
+    `topoClosure must be one of ${Object.keys(TOPO_CLOSURES).join('|')}, got '${closure}'`,
+  );
   // The weight vector is aligned with the edge array by construction upstream, and this function is
   // public: a caller that hands over a shorter vector would otherwise read `undefined` and produce a
   // NaN anomaly, which no ranking can see. The check is the contract, stated where the contract is.
@@ -220,9 +290,13 @@ export function deductExplainedAnomalies(
     return dominant !== undefined && isResponseChannel(dominant.label);
   };
 
-  // The largest single-callee explanation per caller. A maximum rather than a sum: the caller's
-  // traffic splits across its callees, so the fractions do not compose into a total — and a sum would
-  // let two mildly anomalous callees out-explain one that is entirely responsible.
+  // The aggregation over callees, chosen once here rather than branched per edge: a `max` and a `sum` over the
+  // same single term are the same number, which is why the closure is invisible on a tree and decisive on a
+  // fan-out (`docs/topo-closure.md` measures the second).
+  const fold = closure === 'max' ? keepLargest : accumulate;
+
+  // The largest single-callee explanation per caller for `max`, or the total influx for `sum`. A maximum is
+  // the reading for a request that takes one branch; a sum is the reading for one that fans out and waits.
   const explained = new Map<ServiceId, number>();
   for (let i = 0; i < input.edges.length; i++) {
     const edge = input.edges[i]!;
@@ -233,9 +307,7 @@ export function deductExplainedAnomalies(
     // nothing — so this default is reachable and stays.
     const calleeAnomaly = input.anomalies.get(edge.to) ?? 0;
     if (!(calleeAnomaly > 0)) continue;
-    const value = weight * calleeAnomaly;
-    const current = explained.get(edge.from);
-    if (current === undefined || value > current) explained.set(edge.from, value);
+    fold(explained, edge.from, weight * calleeAnomaly);
   }
 
   const discounted = new Map<ServiceId, number>();

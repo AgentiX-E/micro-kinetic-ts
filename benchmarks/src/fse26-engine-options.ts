@@ -25,6 +25,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  TopoClosure,
   TopoDiscountScope,
   TopologyFaultGraphConfig,
 } from '../../packages/tree/src/index.js';
@@ -122,6 +123,8 @@ export interface Fse26SignalOptions {
   readonly topoDiscountScope: TopoDiscountScope;
   /** The smallest explained share at which the deduction may charge a node — see `TreePrunerOptions.topoDiscountGate`. */
   readonly topoDiscountGate: number;
+  /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
+  readonly topoClosure: TopoClosure;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   readonly prismPooling: PrismPooling;
@@ -190,6 +193,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
+      topoClosure: opts.topoClosure,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,
       prismPooling: opts.prismPooling,

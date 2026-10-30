@@ -83,6 +83,7 @@ import type {
   DropDeviationMode,
   LogSignalMode,
   PrismPooling,
+  TopoClosure,
 } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -102,11 +103,13 @@ import {
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+  DEFAULT_TOPO_CLOSURE,
   DEFAULT_TRACE_SKIPS_LEADER,
   isBaselineAnchor,
   isDropDeviationMode,
   isLogSignalMode,
   isPrismPooling,
+  isTopoClosure,
 } from '../../packages/tree/src/index.js';
 
 import {
@@ -316,6 +319,15 @@ export interface CliOptions {
    * it (see `TreePrunerOptions.topoDiscountGate`). 0 = no gate, which is the shipped operator.
    */
   topoDiscountGate: number;
+  /**
+   * How the deduction's explanation is aggregated over a caller's callees (see `TopoClosure`).
+   *
+   * The axis `docs/topo-share.md` §11 asked for: the rank-2 band's largest single group is a node that CALLS
+   * everything and is called by nothing, whose anomaly is an aggregate of its fan-out — a maximum over the
+   * callees cannot reach it, a sum can. `max` is the shipped reading and every published number was measured
+   * under it.
+   */
+  topoClosure: TopoClosure;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
   /**
@@ -587,6 +599,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
+    topoClosure: DEFAULT_TOPO_CLOSURE,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
     // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
@@ -748,7 +761,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
     } else if (args[i] === '--topo-discount-gate' && hasValue(args, i + 1))
       opts.topoDiscountGate = parseUnitInterval(args[++i]!, DEFAULT_TOPO_DISCOUNT_GATE);
-    else if (args[i] === '--log-weight' && hasValue(args, i + 1))
+    else if (args[i] === '--topo-closure' && hasValue(args, i + 1)) {
+      // Falls back to the SHIPPED closure on an unusable value, on the rule the scope above follows: an
+      // unnameable closure must reproduce a published corpus rather than invent a third aggregation.
+      const closure = args[++i]!;
+      opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
       // configuration this runner never described and never recorded.

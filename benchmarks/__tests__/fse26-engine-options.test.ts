@@ -27,6 +27,7 @@ import {
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -84,6 +85,9 @@ describe('buildFse26EngineOptions', () => {
       // `signals` because that is the object the pruner reads it from.
       topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
       topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+      // The fourth field of the same family, on the same rule: read by the pruner from `signals`, and its
+      // shipped value is the maximum, which is the reading every published number was measured under.
+      topoClosure: DEFAULT_TOPO_CLOSURE,
       collisionWeight: 0,
       prismWeight: 0,
       prismPooling: DEFAULT_PRISM_POOLING,

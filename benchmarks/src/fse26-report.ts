@@ -30,9 +30,10 @@ import type {
   DualFamilyGateMode,
   OnsetShape,
   PrismPooling,
+  TopoClosure,
   TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
-import { DEFAULT_TOPO_DISCOUNT_GATE } from '../../packages/tree/src/index.js';
+import { DEFAULT_TOPO_CLOSURE, DEFAULT_TOPO_DISCOUNT_GATE } from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -180,6 +181,14 @@ export interface FSE26RunConfig {
    * the field existed must still parse, and `missingReportedConfigFields` is the audit that says so.
    */
   readonly topoDiscountGate?: number;
+  /**
+   * How the deduction's explanation was aggregated over a caller's callees — see `TopoClosure`.
+   *
+   * Optional for the reason the gate records: this record is what an artifact is read BACK into, so a run
+   * published before the field existed must still parse, and the reader renders the ENGINE's default for it
+   * rather than the value that happened to ship when the field was added.
+   */
+  readonly topoClosure?: TopoClosure;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   /**
@@ -368,6 +377,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'topoDiscount',
   'topoDiscountScope',
   'topoDiscountGate',
+  'topoClosure',
 ] as const;
 
 /**
@@ -522,6 +532,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // weight is non-zero — including at 0, which is the value it ships with — so a gated arm and an ungated
     // one are never byte-identical on the artifact that is supposed to attribute the difference.
     line += ` topoDiscountGate=${config.topoDiscountGate ?? DEFAULT_TOPO_DISCOUNT_GATE}`;
+    // Nested under the same weight AGAIN, and for the same reason: `max` and `sum` agree on a tree, so a
+    // closure printed without the weight it belongs to would name an aggregation no run performed. Printed
+    // even at the shipped `max`, because an omitted-when-default value would render the `sum` arm and the
+    // shipped run identically on the artifact whose whole job is to attribute the difference between them.
+    line += ` topoClosure=${config.topoClosure ?? DEFAULT_TOPO_CLOSURE}`;
   }
   if (config.collisionWeight !== 0) {
     line += ` collisionWeight=${config.collisionWeight}`;

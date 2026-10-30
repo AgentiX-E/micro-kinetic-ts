@@ -19,6 +19,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   isPrismPooling,
@@ -1250,6 +1251,47 @@ describe('TreePruner', () => {
       expect(a.find((r) => r.serviceId === 'a')!.finalScore!).toBeGreaterThan(
         ungated.analyze(graph, 3).find((r) => r.serviceId === 'a')!.finalScore!,
       );
+    });
+
+    it('aggregates the explanation by SUM only when asked, and the fan-out is where it matters', () => {
+      // The shape `docs/topo-share.md` §11 found in the rank-2 band: a node that calls everything and is
+      // called by nothing. `hub` calls `x` and `y` on a response channel and its own reading is the aggregate
+      // of both, so a maximum over its callees explains about one of them and a sum explains the whole.
+      const fanGraph = makeCallGraph(
+        ['hub', 'x', 'y'],
+        [
+          ['hub', 'x'],
+          ['hub', 'y'],
+        ],
+      );
+      const fanMetrics = withLabel('latency_ms', {
+        hub: [1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3],
+        x: [1, 1, 1, 1, 1, 1, 2.8, 2.8, 2.8, 2.8, 2.8, 2.8],
+        y: [1, 1, 1, 1, 1, 1, 2.6, 2.6, 2.6, 2.6, 2.6, 2.6],
+      });
+      const maxed = new TreePruner({ topoDiscount: 1, topoDiscountGate: 1, topoClosure: 'max' });
+      const summed = new TreePruner({ topoDiscount: 1, topoDiscountGate: 1, topoClosure: 'sum' });
+      const graph = maxed.buildFaultGraph(fanGraph, fanMetrics);
+
+      const byMax = maxed.analyze(graph, 3);
+      const bySum = summed.analyze(graph, 3);
+      // Under the maximum, `hub` is only PARTLY explained, so the boundary gate refuses it and magnitude
+      // keeps it first — the defect. Under the sum it is entirely explained, so it leaves the pool.
+      expect(byMax[0]!.serviceId).toBe('hub');
+      expect(bySum.map((r) => r.serviceId)).not.toContain('hub');
+      // …and the difference is the closure rather than the configuration: both arms state the same weight,
+      // scope and gate, the shipped default is the maximum, and the SHIPPED pruner reproduces the `max` arm
+      // score for score — a default compared against itself would be a constant with a comment.
+      expect(DEFAULT_TOPO_CLOSURE).toBe('max');
+      const shipped = new TreePruner().analyze(graph, 3);
+      expect(shipped.map((r) => r.serviceId)).toEqual(byMax.map((r) => r.serviceId));
+      expect(shipped.map((r) => r.finalScore)).toEqual(byMax.map((r) => r.finalScore));
+    });
+
+    it('refuses a closure it does not have, at construction rather than at the first deduction', () => {
+      // A misspelt closure on a run at weight 0 would never reach the operator, so the operator's own check
+      // is not enough: the constructor has to reject it, or the run reports an arm nobody executes.
+      expect(() => new TreePruner({ topoClosure: 'mean' as never })).toThrow(/topoClosure/);
     });
 
     it('deducts an explained caller through its RESPONSE channel and leaves the callee alone', () => {

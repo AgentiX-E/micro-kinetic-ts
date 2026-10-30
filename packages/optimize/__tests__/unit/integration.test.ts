@@ -240,6 +240,8 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'selfAnomalyWeight',
       'selfTimeWeight',
       'stabilityWeight',
+      // The deduction's four fields, in code-unit order: `C` before `D`, so the closure heads the family.
+      'topoClosure',
       'topoDiscount',
       // `sort()` is code-unit order, so `G` precedes `S` — the list is the sorted key set, not the order the
       // record declares them in.

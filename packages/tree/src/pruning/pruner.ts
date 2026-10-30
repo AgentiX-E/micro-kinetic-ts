@@ -58,8 +58,13 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import type { TopoDeductionAudit } from '../causal/topo-deduction.js';
-import { applyAnomalyNormalization, deductExplainedAnomalies } from '../causal/topo-deduction.js';
+import type { TopoClosure, TopoDeductionAudit } from '../causal/topo-deduction.js';
+import {
+  DEFAULT_TOPO_CLOSURE,
+  applyAnomalyNormalization,
+  deductExplainedAnomalies,
+  isTopoClosure,
+} from '../causal/topo-deduction.js';
 import type {
   TopoDiscountScope,
   TopologyFaultGraphConfig,
@@ -333,7 +338,7 @@ export interface TreePrunerOptions extends RCAEngineOptions {
   /**
    * Deduction on a node's own anomaly, by how much of it its CALLEES explain.
    *
-   *   explained(v) = max over callees c of propWeight(v→c) × anomaly(c)
+   *   explained(v) = ⊕ over callees c of propWeight(v→c) × anomaly(c)   (⊕ = {@link topoClosure})
    *   anomaly'(v)  = max(0, anomaly(v) − topoDiscount × explained(v))
    *
    * `explained(v)` is zero for a node none of whose callees is anomalous, so a source keeps ALL of its
@@ -400,6 +405,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * operator, with no cell and no fault type down, and is byte-identical on FSE'26).
    */
   readonly topoDiscountGate: number;
+  /**
+   * How {@link topoDiscount}'s explanation is aggregated over a caller's callees — see {@link TopoClosure}.
+   *
+   *   explained(v) = max_c w·a_c   (`max`, the shipped reading)
+   *   explained(v) = Σ_c   w·a_c   (`sum`, the fan-out reading)
+   *
+   * The two coincide on a node with one callee and differ only on a fan-out, which is exactly the shape
+   * `docs/topo-share.md` §11 found in the rank-2 band: a node that calls everything and is called by nothing
+   * — TrainTicket's `ts-admin-travel-service`, SockShop's `front-end` — has an anomaly that is an aggregate
+   * of nine or ten callees, and a maximum over them cannot reach it however loud the loudest one is.
+   *
+   * The shipped reading is `max` because every published population was measured under it, and because a
+   * request that takes ONE branch of its fan-out is explained by that branch alone. `sum` is the ablation
+   * `docs/topo-closure.md` measures, and it is admissible on the same terms as the gate: the explanation is
+   * capped at the whole inside `min(a, e)`, so a sum cannot produce a negative anomaly, and the gate still
+   * decides whether a node is charged at all.
+   *
+   * Read only when `topoDiscount > 0`, on the same rule {@link topoDiscountScope} follows.
+   *
+   * Default: 'max'.
+   */
+  readonly topoClosure: TopoClosure;
   /**
    * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
    * log volume is highest.
@@ -1448,6 +1475,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoDiscount: DEFAULT_TOPO_DISCOUNT,
   topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
   topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
+  topoClosure: DEFAULT_TOPO_CLOSURE,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
@@ -1497,6 +1525,13 @@ export class TreePruner {
     invariantRange(this.options.criticalLoadThreshold, 0, 1, 'criticalLoadThreshold');
     invariantPositiveInt(this.options.defaultTopK, 'defaultTopK');
     invariantPositiveInt(this.options.maxPropagationDepth, 'maxPropagationDepth');
+    // Checked HERE as well as inside the operator, because the operator only rejects it when the deduction is
+    // switched on: a misspelt closure on a run at `topoDiscount = 0` would otherwise be carried, printed on the
+    // `signals:` line and never executed — a configuration that reports an arm nobody runs.
+    invariant(
+      isTopoClosure(this.options.topoClosure),
+      `topoClosure must be 'max' or 'sum', got '${this.options.topoClosure}'`,
+    );
 
     this.cycleDetector = new JohnsonCycleDetector({
       maxCycles: this.options.maxCycles,
@@ -2030,6 +2065,7 @@ export class TreePruner {
       rho,
       this.options.topoDiscountScope,
       this.options.topoDiscountGate,
+      this.options.topoClosure,
     );
     // The share is reported in the space the operator computed it in and NOT mapped through the
     // normalisation below: `rankNormalizeScores` would turn it into a rank share, which is a different

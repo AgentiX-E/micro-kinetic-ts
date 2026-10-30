@@ -131,8 +131,12 @@ export type {
 // argument: a consumer that normalises the anomaly itself has to be able to deduct in deviation space
 // and map the result back, and the two halves of that round trip are separable problems.
 export {
+  DEFAULT_TOPO_CLOSURE,
+  TOPO_CLOSURES,
   applyAnomalyNormalization,
   deductExplainedAnomalies,
+  isTopoClosure,
+  type TopoClosure,
   type TopoDeductionInput,
   type TopoDeductionResult,
 } from './causal/topo-deduction.js';

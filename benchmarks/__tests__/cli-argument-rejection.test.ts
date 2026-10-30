@@ -57,6 +57,7 @@ import {
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   PRISM_POOLINGS,
+  TOPO_CLOSURES,
 } from '../../packages/tree/src/index.js';
 
 import { parseFSE26Args } from '../src/fse26-cli.js';
@@ -144,6 +145,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // the parser would otherwise default to — the probe asserts the option MOVES, not that it changes the
   // score, and `whole-file` is the only value that keeps this fence a fence on every other flag.
   '--baseline-anchor': 'whole-file',
+  // Iteration 164: the deduction's CLOSURE. A word for the same reason as the three above — `1` is not a
+  // member of `TopoClosure` — and the probe's job is to prove the option MOVES, so the value has to be one
+  // the parser accepts. `sum` is the ablation, which is the arm this flag exists to be able to name.
+  '--topo-closure': 'sum',
 };
 
 function argvFor(one: AcceptedFlag): string[] {
@@ -405,6 +410,10 @@ describe('every option the golden runner forwards can be set from the command li
       // Iteration 187: the deviation window's anchor, the fourth word-vocabulary on this chain. Both members
       // are probed, and both must MOVE the option — the arm and the shipped value are one word apart.
       ...Object.keys(BASELINE_ANCHORS),
+      // Iteration 164: the deduction's CLOSURE, the fifth word-vocabulary on this chain, and the first whose
+      // members are not a mode of the ENGINE but an aggregation of it. Probed from the union for the reason
+      // every other entry is: a third closure extends this list by existing.
+      ...Object.keys(TOPO_CLOSURES),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

@@ -508,7 +508,11 @@ describe('the RCAEval configuration line carries the configuration that produced
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
         // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that
         // printed only non-defaults would render a gated arm and the ungated one byte-identically.
-        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 topoDiscountGate=1',
+        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 topoDiscountGate=1 ' +
+        // Iteration 164 appended the deduction's closure behind its three siblings, and it is printed even at
+        // the shipped `max`: the line is what makes a `sum` arm and the shipped run distinguishable, and a
+        // field omitted at its default would render the two byte-identically.
+        'topoClosure=max',
     );
   });
 

@@ -35,6 +35,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  TopoClosure,
   TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
 
@@ -102,6 +103,8 @@ export interface RCAEvalSignalOptions {
   readonly topoDiscountScope: TopoDiscountScope;
   /** The smallest explained share at which the deduction may charge a node — see `TreePrunerOptions.topoDiscountGate`. */
   readonly topoDiscountGate: number;
+  /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
+  readonly topoClosure: TopoClosure;
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
@@ -236,6 +239,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
+      topoClosure: opts.topoClosure,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
@@ -332,6 +336,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // APPENDED on the same rule, and unconditional because 0 is the shipped gate: an omitted-when-default
     // field would render the gated arm and the shipped run identically on the artifact whose whole job is to
     // attribute the difference between them.
-    `topoDiscountGate=${opts.topoDiscountGate}`
+    `topoDiscountGate=${opts.topoDiscountGate} ` +
+    // APPENDED on the same rule as the two fields above: every byte before this one is what the artifacts
+    // already carry, and the field is unconditional because it ships at a VALUE rather than at a toggle —
+    // an omitted-when-default closure would render the `sum` arm and the shipped run identically.
+    `topoClosure=${opts.topoClosure}`
   );
 }

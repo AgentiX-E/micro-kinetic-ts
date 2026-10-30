@@ -40,16 +40,25 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
  * — and the ablation battery prints none of the three.
  *
  * **The difference is a fact about the study, not an oversight, so it is recorded as one.** The battery's
- * unit is a boolean flag per term; the deduction is not one of its terms, so no row sets its weight and every
- * row carries it at the shipped 0 — and the scope and the gate are read only when that weight is non-zero.
- * Printing them on every row would describe a configuration that does not vary, which is the one thing an
- * untouched field must not do to a reader. A second record is the honest shape: the first says "inapplicable
- * to an engine runner", these three say "outside this study".
+ * unit is a boolean flag per term; the deduction is not one of its terms, so no row VARIES any of its four
+ * fields. Printing them on every row would describe a configuration that does not vary, which is the one thing
+ * an untouched field must not do to a reader. A second record is the honest shape: the first says
+ * "inapplicable to an engine runner", these four say "outside this study".
+ *
+ * **The reasons below said "ships at 0" until iteration 164, and that had been false since iteration 163.**
+ * The enrolment moved the weight to 1 and the gate to 1, so every battery row now RUNS the deduction at the
+ * boundary; what the battery does not do is MOVE it, which is a different sentence and the only one these
+ * entries may assert. A record that described a configuration the engine no longer ships would have been the
+ * one place where the enrolment left a stale claim behind, and it was found by adding the fourth field to a
+ * list of three.
  */
 export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = {
   topoDiscount:
-    'ships at 0 and no row of the battery sets it, so the deduction is off in every configuration',
+    'ships at 1 and no row of the battery varies it, so the deduction is at the boundary in every configuration',
   topoDiscountScope:
-    'read only when topoDiscount is non-zero, which no row of the battery makes it',
-  topoDiscountGate: 'read only when topoDiscount is non-zero, which no row of the battery makes it',
+    'ships at `external` and no row of the battery varies it; it is read only when the weight is non-zero',
+  topoDiscountGate:
+    'ships at 1 and no row of the battery varies it; it is read only when the weight is non-zero',
+  topoClosure:
+    'ships at `max` and no row of the battery varies it; it is read only when the weight is non-zero',
 };

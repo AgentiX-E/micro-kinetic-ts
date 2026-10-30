@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
@@ -92,6 +93,10 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // The deduction's gate, at the shipped 0. Nested under a zero weight on the line, so it prints nothing —
     // and it is present in the object so `missingReportedConfigFields` is answering about the line.
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
+    // The deduction's closure, at the shipped maximum. Present for the same reason the gate is: it is nested
+    // under a zero weight on the LINE and its presence here is what makes `missingReportedConfigFields` an
+    // answer about the line rather than about the object.
+    topoClosure: DEFAULT_TOPO_CLOSURE,
     collisionWeight: 0,
     prismWeight: 0,
     prismPooling: 'additive',
@@ -182,6 +187,9 @@ describe('FSE26 report — attribution', () => {
       'topoDiscount',
       'topoDiscountScope',
       'topoDiscountGate',
+      // …and the closure is the fourth: an artifact that carried a `sum` deduction could not be read back
+      // without it, because the aggregation is invisible on a tree and decisive on a fan-out.
+      'topoClosure',
     ]);
   });
 
@@ -555,6 +563,14 @@ describe('summariseFailedEdgeCoverage', () => {
         patch: { topoDiscount: 0.5, topoDiscountGate: 0.5 },
         token: 'topoDiscountGate=0.5',
         shipped: 'topoDiscountGate',
+      },
+      // …and the closure, nested under the same weight. Its shipped value is a NAME rather than a number, so
+      // this row is the one that proves the omit-when-default rule was not written for numbers alone: a `sum`
+      // arm and the shipped run would otherwise be byte-identical on the artifact that attributes the two.
+      {
+        patch: { topoDiscount: 0.5, topoClosure: 'sum' },
+        token: 'topoClosure=sum',
+        shipped: 'topoClosure',
       },
     ];
     for (const { patch, token, shipped } of rows) {
