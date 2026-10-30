@@ -343,8 +343,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -572,8 +572,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -826,8 +826,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1064,8 +1064,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1326,8 +1326,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1556,8 +1556,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)
@@ -1787,8 +1787,8 @@ jobs:
                 ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
-                  all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
-                  *) echo "::error::anomaly_knobs: toposcope takes all or external, got '${kv#toposcope=}'"; exit 1 ;;
+                  all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
+                  *) echo "::error::anomaly_knobs: toposcope takes all, external or caller, got '${kv#toposcope=}'"; exit 1 ;;
                 esac ;;
               ceil=*) RANKING_ARG+=(--rise-ceiling "${kv#ceil=}") ;;
               zerolat=*)

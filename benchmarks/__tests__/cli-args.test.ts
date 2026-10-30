@@ -88,6 +88,9 @@ describe('parseUnitInterval', () => {
     expect(parseRCAEvalArgs(['--topo-discount-scope', 'external']).topoDiscountScope).toBe(
       'external',
     );
+    // The third arm — only the CALLER's channel is checked — is routeable on this half too, because an arm a
+    // dispatch cannot name is an arm `docs/topo-discount-scope.md` §7.2 cannot measure.
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'caller']).topoDiscountScope).toBe('caller');
     // The scope is bound INDEPENDENTLY of the weight, so naming it alone leaves the enrolled weight alone.
     expect(parseRCAEvalArgs(['--topo-discount-scope', 'all']).topoDiscount).toBe(
       DEFAULT_TOPO_DISCOUNT,

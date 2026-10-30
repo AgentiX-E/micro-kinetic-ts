@@ -505,13 +505,14 @@ function argvOf(row: (typeof MIRRORED_KNOBS)[number], value = row.value): string
 }
 
 describe('the topological deduction pair', () => {
-  it('parses the scope, refusing any value that is not one of the two', () => {
+  it('parses the scope, refusing any value that is not one of the three', () => {
     // The scope is a MODE, not a number, so it is parsed by its union's own guard on the rule every mode flag
     // on this surface follows: a typo reproduces the shipped configuration rather than inventing one.
     expect(parseFSE26Args(['--topo-discount-scope', 'all']).topoDiscountScope).toBe('all');
     expect(parseFSE26Args(['--topo-discount-scope', 'external']).topoDiscountScope).toBe(
       'external',
     );
+    expect(parseFSE26Args(['--topo-discount-scope', 'caller']).topoDiscountScope).toBe('caller');
     expect(parseFSE26Args(['--topo-discount-scope', 'none']).topoDiscountScope).toBe(
       DEFAULT_TOPO_DISCOUNT_SCOPE,
     );

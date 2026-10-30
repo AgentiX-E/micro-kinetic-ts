@@ -19,14 +19,55 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type { CallEdge, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   TOPO_DISCOUNT_SCOPES,
+  deductExplainedAnomalies,
   isResponseChannel,
   isTopoDiscountScope,
-} from '../../src/causal/topology-fault-graph.js';
+  type TopoDeductionInput,
+  type TopoDiscountScope,
+} from '../../src/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** An edge with the only three fields the deduction reads, filled to the type. */
+function edge(from: string, to: string): CallEdge {
+  return { from, to, type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 };
+}
+
+/**
+ * One caller/caller pair, each endpoint's dominant metric named.
+ *
+ * The two labels are the whole of the input: the deduction reads `dominantMetrics` and nothing else to decide
+ * whether a channel crosses a call boundary, so a fixture that carried a third field would be testing a
+ * question the operator does not ask.
+ */
+function pair(
+  callerLabel: string,
+  calleeLabel: string,
+  callerAnomaly = 2,
+  calleeAnomaly = 1,
+): TopoDeductionInput {
+  const edges = [edge('caller', 'callee')];
+  return {
+    anomalies: new Map([
+      ['caller', callerAnomaly],
+      ['callee', calleeAnomaly],
+    ]) as Map<ServiceId, number>,
+    edges,
+    propagationWeights: new Float64Array([1]),
+    dominantMetrics: new Map([
+      ['caller', { label: callerLabel }],
+      ['callee', { label: calleeLabel }],
+    ]),
+  };
+}
+
+/** The discounted anomaly of the fixture's caller, at the maximal weight and no gate. */
+const charged = (input: TopoDeductionInput, scope: TopoDiscountScope): number =>
+  deductExplainedAnomalies(input, 1, scope, 0, 'max').discounted.get('caller')!;
 
 describe('isResponseChannel', () => {
   it('admits every channel a call boundary carries', () => {
@@ -71,10 +112,11 @@ describe('isResponseChannel', () => {
 });
 
 describe('isTopoDiscountScope', () => {
-  it('admits exactly the two scopes', () => {
+  it('admits exactly the three scopes', () => {
     expect(isTopoDiscountScope('all')).toBe(true);
     expect(isTopoDiscountScope('external')).toBe(true);
-    expect(Object.keys(TOPO_DISCOUNT_SCOPES).sort()).toEqual(['all', 'external']);
+    expect(isTopoDiscountScope('caller')).toBe(true);
+    expect(Object.keys(TOPO_DISCOUNT_SCOPES).sort()).toEqual(['all', 'caller', 'external']);
   });
 
   it('refuses anything else, including the prototype chain', () => {
@@ -92,6 +134,60 @@ describe('the shipped scope', () => {
     // Not a preference: the ratio form's internal half is what cost RE3/SockShop two cases per weight while
     // RE1/OnlineBoutique gained, and restricting the deduction to response channels separates them.
     expect(DEFAULT_TOPO_DISCOUNT_SCOPE).toBe('external');
+  });
+});
+
+describe('the channel predicate, which is two questions and not one', () => {
+  // The two sides of the deduction were decided by ONE predicate for three iterations, on the argument that
+  // "does this channel cross a call boundary" is one question. It is two, and the physical statement only
+  // holds for one of them:
+  //
+  //   - the CALLEE side asks "may this node's deviation be an explanation its callers inherit?" — and the
+  //     answer cannot depend on the callee's channel, because a callee saturated on `cpu` injects DELAY into
+  //     its caller. That is queueing, not a modelling choice: the caller's response is the observable, and
+  //     the callee's internal state is what produces it.
+  //   - the CALLER side asks "may this node's deviation be explained away?" — and the answer does depend on
+  //     the caller's channel, because an internal reading (`cpu`, `mem`, `diskio`) is the component's own
+  //     work. No callee produces a caller's CPU.
+  //
+  // Requiring both is what `external` does, and the cost is measurable: a `cpu` fault at `carts` produces an
+  // `error` rise at `front-end`, and `external` refuses to charge `front-end` for it (RE3/SockShop,
+  // `re3ss_carts_f1_1`). Dropping both is what `all` does, and its cost is the mirror: `carts`' own `cpu` is
+  // charged by `carts-db`'s unrelated `diskio`. `caller` keeps the conjunct that is physical and drops the one
+  // that is not.
+
+  it('lets a RESPONSE caller be charged by an INTERNAL callee, which `external` refuses', () => {
+    // `front-end` (error) waits on `carts` (cpu). The caller's error rise is the callee's saturation, and no
+    // reading of the corpus changes that — so the charge belongs, and `external`'s refusal is the defect.
+    const input = pair('error', 'cpu');
+    expect(charged(input, 'caller')).toBeCloseTo(1);
+    expect(charged(input, 'external')).toBeCloseTo(2);
+  });
+
+  it('still refuses to charge an INTERNAL caller, which is what `all` does', () => {
+    // `carts` (cpu) calls `carts-db` (cpu:diskio in the corpus). The caller's own CPU is the caller's own work,
+    // and this is the half of `all` that cost RE3/SockShop four cases in the local readback.
+    const input = pair('cpu', 'diskio');
+    expect(charged(input, 'caller')).toBeCloseTo(2);
+    expect(charged(input, 'all')).toBeCloseTo(1);
+  });
+
+  it('agrees with `external` wherever `external` charges, so it is a superset and never a replacement', () => {
+    // The arm is defined by which cases it ADDS, and this is the assertion that keeps it from also subtracting:
+    // on the response/response pair both scopes must return the same number.
+    const input = pair('latency', 'latency');
+    expect(charged(input, 'caller')).toBeCloseTo(charged(input, 'external'));
+    expect(charged(input, 'caller')).toBeCloseTo(1);
+  });
+
+  it('leaves the callee-side channel out of the decision, but not the callee’s anomaly', () => {
+    // A callee with no anomaly explains nothing at any scope: the predicate is about which channels may
+    // participate, and the ANOMALY is what the participation is worth.
+    const silent = pair('error', 'cpu', 2, 0);
+    expect(charged(silent, 'caller')).toBeCloseTo(2);
+    // …and a callee larger than its caller is capped at the caller's whole, as it is under every scope.
+    const dominant = pair('error', 'cpu', 1, 9);
+    expect(charged(dominant, 'caller')).toBeCloseTo(0);
   });
 });
 
@@ -144,10 +240,32 @@ describe('the deduction formula, fenced at the source', () => {
     expect(pruner).not.toMatch(/applyAnomalyNormalization\(deducted\.share/);
   });
 
-  it('decides both sides of the deduction with ONE predicate', () => {
-    // The explaining callee and the deducted caller answer the same question — does this channel cross a call
-    // boundary — and two predicates would be free to disagree about which channels do.
-    expect(deduction).toMatch(/const explicable = \(nodeId: ServiceId\): boolean =>/);
+  it('decides the two sides with TWO predicates, because they are two questions', () => {
+    // This fence used to assert the opposite — one `explicable` used on both sides, on the argument that two
+    // predicates "would be free to disagree about which channels cross a call boundary". The argument is
+    // sound and the premise is not: the callee side is not asked whether the channel crosses a boundary, it is
+    // asked whether a callee's deviation can be an explanation at all, and a saturated callee explains its
+    // caller's response in every channel. The two names ARE the matrix, so a reader can see which conjunct
+    // each scope keeps without running anything:
+    //
+    //   `all`      — explainsThrough: always        deductibleOn: always
+    //   `external` — explainsThrough: response only  deductibleOn: response only
+    //   `caller`   — explainsThrough: always        deductibleOn: response only
+    expect(deduction).toMatch(/const explainsThrough = \(nodeId: ServiceId\): boolean =>/);
+    expect(deduction).toMatch(/const deductibleOn = \(nodeId: ServiceId\): boolean =>/);
+    // The matrix, pinned by which scope name appears in which predicate: `external` is the only scope that
+    // restricts the CALLEE side, and `all` the only one that frees the CALLER side. A single predicate cannot
+    // satisfy both patterns, which is the regression this replaces `expect(...explicable...)` with.
+    expect(deduction).toMatch(
+      /const explainsThrough[\s\S]{0,240}scope === 'external'[\s\S]{0,80}isResponseChannelOf/,
+    );
+    expect(deduction).toMatch(
+      /const deductibleOn[\s\S]{0,240}scope === 'all'[\s\S]{0,80}isResponseChannelOf/,
+    );
     expect(deduction).toMatch(/isResponseChannel\(dominant\.label\)/);
+    // The callee side must be consulted where the explanation is FOLDED, and the caller side where the charge
+    // is applied: a swapped pair would compile, pass every same-channel fixture, and only a corpus would see it.
+    expect(deduction).toMatch(/if \(!explainsThrough\(edge\.to\)\) continue;/);
+    expect(deduction).toMatch(/if \(!deductibleOn\(nodeId\)\) \{/);
   });
 });

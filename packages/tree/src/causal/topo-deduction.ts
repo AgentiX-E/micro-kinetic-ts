@@ -281,13 +281,35 @@ export function deductExplainedAnomalies(
     `propagationWeights must match edges length (${input.propagationWeights.length} vs ${input.edges.length})`,
   );
 
-  // One predicate for BOTH sides of the deduction: the channel a callee may explain THROUGH and the
-  // channel a caller may be deducted ON are one question, and two predicates would be free to disagree
-  // about which channels cross a call boundary.
-  const explicable = (nodeId: ServiceId): boolean => {
-    if (scope === 'all') return true;
+  // ── The channel scope: TWO questions, and only one of them is about a call boundary ──────────────
+  //
+  // Until iteration 166 both sides were decided by one predicate, on the argument that "does this channel
+  // cross a call boundary" is one question. It is two, and the physical statement holds for one of them:
+  //
+  //   - the CALLEE side asks whether this node's deviation may be an explanation its callers inherit. The
+  //     answer cannot depend on the callee's channel: a callee saturated on `cpu` injects DELAY into its
+  //     caller, and that is queueing rather than modelling. Restricting this side — which is what `external`
+  //     does — makes a `cpu` fault at `carts` invisible to the `error` rise it produces at `front-end`, and
+  //     that refusal is measured: `re3ss_carts_f1_1` is one of five cases the middle arm recovers.
+  //   - the CALLER side asks whether this node's deviation may be explained AWAY. The answer does depend on
+  //     the caller's channel, because an internal reading (`cpu`, `mem`, `diskio`) is the component's own
+  //     work. No callee produces a caller's CPU, and charging it is what cost `all` four cases on the same
+  //     cell (`docs/topo-discount-scope.md` §7 records both arms against the same control).
+  //
+  // So `all` frees both sides, `external` restricts both, and `caller` keeps the conjunct that is physical and
+  // drops the one that is not. The names are the matrix, and the fence in
+  // `__tests__/causal/topo-discount-scope.test.ts` pins which scope appears in which predicate.
+  const isResponseChannelOf = (nodeId: ServiceId): boolean => {
     const dominant = input.dominantMetrics?.get(nodeId);
     return dominant !== undefined && isResponseChannel(dominant.label);
+  };
+  const explainsThrough = (nodeId: ServiceId): boolean => {
+    if (scope === 'external') return isResponseChannelOf(nodeId);
+    return true;
+  };
+  const deductibleOn = (nodeId: ServiceId): boolean => {
+    if (scope === 'all') return true;
+    return isResponseChannelOf(nodeId);
   };
 
   // The aggregation over callees, chosen once here rather than branched per edge: a `max` and a `sum` over the
@@ -300,7 +322,7 @@ export function deductExplainedAnomalies(
   const explained = new Map<ServiceId, number>();
   for (let i = 0; i < input.edges.length; i++) {
     const edge = input.edges[i]!;
-    if (!explicable(edge.to)) continue;
+    if (!explainsThrough(edge.to)) continue;
     const weight = input.propagationWeights[i]!;
     if (!(weight > 0)) continue;
     // A callee CAN be an edge endpoint and carry no anomaly at all — a node with no telemetry explains
@@ -316,7 +338,7 @@ export function deductExplainedAnomalies(
   // to the same question — the shape this repository's analyzer exists to find.
   const share = new Map<ServiceId, number>();
   for (const [nodeId, anomaly] of input.anomalies) {
-    if (!explicable(nodeId)) {
+    if (!deductibleOn(nodeId)) {
       discounted.set(nodeId, anomaly);
       continue;
     }

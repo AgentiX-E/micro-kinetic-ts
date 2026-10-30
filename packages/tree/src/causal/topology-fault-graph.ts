@@ -1569,19 +1569,29 @@ export function isResponseChannel(label: string): boolean {
 /**
  * Which channels the topological discount is allowed to act on.
  *
- * - `external` (default): only {@link isResponseChannel} channels participate on either side of the
- *   deduction — a callee explains its caller through its response, and only a response anomaly at the
- *   caller is deducted.
- * - `all`: every channel participates. This is the ablation arm: it is the form the discount had when its
- *   only definition was "anomaly minus explained anomaly", and it is kept reachable so the scope's own
- *   contribution can be measured against it rather than asserted.
+ * The scope is a pair of predicates, not one, because the two sides answer different questions: whether a
+ * callee's deviation can be an explanation its callers inherit, and whether a caller's deviation may be
+ * explained away. Only the second is a statement about a call boundary — an internal reading at the caller
+ * (`cpu`, `mem`, `diskio`) is the component's own work — while a callee saturated on any channel injects
+ * delay into its caller, which is queueing rather than modelling.
+ *
+ * - `external` (default): both sides restricted to {@link isResponseChannel}. The arm the published nine
+ *   cells were measured on, and the one that leaves RE3/SockShop unmoved.
+ * - `caller`: only the caller side is restricted. A response caller may be charged for an internal callee
+ *   (`error` at `front-end` explained by `cpu` at `carts`), and an internal caller is never charged. This is
+ *   what the one-predicate form was approximating, and `docs/topo-discount-scope.md` §7 carries the two arms
+ *   it was measured between.
+ * - `all`: no restriction on either side. The ablation arm — the form the discount had when its only
+ *   definition was "anomaly minus explained anomaly" — kept reachable so the scope's contribution can be
+ *   measured rather than asserted.
  */
-export type TopoDiscountScope = 'all' | 'external';
+export type TopoDiscountScope = 'all' | 'external' | 'caller';
 
 /** The reachable values of {@link TopoDiscountScope}, as a lookup so a parser cannot invent a third. */
 export const TOPO_DISCOUNT_SCOPES: Readonly<Record<TopoDiscountScope, true>> = {
   all: true,
   external: true,
+  caller: true,
 };
 
 /**

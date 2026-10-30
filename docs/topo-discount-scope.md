@@ -150,7 +150,104 @@ rather than left open. What a next arm would have to change is stated in §6.
 - The FSE'26 read above is the shipped-default control against one weight; the axis is inert there, so no
   further weight is worth dispatching until the scale question is settled.
 
-## 7. How to re-measure
+## 7. The middle arm: the predicate was a conjunction, and only one conjunct is physical
+
+§2 states the physical claim correctly and §5 measures the consequence of getting it wrong in one direction.
+Both arms it compares, however, are built on a decision that was never measured: **one predicate decides both
+sides of the deduction.**
+
+```ts
+// until iteration 166
+const explicable = (nodeId) => {
+  if (scope === 'all') return true;
+  return isResponse(dominant(nodeId));
+};
+// callee side:  if (!explicable(edge.to)) continue;
+// caller  side: if (!explicable(nodeId)) { keep entire; continue; }
+```
+
+The argument for one predicate was that "does this channel cross a call boundary" is one question, and two
+predicates would be free to disagree about it. The argument is sound and its premise is false: the two sides
+answer different questions, and §2 only licenses the second one.
+
+- The **callee** side asks whether a callee's deviation can be an explanation its callers inherit. The answer
+  cannot depend on the callee's channel. A callee saturated on `cpu` injects **delay** into its caller — that is
+  queueing, not a modelling choice — so requiring the callee to be response-dominant makes the operator blind to
+  every internal fault at an origin, which is the majority of the corpus.
+- The **caller** side asks whether a caller's deviation may be explained away. Here the channel matters exactly
+  as §2 says: an internal reading at the caller is the component's own work, and no callee produces its CPU.
+
+So the conjunct belongs on the caller side only. `external` keeps both, `all` drops both, and the arm this
+section measures keeps the one that is physical:
+
+| scope      | `explainsThrough` (callee) | `deductibleOn` (caller) |
+| ---------- | -------------------------- | ----------------------- |
+| `all`      | always                     | always                  |
+| `external` | response only              | response only           |
+| `caller`   | **always**                 | response only           |
+
+The instance that motivated it: `re3ss_carts_f1_1`, where `carts` reports the injected fault in `cpu` and
+`front-end` reports it in `error`. `external` refuses to charge `front-end` — its callee is not response-dominant
+— so the victim keeps an anomaly of 2.026 and outranks the origin's 1.157. Under `caller`, `front-end` is charged
+its callee's 1.157 and falls to rank 3.
+
+### 7.1 The local readback, before the dispatch
+
+Two assembled cells, 155 cases (RE1:OnlineBoutique 125, RE3:SockShop 30), one variable per row, `ρ = 1`
+throughout — the weight §5's superseded note settled. The shipped default is the first row.
+
+| gate | scope    | OB AC@1 | SS AC@1 |       total |
+| ---: | -------- | ------: | ------: | ----------: |
+|    1 | external | 107/125 |   18/30 | **125/155** |
+|    1 | caller   | 107/125 |   18/30 |     125/155 |
+|  0.9 | caller   | 109/125 |   18/30 |     127/155 |
+|  0.8 | caller   | 109/125 |   18/30 |     127/155 |
+| 0.65 | caller   | 109/125 |   17/30 |     126/155 |
+|  0.5 | caller   | 110/125 |   19/30 | **129/155** |
+| 0.35 | caller   | 110/125 |   18/30 |     128/155 |
+|  0.2 | caller   | 110/125 |   18/30 |     128/155 |
+|    0 | caller   | 110/125 |   18/30 |     128/155 |
+|    0 | external | 110/125 |   17/30 |     127/155 |
+|    0 | all      | 108/125 |   13/30 |     121/155 |
+
+Three things are visible, and the third is the one that matters.
+
+1. **The scope alone is worth nothing at the shipped gate.** `gate = 1` requires a callee to explain the caller's
+   _entire_ anomaly, which almost never holds, so the deduction is inert on these cells at that threshold — the
+   `ρ = 0` control reads the same 125/155. The two knobs are **coupled**, and every prior sweep varied one at a
+   time: §5's gate sweep held the scope at `external`, and this section's scope arm had no gate to be measured
+   against.
+2. **The middle arm dominates both extremes at every gate.** Against `external` at the same gate it gains the
+   cases the callee-side conjunct refused (OB +3, SS +2 at 0.5); against `all` it avoids the four cases SS loses
+   when an internal caller is charged.
+3. **The five fixes are the predicted class and the one break is the predicted failure.** At `gate = 0.5`:
+   `re3ss_carts_f1_1` and `re3ss_carts_f3_2` (origin reports `cpu`, victim reports `error`), plus
+   `re1ob_currencyservice_loss_1`, `re1ob_productcatalogservice_delay_1`, `re1ob_productcatalogservice_disk_5`.
+   The break is `re3ss_front-end_f3_1`, where the _origin_ is `front-end` and its own `error` rise is charged
+   against a deviating callee — the operator's standing failure mode, unchanged by the scope.
+
+### 7.2 Predictions, recorded before the dispatch
+
+The 155-case readback is two cells of nine, and +4 cases on 155 is inside one standard error. The dispatch is
+therefore the measurement, and these four claims are what it is read against. `external`/`gate = 1` is the
+control (641/735, re-taken bare on the same commit).
+
+- **P1 — the mechanism, not the total.** At least **three of the six** RE3:SockShop misses whose winner is
+  `front-end` (`carts_f1_1`, `carts_f1_4`, `carts_f3_1`, `carts_f3_2`, `carts_f3_4`, `orders_f4_1`) flip to the
+  truth. If fewer than three flip, the `cpu → error` attribution above is wrong and the arm's gains, whatever
+  their total, are not this mechanism.
+- **P2 — the total.** ≥ **650 of 735** at `gate = 0.5`. Proportional transfer of the local +4/155 predicts
+  ~+12; the cell mixture predicts less; a total below 650 is a refusal.
+- **P3 — no cell down.** No cell below its published value by **≥ 3 cases**. `all`'s damage on RE3:SockShop
+  (−4 locally, −10 pp at `ρ = 0.5` in §5) is the harm this arm exists to avoid; if it reappears, the middle arm
+  is not middle.
+- **P4 — the threshold is not the knob.** `gate = 0` and `gate = 0.5` land within **3 cases** of each other. A
+  larger gap means the threshold, not the scope, is doing the work — which would make the plateau at 0.2–0.5 a
+  threshold effect and the scope claim unsupported even if P2 holds.
+
+**Refusal rule, written in advance:** refuse the arm if P2 or P3 fails, whatever the total.
+
+## 8. How to re-measure
 
 ```bash
 # local, both assembled cells
@@ -159,8 +256,13 @@ pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir ~/RCAEval-json --suite re
 pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir ~/RCAEval-json --suite re3 --system ss \
   --topo-discount 0.5 --topo-discount-scope all
 
+# the middle arm, both gates (§7.2)
+pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir ~/RCAEval-json --suite all \
+  --topo-discount-gate 0.5 --topo-discount-scope caller
+
 # golden half, nine cells, one input
-gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=topodiscount=0.5
+gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=topodiscount=1,toposcope=caller,topodiscountgate=0.5
+gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=topodiscount=1,toposcope=caller,topodiscountgate=0
 gh workflow run benchmark-rcaeval.yml -f anomaly_knobs=topodiscount=0.5,toposcope=all
 # FSE'26 half
 gh workflow run fse26-benchmark.yml -f ranking_knobs=topo_discount=0.5
