@@ -171,12 +171,84 @@ Three findings, and the second is why the instrument shipped with the knob rathe
    `truthAnomalyBefore` is `0`: the truth carried no deviation of its own before the deduction, so the deduction
    had nothing to delete, and the shipped filter dropped it for the only reason that filter ever had. §7.4's
    reading of the class — "the truth was explained away" — is refuted on the one case it can be checked against.
+   In the `graph` arm the case reads `truthRank = undefined → 1` and `rca_score = absent → 0`: a candidate whose
+   BASE TERM is zero is ranked first by the priors alone. Exactly one other case moves at all
+   (`re1ob_productcatalogservice_loss_3`, truth rank 5 → 6, still a miss), and no case in either cell breaks.
 3. **Across both cells, the count of truths that are `absent` with `truthAnomalyBefore > 0` is ZERO.** Not one
    published-style miss in 155 local cases is a deleted truth. So the twelve are, on this evidence, mostly the
    other thing: a truth with no deviation at its own origin, which is a signal problem dressed as a pool problem.
+   The `pool` column says the widening is real and large — mean 9.0 → 13.0 on OnlineBoutique and 12 → 15 on
+   SockShop — while the accuracy it buys is one case, and the two facts are consistent rather than disappointing:
+   a ranking's extra candidates are drawn from nodes with no base term, so only a case whose truth is carried by
+   a prior can move at all.
 
 What that changes is the arm's expected mechanism, not its expected sign. Admission restores a candidate whose
 base term is `log1p(0) = 0`, so it can only be carried by a prior — which is exactly what
 `re1ob_adservice_loss_4` needed, and which is why P4 below is the prediction that matters rather than P2. A
 `graph` arm that moves nothing would say the priors cannot lift a silent origin on these corpora, and that is a
 stronger and more useful result than the +1 is.
+
+## 9. The readback: the mechanism is complete, the magnitude is not, and my refusal rule had a hole
+
+Two remote arms on `ff965bc4`, both bare of other knobs: `41113102918` (a bare dispatch, the control) and
+`41113107920` (`anomaly_knobs=pooladmission=graph`). All totals come from the per-case census, never from the
+suite line.
+
+| cell               | control `positive` |     `graph` |      Δ |
+| ------------------ | -----------------: | ----------: | -----: |
+| RE1:OnlineBoutique |            107/125 |     108/125 | **+1** |
+| RE1:SockShop       |            117/125 |     117/125 |      0 |
+| RE1:TrainTicket    |            106/125 |     106/125 |      0 |
+| RE2:OnlineBoutique |              83/90 |       83/90 |      0 |
+| RE2:SockShop       |              88/90 |       88/90 |      0 |
+| RE2:TrainTicket    |              75/90 |       75/90 |      0 |
+| RE3:OnlineBoutique |              25/30 |       25/30 |      0 |
+| RE3:SockShop       |              18/30 |       18/30 |      0 |
+| RE3:TrainTicket    |              22/30 |       22/30 |      0 |
+| **total**          |        **641/735** | **642/735** | **+1** |
+
+And the class the arm was built for, read from the same two censuses rather than from the accuracy column:
+
+| reading                                          | control | `graph` |
+| ------------------------------------------------ | ------: | ------: |
+| `RETRIEVAL` misses (the suite's own count)       |  **12** |   **0** |
+| of those: `silent` (`truthAnomalyBefore = 0`)    |       6 |       — |
+| of those: `explained` (`truthAnomalyBefore > 0`) |       6 |       — |
+| of those: recovered to a rank                    |       0 |  **12** |
+| of those: recovered to rank 1                    |       0 |   **1** |
+| of those: `rca_score = 0` on entry               |       — |  **12** |
+
+Four findings, and the first is why the instrument shipped with the knob.
+
+1. **The class is two classes, in equal halves.** Six of the twelve are `silent` — the truth never deviated, so
+   the deduction had nothing to explain — and six are `explained`, charged in full by a callee. §7.4 counted the
+   twelve and named one cause; the census now names two, and the split is exactly 6/6. Neither half is a pool
+   problem: one is a signal problem at the origin, the other is the operator doing what `gate = 1` says.
+2. **Admission recovers every CANDIDATE and almost no ANSWER.** Twelve of twelve gain a rank (P1, TRUE — the bar
+   was eight), and one of twelve becomes correct: `re1ob_adservice_loss_4` at rank 1, the case the local cell had
+   already found. The other eleven land at 2, 2, 4, 4, 4, 6, 9, 11, 11, 13, 15.
+3. **Every recovered candidate enters with a zero base term.** `rca_score = 0` on all twelve (P4, TRUE), so each
+   is ordered by priors alone. Their `finalScore` splits cleanly into two groups: 0.25 / 0.25 / 0.25 / 0.25 and
+   0.5646 / 0.5646 / 0.5639 for the eight a prior carries, and 0.0028 / 0.0012 / 0.0011 / 0 / 0 for the four it
+   does not. A candidate whose `finalScore` is 0 is in the ranking and cannot win it.
+4. **No cell and no fault type goes down** (P3, TRUE). Admission only adds candidates; the +1 is the only
+   movement in the nine cells.
+
+**P2 is FALSE: 642, not ≥ 645.** And here the record has to state a defect of its own method rather than a result:
+the refusal rule written in §6 refuses the arm "if P1 or P3 fails, whatever the total", and both passed. So by
+the letter of the rule the arm is **not refused** — while its total missed the only number that speaks to
+whether it is worth shipping. The rule treated the total as a reading and the mechanism as a veto, when the
+honest ordering is the reverse: a mechanism can be confirmed and still not be worth a change, and a total cannot
+be confirmed at all without a mechanism. That asymmetry is recorded here rather than repaired silently.
+
+**Decision: the arm is not enrolled.** `DEFAULT_POOL_ADMISSION` stays `positive`. Three reasons, in order of
+weight: the gain is +1 of 735 (+0.14 pp) against a binomial standard error near 1.2 pp, so it is
+indistinguishable from noise; every published artifact's `pool` column would move by two to five nodes, which
+makes every downstream rate a different quantity for no measured return; and the mechanism's own reading — twelve
+candidates recovered, one answer — says the binding constraint is not the set but the SIGNAL, since eight of the
+twelve recovered candidates carry a prior worth ≤ 0.56 and four carry none at all.
+
+What that points at is the next axis and it is not a knob: a source that is silent on every channel it reports is
+invisible to a formula whose base term is `log1p(selfAnomaly)` and whose priors are all functions of movement.
+`docs/pool-admission.md` was built to prove the class existed; it now says the class exists, is half silence, and
+cannot be reached by admitting more nodes.

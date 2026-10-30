@@ -1177,6 +1177,18 @@ CAUSAL half of §7.4's sentence**: the single absent truth there reads `truthAno
 and no callee could have explained it, and the count of absent-with-a-positive-anomaly across 155 cases is zero.
 So the axis is open on the SET and closed on the attribution.
 
+**READ BACK (it.167, `docs/pool-admission.md` §9): the mechanism is complete and the magnitude is not, so the arm
+is NOT enrolled.** Two arms on `ff965bc4` — bare control `41113102918` (641/735, reproducing the published run case
+for case) and `anomaly_knobs=pooladmission=graph` `41113107920` (**642/735**, every cell at or above the control,
+RE1:OnlineBoutique the only mover at +1). The census splits the twelve: **six `silent` and six `explained`**, all
+twelve recovered to a rank, **one** recovered to rank 1, and `rca_score = 0` on **twelve of twelve** — so every
+recovered candidate is ordered by priors alone, and eight of the twelve carry a prior worth ≤ 0.56 while four
+carry 0.0028, 0.0012, 0.0011, 0 and 0. The class is real, is HALF SILENCE, and cannot be reached by admitting more
+nodes; +0.14 pp against a 1.2 pp standard error is why `DEFAULT_POOL_ADMISSION` stays `positive`. The ruling also
+records a defect of the pre-registered rule rather than patching it: the rule vetoed on P1/P3 and both passed, so
+by its letter the arm was never refused while the only quantity about whether to ship it missed its bar — the
+total belongs in the veto set, and the next arm's rule says so.
+
 It is **not** a fifth knob of the deduction, and the distinction is the reason it survives the closure: the four
 knobs scale or gate one TERM, whereas `poolAdmission` changes which nodes the terms apply to. The arm is
 `pooladmission=graph` on both dispatch surfaces, its predictions and refusal rule are written in
