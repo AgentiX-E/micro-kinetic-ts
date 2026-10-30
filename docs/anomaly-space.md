@@ -229,8 +229,13 @@ read `rawAnomalyScores`, return through `applyAnomalyNormalization`.
   winner's largest per-term advantage. So RE3:TrainTicket's published number is a statement about a
   run that HAS an anchor, and the unanchored reading is 6.7%. No document in this project reports an
   interval, and every "±1 case" reading in §6 is a composition claim rather than a significance one.
-- **`'minmax'` as a space.** The `rankNormalization = false` arm is measured only for reconstruction, not
-  against the corpus: every dispatch runs the shipped `rankNormalization = true`.
+- **`'minmax'` as a space — measured 2026-10-30, and REFUSED.** The `rankNormalization = false` arm had only
+  ever been checked for reconstruction; one dispatch (`no_rank_normalization`, run `40984560183`) now runs it on
+  the whole 735 with everything else shipped, and it costs 11 cases: RE1-TrainTicket 104 → 103, RE2-TrainTicket
+  75 → 71, RE3-TrainTicket 21 → 15, and the 490 cases below the threshold **outcome-identical, 490 of 490**. So
+  the threshold's population is exactly what it says it is, and restoring magnitude on the large-fleet cells
+  makes all three of them worse — the flattened order is not the defect, it is what those cells are surviving
+  on (`docs/base-term-price.md` §5d).
 - **The slope argument, quantified.** "Rank is not affine" is a property of the transform; how much it
   costs a _specific_ fault family is a per-cell measurement, and only the nine-cell table reports it.
 

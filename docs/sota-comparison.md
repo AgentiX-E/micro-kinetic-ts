@@ -234,8 +234,9 @@ rather than another member of this one.
    and — with `RCLAgent`'s per-span argument — it is a **third** independent reason to build the per-case
    discriminator over a bounded, checkable vocabulary, which is the register's last open axis.
 
-**AND, FOUND 2026-10-30, ONE THAT MATCHES US ON EVERY FIELD A NUMBER CAN BE FILED BY AND STILL CANNOT BE FILED:
-94.7% Top-1 on "the RCAEval benchmark (735 failure cases, 12-64 services)"** — S. Hussain and H. C. Panjwani,
+**AND, FOUND 2026-10-30, ONE THAT IS POPULATION UNVERIFIED FOR THE MIRROR-IMAGE REASON — it matches us on
+every field a number can be filed by, and still cannot be filed: 94.7% Top-1 on "the RCAEval benchmark (735 failure
+cases, 12-64 services)"** — S. Hussain and H. C. Panjwani,
 *Decentralized Root Cause Analysis for Cloud-Native Microservices — Experience with Distributed PageRank in
 Production*, **DSN-S 2026**, pp. 50–56, DOI `10.1109/DSN-S70715.2026.00023`. The method is gossip-based
 **distributed Personalized PageRank**, one sidecar agent per service, and the reported standing is **94.7%

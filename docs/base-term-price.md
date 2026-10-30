@@ -235,13 +235,51 @@ input — a rule that reads how far the top two anomalies are apart and pays the
 enough apart to mean something (§5a: 12 of RE1-TrainTicket's 21 misses sit within two rank steps) — which is
 the only form that could take both sides of the trade at once.
 
+## 5d. The space, measured and refused
+
+The first thing a flat coefficient suggests is that the coefficient is not what is wrong. On TrainTicket the
+anomaly is rank-normalised, so its smallest step is 0.008 and every gap in §5a is a multiple of it: if the
+large-fleet ranking needs magnitude, the **space** is the lever and not the weight. The engine has carried the
+alternative all along — `rankNormalization = false` runs `minmax`, an affine rescale that keeps the deviation,
+in units of the fleet's widest one.
+
+That arm is now run. One input (`no_rank_normalization`), one commit, 735 cases, everything else shipped:
+
+| cell               | rank (shipped) | minmax |  Δ |
+| ------------------ | -------------: | -----: | -: |
+| RE1 OnlineBoutique |            107 |    107 |  0 |
+| RE1 SockShop       |            116 |    116 |  0 |
+| RE1 TrainTicket    |            104 |    103 | −1 |
+| RE2 OnlineBoutique |             80 |     80 |  0 |
+| RE2 SockShop       |             85 |     85 |  0 |
+| RE2 TrainTicket    |             75 |     71 | −4 |
+| RE3 OnlineBoutique |             25 |     25 |  0 |
+| RE3 SockShop       |             18 |     18 |  0 |
+| RE3 TrainTicket    |             21 |     15 | −6 |
+| **735**            |        **631** |**620** | **−11** |
+
+Two things this measures, and the second is the general one.
+
+1. **The flag's population is exactly the population the threshold defines, case for case.** All 490 cases below
+   `anomalyNormalizeNodeThreshold` have identical outcomes to the shipped run — 490 of 490, not "the six cells
+   did not move" — and all 13 cases that differ are on the three TrainTicket cells. That is the check
+   `docs/anomaly-space.md` §9 said was untestable on two thirds of the benchmark, and it now has a number:
+   zero cases, in both directions, by construction.
+2. **Magnitude does not help, so the flat coefficient was not hiding a scale problem.** All three TrainTicket
+   cells get **worse**, RE3:TrainTicket by a quarter of its cases. The flattened rank order is not what the
+   large-fleet ranking is suffering from; it is what it is _surviving on_. Restoring the deviation restores the
+   loudness of the neighbours — the inversion §5b names — so an order that preserves magnitude preserves the
+   wrong ordering: on these cells the truth is the quiet node. **The space axis closes on the same corpus, and
+   for the same reason, as the weight axis.**
+
 ## 6. What this cannot answer
 
 - The oracle's bias, above: the gain side of every arm is a strict upper bound and the loss side is
   invisible until the arm runs.
-- The fleet-size asymmetry is a property of `ANOMALY_NORMALIZE_NODE_THRESHOLD`'s `rank` transform, not of
-  this coefficient. If the sweep's optimum differs between TrainTicket and the other two systems, the
-  finding is that the _space_ is the defect and the coefficient is only where it becomes visible — which
-  is the axis `docs/anomaly-space.md` opened and did not finish.
+- ~~The fleet-size asymmetry is a property of the `rank` transform, not of this coefficient.~~ **Answered by
+  §5d and the answer is the opposite of the guess**: the space was the first suspect and it is now a measured
+  refusal — −11 cases, all three large-fleet cells down. What remains unexplained is not the space and not the
+  coefficient but the ordering the two of them read, which is the quiet-truth inversion and belongs to
+  `docs/re3-quiet-truth.md`, not here.
 - A weight sweep cannot say what the base term would be worth in a _different_ function (identity, root,
   or a rank-share without `log1p`). Those are shapes, and a shape is a separate arm.
