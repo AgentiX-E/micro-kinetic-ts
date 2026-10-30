@@ -80,23 +80,59 @@ information about the cases it _does_.
 
 ## 4. The sweep
 
-Arms are dispatched on one commit, one flag apart, read from the `Loss census` block rather than from the
-report's fault-type mean (`docs/accuracy-aggregation.md`).
+Five arms on one commit (`c515486`), one flag apart, read from the `Loss census` block rather than from the
+report's fault-type mean (`docs/accuracy-aggregation.md`). The control is the push-triggered golden run;
+each arm's own configuration line carries the value it ran with, read back from the job logs rather than
+from the dispatch.
 
-| arm                                        | RCAEval (735) | RE1 | RE2 | RE3 | FSE'26 (1422) Top@1 |
-| ------------------------------------------ | ------------: | --: | --: | --: | ------------------: |
-| `selfAnomalyWeight = 0` (ablation)         |             — |   — |   — |   — |                   — |
-| `selfAnomalyWeight = 0.5`                  |             — |   — |   — |   — |                   — |
-| `selfAnomalyWeight = 1` (shipped, control) |             — |   — |   — |   — |                   — |
-| `selfAnomalyWeight = 1.5`                  |             — |   — |   — |   — |                   — |
-| `selfAnomalyWeight = 2`                    |             — |   — |   — |   — |                   — |
+| arm                                        |    RCAEval (735) | RE1 (375) | RE2 (270) |  RE3 (90) |
+| ------------------------------------------ | ---------------: | --------: | --------: | --------: |
+| `selfAnomalyWeight = 0` (ablation)         | **518 = 70.48%** |     64.3% |     79.6% |     68.9% |
+| `selfAnomalyWeight = 0.5`                  |     628 = 85.44% |     86.9% |     87.0% | **74.4%** |
+| `selfAnomalyWeight = 1` (shipped, control) | **631 = 85.85%** | **87.2%** |     88.9% |     71.1% |
+| `selfAnomalyWeight = 1.5`                  |     628 = 85.44% |     87.5% | **90.0%** |     63.3% |
+| `selfAnomalyWeight = 2`                    |     626 = 85.17% |     87.5% |     89.6% |     62.2% |
 
-The table is filled by §5 once the dispatches land; an empty cell is a run that has not happened, which is
-the only honest rendering of a number nobody measured.
+Per cell, as cases:
+
+| cell               |     w = 0 | w = 0.5 |   **w = 1** | w = 1.5 |   w = 2 |
+| ------------------ | --------: | ------: | ----------: | ------: | ------: |
+| RE1 OnlineBoutique |    73/125 | 106/125 | **107/125** | 108/125 | 107/125 |
+| RE1 SockShop       |    97/125 | 116/125 | **116/125** | 116/125 | 117/125 |
+| RE1 TrainTicket    |    71/125 | 104/125 | **104/125** | 104/125 | 104/125 |
+| RE2 OnlineBoutique |     77/90 |   79/90 |   **80/90** |   81/90 |   81/90 |
+| RE2 SockShop       |     69/90 |   84/90 |   **85/90** |   87/90 |   87/90 |
+| RE2 TrainTicket    |     69/90 |   72/90 |   **75/90** |   75/90 |   74/90 |
+| RE3 OnlineBoutique |     24/30 |   26/30 |   **25/30** |   24/30 |   24/30 |
+| RE3 SockShop       |     11/30 |   16/30 |   **18/30** |   17/30 |   17/30 |
+| RE3 TrainTicket    | **27/30** |   25/30 |       21/30 |   16/30 |   15/30 |
 
 ## 5. The reading
 
-_(to be recorded)_
+**The base term is worth +113 cases, +15.4 pp, and the value the formula chose by writing `1` is the optimum
+of the five tested.** The top is flat — 0.5, 1.0 and 1.5 are within three cases of each other — and the cliff
+is below it. That is the second result this instrument produces and the more useful one: an inherited literal
+has become a measured optimum, and the measurement can now be re-run by anyone who doubts it.
+
+Three things the sweep says that the oracle could not.
+
+1. **The oracle was wrong about the direction, and it was wrong by two to one.** Nulling the term flips 50 of
+   the 98 misses that carry evidence and loses 163 cases that the census cannot see, because the census
+   carries the truth's terms and the winner's and no third candidate's. A count of victories with no count of
+   defeats is not a price.
+2. **The suites disagree, and the disagreement is systematic.** RE2 is better at 1.5 (88.9 → 90.0: +1
+   OnlineBoutique, +2 SockShop, 0 TrainTicket). RE3 is better at 0.5 (71.1 → 74.4: +4 TrainTicket, +1
+   OnlineBoutique, −2 SockShop). No weight on the grid regresses no cell except the shipped one, so the
+   shipped value stands — but it stands as the compromise the bar selects, not as the best value for either
+   suite.
+3. **RE3:TrainTicket improves monotonically as the coefficient falls, on every one of its four fault types**
+   (f1 6 → 7, f2 5 → 6, f3 6 → 10, f4 4 → 5, at w = 0), while RE1:TrainTicket loses 33 cases over the same
+   move, worst on `loss` (13 → 0) and `delay` (16 → 8). The cell is not asking for a smaller unit: it is
+   asking for a different ORDER on ties that the rank transform made nearly equal, and `loss` is the class
+   where the anomaly is the only evidence there is.
+
+**The coefficient does not move.** `DEFAULT_SELF_ANOMALY_WEIGHT` stays 1: it is the shipped value, it is the
+grid's optimum on the total, and it is the only arm that regresses no cell.
 
 ## 6. What this cannot answer
 
