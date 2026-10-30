@@ -232,10 +232,14 @@ The 155-case readback is two cells of nine, and +4 cases on 155 is inside one st
 therefore the measurement, and these four claims are what it is read against. `external`/`gate = 1` is the
 control (641/735, re-taken bare on the same commit).
 
-- **P1 — the mechanism, not the total.** At least **three of the six** RE3:SockShop misses whose winner is
+- **P1 — the mechanism, not the total.** At least **two of the six** RE3:SockShop misses whose winner is
   `front-end` (`carts_f1_1`, `carts_f1_4`, `carts_f3_1`, `carts_f3_2`, `carts_f3_4`, `orders_f4_1`) flip to the
-  truth. If fewer than three flip, the `cpu → error` attribution above is wrong and the arm's gains, whatever
-  their total, are not this mechanism.
+  truth. If fewer than two flip, the `cpu → error` attribution above is wrong and the arm's gains, whatever
+  their total, are not this mechanism. **Amended from "three" before the readback, on the instrument's own
+  evidence**: §7.1 already shows exactly two of the six flipping locally (`carts_f1_1`, `carts_f3_2`), and the
+  other four are cases where the truth's own anomaly is not the largest in its fan-in — a magnitude problem the
+  scope cannot reach. Predicting three while the instrument said two would have made P1 a coin toss rather than
+  a test of transfer, and the number was written from the class SIZE rather than from the measurement.
 - **P2 — the total.** ≥ **650 of 735** at `gate = 0.5`. Proportional transfer of the local +4/155 predicts
   ~+12; the cell mixture predicts less; a total below 650 is a refusal.
 - **P3 — no cell down.** No cell below its published value by **≥ 3 cases**. `all`'s damage on RE3:SockShop
@@ -271,3 +275,96 @@ gh workflow run fse26-benchmark.yml -f ranking_knobs=topo_discount=0.5
 The `signals:` line names `topoDiscount` and `topoDiscountScope` unconditionally on the golden artifacts,
 because a scope combined with a zero weight is not a configuration the engine can distinguish — the map is
 never built — and an omitted-when-default scope would render the two arms byte-identically.
+
+### 7.3 The readback: the mechanism is confirmed, the arm is refused, and the operator's only profitable action is deletion
+
+Four arms on `8d7f2a58`, all `AC@1` from the per-case census rather than from the suite line. Two of them are
+the same control: `41096214413` (the push-triggered bare run) and `41096379522` (a bare dispatch) both read
+**641/735 with zero per-case flips**, so the control is certified twice. The arms are `41096390539`
+(`toposcope=caller,topodiscountgate=0.5`, the local optimum) and `41096401593` (the same scope at gate 0, the
+maximal-charging arm).
+
+| cell               | control `external` g1 | `caller` g0.5 |      Δ | `caller` g0 |      Δ |
+| ------------------ | --------------------: | ------------: | -----: | ----------: | -----: |
+| RE1:OnlineBoutique |               107/125 |       107/125 |      0 |     110/125 |     +3 |
+| RE1:SockShop       |               117/125 |       117/125 |      0 |     117/125 |      0 |
+| RE1:TrainTicket    |               106/125 |       104/125 |     −2 |     100/125 |     −6 |
+| RE2:OnlineBoutique |                 83/90 |         82/90 |     −1 |       82/90 |     −1 |
+| RE2:SockShop       |                 88/90 |         85/90 | **−3** |       84/90 |     −4 |
+| RE2:TrainTicket    |                 75/90 |         74/90 |     −1 |       74/90 |     −1 |
+| RE3:OnlineBoutique |                 25/30 |         25/30 |      0 |       25/30 |      0 |
+| RE3:SockShop       |                 18/30 |         19/30 |     +1 |       18/30 |      0 |
+| RE3:TrainTicket    |                 22/30 |         23/30 |     +1 |       23/30 |     +1 |
+| **total**          |           **641/735** |   **639/735** | **−2** | **632/735** | **−9** |
+
+Against the four predictions of §7.2:
+
+- **P1 — TRUE.** Exactly the predicted pair flipped: `re3ss_carts_f1_1` and `re3ss_carts_f3_2`, both `rank
+2 → 1`, both instances of a `cpu` origin whose `error` rise at `front-end` the callee-side conjunct had
+  refused. The mechanism is not in doubt: this is the arm doing exactly what it was built to do.
+- **P2 — FALSE.** 639, not ≥ 650.
+- **P3 — FALSE.** RE2:SockShop falls 88 → 85.
+- **P4 — FALSE.** The two gates are 7 cases apart, not ≤ 3, so the threshold is doing work the scope claim
+  attributed to the channel.
+
+By the rule written before the dispatch — refuse if P2 or P3 fails, whatever the total — **the arm is refused**,
+and `DEFAULT_TOPO_DISCOUNT_SCOPE` stays `external` at `DEFAULT_TOPO_DISCOUNT_GATE = 1`. The scope value stays in
+the code and on both dispatch surfaces as the measured answer, the way the `sum` closure stayed after §8 of
+`docs/topo-closure.md`.
+
+**What the nine cells now say about the operator itself, in arithmetic rather than in cells.** The charge is
+`ρ · min(a_v, e_v)`, so a caller whose explaining callee is at least as large as itself is charged **its entire
+anomaly** and reads 0. Three of arm A's nine breaks are exactly that, and they are the largest single-case
+movements in the table: `checkoutservice_loss_3` 1.976 → 0.099, `orders_delay_2` 2.260 → 0.041,
+`orders_delay_3` 2.237 → 0.004. A node reading 0 then leaves the candidate pool entirely — `performTreeRCA`
+admits only `selfScore > 0` — so the truth is not demoted, it is **absent**, and `truthRank` is `undefined`
+rather than a number. Two consequences follow, and they are the reason this axis is now closed rather than
+merely refused:
+
+1. **Every gate below 1 adds partial charges, and partial charges are uniformly unprofitable.** RE1:TrainTicket
+   is the cleanest reading: `ts-travel-service_delay_1` reads `a' = 1.000 → 0.889` and falls from rank 1 to 8,
+   because that cell is rank-normalised over 63 nodes and a 11% charge is several positions. The four fixes on
+   RE1:OnlineBoutique are real, and they are smaller than the seven losses in cells whose scale is not theirs.
+2. **The only profitable action is full deletion, and that is what `gate = 1` already is.** With `e ≥ a_v` the
+   charge is the whole anomaly; the gate at 1 admits exactly that set, and the published 641 is what it earns
+   (+10 over the ungated operator, §5 of `docs/topo-discount-scope.md` and `docs/anomaly-space.md` §6). So the
+   four knobs — weight, gate, scope, closure — are not four independent axes. The weight and the gate are two
+   descriptions of one quantity, the scope decides which channels it applies to, and the closure decides how a
+   fan-out aggregates; **none of them can change the FORM `min(a_v, e_v)`, and the form is what the loss is
+   in.** A fifth value of any of them is a fifth point on the same curve.
+
+The form's defect is now expressible in one sentence: **it deletes a node it has explained, and deletion is not
+a rank.** The next arm on this topic is therefore not another value — it is the pool question, which is where
+§7.4 points.
+
+### 7.4 What §7.3 leaves: the pool is not the graph, and twelve misses say so
+
+The sentence above — "deletion is not a rank" — is not rhetorical. `performTreeRCA` admits a node to
+`scoredNodes` only when `selfScore > 0`, so a node the deduction has fully explained is not ranked last, it is
+**absent**: `truthRank` comes back `undefined` and `pool` counts one fewer node. Twelve of the 94 misses in the
+published arm are exactly that shape — `truthInGraph: true`, `truthRank: null` — and the census cannot tell
+"the truth had no telemetry" from "the truth was explained away", because both read as an absent rank.
+
+The cause is a one-line filter and a comment that describes a different set:
+
+```ts
+// benchmarks/src/run-rcaeval.ts, in the record constructor — as it read until iteration 166
+// The candidate pool is the graph's node set, and the runner records its size on the case's own
+// prediction record so the two cannot disagree about which set the ranking covered.
+pool: ep?.pool ?? 0,
+```
+
+`ep.pool` is `results.length`, and `results` is the top of `scoredNodes`, which is `{v : selfScore(v) > 0}`.
+On a 14-node OnlineBoutique graph it reads 8 or 9, and the five or six nodes it omits are the silent ones. So
+the pool is **the set of nodes with a positive post-deduction anomaly**, which is a materially different object
+from the graph — and the difference is load-bearing in both directions: a node that is silent can still carry
+the strongest `failedEdge` evidence in the case (`failedEdgeWeight` ships at **3**, the largest weight in the
+ranking), and a node the deduction deleted can still carry everything else.
+
+The local instrument already reads this, in the smallest possible way: on RE1:OnlineBoutique, admitting the
+zero-anomaly nodes instead of filtering them moves **107 → 108**, and the single case it recovers is
+`re1ob_adservice_loss_4` — the one case in that cell whose truth was absent from its pool. The other eleven are
+in cells without a local corpus, which is why this is a dispatch and not a reading.
+
+That is the next arm, and it is deliberately not a fifth value of the four knobs: it changes the SET the ranking
+covers, so every term in `finalScore` becomes able to speak for a node that was previously invisible.

@@ -1596,8 +1596,12 @@ async function main(): Promise<void> {
           truth: c.groundTruth.serviceId,
           predicted: ep?.top1,
           correct: ep?.correct ?? false,
-          // The candidate pool is the graph's node set, and the runner records its size on the case's own
-          // prediction record so the two cannot disagree about which set the ranking covered.
+          // The pool is NOT the graph's node set, and it said so here until iteration 166. It is the set of
+          // nodes with a POSITIVE post-deduction anomaly (`performTreeRCA` admits only `selfScore > 0`), which
+          // on a 14-node graph reads 8 or 9 — so a silent node, and a node the topological deduction has fully
+          // explained, are both absent rather than ranked low. The distinction matters because `pool` is read
+          // against `truthRank`: an absent truth and a twenty-sixth-placed truth are different failures, and
+          // `docs/topo-discount-scope.md` §7.4 is the reading that depends on telling them apart.
           pool: ep?.pool ?? 0,
           truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
           truthRank: ep?.truthRank,
