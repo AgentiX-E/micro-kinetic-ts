@@ -368,3 +368,11 @@ in cells without a local corpus, which is why this is a dispatch and not a readi
 
 That is the next arm, and it is deliberately not a fifth value of the four knobs: it changes the SET the ranking
 covers, so every term in `finalScore` becomes able to speak for a node that was previously invisible.
+
+**Corrected in iteration 167, before that arm was dispatched.** The sentence above reads the twelve `truthRank:
+null` cases as a truth "the deduction deleted". The census that produced them carried no field that could
+distinguish that from a truth whose own anomaly was zero, so the reading was an inference — and the first
+instrument that can check it, on the two cells a local corpus runs, finds the opposite: the single absent truth
+is `silent` (`truthAnomalyBefore = 0`, no callee could have explained a deviation that does not exist) and the
+count of `absent with truthAnomalyBefore > 0` across all 155 cases is **zero**. The class is real; the cause was
+assumed. `docs/pool-admission.md` owns the object, the three-way split, and the two local arms.

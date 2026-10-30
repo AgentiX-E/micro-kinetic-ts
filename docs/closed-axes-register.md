@@ -1160,3 +1160,26 @@ flag's reach at all — it may not, because the workflow owns that fact, which i
 owner and iteration 99's artefact availability. **A candidate's golden half is decidable now**, so what this axis waits
 on is the per-case discriminator rather than a dispatch; `ABLATION_FINDINGS` (the internal ledger) v8 measures it at **+29.0 pp on RE3**
 against additive's +16.2 and **−3.5 pp on RE1**, which is a two-population structure and not a global choice.
+
+## The one axis this register lists as OPEN, and why it is not a fifth knob
+
+**THE SET A RANKING IS A RANKING OF (it.167, `docs/pool-admission.md`).** Every row above is a coefficient that
+was moved and refused, and §7.3 of `docs/topo-discount-scope.md` closed the whole family on arithmetic: weight,
+gate, scope and closure are four descriptions of `min(a_v, e_v)`, and no value of any of them changes that form.
+What none of them touched is the **denominator** — `performTreeRCA` admits a node only when its post-deduction
+self-anomaly is positive, so the pool is `{v : selfScore(v) > 0}` and not the graph, and a node the operator
+explains in full is **absent rather than last**. Twelve of the 94 misses in the published arm are a truth of
+exactly that shape (`truthInGraph: true`, `truthRank: null`), which is why this is the first axis in this file
+recorded as `OPEN` rather than closed: it has not been read back on the nine cells, and both comments that called
+the pool the graph — `run-rcaeval.ts` in it.166 and `loss-census.ts` in it.167 — were stating the wrong object in
+the one place an artifact is read from. **The two-cell local readback (§8 of that document) already refutes the
+CAUSAL half of §7.4's sentence**: the single absent truth there reads `truthAnomalyBefore = 0`, i.e. it was silent
+and no callee could have explained it, and the count of absent-with-a-positive-anomaly across 155 cases is zero.
+So the axis is open on the SET and closed on the attribution.
+
+It is **not** a fifth knob of the deduction, and the distinction is the reason it survives the closure: the four
+knobs scale or gate one TERM, whereas `poolAdmission` changes which nodes the terms apply to. The arm is
+`pooladmission=graph` on both dispatch surfaces, its predictions and refusal rule are written in
+`docs/pool-admission.md` §6 before any arm exists, and the instrument that makes it readable — `truthAnomalyBefore`
+plus `classifyTruthAbsence`'s six answers — ships in the same commit so a total cannot be published without the
+classification that explains it.
