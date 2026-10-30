@@ -235,6 +235,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'maxCycles',
       'maxPropagationDepth',
       'onsetShape',
+      // Iteration 167: the SET the ranking covers. Held for the reason every axis here is held — a search
+      // interpolates over coefficients, and this field picks a POPULATION, so its two values have different
+      // denominators and nothing to interpolate between them.
+      'poolAdmission',
       'poolMetricPenaltyWeight',
       'prismPooling',
       'selfAnomalyWeight',

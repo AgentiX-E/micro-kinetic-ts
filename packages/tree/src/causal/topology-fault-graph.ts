@@ -1614,6 +1614,47 @@ export function isTopoDiscountScope(value: string): value is TopoDiscountScope {
 }
 
 /**
+ * Which SET of nodes the ranking is allowed to answer with.
+ *
+ * `performTreeRCA` has always admitted a node only when its post-deduction self-anomaly is positive, so the
+ * candidate pool is `{v : selfScore(v) > 0}` and not the graph's node set. On a 14-node graph the two differ
+ * by five or six nodes, and the difference is invisible until the deduction deletes something: a node whose
+ * anomaly a callee accounts for in full reads 0 and is then **absent**, which is a different failure from
+ * being ranked last (`docs/topo-discount-scope.md` §7.4). Twelve of the 94 misses in the published arm are a
+ * truth of exactly that shape.
+ *
+ * - `positive` (default): the shipped filter, and the set every published number was measured on.
+ * - `graph`: every node of the fault graph, each ranked by its own score. Admission is not promotion — a
+ *   node with no deviation of its own enters at the bottom unless a prior carries it, and whether a prior
+ *   does is the measurement.
+ */
+export type PoolAdmission = 'positive' | 'graph';
+
+/** The reachable values of {@link PoolAdmission}, as a lookup so a parser cannot invent a third. */
+export const POOL_ADMISSIONS: Readonly<Record<PoolAdmission, true>> = {
+  positive: true,
+  graph: true,
+};
+
+/**
+ * The shipped {@link PoolAdmission}.
+ *
+ * `positive`, because it is what the nine published cells and the 641/735 golden figure were measured under.
+ * The other value is an arm that must name itself on the artifact, on the rule every coefficient here follows.
+ */
+export const DEFAULT_POOL_ADMISSION: PoolAdmission = 'positive';
+
+/**
+ * Whether a string names a {@link PoolAdmission}.
+ *
+ * @param value - Candidate value, as a CLI or a workflow input would carry it.
+ * @returns Whether it is one of the two admissions.
+ */
+export function isPoolAdmission(value: string): value is PoolAdmission {
+  return Object.prototype.hasOwnProperty.call(POOL_ADMISSIONS, value);
+}
+
+/**
  * The fault family a metric LABEL names, or `undefined` when the label names none.
  *
  * Definitional, and deliberately tiny: a label that measures response time names `DELAY`, one that

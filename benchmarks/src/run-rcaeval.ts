@@ -1605,6 +1605,11 @@ async function main(): Promise<void> {
           pool: ep?.pool ?? 0,
           truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
           truthRank: ep?.truthRank,
+          // …and what the truth's anomaly was BEFORE the deduction, which is the only number that tells the two
+          // absences apart: zero is a silent origin, positive-and-unranked is a node the operator explained
+          // away. An older artifact carries neither, and `classifyTruthAbsence` reports that as `unmeasured`
+          // rather than as either answer.
+          truthAnomalyBefore: ep?.truthAnomalyBefore,
           errored: ep?.errored,
           // The truth's own evidence, carried so a DEEP miss can be split by whether anything moved at the
           // origin. Read from the runner's record of the truth's own `RootCauseResult` rather than recomputed

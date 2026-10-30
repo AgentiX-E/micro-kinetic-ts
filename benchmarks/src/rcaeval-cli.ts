@@ -82,6 +82,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   LogSignalMode,
+  PoolAdmission,
   PrismPooling,
   TopoClosure,
 } from '../../packages/tree/src/index.js';
@@ -97,6 +98,7 @@ import {
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_METRIC_RISE_CEILING,
+  DEFAULT_POOL_ADMISSION,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
@@ -108,6 +110,7 @@ import {
   isBaselineAnchor,
   isDropDeviationMode,
   isLogSignalMode,
+  isPoolAdmission,
   isPrismPooling,
   isTopoClosure,
 } from '../../packages/tree/src/index.js';
@@ -328,6 +331,15 @@ export interface CliOptions {
    * under it.
    */
   topoClosure: TopoClosure;
+  /**
+   * Which SET of nodes the ranking may answer with (see `PoolAdmission`).
+   *
+   * A field of its own rather than a hard-wired filter, because the filter is a decision: the ranking admits
+   * only nodes whose post-deduction anomaly is positive, so a node the deduction explains in full is ABSENT
+   * rather than last, and twelve published misses are a truth of that shape. `positive` is what every published
+   * number ran under; `graph` admits the whole graph and is the arm `docs/topo-discount-scope.md` §7.4 names.
+   */
+  poolAdmission: PoolAdmission;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
   /**
@@ -600,6 +612,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    poolAdmission: DEFAULT_POOL_ADMISSION,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
     // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
@@ -766,6 +779,11 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // unnameable closure must reproduce a published corpus rather than invent a third aggregation.
       const closure = args[++i]!;
       opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (args[i] === '--pool-admission' && hasValue(args, i + 1)) {
+      // Falls back to the SHIPPED admission on an unusable value, on the rule the scope and closure above
+      // follow: a typo must reproduce a published corpus rather than widen the set a rank can index into.
+      const admission = args[++i]!;
+      opts.poolAdmission = isPoolAdmission(admission) ? admission : DEFAULT_POOL_ADMISSION;
     } else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a

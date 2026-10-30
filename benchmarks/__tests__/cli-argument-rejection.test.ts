@@ -56,6 +56,7 @@ import {
   DUAL_FAMILY_GATE_MODES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
+  POOL_ADMISSIONS,
   PRISM_POOLINGS,
   TOPO_CLOSURES,
 } from '../../packages/tree/src/index.js';
@@ -414,6 +415,9 @@ describe('every option the golden runner forwards can be set from the command li
       // members are not a mode of the ENGINE but an aggregation of it. Probed from the union for the reason
       // every other entry is: a third closure extends this list by existing.
       ...Object.keys(TOPO_CLOSURES),
+      // Iteration 167: the SET the ranking covers, the sixth word-vocabulary and the first that is not a
+      // property of the deduction at all. Probed from the union for the reason every other entry is.
+      ...Object.keys(POOL_ADMISSIONS),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

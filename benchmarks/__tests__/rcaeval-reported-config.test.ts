@@ -512,7 +512,12 @@ describe('the RCAEval configuration line carries the configuration that produced
         // Iteration 164 appended the deduction's closure behind its three siblings, and it is printed even at
         // the shipped `max`: the line is what makes a `sum` arm and the shipped run distinguishable, and a
         // field omitted at its default would render the two byte-identically.
-        'topoClosure=max',
+        'topoClosure=max ' +
+        // Iteration 167 appended the SET the ranking covers, and it is the one field on this line that is not a
+        // property of the deduction: the filter applies at every weight, so it sits outside that family and is
+        // printed even at `topoDiscount = 0`. `positive` is a value the published corpus ran under, and a line
+        // that omitted it on the default would render a widened pool and the published run identically.
+        'poolAdmission=positive',
     );
   });
 

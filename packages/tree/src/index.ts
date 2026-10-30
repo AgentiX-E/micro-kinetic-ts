@@ -81,6 +81,7 @@ export {
   DEFAULT_MAX_PRE_WINDOW_DRIFT,
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
+  DEFAULT_POOL_ADMISSION,
   // The demand guard: an ENROLMENT, not an opt-in, and the only member of its family list is `workload`.
   // Exported with the classifier because a caller that wants to ask "is this metric fault evidence" must
   // ask the same function the guard asks, not a substring test of its own.
@@ -96,6 +97,7 @@ export {
   // counts refusals must read the same number the engine refuses on — a re-derived drift is a second
   // definition of "stationary", which is the defect `docs/baseline-anchor.md` §7b exists to prevent.
   MIN_STATIONARY_PRE_SAMPLES,
+  POOL_ADMISSIONS,
   PRE_WINDOW_GUARDS,
   TOPO_DISCOUNT_SCOPES,
   isBaselineAnchor,
@@ -104,6 +106,7 @@ export {
   // The transport family, exported on the same rule as the demand family: the term that credits a
   // latency rise and the classifier that calls a latency rise `DELAY` must ask one question.
   isLatencyMetric,
+  isPoolAdmission,
   isResponseChannel,
   isTopoDiscountScope,
   judgePreWindowDrift,
@@ -122,6 +125,7 @@ export type {
   MetricBreakdown,
   MetricDiagnostic,
   MetricDiagnosticOutcome,
+  PoolAdmission,
   PreWindowGuard,
   PreWindowProbe,
   TopoDiscountScope,

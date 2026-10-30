@@ -331,6 +331,14 @@ jobs:
                     *) echo "::error::ranking_knobs: topo_closure takes max or sum, got '$value'"; exit 1 ;;
                   esac
                   ;;
+                # The SET the ranking covers — not a member of the deduction family: the filter applies at every
+                # weight, so it is refused by its own vocabulary rather than inherited from a neighbour's.
+                pool_admission)
+                  case "$value" in
+                    positive|graph) KNOB_ARGS+=(--pool-admission "$value") ;;
+                    *) echo "::error::ranking_knobs: pool_admission takes positive or graph, got '$value'"; exit 1 ;;
+                  esac
+                  ;;
                 collision_weight)
                   KNOB_ARGS+=(--collision-weight "$value")
                   ;;

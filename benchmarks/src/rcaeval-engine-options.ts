@@ -34,6 +34,7 @@ import type {
   DualFamilyGateMode,
   LogSignalMode,
   OnsetShape,
+  PoolAdmission,
   PrismPooling,
   TopoClosure,
   TopoDiscountScope,
@@ -105,6 +106,8 @@ export interface RCAEvalSignalOptions {
   readonly topoDiscountGate: number;
   /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
   readonly topoClosure: TopoClosure;
+  /** Which SET of nodes the ranking may answer with — see `PoolAdmission`. */
+  readonly poolAdmission: PoolAdmission;
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
@@ -240,6 +243,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
       topoClosure: opts.topoClosure,
+      poolAdmission: opts.poolAdmission,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
@@ -340,6 +344,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // APPENDED on the same rule as the two fields above: every byte before this one is what the artifacts
     // already carry, and the field is unconditional because it ships at a VALUE rather than at a toggle —
     // an omitted-when-default closure would render the `sum` arm and the shipped run identically.
-    `topoClosure=${opts.topoClosure}`
+    `topoClosure=${opts.topoClosure}` +
+    // APPENDED on the same rule as the three fields above, and for the same reason: `positive` is a VALUE the
+    // published corpus ran under, so a line that omitted it on the default would render the `graph` arm and the
+    // published run identically on the one artifact whose job is to say which set a rank could index into.
+    ` poolAdmission=${opts.poolAdmission}`
   );
 }

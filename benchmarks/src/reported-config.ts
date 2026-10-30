@@ -61,4 +61,6 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
     'ships at 1 and no row of the battery varies it; it is read only when the weight is non-zero',
   topoClosure:
     'ships at `max` and no row of the battery varies it; it is read only when the weight is non-zero',
+  poolAdmission:
+    'ships at `positive` and no row of the battery varies it; it is the SET the ranking covers, so every row of the battery runs on the published one',
 };

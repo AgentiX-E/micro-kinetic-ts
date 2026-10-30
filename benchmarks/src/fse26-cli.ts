@@ -38,6 +38,7 @@ import type {
   DropDeviationMode,
   FailedEdgeMode,
   LogSignalMode,
+  PoolAdmission,
   TopoClosure,
   TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
@@ -65,6 +66,7 @@ import {
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_ADMISSION,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_PRISM_WEIGHT,
@@ -91,6 +93,7 @@ import {
   isDualFamilyGateMode,
   isLogSignalMode,
   isOnsetShape,
+  isPoolAdmission,
   isPrismPooling,
   isTopoClosure,
   isTopoDiscountScope,
@@ -395,6 +398,14 @@ export interface Fse26CliOptions {
    */
   readonly topoClosure: TopoClosure;
   /**
+   * Which SET of nodes the ranking may answer with — see `PoolAdmission`.
+   *
+   * The ranking admits only nodes whose post-deduction anomaly is positive, which makes a node the deduction
+   * explained in full ABSENT rather than last; twelve misses in the golden population are a truth of that shape,
+   * so the filter is a knob and not a detail. `positive` is what every published number ran under.
+   */
+  readonly poolAdmission: PoolAdmission;
+  /**
    * Weight on the collision (co-occurrence) term. `0` = off, the shipped value.
    *
    * The Deng-Yu collision source is the term's name; its contribution on the golden corpus is `0.0000` on
@@ -580,6 +591,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    poolAdmission: DEFAULT_POOL_ADMISSION,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     prismWeight: DEFAULT_PRISM_WEIGHT,
     prismPooling: DEFAULT_PRISM_POOLING,
@@ -732,6 +744,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // the shipped configuration on both halves of one suite, not to two different aggregations.
       const closure = argv[++i]!;
       opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (arg === '--pool-admission' && hasValue(argv, i + 1)) {
+      // The golden half's fallback rule, for the reason the scope and closure above record: an unusable value
+      // must resolve to the shipped configuration on both halves of one suite.
+      const admission = argv[++i]!;
+      opts.poolAdmission = isPoolAdmission(admission) ? admission : DEFAULT_POOL_ADMISSION;
     } else if (arg === '--collision-weight' && hasValue(argv, i + 1))
       opts.collisionWeight = parseWeight(argv[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (arg === '--prism-weight' && hasValue(argv, i + 1))

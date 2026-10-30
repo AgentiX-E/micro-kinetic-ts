@@ -102,6 +102,10 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     // The deduction's CLOSURE, and the field whose absence from this object is the defect in the module
     // docblock: the engine aggregated by `sum` while the line reported the shipped `max`.
     topoClosure: opts.topoClosure,
+    // …and the SET the ranking covered, which is the field `docs/topo-discount-scope.md` §7.4 makes
+    // load-bearing: a node the deduction explains in full is absent rather than last, so a run that widened the
+    // set must say so on its own line rather than leave it to be inferred from the score column.
+    poolAdmission: opts.poolAdmission,
     collisionWeight: opts.collisionWeight,
     prismWeight: opts.prismWeight,
     prismPooling: opts.prismPooling,

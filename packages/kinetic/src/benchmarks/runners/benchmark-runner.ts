@@ -287,6 +287,18 @@ export interface CasePrediction {
    */
   readonly truthEvidence?: TruthEvidence | undefined;
   /**
+   * The truth's anomaly BEFORE the topological deduction, on the map the ranking reads.
+   *
+   * The field that separates the two ways a truth can be missing from the ranking, which the census has been
+   * unable to tell apart: a truth that never deviated (`0`, i.e. no telemetry or no movement at its origin) and
+   * a truth the deduction EXPLAINED AWAY (`> 0`, deleted by the operator and therefore absent rather than
+   * last). Read from the fault graph the engine was handed, which is the pre-deduction map by construction —
+   * `deductExplainedAnomalies` returns a new map and leaves the graph's own untouched.
+   *
+   * Absent for a truth that is not a node of this case's graph, which is a third and unrelated absence.
+   */
+  readonly truthAnomalyBefore?: number | undefined;
+  /**
    * The WINNER's `finalScore` broken into its named terms.
    *
    * The other half of an attribution. "Which term did the truth lose on" is a question about a GAP, and a gap
@@ -856,6 +868,10 @@ export class BenchmarkRunner {
           // from rank 26 of 68 chosen between comparably-moving candidates, and only the second is a
           // ranking failure. Absent when the truth is not ranked, because then it has no score of its own.
           truthEvidence: placement.evidence,
+          // …and the truth's anomaly BEFORE the deduction, which is what makes an absent truth readable: `0`
+          // means nothing moved at the origin, `> 0` means the operator deleted a node that HAD moved, and the
+          // two were the same record until this field existed (`docs/topo-discount-scope.md` §7.4).
+          truthAnomalyBefore: faultGraph.anomalyScores.get(caseTruth),
           // And the winner's breakdown, so the two sides of the gap are recorded where both are still in
           // hand. Without it the census can say a case was lost and not what it was lost to.
           top1Terms: results[0]?.terms,

@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -97,6 +98,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // under a zero weight on the LINE and its presence here is what makes `missingReportedConfigFields` an
     // answer about the line rather than about the object.
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    // The set the ranking covers. Present for the same reason: it prints unconditionally, so the object and
+    // the line agree about it and `missingReportedConfigFields` is an answer about the line.
+    poolAdmission: DEFAULT_POOL_ADMISSION,
     collisionWeight: 0,
     prismWeight: 0,
     prismPooling: 'additive',
@@ -190,6 +194,10 @@ describe('FSE26 report — attribution', () => {
       // …and the closure is the fourth: an artifact that carried a `sum` deduction could not be read back
       // without it, because the aggregation is invisible on a tree and decisive on a fan-out.
       'topoClosure',
+      // The fifth postdating field is not a member of that family at all: `poolAdmission` is the SET the
+      // ranking covers, so an artifact that admitted the whole graph cannot be read back into a run whose
+      // ranking was a subset — the two have different denominators, and `pool` alone cannot say which.
+      'poolAdmission',
     ]);
   });
 
@@ -243,7 +251,10 @@ describe('FSE26 report — the two renderings agree', () => {
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
         `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
-        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1',
+        // The pool, printed OUTSIDE the deduction block because the filter applies at every weight: at
+        // `topoDiscount = 0` this config still names the set its ranking covered, which is the whole point of
+        // the field being a value rather than a property of the deduction.
+        `temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

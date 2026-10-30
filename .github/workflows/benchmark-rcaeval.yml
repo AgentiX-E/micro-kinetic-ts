@@ -341,6 +341,15 @@ jobs:
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
                 ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -568,6 +577,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
                 esac
                 ;;
               toposcope=*)
@@ -824,6 +842,15 @@ jobs:
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
                 ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1060,6 +1087,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
                 esac
                 ;;
               toposcope=*)
@@ -1324,6 +1360,15 @@ jobs:
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
                 ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external|caller) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1552,6 +1597,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
                 esac
                 ;;
               toposcope=*)
@@ -1783,6 +1837,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
+              # the filter applies at every weight, and a widened pool has a different denominator, so a run that
+              # changed it must say so here rather than leave it to be inferred from the accuracy column.
+              pooladmission=*)
+                case "${kv#pooladmission=}" in
+                  positive|graph) RANKING_ARG+=(--pool-admission "${kv#pooladmission=}") ;;
+                  *) echo "::error::anomaly_knobs: pooladmission takes positive or graph, got '${kv#pooladmission=}'"; exit 1 ;;
                 esac
                 ;;
               toposcope=*)

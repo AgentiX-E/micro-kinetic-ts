@@ -29,11 +29,16 @@ import type {
   DropDeviationMode,
   DualFamilyGateMode,
   OnsetShape,
+  PoolAdmission,
   PrismPooling,
   TopoClosure,
   TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
-import { DEFAULT_TOPO_CLOSURE, DEFAULT_TOPO_DISCOUNT_GATE } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_POOL_ADMISSION,
+  DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_DISCOUNT_GATE,
+} from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -189,6 +194,15 @@ export interface FSE26RunConfig {
    * rather than the value that happened to ship when the field was added.
    */
   readonly topoClosure?: TopoClosure;
+  /**
+   * Which SET of nodes the ranking covered — see `PoolAdmission`.
+   *
+   * Optional for the reason the gate and the closure record: a run published before the field existed must
+   * still parse, and the reader renders the ENGINE's default for it rather than the value that happened to ship
+   * when the field was added. Printed unconditionally, because it is a VALUE (`positive` is the shipped one) and
+   * an omitted-when-default field would render a widened pool and the published run identically.
+   */
+  readonly poolAdmission?: PoolAdmission;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   /**
@@ -378,6 +392,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'topoDiscountScope',
   'topoDiscountGate',
   'topoClosure',
+  'poolAdmission',
 ] as const;
 
 /**
@@ -538,6 +553,10 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // shipped run identically on the artifact whose whole job is to attribute the difference between them.
     line += ` topoClosure=${config.topoClosure ?? DEFAULT_TOPO_CLOSURE}`;
   }
+  // OUTSIDE the deduction block, because the pool is not a property of the deduction: the filter applies at
+  // every weight, and a line that printed it only when the deduction ran would make a `graph` run at weight 0
+  // indistinguishable from the published one.
+  line += ` poolAdmission=${config.poolAdmission ?? DEFAULT_POOL_ADMISSION}`;
   if (config.collisionWeight !== 0) {
     line += ` collisionWeight=${config.collisionWeight}`;
   }

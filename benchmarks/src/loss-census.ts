@@ -15,10 +15,15 @@
  * - {@link classifyLoss} consumes a {@link LossRecord} — one case, its candidate pool, and where the truth
  *   was placed in it — and names the failure. {@link summarizeLoss} counts them per (suite, system).
  *
- * **The pool is the graph.** A case's candidate set is the node set of the call graph this pipeline
- * constructed for it, which is the set the ranker can output; a truth that is not a node cannot be returned
- * by any ranking of it, however good. {@link LossRecord.pool} records the size of that set beside
- * {@link LossRecord.truthInGraph}, because a fraction without a denominator is not a rate.
+ * **The pool is the set the ranker ADMITTED, which is not the graph.** `performTreeRCA` ranks only nodes whose
+ * post-deduction self-anomaly is positive, so `{v : selfScore(v) > 0}` is the set a rank can index into — eight
+ * or nine nodes of a fourteen-node graph — while `truthInGraph` is a claim about the graph. The two are
+ * different objects and the difference is load-bearing: a node the topological deduction explained in full
+ * reads zero and is then ABSENT rather than last, which is a failure no rank can describe. `Iteration 166`
+ * (`docs/topo-discount-scope.md` §7.4) found twelve published misses of exactly that shape, which is why
+ * {@link LossRecord.truthAnomalyBefore} exists and why {@link classifyTruthAbsence} splits an absent truth into
+ * the three things it can be. {@link LossRecord.pool} still records the admitted set's size, because a fraction
+ * without a denominator is not a rate — but the denominator is the ranker's, not the graph's.
  *
  * @module benchmarks/loss-census
  */
@@ -113,6 +118,17 @@ export interface LossRecord {
    * difference between those two is most of what a reranking fix is worth.
    */
   readonly truthRank?: number | undefined;
+  /**
+   * The truth's anomaly BEFORE the topological deduction, or absent when the truth is not a node of this graph.
+   *
+   * The one number that separates the two ways a truth can be missing from the ranking. `0` means nothing moved
+   * at the origin — a signal problem, owned by the corpus or the detector. `> 0` with no rank means the node DID
+   * deviate and the deduction deleted it, which is the operator doing exactly what `gate = 1`, `rho = 1` says it
+   * does, and which `docs/topo-discount-scope.md` §7.4 counts at twelve of ninety-four misses. Recorded as the
+   * measured value rather than as a boolean: a boolean would have to pick a threshold, and the threshold that
+   * matters here is `0`, which the value states itself.
+   */
+  readonly truthAnomalyBefore?: number | undefined;
   /**
    * Whether the engine threw before producing a ranking.
    *
@@ -364,6 +380,44 @@ export function classifyLoss(
   // graph holds but the ranking never surfaces is still one no ranking of THIS pool could have returned.
   if (record.truthRank === undefined) return 'RETRIEVAL';
   return record.truthRank <= shallowDepth ? 'RERANK_SHALLOW' : 'RERANK_DEEP';
+}
+
+/**
+ * Why the truth does or does not appear in the ranking, with the three ABSENCES kept apart.
+ *
+ * `RETRIEVAL` is one class and three different facts. Until iteration 166 the census could not separate them,
+ * because `truthRank === undefined` is the same record whether the graph never held the service, the service
+ * never deviated, or the topological deduction deleted it — and the three have different owners: the first is a
+ * corpus or graph-construction question, the second a detector or telemetry one, and the third is the operator
+ * behaving exactly as `gate = 1` says it should (`docs/topo-discount-scope.md` §7.4).
+ *
+ * The split is decided by one measured number, {@link LossRecord.truthAnomalyBefore}, read against the only
+ * threshold that needs no justification: zero. A truth that moved and is absent was explained away; a truth that
+ * did not move was silent; a record from an artifact written before the column existed is `unmeasured` rather
+ * than folded into either — the same rule this module applies to every other absence.
+ */
+export type TruthAbsence =
+  'ranked' | 'explained' | 'silent' | 'not-in-graph' | 'errored' | 'unmeasured';
+
+/**
+ * Classify why the truth is or is not in the ranking — see {@link TruthAbsence}.
+ *
+ * @param record - The case's census row, or the subset of it a caller has in hand.
+ * @returns The absence, or `ranked` when the truth carries a rank.
+ */
+export function classifyTruthAbsence(record: {
+  readonly truthInGraph: boolean;
+  readonly errored?: boolean | undefined;
+  readonly truthRank?: number | undefined;
+  readonly truthAnomalyBefore?: number | undefined;
+}): TruthAbsence {
+  if (record.errored === true) return 'errored';
+  // The rank first: an admitted truth needs no explanation, and asking for one would make this function's
+  // answer depend on a column an older artifact may not carry.
+  if (record.truthRank !== undefined) return 'ranked';
+  if (!record.truthInGraph) return 'not-in-graph';
+  if (record.truthAnomalyBefore === undefined) return 'unmeasured';
+  return record.truthAnomalyBefore > 0 ? 'explained' : 'silent';
 }
 
 /** The counts for one (suite, system) group. */

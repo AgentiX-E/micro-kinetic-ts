@@ -21,6 +21,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_ADMISSION,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
@@ -88,6 +89,9 @@ describe('buildFse26EngineOptions', () => {
       // The fourth field of the same family, on the same rule: read by the pruner from `signals`, and its
       // shipped value is the maximum, which is the reading every published number was measured under.
       topoClosure: DEFAULT_TOPO_CLOSURE,
+      // …and the SET the ranking covers, which is not a property of the deduction: the filter applies at every
+      // weight, so a run that widened the pool must be distinguishable from a published one at weight 0.
+      poolAdmission: DEFAULT_POOL_ADMISSION,
       collisionWeight: 0,
       prismWeight: 0,
       prismPooling: DEFAULT_PRISM_POOLING,

@@ -299,6 +299,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // per iteration. Packed for the reason the family's first three are: the golden half's 25-input budget is
     // full. A WORD rather than a number, so it travels through the block's own `case` guard.
     '--topo-closure',
+    // Iteration 167: the SET the ranking covers — packed for the reason every post-ceiling knob is here — and
+    // the only entry in this block that is not a term of the score: it changes which nodes a rank can index into.
+    '--pool-admission',
     // Iteration 187: the deviation window's ANCHOR. Packed for the reason every post-ceiling knob is: the
     // golden half's 25-input budget is full. It is a WINDOW rather than a weight, and it belongs to the
     // composition because it re-defines the `max`, `min` and baseline every coefficient in that object is
@@ -355,6 +358,8 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // the reason the three above do — the golden half is at 25/25 — and it is the one member of the family that
     // is a WORD rather than a number, so the block's `case` arm guards it against a third name.
     '--topo-closure',
+    // Iteration 167: the pool, for the reason the four above are here.
+    '--pool-admission',
   ],
 };
 
@@ -599,6 +604,15 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'topoclosure',
   },
+  poolAdmission: {
+    flag: '--pool-admission',
+    // Its own document, and the first knob on this surface that is not a coefficient of the ranking at all: it
+    // decides which SET the ranking is a ranking OF. `docs/pool-admission.md` owns the filter's history, the
+    // twelve published misses that made it visible, and the two readings it names.
+    owner: 'pool-admission.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'pooladmission',
+  },
   traceWeight: {
     flag: '--trace-weight',
     owner: 'rank-collapse-falsified.md',
@@ -814,6 +828,10 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'logSignalMode',
   'logWeight',
   'onsetShape',
+  // Iteration 167: the SET the ranking covers. On both halves for the criterion's AND, and the third entry in
+  // this list that is not a coefficient at all (`baselineAnchor` and `topoClosure` are the other two) — the
+  // pool changes the denominator, so an arm only one half could name would make a rate comparison undecidable.
+  'poolAdmission',
   'poolMetricPenaltyWeight',
   'prismPooling',
   'prismWeight',

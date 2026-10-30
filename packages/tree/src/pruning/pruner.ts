@@ -66,10 +66,12 @@ import {
   isTopoClosure,
 } from '../causal/topo-deduction.js';
 import type {
+  PoolAdmission,
   TopoDiscountScope,
   TopologyFaultGraphConfig,
 } from '../causal/topology-fault-graph.js';
 import {
+  DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   buildTopologyFaultGraph,
 } from '../causal/topology-fault-graph.js';
@@ -427,6 +429,21 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default: 'max'.
    */
   readonly topoClosure: TopoClosure;
+  /**
+   * Which SET of nodes the ranking may answer with — see {@link PoolAdmission}.
+   *
+   * The ranking has always dropped a node whose post-deduction self-anomaly is zero, which is a filter nobody
+   * declared and which the topological deduction makes observable: a node it explains in full reads 0, leaves
+   * the pool entirely, and its `truthRank` comes back missing rather than large
+   * (`docs/topo-discount-scope.md` §7.4). This field names the filter so the filter can be measured.
+   *
+   * `positive` is the shipped value and the set every published figure was measured on; `graph` admits every
+   * node the engine was handed. Read only where the ranking is built, so a `graph` run differs from a
+   * `positive` run in the pool and nowhere else.
+   *
+   * Default {@link DEFAULT_POOL_ADMISSION} = **positive**.
+   */
+  readonly poolAdmission: PoolAdmission;
   /**
    * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
    * log volume is highest.
@@ -1476,6 +1493,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
   topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
   topoClosure: DEFAULT_TOPO_CLOSURE,
+  poolAdmission: DEFAULT_POOL_ADMISSION,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
@@ -2503,8 +2521,12 @@ function performTreeRCA(
     const selfScore = selfScores.get(nodeId)!;
     const depth = depths.get(nodeId)!;
 
-    // Only include nodes with significant self anomaly
-    if (selfScore > 0) {
+    // The pool is `{v : selfScore(v) > 0}` under the shipped admission, which is a SET DECISION and not a
+    // significance test: a node whose anomaly a callee accounts for in full reads exactly 0 and is dropped,
+    // so it is absent from the ranking rather than last in it — and an absent truth and a low-ranked truth are
+    // different failures with different owners (see `docs/topo-discount-scope.md` §7.4). `poolAdmission`
+    // names the decision so it can be measured; `graph` admits every node, each still ranked by its own score.
+    if (selfScore > 0 || options.poolAdmission === 'graph') {
       scoredNodes.push({ serviceId: nodeId, score: selfScore, depth });
     }
   }

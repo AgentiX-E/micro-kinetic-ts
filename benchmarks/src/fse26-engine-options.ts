@@ -24,6 +24,7 @@ import type {
   FailedEdgeMode,
   LogSignalMode,
   OnsetShape,
+  PoolAdmission,
   PrismPooling,
   TopoClosure,
   TopoDiscountScope,
@@ -125,6 +126,8 @@ export interface Fse26SignalOptions {
   readonly topoDiscountGate: number;
   /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
   readonly topoClosure: TopoClosure;
+  /** Which SET of nodes the ranking may answer with — see `PoolAdmission`. */
+  readonly poolAdmission: PoolAdmission;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   readonly prismPooling: PrismPooling;
@@ -194,6 +197,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
       topoClosure: opts.topoClosure,
+      poolAdmission: opts.poolAdmission,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,
       prismPooling: opts.prismPooling,
