@@ -1178,8 +1178,8 @@ and no callee could have explained it, and the count of absent-with-a-positive-a
 So the axis is open on the SET and closed on the attribution.
 
 **READ BACK (it.167, `docs/pool-admission.md` §9): the mechanism is complete and the magnitude is not, so the arm
-is NOT enrolled.** Two arms on `ff965bc4` — bare control `41113102918` (641/735, reproducing the published run case
-for case) and `anomaly_knobs=pooladmission=graph` `41113107920` (**642/735**, every cell at or above the control,
+is NOT enrolled.** Two arms on `ff965bc4` — bare control `41113102918` (641/735, reproducing the published total
+cell for cell) and `anomaly_knobs=pooladmission=graph` `41113107920` (**642/735**, every cell at or above the control,
 RE1:OnlineBoutique the only mover at +1). The census splits the twelve: **six `silent` and six `explained`**, all
 twelve recovered to a rank, **one** recovered to rank 1, and `rca_score = 0` on **twelve of twelve** — so every
 recovered candidate is ordered by priors alone, and eight of the twelve carry a prior worth ≤ 0.56 while four
