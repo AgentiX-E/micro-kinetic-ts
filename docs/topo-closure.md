@@ -204,3 +204,19 @@ What the arm nevertheless establishes, and what the next axis inherits:
    A knob that multiplies a charge cannot pick out which callers to charge.
 3. **Half the misses are not direction errors at all.** 48 of the 94 have a winner with no directed path to the
    truth. Any further work on the deduction — its weight, its gate, its closure — can move at most the other 46.
+
+### 8.3 The other population, on an arm that labels itself
+
+The FSE'26 half was re-taken on the commit that repaired §198.4's label defect — `ranking_knobs=topo_closure=sum`,
+run `41063737205`, whose own header reads `topoClosure=sum`:
+
+| population     |   control (`max`) |            arm (`sum`) | verdict                                                                     |
+| -------------- | ----------------: | ---------------------: | --------------------------------------------------------------------------- |
+| Top@1          | 60.5 % (860/1422) |      60.5 % (860/1422) | identical                                                                   |
+| Top@3 / Top@5  |   79.0 % / 82.2 % |        79.0 % / 82.2 % | identical                                                                   |
+| 25 fault types |                 — | **25 of 25 identical** | identical, down to `PodFailure 0/24`, `JVMMySQLLatency 0/2`, `TimeSkew 0/2` |
+
+Inert on 1 422 cases, as every other knob of this deduction is on that corpus (§197.3). The commit was also certified on the golden half by a bare dispatch of its own — `41061840781`, line reading `topoClosure=max`, **641 of 735 with zero per-case flips** against `41053553008` — so extracting the record out of `main()` stated a field without reading one. The arm also corroborates
+the mislabelled one: `41053711414`, whose header said `max`, reproduces this run's 25 fault-type rows case for case,
+so the engine there really did aggregate by `sum` — which is the split the extraction was made to make impossible,
+and the reason the earlier artifact was re-taken rather than read.
