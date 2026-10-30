@@ -294,6 +294,22 @@ survives into a per-node anomaly. **What this pair does NOT establish is WHY it 
 published in the RCAEval loss census and nowhere else, so on FSE'26 the observable is "no movement" and the
 mechanism is unmeasured. That is a named gap, not a conclusion.
 
+### 10.0 The enrolment certified by a run that names no arm
+
+An arm read through a `workflow_dispatch` knob and a default read by a bare run are two different claims, and
+only the second one is about what a user gets. Both populations were therefore re-run on the commit that
+carries the enrolment (`89900939`) with **no knobs at all**, and both reproduce their arms exactly:
+
+| population | run | the run's own `signals:` line | reads |
+| ---------- | --- | ----------------------------- | ----- |
+| RCAEval (735) | `41031397704`, push-triggered | `topoDiscount=1 … topoDiscountGate=1` | **641 = 87.21 %**, nine cells identical to `41020001659`, `+13 / −3` |
+| FSE'26 (1422) | `41034020065`, bare dispatch | `topoDiscount=1 topoDiscountGate=1` | **60.5 / 79.0 / 82.2**, and **25 of 25 fault types identical** to the pre-enrolment control |
+
+So the default is not "the arm, described": it IS the arm, and a run that asks for nothing reproduces both
+figures. The FSE'26 half now has **three** runs agreeing — the control on `53993ef`, the knobbed arm on
+`e4eaea36`, and the bare run on `89900939` — which is the strongest statement available about a population the
+operator does not move.
+
 ### 10.1 The fences the enrolment moved, and why each one had to be named
 
 Fifteen assertions across six files were pinned to the old default. None of them was a nuisance: every one

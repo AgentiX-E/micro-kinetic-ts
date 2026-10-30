@@ -1140,6 +1140,12 @@ which was correct on both sides only while that constant was 0.
 | **735**          | 631 = 85.85 % |      **641 = 87.21 %** | vendor 89 % (NOFire, unverifiable)        | second among all, **first reproducible** (gap 1.79 pp) |
 | **FSE'26 Top@1** |       60.50 % |            **60.50 %** | 37 % (`RCABench`)                         | **first, +23.5 pp**, unchanged by the arm |
 
+**Certified by a run that names no arm.** The arm and the default are two claims, and only the second is about
+what a user gets. On the enrolment commit (`89900939`), a bare push-triggered RCAEval run (`41031397704`) reads
+**641 = 87.21 %** with the nine cells identical to `41020001659`, and a bare FSE'26 dispatch (`41034020065`)
+reads **60.5 / 79.0 / 82.2** with 25 of 25 fault types identical — both `signals:` lines naming
+`topoDiscount=1 … topoDiscountGate=1` while having been asked for nothing.
+
 The remaining distance to the one unverifiable figure on the page is **13 cases**, and §2026-10-30 (5) is where
 they are.
 
