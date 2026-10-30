@@ -361,7 +361,11 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * — removes that: RE3/SockShop is unmoved at ρ = 0.25 and 0.5 while RE1/OnlineBoutique gains, and
    * `docs/topo-discount-scope.md` records the sweep.
    *
-   * Default: 0 (off; bit-identical to the shipped ranking).
+   * Default: 1, paired with a {@link topoDiscountGate} of 1 — enrolled in iteration 163 after both
+   * populations were read at the boundary: 641/735 on the golden nine cells against 631 for the zero this
+   * field shipped at, with no cell and no fault type down, and `FSE'26` byte-identical on all three
+   * headline numbers and all twenty-five fault types. `docs/topo-share.md` §9 is the plane that decided
+   * it: every partial charge between 0 and 1 was measured and reads BELOW the boundary.
    */
   readonly topoDiscount: number;
   /**
@@ -371,8 +375,9 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * only a response anomaly at a callee may explain, and only a response anomaly at the caller may be
    * deducted. `all` is the ablation arm, and it is the form that was refused.
    *
-   * Read only when `topoDiscount > 0`; at the shipped weight of 0 the map is not built at all, so the two
-   * scopes are indistinguishable on every published number by construction rather than by agreement.
+   * Read only when `topoDiscount > 0`, and the shipped weight is now 1, so this field is load-bearing on
+   * every published number: `external` is what keeps an internal-channel anomaly (a component's own
+   * machine) from being explained away by a busy callee, which is the defect the previous form paid for.
    */
   readonly topoDiscountScope: TopoDiscountScope;
   /**
@@ -381,15 +386,18 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *
    *   charged(v) = min(a, e) >= gate × a ? rho × min(a, e) : 0
    *
-   * `0` — the shipped value — charges every node a callee explains at all, which is the operator
-   * without the gate: `min(a, e) >= 0` holds on every node, so nothing is excluded and the branch is
-   * unreachable. A larger value leaves a node that is only PARTLY explained entirely alone, which is
-   * the difference between a symptom and a source: containment means a symptom's anomaly is mostly its
-   * callees', while a source's callee accounts for a fraction of it.
+   * `0` is the degenerate threshold: it charges every node a callee explains at all, which is the
+   * operator without the gate, because `min(a, e) >= 0` holds on every node. `1` is the boundary, and it
+   * is the SHIPPED value: only a node whose callees account for ALL of it is charged, which turns the
+   * deduction into a filter over the candidate pool. Everything between the two is a bounded charge, and
+   * it was measured and refused — `docs/topo-share.md` §9 reads the `rho × gate` plane and shows that a
+   * partial charge converts a deletion into a DEMOTION rather than into a correct answer, while giving up
+   * most of the fixes.
    *
    * Read only when `topoDiscount > 0`, on the same rule {@link topoDiscountScope} follows.
    *
-   * Default: 0 (off; bit-identical to the ungated deduction, and therefore to the shipped ranking).
+   * Default: 1 (the boundary, which reads 641/735 on the golden nine cells against 631 for the ungated
+   * operator, with no cell and no fault type down, and is byte-identical on FSE'26).
    */
   readonly topoDiscountGate: number;
   /**
@@ -1228,7 +1236,7 @@ export const DEFAULT_TOPO_WEIGHT = 0.0;
  * written in the engine's defaults table and in both runners' option objects, and a numeric literal in
  * each is a class of drift this repository has a census for (`docs/ranking-default-owners.md`).
  */
-export const DEFAULT_TOPO_DISCOUNT = 0;
+export const DEFAULT_TOPO_DISCOUNT = 1;
 
 /**
  * The shipped {@link TreePrunerOptions.topoDiscountGate} — no gate.
@@ -1241,7 +1249,7 @@ export const DEFAULT_TOPO_DISCOUNT = 0;
  *
  * @see DEFAULT_TOPO_DISCOUNT — the pair, and the axis they arm together.
  */
-export const DEFAULT_TOPO_DISCOUNT_GATE = 0;
+export const DEFAULT_TOPO_DISCOUNT_GATE = 1;
 
 /**
  * @see DEFAULT_TOPO_WEIGHT — the class these names close.

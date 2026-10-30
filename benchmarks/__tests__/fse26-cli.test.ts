@@ -21,6 +21,8 @@ import {
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   ONSET_SHAPES,
 } from '../../packages/tree/src/index.js';
@@ -515,12 +517,14 @@ describe('the topological deduction pair', () => {
     );
   });
 
-  it('ships both at the values a bare dispatch resolves to', () => {
-    // Bit-identity on the shipped configuration is the promise the whole axis rests on: the deduction is 0, so
-    // no published number moved by adding it.
+  it('ships the pair the engine ships, so a bare dispatch names no arm at all', () => {
+    // Bit-identity on the shipped configuration is the promise the whole axis rests on, and after iteration
+    // 163 that configuration is the ENROLLED one: a bare dispatch must resolve to the same pair the engine's
+    // own defaults table holds, or a run's `signals:` line would describe a configuration nobody chose.
     const opts = parseFSE26Args([]);
-    expect(opts.topoDiscount).toBe(0);
+    expect(opts.topoDiscount).toBe(DEFAULT_TOPO_DISCOUNT);
     expect(opts.topoDiscountScope).toBe(DEFAULT_TOPO_DISCOUNT_SCOPE);
+    expect(opts.topoDiscountGate).toBe(DEFAULT_TOPO_DISCOUNT_GATE);
   });
 });
 

@@ -19,6 +19,7 @@ import {
   SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
+  DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -65,9 +66,11 @@ describe('parseUnitInterval', () => {
   it('is what the RCAEval runner binds --topo-discount to, including its refusals', () => {
     // The parse rule is only worth its bound if the flag uses it. `--topo-discount 2` must build the
     // SHIPPED configuration rather than a negated anomaly, and a flag left without a value must not
-    // swallow the next flag — the failure `hasValue` exists for.
+    // swallow the next flag — the failure `hasValue` exists for. The fallback is read from the constant
+    // rather than restated, because the two runners each carried their own literal zero and disagreed the
+    // day one of them was enrolled: this assertion is what caught that.
     expect(parseRCAEvalArgs(['--topo-discount', '0.25']).topoDiscount).toBe(0.25);
-    expect(parseRCAEvalArgs(['--topo-discount', '2']).topoDiscount).toBe(0);
+    expect(parseRCAEvalArgs(['--topo-discount', '2']).topoDiscount).toBe(DEFAULT_TOPO_DISCOUNT);
     // A flag with NO value is REPORTED at the flag rather than silently defaulted — the rule `hasValue`
     // exists for, and the reason this is a throw rather than a fallback: a dispatcher who forgot a value
     // would otherwise get two defaults and an artifact that says the flags were never asked for.
@@ -85,7 +88,10 @@ describe('parseUnitInterval', () => {
     expect(parseRCAEvalArgs(['--topo-discount-scope', 'external']).topoDiscountScope).toBe(
       'external',
     );
-    expect(parseRCAEvalArgs(['--topo-discount-scope', 'all']).topoDiscount).toBe(0);
+    // The scope is bound INDEPENDENTLY of the weight, so naming it alone leaves the enrolled weight alone.
+    expect(parseRCAEvalArgs(['--topo-discount-scope', 'all']).topoDiscount).toBe(
+      DEFAULT_TOPO_DISCOUNT,
+    );
     expect(parseRCAEvalArgs(['--topo-discount-scope', 'everything']).topoDiscountScope).toBe(
       DEFAULT_TOPO_DISCOUNT_SCOPE,
     );

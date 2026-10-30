@@ -55,18 +55,21 @@ const deduct = (
 ): ReadonlyMap<ServiceId, number> => deductExplainedAnomalies(input, rho, scope, gate).discounted;
 
 describe('the gate, which decides WHICH nodes the deduction may move', () => {
-  it('is zero as shipped, so the published nine cells cannot move by construction', () => {
+  it('ships at the boundary, so the published nine cells are the FILTER reading', () => {
     // The value is a named constant rather than a literal at the one call site, on the rule
     // `DEFAULT_SELF_ANOMALY_WEIGHT` follows: a shipped number that no name owns is a number no census
-    // can require a claimant to declare.
-    expect(DEFAULT_TOPO_DISCOUNT_GATE).toBe(0);
+    // can require a claimant to declare. It read 0 until iteration 163, when the two populations were
+    // measured at the boundary and the partial-charge probes were read against them: 641/735 against 631
+    // with no cell and no fault type down, and 60.5 % FSE'26 against the same 60.5 % it shipped at.
+    expect(DEFAULT_TOPO_DISCOUNT_GATE).toBe(1);
   });
 
-  it('changes nothing at all at gate 0, on every input this operator has', () => {
-    // The vacuity claim as an equation rather than as an assurance: `explained >= 0 * anomaly` is
-    // `explained >= 0`, which holds for a node whose callee is silent as well as one whose callee
-    // explains six times its anomaly. Every value is compared with `toBe`, not `toBeCloseTo`: a gate
-    // that perturbed the result in the last bit would be a different published number.
+  it('charges no more at the shipped boundary than the degenerate threshold does, on every input', () => {
+    // Two properties that hold across the whole grid, and they are the reason the boundary can only take
+    // charges AWAY: the charge is monotone in the gate (a higher gate admits a subset of the nodes), and
+    // it never takes a node below zero (the charge is `min(a, e)` at most). `gate = 0` is the degenerate
+    // threshold where `explained >= 0 * anomaly` holds even for a silent callee, so it is the maximal
+    // charging arm of this family and the shipped one is compared against it rather than against itself.
     const cases: readonly (readonly [TopoDeductionInput, number, TopoDiscountScope])[] = [
       [inputOf({ a: 3, b: 0 }, [edge('a', 'b')]), 0.5, 'external'],
       [inputOf({ a: 2, b: 4 }, [edge('a', 'b')], 1), 0.5, 'external'],
@@ -75,14 +78,17 @@ describe('the gate, which decides WHICH nodes the deduction may move', () => {
       [inputOf({ a: 2, b: 1, c: 0.6 }, [edge('a', 'b'), edge('a', 'c')], 1), 0.25, 'external'],
     ];
     for (const [input, rho, scope] of cases) {
-      const withoutGate = deductExplainedAnomalies(input, rho, scope, 0).discounted;
-      const threeArg = deductExplainedAnomalies(
+      const atZero = deductExplainedAnomalies(input, rho, scope, 0).discounted;
+      const atShipped = deductExplainedAnomalies(
         input,
         rho,
         scope,
         DEFAULT_TOPO_DISCOUNT_GATE,
       ).discounted;
-      expect([...threeArg.entries()].sort()).toEqual([...withoutGate.entries()].sort());
+      for (const [id, anomaly] of input.anomalies) {
+        expect(atShipped.get(id) ?? anomaly).toBeGreaterThanOrEqual(atZero.get(id) ?? anomaly);
+        expect(atShipped.get(id) ?? anomaly).toBeLessThanOrEqual(anomaly);
+      }
     }
   });
 

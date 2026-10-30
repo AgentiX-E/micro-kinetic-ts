@@ -19,6 +19,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   isPrismPooling,
   ONSET_SHAPES,
@@ -1226,27 +1227,36 @@ describe('TreePruner', () => {
       c: [1, 1, 1, 1, 1, 1, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
     });
 
-    it('is off by default and changes nothing when off', () => {
-      // Bit-identity, asserted on the OBSERVABLE rather than on an internal: the shipped pruner and a
-      // pruner whose deduction is 0 must produce the same ranking and the same scores.
+    it('ships the deduction ON, at the boundary gate, and the two axes are separable on one fixture', () => {
+      // Iteration 163 enrolled the pair. The default is compared against the configuration it claims to be,
+      // score for score, because a default that only equals itself is a constant with a comment.
+      expect(DEFAULT_TOPO_DISCOUNT).toBe(1);
+      expect(DEFAULT_TOPO_DISCOUNT_GATE).toBe(1);
+
       const shipped = new TreePruner();
-      const explicitZero = new TreePruner({ topoDiscount: 0 });
+      const named = new TreePruner({ topoDiscount: 1, topoDiscountGate: 1 });
+      const ungated = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
 
       const a = shipped.analyze(graph, 3);
-      const b = explicitZero.analyze(graph, 3);
+      expect(a.map((r) => r.serviceId)).toEqual(named.analyze(graph, 3).map((r) => r.serviceId));
+      expect(a.map((r) => r.finalScore)).toEqual(named.analyze(graph, 3).map((r) => r.finalScore));
 
-      expect(a.map((r) => r.serviceId)).toEqual(b.map((r) => r.serviceId));
-      expect(a.map((r) => r.finalScore)).toEqual(b.map((r) => r.finalScore));
-      // …and the shipped ranking is the one magnitude picks: the larger self-anomaly first.
-      expect(a[0]!.serviceId).toBe('a');
+      // …and this fixture is where the two axes are NOT the same operator: `a` carries 3.0 against a callee
+      // at 2.8, a share of 14/15, so the boundary refuses to charge it and the ungated arm charges it. That
+      // is the whole content of the gate — the enrolled default is the one that leaves a 93 %-explained node
+      // alone — and it is why the enrolment needs a fixture that can tell them apart rather than a fixture
+      // that cannot.
+      expect(a.find((r) => r.serviceId === 'a')!.finalScore!).toBeGreaterThan(
+        ungated.analyze(graph, 3).find((r) => r.serviceId === 'a')!.finalScore!,
+      );
     });
 
     it('deducts an explained caller through its RESPONSE channel and leaves the callee alone', () => {
       // `b` calls `c`, which is far less anomalous, so almost nothing explains `b` and it keeps its
       // anomaly; `a` is explained by `b` and loses rank 1 at a full deduction.
-      const shipped = new TreePruner();
-      const deducted = new TreePruner({ topoDiscount: 1 });
+      const shipped = new TreePruner({ topoDiscount: 0 });
+      const deducted = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
 
       const before = shipped.analyze(graph, 3);
@@ -1272,8 +1282,8 @@ describe('TreePruner', () => {
       // The defect this scope exists for: a `cpu` anomaly is the component's own machine, so the fact that
       // its callee is busy cannot explain it. Deducting it is what cost RE3/SockShop two cases per weight
       // on the previous form.
-      const shipped = new TreePruner();
-      const deducted = new TreePruner({ topoDiscount: 1 });
+      const shipped = new TreePruner({ topoDiscount: 0 });
+      const deducted = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = shipped.buildFaultGraph(callGraph, internalMetrics);
 
       const before = shipped.analyze(graph, 3);
@@ -1287,8 +1297,12 @@ describe('TreePruner', () => {
     it('deducts an internal-channel caller under the ALL scope, the ablation arm', () => {
       // `all` is the previous behaviour kept reachable so the scope's own contribution can be measured
       // rather than asserted: on the same fixture it is the arm that moves the ranking.
-      const shipped = new TreePruner();
-      const deducted = new TreePruner({ topoDiscount: 1, topoDiscountScope: 'all' });
+      const shipped = new TreePruner({ topoDiscount: 0 });
+      const deducted = new TreePruner({
+        topoDiscount: 1,
+        topoDiscountGate: 0,
+        topoDiscountScope: 'all',
+      });
       const graph = shipped.buildFaultGraph(callGraph, internalMetrics);
 
       const before = shipped.analyze(graph, 3);
@@ -1304,7 +1318,7 @@ describe('TreePruner', () => {
       // would let an unmeasured node be erased by a neighbour's anomaly.
       const withoutMetrics = new Map(responseMetrics);
       withoutMetrics.delete('c');
-      const pruner = new TreePruner({ topoDiscount: 1 });
+      const pruner = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
 
       const results = pruner.analyze(pruner.buildFaultGraph(callGraph, withoutMetrics), 3);
 
@@ -1312,8 +1326,11 @@ describe('TreePruner', () => {
       // walk still visits it (it is a graph member) and that the deduction still happens for `a`.
       expect(results.length).toBeGreaterThan(0);
       expect(results.find((r) => r.serviceId === 'a')!.finalScore!).toBeLessThan(
-        new TreePruner()
-          .analyze(new TreePruner().buildFaultGraph(callGraph, responseMetrics), 3)
+        new TreePruner({ topoDiscount: 0 })
+          .analyze(
+            new TreePruner({ topoDiscount: 0 }).buildFaultGraph(callGraph, responseMetrics),
+            3,
+          )
           .find((r) => r.serviceId === 'a')!.finalScore!,
       );
     });
@@ -1321,7 +1338,7 @@ describe('TreePruner', () => {
     it('reaches exactly zero for a fully explained node, never a negative score', () => {
       // The clamp, asserted where it is observable: at ρ = 1 a node whose anomaly is entirely accounted for
       // by its callee must flat-line at the same score a node with NO anomaly has, not go below it.
-      const pruner = new TreePruner({ topoDiscount: 1 });
+      const pruner = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
       const results = pruner.analyze(graph, 3);
       const explained = results.find((r) => r.serviceId === 'a')!;
@@ -1356,7 +1373,7 @@ describe('TreePruner', () => {
       // The shipped weight is the arm the published nine cells were read on, and a row reporting a zero
       // share there would describe a measurement no run made — the distinction `INPUT_MAP_ABSENT` exists to
       // preserve for optional sources, applied to an optional INSTRUMENT.
-      const pruner = new TreePruner();
+      const pruner = new TreePruner({ topoDiscount: 0 });
       const graph = pruner.buildFaultGraph(callGraph, responseMetrics);
       for (const result of pruner.analyze(graph, 3)) {
         expect(result.evidenceMetrics.some((m) => m.metric === 'topo_share')).toBe(false);
@@ -1369,7 +1386,7 @@ describe('TreePruner', () => {
       // run's configuration line. The refused node below is the assertion that a refusal is still REPORTED:
       // its score is the undeducted one and its share is on record, which is what lets a reader see that the
       // threshold — rather than the corpus — is what spared it.
-      const shipped = new TreePruner();
+      const shipped = new TreePruner({ topoDiscount: 0 });
       const gated = new TreePruner({ topoDiscount: 1, topoDiscountGate: 1 });
       const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
       const before = shipped.analyze(graph, 3);
@@ -1387,8 +1404,9 @@ describe('TreePruner', () => {
       );
       // …and the ungated arm on the same graph does charge it, so the equality above is the gate's doing.
       expect(
-        new TreePruner({ topoDiscount: 1 }).analyze(graph, 3).find((r) => r.serviceId === 'a')!
-          .finalScore!,
+        new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 })
+          .analyze(graph, 3)
+          .find((r) => r.serviceId === 'a')!.finalScore!,
       ).toBeLessThan(before.find((r) => r.serviceId === 'a')!.finalScore!);
     });
 
@@ -1397,7 +1415,7 @@ describe('TreePruner', () => {
       // no share exists for it and no row is written. This is the difference between "the scope excludes
       // this node" and "its callees explained nothing", which is the whole reason the absence is an absence
       // rather than a zero.
-      const pruner = new TreePruner({ topoDiscount: 1 });
+      const pruner = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = pruner.buildFaultGraph(callGraph, internalMetrics);
       const results = pruner.analyze(graph, 3);
       expect(
@@ -1406,7 +1424,11 @@ describe('TreePruner', () => {
           .evidenceMetrics.some((m) => m.metric === 'topo_share'),
       ).toBe(false);
       // The `all` scope admits it, so the row appears — the absence above belongs to the configuration.
-      const allScope = new TreePruner({ topoDiscount: 1, topoDiscountScope: 'all' });
+      const allScope = new TreePruner({
+        topoDiscount: 1,
+        topoDiscountGate: 0,
+        topoDiscountScope: 'all',
+      });
       expect(
         allScope
           .analyze(allScope.buildFaultGraph(callGraph, internalMetrics), 3)
@@ -1422,7 +1444,7 @@ describe('TreePruner', () => {
       // carries no weight.
       // Zeroed EXPLICITLY rather than hoped for: the builder's own fallback weights are non-zero for any pair
       // of series, so the state is constructed where it is being measured.
-      const shipped = new TreePruner();
+      const shipped = new TreePruner({ topoDiscount: 0 });
       const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
       const weightless = {
         ...graph,
@@ -1430,7 +1452,7 @@ describe('TreePruner', () => {
       };
 
       const before = shipped.analyze(graph, 3);
-      const after = new TreePruner({ topoDiscount: 1 }).analyze(weightless, 3);
+      const after = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 }).analyze(weightless, 3);
 
       // Nothing on any edge can be charged, so the ranking is unchanged.
       expect(after.map((r) => r.serviceId)).toEqual(before.map((r) => r.serviceId));
@@ -1449,8 +1471,8 @@ describe('TreePruner', () => {
       //
       // The third is the interesting one: a healthy callee is still an edge endpoint, and the guard has to
       // read its anomaly rather than assume that every endpoint carries one.
-      const shipped = new TreePruner();
-      const deducted = new TreePruner({ topoDiscount: 1 });
+      const shipped = new TreePruner({ topoDiscount: 0 });
+      const deducted = new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 });
       const graph = shipped.buildFaultGraph(callGraph, responseMetrics);
       const before = shipped.analyze(graph, 3);
       const scoreOf = (
@@ -1545,7 +1567,7 @@ describe('TreePruner', () => {
 
       for (const n of [19, 24]) {
         const { callGraph: fleetCallGraph, metrics: fleetMetrics } = fleet(n);
-        const shipped = new TreePruner();
+        const shipped = new TreePruner({ topoDiscount: 0 });
         const graph = shipped.buildFaultGraph(fleetCallGraph, fleetMetrics);
         const before = shipped.analyze(graph, n);
         const half = new TreePruner({ topoDiscount: 0.5 }).analyze(graph, n);
@@ -1570,7 +1592,7 @@ describe('TreePruner', () => {
         // anomaly is gone, so the victim either falls or leaves the candidate list entirely (a service
         // with no anomaly left has nothing to report).
         const fullPosition = positionOf(
-          new TreePruner({ topoDiscount: 1 }).analyze(graph, n),
+          new TreePruner({ topoDiscount: 1, topoDiscountGate: 0 }).analyze(graph, n),
           's1',
         );
         expect(
@@ -3207,6 +3229,9 @@ describe('the gated term — a decline, a neutral direction and a missing map ar
 });
 
 describe('TreePruner — self-time prior', () => {
+  // Every pruner below states the OTHER axis explicitly at 0, because this block measures one term against
+  // a fixed background: iteration 163 enrolled the topological deduction, and a test whose background moved
+  // under it would still be green while asserting a different comparison than the one it was written for.
   // The failure this term exists for, in its smallest form: a CALLEE breaks and a CALLER's own response
   // time rises with it, because a caller's latency CONTAINS its callees'. The two services carry the
   // same channel and differ only in how much of the rise is theirs — the callee created all of it, the
@@ -3236,16 +3261,16 @@ describe('TreePruner — self-time prior', () => {
   /** The same graph with the term's own field removed, so "inert" is measured against its ABSENCE. */
   const withoutField = (): ReadonlyMap<string, number> => {
     const [callGraph, metrics] = makeCase();
-    const graph = new TreePruner().buildFaultGraph(callGraph, metrics);
+    const graph = new TreePruner({ topoDiscount: 0 }).buildFaultGraph(callGraph, metrics);
     return new Map(
-      new TreePruner()
+      new TreePruner({ topoDiscount: 0 })
         .analyze({ ...graph, selfTimeScores: undefined })
         .map((r) => [r.serviceId, r.finalScore!]),
     );
   };
 
   it('carries the SHARE in the graph it builds: all of it at the leaf, none of it at the caller', () => {
-    const { graph } = scores(new TreePruner({ selfTimeWeight: 1 }));
+    const { graph } = scores(new TreePruner({ topoDiscount: 0, selfTimeWeight: 1 }));
 
     expect(graph.selfTimeScores?.get(SOURCE)).toBe(1);
     // The caller's rise is smaller than its callee's, so nothing it has is self-created.
@@ -3255,13 +3280,13 @@ describe('TreePruner — self-time prior', () => {
   it('builds NO map at weight 0 — the shipped path does not pay for a term it does not use', () => {
     // Not merely "the term contributes 0": at the shipped weight the map is never constructed, which is
     // what makes the shipped ranking bit-identical by construction rather than by arithmetic.
-    const { graph } = scores(new TreePruner({ selfTimeWeight: 0 }));
+    const { graph } = scores(new TreePruner({ topoDiscount: 0, selfTimeWeight: 0 }));
 
     expect(graph.selfTimeScores).toBeUndefined();
   });
 
   it('is inert at weight 0 against a pruner that never mentions it', () => {
-    const zero = scores(new TreePruner({ selfTimeWeight: 0 })).byService;
+    const zero = scores(new TreePruner({ topoDiscount: 0, selfTimeWeight: 0 })).byService;
     const absent = withoutField();
 
     expect(zero.get(SOURCE)!).toBeCloseTo(absent.get(SOURCE)!, 12);
@@ -3272,8 +3297,8 @@ describe('TreePruner — self-time prior', () => {
     // A new axis rather than a re-weighting, and stated at an explicit weight so the property survives any
     // future enrolment of a shipped default.
     const weight = 0.3;
-    const before = scores(new TreePruner({ selfTimeWeight: 0 })).byService;
-    const after = scores(new TreePruner({ selfTimeWeight: weight })).byService;
+    const before = scores(new TreePruner({ topoDiscount: 0, selfTimeWeight: 0 })).byService;
+    const after = scores(new TreePruner({ topoDiscount: 0, selfTimeWeight: weight })).byService;
 
     expect(after.get(SOURCE)! - before.get(SOURCE)!).toBeCloseTo(weight, 10);
     expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
@@ -3284,7 +3309,7 @@ describe('TreePruner — self-time prior', () => {
     // reconstruct the total without knowing the term's shape.
     const weight = 0.4;
     const [callGraph, metrics] = makeCase();
-    const pruner = new TreePruner({ selfTimeWeight: weight });
+    const pruner = new TreePruner({ topoDiscount: 0, selfTimeWeight: weight });
     const results = pruner.analyze(pruner.buildFaultGraph(callGraph, metrics));
     const source = results.find((r) => r.serviceId === SOURCE)!;
     const term = source.terms!.find((t) => t.name === 'selfTime')!;

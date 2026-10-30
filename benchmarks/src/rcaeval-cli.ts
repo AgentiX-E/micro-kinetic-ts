@@ -740,14 +740,14 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     else if (args[i] === '--topo-weight' && hasValue(args, i + 1))
       opts.topoWeight = parseWeight(args[++i]!, DEFAULT_TOPO_WEIGHT);
     else if (args[i] === '--topo-discount' && hasValue(args, i + 1))
-      opts.topoDiscount = parseUnitInterval(args[++i]!);
+      opts.topoDiscount = parseUnitInterval(args[++i]!, DEFAULT_TOPO_DISCOUNT);
     else if (args[i] === '--topo-discount-scope' && hasValue(args, i + 1)) {
       // Falls back to the SHIPPED scope on an unusable value, on the rule every mode flag here follows: a
       // typo must reproduce a published corpus rather than invent one.
       const scope = args[++i]!;
       opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
     } else if (args[i] === '--topo-discount-gate' && hasValue(args, i + 1))
-      opts.topoDiscountGate = parseUnitInterval(args[++i]!);
+      opts.topoDiscountGate = parseUnitInterval(args[++i]!, DEFAULT_TOPO_DISCOUNT_GATE);
     else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a

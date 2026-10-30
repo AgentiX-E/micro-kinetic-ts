@@ -1096,6 +1096,82 @@ byte-identical. The mechanism and its cost are one action — the operator delet
 explain all of it, which promotes the truth in thirteen cases and deletes three truths that a callee happened
 to overshadow (`checkoutservice_delay_1/2/3`) — and `docs/topo-share.md` §8.2 is the record.
 
-**Not yet enrolled**: `rho = 1` as a shipped default is a change to every user's ranking, so it needs the
-FSE'26 half (`41024050841`) and the bounded-charge probes (`41024054670`, `41024058625`) that ask whether a
-partial charge keeps the thirteen and returns the three.
+**Not yet enrolled** at the time of writing: `rho = 1` as a shipped default is a change to every user's
+ranking, so it needed the FSE'26 half (`41024050841`) and the bounded-charge probes (`41024054670`,
+`41024058625`) that ask whether a partial charge keeps the thirteen and returns the three. **Both were read
+and the pair is ENROLLED — see §2026-10-30 (4).**
+
+## 2026-10-30 (4) — ENROLLED: the boundary gate is the default, 735 at 641 and FSE'26 byte-identical
+
+The two arms §2026-10-30 (3) held enrolment for are read, and neither of them changed the decision.
+
+**The bounded charge is refused, and the plane is a knee rather than a slope.** Every interior point of the
+`rho × gate` plane reads below the corner: `gate = 0` at `rho = 1` 635 (`+17 / −13`), `gate = 1` at `rho = 0.25`
+**637** (`+6 / −0`), at `rho = 0.5` 635 (`+6 / −2`), at `rho = 0.75` 636 (`+8 / −3`), at `rho = 1` **641**
+(`+13 / −3`) against 631. The quarter point is the best ZERO-BREAK configuration and it is still four cases short
+of the corner, which is why the corner was enrolled; that `rho = 0.5` is worse than `rho = 0.25` is the tell that
+the six cheap fixes and the two `checkoutservice` breaks have different margins, and it is a prediction this
+section's first draft got wrong until the arm landed. The interior arms
+do the one thing §8.3 asked of them — the three deleted truths come back into the pool, their post-deduction
+anomaly exactly `(1 − rho)·a` — and they come back to rank 3 / 2 / 1, which is a miss, while seven of the
+thirteen fixes are given up. A fix demotes a *caller* of the truth and a break demotes the *truth*; both are
+`rho × min(a, e)` on the same relation, so what orders the two ledgers is the pair of margins and not the
+strength — and the margins are a property of the corpus, which is why the knee sits where it does.
+
+**The other population is inert, measured against a same-tree control.** FSE'26 `41027467282` (bare dispatch)
+against `41024050841` (`topo_discount=1, topo_discount_gate=1`): **Top@1 60.5 % (860/1422), Top@3 79.0 %,
+Top@5 82.2 % — identical on both**, and **25 of 25 fault types identical**, down to `PodFailure 0/24` and
+`JVMMySQLLatency 0/2`. The operator does not move that corpus at all, so the enrolment carries no risk there.
+What the comparison does NOT show is *why* it is inert: the share is published in the RCAEval loss census and
+nowhere else, so on 1 422 cases the observable is "no movement".
+
+**Enrolled.** `DEFAULT_TOPO_DISCOUNT` 0 → 1, `DEFAULT_TOPO_DISCOUNT_GATE` 0 → 1, `DEFAULT_TOPO_DISCOUNT_SCOPE`
+unchanged at `external`. Fifteen fences across six files were pinned to the old default and every one of them
+was a test leaning on a default instead of naming the arm it compared against; the enrolment re-named them
+(`docs/topo-share.md` §10.1) and, in doing so, found a real divergence — `rcaeval-cli.ts` parsed
+`--topo-discount` by inheriting `parseUnitInterval`'s own zero while `fse26-cli.ts` passed the named constant,
+which was correct on both sides only while that constant was 0.
+
+| population       | was           | **now**                | published / reproduced                    | standing                                  |
+| ---------------- | ------------: | ---------------------: | ----------------------------------------- | ----------------------------------------- |
+| **RE1** (375)    | 327 = 87.20 % |      **330 = 88.00 %** | `L0` 85.4 % (`arXiv:2610.05009`)          | **first, +2.60 pp**                       |
+| **RE2** (270)    | 240 = 88.89 % |      **246 = 91.11 %** | 0.88 SS / 0.78 OB Top-1 (`2609.36771`)    | **first on both published cells**         |
+| **RE3** (90)     |  64 = 71.11 % |       **65 = 72.22 %** | PRISM `conjunctive` 76.7 % (RE3-TT)       | second; RE3-TT 23 of 30                   |
+| **735**          | 631 = 85.85 % |      **641 = 87.21 %** | vendor 89 % (NOFire, unverifiable)        | second among all, **first reproducible** (gap 1.79 pp) |
+| **FSE'26 Top@1** |       60.50 % |            **60.50 %** | 37 % (`RCABench`)                         | **first, +23.5 pp**, unchanged by the arm |
+
+The remaining distance to the one unverifiable figure on the page is **13 cases**, and §2026-10-30 (5) is where
+they are.
+
+## 2026-10-30 (5) — the 13 cases, and why the next axis is a direction rather than a weight
+
+Thirteen cases separate 641 from 654, the first figure that would clear the one number on this page nobody can
+reproduce. `docs/topo-share.md` §11 reads the census of the enrolled arm and finds the band a ranking change
+can still reach is not diffuse: of the 94 misses, **31 sit at rank 2** (16 at 3, 8 at 4, 7 at 5, 20 at 6+, 12
+absent), and within that band a single structure accounts for nine of them — the false winner is the node that
+CALLS everything else and observes the whole fleet.
+
+| false winner                              | cases | what it is                                              |
+| ----------------------------------------- | ----: | ------------------------------------------------------- |
+| `ts-admin-travel-service`                 |     6 | TrainTicket's admin caller: it calls every service, nothing calls it |
+| `front-end`                               |     3 | SockShop's root caller: the same shape                   |
+| the truth's own CALLEE (5 distinct names) |    22 | the opposite direction — the anomaly sits downstream     |
+
+Both groups are a direction error, and both have a published name. `TopoEvo` (`arXiv:2605.15611`) calls the
+first **symptom-amplification bias** — "misattributing the root cause to salient downstream victims" — and
+reports **3.44 pp absolute** on root-cause localization from adjudicating it with two explicit tests:
+**temporal precedence** (the cause's onset precedes the victim's) and **path consistency** (the evidence lies on
+a propagation path). `Blast Radius Bench` publishes the counter as a first-class metric — a **reversed-causality
+count** — and calls it the single most diagnostic error in incident reasoning
+(`docs/benchmark-corpus-completeness.md` §11).
+
+Neither test exists here. The engine measures magnitude along an edge twice (`failedEdge`, `lat`) and direction
+in time never: `temporalWeight` ships at 0 and is `WEIGHT_ZERO` on every RCAEval term instance. That is the next
+axis, and the reason it is admissible when four thresholds before it were refused is that it changes *who can
+be first* rather than *how much anyone is charged*.
+
+**What this section does not claim.** The nine observer cases are counted from the census, not attributed by a
+mechanism; that the precedence test would repair them is a hypothesis with a competitor's number behind it, not
+a measurement of this engine. The first artifact the next iteration owes is therefore the reversed-causality
+count itself, published per case, because a claim about direction that cannot be counted is the same kind of
+sentence as the four thresholds this record has already refused.

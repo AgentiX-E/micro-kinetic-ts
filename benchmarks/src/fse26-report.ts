@@ -32,6 +32,7 @@ import type {
   PrismPooling,
   TopoDiscountScope,
 } from '../../packages/tree/src/index.js';
+import { DEFAULT_TOPO_DISCOUNT_GATE } from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -520,7 +521,7 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // not a configuration the engine can distinguish, because the map is never built. Printed whenever the
     // weight is non-zero — including at 0, which is the value it ships with — so a gated arm and an ungated
     // one are never byte-identical on the artifact that is supposed to attribute the difference.
-    line += ` topoDiscountGate=${config.topoDiscountGate ?? 0}`;
+    line += ` topoDiscountGate=${config.topoDiscountGate ?? DEFAULT_TOPO_DISCOUNT_GATE}`;
   }
   if (config.collisionWeight !== 0) {
     line += ` collisionWeight=${config.collisionWeight}`;

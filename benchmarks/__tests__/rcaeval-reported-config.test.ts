@@ -481,11 +481,11 @@ describe('the RCAEval configuration line carries the configuration that produced
     // unconditionally on the same rule as every field above: it ships at `whole-file`, so a line that omitted
     // defaults would render the shipped run and an arm that re-anchored every metric byte-identically.
     expect(formatSignalLine(shipped)).toBe(
-      // Iteration 190 added `topoDiscountScope` here, and it is the one field on this line whose presence
-      // CHANGES the shipped artifact rather than annotating it: the deduction is inert at weight 0, so the two
-      // scopes are indistinguishable by construction and an omitted-when-default rule would render the shipped
-      // run and the ablation arm byte-identically — the exact defect every field above exists to prevent.
-      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=0 ' +
+      // Iteration 190 added `topoDiscountScope` here, and iteration 163 enrolled the operator it scopes: the
+      // deduction now ships at 1 with the boundary gate, so this line names three fields that a release ago
+      // were inert. All three are printed unconditionally, which is what lets a reader separate the enrolled
+      // run from the twelve configurations that drew it — the defect every field above exists to prevent.
+      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=1 ' +
         'topoDiscountScope=external logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'failedEdgeWeight=3 ' +
@@ -508,7 +508,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
         // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that
         // printed only non-defaults would render a gated arm and the ungated one byte-identically.
-        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 topoDiscountGate=0',
+        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 topoDiscountGate=1',
     );
   });
 

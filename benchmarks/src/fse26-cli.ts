@@ -360,21 +360,27 @@ export interface Fse26CliOptions {
    *   explained(v) = max over callees c of propWeight(v→c) × anomaly(c)
    *   anomaly'(v)  = max(0, anomaly(v) − topoDiscount × explained(v))
    *
-   * `0` is the shipped value and the ablation's own zero: the map is not built at all, so a bare dispatch
-   * reproduces a published corpus by construction. The form and its two refused predecessors are recorded
-   * on `TreePrunerOptions.topoDiscount`; `docs/topo-discount-scope.md` carries the sweep.
+   * `1` is the shipped value since iteration 163, paired with the boundary gate: a bare dispatch runs the
+   * enrolled operator, and `0` is the ablation's own zero — the map is not built at all, so `0` reproduces
+   * the corpus every cell before this release was published on. The enrolment was read on THIS population
+   * first: the arm is byte-identical to the bare dispatch on all three headline numbers and on all
+   * twenty-five fault types, which is why it costs nothing here. The form and its two refused predecessors
+   * are recorded on `TreePrunerOptions.topoDiscount`; `docs/topo-discount-scope.md` carries the sweep.
    */
   readonly topoDiscount: number;
   /**
    * Which channels {@link topoDiscount} may act on — `external` restricts both sides to response channels.
    *
-   * Printed only when the weight is non-zero, because a scope combined with a zero deduction is not part of
-   * the configuration: the map is never built, so the two values are indistinguishable by construction.
+   * Printed only when the weight is non-zero. Since the weight ships at 1 that is now every run, which is
+   * what it should be: a scope combined with a zero deduction is not part of the configuration, and the
+   * shipped configuration is no longer that case.
    */
   readonly topoDiscountScope: TopoDiscountScope;
   /**
    * The smallest share of a node's anomaly its callees must account for before {@link topoDiscount} may
-   * charge it — see `TreePrunerOptions.topoDiscountGate`. 0 = no gate, which is the shipped operator.
+   * charge it — see `TreePrunerOptions.topoDiscountGate`. The shipped value is the BOUNDARY, 1, and `0` is
+   * the ungated ablation: at 0 every node a callee explains at all is charged, which is not a filter but a
+   * proportional demotion, and `docs/topo-share.md` §9 reads the plane between the two.
    */
   readonly topoDiscountGate: number;
   /**

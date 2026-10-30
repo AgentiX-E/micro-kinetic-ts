@@ -578,13 +578,14 @@ describe('summariseFailedEdgeCoverage', () => {
     // …and the shipped pooling stays off even once the weight is on, so an ablation of the pooling alone
     // is visible while the shipped pairing keeps the line it always had.
     expect(formatFSE26ConfigLine(makeConfig({ prismWeight: 0.125 }))).not.toContain('prismPooling');
-    // The gate is READ from an artifact that predates it, and reads as the shipped 0 rather than as
+    // The gate is READ from an artifact that predates it, and reads as the ENGINE'S default rather than as
     // `undefined`: this record is what a JSON artifact is parsed back into, so a run published before the
-    // field existed must still render a line a reader can attribute.
+    // field existed must still render a line a reader can attribute — and the value it renders has to be the
+    // one the engine would have used, not the one that happened to be shipped when the field was added.
     const legacy: { topoDiscountGate?: number } = makeConfig({ topoDiscount: 0.5 });
     delete legacy.topoDiscountGate;
     expect(formatFSE26ConfigLine(legacy as Parameters<typeof formatFSE26ConfigLine>[0])).toContain(
-      'topoDiscountGate=0',
+      `topoDiscountGate=${DEFAULT_TOPO_DISCOUNT_GATE}`,
     );
   });
 
