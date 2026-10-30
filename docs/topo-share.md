@@ -119,6 +119,24 @@ Measured in this build:
 instrument. Until that artifact exists, §5.1 is a method and not a result, and this document says so rather
 than implying the grid has been superseded.
 
+### 6.1 Three predictions, recorded before the readback
+
+Written when the two arms were dispatched (`41019996998` at gate 0, `41020001659` at gate 1) and before any
+artifact was opened, so that the reading cannot be a story told afterwards:
+
+1. **The instrumented arm reproduces 635 case for case.** The instrument changes no score, and the control it
+   is read against is the same configuration on the previous commit.
+2. **A share is published on every truth the arm ranks, and on none of the six it deletes.** The deleted ones
+   have no post-deduction score, hence no evidence row at all — which is the gap §5.2 states as arithmetic
+   rather than as a limitation of the instrument.
+3. **At `gate = 1` the count of cases carrying no truth evidence stays 12, and RE2:TrainTicket returns to 75.** Deletion requires `share = 1`, which every gate in `[0, 1]` passes, so the boundary arm cannot add
+   or remove a deletion; and the blocking case's post-deduction anomaly is non-zero (`0.647`), which means its
+   share is below 1, so the boundary gate must refuse to charge it. What that costs is the seventeen cases
+   `gate = 0.5` repairs, which sit at shares in `[0.5, 1)`: the boundary arm charges only `share = 1`, so it
+   keeps whatever a fully-explained node's charge buys and nothing else. It is therefore **not predicted to
+   beat 639** — it is the arm that says whether the tail of the repairs lives at `share = 1` or below it, and
+   the number it prints is the denominator of the next decision rather than a candidate to enrol.
+
 ## 7. How to re-measure
 
 ```bash

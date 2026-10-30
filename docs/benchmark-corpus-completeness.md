@@ -7,11 +7,11 @@ benchmark; §6 carries the acceptance, §7 the law.
 
 Verbatim from RCAEval's own repository (read 2026-10-09; the paper is `arXiv:2412.17015`, its Table 2):
 
-| dataset | system | cases | fault types | logs | traces |
-| --- | --- | ---: | --- | --- | --- |
-| RE1-OB / SS / TT | Online Boutique / Sock Shop / Train Ticket | **125 each** | cpu, mem, disk, delay, loss | **N/A** | **N/A** |
-| RE2-OB / SS / TT | as above | **90 each** | cpu, mem, disk, delay, loss, socket | Yes | Yes / **N/A** / Yes |
-| RE3-OB / SS / TT | as above | **30 each** | f1…f5 (OB) / f1…f4 (SS, TT) | Yes | Yes / **N/A** / Yes |
+| dataset          | system                                     |        cases | fault types                         | logs    | traces              |
+| ---------------- | ------------------------------------------ | -----------: | ----------------------------------- | ------- | ------------------- |
+| RE1-OB / SS / TT | Online Boutique / Sock Shop / Train Ticket | **125 each** | cpu, mem, disk, delay, loss         | **N/A** | **N/A**             |
+| RE2-OB / SS / TT | as above                                   |  **90 each** | cpu, mem, disk, delay, loss, socket | Yes     | Yes / **N/A** / Yes |
+| RE3-OB / SS / TT | as above                                   |  **30 each** | f1…f5 (OB) / f1…f4 (SS, TT)         | Yes     | Yes / **N/A** / Yes |
 
 **735 = 375 + 270 + 90**, which is the population PRISM reports 68% on and the population every claim in this
 repository is written against.
@@ -26,12 +26,12 @@ cells, and **RE3-SS has four fault types**, which its per-fault-type table shows
 no-inject fidelity control, and the ablation that produces the ledger. RE1 and RE3 were never capped. So the
 corpus was
 
-| suite | published | ranked | share |
-| --- | ---: | ---: | ---: |
-| RE1 | 375 | 375 | 100% |
-| RE2 | 270 | **150** | **56%** |
-| RE3 | 90 | 90 | 100% |
-| **total** | **735** | **615** | **84%** |
+| suite     | published |  ranked |   share |
+| --------- | --------: | ------: | ------: |
+| RE1       |       375 |     375 |    100% |
+| RE2       |       270 | **150** | **56%** |
+| RE3       |        90 |      90 |    100% |
+| **total** |   **735** | **615** | **84%** |
 
 and 120 RE2 cases — 40 of each system's 90 — were never ranked.
 
@@ -48,7 +48,7 @@ population this repository has held whose fault types are balanced. Two conseque
 
 **One cause, two published consequences.**
 
-1. **The fold.** `docs/sota-comparison.md` derives the headline with the *dataset's* sizes:
+1. **The fold.** `docs/sota-comparison.md` derives the headline with the _dataset's_ sizes:
 
    ```
    (375 x 0.803 + 270 x 0.798 + 90 x 0.587) / 735 = 0.7738
@@ -57,10 +57,11 @@ population this repository has held whose fault types are balanced. Two conseque
    The `0.798` is the three RE2 cells' mean — computed from **150** cases — and it is multiplied by **270**. A
    fold weighted by a corpus it did not rank is not a measurement of that corpus; it is an extrapolation wearing
    a measurement's clothes.
+
 2. **The head-to-head.** `docs/prism-head-to-head.md` prints that same 150-case mean in a column its own header
-   labels **"engine (golden)"**, beside a competitor evaluated on all 735, under the sentence *"Cases: 735
-   discovered, 735 evaluated"* — which is the PRISM runner's own line and describes the PRISM side. Its
-   headline comparison, *"PRISM 78.9% vs ours 77.4% on the identical 735 cases"*, therefore compared **735
+   labels **"engine (golden)"**, beside a competitor evaluated on all 735, under the sentence _"Cases: 735
+   discovered, 735 evaluated"_ — which is the PRISM runner's own line and describes the PRISM side. Its
+   headline comparison, _"PRISM 78.9% vs ours 77.4% on the identical 735 cases"_, therefore compared **735
    against 615**.
 
 **Neither number is a lie and neither is a measurement.** The competitor's 68% is over 735; what we cannot say
@@ -71,7 +72,7 @@ is what our own number would be over the same 735 — and that is the only compa
 The no-inject invocation is the **fidelity control** for the published one (what the injection anchor
 contributes), and the ablation's RE2 baseline is the ledger's reference row. Removing the cap from the
 published cells alone would have left the control comparing a full corpus against a subset, and the ledger
-measuring a corpus the cells are not published on — which is the *same* defect one level up, and precisely what
+measuring a corpus the cells are not published on — which is the _same_ defect one level up, and precisely what
 iteration 72 repaired when it bought the study's 14-of-14 parity with the published cells.
 
 ## 5. The repair, and what holds it
@@ -115,7 +116,7 @@ the retained array would report "cases with ERROR/FATAL logs" under a label that
 - **An exact set** for the workflows that may still SAMPLE — the four probes/sweeps, each of which states its
   own `max N cases` in its artifact. The check reads **invocations**, not file text: its first version scanned
   the whole file, and the comment explaining why the flag is gone made `benchmark-rcaeval.yml` a member of its
-  own sampler list. *A count of a syntactic form is not a statement about a group.*
+  own sampler list. _A count of a syntactic form is not a statement about a group._
 
 And the dispatch-surface census, which the cap removal broke, now carries the decision as a **DIRECTION**:
 `--max-cases` is required reachable from the FSE'26 dispatch and **required unreachable** from the RCAEval
@@ -128,7 +129,7 @@ A movement there is the signal that something other than the corpus changed.
 ### 5.2 A fourth defect, found while verifying the third: the discovery walk is unsorted
 
 `discoverAllCases` in both runners walks `readdirSync` breadth-first and **unsorted**, so `--max-cases N` took
-*whatever the filesystem yielded first*. The capped sample's case SET was therefore arbitrary, and it could differ
+_whatever the filesystem yielded first_. The capped sample's case SET was therefore arbitrary, and it could differ
 between two machines evaluating the same suite.
 
 This is why the capped suites were never reproducible at the case level while the uncapped ones were: the nine
@@ -148,25 +149,25 @@ They coincide only where every fault type holds the same case count, which is RE
 
 That second line was **true of the capped corpus** and the correction made it **false**. On the full corpus RE2's
 `AVG` and `CW` both read `83.7%`, with all six fault types at 45 case-reps — so `RE2` is a second suite where the
-two folds coincide, and the parenthetical that excluded it is wrong. It said "RE1 alone" because RE2's *arbitrary
-50-case sample* happened not to be balanced (`AVG` 79.8 vs `CW` 79.3), i.e. **the line was a correct description of
+two folds coincide, and the parenthetical that excluded it is wrong. It said "RE1 alone" because RE2's _arbitrary
+50-case sample_ happened not to be balanced (`AVG` 79.8 vs `CW` 79.3), i.e. **the line was a correct description of
 the defect and a false description of the benchmark.**
 
 The repair is to stop naming a suite at all: the line now states the rule and points at the per-fault-type cells,
-which print their counts and therefore settle it for whatever population the run actually has. *A named answer to
-a population question goes stale the next time the population moves; a rule does not.*
+which print their counts and therefore settle it for whatever population the run actually has. _A named answer to
+a population question goes stale the next time the population moves; a rule does not._
 
 **And the repair had to be ONE OWNER rather than two edits.** Correcting the table's copy exposed a **second,
 independently-worded copy of the same rule** above the PRISM sweep's own frontier table, still reading
 `which is RE1 alone` — so the artifact went on printing the falsified claim in one of its two tables. The
 statement now lives in `FOLD_CONVENTIONS` and both renderings print it, because two wordings of one fact is the
-register's *"a quantity with N implementations is a quantity with no convention"*, in prose.
+register's _"a quantity with N implementations is a quantity with no convention"_, in prose.
 
 ### 5.4 The fence for §5.3 was itself defeated by the comment explaining §5.3
 
 The absence fence — `expect(RUNNER).not.toContain('which is RE1 alone')` — **failed on its first run**, because
-the comment directly above it quotes the phrase in order to explain why it was removed. *A text assertion is
-satisfied or defeated by the prose that describes the defect.*
+the comment directly above it quotes the phrase in order to explain why it was removed. _A text assertion is
+satisfied or defeated by the prose that describes the defect._
 
 This is the second time this repository has paid for exactly this, and the first is already in the register:
 `benchmark-rcaeval-trigger`'s sampler check scanned the whole workflow file and thereby matched **the comment
@@ -176,27 +177,27 @@ repair here is general rather than local: the check reads **comment-stripped** s
 so a URL in a literal cannot be mangled), and then the assertion is about the **statement** rather than about the
 file.
 
-**The law, for the third time in this repository's own language:** *a count of a syntactic form is not a statement
-about a group* — and it is not a statement about a **statement** either, until the prose around it is removed.
+**The law, for the third time in this repository's own language:** _a count of a syntactic form is not a statement
+about a group_ — and it is not a statement about a **statement** either, until the prose around it is removed.
 
 ## 6. Measured acceptance (run `37872246084` on `db57ffb`; 10/10 jobs green, 79.3 min)
 
 ### 6.1 The nine cells, and the control that tests the repair
 
-| suite | OnlineBoutique | SockShop | TrainTicket | suite mean |
-| --- | ---: | ---: | ---: | ---: |
-| RE1 | 80.0% | 92.8% | 68.0% | 80.27% |
-| RE2 (was 82.4 / 88.9 / 68.1) | **86.7%** | **92.2%** | **71.1%** | **83.33%** |
-| RE3 | 80.0% | 45.0% | 51.1% | 58.70% |
+| suite                        | OnlineBoutique |  SockShop | TrainTicket | suite mean |
+| ---------------------------- | -------------: | --------: | ----------: | ---------: |
+| RE1                          |          80.0% |     92.8% |       68.0% |     80.27% |
+| RE2 (was 82.4 / 88.9 / 68.1) |      **86.7%** | **92.2%** |   **71.1%** | **83.33%** |
+| RE3                          |          80.0% |     45.0% |       51.1% |     58.70% |
 
 **RE1 and RE3 are unchanged, and asserted rather than eyeballed**: their `AC@1` table rows compare equal
 line-for-line against the previous run, and the only differing lines anywhere in their artifacts are the wall-clock
 duration and the `[log] sample` line (§6.4).
 
-| | before (615 ranked) | after (735 ranked) |
-| --- | ---: | ---: |
-| overall, weighted by the dataset's own 375 / 270 / 90 | **77.45%** | **78.75%** |
-| contribution of RE1 / RE2 / RE3 to the movement | — | 0.000 / **+1.298** / 0.000 |
+|                                                       | before (615 ranked) |         after (735 ranked) |
+| ----------------------------------------------------- | ------------------: | -------------------------: |
+| overall, weighted by the dataset's own 375 / 270 / 90 |          **77.45%** |                 **78.75%** |
+| contribution of RE1 / RE2 / RE3 to the movement       |                   — | 0.000 / **+1.298** / 0.000 |
 
 The movement is **+1.30 pp and every part of it is RE2** — the prediction the control existed to test. RE2's own
 suite mean moved 79.80% → **83.33%**.
@@ -214,16 +215,16 @@ It was asserted inert on the **consumers** before it was measured. The measureme
 removed: RE2-OB's retained entries went from a heap-limit failure to fitting, and RE3's retained volume fell by
 one to two orders of magnitude **while its census case count did not move at all** (30/30 before and after):
 
-| RE3 system | retained entries before | after |
-| --- | ---: | ---: |
-| OnlineBoutique | 2,163,430 | **41,401** |
-| SockShop | 2,592,666 | **43,102** |
-| TrainTicket | 1,937,403 | **12,313** |
+| RE3 system     | retained entries before |      after |
+| -------------- | ----------------------: | ---------: |
+| OnlineBoutique |               2,163,430 | **41,401** |
+| SockShop       |               2,592,666 | **43,102** |
+| TrainTicket    |               1,937,403 | **12,313** |
 
 And the bound: `ablation-re2` was raised 90 → 180 on a projection of 1.8× the case-runs, and measured **52.2 min** —
-*less* than the **54.3 min** it took on the capped 150-case corpus. **The projection was wrong, in the safe
+_less_ than the **54.3 min** it took on the capped 150-case corpus. **The projection was wrong, in the safe
 direction, and its error is informative: the heap was the cost, not the corpus.** Doubling the corpus while
-ceasing to retain 240 MB per case per suite is *cheaper* than the capped run was. 180 was then 3.4× the measured
+ceasing to retain 240 MB per case per suite is _cheaper_ than the capped run was. 180 was then 3.4× the measured
 worst case — loose rather than binding, which stays the choice because a bound a working job exceeds misclassifies
 healthy work while a loose one only delays detecting a hang. **The multiplier is superseded below; the reasoning
 is not.**
@@ -234,8 +235,8 @@ commit's edits are three console statements and a field rename. Its siblings mov
 (`rcaeval-re2` 27.3 → 27.5, `ablation-re3` 31.5 → 32.5, `ablation-re1` 16.9 → 14.3). So `ablation-re2` has been
 observed at **52.2 and 86.3 min — a 65% spread**, and the old 90-minute bound would have **killed the second
 run**. The 90 → 180 raise was therefore necessary, but for a reason the record did not have: **run-to-run variance
-on the heaviest job, not "1.8× the case-runs"**. 180 was then 2.1× the observed worst case. *A bound set from one
-measurement is a bound with no margin, and a precedent is not a measurement* — this repository's own law, here
+on the heaviest job, not "1.8× the case-runs"**. 180 was then 2.1× the observed worst case. _A bound set from one
+measurement is a bound with no margin, and a precedent is not a measurement_ — this repository's own law, here
 with a number attached. A future iteration should set this from a distribution (several runs) rather than from the
 newest sample.
 
@@ -243,23 +244,23 @@ newest sample.
 confirmed iteration 76's refactor (`37900344770`, commit `070e9b4`) took **88.1 min** for the same job. The
 identical 270-case corpus has now measured `ablation-re2` at:
 
-| run | commit | `ablation-re2` | what changed in the job |
-| --- | --- | ---: | --- |
-| `37872246084` | `db57ffb` | **52.2 min** | the heap fix |
-| `37886983273` | `62bac15` | **86.3 min** | three console statements, one field rename |
-| `37900344770` | `070e9b4` | **88.1 min** | a fold refactor, provably value-preserving |
+| run           | commit    | `ablation-re2` | what changed in the job                    |
+| ------------- | --------- | -------------: | ------------------------------------------ |
+| `37872246084` | `db57ffb` |   **52.2 min** | the heap fix                               |
+| `37886983273` | `62bac15` |   **86.3 min** | three console statements, one field rename |
+| `37900344770` | `070e9b4` |   **88.1 min** | a fold refactor, provably value-preserving |
 
 **52.2 → 88.1 is a 69% spread on a job whose computation is deterministic**, and the two later runs agree with
 each other to 2% while both differ from the first by ~65%. So the variance is not a random walk around a mean;
 one of the three observations comes from a different regime — the most likely reading being machine class or
 runner-image state, which the artifact does not record and this repository therefore cannot attribute. 180 is
-**2.0× the observed worst case**. The honest statement is the one the numbers support: *the bound is set from the
+**2.0× the observed worst case**. The honest statement is the one the numbers support: _the bound is set from the
 spread, the spread is unexplained, and a tighter bound would need a per-job wall-clock series the workflow does
-not currently emit.* Naming that is the follow-up; asserting a cause is not available.
+not currently emit._ Naming that is the follow-up; asserting a cause is not available.
 
 (The first draft of this paragraph said 84.8 min — written from expectation rather than read back from the run's
-own job list, and corrected before it was committed. *An unverified figure inside an acceptance record is the
-defect the record exists to prevent.*)
+own job list, and corrected before it was committed. _An unverified figure inside an acceptance record is the
+defect the record exists to prevent._)
 
 ### 6.4 A third correction: two instruments now print the same word for different quantities
 
@@ -289,7 +290,7 @@ wrote it.
 
 **A benchmark claim cannot be weighted by a corpus it did not rank.** The generalisation is the one this
 repository keeps re-learning in new clothes: a summary must be a function of the population that was measured.
-Here the population was written down in the *dataset* rather than the *run*, and nothing failed — no test, no
+Here the population was written down in the _dataset_ rather than the _run_, and nothing failed — no test, no
 gate, no artifact — because every artifact printed its own case count and only the prose that folded them read
 from somewhere else.
 
@@ -299,8 +300,8 @@ from somewhere else.
 
 **Added in iteration 80-81; owner of `scripts/audit_input_schema.py` and its artifact.**
 
-`arXiv:2609.27069`'s second finding is a claim about the INPUT rather than about any method: a *"non-uniform
-column schema that silently zeroes telemetry for 250 of 375 RE1 cases"*, with its Table 3 supplying the
+`arXiv:2609.27069`'s second finding is a claim about the INPUT rather than about any method: a _"non-uniform
+column schema that silently zeroes telemetry for 250 of 375 RE1 cases"_, with its Table 3 supplying the
 mechanism — a raw frame of **51 columns** on Online Boutique against **421–439** and **1180–1446** on Sock Shop
 and Train Ticket, so a reader assuming one schema reads nothing for two systems. 250 is exactly 125 + 125.
 **Every RE1 number in this repository inherits that claim**, so it was checked against the converted corpus.
@@ -344,7 +345,7 @@ folded into "empty", because the two have different causes and therefore differe
 ### 8.2 The law
 
 **A UNION IS NOT A POPULATION.** It is the same law as §7 in a new medium: a summary must be a function of the
-population that was measured, and a union of a population is a function of its *support* only. The pair that
+population that was measured, and a union of a population is a function of its _support_ only. The pair that
 catches it is a count of members beside a distribution over members; either one alone will read as the other.
 
 ### 8.3 The measurement, once the union stopped being read as a population
@@ -352,17 +353,17 @@ catches it is a count of members beside a distribution over members; either one 
 Run `38013486500`, the census artifact's own numbers (the table is what the artifact prints; every group figure is
 re-derivable from its `per_case` rows):
 
-| suite | system | cases | w/ foreign | `names(U)` | **per-case min/med/max** | foreign pts | **share** |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| RE1 | OnlineBoutique | 125 | **125** | 10 | **3 / 3 / 9** | 1,954,369 | **14.87%** |
-| RE1 | SockShop | 125 | **125** | 4 | 3 / 3 / 4 | 540,343 | 10.19% |
-| RE1 | TrainTicket | 125 | **125** | 28 | **28 / 28 / 28** | 7,516,507 | **31.02%** |
-| RE2 | OnlineBoutique | 90 | **90** | 6 | 1 / 2 / 4 | 767,107 | 8.12% |
-| RE2 | SockShop | 90 | **90** | 4 | 3 / 3 / 4 | 1,432,354 | 14.42% |
-| RE2 | TrainTicket | 90 | **90** | 33 | 32 / 32 / 33 | 17,830,934 | **37.97%** |
-| RE3 | OnlineBoutique | 30 | **30** | 18 | **2 / 2 / 18** | 351,604 | 11.56% |
-| RE3 | SockShop | 30 | **30** | 14 | **3 / 3 / 14** | 511,555 | 14.25% |
-| RE3 | TrainTicket | 30 | **30** | 33 | 32 / 32 / 33 | 6,933,850 | **40.72%** |
+| suite | system         | cases | w/ foreign | `names(U)` | **per-case min/med/max** | foreign pts |  **share** |
+| ----- | -------------- | ----: | ---------: | ---------: | -----------------------: | ----------: | ---------: |
+| RE1   | OnlineBoutique |   125 |    **125** |         10 |            **3 / 3 / 9** |   1,954,369 | **14.87%** |
+| RE1   | SockShop       |   125 |    **125** |          4 |                3 / 3 / 4 |     540,343 |     10.19% |
+| RE1   | TrainTicket    |   125 |    **125** |         28 |         **28 / 28 / 28** |   7,516,507 | **31.02%** |
+| RE2   | OnlineBoutique |    90 |     **90** |          6 |                1 / 2 / 4 |     767,107 |      8.12% |
+| RE2   | SockShop       |    90 |     **90** |          4 |                3 / 3 / 4 |   1,432,354 |     14.42% |
+| RE2   | TrainTicket    |    90 |     **90** |         33 |             32 / 32 / 33 |  17,830,934 | **37.97%** |
+| RE3   | OnlineBoutique |    30 |     **30** |         18 |           **2 / 2 / 18** |     351,604 |     11.56% |
+| RE3   | SockShop       |    30 |     **30** |         14 |           **3 / 3 / 14** |     511,555 |     14.25% |
+| RE3   | TrainTicket    |    30 |     **30** |         33 |             32 / 32 / 33 |   6,933,850 | **40.72%** |
 
 **Three readings, and the first two are what the union was hiding.**
 
@@ -393,8 +394,8 @@ The census is a gate in `cache-datasets.yml` and it ran in **`38013486500`**, wh
 read from **that run's own artifacts** and are **byte-identical to the re-baselined golden** — RE1
 `80.0 / 92.8 / 68.0` · RE2 `86.7 / 92.2 / 71.1` · RE3 `80.0 / 45.0 / 51.1`.
 
-**Which is worth stating precisely, because the first report of this iteration described it as holding *by
-construction*.** It did hold by construction — nothing on the ranking path moved — but a construction argument is
+**Which is worth stating precisely, because the first report of this iteration described it as holding _by
+construction_.** It did hold by construction — nothing on the ranking path moved — but a construction argument is
 the WEAKER claim, and here it is now the secondary one: the run exists, it is green, and its artifacts reproduce
 the baseline exactly. **"It cannot have changed the number" and "the number did not change" are different
 sentences, and only the second one is a measurement.** The first is what a report falls back on when it has not
@@ -403,32 +404,32 @@ run anything, so it must be labelled as such at the moment it is used, not upgra
 ### 8.5 The census's `metrics` arm was a CONSTRUCTION — found by asking §8's own question of the LEDGER
 
 **Iteration 103 asked the census that decides STARVED from INERT the same question §8 asks of the corpus, and the
-census failed it.** `channelCases(coverage, 'metrics')` returned `coverage.cases`, with the comment *"every
-RCAEval case has metrics"* — and the cases it was handed are `BenchmarkCase[]`, which has carried
+census failed it.** `channelCases(coverage, 'metrics')` returned `coverage.cases`, with the comment _"every
+RCAEval case has metrics"_ — and the cases it was handed are `BenchmarkCase[]`, which has carried
 `metrics: MetricMap` all along. **A count that is a construction where a measurement is asserted**, on the one
 channel every never-ablated prior acts on and the one a competitor's published claim is about.
 
 **The mechanism is why it matters, not the bookkeeping.** `arXiv:2609.27069`'s allegation and this document's
 refutation have the **same signature in a count**:
 
-| | the mechanism | what a bare zero says |
-| --- | --- | --- |
-| the allegation | a **non-uniform column schema** silently zeroes telemetry for 250 of 375 RE1 cases | nothing |
-| §8's finding | 735/735 cases carry non-zero telemetry, 0 degenerate | nothing |
+|                | the mechanism                                                                      | what a bare zero says |
+| -------------- | ---------------------------------------------------------------------------------- | --------------------- |
+| the allegation | a **non-uniform column schema** silently zeroes telemetry for 250 of 375 RE1 cases | nothing               |
+| §8's finding   | 735/735 cases carry non-zero telemetry, 0 degenerate                               | nothing               |
 
 A reader given one zero for both cannot tell which was measured, and the fixes are different: one is a converter
 defect, the other is a corpus that carries nothing on that channel. **So the census now reports the LEVEL of
 every absence, per case**, and the level is a pure function of the count and what the producer recorded:
 
-| level | the producer's own fact |
-| --- | --- |
-| `READ` | a non-zero reading was kept — nothing is absent |
-| `FILE-ABSENT` | the artifact the channel is read from is not in the case directory |
-| `NO-POINTS` | the artifact is there and holds no data point |
-| `COLUMN-ABSENT` | points are there and this channel's columns are not among them — **the allegation's mechanism** |
-| `ALL-ZERO` | points and columns are there and every value is zero — **the degeneracy class §1 and §8 define** |
-| `NO-KEPT-ROW` | non-zero values are there and the retention filter kept none of them |
-| `UNREPORTED` | the producer does not say, and the census must not guess |
+| level           | the producer's own fact                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `READ`          | a non-zero reading was kept — nothing is absent                                                  |
+| `FILE-ABSENT`   | the artifact the channel is read from is not in the case directory                               |
+| `NO-POINTS`     | the artifact is there and holds no data point                                                    |
+| `COLUMN-ABSENT` | points are there and this channel's columns are not among them — **the allegation's mechanism**  |
+| `ALL-ZERO`      | points and columns are there and every value is zero — **the degeneracy class §1 and §8 define** |
+| `NO-KEPT-ROW`   | non-zero values are there and the retention filter kept none of them                             |
+| `UNREPORTED`    | the producer does not say, and the census must not guess                                         |
 
 **`reached > 0` always wins.** The level is a FUNCTION of the count and the evidence rather than a field, so a
 recorded reason can never contradict the measurement — a field could be set to `READ` on an empty channel and
@@ -444,10 +445,10 @@ and nothing was read".**
 ### 8.5.1 What the allegation actually says, read from its own section 7 on 2026-10-15
 
 **Verified rather than paraphrased, because the level vocabulary has to name the claim's real mechanism.** The
-paper's abstract states the property as *"a non-uniform column schema that silently zeroes telemetry for most RE1
-cases"*, and its own §7 supplies what that means: **the raw frame width VARIES BY SYSTEM** — *"Online Boutique
-51-60, Sock Shop 421-439, Train Ticket 1180-1446"* — with the footnote that *"column counts are for one case per
-system, since raw frame width varies"*. Its own Table 3 is the demonstration: BARO, RCAEval's reference
+paper's abstract states the property as _"a non-uniform column schema that silently zeroes telemetry for most RE1
+cases"_, and its own §7 supplies what that means: **the raw frame width VARIES BY SYSTEM** — _"Online Boutique
+51-60, Sock Shop 421-439, Train Ticket 1180-1446"_ — with the footnote that _"column counts are for one case per
+system, since raw frame width varies"_. Its own Table 3 is the demonstration: BARO, RCAEval's reference
 implementation, scores **0.880 Avg@5 on Online Boutique** (51 columns, curated RED metrics) against **0.557 on
 Sock Shop** (438, raw cAdvisor) and **0.277 on Train Ticket** (1242, raw cAdvisor).
 
@@ -459,16 +460,16 @@ reads 375 of 375 RE1 cases with non-zero telemetry. **The two claims are about t
 whether it occurs**, which is the one thing a bare zero could not have told a reader.
 
 **And the same section withdraws a claim of its own, which is a fact about competitor completeness rather than
-about our numbers.** Its portable artifact reads RE1 only — *"the localization loader in this artifact
+about our numbers.** Its portable artifact reads RE1 only — _"the localization loader in this artifact
 (`kintsugi/data/localization.py`) reads RE1 only, and an earlier PSC run labelled RE2 was scored on RE1 folds. **We
-withdraw that result and make no PSC claim on RE2** until the model is ported."* Our record never compared with it
+withdraw that result and make no PSC claim on RE2** until the model is ported."_ Our record never compared with it
 on RE2, so no number moves; what changes is that the reference's own RE2 status is now named rather than left for
 a reader of the abstract to infer.
 
 **Two further numbers from the same table, recorded because the row is now more than a single headline**: the
 paper's **`Max-deviation` heuristic reaches 0.797 `Avg@5` on RE1** (0.877 on Online Boutique, 0.888 on Sock Shop,
-0.627 on Train Ticket), and its `0.915` sits inside a seed spread it reports itself — *"eight independent
-stratified seeds span 0.914 to 0.928 (mean 0.921)"*. Both are on `Avg@5`, a metric we do not headline, so **no gap
+0.627 on Train Ticket), and its `0.915` sits inside a seed spread it reports itself — _"eight independent
+stratified seeds span 0.914 to 0.928 (mean 0.921)"_. Both are on `Avg@5`, a metric we do not headline, so **no gap
 is read in either direction**; they are recorded because a row that carries one number and not its spread is the
 shape this whole document exists to prevent.
 
@@ -497,26 +498,26 @@ header described the defect instead of the corpus (§5.3) and the metric term wh
 own rank spacing: in each, the number was produced by the instrument rather than by the world.
 
 **And it is law 3 one level down.** The census's `UNREPORTED` is the MIDDLE absence — the channel is empty and the
-reason is not recorded — which is neither *"the file is absent"* nor *"the values are zero"*. A boolean lookup
+reason is not recorded — which is neither _"the file is absent"_ nor _"the values are zero"_. A boolean lookup
 would collapse it into one of those two, and the two have different fixes.
 
 ### 8.8 The CI run turned the prediction into an OBSERVATION — and printed a fact no local run could
 
 **The ablation battery ran on the revision that changed this census and printed its line for all nine cells**
-(`benchmark-rcaeval.yml` run `38728053527`, revision `4acf174`, all twelve jobs green). Section 8 *predicted* that
+(`benchmark-rcaeval.yml` run `38728053527`, revision `4acf174`, all twelve jobs green). Section 8 _predicted_ that
 the measured metric count equals `cases`; the run confirms it exactly:
 
-| suite | system | cases | metrics non-zero | logs readable | spans | spanActivity | failedEdges | latency |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| RE1 | OnlineBoutique | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
-| RE1 | SockShop | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
-| RE1 | TrainTicket | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
-| RE2 | OnlineBoutique | 90 | **90/90** | 21/90 | 90/90 | 0/90 | 0/90 | 0/90 |
-| RE2 | SockShop | 90 | **90/90** | 90/90 | 0/90 | 0/90 | 0/90 | 0/90 |
-| RE2 | TrainTicket | 90 | **90/90** | 40/90 | 90/90 | 0/90 | 0/90 | 0/90 |
-| RE3 | OnlineBoutique | 30 | **30/30** | 30/30 | 30/30 | 30/30 | 15/30 | 0/30 |
-| RE3 | SockShop | 30 | **30/30** | 30/30 | 0/30 | 0/30 | 0/30 | 0/30 |
-| RE3 | TrainTicket | 30 | **30/30** | 30/30 | 30/30 | 30/30 | 0/30 | 0/30 |
+| suite | system         | cases | metrics non-zero | logs readable | spans | spanActivity | failedEdges | latency |
+| ----- | -------------- | ----: | ---------------: | ------------: | ----: | -----------: | ----------: | ------: |
+| RE1   | OnlineBoutique |   125 |      **125/125** |         0/125 | 0/125 |        0/125 |       0/125 |   0/125 |
+| RE1   | SockShop       |   125 |      **125/125** |         0/125 | 0/125 |        0/125 |       0/125 |   0/125 |
+| RE1   | TrainTicket    |   125 |      **125/125** |         0/125 | 0/125 |        0/125 |       0/125 |   0/125 |
+| RE2   | OnlineBoutique |    90 |        **90/90** |         21/90 | 90/90 |         0/90 |        0/90 |    0/90 |
+| RE2   | SockShop       |    90 |        **90/90** |         90/90 |  0/90 |         0/90 |        0/90 |    0/90 |
+| RE2   | TrainTicket    |    90 |        **90/90** |         40/90 | 90/90 |         0/90 |        0/90 |    0/90 |
+| RE3   | OnlineBoutique |    30 |        **30/30** |         30/30 | 30/30 |        30/30 |       15/30 |    0/30 |
+| RE3   | SockShop       |    30 |        **30/30** |         30/30 |  0/30 |         0/30 |        0/30 |    0/30 |
+| RE3   | TrainTicket    |    30 |        **30/30** |         30/30 | 30/30 |        30/30 |        0/30 |    0/30 |
 
 **735 of 735 cases carry non-zero telemetry, and no cell prints an `absent[metrics]` line at all** — so
 `ALL-ZERO` and `COLUMN-ABSENT`, the level the competing allegation names, occur **zero times** on the corpus this
@@ -526,13 +527,13 @@ workflow that produced the number.
 **And the same run printed the second half, which no local run could: the census names the STARVED channels**, i.e.
 terms whose input is absent and on which a 0.0 says nothing about the term:
 
-| cell | STARVED terms |
-| --- | --- |
+| cell                        | STARVED terms                                         |
+| --------------------------- | ----------------------------------------------------- |
 | RE1-OB / SS / TT (125 each) | `logWeight`, `traceWeight`, `topoWeight`, `latWeight` |
-| RE2-OB, RE2-TT | `traceWeight`, `latWeight` |
-| RE2-SS | `traceWeight`, `topoWeight`, `latWeight` |
-| RE3-OB, RE3-TT | `latWeight` |
-| RE3-SS | `traceWeight`, `topoWeight`, `latWeight` |
+| RE2-OB, RE2-TT              | `traceWeight`, `latWeight`                            |
+| RE2-SS                      | `traceWeight`, `topoWeight`, `latWeight`              |
+| RE3-OB, RE3-TT              | `latWeight`                                           |
+| RE3-SS                      | `traceWeight`, `topoWeight`, `latWeight`              |
 
 Three readings follow, and all three are new to this record:
 
@@ -552,8 +553,8 @@ Three readings follow, and all three are new to this record:
 cases`, because the four non-metric channels are handed a bare array. **On RE1 that is the difference between a
 property of the corpus and a property of our own code**, and the loader's own source shows at least one of the
 reasons is deliberate rather than physical: `rcaeval-loader.ts` writes `traces: undefined` beside a comment saying
-*"Traces are consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after
-augmentation."* **So reading `undefined` as "the artifact is absent" would be a FALSE statement.** The level
+_"Traces are consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after
+augmentation."_ **So reading `undefined` as "the artifact is absent" would be a FALSE statement.** The level
 vocabulary may not guess, and `UNREPORTED` is the honest answer **until the party that still holds the evidence
 supplies it** — which is a design statement rather than a repair: this census has one field the CALLER already
 overrides for exactly that reason (`coverage: { ...summarizeInputCoverage(cases), casesWithSpans }`,
@@ -567,18 +568,18 @@ need what one already has.**
 **The CI run left one question open — whether RE1's empty log channel is the corpus or our reader — and it is
 answerable from the source, which makes leaving it open a choice rather than a limit.**
 
-`rcaeval-loader.ts` declares the contract in its own header, line 5: *"RCAEval is the primary AIOps benchmark dataset
-with 735 cases across 3 suites (**RE1: metrics-only**, RE2: metrics+logs+traces, RE3: full multimodal)"*, and line 11
-marks `logs.csv` as *"(RE2/RE3 only; no level column …)"*. **RE1 carries metrics and nothing else, so every channel
+`rcaeval-loader.ts` declares the contract in its own header, line 5: _"RCAEval is the primary AIOps benchmark dataset
+with 735 cases across 3 suites (**RE1: metrics-only**, RE2: metrics+logs+traces, RE3: full multimodal)"_, and line 11
+marks `logs.csv` as _"(RE2/RE3 only; no level column …)"_. **RE1 carries metrics and nothing else, so every channel
 it starves is starved because the dataset does not ship it.**
 
 **And the loader already held that fact in a form a program could read.** `loadCase` calls `tryLoadLogs` and
-`tryLoadTraces` **unconditionally and defensively** — *"if optional files are missing or malformed, the case is still
-loaded with degraded data"* — so on RE1 both return `undefined` because **the file could not be read**, which is
+`tryLoadTraces` **unconditionally and defensively** — _"if optional files are missing or malformed, the case is still
+loaded with degraded data"_ — so on RE1 both return `undefined` because **the file could not be read**, which is
 exactly what the `FILE-ABSENT` level names. **The level is determined at the loader layer.**
 
-**It is destroyed one layer above.** `toBenchmarkCase` writes `traces: undefined` **deliberately** — *"Traces are
-consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after augmentation"*
+**It is destroyed one layer above.** `toBenchmarkCase` writes `traces: undefined` **deliberately** — _"Traces are
+consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after augmentation"_
 — so by the time the census receives a `BenchmarkCase`, `undefined` means **either** "the file was absent" **or**
 "the value was released on purpose", and nothing on that object distinguishes them. **That is law 40 stated as a
 mechanism: the evidence of an absence is destroyed by the data path before the census that must report it runs, and
@@ -590,16 +591,16 @@ reading could lift. **So the reference above us at 85.4% / 82.8% is measured on 
 5.13 pp is a **METHOD** gap on an identical input rather than an input gap. That is the more urgent reading, and it
 removes the most comfortable explanation for the one cell where a named reference leads.
 
-**And a sentence written earlier in §8.8 was corrected in place for exactly that reason.** It read that *"the
-reference above us on RE1 reads all three RCAEval environments with tooling"* — true of the paper in general and
+**And a sentence written earlier in §8.8 was corrected in place for exactly that reason.** It read that _"the
+reference above us on RE1 reads all three RCAEval environments with tooling"_ — true of the paper in general and
 false of RE1, where there is nothing else to read. It is replaced rather than quietly dropped, because the shape it
 had — **an inference about a competitor's INPUT drawn from its METHOD** — is the class this document exists to catch.
 
 ### 8.10 The census was GIVEN the record — law 40 enrolled, and the level that names the mechanism
 
-**Iteration 103 wrote law 40 from an observation; iteration 104 is the enrolment that obeys it.** The rule reads: *a
+**Iteration 103 wrote law 40 from an observation; iteration 104 is the enrolment that obeys it.** The rule reads: _a
 census given only what SURVIVED cannot report why the rest did not — the evidence of an absence must be supplied by
-whoever still holds it.* What it was written against is a single artifact printing two adjacent lines that
+whoever still holds it._ What it was written against is a single artifact printing two adjacent lines that
 contradict each other (`38728053527`, RE2-OnlineBoutique):
 
 ```
@@ -615,14 +616,14 @@ and the counts it prints are the record.
 
 **Three changes, and each is a claim.**
 
-| the change | the claim it makes |
-| --- | --- |
-| `summarizeInputCoverage(cases, records)` accepts what each channel's HOLDER recorded | a census may not state a limit its own artifact disproves |
-| the vocabulary gains `RANKED-VIEW-EMPTY` | a channel that is empty on the ranked view while another view holds rows is a THIRD kind of zero — the input arrived and the derivation the engine was handed discarded it, which establishes nothing about the term in either direction |
-| the STARVED line splits into `UNMEASURABLE` and `MEASURABLE-ELSEWHERE` | those two zeros mean opposite things, and a reader told only *"a 0.0 on it says nothing about the term"* cannot act on either |
+| the change                                                                           | the claim it makes                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `summarizeInputCoverage(cases, records)` accepts what each channel's HOLDER recorded | a census may not state a limit its own artifact disproves                                                                                                                                                                                |
+| the vocabulary gains `RANKED-VIEW-EMPTY`                                             | a channel that is empty on the ranked view while another view holds rows is a THIRD kind of zero — the input arrived and the derivation the engine was handed discarded it, which establishes nothing about the term in either direction |
+| the STARVED line splits into `UNMEASURABLE` and `MEASURABLE-ELSEWHERE`               | those two zeros mean opposite things, and a reader told only _"a 0.0 on it says nothing about the term"_ cannot act on either                                                                                                            |
 
 **`RANKED-VIEW-EMPTY` is ordered above every single-view arm and below `UNREPORTED`**, and both halves are claims.
-Above, because it is read off a CROSS-VIEW comparison: when another view holds rows, *"the artifact held no points"*
+Above, because it is read off a CROSS-VIEW comparison: when another view holds rows, _"the artifact held no points"_
 is not a weaker reading but a **false** one. Below, because it needs a record to exist at all. It is guarded on both
 of its fields, so a caller that supplies no views falls through to exactly the arms that were there before it —
 which is what makes the change additive rather than a re-reading of every existing level.
@@ -663,7 +664,7 @@ different fix** — which is the defect the level vocabulary exists to prevent, 
 
 **The repair is a flag, and where it is set is itself a claim.** `ChannelEvidence.carriesValues` is optional and
 `undefined` means `true`, so every evidence literal written before it keeps the meaning it was written with. The
-single-arm helper `evidenceFor` sets it to **`false`**, and *not* to `channel === 'metrics'`: **the metric arm builds
+single-arm helper `evidenceFor` sets it to **`false`**, and _not_ to `channel === 'metrics'`: **the metric arm builds
 its own evidence from the case's `metrics` map**, so no input reaches the helper with `channel === 'metrics'` — a
 comparison no input can make is a branch the coverage gate reports as dead code, and one that reads as if it
 protected something (law 6).
@@ -673,12 +674,12 @@ iteration's work (`assembleRCAEvalCase` returns `logRowsRead` and the ablation l
 attached to a real record is worse than no record at all. The fence now asserts four things about a record that
 counts rows and names no view:
 
-| the record | the level | why |
-| --- | --- | --- |
-| `{ logs: { rowsRead: 40 } }` | `NO-KEPT-ROW` | the file yielded rows and the retention kept none |
-| `{ logs: {} }` | `NO-POINTS` | the artifact is there and holds no row at all |
-| `{ metrics: { rowsRead: 2 } }` on an all-zero case | `ALL-ZERO` | the value channel with the SAME shape, so the arm is scoped rather than rewritten |
-| any record | the count is unchanged | a record explains an absence; it never creates a reading |
+| the record                                         | the level              | why                                                                               |
+| -------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `{ logs: { rowsRead: 40 } }`                       | `NO-KEPT-ROW`          | the file yielded rows and the retention kept none                                 |
+| `{ logs: {} }`                                     | `NO-POINTS`            | the artifact is there and holds no row at all                                     |
+| `{ metrics: { rowsRead: 2 } }` on an all-zero case | `ALL-ZERO`             | the value channel with the SAME shape, so the arm is scoped rather than rewritten |
+| any record                                         | the count is unchanged | a record explains an absence; it never creates a reading                          |
 
 ### 8.12 The label said "measurable elsewhere" and the next line said `comparable 1`
 
@@ -701,15 +702,15 @@ artifact disproves. It was found by reading the artifact a green run produced, n
 
 **The nine cells, measured** (`whole-file` rows / `comparable` cases, and the level iteration 104 printed):
 
-| cell | whole-file | comparable | printed then | prints now |
-| --- | ---: | ---: | --- | --- |
-| RE1-OnlineBoutique / SockShop / TrainTicket | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
-| RE2-OnlineBoutique | 1080 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
-| RE2-SockShop | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
-| RE2-TrainTicket | 6781 | **1** | `MEASURABLE-ELSEWHERE` | `RANKED-VIEW-EMPTY on 90/90 cases (1 usable)` — one case IS usable, so the view really does discard it |
-| RE3-OnlineBoutique | 356 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
-| RE3-SockShop | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
-| RE3-TrainTicket | 2006 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
+| cell                                        | whole-file | comparable | printed then           | prints now                                                                                             |
+| ------------------------------------------- | ---------: | ---------: | ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| RE1-OnlineBoutique / SockShop / TrainTicket |          0 |          0 | `NO-POINTS`            | `NO-POINTS`                                                                                            |
+| RE2-OnlineBoutique                          |       1080 |      **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR`                                                                                   |
+| RE2-SockShop                                |          0 |          0 | `NO-POINTS`            | `NO-POINTS`                                                                                            |
+| RE2-TrainTicket                             |       6781 |      **1** | `MEASURABLE-ELSEWHERE` | `RANKED-VIEW-EMPTY on 90/90 cases (1 usable)` — one case IS usable, so the view really does discard it |
+| RE3-OnlineBoutique                          |        356 |      **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR`                                                                                   |
+| RE3-SockShop                                |          0 |          0 | `NO-POINTS`            | `NO-POINTS`                                                                                            |
+| RE3-TrainTicket                             |       2006 |      **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR`                                                                                   |
 
 **And it corrects a sentence of iteration 103's own acceptance.** That record said `latWeight` "has never been
 measurable anywhere in this instrument, on any suite", on the strength of the STARVED list. **RE2-TrainTicket has one
@@ -723,7 +724,7 @@ cases** — not zero, and not "elsewhere" either.
   "and some of them can be read" supports neither answer; the level then falls back to `UNREPORTED`, which is the
   truthful statement about a holder that kept rows and never counted usability.
 - `NO-COMPARABLE-PAIR` — unanticipated rows exist and none is usable. Placed **above** `RANKED-VIEW-EMPTY` in the
-  union, because it is the more specific claim (it needs the same counts *and* a usability count) and it reports that
+  union, because it is the more specific claim (it needs the same counts _and_ a usability count) and it reports that
   the cross-view comparison came out **negative**.
 - The STARVED line gains a **third** bucket, `NO COMPARABLE PAIR ⇒ UNMEASURABLE terms`, because the sentence a reader
   needs is neither "the input never arrived" nor "the view discarded it" but **"the input arrived and this corpus
@@ -751,17 +752,17 @@ says the census does not know why. **It knew**: `assembleRCAEvalCase` measures `
 filter and returns it in its result, and the ablation loop destructured four fields and never took that one.
 
 **The evidence was not missing. Its granularity was.** A population-level record cannot answer this question,
-because the question is *which* case held rows: `logs: []` reads identically whether the file was empty or every row
+because the question is _which_ case held rows: `logs: []` reads identically whether the file was empty or every row
 was filtered out. §8.10's record is one number per channel per population and that is exactly the wrong shape here,
 so the fix is not another field on `ChannelRecord` — it is **the count on the case it describes**.
 
 **`BenchmarkCase.logsReadRows`** now carries it, written by the assembly **inside the branch that has a payload**:
 
-| the case | the level | why |
-| --- | --- | --- |
-| `logs: []`, `logsReadRows: 40` | `NO-KEPT-ROW` | the file held rows and the severity derivation kept none |
-| `logs: []`, `logsReadRows: 0` | `NO-POINTS` | the file was read and held nothing |
-| `logs: undefined`, no `logsReadRows` | `UNREPORTED` | the loader produced no payload; **why** is recorded nowhere, and absent-file and failed-parse are different owners |
+| the case                             | the level     | why                                                                                                                |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `logs: []`, `logsReadRows: 40`       | `NO-KEPT-ROW` | the file held rows and the severity derivation kept none                                                           |
+| `logs: []`, `logsReadRows: 0`        | `NO-POINTS`   | the file was read and held nothing                                                                                 |
+| `logs: undefined`, no `logsReadRows` | `UNREPORTED`  | the loader produced no payload; **why** is recorded nowhere, and absent-file and failed-parse are different owners |
 
 **That third row is the load-bearing one.** A writer that attached `logsReadRows: 0` to a case with no payload would
 convert "the reason is unrecorded" into "the file was read and was empty" — a claim nobody made. The branch is why
@@ -781,7 +782,6 @@ of nine cells read `NO-POINTS ... (0 usable)` — inviting a reader to conclude 
 failed, when nothing had arrived to measure. The count is now scoped to the two **cross-view** levels, which are the
 only ones whose claim is about usability.
 
-
 ---
 
 ## 9. How many CLASSES the benchmark has — the ledger's own answer, and the floor under every published number
@@ -789,7 +789,7 @@ only ones whose claim is about usability.
 **Added in iteration 153. Owner of no new script: the instrument is the loss census that every run already writes.**
 
 `arXiv:2609.27069` (2026-09-22) audits RCAEval and reports two properties that "condition any result on it". Its
-first is a claim about the *label space*, and it re-prices every accuracy ever printed on this corpus, ours
+first is a claim about the _label space_, and it re-prices every accuracy ever printed on this corpus, ours
 included:
 
 > RCAEval injects faults into only five services per system while exposing 12 to 70 in telemetry, and the headline
@@ -801,25 +801,25 @@ included:
 census records one row per case with its ground truth, so the label space is readable from the 735 rows of run
 `40803879406` at `24dc3bc` — no new instrument, no new dispatch:
 
-| cell | n | distinct truths | the label distribution | majority-class Top-1 floor | ours | gap | candidates exposed (median) |
-| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
-| RE1:OnlineBoutique | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 85.6% | +65.6 | 10 |
-| RE1:SockShop | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 92.8% | +72.8 | 14 |
-| RE1:TrainTicket | 125 | **5** | 25 / 25 / 25 / 25 / 25 | 20.0% | 83.2% | +63.2 | 64 |
-| RE2:OnlineBoutique | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 88.9% | +68.9 | 9 |
-| RE2:SockShop | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 94.4% | +74.4 | 13 |
-| RE2:TrainTicket | 90 | **5** | 18 / 18 / 18 / 18 / 18 | 20.0% | 83.3% | +63.3 | 68 |
-| RE3:OnlineBoutique | 30 | 4 | 15 / 9 / 3 / 3 | **50.0%** | 83.3% | +33.3 | 9 |
-| RE3:SockShop | 30 | 3 | 12 / 9 / 9 | **40.0%** | 60.0% | +20.0 | 13 |
-| RE3:TrainTicket | 30 | 2 | 15 / 15 | **50.0%** | 70.0% | +20.0 | 68 |
-| **735** | 735 | — | per-cell priors | **23.27%** | **85.85%** | +62.58 | — |
+| cell               |   n | distinct truths | the label distribution | majority-class Top-1 floor |       ours |    gap | candidates exposed (median) |
+| ------------------ | --: | --------------: | ---------------------- | -------------------------: | ---------: | -----: | --------------------------: |
+| RE1:OnlineBoutique | 125 |           **5** | 25 / 25 / 25 / 25 / 25 |                      20.0% |      85.6% |  +65.6 |                          10 |
+| RE1:SockShop       | 125 |           **5** | 25 / 25 / 25 / 25 / 25 |                      20.0% |      92.8% |  +72.8 |                          14 |
+| RE1:TrainTicket    | 125 |           **5** | 25 / 25 / 25 / 25 / 25 |                      20.0% |      83.2% |  +63.2 |                          64 |
+| RE2:OnlineBoutique |  90 |           **5** | 18 / 18 / 18 / 18 / 18 |                      20.0% |      88.9% |  +68.9 |                           9 |
+| RE2:SockShop       |  90 |           **5** | 18 / 18 / 18 / 18 / 18 |                      20.0% |      94.4% |  +74.4 |                          13 |
+| RE2:TrainTicket    |  90 |           **5** | 18 / 18 / 18 / 18 / 18 |                      20.0% |      83.3% |  +63.3 |                          68 |
+| RE3:OnlineBoutique |  30 |               4 | 15 / 9 / 3 / 3         |                  **50.0%** |      83.3% |  +33.3 |                           9 |
+| RE3:SockShop       |  30 |               3 | 12 / 9 / 9             |                  **40.0%** |      60.0% |  +20.0 |                          13 |
+| RE3:TrainTicket    |  30 |               2 | 15 / 15                |                  **50.0%** |      70.0% |  +20.0 |                          68 |
+| **735**            | 735 |               — | per-cell priors        |                 **23.27%** | **85.85%** | +62.58 |                           — |
 
 Three findings, and the first two are not the paper's:
 
 1. **RE1 and RE2 are five-way and perfectly BALANCED.** Every one of those six cells has exactly 5 truths at
    exactly equal frequency (25 each on RE1, 18 each on RE2). So on 645 of the 735 cases — 87.8% of the corpus — a
    prior buys **nothing** over chance: the majority floor and the uniform floor are the same 20%. This is the
-   strongest validity statement this corpus can make in our favour, and it is a property of the *dataset*, not of
+   strongest validity statement this corpus can make in our favour, and it is a property of the _dataset_, not of
    our ranking: on those cells the task is genuinely 5-way, and 20% is the price of not reading the telemetry.
 2. **RE3 is neither balanced nor five-way, and that is where the honest floor is high.** TrainTicket exposes two
    truths at 15 each, SockShop three at 12/9/9, OnlineBoutique four at 15/9/3/3. A constant answer therefore
@@ -827,7 +827,7 @@ Three findings, and the first two are not the paper's:
    +20.0 over a prior, not +60, and `RE3:TrainTicket 70.0%` is +20.0. **Those two cells cannot carry a SOTA claim
    on their own**, and any competitor number on them inherits the same floor.
 3. **`Avg@5` is degenerate on this corpus, and this is arithmetic rather than opinion.** Every cell has at most 5
-   distinct truths, so a *constant* top-5 naming the cell's five truths scores Avg@5 **100.0% on all 735 cases**.
+   distinct truths, so a _constant_ top-5 naming the cell's five truths scores Avg@5 **100.0% on all 735 cases**.
    The paper's 99.7 / 0.488 is the version of that number a ranker who does not know the label set can reach; with
    the label set known it is 1.000. A metric with a 1.000 ceiling reachable without reading any telemetry cannot
    rank two methods, which is why this repository reports **Top-1**, whose per-cell floors are the column above.
@@ -835,7 +835,7 @@ Three findings, and the first two are not the paper's:
 **The cross-system collapse the paper reports is also visible in our label sets**, and the mechanism is the one it
 names: the three systems' truth sets are disjoint (OnlineBoutique's five, SockShop's five, TrainTicket's five share
 no service name), so a prior fitted on one system scores 0 on another — `0.192` against `0.488`. Our own artifacts
-say the same thing from the other side: the trace term's fifteen hits on RE3-TrainTicket are *all*
+say the same thing from the other side: the trace term's fifteen hits on RE3-TrainTicket are _all_
 `ts-auth-service`, i.e. one of that cell's two truths, and its five misses are all the other one. A term that
 recovers the prior within a cell, and nothing across cells, is exactly what a prior-driven benchmark rewards.
 
@@ -844,11 +844,36 @@ recovers the prior within a cell, and nothing across cells, is exactly what a pr
 - **It does not lower any published number.** 85.85% Top-1 on 735 cases stands, and the floors above are beside it
   rather than subtracted from it. A 5-way problem still has to be solved by reading telemetry, and 20% is what
   comes for free.
-- **It does not say RE3 is small.** It says RE3 is *prior-heavy*: 90 cases over 2–4 truths with an imbalanced
+- **It does not say RE3 is small.** It says RE3 is _prior-heavy_: 90 cases over 2–4 truths with an imbalanced
   distribution. That is a property to report, not an excuse — and it is why the RE3 row of every comparison table
   in this repository should carry its floor in the same line from now on.
 - **It says nothing against `Avg@5` as a metric in general.** It says `Avg@5` on a corpus whose label set has five
   members cannot separate methods, which is a property of this corpus's label cardinality.
 - **The floors are conventions, not measurements of a method.** "Majority class" is the strongest constant
-  predictor on a Top-1 metric; a competitor's `Avg@5 0.488` is the strongest constant top-5 a *blind* predictor
+  predictor on a Top-1 metric; a competitor's `Avg@5 0.488` is the strongest constant top-5 a _blind_ predictor
   reaches. Both are computed from the ledger, and the ledger is a dataset fact.
+
+## 10. The corpus we do not run — `RCAtlas`, 90 validated cases over eight public datasets
+
+**Found 2026-10-30, not adopted.** `arXiv:2610.35767` (_Free to Look, Free to Reason_) evaluates on **RCAtlas**:
+**90 validated cases drawn from eight public datasets**, six models, three reasoning efforts. Its own baseline
+table is the reason it is worth a line here: on that population, **non-LLM statistical and causal methods read
+PR@1 6–39 %**, published LLM agents **16–53 %**, and three "simple harnesses" that prescribe none of the
+model's calls **65–77 %**.
+
+Two facts, kept apart:
+
+1. **A floor is published for the class this engine belongs to.** 6–39 % for statistical and causal methods is
+   a number our cohort would be filed under, and it is far below the 86.94 % this engine reads on RCAEval —
+   which is exactly why the two cannot be compared: they are different populations, and the paper's own point
+   is that per-paper evaluations on per-paper data do not compose.
+2. **The population is 90 cases over eight datasets.** That is 11 cases per dataset before any fault-type
+   split, which cannot support a per-cell claim — the same objection §9 raises against a 30-case RE3 cell —
+   and no per-case result file was read, so the label set, the injection protocol and the candidate
+   construction are all unverified.
+
+**Not adopted, and named rather than implied.** Running this engine on RCAtlas would need the dataset's own
+labels, which this record has not established; and a 90-case fold cannot enter the standing table beside the
+735 without a caveat that would dominate its own number. What would make it worth the acquisition work is a
+per-case result file from any reference on it, because that is the artifact that turns "different populations"
+into a measurable gap.
