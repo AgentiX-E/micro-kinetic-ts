@@ -257,7 +257,13 @@ a four-point grid, and the prediction in §2 would become a distribution rather 
 
 639 of 735 with eight cells at or above the published value and one below is the closest any arm in this
 campaign has come, and it is refused for the reason the 635 arm was refused: **"no cell down" is the bar, and
-RE2:TrainTicket is one case down.** The shipped default therefore stays `gate = 0`, which is vacuous and
+RE2:TrainTicket is one case down.**
+
+**Superseded 2026-10-30 (it.162).** The boundary value of the same operator — `gate = 1`, charge only a node
+its callees account for in full — reads **641 of 735 with no cell below the published value and no fault type
+down** (`docs/topo-share.md` §8). It was not found by a finer grid; it was found by publishing the share and
+reading which candidates were fully explained. The `gate = 0` default still ships, because enrolling
+`rho = 1` is a change to every user's ranking and the FSE'26 half has not been read yet. The shipped default therefore stays `gate = 0`, which is vacuous and
 leaves the nine published cells bit-identical by construction — so nothing in this section changes what the
 engine does; it changes what the project knows about what it does.
 

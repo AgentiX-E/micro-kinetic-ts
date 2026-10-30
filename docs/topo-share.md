@@ -114,10 +114,9 @@ Measured in this build:
 - the `TruthEvidence` pair, and its absence on a result the engine did not write a row for;
 - the equality of the two mirrored declarations, by the existing census fence.
 
-**Not measured: the 735-case share distribution.** The arm that produces it is the already-dispatchable
-`anomaly_knobs=topodiscount=1` (gate 0, the control that must reproduce 635) on a build carrying this
-instrument. Until that artifact exists, §5.1 is a method and not a result, and this document says so rather
-than implying the grid has been superseded.
+**Measured: the 735-case share distribution, and the arm it chose.** §7 records the reading; the short form is
+that the boundary gate this document predicted would _not_ beat 639 reads **641 of 735 with every one of the
+nine cells at or above the published value**, and the share distribution is why the two arms differ.
 
 ### 6.1 Three predictions, recorded before the readback
 
@@ -149,3 +148,63 @@ gh workflow run benchmark-rcaeval.yml -f scopes=golden -f anomaly_knobs=topodisc
 # Local, on the fixture the operator's own tests use:
 pnpm vitest run packages/tree/__tests__/causal/topo-deduction-share.test.ts
 ```
+
+## 8. The reading — three arms, and the prediction that was wrong in the useful direction
+
+Runs on `e4eaea36`'s parent tree (`7aea6e32`): `41019971423` (push-triggered golden control, shipped
+configuration), `41019996998` (`topodiscount=1`, gate 0), `41020001659` (`topodiscount=1,topodiscountgate=1`).
+Every `signals:` line was read before any cell was: the three differ in exactly `topoDiscount` and
+`topoDiscountGate`.
+
+| cell                | shipped | `rho = 1`, gate 0 | **`rho = 1`, gate 1** |
+| ------------------- | ------: | ----------------: | --------------------: |
+| RE1 OnlineBoutique  |     107 |               110 |                   107 |
+| RE1 SockShop        |     116 |               117 |               **117** |
+| RE1 TrainTicket     |     104 |               102 |               **106** |
+| RE2 OnlineBoutique  |      80 |                82 |                **83** |
+| RE2 SockShop        |      85 |                85 |                **88** |
+| RE2 TrainTicket     |      75 |                74 |                    75 |
+| RE3 OnlineBoutique  |      25 |                25 |                    25 |
+| RE3 SockShop        |      18 |                17 |                    18 |
+| RE3 TrainTicket     |      21 |                23 |                **22** |
+| **total**           | **631** |           **635** |     **641 = 87.21 %** |
+| cells below shipped |       — |                 3 |                 **0** |
+
+**641 is the first arm in this campaign with no cell below the published value**, and the first whose fault-type
+table has no negative entry: `delay` 99 → **103**, `loss` 70 → **74**, `socket` 43 → 44, `f1` 18 → 19, and the
+other seven types identical.
+
+### 8.1 The three predictions
+
+| #   | prediction                                                                                                           | outcome                                                                                                                                                                                                                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | the instrumented arm reproduces 635 case for case                                                                    | **held** — 631 / 635 / 641, and gate 0 is the same 635 the previous commit read                                                                                                                                                                                                                                                |
+| 2   | a share on every truth the arm ranks, none on the six it deletes                                                     | **half** — 12 without evidence, as predicted; but only **406 of the 723** ranked truths carry a share, because `external` scope never considers the **317** whose dominant channel is internal. That absence is the configuration's, and the instrument reports it as an absence rather than as a zero — which is §2.1 working |
+| 3   | at gate 1 the no-evidence count stays 12 and RE2:TrainTicket returns to 75; the arm is **not** predicted to beat 639 | **half, and the half that failed is the useful one** — the count is 12 and the cell is 75, both as stated; the total is **641**, two above the arm this document expected to remain the best                                                                                                                                   |
+
+### 8.2 Why the boundary gate wins, and why it is the same mechanism as its cost
+
+`gate = 1` charges only a node whose callees account for **all** of it, so the operator becomes a filter: a
+node that is fully contained in its callees is removed from the candidate pool. Both sides of the ledger are
+that one action:
+
+- **13 fixes, every one a rank 2 → 1.** The false winner was a CALLER — `recommendationservice` over
+  `productcatalogservice` (four cases), `front-end` over `carts` / `user` (three), `orders` over `carts`,
+  `checkoutservice` over `currencyservice`, `ts-travel-service` over `ts-train-service` — and deleting it
+  promotes the truth. This is the containment reading of a symptom doing exactly what it says.
+- **3 breaks, and they are the same action on the other side.** `checkoutservice_delay_1/2/3` are truths whose
+  OWN anomaly a callee accounted for in full, so the truth itself left the pool (rank 1 → absent). Containment
+  cannot tell a source that a big callee overshadows from a symptom that a callee explains, and that is the
+  `delay`-on-the-path problem §195 named.
+
+Six cases acquire a deletion they did not have (the three above plus `orders_delay_1`, `orders_loss_4`,
+`orders_loss_5`); the last three were already misses, so the net cost of the filter is **3 cases against 13**.
+
+### 8.3 What is still owed before this is enrolled
+
+The golden half's bar is now met: no cell down, no fault type down, +10 cases. What is not yet measured is the
+other half — `FSE'26` at `topo_discount=1,topo_discount_gate=1` (arm `41024050841`), and the two bounded-charge
+probes (`rho = 0.5 / 0.75` at gate 1, arms `41024054670` / `41024058625`) that ask whether a partial charge
+keeps the thirteen fixes while returning the three deleted truths to the pool. Enrolling the deduction at
+`rho = 1` changes the shipped default for every user of this engine, so it is a decision for a measurement on
+both populations rather than for one.

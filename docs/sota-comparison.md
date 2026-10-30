@@ -1077,3 +1077,25 @@ vendor's **89%** — a figure that ships no per-case results and cannot be repro
 7.76 pp below the DSN-S 2026 `94.7%`, whose population is still `POPULATION UNVERIFIED` for the reason §0a
 gives (a bare PageRank at 94.1% cannot share a corpus with the benchmark author's own 68%). The gate takes the
 gap to the verifiable references from 3.15 pp (631 = 85.85%) to **2.06 pp** without closing it.
+
+## 2026-10-30 (3) — the boundary gate: 641, and the first arm with no cell down
+
+The instrument of §2026-10-30 (2) published the share the gate reads, and the boundary value of the same
+operator — `rho = 1, gate = 1`, i.e. **charge only a node its callees account for in full** (run `41020001659`)
+— reads **641 of 735 = 87.21 %** with **every one of the nine cells at or above the published value**:
+
+| population    |       shipped |     boundary gate |                             best published | standing                                         |
+| ------------- | ------------: | ----------------: | -----------------------------------------: | ------------------------------------------------ |
+| **RE1** (375) | 327 = 87.20 % | **330 = 88.00 %** |           `L0` 85.4 % (`arXiv:2610.05009`) | **FIRST — +2.60 pp**                             |
+| **RE2** (270) | 240 = 88.89 % | **246 = 91.11 %** | `arXiv:2609.36771` 0.88 SS / 0.78 OB Top-1 | **first on both cells it publishes**             |
+| **RE3** (90)  |  64 = 71.11 % |  **65 = 72.22 %** |       PRISM `conjunctive` 76.7 % on RE3-TT | second, **parity on the RE3-TT cell** (23 of 30) |
+| **735**       | 631 = 85.85 % | **641 = 87.21 %** |         vendor 89 % (NOFire, unverifiable) | second, gap **1.79 pp**                          |
+
+No fault type regressed: `delay` 99 → 103, `loss` 70 → 74, `socket` 43 → 44, `f1` 18 → 19, and seven types
+byte-identical. The mechanism and its cost are one action — the operator deletes a candidate whose callees
+explain all of it, which promotes the truth in thirteen cases and deletes three truths that a callee happened
+to overshadow (`checkoutservice_delay_1/2/3`) — and `docs/topo-share.md` §8.2 is the record.
+
+**Not yet enrolled**: `rho = 1` as a shipped default is a change to every user's ranking, so it needs the
+FSE'26 half (`41024050841`) and the bounded-charge probes (`41024054670`, `41024058625`) that ask whether a
+partial charge keeps the thirteen and returns the three.
