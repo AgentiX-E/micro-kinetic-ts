@@ -68,6 +68,7 @@ import {
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
@@ -310,6 +311,11 @@ export interface CliOptions {
    * MUCH of an explained anomaly is deducted, the scope says WHICH anomalies a callee is allowed to explain.
    */
   topoDiscountScope: TopoDiscountScope;
+  /**
+   * The smallest share of a node's anomaly its callees must account for before the deduction may charge
+   * it (see `TreePrunerOptions.topoDiscountGate`). 0 = no gate, which is the shipped operator.
+   */
+  topoDiscountGate: number;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
   /**
@@ -580,6 +586,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+    topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
     // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
@@ -739,7 +746,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // typo must reproduce a published corpus rather than invent one.
       const scope = args[++i]!;
       opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
-    } else if (args[i] === '--log-weight' && hasValue(args, i + 1))
+    } else if (args[i] === '--topo-discount-gate' && hasValue(args, i + 1))
+      opts.topoDiscountGate = parseUnitInterval(args[++i]!);
+    else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
       // configuration this runner never described and never recorded.

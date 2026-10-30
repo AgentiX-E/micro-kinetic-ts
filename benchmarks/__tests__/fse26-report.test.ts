@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
 } from '../../packages/tree/src/index.js';
@@ -88,6 +89,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     topoWeight: 0,
     topoDiscount: 0,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+    // The deduction's gate, at the shipped 0. Nested under a zero weight on the line, so it prints nothing —
+    // and it is present in the object so `missingReportedConfigFields` is answering about the line.
+    topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     collisionWeight: 0,
     prismWeight: 0,
     prismPooling: 'additive',
@@ -172,6 +176,12 @@ describe('FSE26 report — attribution', () => {
       'dualFamilyGateMode',
       'temporalWeight',
       'onsetShape',
+      // The deduction's three fields postdate those runs as well: the weight and the scope were reported on
+      // the LINE only, and never in the record an artifact is read back into, which is why an artifact that
+      // carried a non-zero deduction could not be compared with one that did not.
+      'topoDiscount',
+      'topoDiscountScope',
+      'topoDiscountGate',
     ]);
   });
 
@@ -537,6 +547,15 @@ describe('summariseFailedEdgeCoverage', () => {
       // SCOPE is nested under it, because a scope combined with a zero deduction is not a configuration the
       // engine can distinguish: the map is never built.
       { patch: { topoDiscount: 0.5 }, token: 'topoDiscount=0.5', shipped: 'topoDiscount' },
+      // Iteration 195's gate, nested under the same weight as the scope and for the same reason. It is
+      // printed whenever the weight is non-zero — INCLUDING at 0, the value it ships with — because a gated
+      // arm and an ungated one differ in this field alone, and a line that omitted it at its default would
+      // render the two byte-identically on the artifact whose job is to attribute the difference.
+      {
+        patch: { topoDiscount: 0.5, topoDiscountGate: 0.5 },
+        token: 'topoDiscountGate=0.5',
+        shipped: 'topoDiscountGate',
+      },
     ];
     for (const { patch, token, shipped } of rows) {
       expect(
@@ -559,6 +578,14 @@ describe('summariseFailedEdgeCoverage', () => {
     // …and the shipped pooling stays off even once the weight is on, so an ablation of the pooling alone
     // is visible while the shipped pairing keeps the line it always had.
     expect(formatFSE26ConfigLine(makeConfig({ prismWeight: 0.125 }))).not.toContain('prismPooling');
+    // The gate is READ from an artifact that predates it, and reads as the shipped 0 rather than as
+    // `undefined`: this record is what a JSON artifact is parsed back into, so a run published before the
+    // field existed must still render a line a reader can attribute.
+    const legacy: { topoDiscountGate?: number } = makeConfig({ topoDiscount: 0.5 });
+    delete legacy.topoDiscountGate;
+    expect(formatFSE26ConfigLine(legacy as Parameters<typeof formatFSE26ConfigLine>[0])).toContain(
+      'topoDiscountGate=0',
+    );
   });
 
   it('prints the four guard poles, including the one whose shipped value is the silent pole', () => {

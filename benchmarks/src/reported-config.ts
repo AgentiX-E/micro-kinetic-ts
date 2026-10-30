@@ -29,3 +29,27 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
   failedEdgeMode: 'meaningless without a weight to aggregate; ships at `sum`, never forwarded',
   failedEdgeMinRecords: 'meaningless without a weight to threshold; ships at 1, never forwarded',
 };
+
+/**
+ * The reported fields the ABLATION artifact may omit BEYOND {@link UNREPORTED_BY_ENGINE_RUNNERS}.
+ *
+ * The shared record's own docblock argues that one record is right because "both runners reach the engine
+ * through `TreePruner`, so both are inapplicable to the same six fields for the same reasons". That sentence
+ * is still true and no longer sufficient: the two halves' LINES now differ, because the golden half prints
+ * the topological deduction — weight, scope and gate, unconditionally, on the rule every field there follows
+ * — and the ablation battery prints none of the three.
+ *
+ * **The difference is a fact about the study, not an oversight, so it is recorded as one.** The battery's
+ * unit is a boolean flag per term; the deduction is not one of its terms, so no row sets its weight and every
+ * row carries it at the shipped 0 — and the scope and the gate are read only when that weight is non-zero.
+ * Printing them on every row would describe a configuration that does not vary, which is the one thing an
+ * untouched field must not do to a reader. A second record is the honest shape: the first says "inapplicable
+ * to an engine runner", these three say "outside this study".
+ */
+export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = {
+  topoDiscount:
+    'ships at 0 and no row of the battery sets it, so the deduction is off in every configuration',
+  topoDiscountScope:
+    'read only when topoDiscount is non-zero, which no row of the battery makes it',
+  topoDiscountGate: 'read only when topoDiscount is non-zero, which no row of the battery makes it',
+};

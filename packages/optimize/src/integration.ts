@@ -79,6 +79,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the topological deduction, off at 0 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and a term whose additive sibling ships at weight 0 has no business being a search axis',
   topoDiscountScope:
     'the deduction QUANTITY rather than a number: `all` and `external` are two physical claims about which channels cross a call boundary, so it is a dispatch axis and not a fusion coefficient the search can interpolate',
+  topoDiscountGate:
+    'a SUPPORT CONDITION on the deduction rather than a weight: it decides which nodes the operator may charge at all, so it belongs to the same dispatch axis as the weight and the scope above — and at weight 0 it is not read, so a search that moved it would be tuning a field the run cannot consult',
 };
 
 /**

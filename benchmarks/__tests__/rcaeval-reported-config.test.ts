@@ -504,7 +504,11 @@ describe('the RCAEval configuration line carries the configuration that produced
         // printed only non-defaults would render a measured arm and the shipped run identically.
         'selfTimeWeight=0 victimWeight=0 dualFamilyWeight=0.25 dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
-        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1',
+        // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the
+        // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
+        // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that
+        // printed only non-defaults would render a gated arm and the ungated one byte-identically.
+        'temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 topoDiscountGate=0',
     );
   });
 

@@ -306,6 +306,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // deduction-of-response-channels form is the successor that made the same weight admissible.
     '--topo-discount',
     '--topo-discount-scope',
+    // Iteration 195: the deduction's GATE, which `topo-discount-scope.md` §6 named and did not run. Packed on
+    // the same rule as every post-ceiling knob — the golden half's 25-input budget is full — and it is the
+    // third and last field of the deduction: the weight says HOW MUCH, the scope says WHICH CHANNELS, and the
+    // gate says WHICH NODES, which is the only one of the three that can separate a symptom from a source.
+    '--topo-discount-gate',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -340,6 +345,8 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // the reason every post-ceiling knob is here — this workflow is at 25/25.
     '--topo-discount',
     '--topo-discount-scope',
+    // Iteration 195: the gate, for the reason the two above are here.
+    '--topo-discount-gate',
   ],
 };
 
@@ -561,6 +568,17 @@ const KNOBS: Readonly<
     // scope's contribution can be measured against the form that was refused.
     fse26: 'ranking_knobs',
     rcaeval: 'toposcope',
+  },
+  topoDiscountGate: {
+    flag: '--topo-discount-gate',
+    // Its own document, because the question moved: `topo-discount-scope.md` §6 named the arm, and
+    // `anomaly-space.md` §6 supplied the number that made it the remaining one — at rho = 1 the ungated
+    // operator reads 635/735 with three cells down a case or two each, and a weight cannot separate the gains
+    // from the losses because it moves both in the same direction. Neither of those owns the operator, its
+    // inertness proof, or the three predictions the arm will be read against.
+    owner: 'topo-discount-gate.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'topodiscountgate',
   },
   traceWeight: {
     flag: '--trace-weight',
@@ -797,6 +815,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'temporalWeight',
   'topoDiscount',
   'topoDiscountScope',
+  'topoDiscountGate',
   'topoWeight',
   'traceWeight',
   'traceSkipsLeader',

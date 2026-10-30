@@ -176,6 +176,7 @@ async function main(): Promise<void> {
     topoWeight: opts.topoWeight,
     topoDiscount: opts.topoDiscount,
     topoDiscountScope: opts.topoDiscountScope,
+    topoDiscountGate: opts.topoDiscountGate,
     collisionWeight: opts.collisionWeight,
     prismWeight: opts.prismWeight,
     prismPooling: opts.prismPooling,

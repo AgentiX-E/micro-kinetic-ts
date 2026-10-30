@@ -375,6 +375,23 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly topoDiscountScope: TopoDiscountScope;
   /**
+   * The smallest share of a node's anomaly its callees must account for before {@link topoDiscount}
+   * may charge it, in [0, 1].
+   *
+   *   charged(v) = min(a, e) >= gate × a ? rho × min(a, e) : 0
+   *
+   * `0` — the shipped value — charges every node a callee explains at all, which is the operator
+   * without the gate: `min(a, e) >= 0` holds on every node, so nothing is excluded and the branch is
+   * unreachable. A larger value leaves a node that is only PARTLY explained entirely alone, which is
+   * the difference between a symptom and a source: containment means a symptom's anomaly is mostly its
+   * callees', while a source's callee accounts for a fraction of it.
+   *
+   * Read only when `topoDiscount > 0`, on the same rule {@link topoDiscountScope} follows.
+   *
+   * Default: 0 (off; bit-identical to the ungated deduction, and therefore to the shipped ranking).
+   */
+  readonly topoDiscountGate: number;
+  /**
    * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
    * log volume is highest.
    *
@@ -1213,6 +1230,19 @@ export const DEFAULT_TOPO_WEIGHT = 0.0;
 export const DEFAULT_TOPO_DISCOUNT = 0;
 
 /**
+ * The shipped {@link TreePrunerOptions.topoDiscountGate} — no gate.
+ *
+ * A name rather than a literal for the reason `DEFAULT_TOPO_DISCOUNT` has one, and it is a SEPARATE
+ * name rather than a shared zero because the two knobs answer different questions and a census that
+ * could not tell them apart could not require a claimant for either. `0` is not a placeholder: it is
+ * the ungated operator, which is what the nine published cells were measured with, and the gate is
+ * inert there by construction rather than by agreement.
+ *
+ * @see DEFAULT_TOPO_DISCOUNT — the pair, and the axis they arm together.
+ */
+export const DEFAULT_TOPO_DISCOUNT_GATE = 0;
+
+/**
  * @see DEFAULT_TOPO_WEIGHT — the class these names close.
  *
  * The collision term is the Deng-Yu-inspired `Q(f,f)` aggregation, and 0 is a REJECTION rather than an
@@ -1408,6 +1438,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoWeight: DEFAULT_TOPO_WEIGHT,
   topoDiscount: DEFAULT_TOPO_DISCOUNT,
   topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+  topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: DEFAULT_RISE_WEIGHT,
@@ -1979,6 +2010,7 @@ export class TreePruner {
       },
       rho,
       this.options.topoDiscountScope,
+      this.options.topoDiscountGate,
     );
     return applyAnomalyNormalization(deducted, graph.anomalyNormalization);
   }

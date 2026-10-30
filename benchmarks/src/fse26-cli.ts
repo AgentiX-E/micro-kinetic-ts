@@ -77,6 +77,7 @@ import {
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
@@ -372,6 +373,11 @@ export interface Fse26CliOptions {
    */
   readonly topoDiscountScope: TopoDiscountScope;
   /**
+   * The smallest share of a node's anomaly its callees must account for before {@link topoDiscount} may
+   * charge it — see `TreePrunerOptions.topoDiscountGate`. 0 = no gate, which is the shipped operator.
+   */
+  readonly topoDiscountGate: number;
+  /**
    * Weight on the collision (co-occurrence) term. `0` = off, the shipped value.
    *
    * The Deng-Yu collision source is the term's name; its contribution on the golden corpus is `0.0000` on
@@ -555,6 +561,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+    topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     prismWeight: DEFAULT_PRISM_WEIGHT,
     prismPooling: DEFAULT_PRISM_POOLING,
@@ -698,7 +705,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--topo-discount-scope' && hasValue(argv, i + 1)) {
       const scope = argv[++i]!;
       opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
-    } else if (arg === '--collision-weight' && hasValue(argv, i + 1))
+    } else if (arg === '--topo-discount-gate' && hasValue(argv, i + 1))
+      // The golden half's unit-interval rule, for the reason the weight above records: one malformed
+      // argument must not become two different configurations on the two halves of the same suite.
+      opts.topoDiscountGate = parseUnitInterval(argv[++i]!, DEFAULT_TOPO_DISCOUNT_GATE);
+    else if (arg === '--collision-weight' && hasValue(argv, i + 1))
       opts.collisionWeight = parseWeight(argv[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (arg === '--prism-weight' && hasValue(argv, i + 1))
       opts.prismWeight = parseWeight(argv[++i]!, DEFAULT_PRISM_WEIGHT);

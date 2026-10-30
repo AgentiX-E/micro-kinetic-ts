@@ -111,8 +111,17 @@ describe('the deduction formula, fenced at the source', () => {
     expect(deduction).toMatch(/anomaly\s*-\s*chargeable/);
     // The cap goes on the EXPLAINED quantity, inside the weight: `rho × min(a, e)`. Clamping the result
     // instead (`max(0, a − rho·e)`) bounds nothing, and it is the form that zeroed TrainTicket's cells.
-    expect(deduction).toMatch(/rho\s*\*\s*Math\.min\(anomaly,/);
+    // The cap is a named binding since the gate exists, because the gate reads the SAME capped quantity
+    // the charge does — two expressions of "how much was explained" would be free to disagree, and the
+    // one a reader checked would not be the one the charge used.
+    expect(deduction).toMatch(/const capped = Math\.min\(anomaly,/);
+    expect(deduction).toMatch(/rho \* capped/);
     expect(deduction).not.toMatch(/Math\.max\(0,/);
+    // The gate compares against `gate × anomaly` rather than dividing by `anomaly`, which is not
+    // guaranteed positive: a division would answer `NaN` on a silent node and switch the deduction off
+    // for it while the configuration line still reported it on.
+    expect(deduction).toMatch(/capped >= gate \* anomaly/);
+    expect(deduction).not.toMatch(/capped \/ anomaly/);
   });
 
   it('takes its input from the DEVIATION map and returns through the graph’s own transform', () => {

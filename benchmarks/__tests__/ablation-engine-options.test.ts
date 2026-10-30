@@ -55,7 +55,10 @@ import {
   type AblationFeatureFlags,
 } from '../src/ablation-engine-options.js';
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
-import { UNREPORTED_BY_ENGINE_RUNNERS } from '../src/reported-config.js';
+import {
+  UNREPORTED_BY_ABLATION_BATTERY,
+  UNREPORTED_BY_ENGINE_RUNNERS,
+} from '../src/reported-config.js';
 import { PRUNER_OPTION_MEMBERS, TOPOLOGY_MEMBERS, namedOn } from './helpers/engine-interfaces.js';
 // The stripper lives in `helpers/` rather than here: this fence found the defect it guards against, and the
 // sibling fence in `accuracy-aggregation` needs the same reader. Two copies of a stripper are two answers to
@@ -134,13 +137,18 @@ describe('the ablation artifact states the configuration it ran', () => {
     // is SHARED with the golden half: both runners reach the engine through `TreePruner`, so both are
     // inapplicable to the same six fields for the same reasons, and two copies would be two answers.
     const named = new Set(namedOn(formatAblationConfigLine(ALL_OFF)));
-    const exempt = new Set(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS));
+    // TWO records since iteration 195, and the split is a fact rather than a convenience: the golden half
+    // prints the topological deduction on every line, so those three fields cannot be exempt there, and the
+    // battery prints none of them because no row of it sets their weight. One shared record would have to
+    // answer both questions with one answer, and it cannot.
+    const exemptRecords = { ...UNREPORTED_BY_ENGINE_RUNNERS, ...UNREPORTED_BY_ABLATION_BATTERY };
+    const exempt = new Set(Object.keys(exemptRecords));
     const namedReported = REPORTED_CONFIG_FIELDS.filter((field) => named.has(field));
     expect([...namedReported, ...exempt].sort()).toEqual([...REPORTED_CONFIG_FIELDS].sort());
     for (const field of namedReported) {
       expect(exempt.has(field), `${field} is both printed and exempt`).toBe(false);
     }
-    for (const [field, reason] of Object.entries(UNREPORTED_BY_ENGINE_RUNNERS)) {
+    for (const [field, reason] of Object.entries(exemptRecords)) {
       expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
     }
   });

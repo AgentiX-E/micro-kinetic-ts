@@ -4,10 +4,15 @@
  * ## The operator
  *
  *     explained(v) = max over callees c with weight(v→c) > 0 of weight(v→c) × anomaly(c)
- *     anomaly′(v)  = anomaly(v) − rho × min(anomaly(v), explained(v))
+ *     charged(v)   = min(anomaly(v), explained(v)) >= gate × anomaly(v)
+ *                    ? rho × min(anomaly(v), explained(v))
+ *                    : 0
+ *     anomaly′(v)  = anomaly(v) − charged(v)
  *
  * A node that calls nothing anomalous keeps all of its anomaly; a node whose anomaly is entirely
- * accounted for by what it calls loses `rho` of it and no more.
+ * accounted for by what it calls loses `rho` of it and no more; and a node whose anomaly is only
+ * PARTLY accounted for is left alone entirely, which is what `gate` decides and what §"The gate"
+ * below is about.
  *
  * The `min` is inside the `rho`, not outside, and that placement is the operator: it makes the relative
  * effect `rho × min(1, explained/anomaly)`, **bounded by `rho` on every population**, while at `rho = 1`
@@ -57,6 +62,29 @@
  * the deduction to {@link isResponseChannel} channels (the only ones a call boundary transmits) is
  * orthogonal to both and is carried by {@link TopoDiscountScope}.
  *
+ * ## The gate, which is the one thing that document named and did not measure
+ *
+ * `docs/topo-discount-scope.md` §6 leaves exactly two arms unrun, and names this one:
+ *
+ * > …or to gate the deduction on `explained / anomaly >= θ`, so a node that a callee explains only
+ * > slightly is not moved at all.
+ *
+ * The measurement that motivates it is the shape of the nine cells at `rho = 1`, in deviation space,
+ * against a control that reproduces the shipped run case for case (`docs/anomaly-space.md` §6):
+ * five cells gain eight cases and three cells lose four, for `631 → 635`. A weight cannot separate
+ * those two groups — raising it gains and loses in the same direction, because the operator charges
+ * every caller whose callee moves at all. What separates them is a property of the NODE rather than of
+ * the configuration: a symptom's anomaly is *mostly* its callees' (that is what containment means),
+ * while a source's callee accounts for a *fraction* of it, because the source's own reading is the
+ * fault. `gate` is that fraction, and at `rho = 1` it turns the operator from "deduct a share" into
+ * "deduct everything, but only from a node that is mostly explained" — the influx balance of §"The
+ * operator" with a support condition instead of a linearisation.
+ *
+ * **`gate = 0` is not a small default, it is the operator without the gate**, because
+ * `min(a, e) >= 0` holds for every node. That is the same standard `topoDiscount = 0` is held to: a
+ * default that had to be defended against the published cells would be a change, and this one is
+ * inert by construction — no branch that can be reached, no float that can round.
+ *
  * @module causal/topo-deduction
  */
 
@@ -94,18 +122,30 @@ export interface TopoDeductionInput {
  * @param input - Anomalies in deviation space, the edges, and their weights.
  * @param rho - How much of the explained part to remove, in [0, 1].
  * @param scope - Which channels may explain and be explained through.
+ * @param gate - The smallest share `min(a, e) / a` at which the operator runs on a node, in [0, 1].
+ *   `0` charges every node a callee explains at all, which is the ungated operator and the shipped
+ *   behaviour; a larger value leaves a mostly-unexplained node entirely alone. Required rather than
+ *   defaulted, on the rule the engine's other shipped values follow: a parameter whose callers can
+ *   omit it is a parameter that silently takes a value nobody declared.
  * @returns A new map in the SAME space as `input.anomalies`; the input is untouched.
- * @throws RangeError if `rho` is outside [0, 1] or if the weight vector is not aligned with the edges.
+ * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, or if the weight vector is not
+ *   aligned with the edges.
  */
 export function deductExplainedAnomalies(
   input: TopoDeductionInput,
   rho: number,
   scope: TopoDiscountScope,
+  gate: number,
 ): Map<ServiceId, number> {
   // `invariantFinite` first: `invariantRange` cannot see NaN — `NaN < 0` and `NaN > 1` are both false,
   // so a NaN weight would pass a range check and poison every anomaly downstream.
   invariantFinite(rho, 'topoDiscount');
   invariantRange(rho, 0, 1, 'topoDiscount');
+  // The gate is checked the same way and for the same reason, and the failure it prevents is the
+  // quieter of the two: a NaN gate makes `min(a, e) >= NaN` false on EVERY node, so the deduction
+  // switches itself off while the configuration line reports it on.
+  invariantFinite(gate, 'topoDiscountGate');
+  invariantRange(gate, 0, 1, 'topoDiscountGate');
   // The weight vector is aligned with the edge array by construction upstream, and this function is
   // public: a caller that hands over a shorter vector would otherwise read `undefined` and produce a
   // NaN anomaly, which no ranking can see. The check is the contract, stated where the contract is.
@@ -153,7 +193,16 @@ export function deductExplainedAnomalies(
     // weight — rather than clamping the subtraction's result at zero — is what makes the relative effect
     // `rho × min(1, e/a)` bounded by `rho`, which an unclamped subtraction has only while the
     // subtrahend happens to stay small.
-    const chargeable = rho * Math.min(anomaly, explained.get(nodeId) ?? 0);
+    const capped = Math.min(anomaly, explained.get(nodeId) ?? 0);
+    // The gate reads the SAME capped quantity the charge does, so the two halves of one sentence cannot
+    // disagree about how much was explained: with `e = 10` against `a = 2` the raw share is 5 and the
+    // capped share is 1, and only the second is a share a gate inside [0, 1] can express. Written as a
+    // comparison against `gate × anomaly` rather than as a ratio of the two because `anomaly`
+    // is not guaranteed positive — a node with no anomaly must read `0` at every gate, and a division
+    // would answer `NaN` there and silently switch the deduction off for it. A non-positive anomaly is
+    // admitted unconditionally for the same reason: a share of a non-positive whole is not a quantity,
+    // and the charge it would gate is `rho × min(a, e) ≤ 0`, which the branch below already absorbs.
+    const chargeable = anomaly <= 0 || capped >= gate * anomaly ? rho * capped : 0;
     // Written as a branch rather than a clamp at zero so a fully explained node reads exactly `0` and
     // never `-0`, which the ranking's tie-break would see as a different value from a node whose anomaly
     // genuinely was zero. The clamp that matters is on the EXPLAINED side, above: with `chargeable ≤ rho·a`

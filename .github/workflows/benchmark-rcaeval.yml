@@ -119,7 +119,7 @@ on:
         default: ''
         type: string
       anomaly_knobs:
-        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `selfanom`, `dualfam`, `dualfamgate`, `dualfamgatemode`, `traceskipsleader` (ranking terms; `selfanom` is the BASE term's coefficient, which ships at 1 — the one weight the formula used to carry as a literal, so 0 is its ablation and `docs/base-term-price.md` is the reading: −113 cases); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0); `topodiscount`, `toposcope` (the topological deduction's weight and the channels it may act on, shipped 0 and external, so both are inert until the weight is non-zero). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget. `topo_discount` WAS retired from this budget after being measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25, `docs/dispatch-forwarding.md`); it returns here as `topodiscount` because the term itself was wrong rather than the weight: the old form scaled a node's WHOLE anomaly by what its callees explained, so on RE3/SockShop it deducted a callee-origin's own `cpu` reading. The form is now a DEDUCTION of explained RESPONSE channels only (`docs/topo-discount-scope.md`), which leaves RE3/SockShop unmoved and RE1/OnlineBoutique higher at the same weight"
+        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `selfanom`, `dualfam`, `dualfamgate`, `dualfamgatemode`, `traceskipsleader` (ranking terms; `selfanom` is the BASE term's coefficient, which ships at 1 — the one weight the formula used to carry as a literal, so 0 is its ablation and `docs/base-term-price.md` is the reading: −113 cases); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0); `topodiscount`, `toposcope`, `topodiscountgate` (the topological deduction's weight, the channels it may act on, and the smallest share of a node's anomaly its callees must account for before the deduction may charge it — shipped 0, external and 0, so all three are inert until the weight is non-zero; the gate is the arm `docs/topo-discount-scope.md` §6 named and did not run, and `docs/anomaly-space.md` §6 is why it is the remaining one: at rho = 1 the ungated operator reads 635/735 with three cells down a case or two each). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget. `topo_discount` WAS retired from this budget after being measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25, `docs/dispatch-forwarding.md`); it returns here as `topodiscount` because the term itself was wrong rather than the weight: the old form scaled a node's WHOLE anomaly by what its callees explained, so on RE3/SockShop it deducted a callee-origin's own `cpu` reading. The form is now a DEDUCTION of explained RESPONSE channels only (`docs/topo-discount-scope.md`), which leaves RE3/SockShop unmoved and RE1/OnlineBoutique higher at the same weight"
         required: false
         default: ''
         type: string
@@ -326,6 +326,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -540,6 +546,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -779,6 +791,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1002,6 +1020,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1249,6 +1273,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1464,6 +1494,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;
@@ -1680,6 +1716,12 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
+              topodiscountgate=*)
+                case "${kv#topodiscountgate=}" in
+                  0|0.25|0.5|0.75|1) RANKING_ARG+=(--topo-discount-gate "${kv#topodiscountgate=}") ;;
+                  *) echo "::error::anomaly_knobs: topodiscountgate takes 0, 0.25, 0.5, 0.75 or 1, got '${kv#topodiscountgate=}'"; exit 1 ;;
+                esac
+                ;;
               toposcope=*)
                 case "${kv#toposcope=}" in
                   all|external) RANKING_ARG+=(--topo-discount-scope "${kv#toposcope=}") ;;

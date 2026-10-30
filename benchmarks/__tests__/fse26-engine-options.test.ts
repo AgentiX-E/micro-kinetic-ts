@@ -28,6 +28,7 @@ import {
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_VICTIM_WEIGHT,
@@ -79,6 +80,9 @@ describe('buildFse26EngineOptions', () => {
       // The deduction pair. Both are read from `signals` by the pruner, so both have to land there — and the
       // weight is 0, which is exactly why a silent drop would be invisible and why the row exists.
       topoDiscount: DEFAULT_TOPO_DISCOUNT,
+      // The deduction's gate, on the same rule: read from the engine's own constant, and it must land in
+      // `signals` because that is the object the pruner reads it from.
+      topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
       topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
       collisionWeight: 0,
       prismWeight: 0,

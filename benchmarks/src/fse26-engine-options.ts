@@ -120,6 +120,8 @@ export interface Fse26SignalOptions {
   readonly topoDiscount: number;
   /** Which channels the deduction may act on — see `TopoDiscountScope`. */
   readonly topoDiscountScope: TopoDiscountScope;
+  /** The smallest explained share at which the deduction may charge a node — see `TreePrunerOptions.topoDiscountGate`. */
+  readonly topoDiscountGate: number;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   readonly prismPooling: PrismPooling;
@@ -187,6 +189,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,
+      topoDiscountGate: opts.topoDiscountGate,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,
       prismPooling: opts.prismPooling,

@@ -241,6 +241,9 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'selfTimeWeight',
       'stabilityWeight',
       'topoDiscount',
+      // `sort()` is code-unit order, so `G` precedes `S` — the list is the sorted key set, not the order the
+      // record declares them in.
+      'topoDiscountGate',
       'topoDiscountScope',
       'traceSkipsLeader',
       'useTwoHopDecay',

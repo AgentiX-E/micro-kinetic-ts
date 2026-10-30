@@ -173,6 +173,12 @@ export interface FSE26RunConfig {
   readonly topoDiscount: number;
   /** Which channels the deduction may act on — see `TopoDiscountScope`. */
   readonly topoDiscountScope: TopoDiscountScope;
+  /**
+   * The smallest explained share at which the deduction may charge a node. Optional in this record, like
+   * every weight here, because the record is what an artifact is read BACK into: an artifact written before
+   * the field existed must still parse, and `missingReportedConfigFields` is the audit that says so.
+   */
+  readonly topoDiscountGate?: number;
   readonly collisionWeight: number;
   readonly prismWeight: number;
   /**
@@ -358,6 +364,9 @@ export const REPORTED_CONFIG_FIELDS = [
   'dualFamilyGateMode',
   'temporalWeight',
   'onsetShape',
+  'topoDiscount',
+  'topoDiscountScope',
+  'topoDiscountGate',
 ] as const;
 
 /**
@@ -507,6 +516,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // Nested under the weight, on `prismPooling`'s rule: a scope combined with a zero deduction is not part
     // of the configuration, so printing it would report a difference the engine cannot have.
     line += ` topoDiscountScope=${config.topoDiscountScope}`;
+    // Nested under the SAME weight as the scope, on the same rule: a gate combined with a zero deduction is
+    // not a configuration the engine can distinguish, because the map is never built. Printed whenever the
+    // weight is non-zero — including at 0, which is the value it ships with — so a gated arm and an ungated
+    // one are never byte-identical on the artifact that is supposed to attribute the difference.
+    line += ` topoDiscountGate=${config.topoDiscountGate ?? 0}`;
   }
   if (config.collisionWeight !== 0) {
     line += ` collisionWeight=${config.collisionWeight}`;

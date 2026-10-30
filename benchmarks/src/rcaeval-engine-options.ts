@@ -100,6 +100,8 @@ export interface RCAEvalSignalOptions {
   readonly topoDiscount: number;
   /** Which channels the topological deduction may act on — see `TopoDiscountScope`. */
   readonly topoDiscountScope: TopoDiscountScope;
+  /** The smallest explained share at which the deduction may charge a node — see `TreePrunerOptions.topoDiscountGate`. */
+  readonly topoDiscountGate: number;
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
@@ -233,6 +235,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,
+      topoDiscountGate: opts.topoDiscountGate,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
@@ -325,6 +328,10 @@ export function formatSignalLine(opts: CliOptions): string {
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape} ` +
     // APPENDED, not inserted: every byte before this one is what the artifacts already carry, and the field is
     // unconditional on the failed-edge rule because 1 is a value a dispatch can ablate.
-    `selfAnomalyWeight=${opts.selfAnomalyWeight}`
+    `selfAnomalyWeight=${opts.selfAnomalyWeight} ` +
+    // APPENDED on the same rule, and unconditional because 0 is the shipped gate: an omitted-when-default
+    // field would render the gated arm and the shipped run identically on the artifact whose whole job is to
+    // attribute the difference between them.
+    `topoDiscountGate=${opts.topoDiscountGate}`
   );
 }
