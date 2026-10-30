@@ -234,6 +234,32 @@ rather than another member of this one.
    and — with `RCLAgent`'s per-span argument — it is a **third** independent reason to build the per-case
    discriminator over a bounded, checkable vocabulary, which is the register's last open axis.
 
+**AND, FOUND 2026-10-30, ONE THAT MATCHES US ON EVERY FIELD A NUMBER CAN BE FILED BY AND STILL CANNOT BE FILED:
+94.7% Top-1 on "the RCAEval benchmark (735 failure cases, 12-64 services)"** — S. Hussain and H. C. Panjwani,
+*Decentralized Root Cause Analysis for Cloud-Native Microservices — Experience with Distributed PageRank in
+Production*, **DSN-S 2026**, pp. 50–56, DOI `10.1109/DSN-S70715.2026.00023`. The method is gossip-based
+**distributed Personalized PageRank**, one sidecar agent per service, and the reported standing is **94.7%
+Top-1, "statistically indistinguishable from centralized PageRank at 94.1%"**.
+
+Three field matches and one arithmetic refusal. The count is the 735 we run; the metric is service **Top-1**;
+the service range is the one we see (12–14 on OnlineBoutique and SockShop, 63–69 on TrainTicket). What does not
+match is the field it would land in: **94.1% for plain centralized PageRank is 26.1 pp above PRISM**, the
+graph-free method of the benchmark's own author (`arXiv:2601.21359`, 68%), and **8.9 pp above us**. A corpus on
+which a bare PageRank reaches 94% cannot also be one on which the author's own method reaches 68% and the
+pre-LLM causal cohort reaches 19%, unless the two are measuring different things. The candidate explanations,
+each checkable and **none checked**: (i) ground truth at a coarser granularity than the root-cause service;
+(ii) a candidate set restricted to services already carrying an anomaly — a detectability filter that removes
+retrieval from the measurement and is the largest single source of inflated Top-1 in this field; (iii) a corpus
+revision other than the one this repository runs; (iv) a per-case filter such as "inject time known", which on
+this corpus alone moves RE3-TrainTicket from 21/30 to 2/30.
+
+So it is **recorded and not conceded, no gap is quoted in either direction, and the standing in §1 does not
+move**. The verification owed is the paper's own evaluation section; the DOI page serves the abstract only
+(read 2026-10-30), so the one document that settles it has not been read yet. **If its protocol is ours, this is
+the first reference to be above us on the whole 735 and the honest sentence becomes "8.9 pp behind"**; if it is
+(ii), it belongs beside the vendor's 89%. The distinction is worth a read rather than a round of guessing, and
+it is the cheapest outstanding item on this page.
+
 ### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
 
 **`Beyond Conditional Independence: Root Cause Analysis with Deep Causal Models`** — Md Musfiqur Rahman, Kenneth

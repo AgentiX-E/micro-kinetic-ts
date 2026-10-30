@@ -107,14 +107,27 @@ Per cell, as cases:
 | RE3 SockShop       |     11/30 |   16/30 |   **18/30** |   17/30 |   17/30 |
 | RE3 TrainTicket    | **27/30** |   25/30 |       21/30 |   16/30 |   15/30 |
 
+And on the other half of the kill criterion — 1,422 cases, three arms, the same commit and the same one flag:
+
+| arm                                        |   FSE'26 Top@1 |     Top@3 |     Top@5 |
+| ------------------------------------------ | -------------: | --------: | --------: |
+| `selfAnomalyWeight = 0` (ablation)         | **62.24%** 885 | **80.7%** | **83.0%** |
+| `selfAnomalyWeight = 1` (shipped, control) |     60.48% 860 |     79.0% |     82.2% |
+| `selfAnomalyWeight = 2`                    |     57.10% 812 |     74.5% |     78.3% |
+
+The FSE'26 control is also the second identity proof of the naming: it reproduces the run made **before** the
+constant existed (`40964283136`, commit `9075e05`) byte for byte — 860 / 79.0 / 82.2 — which is what "at 1 the
+sum is unchanged" has to mean on a corpus nobody re-compiled.
+
 ## 5. The reading
 
-**The base term is worth +113 cases, +15.4 pp, and the value the formula chose by writing `1` is the optimum
-of the five tested.** The top is flat — 0.5, 1.0 and 1.5 are within three cases of each other — and the cliff
-is below it. That is the second result this instrument produces and the more useful one: an inherited literal
-has become a measured optimum, and the measurement can now be re-run by anyone who doubts it.
+**The base term is worth +113 cases, +15.4 pp on RCAEval, and on that corpus the value the formula chose by
+writing `1` is the optimum of the five tested.** The top is flat — 0.5, 1.0 and 1.5 are within three cases of
+each other — and the cliff is below it. That is the second result this instrument produces and the more
+useful one: an inherited literal has become a measured optimum, and the measurement can now be re-run by
+anyone who doubts it. The third result is §5b's, and it is the one that keeps the sentence honest.
 
-Three things the sweep says that the oracle could not.
+Four things the sweep says that the oracle could not.
 
 1. **The oracle was wrong about the direction, and it was wrong by two to one.** Nulling the term flips 50 of
    the 98 misses that carry evidence and loses 163 cases that the census cannot see, because the census
@@ -130,9 +143,97 @@ Three things the sweep says that the oracle could not.
    move, worst on `loss` (13 → 0) and `delay` (16 → 8). The cell is not asking for a smaller unit: it is
    asking for a different ORDER on ties that the rank transform made nearly equal, and `loss` is the class
    where the anomaly is the only evidence there is.
+4. **The one cell that looks flat is flat by arithmetic, not by robustness.** RE1:TrainTicket reads
+   104/125 at 0.5, 1, 1.5 and 2 — a plateau across a 4× range, which reads like a cell that does not care.
+   It is a cell that cannot be reached. Its misses were asked one question each: does the truth's own anomaly
+   point above the winner's, and if so by how much? Fourteen of its 21 say **no** — the truth is ranked below
+   the winner on the anomaly itself, so no coefficient recovers them. Of the seven that say yes, one crosses
+   at `w = 1.9`, and the other six need `w ∈ {7.8, 10.3, 15.6, 15.6, 31.4, 31.4}`. Against a `dualFamily`
+   flag that pays a flat **0.25** in a space whose smallest step is **0.008**, the modal miss is a one-rank
+   disagreement outvoted 31 : 1, and the grid's top of 2 is 0.016 — still 16× short. **The axis was never
+   flat; the answer sits 15 grid-widths above the tested top.**
+
+## 5a. The ceiling, per cell
+
+The same question asked of all 98 misses: which way does the truth's own anomaly point, and what weight would
+be needed to act on it.
+
+| cell               | misses | base points at the WINNER too | base points at the truth | weight that would flip it                       | ceiling |
+| ------------------ | -----: | ----------------------------: | -----------------------: | :---------------------------------------------- | ------: |
+| RE1 OnlineBoutique |     17 |                            16 |                        1 | 1.2                                             |     108 |
+| RE1 SockShop       |      9 |                             8 |                        1 | 2.0                                             |     117 |
+| RE1 TrainTicket    |     21 |                            14 |                        7 | 1.9 · 7.8 · 10.3 · 15.6 · 15.6 · 31.4 · 31.4    |     111 |
+| RE2 OnlineBoutique |      9 |                             3 |                        6 | 1.0 · 1.1 · 2.4 · 4.4 · 6.3 · 9.2               |      86 |
+| RE2 SockShop       |      4 |                             1 |                        3 | 1.2 · 1.4 · 3.2                                 |      88 |
+| RE2 TrainTicket    |     15 |                            14 |                        1 | 5.3                                             |      76 |
+| RE3 OnlineBoutique |      2 |                             2 |                        0 | —                                               |      25 |
+| RE3 SockShop       |     12 |                            11 |                        1 | 5.6                                             |      19 |
+| RE3 TrainTicket    |      9 |                             9 |                        0 | —                                               |      21 |
+| **735**            | **98** |                        **78** |                   **20** | **7 inside [0, 2] · 8 in (2, 10] · 5 above 10** | **651** |
+
+**The remaining headroom of this axis is 20 cases of 735 — 2.7 pp — and it is bought entirely with the 78
+misses whose anomaly ordering is itself wrong.** Three things follow, and they are the reason the coefficient
+string is closed rather than merely unpromising:
+
+- **78 of the 98 misses are not a weighting problem.** The truth's anomaly is below the winner's; a bigger
+  coefficient makes those cases worse, not better. Three quarters of the loss is upstream of the ranking, in
+  the anomaly score or in retrieval, and this document cannot price that.
+- **Thirteen of the 20 recoverable cases need a weight the project has never run**, five of them more than
+  10 and two at 31.4. Every such arm is a different model, not a tuning step, and nothing here measures what
+  `w = 31` does to the 637 cases that are currently right.
+- **The cells that prefer a higher weight prefer it for the same reason.** RE2:OnlineBoutique and RE2:SockShop
+  are the only two cells where the base term already points at the truth in most misses (6 of 9, 3 of 4);
+  they are also the two that gained at `w = 1.5`. That is one mechanism agreeing with itself, and it is the
+  mechanism the next section has to explain before any of this is worth re-tuning.
+
+## 5b. The other corpus says the opposite
+
+On 1,422 FSE'26 cases the same coefficient is **monotone decreasing**: 0 is the best of the three arms and 1 is
+1.76 pp below it. Removing the term does not liberate a tie-break there — it recovers 25 cases. The movement
+is not uniform, and its shape is the reading:
+
+| fault type               | w = 0 | w = 1 | w = 2 | total | Δ(0 − 1) |
+| ------------------------ | ----: | ----: | ----: | ----: | -------: |
+| ContainerKill            |    38 |    26 |    18 |    89 |  **+12** |
+| HTTPResponseReplaceCode  |   167 |   160 |   151 |   231 |   **+7** |
+| JVMMemoryStress          |    60 |    55 |    44 |   171 |   **+5** |
+| HTTPRequestReplaceMethod |   126 |   123 |   115 |   190 |       +3 |
+| NetworkBandwidth         |    18 |    21 |    21 |    42 |       −3 |
+| HTTPRequestDelay         |    54 |    56 |    57 |    88 |       −2 |
+| HTTPRequestReplacePath   |    36 |    38 |    38 |    39 |       −2 |
+
+Four fault families pay for the term — a killed container, a memory stress, a replaced response code, a
+replaced method — and three are paid by it. The first two are the **resource** regimes, where a deviation
+score should be the best evidence available; the other two are **substitution** regimes, where what changes is
+a value rather than a level, so a level-based anomaly is close to uninformative there and its ordering is
+noise. And `ContainerKill` is the regime in which the fault _destroys the series the term reads_ — a killed
+pod stops emitting, so on the truth the anomaly is computed from a truncated or falling series while its
+neighbours carry the loud deviation. On the RCAEval half the same asymmetry is measured directly: **78 of the
+98 evidence-carrying misses have the truth ranked BELOW the winner on the anomaly itself**, which is the
+"quiet truth" inversion `docs/re3-quiet-truth.md` found on RE3 and this census now shows on the whole 735
+(11 of 12 on RE3-SockShop, 14 of 21 on RE1-TrainTicket, 14 of 15 on RE2-TrainTicket, 16 of 17 on
+RE1-OnlineBoutique). The phenomenon is not a cell's quirk. It is the corpus.
+
+So the price of this term is **+113 cases on RCAEval and −25 on FSE'26**, and the two corpora are not
+disagreeing about the coefficient: they are disagreeing about the fault mix. RCAEval's 735 sit mostly in the
+classes the term pays for; FSE'26's 1,422 include four large families where it does not. A single global
+constant cannot express that, and the honest report is the exchange rate — **moving it to 0 buys 25 FSE'26
+cases and costs 113 RCAEval cases, 4.5 to 1 against**, and moving it to 2 costs both.
+
+## 5c. What the coefficient is not allowed to say
+
+The verdict below is therefore not "1 is optimal". It is narrower and it is the only claim the two
+instruments jointly support.
 
 **The coefficient does not move.** `DEFAULT_SELF_ANOMALY_WEIGHT` stays 1: it is the shipped value, it is the
-grid's optimum on the total, and it is the only arm that regresses no cell.
+grid's optimum on the RCAEval total, it is the only arm that regresses no RCAEval cell, and on the other
+corpus it is 1.76 pp off an arm that costs 113 cases on this one. Every value on the grid regresses a
+benchmark; 1 regresses the smaller one, by the smaller amount. The register entry records a **trade**, not a
+verdict, and the two arms that would test the trade properly are named and unrun: `w = 0.5` on the FSE'26
+half, which locates the crossing rather than assuming it is monotone, and any per-case gate on the term's own
+input — a rule that reads how far the top two anomalies are apart and pays the term only when they are far
+enough apart to mean something (§5a: 12 of RE1-TrainTicket's 21 misses sit within two rank steps) — which is
+the only form that could take both sides of the trade at once.
 
 ## 6. What this cannot answer
 
