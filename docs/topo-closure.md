@@ -116,3 +116,91 @@ workflow_dispatch benchmark-rcaeval.yml
 The closure is printed unconditionally on both halves' `signals:` lines, and the census carries the per-case
 evidence — `topo_share` beside `topo_gate` — so a case that moved can be read against the share that moved it
 rather than inferred from the total.
+
+## 8. The reading — all four predictions refuted, and the closure REFUSED
+
+Arm `41053699258` (`anomaly_knobs=topoclosure=sum`, its own `signals:` line reading `topoDiscount=1
+topoDiscountScope=external topoDiscountGate=1 topoClosure=sum`) against `41053553008`, a **bare** dispatch of the
+same commit that ran `topoClosure=max` with no knobs at all and reproduced `41031397704` case for case.
+
+| arm              | cases | fixes | breaks |   total |    rate | cells below published |
+| ---------------- | ----: | ----: | -----: | ------: | ------: | --------------------: |
+| `max` (shipped)  |   735 |     — |      — | 641/735 | 87.21 % |             published |
+| `sum` (this arm) |   735 |    +2 |    −11 | 632/735 | 85.99 % |                 **4** |
+
+| cell               |   `max` |   `sum` |      Δ |
+| ------------------ | ------: | ------: | -----: |
+| RE1:OnlineBoutique | 107/125 | 107/125 |      0 |
+| RE1:SockShop       | 117/125 | 117/125 |      0 |
+| RE1:TrainTicket    | 106/125 | 103/125 | **−3** |
+| RE2:OnlineBoutique |   83/90 |   82/90 | **−1** |
+| RE2:SockShop       |   88/90 |   85/90 | **−3** |
+| RE2:TrainTicket    |   75/90 |   72/90 | **−3** |
+| RE3:OnlineBoutique |   25/30 |   25/30 |      0 |
+| RE3:SockShop       |   18/30 |   18/30 |      0 |
+| RE3:TrainTicket    |   22/30 |   23/30 |     +1 |
+
+**P1 — refuted, and by the case list rather than by the count.** Nine rank-2 cases have a false winner of the
+observer shape; **one of the nine** became correct (`ts-travel-service_loss_5`, rank 2 → 1). The other eight kept
+rank 2 exactly. P1 asked for four. The mechanism was not blocked, it was _insufficient_: the gate charges an
+observer only when its aggregate explanation reaches its whole anomaly, and summing a fan-out that is mostly idle
+still does not reach it — the aggregate crosses the threshold in one case out of thirteen rank-2 caller cases, not
+in four of nine.
+
+**P2 — refuted downward.** 632, below both the predicted floor of 642 and the control's 641.
+
+**P3 — refuted upward, past its own refusal threshold.** Eleven broke where one to six were predicted, and the
+document had already written the consequence: _if ten or more break, the closure is REFUSED regardless of the
+total._ The mechanism it named is right in every case:
+
+| break                                   | truth               | what `sum` did to the truth                             |
+| --------------------------------------- | ------------------- | ------------------------------------------------------- |
+| `ts-travel-service_delay_1/3/4/5` (RE1) | `ts-travel-service` | rank 1 → 58 / 62 / 62 / 38, anomaly 1.000 → 0.079–0.126 |
+| `ts-travel-service_delay_1/2` (RE2)     | `ts-travel-service` | rank 1 → 8 / 3                                          |
+| `ts-travel-service_cpu_1` (RE2)         | `ts-travel-service` | rank 1 → 44                                             |
+| `orders_delay_2/3`, `orders_socket_1`   | `orders`            | rank 1 → **absent** (no truth evidence at all)          |
+| `checkoutservice_loss_3`                | `checkoutservice`   | rank 1 → **absent** (no truth evidence at all)          |
+
+Seven of the eleven are ONE service, `ts-travel-service`, and the reason is structural: it is the corpus's widest
+fan-out caller, so it is the node a `sum` overcharges most. Four of the eleven did not fall in rank but vanished
+from the pool — the truth's own anomaly fully explained by its callees, which at `rho = 1` deletes it rather than
+demoting it. That is the exact mirror of the class P1 was meant to repair, and it arrives at nearly twice the rate
+the prediction admitted.
+
+**P4 — refuted.** Four cells below their published value, one above.
+
+### 8.1 The direction mix, which is the instrument's first reading
+
+The same two arms carry `winnerRelation` per case, so the movement can be read as a change of _direction_ rather
+than a change of total (see `docs/winner-direction.md`):
+
+| relation of the miss                                             | `max` | `sum` |
+| ---------------------------------------------------------------- | ----: | ----: |
+| `caller` — the winner is the truth's victim (reversed causality) |    32 |    29 |
+| `callee` — the winner is the truth's dependency                  |    14 |    20 |
+| `unrelated` — no directed path either way                        |    48 |    54 |
+| misses                                                           |    94 |   103 |
+
+The closure converted three reversed-causality misses and _created_ six callee-shaped and six unrelated ones. The
+`callee` column rising is the breaks: charging a caller drops it below the callee that explained it. The
+`unrelated` column rising is the deletions: a truth with no evidence row leaves a pool in which some disconnected
+node is now first.
+
+### 8.2 The verdict, and what the refusal leaves behind
+
+**`DEFAULT_TOPO_CLOSURE` stays `max`.** Three of the four predictions fail in the direction that refuses, and the
+fourth fails outright; there is no reading of the arm under which it is an improvement, and the prediction that
+would have overridden the total — ten or more breaks — fired.
+
+What the arm nevertheless establishes, and what the next axis inherits:
+
+1. **The observer class is real and is the right diagnosis, and the aggregate is the wrong lever for it.** The nine
+   cases are exactly the shape §6 described, the one that moved did so by the predicted mechanism, and the other
+   eight stayed put because a fan-out is not a request path — the sum of a mostly-idle fan-out is still smaller
+   than the observer's own anomaly. The lever that would move them is a _per-request_ attribution (which branch was
+   on the caller's path), not a different aggregation of the same quantities.
+2. **The cost is on the same containment relation as the benefit**, which is why no value of `rho` or `gate` can
+   separate them (`docs/topo-share.md` §9 found the same thing for the bounded charge, from the other side).
+   A knob that multiplies a charge cannot pick out which callers to charge.
+3. **Half the misses are not direction errors at all.** 48 of the 94 have a winner with no directed path to the
+   truth. Any further work on the deduction — its weight, its gate, its closure — can move at most the other 46.

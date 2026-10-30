@@ -211,19 +211,19 @@ both populations rather than for one.
 
 ## 9. The bounded charge, measured — the axis §8.3 asked for, and the answer is no
 
-§8.3 left one question open, and it was the only one left: *does a partial charge keep the thirteen fixes
-while returning the three deleted truths to the pool?* If it did, the filter would become a demotion and the
+§8.3 left one question open, and it was the only one left: _does a partial charge keep the thirteen fixes
+while returning the three deleted truths to the pool?_ If it did, the filter would become a demotion and the
 `share = 1` tail would stop being a structural loss. Four arms answer it, and they answer it on one
 configuration line each.
 
-| arm           | `rho` | gate | fixes | breaks | total       | rate        | cells below published |
+| arm           | `rho` | gate | fixes | breaks |       total |        rate | cells below published |
 | ------------- | ----: | ---: | ----: | -----: | ----------: | ----------: | --------------------: |
-| `41019971423` |     0 |    0 |     — |      — | **631/735** | 85.85 %     | published (control)   |
-| `41019996998` |     1 |    0 |   +17 |    −13 |     635/735 | 86.39 %     | 3                     |
-| `41027607492` |  0.25 |    1 |    +6 |  **−0** |     637/735 | 86.67 %     | 0                     |
-| `41024054670` |   0.5 |    1 |    +6 |     −2 |     635/735 | 86.39 %     | 0                     |
-| `41024058625` |  0.75 |    1 |    +8 |     −3 |     636/735 | 86.53 %     | 0                     |
-| `41020001659` |     1 |    1 |   +13 |     −3 | **641/735** | **87.21 %** | **0**                 |
+| `41019971423` |     0 |    0 |     — |      — | **631/735** |     85.85 % |   published (control) |
+| `41019996998` |     1 |    0 |   +17 |    −13 |     635/735 |     86.39 % |                     3 |
+| `41027607492` |  0.25 |    1 |    +6 | **−0** |     637/735 |     86.67 % |                     0 |
+| `41024054670` |   0.5 |    1 |    +6 |     −2 |     635/735 |     86.39 % |                     0 |
+| `41024058625` |  0.75 |    1 |    +8 |     −3 |     636/735 |     86.53 % |                     0 |
+| `41020001659` |     1 |    1 |   +13 |     −3 | **641/735** | **87.21 %** |                 **0** |
 
 Four things this table decides, and one thing it refuses to.
 
@@ -231,7 +231,7 @@ Four things this table decides, and one thing it refuses to.
 of this section extrapolated a monotone family — 631 → 635 → 636 → 641 across `rho = 0 / 0.5 / 0.75 / 1` —
 and left the `rho = 0.25` cell blank until the arm landed. It landed at **637 with `+6 / −0`**: the same six
 fixes the `rho = 0.5` arm keeps, and NONE of its two breaks. So the measured plane reads **631 → 637 → 635 →
-636 → 641**, a knee rather than a slope, and `rho = 0.5` is *worse* than an arm with half its charge. The
+636 → 641**, a knee rather than a slope, and `rho = 0.5` is _worse_ than an arm with half its charge. The
 reason is that the fixes and the breaks have different margins: the six fixes clear at a charge of at most a
 quarter, the two `checkoutservice` breaks need a charge strictly between a quarter and a half, and nothing
 about either is visible from a grid of halves. That is the same lesson §8.1's prediction 3 taught — the
@@ -252,8 +252,8 @@ over two DIFFERENT operators rather than the end of one curve: below 1 the opera
 and the six fixes the knee keeps are the demotions that happen to need no more than a quarter of the charge. There is no interior
 point at which the breaks vanish while the fixes remain, and the reason is arithmetic rather than empirical.
 
-**3. Why no interior point reaches the corner, in one sentence.** A fix demotes a *caller* of the truth; a
-break demotes the *truth*. Both charges are `rho × min(a, e)` on the same relation, so the ratio of the two
+**3. Why no interior point reaches the corner, in one sentence.** A fix demotes a _caller_ of the truth; a
+break demotes the _truth_. Both charges are `rho × min(a, e)` on the same relation, so the ratio of the two
 ledgers is fixed by the MARGINS rather than by `rho`: raising the charge converts each fix and each break at
 its own threshold, and the ordering of those thresholds is a property of the corpus. Measured, the six cheap
 fixes come before the two `checkoutservice` breaks and the remaining seven fixes come after them — so at the
@@ -274,17 +274,17 @@ The golden half met its bar in §8 (no cell down, no fault type down, +10 cases)
 owed and is now measured on the same code (`53993ef` is a docs-only descendant of `7aea6e32`, so the arm and
 its control run the same tree):
 
-| population             | control (`41027467282`, bare) | arm (`41024050841`, `rho = 1, gate = 1`) | verdict |
-| ---------------------- | ----------------------------: | ---------------------------------------: | ------- |
-| FSE'26 Top@1           |                 60.5 % (860/1422) |                            60.5 % (860/1422) | identical |
-| FSE'26 Top@3 / Top@5   |                    79.0 % / 82.2 % |                       79.0 % / 82.2 % | identical |
-| FSE'26 fault types     |                                 — |                    **25 of 25 identical** | identical |
+| population           | control (`41027467282`, bare) | arm (`41024050841`, `rho = 1, gate = 1`) | verdict   |
+| -------------------- | ----------------------------: | ---------------------------------------: | --------- |
+| FSE'26 Top@1         |             60.5 % (860/1422) |                        60.5 % (860/1422) | identical |
+| FSE'26 Top@3 / Top@5 |               79.0 % / 82.2 % |                          79.0 % / 82.2 % | identical |
+| FSE'26 fault types   |                             — |                   **25 of 25 identical** | identical |
 
 So the operator is **inert on the FSE'26 population** and worth **+10 cases** on the golden one. The
 enrolment is therefore:
 
 ```ts
-export const DEFAULT_TOPO_DISCOUNT = 1;      // was 0
+export const DEFAULT_TOPO_DISCOUNT = 1; // was 0
 export const DEFAULT_TOPO_DISCOUNT_GATE = 1; // was 0
 ```
 
@@ -300,10 +300,10 @@ An arm read through a `workflow_dispatch` knob and a default read by a bare run 
 only the second one is about what a user gets. Both populations were therefore re-run on the commit that
 carries the enrolment (`89900939`) with **no knobs at all**, and both reproduce their arms exactly:
 
-| population | run | the run's own `signals:` line | reads |
-| ---------- | --- | ----------------------------- | ----- |
-| RCAEval (735) | `41031397704`, push-triggered | `topoDiscount=1 … topoDiscountGate=1` | **641 = 87.21 %**, nine cells identical to `41020001659`, `+13 / −3` |
-| FSE'26 (1422) | `41034020065`, bare dispatch | `topoDiscount=1 topoDiscountGate=1` | **60.5 / 79.0 / 82.2**, and **25 of 25 fault types identical** to the pre-enrolment control |
+| population    | run                           | the run's own `signals:` line         | reads                                                                                       |
+| ------------- | ----------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
+| RCAEval (735) | `41031397704`, push-triggered | `topoDiscount=1 … topoDiscountGate=1` | **641 = 87.21 %**, nine cells identical to `41020001659`, `+13 / −3`                        |
+| FSE'26 (1422) | `41034020065`, bare dispatch  | `topoDiscount=1 topoDiscountGate=1`   | **60.5 / 79.0 / 82.2**, and **25 of 25 fault types identical** to the pre-enrolment control |
 
 So the default is not "the arm, described": it IS the arm, and a run that asks for nothing reproduces both
 figures. The FSE'26 half now has **three** runs agreeing — the control on `53993ef`, the knobbed arm on
@@ -316,18 +316,18 @@ Fifteen assertions across six files were pinned to the old default. None of them
 was a place where a test had been leaning on a default instead of naming the arm it compared against, and the
 enrolment turned that leaning into a silent change of subject.
 
-| file                                          | fence                                                     | what it now states                                              |
-| --------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
-| `causal/topo-discount-gate.test.ts`           | the shipped gate is 0                                     | it is **1**, the boundary                                        |
-| the same file                                 | "gate 0 changes nothing" compared gate 0 against the default | monotonicity of the charge in the gate, across a five-case grid |
-| `unit/pruner.test.ts`                         | `new TreePruner()` was the undeducted arm                 | the undeducted arm is `{ topoDiscount: 0 }`, named                |
-| the same file                                 | six deduction tests compared against an ungated arm        | they name `topoDiscountGate: 0` as well as the weight            |
-| the same file                                 | the self-time block measured its term on the shipped background | it fixes `topoDiscount: 0` so its background cannot move   |
-| `benchmarks/cli-args.test.ts`                 | `--topo-discount 2` fell back to a literal 0              | it falls back to `DEFAULT_TOPO_DISCOUNT`                         |
-| `benchmarks/fse26-cli.test.ts`                | "ships both at the values a bare dispatch resolves to"    | a bare dispatch resolves to the engine's own three values         |
-| `benchmarks/fse26-report.test.ts`             | a legacy config without the gate rendered `=0`             | it renders the ENGINE's default                                   |
-| `benchmarks/rcaeval-reported-config.test.ts`  | the golden `signals:` line                                | the enrolled line, `topoDiscount=1 … topoDiscountGate=1`           |
-| `kinetic/shipped-declaration-census.test.ts`  | two docblocks still said `Default: 0`                     | both say what ships and why                                       |
+| file                                         | fence                                                           | what it now states                                              |
+| -------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| `causal/topo-discount-gate.test.ts`          | the shipped gate is 0                                           | it is **1**, the boundary                                       |
+| the same file                                | "gate 0 changes nothing" compared gate 0 against the default    | monotonicity of the charge in the gate, across a five-case grid |
+| `unit/pruner.test.ts`                        | `new TreePruner()` was the undeducted arm                       | the undeducted arm is `{ topoDiscount: 0 }`, named              |
+| the same file                                | six deduction tests compared against an ungated arm             | they name `topoDiscountGate: 0` as well as the weight           |
+| the same file                                | the self-time block measured its term on the shipped background | it fixes `topoDiscount: 0` so its background cannot move        |
+| `benchmarks/cli-args.test.ts`                | `--topo-discount 2` fell back to a literal 0                    | it falls back to `DEFAULT_TOPO_DISCOUNT`                        |
+| `benchmarks/fse26-cli.test.ts`               | "ships both at the values a bare dispatch resolves to"          | a bare dispatch resolves to the engine's own three values       |
+| `benchmarks/fse26-report.test.ts`            | a legacy config without the gate rendered `=0`                  | it renders the ENGINE's default                                 |
+| `benchmarks/rcaeval-reported-config.test.ts` | the golden `signals:` line                                      | the enrolled line, `topoDiscount=1 … topoDiscountGate=1`        |
+| `kinetic/shipped-declaration-census.test.ts` | two docblocks still said `Default: 0`                           | both say what ships and why                                     |
 
 **And one divergence the enrolment FOUND rather than caused.** `rcaeval-cli.ts` parsed `--topo-discount` with
 `parseUnitInterval(args[++i]!)`, inheriting that helper's own zero, while `fse26-cli.ts` passed
@@ -339,18 +339,46 @@ noticed that one of them was a literal. A cross-runner parity test caught it on 
 On the enrolled arm the truth's rank among the misses is: **31 at rank 2**, 16 at 3, 8 at 4, 7 at 5, 20 at 6+
 and 12 absent. Rank 2 is the band a ranking change can still reach, and its structure is not diffuse:
 
-| false winner                                   | cases | its position relative to the truth            |
-| ---------------------------------------------- | ----: | --------------------------------------------- |
-| `ts-admin-travel-service` (TrainTicket)        |     6 | the ADMIN caller — observes every other service |
-| `front-end` (SockShop)                         |     3 | the ROOT caller — same shape                   |
-| `ts-inside-payment-service`, `recommendationservice`, `orders-db`, … | 22 | the CALLEE of the truth — the opposite direction |
+| false winner                                                         | cases | its position relative to the truth               |
+| -------------------------------------------------------------------- | ----: | ------------------------------------------------ |
+| `ts-admin-travel-service` (TrainTicket)                              |     6 | the ADMIN caller — observes every other service  |
+| `front-end` (SockShop)                                               |     3 | the ROOT caller — same shape                     |
+| `ts-inside-payment-service`, `recommendationservice`, `orders-db`, … |    22 | the CALLEE of the truth — the opposite direction |
 
 Two of those three groups are the same defect: a node whose anomaly is an aggregate of what it calls is
 ranked above the thing it is calling. `TopoEvo` (`arXiv:2605.15611`) names it **symptom-amplification bias**
 and reports a 3.44 pp absolute gain from adjudicating it with two explicit tests — **temporal precedence**
 (cause onsets first) and **path consistency** (the evidence lies on a propagation path). Neither is built
 here: the engine has `failedEdge` and `lat`, both of which measure magnitude along an edge and neither of
-which measures *direction in time*.
+which measures _direction in time_.
 
 That is the next axis, and it is a mechanism rather than a threshold — which is the only kind this document
 has admitted since §2.
+
+### 11.1 The measured version, and the two rows it corrects
+
+The table above was read off **service names and a mental model of the deployment**: the artifact carried no call
+graph, so the winner's direction was computable at run time and thrown away. It is now a column
+(`docs/winner-direction.md`), and the same 94 misses read like this:
+
+| rank 2, 31 misses      | §11 (by name) | measured |
+| ---------------------- | ------------: | -------: |
+| the truth's caller     |             9 |   **13** |
+| the truth's callee     |            22 |    **6** |
+| unreachable either way |             0 |   **12** |
+
+Three corrections follow, and the third is the one that matters:
+
+1. The observer group is **5 `ts-admin-travel-service` + 4 `front-end`**, not 6 + 3. The total, 9, was right.
+2. `recommendationservice` is a **caller** of `productcatalogservice`, not its callee — the arrow in that row was
+   drawn the wrong way, and it is exactly the kind of error a name-based reading produces.
+3. **Twelve of the 31 rank-2 misses have no directed path to the truth in either direction.** No weighting, gating
+   or aggregation of the deduction can reach them, because the deduction compares a node with its neighbours and
+   these winners are not neighbours. Over the whole population the block is larger still: **48 of the 94 misses are
+   as undirected as these**, against 32 reversed and 14 depend.
+
+So the sentence "both are direction errors; neither is a weighting error" survives only for the 19 that are. The
+next axis still belongs at a direction — §11's argument holds for the reachable half, and 25 of the 32 reversed
+misses are a **direct** caller, which makes a one-hop predicate expressible for the first time — but it is now
+argued from a count over 46 reachable misses rather than over 94, and the other 48 have moved to a different
+question: what signal, outside the call graph, decides them.
