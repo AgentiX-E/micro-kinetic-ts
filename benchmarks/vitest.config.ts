@@ -105,6 +105,13 @@ export default defineConfig({
         'src/fse26-separator.ts',
         'src/fse26-cli.ts',
         'src/fse26-engine-options.ts',
+        // Added with the module: the OTHER projection of the same parsed options — the record the `Config:`
+        // line and the JSON artifact are rendered from. It was inline in `run-fse26.ts`'s `main()` until run
+        // `41053711414` aggregated by `sum` and printed `topoClosure=max`: the engine mapping had been
+        // extracted for exactly this reason and the reported record had not, so nothing could ask whether the
+        // two agreed. They are two objects built from one input, and the test that compares them is the only
+        // thing standing between a dispatch and an artifact that misnames its own configuration.
+        'src/fse26-run-config.ts',
         // Added with the module: `cli-args.ts` decides what a MALFORMED flag means, and
         // it was written, imported by two test files and left out of this list — the
         // allow-list's own hole, a third time. `__tests__/coverage-scope.test.ts` now

@@ -49,6 +49,7 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
+import { buildFse26RunConfig } from './fse26-run-config.js';
 
 import { parseFSE26Args } from './fse26-cli.js';
 import {
@@ -141,58 +142,12 @@ async function main(): Promise<void> {
   // and the `config` object in the JSON artifact — come from this object, so
   // they cannot disagree about the mode; that is how the JSON lost `logMode`
   // while the line kept it, leaving two artifacts 24.2pp apart with byte-equal
-  // `config` blocks.
-  const runConfig: FSE26RunConfig = {
-    selfAnomalyWeight: opts.selfAnomalyWeight,
-    logWeight: opts.logWeight,
-    logSignalMode: opts.logMode,
-    rankNormalization: opts.rankNormalization,
-    anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
-    dropMetrics: opts.dropMetrics,
-    metricRiseCeiling: opts.metricRiseCeiling,
-    dropDeviationMode: opts.dropDeviationMode,
-    baselineAnchor: opts.baselineAnchor,
-    metricFleetBaseline: opts.metricFleetBaseline,
-    suppressDemandMetrics: opts.suppressDemandMetrics,
-    failedEdgeWeight: opts.failedEdgeWeight,
-    failedEdgeMode: opts.failedEdgeMode,
-    failedEdgeMinRecords: opts.failedEdgeMinRecords,
-    latWeight: opts.latWeight,
-    latMinRise: opts.latMinRise,
-    poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
-    stabilityWeight: opts.stabilityWeight,
-    selfTimeWeight: opts.selfTimeWeight,
-    victimWeight: opts.victimWeight,
-    dualFamilyWeight: opts.dualFamilyWeight,
-    dualFamilyGate: opts.dualFamilyGate,
-    dualFamilyGateMode: opts.dualFamilyGateMode,
-    temporalWeight: opts.temporalWeight,
-    onsetShape: opts.onsetShape,
-    // The eight the mirror made reachable on this half. Carried on the config rather than left to the
-    // line's default so that the JSON artifact records them too: the line may OMIT a default, and a
-    // reader of the JSON must not have to know that an absent key means the shipped value.
-    traceWeight: opts.traceWeight,
-    traceSkipsLeader: opts.traceSkipsLeader,
-    topoWeight: opts.topoWeight,
-    topoDiscount: opts.topoDiscount,
-    topoDiscountScope: opts.topoDiscountScope,
-    topoDiscountGate: opts.topoDiscountGate,
-    collisionWeight: opts.collisionWeight,
-    prismWeight: opts.prismWeight,
-    prismPooling: opts.prismPooling,
-    collapseDiscount: opts.collapseDiscount,
-    suppressIdleTransients: opts.suppressIdleTransients,
-    suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
-    suppressZeroBaselineLatency: opts.suppressZeroBaselineLatency,
-    capTrendBonusAtDeviation: opts.capTrendBonusAtDeviation,
-    // The anomaly composition: carried so the JSON records it too, and printed unconditionally by the
-    // line, because on the golden half these four ARE the ranking.
-    anomalyTrendWeight: opts.anomalyTrendWeight,
-    anomalyBurstWeight: opts.anomalyBurstWeight,
-    anomalyCvWeight: opts.anomalyCvWeight,
-    anomalyBreadthWeight: opts.anomalyBreadthWeight,
-    anomalyBreadthGate: opts.anomalyBreadthGate,
-  };
+  // `config` blocks. It is built in `fse26-run-config.ts` rather than here so
+  // that the test suite can call it: this file calls `main()` on import, which
+  // is why the ENGINE mapping was extracted, and the reported record had the
+  // same hole — `topoClosure` reached the engine and not the record, so run
+  // `41053711414` aggregated by `sum` and printed `topoClosure=max`.
+  const runConfig: FSE26RunConfig = buildFse26RunConfig(opts);
 
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
