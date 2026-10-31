@@ -127,6 +127,8 @@ RE3  65  90
 TOTAL 641 735
 ```
 
+**Reproduced, because a standing figure has to be one a stranger can obtain rather than one this document remembers.** Since the battery this block records, the same twelve readings have been obtained from five further runs — `41113102918` (the pool-admission control), `41096214413` and `41096379522` (two independent controls on `8d7f2a58`, with **zero per-case flips between them**), `41205151091` (the control `topoDiscountGate = 0.5` was read against) and `41213454636` (the push battery on `7f55ad4b`) — and **not one cell moved in any of them**: `330/375`, `246/270`, `65/90`, `641/735`, each read off the run's own `TOTAL` line. Five reproductions of one total across two revisions is what this number is; it is not a reading that happened once.
+
 **What the fence does NOT cover, stated because this is where the defect lived.** It holds the TABLES to the anchor.
 Claim 4 above was *prose* — a paragraph that read the wrong population while §0's own row 4 had it right — and no
 table fence can see that. The rule that replaces it is a reading rule rather than a mechanical one: **a sentence that

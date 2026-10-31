@@ -411,3 +411,61 @@ pre-registration.
 #   41205151091  factory defaults     641/735   107/117/106  83/88/75  25/18/22
 #   41212474116  topodiscountgate=0.5 639/735   110/117/104  82/86/74  25/18/23
 ```
+
+### 7.2 The twelve flips are one action, and only the culprit's role decides its sign
+
+§7.1 read the arm at the CELL level and named a mechanism for each half. Both arms also ship a `--loss-census`
+artifact — one record per case, carrying the truth's own evidence beside the winner's — so the twelve flips can be
+read case by case instead of by cell. Read that way, the arm is not two mechanisms. It is one.
+
+**The truth's own post-deduction anomaly separates the two groups perfectly.** In all five gains it does not fall:
+three are bit-identical, and the two on the rank-normalised surface rise by exactly the positions their competitors
+vacated. In all seven losses it falls.
+
+| case | cell | truth's own anomaly, `gate=1` → `gate=0.5` | Δ | rank | where the charge landed |
+| --- | --- | ---: | ---: | ---: | --- |
+| `re1ob_currencyservice_loss_1` | RE1:OnlineBoutique | 0.8266 → 0.8266 | **0.0000** | 2 → 1 | a competitor: `checkoutservice` |
+| `re1ob_productcatalogservice_delay_1` | RE1:OnlineBoutique | 2.3419 → 2.3419 | **0.0000** | 3 → 1 | a competitor: `frontend` |
+| `re1ob_productcatalogservice_disk_5` | RE1:OnlineBoutique | 0.9573 → 0.9573 | **0.0000** | 2 → 1 | a competitor: `recommendationservice` |
+| `re1tt_ts-route-service_loss_5` | RE1:TrainTicket | 0.9841 → 1.0000 | +0.0159 | 2 → 1 | a competitor: `ts-travel2-service` |
+| `re3tt_ts-route-service_f2_1` | RE3:TrainTicket | 0.5373 → 0.5672 | +0.0299 | 3 → 1 | a competitor: `ts-contacts-service` |
+| `re1tt_ts-travel-service_delay_1` | RE1:TrainTicket | 1.0000 → 0.8889 | **−0.1111** | 1 → 8 | the culprit: charged by a callee |
+| `re1tt_ts-travel-service_delay_3` | RE1:TrainTicket | 1.0000 → 0.9524 | **−0.0476** | 1 → 4 | the culprit: charged by a callee |
+| `re1tt_ts-travel-service_delay_4` | RE1:TrainTicket | 1.0000 → 0.9206 | **−0.0794** | 1 → 6 | the culprit: charged by a callee |
+| `re2ob_checkoutservice_loss_3` | RE2:OnlineBoutique | 1.9761 → 0.0988 | **−1.8773** | 1 → 2 | the culprit: charged by `paymentservice` |
+| `re2ss_orders_delay_2` | RE2:SockShop | 2.2601 → 0.0406 | **−2.2194** | 1 → 13 | the culprit: charged by `payment` |
+| `re2ss_orders_delay_3` | RE2:SockShop | 2.2367 → 0.0037 | **−2.2331** | 1 → 6 | the culprit: charged by `user` |
+| `re2tt_ts-travel-service_cpu_1` | RE2:TrainTicket | 0.9853 → 0.6471 | **−0.3382** | 1 → 3 | the culprit |
+
+The column that decides the case is the last one. **Every flip in this arm is the charge landing on one node.** In
+the gains the node is a competitor — a caller that outranked the callee explaining it — and removing it promotes the
+truth. In the losses the node is the truth itself, and removing it demotes the truth. There is no third action in
+the arm and no case where both happen.
+
+Four of the five gains and three of the seven losses carry that edge in `configs/topology/*.yaml`; the rest arrive
+through the semantic-enhancement edges each run's own `[topo]` line counts, and for those the relation is guaranteed
+by the operator rather than checked against the YAML: `charged(v) > 0` requires `e(v) > 0`, and `e(v)` is a positive
+combination of `v`'s **callees**, so a charged node is always a caller of an anomalous callee. In a gain the charge's
+beneficiary is the truth; in a loss its subject is.
+
+**The two halves are the same measurement on two populations, and the population law is visible in the units.** On
+TrainTicket every flip is 1–7 positions of a 63-step rank surface (`1/63 = 0.01587`: `0.1111 = 7 steps`,
+`0.0794 = 5`, `0.0476 = 3`), because step 1b normalises the anomaly to a rank before the deduction sees it. On
+OnlineBoutique and SockShop the same action is a 95–99.8 % deletion of a deviation (`2.2601 → 0.0406`). One charge,
+two currencies — which is `docs/anomaly-space.md` §6's finding read from the other end.
+
+**What this closes, and why `639` was never the argument.** The arm's information set does not contain the culprit.
+Every knob in the family — `rho`, `gate`, `scope`, `closure` — moves the same charge between a caller and its
+callee, so the arm's expected value is the base rate at which a charged caller happens to BE the culprit. The
+measured plane is that base rate rising as the charge is restricted to nodes whose explanation is complete —
+`631` at `rho = 0`, `635` at `gate = 0`, `637 / 635 / 636` at `rho = 0.25 / 0.5 / 0.75`, `641` at `share = 1` —
+and `share = 1` is the only confidence the operator can express that pays, which is the shipped value. This
+section's table is the same statement in the only form that can falsify it: **a flip whose truth's own anomaly fell
+while the case was still gained would break the symmetry.** None does, in either arm.
+
+**The constraint that survives is a direction signal, not a coefficient.** §7.1 asked for a per-case selection
+between the deduction and `failedEdge`/`lat`; §7.2 says why no such selection can be built out of this operator's
+outputs: the quantity that would have to decide it is the culprit's role in the edge it was charged on, and the
+operator computes a charge without computing whose fault it is. The next axis is therefore not in this family at
+all — it is the one `docs/closed-axes-register.md` records under `miss-reachability.md`: the ranking's remaining
+headroom is seven `outvoted` cases in 735, and the only term with a window is `dualFamily`.
