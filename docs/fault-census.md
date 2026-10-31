@@ -49,59 +49,72 @@ the only question with two possible answers: **was the truth loud enough to be f
 The name is spelled out in `benchmarks/src/fault-census.ts` rather than imported, on the rule `loss-census.ts` records
 for every mirror in this package. A rename upstream would be visible as every miss turning `outvoted`.
 
-## 4. The six measurable readings
+## 4. The nine readings
 
 The census costs nothing at run time — it is a function of the per-case breakdowns the ranking already emits — so
-every RCAEval job prints it. Six of the nine cells have been read, all of them under the shipped protocol
-(`injectTime` ON), all from the battery on `d030fb2d`:
+every RCAEval job prints it. All nine cells have now been read, under the shipped protocol (`injectTime` ON), from the
+batteries on `d030fb2d` and `25b4279b`:
 
 | cell | n | correct | pooled | published | miss | blank | outweighed | outvoted |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RE1:OnlineBoutique` | 125 | 107 | 85.6% | 85.6% | 18 | 1 | 16 | 1 |
 | `RE1:SockShop` | 125 | 117 | 93.6% | 93.6% | 8 | 2 | 6 | 0 |
 | `RE1:TrainTicket` | 125 | 106 | 84.8% | 84.8% | 19 | 0 | 15 | 4 |
+| `RE2:OnlineBoutique` | 90 | 83 | 92.2% | 92.2% | 7 | 4 | 3 | 0 |
+| `RE2:SockShop` | 90 | 88 | 97.8% | 97.8% | 2 | 2 | 0 | 0 |
+| `RE2:TrainTicket` | 90 | 75 | 83.3% | 83.3% | 15 | 0 | 14 | 1 |
 | `RE3:OnlineBoutique` | 30 | 25 | 83.3% | 88.9% | 5 | 3 | 2 | 0 |
 | `RE3:SockShop` | 30 | 18 | 60.0% | 63.6% | 12 | 0 | 11 | 1 |
 | `RE3:TrainTicket` | 30 | 22 | 73.3% | 74.5% | 8 | 0 | 8 | 0 |
-| **total** | **465** | **395** | **84.9%** | — | **70** | **6** | **58** | **6** |
+| **total** | **735** | **641** | **87.21%** | — | **94** | **12** | **75** | **7** |
 
-Both rates are printed because they are **different units**, and the difference is §1's problem one level down. `pooled`
-is cases over cases; `published` is the number the campaign reports, which is the **unweighted mean of the per-type
-rates**. On RE1 the two coincide because every type holds 25 cases. On `RE3:OnlineBoutique` they do not: a three-case
-`f2` carries the same weight as a ten-case `f3`, so the cell reads 88.9% published against 83.3% pooled — and the
-three `blank`s, all on a nine-case type, cost the published number **6.7 pp** where they cost the pooled one **10 pp**.
+The total is exactly the published nine-cell number, 641 of 735 = 87.21%: the same cases, counted once for accuracy and
+once for owner.
 
-**58 of the 70 misses are `outweighed`** — 82.9%, and 86.2% once `RE3:OnlineBoutique`, the cell with the three
-`blank`s, is set aside. Six are `blank`: three on `RE3:OnlineBoutique`'s `f1`, which is the only cell where the ranking
-fails to surface the truth at all, and two on `RE1:SockShop`'s `loss`.
+**75 of the 94 misses are `outweighed`** — 79.8%. Twelve are `blank` (12.8%) and seven are `outvoted` (7.4%).
 
-The six `outvoted` cases are the interesting population, because they are the whole of it — every case in this corpus
-where the truth's own evidence was at least the winner's and the case was still lost:
+`pooled` is cases over cases; `published` is the number the campaign reports, which is the **unweighted mean of the
+per-type rates**. They coincide in eight of the nine cells because every type there is equally sized, and they differ
+on RE3, where a three-case `f2` carries the same weight as a ten-case `f3`: `RE3:OnlineBoutique` reads 88.9% published
+against 83.3% pooled, and its three `blank`s on a nine-case type cost the published number **6.7 pp** where they cost
+the pooled one **10 pp**. That is §1's unit problem one level down, inside a single cell.
+
+### 4.1 The split is not the same on the two graph sizes
+
+The nine cells fall into exactly two groups by graph size, and the groups differ in the buckets as well as in the rate:
+
+| group | n | rate | miss | blank | outweighed | outvoted | outweighed share |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TrainTicket, 63–69 nodes (rank-normalised) | 245 | 82.9% | 42 | **0** | 37 | 5 | **88.1%** |
+| OnlineBoutique / SockShop, 12–15 nodes | 490 | 89.4% | 52 | **12** | 38 | 2 | 73.1% |
+
+Two things separate the groups. **Every `blank` miss in the corpus is on a small graph**: on 63–69 nodes the ranking
+always surfaces the truth, and on 12–15 nodes it fails to 12 times. And the small graphs *lose* a larger share of their
+misses to candidate generation than to the evidence, which is why a weight searched on them is aimed at a population
+that is not the one it is measured on.
+
+### 4.2 The seven `outvoted` cases are the whole reachable population
 
 | cell | fault type | blame |
 | --- | --- | --- |
 | `RE1:OnlineBoutique` | `loss` | `dualFamily 1` |
 | `RE1:TrainTicket` | `loss` ×2, `delay` ×2 | `dualFamily 4`, `stability 4` |
+| `RE2:TrainTicket` | `loss` | `dualFamily 1` |
 | `RE3:SockShop` | `f4` | `dualFamily 1`, `stability 1` |
 
-**All six name `dualFamily`, and five also name `stability`.** Those are the only two terms in the formula whose value
-does not depend on how loud the fault was: `dualFamily` is a constant `0.25` in log space for having a moving channel
-in both metric families, and `stability` is an ordinal rank in `[0, 1]` over the candidates' dispersion bonus. Nothing
-that measures magnitude — `temporal`, `collision`, `topo`, `rise`, `prism`, `source` — appears in the bucket at all.
+**All seven name `dualFamily`, five also name `stability`**, and nothing that measures magnitude appears at all. Those
+are the formula's only two magnitude-free signals: a flat `0.25` in log space for having a moving channel in both
+metric families, and an ordinal rank in `[0, 1]` over the candidates' dispersion bonus at weight `0.007352`.
 
-Two consequences follow, and both are arithmetic rather than opinion.
+Two consequences, both arithmetic rather than opinion.
 
-1. **The margin on these six cases is at most `0.25 + 0.007352`.** If the truth's base was at least the winner's and
-   the only terms paying the winner more were these two, then the whole difference fits inside the presence bonus and
-   one stability rank. These are ties, and the formula breaks them with a bonus for being instrumented.
-2. **The other 64 misses are unreachable by any weight.** A prior is multiplied by a magnitude term, and the bucket
-   says the magnitude was already smaller. This is what closes §5.
+1. **The margin on these seven cases is at most `0.25 + 0.007352`.** If the truth's base was at least the winner's and
+   the only terms paying the winner more were these two, the whole difference fits inside the presence bonus and one
+   stability rank. These are ties, and the formula breaks them with a bonus for being instrumented.
+2. **The other 87 misses are unreachable by any weight.** A prior is multiplied by a magnitude term, and the bucket
+   says the magnitude was already smaller — or that the truth never entered the ranking at all. This is what closes §5.
 
-`RE3:TrainTicket` is the cleanest illustration that the buckets are not the accuracy table: 73.3% and eight misses,
-**all eight `outweighed`**, with no `blank` at all. Different fault labels, same bucket, and on a 68-service graph the
-candidate generator never fails and the evidence never wins.
-
-### 4.1 The two passes that are excluded, and why the exclusion is not cherry-picking
+### 4.3 The two passes that are excluded, and why the exclusion is not cherry-picking
 
 Every RCAEval job runs each suite three times: the shipped protocol, a `--no-inject-time` pass, and a
 `--no-inject-time --log-signal-mode novelty` pass. The table above uses the first only, and on RE3 that is not a
@@ -111,7 +124,7 @@ With the anchor removed, `RE3:TrainTicket` reads **2/30** against **22/30** with
 the truth's own onset is undefined (`onset GT=9007199254740991`, the `MAX_SAFE_INTEGER` sentinel) and its own
 anomaly is `0.0224` against the leader's `1.0000`. The corpus for that suite does not carry the injection into the
 metrics the decoupled pass reads, so the pass compares a truth that has no event against candidates that do. Its
-`[faults]` line would have added **28** misses, all `outweighed`, to a bucket of 58 — the contamination would have
+`[faults]` line would have added **28** misses, all `outweighed`, to a bucket of 75 — the contamination would have
 looked like agreement with the thesis rather than like a bug, which is exactly why it is written down here rather
 than silently dropped.
 
@@ -129,11 +142,11 @@ The weight-search axis is closed by arithmetic rather than by another arm.
 The latent-term census (`docs/latent-term-census.md`) prices every dormant term: at what weight it wins a case back,
 and at what weight it costs one. It reported one or two free cases per term per cell, and the two arms dispatched
 against those readings came back at **+2/−2** and **+2/−1/−1** — the same total. This census says why. A weight
-multiplies a signal, the signal is one of the priors in `finalScore = base + Σ wᵢ·signalᵢ`, and on **58 of the 70
+multiplies a signal, the signal is one of the priors in `finalScore = base + Σ wᵢ·signalᵢ`, and on **75 of the 94
 misses the base term itself was already the smaller number** — so the arm is asked to overturn a magnitude deficit
-with a term that is scaled by the same magnitude it is supposed to overturn. On `RE1:OnlineBoutique` the reachable
-population is **one** case out of 18; on `RE1:SockShop` it is **zero** out of 8; on `RE3:TrainTicket`, **zero** out of
-8. An arm that can move at most one case per cell cannot be distinguished from the noise in a 25-case population, and
+with a term that is scaled by the same magnitude it is supposed to overturn. The reachable population per cell is
+**1** of 18 (`RE1:OnlineBoutique`), **0** of 8 (`RE1:SockShop`), **4** of 19 (`RE1:TrainTicket`), **0** of 7, **0** of
+2, **1** of 15 (RE2), **0** of 5, **1** of 12, **0** of 8 (RE3) — seven cases in 735. An arm that can move at most one case per cell cannot be distinguished from the noise in a 25-case population, and
 the last eight iterations are that sentence measured eight times.
 
 That is also the honest reading of the eight iterations before this one. Each measured something real, and each was
@@ -159,9 +172,9 @@ makes askable, in the order the numbers rank them:
    `log1p` of a per-service anomaly built from each service's own baseline, and on graphs of 20 nodes or more the
    anomaly is **rank-normalised before it is scored** (`anomalyNormalizeNodeThreshold`) — which is exactly the
    rescaling that removes a cross-service scale difference. TrainTicket is 63–69 nodes, so its base term is an
-   ordinal rank, and there the bucket is the same or slightly worse: **23 of 27** TT misses are `outweighed`, against
-   **35 of 43** on the small systems where no rescaling runs. Normalisation does not move the bucket, so the deficit
-   is not scale — it is the ordering itself.
+   ordinal rank, and there the bucket is **worse**, not better: **37 of 42** TT misses are `outweighed` (88.1%),
+   against **38 of 52** (73.1%) on the small systems where no rescaling runs. Normalisation does not move the bucket,
+   so the deficit is not scale — it is the ordering itself.
 3. **Is a magnitude-free signal available?** Two already are, and they are the only two that appear in the
    `outvoted` bucket: `dualFamily` on all six cases and `stability` on five. The question is no longer whether such a
    signal exists but whether the shipped weights say anything true about it. `dualFamily` pays a flat `0.25` for
@@ -187,9 +200,11 @@ makes askable, in the order the numbers rank them:
   of a candidate, at non-zero weight. `outweighed` therefore means "the base measurement was smaller", and a case
   could in principle be won by one of the others — which is the `outvoted` bucket's job to reveal, and it holds six
   cases across six cells, every one of them blamed on `dualFamily` and five on `stability`.
-- **Six of nine cells.** The three `RE2` cells have not been read yet, so 58/70 is a rate over the cells that have
-  run, not over the campaign's headline grid. The instrument prints on every job, so closing the gap is a matter of
-  waiting for the battery rather than of new code.
+- **One battery, nine cells, one configuration.** The table is the shipped configuration on the corpora these two
+  batteries carried. It is not a claim about a different weight, and it is not a claim about a corpus those jobs do not
+  hold.
+- **The buckets are a partition of misses, not of errors.** A case outside the top-1 is a miss whether the engine was
+  slow, wrong by one hop, or never asked; the census says nothing about which.
 - **The blame is a lower bound.** A term is named when the winner was paid more than the truth by it, which requires
   both sides to carry a breakdown. A case whose winner predates `top1Terms` is counted as `outvoted` and names
   nobody, so a bucket of six may hide a seventh whose owner was never recorded.
