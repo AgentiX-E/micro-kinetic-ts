@@ -74,11 +74,11 @@ import {
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
-  type DualFamilyGateMode,
-  type FailedEdgeGateMode,
   isDualFamilyGateMode,
   isFailedEdgeGateMode,
   isOnsetShape,
+  type DualFamilyGateMode,
+  type FailedEdgeGateMode,
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
@@ -114,6 +114,7 @@ import {
   DEFAULT_TOPO_PRECEDENCE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRANSIENT_GUARD_TEST,
+  TRANSIENT_GUARD_TESTS,
   isBaselineAnchor,
   isDropDeviationMode,
   isLogSignalMode,
@@ -122,6 +123,7 @@ import {
   isTopoClosure,
   isTopoPrecedence,
   isTransientGuardTest,
+  type TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 
 import {
@@ -499,7 +501,7 @@ export interface CliOptions {
    * intermittent plateau that fills most of the post window survives. Transported in the packed `anomaly_knobs`
    * block as `transguard=<endpoint|level>`; ships at `endpoint`, which is bit-identical by construction.
    */
-  transientGuardTest: 'endpoint' | 'level-window';
+  transientGuardTest: TransientGuardTest;
   /**
    * Suppress a metric whose baseline is essentially zero (≤ 0.001) from scoring
    * its RISE: a near-zero-baseline cpu/diskio fluctuation reads as a spurious
@@ -943,7 +945,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // dispatch that named it, because a silent fallback to `endpoint` would publish the shipped cells under a
       // configuration the artifact claims was `level-window`.
       if (!isTransientGuardTest(v)) {
-        throw new Error(`--transient-guard-test takes endpoint or level-window, got '${v}'`);
+        throw new Error(
+          `--transient-guard-test takes ${Object.keys(TRANSIENT_GUARD_TESTS).join(', ')}, got '${v}'`,
+        );
       }
       opts.transientGuardTest = v;
     } else if (args[i] === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;

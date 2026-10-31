@@ -1,12 +1,13 @@
 # The transient guard's question — the estimator was never where the defect lived
 
-**Status:** the mechanism is IMPLEMENTED and ships at `endpoint`, which is bit-identical to the published nine
-cells by construction. Measured on the two cells this repository can rank offline — one up by five cases, one
-down by roughly six — so the GLOBAL arm is **REFUSED** (§5) and the conditional form is **PRE-REGISTERED** (§6)
-rather than dispatched on the strength of the cell that likes it.
+**Status:** the mechanism is IMPLEMENTED with three members and ships at `endpoint`, which is bit-identical to
+the published nine cells by construction. Measured on the two cells this repository can rank offline:
+`level-window` is **+5 / −7** (REFUSED, §5), `either` is **+3 / −0** and is a candidate awaiting the four
+span-bearing cells (§6). A conditional arm conditioned on direction evidence was pre-registered here and is
+**falsified by the corpus's own partition** (§5), not deferred.
 
 **Owner of:** `transientGuardTest` (`packages/tree/src/causal/topology-fault-graph.ts`),
-`--transient-guard-test`, `anomaly_knobs=transguard=<endpoint|level-window>`.
+`--transient-guard-test`, `anomaly_knobs=transguard=<endpoint|level-window|either>`.
 
 ---
 
@@ -34,10 +35,11 @@ the QUESTION rather than the estimate of the same two endpoints.
 
 ## 2. The two statistics
 
-| value                | statistic                                                         | what it reads         |
-| -------------------- | ----------------------------------------------------------------- | --------------------- |
-| `endpoint` (shipped) | `\|values[0] − values[n−1]\| / range`                             | two samples           |
-| `level-window`       | `\|median(post) − median(pre)\| / range`, split at `injectTimeMs` | every sample, by side |
+| value                | statistic                                                         | what it reads               |
+| -------------------- | ----------------------------------------------------------------- | --------------------------- |
+| `endpoint` (shipped) | `\|values[0] − values[n−1]\| / range`                             | two samples                 |
+| `level-window`       | `\|median(post) − median(pre)\| / range`, split at `injectTimeMs` | every sample, by side       |
+| `either`             | `max` of the two verdicts above                                   | whichever reading finds more |
 
 `level-window` asks the guard's question — _did this channel settle at a new level_ — of the two sides of the
 injection boundary. An off-beat at either end cannot decide a channel, and an intermittent plateau that fills
@@ -85,52 +87,82 @@ So the arm is not two mechanisms and it is not a better estimator. It is one ver
 the truth's own transport channel — applied to a population where that verdict happens to be the whole
 difference between rank 1 and rank 2.
 
-## 5. What refuses it
+## 5. What refuses the global arm, and what the two populations actually disagree about
 
 **The bar this repository has used for every refusal: no cell down.** `RE3:SockShop` — the weakest cell of the
 published nine — falls 21.1 pp, and the local reading there is not a sample of the cell, it IS the cell's 30
-cases. A five-case gain on a cell we already lead for a six-case loss on the cell with the most headroom is a
-bad trade by the same arithmetic that refused `dualfamily = 0.34` (§8 of `docs/miss-reachability.md`).
+cases.
 
-That the two populations disagree is not a surprise in hindsight, and the disagreement is measurable rather
-than atmospherical: **RE1 has no direction evidence at all.** On all 375 RE1 cases the `trace`, `failedEdge`
-and `lat` terms are `WEIGHT_ZERO` or `INPUT_MAP_EMPTY` (the run's own `why the zero terms are zero` block
-prints 100.0 % for each), so the transient guard is the ONLY mechanism suppressing a propagated symptom
-there. Where `failedEdge` and `lat` are live, the ranking already knows who called whom, and re-deciding which
-channels are evidence re-cuts a question that has been answered.
+The explanation this document first wrote was that RE1 has no direction evidence and RE2/RE3 do, so the guard
+is RE1's only suppressor of a propagated symptom. **That explanation is false, and the corpus already said so.**
+`packages/tree/src/pruning/pruner.ts` records the partition: `edgeLatency` is EMPTY on **five of the nine
+cells — 495 of 735 cases** (all three RE1 cells, RE3:SockShop, RE2:SockShop), and `failedEdge` reads
+`WEIGHT_ZERO` on 734 of 735 golden cases. `RE3:SockShop`, the cell that pays for this arm, is one of the five
+with **no direction evidence at all**. The discriminator cannot be direction evidence, because the cell that
+likes the arm and the cell that refuses it sit on the same side of that line.
 
-## 6. Pre-registered — the conditional arm, not a third statistic
+**What the two populations actually differ in is the SHAPE of the culprit's own signature**, and it is read
+case by case rather than argued. `re3ss_carts_f1_2` is the witness for the losing side, and it is the mirror
+image of `re1ob_adservice_delay_3`:
 
-**Rule.** Apply `level-window` only where the case carries NO direction evidence — no per-edge latency rows
-and no failed-edge records — and `endpoint` everywhere else. That is the same condition
-`docs/topo-discount-gate.md` §7.1 arrived at from the other end ("the family must be conditioned on the
-absence of an explicit direction term"), and it is checkable before the ranking runs: the runner already
-prints `[failed-edge-gate] … carried no per-edge latency` and `direction-gate[whole-view]` per cell.
+| | `re1ob_adservice_delay_3` (RE1, gained) | `re3ss_carts_f1_2` (RE3, lost) |
+| --- | --- | --- |
+| the truth's channel | `latency-90`, 5 ms → 106 ms | `cpu`, 4 → 30 |
+| shape after injection | **plateau to the end of the window**, 361 of 721 samples | **bounded burst**, ~150 of 721 samples, returns to baseline |
+| median(pre) → median(post) | moves with the plateau | 3.60 → 4.29, i.e. **0.02 of the range** |
+| `\|values[0] − values[n−1]\|` | 0 — the last sample is an off-beat | **25.8 → 5.6**, i.e. 0.69 of the range |
+| what the shipped statistic did | dropped it (wrong) | kept it — on a **warm-up spike at index 0**, not on the injection |
+| what the level test did | kept it (right) | dropped it (right by its own contract) |
 
-**Predictions, written before an arm exists.**
+So the nine RE3 cases are not evidence that the level test is a worse reading of the same quantity. They are
+nine cases whose shipped-mode win is carried by a channel the guard's own contract does not consider evidence:
+a start-of-series warm-up with a settled tail, or a burst that returns. The milestone that says "89.6 %" and
+the milestone that says "63.6 %" are measuring different things, and the metric cannot arbitrate between them.
 
-1. The three RE1 cells rise and the six RE2/RE3 cells are bit-identical to the shipped run, because the flag
-   cannot fire on a case that supplied a direction row.
-2. `RE1:OnlineBoutique` reads **112/125** and `RE1:TrainTicket` moves by more than the ±1 case a rank surface
-   hands out for free: it is 125 cases of which 19 are misses and 9 of those are `reversed`, and the guard's
-   verdict on the truth's transport channel is exactly the event that decides them.
-3. `RE3:SockShop` returns to **63.6 %** — the number the shipped run reads — because every RE3 case carries
-   trace rows.
+## 6. The third statistic the evidence leaves — `either`
 
-**Veto.** Any RE2 or RE3 cell differs from the shipped run, or any RE1 cell goes down. Either one means the
-condition is not "direction evidence absent" but "OnlineBoutique", and the conditional form is refused on the
-same bar as the global one.
+`endpoint` is decided by the samples at index 0 and `n − 1`; the level test is decided by the medians of the
+two sides. **Their blind spots are disjoint**, and both are exhibited above: `either` takes the LARGER of the
+two verdicts, which is the same as keeping a channel when either honest reading finds a shift. It cannot
+suppress more than the shipped statistic does, so no published cell can fall for the reason the global level
+arm falls — only for the reason a noisier channel set re-orders a case.
 
-**Instrument owed before the arm ships.** The per-case direction supply the condition reads is printed per
-CELL and not per case; a case-level `directionEvidence` field on the loss record is what makes §6's rule
-falsifiable at the granularity it is written at. Until it exists, the arm can only be read at cell
-granularity, which is what predictions 1 and 3 are stated at.
+| arm | `RE1:OnlineBoutique` | `RE3:SockShop` | what it says |
+| --- | --- | --- | --- |
+| `endpoint` (shipped) | 85.6 % (107/125) | 63.6 % (21/33) | two samples decide a channel |
+| `level-window` | **89.6 %** (112/125) | 42.5 % (14/33) | the two sides' medians decide it |
+| `either` | 88.0 % (**110**/125) | **63.6 %** (21/33) | a channel either reading calls permanent |
 
+Against the shipped arm, `either` is **+3 and −0 on the two cells this host can rank** — the first arm of this
+axis that clears the no-cell-down bar locally. Against `level-window` it wins nothing on RE1 (its four gains
+are the same four channels, and it loses the two cases the level test also wins: `checkoutservice_loss_3`,
+`currencyservice_loss_5`) and recovers all seven RE3 cases.
+
+**What that does not buy.** `+3` on one cell is not SOTA, and 88.0 % is the published competitor's number on
+that cell rather than above it. `either` is a candidate that must be read on all nine cells before it ships,
+and the two cells here predict what the reading will look like: the four span-bearing cells (RE2:OnlineBoutique
+90 cases, RE2:TrainTicket, RE3:OnlineBoutique, RE3:TrainTicket) are where a wider channel set can re-order
+ranks, and none of them is in this measurement.
+
+**The rule this section replaces, and why it is dead rather than deferred.** The previous text pre-registered a
+conditional arm — _apply `level-window` only where the case carries no direction evidence_ — with three
+predictions and one veto. The partition above falsifies it before it could be dispatched: the rule sends
+`RE3:SockShop` (one of the five cells with no `edgeLatency` rows) to `level-window`, which is precisely where
+the arm loses seven cases, so the arm's own veto fires on its own prediction 3. The condition was arrived at
+from `docs/topo-discount-gate.md` §7.1's sentence about explicit direction terms, and that sentence is true of
+the FAMILY it was written for and false as a description of this axis: what separates the two cells is the
+shape of the injected signature, which is a property of the corpus's fault and not of its trace supply.
 ## 7. Limits
 
 - **Two cells, one corpus.** The measurement covers the two cells this host can rank. `RE1:SockShop`,
-  `RE1:TrainTicket` and all six RE2/RE3 cells are not in it, and §6's predictions are exactly the part of that
-  gap a dispatch can close.
+  `RE1:TrainTicket` and all six RE2/RE3 cells are not in it, and that gap is exactly what a dispatch closes —
+  §6 states what it expects the reading to look like rather than claiming it.
+- **`either` inherits the shipped statistic's exploit.** It is a union, so it keeps everything `endpoint` keeps,
+  including a channel whose only credential is a warm-up spike at index 0 — the exact artifact that carries the
+  nine RE3 cases. That is deliberate (the bar is no cell down, and the artifact is already in every published
+  number) and it is the reason `either` is not a theory of the guard but an admission rule. A corpus whose
+  windows open on a start-up transient rather than on a pre-injection baseline would be ranked partly on
+  artifacts under this arm, and the honest fix there is the window boundary, not the statistic.
 - **The gain is a verdict, not a magnitude.** Seven of seven gains restore a channel; the arm does not make
   any channel louder than its own deviation, so it cannot move a case that is lost on amplitude alone.
 - **The median is not a level test of drift.** A channel that drifts monotonically through the injection

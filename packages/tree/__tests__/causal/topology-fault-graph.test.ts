@@ -3051,6 +3051,80 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     expect(earlyAnchor.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
   });
 
+  it('keeps a channel that EITHER statistic calls permanent, because their blind spots do not coincide', () => {
+    // The two statistics fail on disjoint shapes, and both failures are measured on the corpora this repository
+    // ranks. `level-window` is blind to a channel whose medians coincide while its ends do not — a series that
+    // opens on a warm-up spike and settles (`re3ss_carts_f1_2`: `cpu` at 25.8 → 5.6 against a settled tail,
+    // injected burst moving the median by 0.02 of the range). `endpoint` is blind to a channel that settles at a
+    // new level and happens to end on an off-beat (`re1ob_adservice_delay_3`, the plateau in the case above).
+    // `either` takes the larger verdict, so a channel one honest reading calls permanent stays evidence.
+    const graph = makeCallGraph(['svc'], []);
+
+    const warmUp = [
+      25,
+      20,
+      15,
+      10,
+      8,
+      7,
+      6,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      ...Array.from({ length: 12 }, () => 5.7),
+      5.7,
+      5.7,
+      5.7,
+    ];
+    const warmUpMetrics = makeMetrics([['svc', [makeTimeSeries('cpu', warmUp)]]]);
+    const warmUpOutcome = (test?: 'endpoint' | 'level-window' | 'either') =>
+      buildTopologyFaultGraph(graph, warmUpMetrics, {
+        injectTimeMs: 15000,
+        ...(test === undefined ? {} : { transientGuardTest: test }),
+      }).metricDiagnostics.get('svc')![0]!.outcome;
+
+    // The shipped statistic keeps it for a reason that has nothing to do with the injection: its two samples
+    // straddle the warm-up. The level test drops it, correctly — the injected burst never moves the level.
+    expect(warmUpOutcome()).toBe('kept');
+    expect(warmUpOutcome('level-window')).toBe('transient-return');
+    expect(warmUpOutcome('either')).toBe('kept');
+
+    // And the mirror: a settled plateau is dropped by the shipped statistic and kept by the level test.
+    const plateau = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('latency-50', [
+            ...Array.from({ length: 15 }, () => 5),
+            ...Array.from({ length: 12 }, () => 106),
+            5,
+            5,
+            5,
+          ]),
+        ],
+      ],
+    ]);
+    const plateauOutcome = (test: 'endpoint' | 'level-window' | 'either') =>
+      buildTopologyFaultGraph(graph, plateau, {
+        injectTimeMs: 15000,
+        transientGuardTest: test,
+      }).metricDiagnostics.get('svc')![0]!.outcome;
+
+    expect(plateauOutcome('endpoint')).toBe('transient-return');
+    expect(plateauOutcome('level-window')).toBe('kept');
+    expect(plateauOutcome('either')).toBe('kept');
+
+    // Where the boundary cannot be placed, `either` has one verdict rather than two and is exactly the shipped
+    // statistic — the union degrades to the arm that ships, not to a third behaviour.
+    const noAnchor = buildTopologyFaultGraph(graph, plateau, { transientGuardTest: 'either' });
+    expect(noAnchor.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+  });
+
   it('distinguishes the optional near-zero-baseline guard from the always-on ones', () => {
     const graph = makeCallGraph(['svc'], []);
     const metrics = makeMetrics([
@@ -3607,9 +3681,17 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     // The guard the RCAEval parser calls. The reason it is a union rather than a boolean is that the two
     // members are not "on" and "off" — they are the same guard asking its question of different samples —
     // so a third name has to be refused by name rather than coerced onto one of them.
-    expect(Object.keys(TRANSIENT_GUARD_TESTS).sort()).toEqual(['endpoint', 'level-window']);
+    expect(Object.keys(TRANSIENT_GUARD_TESTS).sort()).toEqual([
+      'either',
+      'endpoint',
+      'level-window',
+    ]);
     expect(isTransientGuardTest('endpoint')).toBe(true);
     expect(isTransientGuardTest('level-window')).toBe(true);
+    // The third member is the UNION of the other two rather than a third estimator: it is the larger of two
+    // verdicts already computed, which is why the vocabulary is honest as a set of three questions asked of
+    // the same series.
+    expect(isTransientGuardTest('either')).toBe(true);
     expect(isTransientGuardTest('window')).toBe(false);
     expect(isTransientGuardTest('')).toBe(false);
     // A prototype key is not a member: `hasOwnProperty` rather than `in`, or every object would answer true.

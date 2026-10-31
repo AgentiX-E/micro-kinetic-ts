@@ -40,6 +40,7 @@ import type {
   TopoClosure,
   TopoDiscountScope,
   TopoPrecedence,
+  TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
@@ -168,7 +169,7 @@ export interface RCAEvalTopologyOptions {
   readonly anomalyNormalizeNodeThreshold: number;
   readonly suppressIdleTransients: boolean;
   /** The transient guard's statistic — `endpoint` (shipped) or `level-window`. */
-  readonly transientGuardTest: 'endpoint' | 'level-window';
+  readonly transientGuardTest: TransientGuardTest;
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level — see `CliOptions`. */
   readonly suppressZeroBaselineLatency: boolean;

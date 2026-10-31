@@ -326,7 +326,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -605,7 +606,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -909,7 +911,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -1197,7 +1200,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -1509,7 +1513,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -1789,7 +1794,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
@@ -2070,7 +2076,8 @@ jobs:
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
               #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
-              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection
+              #   boundary; `either` keeps a channel when either reading calls it permanent.
               #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
               #   deviation is measured on, this decides whether a channel is evidence at all.
               transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;

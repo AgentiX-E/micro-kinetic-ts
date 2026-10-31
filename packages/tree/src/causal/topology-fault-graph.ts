@@ -557,7 +557,7 @@ export const DEFAULT_RANK_NORMALIZATION = true;
  */
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 
-export type TransientGuardTest = 'endpoint' | 'level-window';
+export type TransientGuardTest = 'endpoint' | 'level-window' | 'either';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
@@ -586,6 +586,7 @@ export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'endpoint';
 export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> = {
   endpoint: true,
   'level-window': true,
+  either: true,
 };
 
 /**
@@ -1976,11 +1977,24 @@ function computeAnomalyFeatures(
     // question of the two SIDES of the injection boundary, so no single off-beat can decide a channel and an
     // intermittent plateau that occupies the majority of the post window reads as the permanent shift it is.
     // The fallback is `levelPermanence`'s own `undefined`, which is a series whose boundary cannot be placed.
+    //
+    // `either` takes the LARGER of the two verdicts, which is the same as "keep the channel when either reading
+    // finds a shift". It is not a compromise between two estimates of one quantity — the two statistics fail on
+    // disjoint shapes and each failure is measured: `endpoint` is decided by the samples at index 0 and n−1, so
+    // a channel that settles at a new level after a start-of-series warm-up is dropped only when those two
+    // samples happen to be far apart (`re3ss_carts_f1_2` keeps its `cpu` channel on exactly such a warm-up,
+    // 25.8 → 5.6 against a settled tail, while the injected burst moves the median by 0.02 of the range); the
+    // level test is decided by the medians of the two sides, so a channel whose ends move and whose median does
+    // not is dropped even though it was permanent. A channel one honest reading calls permanent is a channel
+    // where a shift was found.
     const permanenceEndpoint = range > max * 1e-6 ? headTailSpread / range : 1;
+    const permanenceLevel = levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range);
     const permanence =
-      (cfg.transientGuardTest === 'level-window'
-        ? levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range)
-        : undefined) ?? permanenceEndpoint;
+      cfg.transientGuardTest === 'level-window'
+        ? (permanenceLevel ?? permanenceEndpoint)
+        : cfg.transientGuardTest === 'either'
+          ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
+          : permanenceEndpoint;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
