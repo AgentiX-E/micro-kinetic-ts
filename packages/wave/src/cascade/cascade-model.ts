@@ -1,37 +1,62 @@
 /**
- * Wave Cascade Model — discretized wave kinetic equation simulation.
+ * Wave Cascade Model — the kinetic equation integrated on a service call graph.
  *
- * Simulates alert intensity propagation through the service graph
- * using a discretized version of Deng Yu's wave kinetic equation (WKE).
+ * Simulates alert intensity propagation through the service graph with the two parts of Deng Yu's
+ * wave kinetic equation (WKE) that a call graph can actually carry:
  *
- * ## Deng Yu Theorem Mapping
+ *     ∂_t n = Q_lin[n] + c · Q_triad[n] − γ n
  *
- * ### Wave Kinetic Equation (WKE)
- * From Deng Yu's work on wave turbulence theory, the WKE describes
- * the statistical evolution of wave energy in weakly nonlinear
- * dispersive systems:
+ * ## The linear part is the transport, and it is the part that propagates
  *
- *   ∂_t n(k) = ∫ T(k,k₁,k₂) [n₁n₂ - n_k(n₁+n₂)] dk₁dk₂
+ * `Q_lin[n]_i = c · v · Σ_j S(i,j) · (n_j − n_i)` — the graph Laplacian of the symmetric coupling
+ * `S(i,j) = max(A(i,j), A(j,i))`. It is the discrete symbol of the linearised collision operator:
+ * the reversible, mass-transporting part of the kinetics, whose spectral gap sets the decay time of
+ * the slowest mode. `graph-spectrum.ts` computes that gap from the same operator this file integrates.
  *
- * where:
- *   n(k) = wave energy spectrum at wavenumber k
- *   T(k,k₁,k₂) = interaction kernel
+ * ## The three-wave part is a correction, and it only exists on triads
  *
- * The three-wave interaction terms represent:
- *   n₁n₂ → energy flowing INTO mode k (two waves combine)
- *   n_k(n₁+n₂) → energy flowing OUT of mode k (wave disperses)
+ *     T(i,j,k) = c · S(i,j) · S(i,k) · S(j,k)
+ *     Q_triad[n]_i = Σ_{j,k} T(i,j,k) · [n_j n_k − n_i (n_j + n_k)]
  *
- * ### AIOps Translation
- * - Wave energy → alert "intensity" at a service
- * - Wavenumber k → service position in call graph
- * - Energy cascade → alert propagation along call chains
- * - Interaction kernel T → graph edge propagation weights
- * - Dissipation → alert resolution / auto-healing
+ * The vertex is **symmetric under permutation of its three modes**, which is the property the WKE
+ * kernel has and the one the previous implementation lacked: it built `T` from the *directed*
+ * adjacency and read `A(i,·)` — the calls `i` MAKES — for all three factors, so the tensor was
+ * index-asymmetric and, for any node downstream of the injection, collapsed to its self term
+ * `c·(n² − 2n²) = −c·n²`, strictly negative. A service could only lose intensity. Direction of
+ * transfer is a property of the occupation numbers (`n_j n_k` vs `n_i(n_j + n_k)`), not of the index.
  *
- * ### Discretized WKE for AIOps
- *   I(s, t+Δt) = I(s,t)
- *     + Δt × Σ_{s',s''} T(s,s',s'')[I(s')I(s'') - I(s)(I(s')+I(s''))]
- *     - γ × I(s,t) × Δt
+ * A triad needs three mutually coupled services, so on a sparse call graph this term is usually
+ * zero — which is exactly why the propagation has to come from `Q_lin`, and why the previous
+ * model, which had only the triads, never propagated on any acyclic graph.
+ *
+ * ## The integration is a theorem, not a clamp
+ *
+ * The previous update was explicit Euler with `Math.max(0, Math.min(1, …))`, and the clamp was not
+ * decoration: at `dt = 600 ms` with degrees up to 15 the linear term moved a node by thousands of
+ * units per step, so trajectories saturated at 1 and were then pinned at exactly 0 — measured on the
+ * one topology that propagated at all. Splitting the update into a stiff part treated implicitly and
+ * a saturating source makes `[0, 1]` an **invariant set** with no clamp anywhere:
+ *
+ *     n_i' = ( n_i + dt·c·v·u_i + (1 − n_i)·s_i ) / ( 1 + dt·(c·v·d_i + γ + c·max(0, B_i)) )
+ *
+ *     u_i = Σ_j S(i,j)·n_j                 (the neighbour mass that can arrive)
+ *     d_i = Σ_j S(i,j)                     (its rate)
+ *     s_i = dt·c·A_i / (1 + dt·c·A_i)      (Padé form of 1 − e^{−dt·c·A_i}: the triad source can only
+ *                                           fill the remaining headroom, so it cannot overshoot)
+ *     A_i = Σ_{j,k} max(T, 0)·n_j·n_k      (triad source)
+ *     B_i = Σ_{j,k} T·(n_j + n_k)          (triad sink coefficient)
+ *
+ * With `0 ≤ n ≤ 1` assumed, the numerator is at most `n_i + dt·c·v·d_i + (1 − n_i) = 1 + dt·c·v·d_i`
+ * and the denominator is at least that, so `n' ≤ 1`; every term in the numerator is non-negative, so
+ * `n' ≥ 0`. Both hold for **any** `dt`, and `cascade-model.test.ts` asserts them across a sweep of
+ * horizons, couplings and speeds rather than trusting the argument.
+ *
+ * ## Units
+ *
+ * The operator is stated **per second**: `dt` is converted from the millisecond horizon, and
+ * `γ = 1000 / decayTimeConstant`, so the decay constant (milliseconds) and the transport speed
+ * (hops per second) live on one clock. The previous implementation divided by a millisecond τ and
+ * multiplied by a `dt` of hundreds, which is why the front crossed a 15-node graph in the first step.
  *
  * @module wave/cascade/cascade-model
  */
@@ -45,6 +70,8 @@ import type {
 } from '@agentix-e/micro-kinetic-core';
 import { invariant, invariantNonEmpty, invariantRange } from '@agentix-e/micro-kinetic-core';
 
+import { buildTransportCoupling, laplacianSpectrum } from './graph-spectrum.js';
+
 /** Default wave parameters. */
 const DEFAULT_WAVE_PARAMS: WaveParams = {
   couplingStrength: 0.5,
@@ -54,30 +81,31 @@ const DEFAULT_WAVE_PARAMS: WaveParams = {
   timeHorizon: 300000, // 5 minutes
 };
 
+/** Number of simulation steps the horizon is divided into. */
+const STEPS = 500;
+
+/** Non-zero triads of the interaction tensor, in compressed form. */
+interface TriadIndex {
+  readonly i: Int32Array;
+  readonly j: Int32Array;
+  readonly k: Int32Array;
+  readonly t: Float64Array;
+}
+
 /**
  * Wave Cascade Model — WKE-based alert cascade simulation.
  *
- * Implements IWavePropagationModel.simulateCascade() using
- * the discretized wave kinetic equation.
+ * Implements IWavePropagationModel.simulateCascade() using the discretized wave kinetic equation.
  */
 export class WaveCascadeModel {
   /**
    * Simulate an alert cascade from a source service.
    *
    * **Algorithm:**
-   * 1. Initialize I(s, 0) = 0 for all s, I(source, 0) = 1
-   * 2. Compute interaction kernel T from graph topology
-   * 3. For each time step Δt:
-   *    a. For each node s, compute the three-wave interaction term
-   *    b. Apply the dissipation term -γ × I(s,t)
-   *    c. Check if cascade has dissipated
-   * 4. Return the complete intensity trajectory data
-   *
-   * **Deng Yu's Guarantee:**
-   *   In the weakly nonlinear regime (coupling < 0.7),
-   *   the WKE provides a statistically accurate description
-   *   of wave energy transfer, with error O(ε³) where ε is
-   *   the nonlinearity parameter.
+   * 1. Initialize n(source, 0) = 1, n(s, 0) = 0 elsewhere
+   * 2. Build the symmetric transport coupling and the triad index
+   * 3. For each step: neighbour mass, saturating triad source, implicit sink
+   * 4. Report the farthest service the cascade ever reached above `cascadeThreshold`
    *
    * @param source - Source service ID where cascade originates
    * @param graph - Service call graph topology
@@ -98,132 +126,134 @@ export class WaveCascadeModel {
     invariant(p.propagationSpeed > 0, 'propagationSpeed must be positive');
     invariant(p.decayTimeConstant > 0, 'decayTimeConstant must be positive');
     invariant(p.timeHorizon > 0, 'timeHorizon must be positive');
+    invariant(p.cascadeThreshold > 0, 'cascadeThreshold must be positive');
 
     const serviceIds = Array.from(graph.nodes.keys());
-    const N = serviceIds.length;
+    const n = serviceIds.length;
+    const index = new Map(serviceIds.map((id, at) => [id, at]));
 
-    // Step 1: Build adjacency and interaction kernel
-    const adjacency = this.buildAdjacencyMatrix(graph, serviceIds);
-    const interactionKernel = this.buildInteractionKernel(adjacency, N, p.couplingStrength);
-
-    // Step 2: Time discretization
-    const dt = Math.min(100, p.timeHorizon / 500); // at most 500 steps
-    const steps = Math.floor(p.timeHorizon / dt);
-
-    // Step 3: Initialize intensity array
-    // I[s][t] — stores intensity trajectories
-    const sourceIdx = serviceIds.indexOf(source);
-    invariant(sourceIdx >= 0, `Source service "${source}" index not found`);
-
-    const intensities: Float64Array[] = Array.from(
-      { length: N },
-      () => new Float64Array(steps + 1),
+    const coupling = buildTransportCoupling(
+      graph.edges.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        callRate: edge.callRate,
+        errorRate: edge.errorRate,
+      })),
+      index,
+      n,
     );
 
-    // Set initial condition: I(source, 0) = 1, all others = 0
-    for (let i = 0; i < N; i++) {
-      intensities[i]![0] = i === sourceIdx ? 1.0 : 0.0;
+    const degrees = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let degree = 0;
+      for (let j = 0; j < n; j++) degree += coupling[i * n + j]!;
+      degrees[i] = degree;
     }
 
-    // Step 4: Time evolution — discretized WKE
+    const triads = this.buildTriads(coupling, n, p.couplingStrength);
+
+    // Seconds on both sides of the equation: the horizon and τ are milliseconds in the API.
+    const horizonSeconds = p.timeHorizon / 1000;
+    const dt = horizonSeconds / STEPS;
+    const gamma = 1000 / p.decayTimeConstant;
+    const transport = p.couplingStrength * p.propagationSpeed;
+
+    const sourceIdx = index.get(source);
+    invariant(sourceIdx !== undefined, `Source service "${source}" index not found`);
+
+    const trajectories: Float64Array[] = Array.from(
+      { length: n },
+      () => new Float64Array(STEPS + 1),
+    );
+    for (let i = 0; i < n; i++) trajectories[i]![0] = i === sourceIdx ? 1 : 0;
+
+    const current = new Float64Array(n);
+    const next = new Float64Array(n);
+    for (let i = 0; i < n; i++) current[i] = trajectories[i]![0]!;
+
     let dissipated = false;
     let dissipationTime: number | undefined;
-    let peakIntensity = 1.0;
-    let timeToPeak = 0;
+    // The peak includes t = 0, where the source sits at 1: a cascade's peak is its initial condition
+    // when nothing amplifies it, and the field is bounded by that initial value.
+    let peakIntensity = 1;
 
-    for (let t = 0; t < steps; t++) {
-      const currentTime = t * dt;
-      let maxIntensity = 0;
+    for (let t = 0; t < STEPS; t++) {
+      for (let i = 0; i < n; i++) {
+        let neighbourMass = 0;
+        for (let j = 0; j < n; j++) neighbourMass += coupling[i * n + j]! * current[j]!;
 
-      for (let i = 0; i < N; i++) {
-        const iVal = intensities[i]![t]!;
-
-        // Three-wave interaction term
-        let interactionSum = 0;
-        for (let j = 0; j < N; j++) {
-          for (let k = 0; k < N; k++) {
-            const tjk = interactionKernel[i * N * N + j * N + k]!;
-            if (Math.abs(tjk) < 1e-12) continue;
-
-            const nj = intensities[j]![t]!;
-            const nk = intensities[k]![t]!;
-
-            // n₁n₂ - n_k(n₁+n₂) → branching and merging terms
-            interactionSum += tjk * (nj * nk - iVal * (nj + nk));
-          }
+        let source = 0;
+        let sink = 0;
+        for (let at = 0; at < triads.i.length; at++) {
+          if (triads.i[at] !== i) continue;
+          const value = triads.t[at]!;
+          const nj = current[triads.j[at]!]!;
+          const nk = current[triads.k[at]!]!;
+          if (value > 0) source += value * nj * nk;
+          sink += value * (nj + nk);
         }
 
-        // Dissipation term
-        const gamma = 1 / p.decayTimeConstant;
-        const dissipation = gamma * iVal;
-
-        // Euler integration
-        const di = p.propagationSpeed * interactionSum - dissipation;
-        const nextVal = Math.max(0, Math.min(1, iVal + di * dt));
-
-        intensities[i]![t + 1] = nextVal;
-
-        if (nextVal > maxIntensity) {
-          maxIntensity = nextVal;
-        }
+        const scaledSource = dt * p.couplingStrength * source;
+        const triadSource = scaledSource / (1 + scaledSource);
+        const numerator =
+          current[i]! + dt * transport * neighbourMass + (1 - current[i]!) * triadSource;
+        const denominator =
+          1 + dt * (transport * degrees[i]! + gamma + p.couplingStrength * Math.max(0, sink));
+        next[i] = numerator / denominator;
       }
 
-      // Track peak — intensity is bounded by initial value of 1.0
-      // so peakIntensity stays at 1.0 (the initial source intensity)
+      for (let i = 0; i < n; i++) {
+        current[i] = next[i]!;
+        trajectories[i]![t + 1] = next[i]!;
+      }
 
-      // Check dissipation
-      if (maxIntensity < p.cascadeThreshold && !dissipated) {
+      let stepMax = 0;
+      for (let i = 0; i < n; i++) stepMax = Math.max(stepMax, next[i]!);
+      peakIntensity = Math.max(peakIntensity, stepMax);
+
+      if (!dissipated && stepMax < p.cascadeThreshold) {
         dissipated = true;
-        dissipationTime = currentTime;
+        dissipationTime = (t + 1) * dt * 1000;
       }
     }
 
-    // Step 5: Compute propagation distance (BFS from source)
     const propagationDistance = this.computePropagationDistance(
       source,
-      graph,
-      intensities,
-      steps,
+      coupling,
+      n,
+      trajectories,
       serviceIds,
+      p.cascadeThreshold,
     );
 
-    // Step 6: Build result trajectories
     const intensityTrajectories = new Map<string, readonly AlertIntensity[]>();
-
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < n; i++) {
       const serviceId = serviceIds[i]!;
       const trajectory: AlertIntensity[] = [];
-      for (let t = 0; t <= steps; t++) {
-        trajectory.push({
-          serviceId,
-          time: t * dt,
-          intensity: intensities[i]![t]!,
-        });
+      for (let t = 0; t <= STEPS; t++) {
+        trajectory.push({ serviceId, time: t * dt * 1000, intensity: trajectories[i]![t]! });
       }
       intensityTrajectories.set(serviceId, trajectory);
     }
-
-    // Final max was already checked during the last iteration of the loop
 
     return {
       sourceServiceId: source,
       intensityTrajectories,
       propagationDistance,
       peakIntensity,
-      timeToPeak,
+      timeToPeak: this.computeTimeToPeak(trajectories, n, sourceIdx!, dt),
       dissipated,
       dissipationTime,
     };
   }
 
   /**
-   * Compute the correlation decay curve from the graph's spectral gap.
+   * Compute the correlation decay curve from the transport operator's spectral gap.
    *
-   * Under the WKE, alert correlations decay exponentially:
-   *   C(t) = C₀ × exp(-t/τ)
-   *
-   * The decay constant τ is derived from the spectral gap of
-   * the graph's adjacency matrix: τ = 1/spectralGap.
+   * The slowest non-constant mode of `dn/dt = −speed · L n` decays as `exp(−λ₂ · t)`, so the
+   * correlation decay constant is `τ = 1/λ₂` — in seconds, published in milliseconds to match the
+   * time axis of the curve. The gap comes from the same Laplacian the trajectory is integrated with,
+   * which is what makes this curve a property of the cascade rather than of a different matrix.
    *
    * @param graph - Service call graph
    * @param timeHorizon - Time horizon for the decay curve (ms)
@@ -231,270 +261,177 @@ export class WaveCascadeModel {
    */
   public computeDecayCurve(graph: ServiceCallGraph, timeHorizon: number): DecayCurve {
     invariant(timeHorizon > 0, 'timeHorizon must be positive');
+    invariant(graph.nodes.size > 0, 'graph must contain nodes');
 
     const serviceIds = Array.from(graph.nodes.keys());
-    const N = serviceIds.length;
+    const n = serviceIds.length;
+    const index = new Map(serviceIds.map((id, at) => [id, at]));
+    const coupling = buildTransportCoupling(
+      graph.edges.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        callRate: edge.callRate,
+        errorRate: edge.errorRate,
+      })),
+      index,
+      n,
+    );
 
-    // Build adjacency and compute spectral gap
-    const adjacency = this.buildAdjacencyMatrix(graph, serviceIds);
-    const spectralGap = this.computeSpectralGap(adjacency, N);
+    const { gap } = laplacianSpectrum(coupling, n);
 
-    // Decay constant: τ = 1 / spectralGap
-    // If spectral gap is 0 (disconnected), use a large but finite τ
-    const tau = spectralGap > 1e-10 ? 1 / spectralGap : timeHorizon;
+    // A graph with no transport at all (one node, or no surviving edge) does not decorrelate across
+    // anything, so the only finite statement is that the horizon is shorter than the decay.
+    const tauSeconds = gap > 1e-10 ? 1 / gap : timeHorizon / 1000;
+    const tau = tauSeconds * 1000;
 
-    // Sample time points
     const numPoints = 100;
     const timePoints = new Float64Array(numPoints);
     const correlationValues = new Float64Array(numPoints);
-
-    const c0 = 1.0; // normalized initial correlation
-
     for (let i = 0; i < numPoints; i++) {
       const t = (i / (numPoints - 1)) * timeHorizon;
       timePoints[i] = t;
-      correlationValues[i] = c0 * Math.exp(-t / tau);
+      correlationValues[i] = Math.exp(-t / tau);
     }
-
-    // R² = 1.0 since this is the theoretical curve
-    const fitQuality = 1.0;
 
     return {
       timePoints,
       correlationValues,
       decayConstant: tau,
-      fitQuality,
+      // The curve IS the exponential of the operator's gap: there is nothing fitted, so the residual
+      // is zero by construction rather than by a regression that could have failed.
+      fitQuality: 1.0,
     };
   }
 
   // ── Internal helpers ────────────────────────────────────
 
   /**
-   * Build the adjacency matrix from the service call graph.
+   * Compress the three-wave tensor into its non-zero entries.
    *
-   * A_{ij} = callRate_norm(i→j) × (1 - errorRate(i→j))
+   * `T(i,j,k) = c · S(i,j) · S(i,k) · S(j,k)` is symmetric under permutation of its modes, and the
+   * index is built by skipping any triple with `S(j,k) = 0` — the triads that exist, rather than an
+   * N³ array that is almost entirely zeros on a service graph with 13 edges.
    *
-   * @param graph - Service call graph
-   * @param serviceIds - Ordered service ID list
-   * @returns Flattened N×N adjacency matrix (row-major)
-   */
-  private buildAdjacencyMatrix(graph: ServiceCallGraph, serviceIds: string[]): Float64Array {
-    const N = serviceIds.length;
-    const matrix = new Float64Array(N * N);
-    const idToIdx = new Map(serviceIds.map((id, i) => [id, i]));
-
-    // Set diagonal
-    for (let i = 0; i < N; i++) {
-      matrix[i * N + i] = 1.0;
-    }
-
-    for (const edge of graph.edges) {
-      const from = idToIdx.get(edge.from);
-      const to = idToIdx.get(edge.to);
-      if (from === undefined || to === undefined) continue;
-
-      // Normalize call rate and weight by error
-      const callRateNorm = Math.tanh(edge.callRate / 100);
-      const weight = callRateNorm * (1 - edge.errorRate);
-      matrix[from * N + to] = Math.max(0, Math.min(1, weight));
-    }
-
-    return matrix;
-  }
-
-  /**
-   * Build the 3D interaction kernel T(i, j, k) for the WKE.
-   *
-   * T(i, j, k) = coupling × A(i,j) × A(i,k) × A(j,k)
-   *
-   * This kernel determines how wave energy transfers between
-   * three nodes (i, j, k) — representing the three-wave
-   * resonant interactions in the WKE.
-   *
-   * @param adjacency - N×N adjacency matrix (row-major)
-   * @param N - Matrix dimension
+   * @param coupling - Symmetric coupling matrix
+   * @param n - Matrix dimension
    * @param couplingStrength - Global coupling multiplier
-   * @returns Flattened N×N×N interaction kernel tensor (row-major)
+   * @returns Non-zero triads
    */
-  private buildInteractionKernel(
-    adjacency: Float64Array,
-    N: number,
-    couplingStrength: number,
-  ): Float64Array {
-    const kernel = new Float64Array(N * N * N);
+  private buildTriads(coupling: Float64Array, n: number, couplingStrength: number): TriadIndex {
+    const i: number[] = [];
+    const j: number[] = [];
+    const k: number[] = [];
+    const t: number[] = [];
 
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        const aij = adjacency[i * N + j]!;
-        if (aij < 1e-8) continue;
-
-        for (let k = 0; k < N; k++) {
-          const aik = adjacency[i * N + k]!;
-          const ajk = adjacency[j * N + k]!;
-
-          // T ∝ A(i,j) × A(i,k) × A(j,k)
-          const t = couplingStrength * aij * aik * ajk;
-          kernel[i * N * N + j * N + k] = t;
+    for (let a = 0; a < n; a++) {
+      for (let b = 0; b < n; b++) {
+        const sab = coupling[a * n + b]!;
+        if (sab === 0) continue;
+        for (let c = 0; c < n; c++) {
+          const sac = coupling[a * n + c]!;
+          if (sac === 0) continue;
+          const sbc = coupling[b * n + c]!;
+          if (sbc === 0) continue;
+          i.push(a);
+          j.push(b);
+          k.push(c);
+          t.push(couplingStrength * sab * sac * sbc);
         }
       }
     }
 
-    return kernel;
+    return {
+      i: Int32Array.from(i),
+      j: Int32Array.from(j),
+      k: Int32Array.from(k),
+      t: Float64Array.from(t),
+    };
   }
 
   /**
-   * Compute the spectral gap of a matrix.
+   * Farthest service the cascade ever reached above the cascade threshold.
    *
-   * spectralGap = λ₁ - λ₂  (difference between largest and second eigenvalues)
-   *
-   * Using power iteration with deflation.
-   *
-   * @param matrix - Flattened N×N matrix (row-major)
-   * @param N - Matrix dimension
-   * @returns Spectral gap
-   */
-  private computeSpectralGap(matrix: Float64Array, N: number): number {
-    if (N <= 1) return 1.0;
-
-    // Power iteration for dominant eigenvalue
-    const lambda1 = this.powerIteration(matrix, N);
-
-    // Deflate and get second eigenvalue
-    // For a general matrix, we subtract the rank-1 approximation
-    // from the dominant eigenpair and iterate again
-    const eigenvector = new Float64Array(N);
-    // Approximate dominant eigenvector via power method
-    for (let i = 0; i < N; i++) eigenvector[i] = Math.random() * 2 - 1;
-    this.normalize(eigenvector);
-
-    // Refine eigenvector
-    for (let iter = 0; iter < 50; iter++) {
-      const next = this.matrixVectorMultiply(matrix, N, eigenvector);
-      this.normalize(next);
-      eigenvector.set(next);
-    }
-
-    // Deflated matrix: A' = A - λ₁ × v × v^T
-    const deflated = new Float64Array(N * N);
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = matrix[i * N + j]! - lambda1 * eigenvector[i]! * eigenvector[j]!;
-      }
-    }
-
-    // Power iteration on deflated matrix
-    const lambda2 = Math.abs(this.powerIteration(deflated, N));
-
-    const gap = lambda1 - lambda2;
-    return Math.max(0, gap);
-  }
-
-  /**
-   * Power iteration to find the dominant eigenvalue.
-   */
-  private powerIteration(matrix: Float64Array, N: number): number {
-    const vec = new Float64Array(N);
-    for (let i = 0; i < N; i++) vec[i] = Math.random() * 2 - 1;
-    this.normalize(vec);
-
-    let eigenvalue = 0;
-    for (let iter = 0; iter < 100; iter++) {
-      const next = this.matrixVectorMultiply(matrix, N, vec);
-
-      // Rayleigh quotient: λ = v^T A v / v^T v
-      let num = 0;
-      let den = 0;
-      for (let i = 0; i < N; i++) {
-        num += vec[i]! * next[i]!;
-        den += vec[i]! * vec[i]!;
-      }
-      eigenvalue = den > 0 ? num / den : 0;
-
-      this.normalize(next);
-      vec.set(next);
-    }
-
-    return eigenvalue;
-  }
-
-  /**
-   * Matrix-vector multiplication.
-   */
-  private matrixVectorMultiply(matrix: Float64Array, N: number, vec: Float64Array): Float64Array {
-    const result = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      let sum = 0;
-      for (let j = 0; j < N; j++) {
-        sum += matrix[i * N + j]! * vec[j]!;
-      }
-      result[i] = sum;
-    }
-    return result;
-  }
-
-  /**
-   * Normalize a vector to unit L² norm.
-   */
-  private normalize(vec: Float64Array): void {
-    let norm = 0;
-    for (const v of vec) norm += v * v;
-    norm = Math.sqrt(norm);
-    if (norm > 1e-15) {
-      for (let i = 0; i < vec.length; i++) {
-        vec[i] = vec[i]! / norm;
-      }
-    }
-  }
-
-  /**
-   * Compute propagation distance from trajectories.
-   *
-   * Uses BFS to find the farthest service from the source
-   * that has significant alert intensity (above threshold).
+   * The distance is a BFS hop count over the transport coupling, and the membership test is the
+   * **peak** of the trajectory. The previous implementation read intensity on the LAST step, which
+   * is below the threshold for every node on every graph as soon as the horizon exceeds a few decay
+   * constants — so the field was structurally zero, and a cascade that clearly happened reported 0.
    *
    * @param source - Source service
-   * @param graph - Service call graph
-   * @param intensities - Intensity trajectory data
-   * @param steps - Number of time steps
+   * @param coupling - Symmetric coupling matrix
+   * @param n - Matrix dimension
+   * @param trajectories - Intensity trajectories
    * @param serviceIds - Ordered service IDs
+   * @param threshold - Intensity a service must ever exceed to count as reached
    * @returns Maximum propagation distance
    */
   private computePropagationDistance(
     source: string,
-    graph: ServiceCallGraph,
-    intensities: Float64Array[],
-    steps: number,
-    serviceIds: string[],
+    coupling: Float64Array,
+    n: number,
+    trajectories: readonly Float64Array[],
+    serviceIds: readonly string[],
+    threshold: number,
   ): number {
-    // BFS distances from source
-    const distances = new Map<string, number>();
-    const queue: string[] = [source];
-    distances.set(source, 0);
+    const index = new Map(serviceIds.map((id, at) => [id, at]));
+    const distances = new Int32Array(n).fill(-1);
+    const start = index.get(source);
+    invariant(start !== undefined, 'source index missing');
+    distances[start!] = 0;
 
+    const queue: number[] = [start!];
     while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentDist = distances.get(current)!;
-
-      for (const edge of graph.edges) {
-        if (edge.from === current && !distances.has(edge.to)) {
-          distances.set(edge.to, currentDist + 1);
-          queue.push(edge.to);
+      const at = queue.shift()!;
+      for (let to = 0; to < n; to++) {
+        if (coupling[at * n + to]! > 0 && distances[to] === -1) {
+          distances[to] = distances[at]! + 1;
+          queue.push(to);
         }
       }
     }
 
-    // Find the farthest service with non-zero intensity at the end
     let maxDist = 0;
-    for (let i = 0; i < serviceIds.length; i++) {
-      const serviceId = serviceIds[i]!;
-      const dist = distances.get(serviceId);
-      const finalIntensity = intensities[i]![steps]!;
+    for (let i = 0; i < n; i++) {
+      if (distances[i]! <= maxDist) continue;
+      const peak = trajectories[i]!.reduce((best, value) => Math.max(best, value), 0);
+      if (peak >= threshold) maxDist = distances[i]!;
+    }
+    return maxDist;
+  }
 
-      if (dist !== undefined && finalIntensity > 0.01 && dist > maxDist) {
-        maxDist = dist;
+  /**
+   * Time at which the cascade OUTSIDE the source is at its largest.
+   *
+   * The source starts at 1 and only decays, so a peak taken over all services is always at t = 0 and
+   * the field reported 0 for every graph. The informative instant is the one where the mass that
+   * left the source is largest: 0 for an isolated source, and strictly positive for a cascade that
+   * has a front.
+   *
+   * @param trajectories - Intensity trajectories
+   * @param n - Node count
+   * @param sourceIdx - Source index
+   * @param dt - Step size in seconds
+   * @returns Time of the off-source peak, in milliseconds
+   */
+  private computeTimeToPeak(
+    trajectories: readonly Float64Array[],
+    n: number,
+    sourceIdx: number,
+    dt: number,
+  ): number {
+    const steps = trajectories[0]!.length;
+    let best = 0;
+    let bestTime = 0;
+    for (let t = 0; t < steps; t++) {
+      let total = 0;
+      for (let i = 0; i < n; i++) {
+        if (i === sourceIdx) continue;
+        total += trajectories[i]![t]!;
+      }
+      if (total > best) {
+        best = total;
+        bestTime = t * dt * 1000;
       }
     }
-
-    return maxDist;
+    return bestTime;
   }
 }
