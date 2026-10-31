@@ -41,6 +41,13 @@ i.e. only when the three services are mutually coupled — a **triad**. A real c
 SockShop is 15 services and 13 edges, OnlineBoutique 14 and 13. There are almost no triangles, so the
 three-wave term is zero on almost every node of almost every case, however its indices are ordered.
 
+And the theory says the same thing from the other side. In Deng's derivation the collision history is expanded
+into diagrams, and under the fast phase oscillation every diagram carrying a closed loop cancels — only the **tree**
+diagrams survive and carry the energy. That reduction is what produces the scaling law there, and the same
+diagrammatic control of cumulants is what he carried over to the hard-sphere problem. A three-wave triad *is* a loop
+(three services mutually coupled), and a call graph is nearly a tree, so the discrete model agrees with the theory
+twice over: the tree carries the cascade, and the loop term is small exactly where the graph is nearly a tree.
+
 Alert propagation along a call edge is not a three-wave resonance. It is **transport**: the reversible part of
 the kinetics, whose generator is the graph Laplacian of the coupling,
 

@@ -416,3 +416,49 @@ grid, and a dispatch is a measurement about the thing that ships.
 if a cell reports `failed records n cases / m rows` with `term subjects 0`, the records exist and the filter ate them,
 and raising the minimum would make that worse rather than better. The next dispatch therefore has a precondition
 rather than a hypothesis: read the two columns, and only dispatch if they disagree.
+
+## 12. The precondition, read: admission and evidence are disjoint
+
+§11.4 left a precondition rather than a hypothesis — read `failed records` beside `term subjects`, and dispatch only
+if they disagree. They were read on all nine cells (battery `41165050037`, shipped configuration), and on the one cell
+that has records a second arm (`41166434493`, `failededgegate=fleet`) priced what the gate does with them.
+
+| cell | cases | `failed records` | `term subjects` |
+| --- | --- | --- | --- |
+| RE1:OnlineBoutique | 125 | none | 0 |
+| RE1:SockShop | 125 | none | 0 |
+| RE1:TrainTicket | 125 | none | 0 |
+| RE2:OnlineBoutique | 90 | none | 0 |
+| RE2:SockShop | 90 | none | 0 |
+| RE2:TrainTicket | 90 | none | 0 |
+| **RE3:OnlineBoutique** | 30 | **15 cases / 30 rows** | **7** |
+| RE3:SockShop | 30 | none | 0 |
+| RE3:TrainTicket | 30 | none | 0 |
+
+On the eight cells that report `none`, the corpus line above the census says the same thing in the loader's words:
+`Data: failed edges in 0/125 cases (0 records, 0 in-graph)`. The term is built from spans whose `status === 'ERROR'`,
+and the cell that carries spans carries no failures in them.
+
+RE3:OnlineBoutique is where the precondition is met, and the answer is not the one the knob was built for:
+
+```
+[failed-edge-gate] cases=30 | rank-1 measured 16 | name refused 8 | bar(fleet@0.50) refused 0 | admissible 8 | acted 0 (mismatch 8)
+[failed-edge-input] cases=30 | failed records 15 cases / 30 rows | term subjects 7 cases | admitted rank-1 with entry 0 of 8
+```
+
+Three counts, and the third is the whole answer:
+
+| count | value | what it means |
+| --- | --- | --- |
+| records | 15 cases / 30 rows | the corpus HAS the data |
+| subjects | 7 cases | `max(0, failed − baseline)` eats 8 of the 15 |
+| admitted with an entry | **0 of 8** | every case the gate admits has an EMPTY subject map |
+
+The 7 subjects sit in the 22 cases the gate does not admit; the 8 the gate admits have no subject. The two sets are
+disjoint, so no bar, no weight and no minimum can make the term fire on this corpus — the weight of 3 that ships is
+inert here for an **input** reason, and the `+41 cases` the register records for it were measured on FSE'26, a corpus
+that carries failed-call records.
+
+`failedEdgeMinRecords` is therefore **not** the knob: the records exist and the filter is not what stops the term.
+The knob this finding asks for is a gate on the term's own input — `failedTraceEdges.length > 0` — so that a
+configuration line can never again print a weight for a term whose map is empty on every case it is applied to.
