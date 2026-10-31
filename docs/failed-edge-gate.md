@@ -253,72 +253,92 @@ three branches were not lines nobody had executed — they were rules nobody had
 ## 10. The two arms, and the third mechanism they found
 
 Two dispatches, `scopes=golden`, same commit: `41154322031` at the shipped bar and `41154430071` at
-`failededgegate=fleet,failededgegateshare=0.50`. RE3's census arrived first and is what this section reads; RE2's
-two cells are 90 cases each and were still running when this was written, so nothing here is extrapolated to them.
+`failededgegate=fleet,failededgegateshare=0.50`. All nine cells were attempted and all but one reported. Six of them
+carry the observable and their counts are below; the two SockShop cells report `no measurement`; and RE1 lost its
+shipped-bar job to the cache (`micro-kinetic-ts-docs` §202 records that defect), which costs nothing here because
+RE1 carries no traces on any view — the fleet arm ran RE1 and its census says `no measurement: 125 of 125` three
+times, at the same 330/375 the shipped configuration publishes.
 
 ### 10.1 The rise distribution §7 asked for, measured
 
 | cell | cases | champion | rank-1 measured | rise p10 / p50 / p90 / max | `absolute@300` refused | `fleet@0.50` (what-if) |
 | --- | --- | --- | --- | --- | --- | --- |
+| RE2:OnlineBoutique | 90 | 90 | 88 | 1.05 / 5.30 / 95.56 / **358.80** | 51 | 33 |
+| RE2:SockShop | 90 | 0 | — | `no measurement: 90 of 90` | — | — |
+| RE2:TrainTicket | 90 | 89 | 88 | 1.47 / 5.74 / 42.53 / **191.71** | 45 | 39 |
 | RE3:OnlineBoutique | 30 | 30 | 16 | 0.85 / 0.94 / 1.15 / **1.29** | 8 | 8 |
 | RE3:SockShop | 30 | 0 | — | `no measurement: 30 of 30` | — | — |
 | RE3:TrainTicket | 30 | 30 | 30 | 0.86 / 1.99 / 18.89 / **26.71** | 9 | 5 |
 
-The bar's scale is now a measurement rather than an argument: the largest rise this corpus produces on the
-observable the gate reads is **26.71 ms**, against a bar of **300** — a factor of **11.2**, and on OnlineBoutique a
-factor of **233**. §8's refusal to call the bar "out of scale" was right to wait for these numbers and the numbers
-side with the fleet reading.
+**This table corrects §8 and it corrects this section's own first draft.** The per-edge observable is not uniformly
+small: RE2:OnlineBoutique's tail reaches **358.80**, above the constant, and its p90 (95.56) sits inside a factor of
+three of it. So "the bar is out of scale for this corpus" is true of RE3 (233× on OnlineBoutique, 11.2× on
+TrainTicket) and **false of RE2**, where the shipped bar admits a case: `admissible 1` on RE2:OnlineBoutique is the
+absolute bar firing on real data for the first time on this half.
 
-### 10.2 The what-if column predicted the other arm exactly
+### 10.2 The what-if column predicted the other arm exactly, four times
 
-`fleet@0.50 admissible 8` and `5` were printed by the **absolute** arm as a counterfactual, computed from the same
-map the gate reads. The fleet arm's own census then reported `admissible 8` and `admissible 5`. A predictor that
-sits in the shipped arm and gets the next arm's population right is worth more than the prediction: it means the
-census is reading the mechanism, not repeating a decision.
+`fleet@0.50 admissible 33 / 39 / 8 / 5` was printed by the **absolute** arm as a counterfactual, computed from the
+same map the gate reads. The fleet arm's own census then reported `admissible 33 / 39 / 8 / 5`. A predictor that
+sits in the shipped arm and gets the next arm's population right on four cells is worth more than the prediction: it
+means the census is reading the mechanism rather than repeating a decision.
 
-### 10.3 …and then nothing moved
+### 10.3 …and then 85 admissions moved nothing
 
-| | RE3:OnlineBoutique | RE3:SockShop | RE3:TrainTicket | RE3 total |
-| --- | --- | --- | --- | --- |
-| absolute arm | 25/30 | 18/30 | 22/30 | **65/90 = 72.2%** |
-| fleet arm | 25/30 | 18/30 | 22/30 | **65/90 = 72.2%** |
+| | RE2:OB | RE2:SS | RE2:TT | RE3:OB | RE3:SS | RE3:TT | total |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| absolute arm | 83/90 | 88/90 | 75/90 | 25/30 | 18/30 | 22/30 | **311/360 = 86.4%** |
+| fleet arm | 83/90 | 88/90 | 75/90 | 25/30 | 18/30 | 22/30 | **311/360 = 86.4%** |
+| admitted (fleet) | 33 | — | 39 | 8 | — | 5 | **85** |
 
-Cell for cell identical, on a run where the gate admitted 13 cases the other arm refused. The census says why in
-its own arithmetic: `admissible 8 | acted 0 (mismatch 8)` and `admissible 5 | acted 0 (mismatch 5)` — and the
-`mismatch` column exists because the two halves were implemented as two counts for exactly this possibility.
+Cell for cell identical, on a run where the gate admitted **85 cases the other arm refused**, and where the shipped
+bar itself admitted one. The census's own arithmetic says why: `admissible 33 | acted 0 (mismatch 33)`,
+`admissible 39 | acted 0 (mismatch 39)`, and the same 8 and 5 — **every** admitted case, on every cell, including
+the one the shipped bar admitted.
 
 ### 10.4 The third mechanism: the gate's observable is not the term's input
 
-The breakdown of the fleet arm's misses carries a cause the shipped arm never produced:
+The breakdown of the fleet arm's misses carries a cause the shipped arm produced only rarely:
 
 ```
-failedEdge         INPUT_MAP_EMPTY(failedEdgeScores) 13.6% · WEIGHT_ZERO 86.4%
+failedEdge         INPUT_MAP_EMPTY(failedEdgeScores) 13.6% · WEIGHT_ZERO 86.4%     (RE3, fleet arm)
+failedEdge         WEIGHT_ZERO 100.0%                                              (RE3, absolute arm)
 ```
 
-against the absolute arm's `WEIGHT_ZERO 100.0%`. The gate asks a question about **`edgeLatencyByCallee`** — "did
-this case's rank-1 service sit behind an inbound edge whose mean span rose" — while the term can only add a number
-from **`failedEdgeScores`**, which is built from `failedTraceEdges`: the calls that actually **failed**. A slow
-call is not a failed call, and a corpus can carry the first without the second.
+The gate asks a question about **`edgeLatencyByCallee`** — "did this case's rank-1 service sit behind an inbound
+edge whose mean span rose" — while the term can only add a number from **`failedEdgeScores`**, which
+`directional-evidence.ts` builds from `failedTraceEdges`, and those come from spans whose **`status === 'ERROR'`**. A
+slow call is not a failed call, and this corpus carries the first without the second.
 
-The measurement, stated at its own resolution: **all 13 admitted cases contributed 0** (`acted 0`, `mismatch 13`),
-and the cause is *sampled* rather than enumerated — the breakdown audits the misses, so 3 of them name
-`INPUT_MAP_EMPTY(failedEdgeScores)` and the other 10 admitted cases are not in that population. What is established
-is that the admission did not reach the term; what is not is that every one of the 13 was empty for the same
-reason.
+The measurement, at its own resolution: **85 of 85 admissions contributed 0** — that count is exact, because
+`acted` is read off the breakdown rather than recomputed, and `mismatch` is the difference the census refuses to
+hide. The *cause* is sampled rather than enumerated, because the breakdown audits misses: 3 of 22 on RE3 name
+`INPUT_MAP_EMPTY(failedEdgeScores)`, and the other admitted cases are not in that population. What is established is
+that the admission does not reach the term; what is not is that all 85 were empty for the same reason — though the
+mechanism named above predicts they are.
 
-So the term has **four** separable refusals, and they now have four separate counts rather than one label:
+So the term has **four** refusals, and they now have four counts instead of one label:
 
-| refusal | population | counted by |
+| refusal | population (the six reporting cells, 360 cases) | counted by |
 | --- | --- | --- |
-| no observable | 495 cases over 5 cells | `no measurement: n of n` |
-| not a duration-family metric | 29 of 60 rank-1-measured cases on RE3 | `name refused` |
-| bar | 17 of 60 (absolute) → 4 of 60 (fleet@0.50) | `bar(…) refused` |
-| **the admission does not reach the term** | 13 admitted, 0 acted | `acted 0 (mismatch n)`; cause sampled at 3 of 22 misses |
+| no observable | 120 of those 360 (RE2:SockShop 90, RE3:SockShop 30), plus 495 over the five trace-less cells | `no measurement: n of n` |
+| not a duration-family metric | 108 of the 222 rank-1-measured cases | `name refused` |
+| bar | 113 at `absolute@300` → 29 at `fleet@0.50` | `bar(…) refused` |
+| **the admission does not reach the term** | 85 admitted (1 of them under the shipped bar), 0 acted | `acted 0 (mismatch n)`; cause sampled at 3 of 22 misses |
+
+The three interior rows sum to the 222 measured cases at both bars — 108 + 113 + 1 at the constant, 108 + 29 + 85 at
+the share — which is the property that makes them counts rather than four opinions about one decision.
 
 ### 10.5 What this refutes, and what it leaves
 
-It refutes §10's own premise as stated in §7 — *the bar is the only thing between the term and the golden half* —
-and it refutes it in the direction that costs the most: the bar was the **cheapest** of the three, and removing it
-buys a term with nothing to add. The next question is therefore not a better bar. It is whether the corpus carries
-failed-call records at all, and if it does, why the cases the gate admitted had none: `failedEdgeMinRecords` is the
-knob that already exists for the second half of that question, and no arm has yet varied it.
+It refutes §7's premise — *the bar is the only thing between the term and the golden half* — and it refutes it in the
+direction that costs the most: the bar was the **cheapest** of the three, and removing it buys a term with nothing
+to add. It also refutes the softer version, that the shipped constant is simply too large for this corpus: on
+RE2:OnlineBoutique it fires, and the case it fires on still contributes nothing.
+
+The next question is therefore not a better bar, and not a smaller share. It is whether this corpus carries
+failed-call records at all — `directional-evidence.ts` already reports `failedMass rankable=` per run, and on the one
+run whose artifact was readable (RE1, 204 cases) it printed `with traces=0`, which is the trace-less case rather than
+the answer. `failedEdgeMinRecords` is the knob that already exists for the other half of the question and no arm has
+varied it. Until one of those two facts is settled, the honest status of this term on the golden half is *unmeasured*
+rather than *unhelpful*, and the fleet bar is an instrument waiting for an input.
