@@ -123,6 +123,13 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       signature: 'a.name < b.name',
       population: '`census.terms.entries()`, a Map keyed by term name',
     },
+    // The closed segment's ordering, added with the segment. Its keys are the same Map's, and it is reached only
+    // after the CAP arm has answered — so the name arm settles terms priced identically, never the price itself.
+    {
+      signature: 'a.name < b.name',
+      population:
+        'the `shut` slice of the same `census.terms.entries()` reading, after the cap arm',
+    },
   ],
   'benchmarks/src/log-route.ts': [
     // The unclassified-class histogram's tie-break. Its keys ARE Map keys, so they are distinct and the two-arm

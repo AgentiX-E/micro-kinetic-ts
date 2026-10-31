@@ -97,6 +97,15 @@ export interface LatentTermCensus {
 export const LATENT_TERM_TOP = 5;
 
 /**
+ * How many CLOSED terms the line prints.
+ *
+ * Three rather than five because this segment answers a question with one number in it — the smallest `cap` — and
+ * the rest of the list is the same reading at a weight nobody is about to choose. The truncation is counted (`+N`)
+ * rather than silent: the count is how a reader knows the tail exists.
+ */
+export const LATENT_TERM_SHUT = 3;
+
+/**
  * A census with nothing in it.
  *
  * @returns Zeroed totals, ready for {@link accumulateLatentTermCensus}.
@@ -301,29 +310,57 @@ function accumulateMiss(census: LatentTermCensus, prediction: CasePrediction): v
 /**
  * The census as a line, or `undefined` when it has no failing case to speak about.
  *
+ * ## Two segments, because a window and a closed window are different readings
+ *
+ * `win:` is the head of the terms that HAVE a window — reachable misses, cheapest first — and it answers "what is a
+ * dispatch on this cell worth".
+ *
+ * `shut:` is the head of the terms that have NONE, and it answers the other half of the same question: "what does a
+ * dispatch on this cell cost". It was written because a `shut` term was not merely unranked but INVISIBLE — the
+ * filter that drops a term with no reachable miss also drops the term whose `cap` is the smallest number in the
+ * cell, and the two are the same term whenever a prior has a price and no evidence.
+ *
+ * Measured, on the arm this segment was written after: `temporalWeight = 0.02` gained two cases on RE1 and lost one
+ * on RE3:TrainTicket, and the run that chose that arm had no line saying the loss was coming — the term reads the
+ * truth higher than the winner on 0 of that cell's 8 misses, so it had no requirement to print and was filtered out
+ * before the head was taken. The cell's own reading was `cap < 0.02, need = none`, i.e. pure risk, and a filter
+ * that prints only the terms that can be won hides exactly that.
+ *
  * @param census - The running totals.
  */
 export function formatLatentTermLine(census: LatentTermCensus): string | undefined {
-  if (census.misses === 0 && census.unmeasured === 0) return undefined;
-  const readings: LatentTermReading[] = [...census.terms.entries()]
-    .map(([name, entry]) => ({
-      name,
-      weight: entry.weight,
-      cap: entry.cap,
-      minRequired:
-        entry.required.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...entry.required),
-      flips: entry.required.filter((required) => required < entry.cap).length,
-    }))
-    .filter((one) => Number.isFinite(one.minRequired))
+  // A cell that lost nothing AND guarded nothing has no reading: no miss to win back and no case that could be
+  // lost, which is the difference between "this cell is free" and "this cell was not measured". A cell that lost
+  // nothing but guarded its cases does print — every term in it is closed, and the `shut:` segment is then the
+  // cell's entire weight budget, which is the most useful thing a perfect cell can say.
+  if (census.misses === 0 && census.unmeasured === 0 && census.guarded === 0) return undefined;
+  const readings: LatentTermReading[] = [...census.terms.entries()].map(([name, entry]) => ({
+    name,
+    weight: entry.weight,
+    cap: entry.cap,
+    minRequired:
+      entry.required.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...entry.required),
+    flips: entry.required.filter((required) => required < entry.cap).length,
+  }));
+  const open = readings
+    .filter((one) => one.flips > 0)
     .sort(
       (a, b) => b.flips - a.flips || a.minRequired - b.minRequired || (a.name < b.name ? -1 : 1),
     )
     .slice(0, LATENT_TERM_TOP);
+  // Sorted by CAP rather than by name, because the question this segment answers is "how much weight does this cell
+  // have room for", and the smallest cap is that number. Both caps are finite here by construction: a term reaches
+  // this segment only if it has a window (flips > 0), and a cap is only recorded by a guarded case, so an entry that
+  // was never priced never got in. `need=none` is therefore the shape to expect, not `cap=inf`.
+  const shut = readings
+    .filter((one) => one.flips === 0)
+    .sort((a, b) => a.cap - b.cap || (a.name < b.name ? -1 : 1));
   const counts = [`misses=${census.misses} guarded=${census.guarded}`];
   if (census.unguarded > 0) counts.push(`unguarded=${census.unguarded}`);
   if (census.unmeasured > 0) counts.push(`unmeasured=${census.unmeasured}`);
   if (census.tied > 0) counts.push(`tied=${census.tied}`);
-  return `[latent] ${counts.join(' ')} | win: ${list(readings)}`;
+  const head = `[latent] ${counts.join(' ')} | win: ${list(open)}`;
+  return shut.length === 0 ? head : `${head} | shut: ${closedList(shut)}`;
 }
 
 /**
@@ -343,4 +380,22 @@ function list(readings: readonly LatentTermReading[]): string {
         `${r.name}=${r.flips}(${Number.isFinite(r.cap) ? r.cap.toFixed(3) : 'inf'},${r.minRequired.toFixed(3)})`,
     )
     .join(' ');
+}
+
+/**
+ * Render the closed terms as `name(cap=X,need=Y)`, where `need=none` is the strongest reading on the line.
+ *
+ * The shape differs from {@link list} on purpose: a term with a window is quoted as a GAIN and a closed term as a
+ * BOUND, and printing both in one shape would invite reading a cost as a small win.
+ *
+ * @param readings - The closed terms, already sorted by cap.
+ */
+function closedList(readings: readonly LatentTermReading[]): string {
+  const shown = readings.slice(0, LATENT_TERM_SHUT).map((r) => {
+    const need = Number.isFinite(r.minRequired) ? r.minRequired.toFixed(3) : 'none';
+    return `${r.name}(cap=${r.cap.toFixed(3)},need=${need})`;
+  });
+  const rest = readings.length - shown.length;
+  if (rest > 0) shown.push(`+${rest}`);
+  return shown.join(' ');
 }

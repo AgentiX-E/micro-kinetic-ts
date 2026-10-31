@@ -285,7 +285,7 @@ describe('latent-term census — the cap on a correct case', () => {
         top1Terms: [term('self', 1, 1.5), term('knob', 0, 0)],
       }),
     ]);
-    expect(formatLatentTermLine(atCap)).toContain('knob=0(1.000,1.000)');
+    expect(formatLatentTermLine(atCap)).toContain('knob(cap=1.000,need=1.000)');
     const underCap = censusOf([
       guarded,
       prediction({
@@ -467,5 +467,179 @@ describe('latent-term census — the line', () => {
     ]);
     // The truth is at 1.20 and so is the winner: a tie broken by name, reachable at the weight already carried.
     expect(census.tied).toBe(1);
+  });
+});
+
+/**
+ * The closed segment: the terms a cell has NO room for.
+ *
+ * Written after an arm that lost a case on a cell whose reading was never printed. `temporalWeight = 0.02` gained
+ * two cases on RE1 and lost one on RE3-TrainTicket, where the prior reads the truth higher than the winner on zero
+ * of eight misses. A term with no reachable miss had no requirement to print, and the formatter's filter dropped it
+ * before the head was taken — so the one number that said "do not dispatch here" (`cap < 0.02`) was the one the
+ * line could not carry. These tests pin that a term with a price and no evidence is printed, that the segment leads
+ * with the smallest price, and that the truncation is counted.
+ */
+describe('latent-term census — the closed segment', () => {
+  it('prints a term that can never win a miss as a CLOSED bound, with its cap and no requirement', () => {
+    const census = censusOf([
+      // A correct case where `knob` can lift the runner-up: the truth leads by 0.50 and the rival gains 0.10 per
+      // unit of weight, so the cell loses this case at 5.0 — a finite cap, which is the price of the term here.
+      prediction({
+        correct: true,
+        truthTerms: [term('self', 1, 1.5), term('knob', 0, 0.5)],
+        top1Terms: [term('self', 1, 1.5), term('knob', 0, 0.5)],
+        rankedTerms: [
+          [term('self', 1, 1.5), term('knob', 0, 0.5)],
+          [term('self', 1, 1.0), term('knob', 0, 0.6)],
+        ],
+      }),
+      // A miss where `knob` reads the truth LOWER than the winner on the only rival that outranks it: no weight
+      // wins this case back, so the term has a price and no upside on the cell.
+      prediction({
+        correct: false,
+        truthTerms: [term('self', 1, 1.0), term('knob', 0, 0.1)],
+        top1Terms: [term('self', 1, 2.0), term('knob', 0, 0.9)],
+      }),
+    ]);
+    const line = formatLatentTermLine(census)!;
+    expect(line).toContain('win: none');
+    expect(line).toContain('shut: knob(cap=5.000,need=none)');
+  });
+
+  it('leads the closed segment with the SMALLEST cap, because that is the cell’s weight budget', () => {
+    // Three closed terms with different prices, declared in an order that is neither the cap order nor the name
+    // order, so neither a stable sort of the input nor an alphabetical accident can produce the expected line.
+    const priced = ['wide', 'tight', 'middle'];
+    const caps = [0.9, 0.01, 0.2];
+    const cases: CasePrediction[] = priced.map((name, i) =>
+      prediction({
+        correct: true,
+        truthTerms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        top1Terms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        // The truth leads by 0.50 and the rival closes it at `advantage` per unit → cap = 0.50 / advantage, so a
+        // slope pair chosen from the cap gives exactly the price this case is meant to carry.
+        rankedTerms: [
+          [term('self', 1, 1.5), term(name, 0, 0.5)],
+          [term('self', 1, 1.0), term(name, 0, 0.5 + 0.5 / caps[i]!)],
+        ],
+      }),
+    );
+    const census = censusOf(cases);
+    const line = formatLatentTermLine(census)!;
+    expect(line).toContain(
+      'shut: tight(cap=0.010,need=none) middle(cap=0.200,need=none) wide(cap=0.900,need=none)',
+    );
+  });
+
+  it('counts the closed terms it truncated, so the tail is known to exist', () => {
+    const names = ['e5', 'e4', 'e3', 'e2', 'e1'];
+    const cases: CasePrediction[] = names.map((name, i) =>
+      prediction({
+        correct: true,
+        truthTerms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        top1Terms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        rankedTerms: [
+          [term('self', 1, 1.5), term(name, 0, 0.5)],
+          [term('self', 1, 1.0), term(name, 0, 0.5 + 0.5 / (0.1 * (names.length - i)))],
+        ],
+      }),
+    );
+    const line = formatLatentTermLine(censusOf(cases))!;
+    // Five closed terms against a head of three, priced 0.1 … 0.5: the two most expensive are cut off and counted.
+    expect(line).toContain('+2');
+    expect(line).toContain('e1(cap=0.100');
+    expect(line).not.toContain('e5(');
+  });
+
+  it('orders two terms with the SAME cap by name, so the line does not depend on insertion', () => {
+    // Caps are compared as numbers, but equal caps fall through to the name arm — and that arm has TWO branches,
+    // so the names are declared in a mixed order: an insertion sort compares an older entry against a newer one, and
+    // only an ascending pair answers `-1` while a descending pair answers `1`. Two names would cover one of them.
+    const twins = [
+      ['mike', 0.3],
+      ['alpha', 0.3],
+      ['zulu', 0.3],
+      ['bravo', 0.3],
+      ['yankee', 0.3],
+      ['charlie', 0.3],
+    ] as const;
+    const cases: CasePrediction[] = twins.map(([name, cap]) =>
+      prediction({
+        correct: true,
+        truthTerms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        top1Terms: [term('self', 1, 1.5), term(name, 0, 0.5)],
+        rankedTerms: [
+          [term('self', 1, 1.5), term(name, 0, 0.5)],
+          [term('self', 1, 1.0), term(name, 0, 0.5 + 0.5 / cap)],
+        ],
+      }),
+    );
+    const line = formatLatentTermLine(censusOf(cases))!;
+    // Six equally priced terms and a head of three: the order is the name arm alone, and the tail is counted.
+    expect(line.indexOf('alpha(')).toBeLessThan(line.indexOf('bravo('));
+    expect(line.indexOf('bravo(')).toBeLessThan(line.indexOf('charlie('));
+    expect(line).toContain('+3');
+  });
+
+  it('prints a term that would win only AFTER it starts losing as a CONFLICT, with both numbers', () => {
+    // The cell loses this case at 0.20, and the cheapest miss on it needs 0.50: the window is empty because the
+    // term would cost a case before it won one. Both numbers are printed, because "no window" and "no evidence"
+    // are different findings and this one is a conflict between cases rather than an absent input.
+    const census = censusOf([
+      prediction({
+        correct: true,
+        truthTerms: [term('self', 1, 1.5), term('knob', 0, 0.5)],
+        top1Terms: [term('self', 1, 1.5), term('knob', 0, 0.5)],
+        rankedTerms: [
+          [term('self', 1, 1.5), term('knob', 0, 0.5)],
+          [term('self', 1, 1.0), term('knob', 0, 3.0)],
+        ],
+      }),
+      prediction({
+        correct: false,
+        truthTerms: [term('self', 1, 1.0), term('knob', 0, 0.6)],
+        top1Terms: [term('self', 1, 1.4), term('knob', 0, 0.4)],
+      }),
+    ]);
+    // cap = 0.50 / (3.0 − 0.5) = 0.20; need = 0 + 0.40 / (0.6 − 0.4) = 2.00.
+    expect(formatLatentTermLine(census)).toContain('shut: knob(cap=0.200,need=2.000)');
+  });
+
+  it('prices a cap on the rival that carries the term, and skips a name neither side prices', () => {
+    // Two edges of the same loop. `knob` is absent from the truth's breakdown — the truth did not pay for it — and
+    // the margin it can be lifted by is still real, so the cap must be anchored on the rival's weight rather than
+    // lost. `ghost` is emitted by both sides with a contribution and NO weight: nothing can move it, and recording
+    // an infinite cap for it would claim the cell is safe from a term that is not even priced.
+    const ghost: ScoreTerm = { name: 'ghost', contribution: 0 };
+    const census = censusOf([
+      prediction({
+        correct: true,
+        // `extra` is carried by the truth and NOT by the challenger: its rival slope reads as zero, which is the
+        // other `?? 0` arm — a term the rival does not pay for is a term that cannot lift it. It is in `top1Terms`
+        // because on a correct case the TOP candidate IS the truth, and that is the side the guarded path reads.
+        truthTerms: [term('self', 1, 1.5), term('extra', 1, 0.4), ghost],
+        top1Terms: [term('self', 1, 1.5), term('extra', 1, 0.4), ghost],
+        rankedTerms: [
+          [term('self', 1, 1.5), term('extra', 1, 0.4), ghost],
+          [term('self', 1, 1.0), term('knob', 0, 0.6), ghost],
+        ],
+      }),
+    ]);
+    // margin = (1.5 + 0.4) − 1.0 = 0.9; advantage = 0.6 − 0 = 0.6 → cap = 0.9 / 0.6.
+    expect(census.terms.get('knob')?.weight).toBe(0);
+    expect(census.terms.get('knob')?.cap).toBeCloseTo(0.9 / 0.6, 12);
+    expect(census.terms.has('ghost')).toBe(false);
+  });
+
+  it('omits the segment when every recorded term has a window', () => {
+    const census = censusOf([
+      prediction({
+        correct: false,
+        truthTerms: [term('self', 1, 1.0), term('knob', 0, 0.6)],
+        top1Terms: [term('self', 1, 1.4), term('knob', 0, 0.4)],
+      }),
+    ]);
+    expect(formatLatentTermLine(census)).not.toContain('shut:');
   });
 });
