@@ -219,3 +219,29 @@ number with nothing to compare it to — which is the defect this document exist
   workflow expands in **seven** copies (one per job); a key added to one copy passes every "the file contains the
   flag" check and fails at dispatch with `unknown key`. `dispatch-surface-census.test.ts` asserts the key from
   every copy.
+
+## 9. The three rules the coverage report made us write down
+
+`src/pruning/**` finished this iteration at 100% of statements, branches, functions and lines, and the last
+three branches were not lines nobody had executed — they were rules nobody had written down.
+
+1. **A share the arithmetic cannot read.** The bar is `Number.isFinite(share) ? Math.max(0, share) : 1`, and the
+   `: 1` arm had no test. Both wrong readings are silent and both *look like a narrow gate*: a `NaN` bar makes
+   every comparison false, and an infinite one refuses everything, so a caller passing `NaN` would be told the
+   case has no rise when it has one. The defined reading is the end of the interval that asserts nothing new —
+   the champion alone. A **negative** share is clamped to the opposite end, because a bar below zero would admit
+   a case the observable never measured.
+
+2. **The two `??` fallbacks in the gate's construction.** They looked like a second copy of the defaults table —
+   the exact defect that table exists to prevent — until the type said otherwise: `{ ...DEFAULTS, ...options }`
+   copies a key whose value is `undefined`, so a caller forwarding an optional field it never received *erases*
+   the default instead of leaving it alone, and `rcaeval-cli` is such a caller. The rule is now a test that drives
+   the ranking three ways — omitted, named, and spelled out as `undefined` — and requires one answer.
+
+3. **An unmeasured callee in `computeTopoSourceScores`.** `anomalyScores.get(edge.to) ?? 0` reads an absence as
+   healthy, which is the OPPOSITE of what every rise term in this repository does with the same absence. The two
+   conventions meet here and disagree *on purpose*: this term subtracts from a source score, so reading "no
+   measurement" as "no rise" would discount a caller for a callee nobody instrumented, and the penalty would fall
+   on the least-observed neighbourhood in the graph. The asymmetry is now asserted from both sides, together with
+   the second half of it — a node that carries no score cannot appear as a source merely because an edge mentions
+   it.
