@@ -248,15 +248,15 @@ describe('the fault line — one entry per type, the misses first', () => {
     ]);
 
   it('prints hits over cases, the miss count and the three-way split', () => {
-    const line = formatFaultLine(build())!;
+    const line = formatFaultLine(build(), 'inject-time')!;
 
-    expect(line.startsWith('[faults] ')).toBe(true);
+    expect(line.startsWith('[faults:inject-time] ')).toBe(true);
     expect(line).toContain('loss 0/3: miss 3 = blank 1 + outweighed 1 + outvoted 1 [dualFamily 1]');
     expect(line).toContain('cpu 1/1: miss 0');
   });
 
   it('orders the types by misses, so the head is the pocket', () => {
-    const line = formatFaultLine(build())!;
+    const line = formatFaultLine(build(), 'inject-time')!;
 
     expect(line.indexOf('loss ')).toBeLessThan(line.indexOf('cpu '));
   });
@@ -272,18 +272,21 @@ describe('the fault line — one entry per type, the misses first', () => {
         }),
       ),
     );
-    const line = formatFaultLine(many)!;
+    const line = formatFaultLine(many, 'inject-time')!;
 
     // Every blamed term was named once, and the two past the bound are counted rather than dropped.
     expect(line).toContain('[t0 1 t1 1 t2 1 +2]');
   });
 
   it('returns nothing for a census with no case in it', () => {
-    expect(formatFaultLine(createFaultCensus())).toBeUndefined();
+    expect(formatFaultLine(createFaultCensus(), 'inject-time')).toBeUndefined();
   });
 
   it('prints a type whose every case passed with no split at all', () => {
-    const line = formatFaultLine(censusOf([prediction({ correct: true, faultType: 'mem' })]))!;
+    const line = formatFaultLine(
+      censusOf([prediction({ correct: true, faultType: 'mem' })]),
+      'inject-time',
+    )!;
 
     expect(line).toContain('mem 1/1: miss 0');
     expect(line).not.toContain('blank');
@@ -334,7 +337,10 @@ describe('the fault line on ties and on a split with no owner', () => {
         truthTerms: [term(BASE_TERM_NAME, 0.1)],
         top1Terms: [term(BASE_TERM_NAME, 0.9)],
       });
-    const line = formatFaultLine(censusOf([tied('zeta'), tied('alpha'), tied('mike')]))!;
+    const line = formatFaultLine(
+      censusOf([tied('zeta'), tied('alpha'), tied('mike')]),
+      'inject-time',
+    )!;
 
     // Equal on misses and on cases, so the label decides — and a two-element comparison reaches only one arm of
     // that comparison, which is why three labels are needed to pin an order rather than a coincidence.
@@ -352,6 +358,7 @@ describe('the fault line on ties and on a split with no owner', () => {
           top1Terms: [term(BASE_TERM_NAME, 0.5), term('prism', 1.0)],
         }),
       ]),
+      'inject-time',
     )!;
 
     expect(line).toContain('f4 0/1: miss 1 = blank 0 + outweighed 0 + outvoted 1');
@@ -366,8 +373,29 @@ describe('the fault line on ties and on a split with no owner', () => {
         truthTerms: [term(BASE_TERM_NAME, 1.0), term(name, 0.0)],
         top1Terms: [term(BASE_TERM_NAME, 1.0), term(name, 1.0)],
       });
-    const line = formatFaultLine(censusOf([blamed('zeta'), blamed('mike'), blamed('alpha')]))!;
+    const line = formatFaultLine(
+      censusOf([blamed('zeta'), blamed('mike'), blamed('alpha')]),
+      'inject-time',
+    )!;
 
     expect(line).toContain('[alpha 1 mike 1 zeta 1]');
+  });
+});
+
+describe('the anchor the line declares', () => {
+  it('names the pass, because the two passes of one job are not the same population', () => {
+    const census = censusOf([prediction({ correct: false, faultType: 'loss' })]);
+
+    expect(formatFaultLine(census, 'inject-time')).toContain('[faults:inject-time]');
+    expect(formatFaultLine(census, 'dataset-decoupled')).toContain('[faults:dataset-decoupled]');
+  });
+
+  it('declares the anchor before the first entry, so a truncated paste still carries it', () => {
+    const line = formatFaultLine(
+      censusOf([prediction({ correct: true, faultType: 'mem' })]),
+      'dataset-decoupled',
+    )!;
+
+    expect(line.startsWith('[faults:dataset-decoupled] mem 1/1')).toBe(true);
   });
 });

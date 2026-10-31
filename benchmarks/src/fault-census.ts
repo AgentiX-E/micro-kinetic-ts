@@ -27,6 +27,12 @@
  * contains the priors, so comparing totals would answer "did the priors decide it" with "yes" for every miss by
  * construction, and the axis would be a constant.
  *
+ * ## The line says which pass it is
+ *
+ * Every RCAEval job runs each suite three times — the shipped protocol, a `--no-inject-time` pass, and the same pass
+ * with `logSignalMode=novelty` — so one log holds three censuses of the same cases. They are not the same population:
+ * see {@link FaultCensusAnchor}. The line therefore carries its anchor, and the parameter has no default.
+ *
  * ## What the base term is, and why its name is written here
  *
  * `finalScore(v) = log1p(selfAnomaly(v)) + Σ signalWeight × signal(v)`: the first summand is the one contribution
@@ -152,14 +158,33 @@ export function accumulateFaultCensus(census: FaultCensus, prediction: CasePredi
 }
 
 /**
+ * The anchor a run scored against — the one field that makes two `[faults]` lines incomparable.
+ *
+ * `inject-time` is the RCAEval baseline protocol: the anomaly window is anchored to the injection the dataset
+ * records. `dataset-decoupled` is the pass that removes it and reads the metrics on their own. They are not the same
+ * population, and on `RE3:TrainTicket` they are not close: 22/30 against 2/30, because that corpus does not carry the
+ * injection into the metrics the decoupled pass reads — the truth's own onset comes back undefined and its own
+ * anomaly reads 0.0224 against the leader's 1.0.
+ *
+ * A job runs both passes back to back, so the two lines sit a few hundred lines apart in one log and a census read
+ * off a paste cannot tell them apart unless the line says which it is. It says which it is.
+ */
+export type FaultCensusAnchor = 'inject-time' | 'dataset-decoupled';
+
+/**
  * The readable line, or `undefined` when the census has no case in it.
  *
  * Types are ordered by their miss count, so the head of the line is the pocket rather than the alphabetically first
  * label; the entry's own numbers let a reader check that the sum of the split is the miss count.
  *
  * @param census - The running totals.
+ * @param anchor - Which pass these cases were scored under. Required rather than optional: a default would make the
+ *   one field that decides comparability the one field a new caller can omit.
  */
-export function formatFaultLine(census: FaultCensus): string | undefined {
+export function formatFaultLine(
+  census: FaultCensus,
+  anchor: FaultCensusAnchor,
+): string | undefined {
   if (census.byFault.size === 0) return undefined;
   const entries: string[] = [...census.byFault.entries()]
     .sort(([a, x], [b, y]) => y.n - y.correct - (x.n - x.correct) || y.n - x.n || (a < b ? -1 : 1))
@@ -175,7 +200,7 @@ export function formatFaultLine(census: FaultCensus): string | undefined {
       const blame = formatBlame(tally.blame);
       return `${hits}: miss ${misses} = ${split.join(' + ')}${blame === '' ? '' : ` [${blame}]`}`;
     });
-  return `[faults] ${entries.join(' | ')}`;
+  return `[faults:${anchor}] ${entries.join(' | ')}`;
 }
 
 /**

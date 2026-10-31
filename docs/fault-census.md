@@ -49,29 +49,72 @@ the only question with two possible answers: **was the truth loud enough to be f
 The name is spelled out in `benchmarks/src/fault-census.ts` rather than imported, on the rule `loss-census.ts` records
 for every mirror in this package. A rename upstream would be visible as every miss turning `outvoted`.
 
-## 4. The two measurable readings
+## 4. The six measurable readings
 
-The sandbox corpus holds one system per suite, so these are `RE1:OnlineBoutique` and `RE3:SockShop` — the two cells
-every previous arm in this campaign was decided on:
+The census costs nothing at run time — it is a function of the per-case breakdowns the ranking already emits — so
+every RCAEval job prints it. Six of the nine cells have been read, all of them under the shipped protocol
+(`injectTime` ON), all from the battery on `d030fb2d`:
 
-```
-RE1:OnlineBoutique
-[faults] loss 13/25: miss 12 = blank 1 + outweighed 10 + outvoted 1 [dualFamily 1]
-       | delay 22/25: miss 3  = blank 0 + outweighed 3  + outvoted 0
-       | cpu   23/25: miss 2  = blank 0 + outweighed 2  + outvoted 0
-       | disk  24/25: miss 1  = blank 0 + outweighed 1  + outvoted 0
-       | mem   25/25: miss 0
+| cell | n | correct | rate | miss | blank | outweighed | outvoted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `RE1:OnlineBoutique` | 125 | 107 | 85.6% | 18 | 1 | 16 | 1 |
+| `RE1:SockShop` | 125 | 117 | 93.6% | 8 | 2 | 6 | 0 |
+| `RE1:TrainTicket` | 125 | 106 | 84.8% | 19 | 0 | 15 | 4 |
+| `RE3:OnlineBoutique` | 30 | 25 | 83.3% | 5 | 3 | 2 | 0 |
+| `RE3:SockShop` | 30 | 18 | 60.0% | 12 | 0 | 11 | 1 |
+| `RE3:TrainTicket` | 30 | 22 | 73.3% | 8 | 0 | 8 | 0 |
+| **total** | **465** | **395** | **84.9%** | **70** | **6** | **58** | **6** |
 
-RE3:SockShop
-[faults] f4 1/7:  miss 6 = blank 0 + outweighed 5 + outvoted 1 [dualFamily 1 stability 1]
-       | f3 6/10: miss 4 = blank 0 + outweighed 4 + outvoted 0
-       | f1 8/10: miss 2 = blank 0 + outweighed 2 + outvoted 0
-       | f2 3/3:  miss 0
-```
+**58 of the 70 misses are `outweighed`** — 82.9%, and 86.2% once `RE3:OnlineBoutique`, the cell with the three
+`blank`s, is set aside. Six are `blank`: three on `RE3:OnlineBoutique`'s `f1`, which is the only cell where the ranking
+fails to surface the truth at all, and two on `RE1:SockShop`'s `loss`.
 
-**47 of the 51 misses are `outweighed`.** Three are `blank` and one is `outvoted`; the single `outvoted` case on each
-cell names `dualFamily` — the presence bonus, which pays a constant `0.25` in log space for having a moving channel in
-both metric families, independent of the fault's magnitude.
+The six `outvoted` cases are the interesting population, because they are the whole of it — every case in this corpus
+where the truth's own evidence was at least the winner's and the case was still lost:
+
+| cell | fault type | blame |
+| --- | --- | --- |
+| `RE1:OnlineBoutique` | `loss` | `dualFamily 1` |
+| `RE1:TrainTicket` | `loss` ×2, `delay` ×2 | `dualFamily 4`, `stability 4` |
+| `RE3:SockShop` | `f4` | `dualFamily 1`, `stability 1` |
+
+**All six name `dualFamily`, and five also name `stability`.** Those are the only two terms in the formula whose value
+does not depend on how loud the fault was: `dualFamily` is a constant `0.25` in log space for having a moving channel
+in both metric families, and `stability` is an ordinal rank in `[0, 1]` over the candidates' dispersion bonus. Nothing
+that measures magnitude — `temporal`, `collision`, `topo`, `rise`, `prism`, `source` — appears in the bucket at all.
+
+Two consequences follow, and both are arithmetic rather than opinion.
+
+1. **The margin on these six cases is at most `0.25 + 0.007352`.** If the truth's base was at least the winner's and
+   the only terms paying the winner more were these two, then the whole difference fits inside the presence bonus and
+   one stability rank. These are ties, and the formula breaks them with a bonus for being instrumented.
+2. **The other 64 misses are unreachable by any weight.** A prior is multiplied by a magnitude term, and the bucket
+   says the magnitude was already smaller. This is what closes §5.
+
+`RE3:TrainTicket` is the cleanest illustration that the buckets are not the accuracy table: 73.3% and eight misses,
+**all eight `outweighed`**, with no `blank` at all. Different fault labels, same bucket, and on a 68-service graph the
+candidate generator never fails and the evidence never wins.
+
+### 4.1 The two passes that are excluded, and why the exclusion is not cherry-picking
+
+Every RCAEval job runs each suite three times: the shipped protocol, a `--no-inject-time` pass, and a
+`--no-inject-time --log-signal-mode novelty` pass. The table above uses the first only, and on RE3 that is not a
+preference — the other two are not measurements of the same population.
+
+With the anchor removed, `RE3:TrainTicket` reads **2/30** against **22/30** with it, and the diagnostic says why:
+the truth's own onset is undefined (`onset GT=9007199254740991`, the `MAX_SAFE_INTEGER` sentinel) and its own
+anomaly is `0.0224` against the leader's `1.0000`. The corpus for that suite does not carry the injection into the
+metrics the decoupled pass reads, so the pass compares a truth that has no event against candidates that do. Its
+`[faults]` line would have added **28** misses, all `outweighed`, to a bucket of 58 — the contamination would have
+looked like agreement with the thesis rather than like a bug, which is exactly why it is written down here rather
+than silently dropped.
+
+The `novelty` pass is excluded on the same ground: it is a different ranking configuration (`logSignalMode` is a
+`signals:` field), and a census of a configuration that is not shipped answers a question nobody asked.
+
+Because one log now holds three censuses of the same cases, the line declares which pass it belongs to:
+`[faults:inject-time] …` against `[faults:dataset-decoupled] …`. The parameter has no default, so a caller cannot omit
+the one field that decides comparability.
 
 ## 5. What this retires
 
@@ -79,13 +122,23 @@ The weight-search axis is closed by arithmetic rather than by another arm.
 
 The latent-term census (`docs/latent-term-census.md`) prices every dormant term: at what weight it wins a case back,
 and at what weight it costs one. It reported one or two free cases per term per cell, and the two arms dispatched
-against those readings came back at **+2/−2** and **+2/−1/−1** — the same total. This census says why: those arms were
-being asked to repair cases that are not in the bucket a weight can reach. On RE1:OnlineBoutique **zero** of the 39
-misses are reachable by a weight on a dormant term, because the truth's base term was already the smaller number on
-37 of them.
+against those readings came back at **+2/−2** and **+2/−1/−1** — the same total. This census says why. A weight
+multiplies a signal, the signal is one of the priors in `finalScore = base + Σ wᵢ·signalᵢ`, and on **58 of the 70
+misses the base term itself was already the smaller number** — so the arm is asked to overturn a magnitude deficit
+with a term that is scaled by the same magnitude it is supposed to overturn. On `RE1:OnlineBoutique` the reachable
+population is **one** case out of 18; on `RE1:SockShop` it is **zero** out of 8; on `RE3:TrainTicket`, **zero** out of
+8. An arm that can move at most one case per cell cannot be distinguished from the noise in a 25-case population, and
+the last eight iterations are that sentence measured eight times.
 
 That is also the honest reading of the eight iterations before this one. Each measured something real, and each was
 aimed at a population of at most two cases per cell.
+
+**Corrections, recorded rather than folded in.** The first version of this section said "47 of 51 misses are
+`outweighed`", because the miss counts had been read off the cells' case counts — 125 cases on `RE1:OnlineBoutique` —
+instead of off their misses, which are 18. The second version said 37 of 43, which was right for the four cells it was
+computed from and printed only two of them, so a reader could not check it. The table in §4 is the third version and
+the first one computed from every cell's own line. The instrument was correct in all three; the prose about it was
+not, twice.
 
 ## 6. What it points at
 
@@ -99,8 +152,12 @@ makes askable, in the order the numbers rank them:
 2. **Is the deviation comparable across services?** The base term is `log1p` of a per-service anomaly, and the
    anomaly is built from each service's own baseline. A service whose baseline is noisy reads a smaller anomaly for
    the same absolute effect.
-3. **Is a magnitude-free signal available?** `dualFamily` is the only term in the formula that is not a magnitude, and
-   it is the only one that appears in the `outvoted` bucket at all.
+3. **Is a magnitude-free signal available?** Two already are, and they are the only two that appear in the
+   `outvoted` bucket: `dualFamily` on all six cases and `stability` on five. The question is no longer whether such a
+   signal exists but whether the shipped weights say anything true about it. `dualFamily` pays a flat `0.25` for
+   instrumentation, which is large enough to decide a tie on its own; `stability` pays at most `0.007352`, which is
+   small enough to decide one only when nothing else is left. Between them they hold six cases, and those six are the
+   only cases in this corpus that any change to the formula can win.
 
 ## 7. Limits
 
@@ -112,5 +169,11 @@ makes askable, in the order the numbers rank them:
   compare it with; the census reports the miss and names no owner, rather than inventing one.
 - **The base term is not the only measurement.** `log`, `trace`, `lat`, `pool` and `stability` are also measurements
   of a candidate, at non-zero weight. `outweighed` therefore means "the base measurement was smaller", and a case
-  could in principle be won by one of the others — which is the `outvoted` bucket's job to reveal, and it is empty on
-  both cells.
+  could in principle be won by one of the others — which is the `outvoted` bucket's job to reveal, and it holds six
+  cases across six cells, every one of them blamed on `dualFamily` and five on `stability`.
+- **Six of nine cells.** The three `RE2` cells have not been read yet, so 58/70 is a rate over the cells that have
+  run, not over the campaign's headline grid. The instrument prints on every job, so closing the gap is a matter of
+  waiting for the battery rather than of new code.
+- **The blame is a lower bound.** A term is named when the winner was paid more than the truth by it, which requires
+  both sides to carry a breakdown. A case whose winner predates `top1Terms` is counted as `outvoted` and names
+  nobody, so a bucket of six may hide a seventh whose owner was never recorded.

@@ -1520,7 +1520,10 @@ async function main(): Promise<void> {
     for (const r of results.values()) {
       for (const p of r.casePredictions) accumulateFaultCensus(faultCensus, p);
     }
-    const faultLine = formatFaultLine(faultCensus);
+    const faultLine = formatFaultLine(
+      faultCensus,
+      opts.noInjectTime ? 'dataset-decoupled' : 'inject-time',
+    );
     if (faultLine !== undefined) console.log(faultLine);
 
     // The ONE binary term's decisions, scored. `trace` is pinned on for RE3 alone, the term-gap census reads it as
