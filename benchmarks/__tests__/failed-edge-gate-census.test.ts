@@ -384,7 +384,7 @@ describe('failed-edge gate census — the line', () => {
  * 3. **admitted with entry** — of the cases the bar let through, how many carry a score for their FINAL rank-1.
  *    A term can only move the service it has a number for, so this is the population `acted` is a subset of.
  */
-describe('failed-edge gate census — the term\'s input, counted rather than sampled', () => {
+describe("failed-edge gate census — the term's input, counted rather than sampled", () => {
   it('counts failed records per CASE and per ROW, and only when a record exists', () => {
     // Two counts, because they answer different questions: "how many cases carry a failed call" is the coverage
     // question, and "how many failed edges is that" is the magnitude question. A cell with one case and nine rows
@@ -497,7 +497,6 @@ describe('failed-edge gate census — the input line', () => {
   it('reports the admitted-with-entry fraction against its own denominator', () => {
     // Stated as `0 of 1` rather than `0`, because a bare zero and a zero out of nothing are the two readings this
     // line exists to keep apart — and a cell where nothing was admitted has no denominator to divide by at all.
-    const ids = services();
     const one = createFailedEdgeGateCensus('fleet', 0);
     accumulateFailedEdgeGateCensus(one, recordOf({ ...specOf(4, DURATION), termSubjects: [] }));
     const none = createFailedEdgeGateCensus('absolute', 0.5);
