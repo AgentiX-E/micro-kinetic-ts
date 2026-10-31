@@ -101,6 +101,7 @@ import {
   computeTopoSourceScores,
   computeTraceActivityScores,
   gatedRiseContribution,
+  maxInboundRise,
 } from './ranking-signals.js';
 
 /**
@@ -654,6 +655,27 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * anomaly is maximal. One event is not a pattern.
    */
   readonly failedEdgeMinRecords?: number;
+  /**
+   * Which BAR the direction term's rise is read against — see {@link FailedEdgeGateMode}.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_GATE_MODE} (`absolute`), so the option is inert until a run names
+   * it. What licenses the field existing at all is the shipped value's reach on the golden corpus: the term
+   * reads `WEIGHT_ZERO` on **734 of 735** cases and contributed on none, while the artifact's
+   * `direction-gate` line reported `CAN fire` on the cells that supply spans — because that line measures the
+   * VIEW's capability rather than the gate's decisions. The causes are two and only one of them is the number
+   * `300`: five cells carry no `edgeLatency` at all — 495 of the 735 cases, so no bar can act — and on the
+   * four that do, the rise distribution has never been printed. This field replaces the constant with a bar that has no corpus in it,
+   * and the per-cell `[failed-edge-gate]` census reports what either bar decided.
+   */
+  readonly failedEdgeGateMode?: FailedEdgeGateMode;
+  /**
+   * The fleet share the rise must clear, read only at `failedEdgeGateMode: 'fleet'`.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_GATE_SHARE}. Clamped to `[0, ∞)` by the predicate rather than by
+   * the parser, because a share below zero is not a share and the predicate has to stay total for a
+   * caller that constructs the gate object directly.
+   */
+  readonly failedEdgeGateShare?: number;
   /**
    * Weight of the per-edge inbound latency rise.
    *
@@ -1414,6 +1436,70 @@ export const FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU = { lo: 240, hi: 360 } as con
 export const FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300;
 
 /**
+ * Which BAR the failed-edge direction term's rise is read against.
+ *
+ * - `absolute` — {@link FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR}, the constant fitted on FSE'26's injection
+ *   scale. The SHIPPED value, so a run that names no mode is the published run.
+ * - `fleet` — `share ×` the case's own largest measured inbound rise. Dimensionless, and therefore the
+ *   same statement about a 14-service graph and a 69-service one.
+ *
+ * The mode exists because the absolute bar is not a property of the statistic: it is a property of the
+ * corpus the statistic was measured on. See {@link FailedEdgeGate} and the docblock on
+ * `failedEdgeRiseBar` for the two artifacts that make that a measurement rather than an argument.
+ */
+export type FailedEdgeGateMode = 'absolute' | 'fleet';
+
+/**
+ * The mode vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree
+ * about which two words the engine accepts.
+ */
+export const FAILED_EDGE_GATE_MODES: Readonly<Record<FailedEdgeGateMode, true>> = {
+  absolute: true,
+  fleet: true,
+};
+
+/** The shipped gate mode: the absolute bar, which is what every published cell ran. */
+export const DEFAULT_FAILED_EDGE_GATE_MODE: FailedEdgeGateMode = 'absolute';
+
+/**
+ * The shipped fleet share — inert at the shipped mode, and the value the first arm reads.
+ *
+ * Half the case's champion is the interval's midpoint in the only sense this axis has: it is the bar at
+ * which "among the case's strong rises" is true of a service that rose by at least half of the strongest,
+ * which is the plainest reading of the phrase and involves no fitted number. A sweep is what prices it.
+ */
+export const DEFAULT_FAILED_EDGE_GATE_SHARE = 0.5;
+
+/**
+ * Whether a string names a gate mode.
+ *
+ * @param value - The candidate word, as a CLI or a workflow handed it over.
+ * @returns True only for a member of {@link FAILED_EDGE_GATE_MODES}.
+ */
+export function isFailedEdgeGateMode(value: string): value is FailedEdgeGateMode {
+  return Object.prototype.hasOwnProperty.call(FAILED_EDGE_GATE_MODES, value);
+}
+
+/**
+ * The gate's configuration, as the predicate reads it.
+ *
+ * `fleetMax` is supplied by the caller because the predicate is a function of two SCALARS — the rise it
+ * judges and the bar it judges it against — and the champion lives in the case's per-callee map. Passing
+ * the map would make the predicate a function of a container, and a caller would then be free to pass a
+ * differently-filtered one.
+ *
+ * `fleetMax` is unread at `absolute`, which is what makes the shipped path byte-identical rather than
+ * identical-by-arithmetic.
+ */
+export interface FailedEdgeGate {
+  readonly mode: FailedEdgeGateMode;
+  /** The share of the champion the rise must clear. Read only at `fleet`. */
+  readonly share: number;
+  /** The case's largest measured inbound rise, or absent when none was measured. Read only at `fleet`. */
+  readonly fleetMax?: number | undefined;
+}
+
+/**
  * The metric-name families that count as a duration series.
  *
  * These four alternatives are not a guess: they are the ones the corpus's dominant labels use
@@ -1443,22 +1529,105 @@ const DURATION_DOMINANT_METRIC = /duration|latency|time|p99|p95/i;
  *
  * @param dominantMetric - The label of the rank-1 service's dominant metric, if measured.
  * @param latRise - The rank-1 service's largest raw inbound `post / pre` rise, if measured.
+ * @param gate - Which BAR the rise is read against. Omitted means {@link DEFAULT_FAILED_EDGE_GATE_MODE},
+ *   which is the absolute constant, so every caller that does not name a mode runs the shipped predicate.
  * @returns True only when both halves of the gate hold.
  */
 export function admitsFailedEdgeTerm(
   dominantMetric: string | undefined,
   latRise: number | undefined,
+  gate?: FailedEdgeGate,
 ): boolean {
+  if (!namesDurationChannel(dominantMetric)) return false;
+  // A missing measurement is REFUSED before the bar is computed, and that ordering is the whole of the
+  // rule: folding an absent rise into `0` and then comparing it would admit the case at a share of 0,
+  // because `0 >= 0`. `Number.isFinite` keeps a NaN out for the same reason — every comparison against a
+  // NaN is false, which would reproduce this refusal for a different reason than the one it states.
+  if (latRise === undefined || !Number.isFinite(latRise)) return false;
+  return latRise >= failedEdgeRiseBar(gate);
+}
+
+/**
+ * The gate's FIRST half, alone — the single owner of "is this the channel a failed call would show in".
+ *
+ * Exported because the census has to report the two halves' refusals separately, and a census that tested the
+ * name itself would be a second implementation of the half it is reporting on. Every caller that asks this
+ * question — the predicate above and the instrument beside it — asks it here.
+ *
+ * @param dominantMetric - The label of the metric that won a service's anomaly, if measured.
+ * @returns True only for a label in the duration family.
+ */
+export function namesDurationChannel(dominantMetric: string | undefined): boolean {
   // `undefined` is not the empty string: a metric with an empty label was never named by the
   // producer, and `RegExp.test('')` is false anyway — but the explicit first test is what makes
   // the absence-vs-empty distinction readable rather than incidental.
   if (dominantMetric === undefined) return false;
-  if (!DURATION_DOMINANT_METRIC.test(dominantMetric)) return false;
-  // A missing rise reads as 0 and is refused; `Number.isFinite` keeps a NaN out, which would
-  // otherwise make every comparison false and silently reproduce the same refusal for a different
-  // reason than the one this branch states.
-  const rise = latRise === undefined || !Number.isFinite(latRise) ? 0 : latRise;
-  return rise >= FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR;
+  return DURATION_DOMINANT_METRIC.test(dominantMetric);
+}
+
+/**
+ * The rise a rank-1 service must clear for the direction term to be allowed to act.
+ *
+ * Two forms, and the reason there are two is a measurement rather than a preference.
+ *
+ * ## The absolute bar is a statement about ONE corpus's injection strength
+ *
+ * {@link FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR} = 300 was fitted on FSE'26, where an injection adds hundreds
+ * of milliseconds to a sub-millisecond baseline, so the useful cases' rank-1 rise has a median of 340.9
+ * against 9.0 on the harmful ones. The bar is not wrong about FSE'26.
+ *
+ * ## What is MEASURED about the other corpus, and what is not
+ *
+ * The term reads `WEIGHT_ZERO` on **734 of 735** golden cases (and `INPUT_MAP_EMPTY` on the one the gate
+ * admitted) — that count is measured, and it has **two** causes that must not be collapsed:
+ *
+ * - **On FIVE of the nine cells the observable does not exist: 495 cases.** `edgeLatencyByCallee` is empty
+ *   on every RE1 case and on both SockShop groups, because those corpora carry no traces: the run prints
+ *   `latency-routes[OnlineBoutique]: … rows: whole-file 0` over 125 cases, `latency-routes[SockShop]: … 0`
+ *   over the 30 RE3 cases this machine can rank, and the same on RE2-SockShop. The gate's second half has no
+ *   VALUE there, so **no bar — this constant or any share — can admit anything**, and the refusal is a
+ *   property of the corpus rather than of the number.
+ * - **On the FOUR cells that carry spans, 239 of 240 cases were refused**: RE2-OnlineBoutique (1080 rows /
+ *   90 cases), RE2-TrainTicket (6781), RE3-OnlineBoutique (356) and RE3-TrainTicket (2006). Whether that is
+ *   these units or those rises is **UNMEASURED** — no artifact has ever printed the rise distribution there.
+ *   The `[failed-edge-gate]` census in `benchmarks` is the instrument that does, and
+ *   `docs/failed-edge-gate.md` is its pre-registered arm.
+ *
+ * So the claim this constant's docblock may make is narrower than "the bar is wrong here": on 495 of the 735
+ * cases the term cannot act for a reason that is not the bar at all, and on the 240 that carry the observable
+ * the bar has never been read against a printed distribution. What IS an internal contradiction, needing no
+ * new run: the engine credits rises from **10.3** up through `latMinRise` on the SAME per-edge ratio — two
+ * thresholds on one quantity, fitted separately, disagreeing by a factor of **29**.
+ *
+ * ## The fleet bar is the same statement without the corpus
+ *
+ * `share × the case's own largest measured inbound rise` is the construction `anomalyBreadthGate` and
+ * `dualFamilyGate` already use, and it is dimensionless for the same reason they are: it says "the rank-1
+ * must be among the case's strong rises" rather than "the rise must exceed a number that only one
+ * dataset produces". At `share` 0 it admits every case the observable can speak about; at 1 it admits
+ * only the case's champion.
+ *
+ * ## Why the fleet bar fails CLOSED
+ *
+ * A case with no measured rise has no champion, and a champion of `0`, `NaN` or `Infinity` is not a bar
+ * any rise can be compared against. All three refuse. The alternative — treating "no data" as a bar of
+ * zero — would let the absence of evidence admit the term, which is the exact failure the missing-rise
+ * branch above already guards on the other axis.
+ *
+ * @param gate - The gate configuration, or `undefined` for the shipped absolute bar.
+ * @returns The bar the rise is compared against, `Infinity` when the gate cannot name one.
+ */
+function failedEdgeRiseBar(gate: FailedEdgeGate | undefined): number {
+  if (gate === undefined || gate.mode === 'absolute') return FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR;
+  const champion = gate.fleetMax;
+  if (champion === undefined || !Number.isFinite(champion) || champion <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  // A share outside the unit interval is not a share. `0` is legal and means "every measured rise";
+  // anything negative would compute a bar below zero and admit a case the observable never measured,
+  // so it is clamped to the end of the interval that keeps the predicate total.
+  const share = Number.isFinite(gate.share) ? Math.max(0, gate.share) : 1;
+  return share * champion;
 }
 
 /**
@@ -1504,6 +1673,8 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
   failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
   failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+  failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -1992,10 +2163,21 @@ export class TreePruner {
     if (directionWeight === 0) return withFaultHypotheses(graph, baseline);
     const rankOne = baseline[0];
     if (rankOne === undefined) return withFaultHypotheses(graph, baseline);
+    // The champion is read ONLY when the fleet bar is in force, so the shipped path does not compute a
+    // quantity it would never compare against — the same rule the self-time, symmetry and dual-family
+    // maps follow. It is the max over the map the decision already reads, so the number the gate judges
+    // against and the number the artifact prints cannot be two derivations of one statistic.
+    const gateMode = this.options.failedEdgeGateMode ?? DEFAULT_FAILED_EDGE_GATE_MODE;
+    const failedEdgeGate: FailedEdgeGate = {
+      mode: gateMode,
+      share: this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_GATE_SHARE,
+      fleetMax: gateMode === 'fleet' ? maxInboundRise(graph.edgeLatencyByCallee) : undefined,
+    };
     if (
       !admitsFailedEdgeTerm(
         graph.dominantMetrics?.get(rankOne.serviceId)?.label,
         graph.edgeLatencyByCallee?.get(rankOne.serviceId)?.rise,
+        failedEdgeGate,
       )
     ) {
       return withFaultHypotheses(graph, baseline);

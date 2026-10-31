@@ -360,6 +360,12 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--topo-closure',
     // Iteration 167: the pool, for the reason the four above are here.
     '--pool-admission',
+    // Iteration 168: the direction term's BAR, beside the weight it qualifies. The weight has had a top-level
+    // input since iteration 125 and was still unmeasurable on this half: the bar it is read against is an absolute
+    // 300 fitted on FSE'26's millisecond injections, the goldens' latencies are seconds, so every case was refused
+    // and the term read `WEIGHT_ZERO` on 734 of 735. Packed for the reason every post-ceiling knob is — 25/25.
+    '--failed-edge-gate-mode',
+    '--failed-edge-gate-share',
   ],
 };
 
@@ -431,6 +437,24 @@ const KNOBS: Readonly<
     owner: 'fse26-failed-edge-verdict.md',
     fse26: 'failed_edge_min_records',
     rcaeval: null,
+  },
+  failedEdgeGateMode: {
+    // The weight's OTHER axis, and the one that decided whether the term could act on the golden half at all:
+    // `absolute` is the 300 fitted on FSE'26's injection strength, `fleet` a share of each case's own champion.
+    // FSE'26 has no input for it and does not need one — that corpus IS the bar's units — so the row is
+    // `rcaeval`-only, which is a statement about where the defect lives rather than about the field.
+    flag: '--failed-edge-gate-mode',
+    owner: 'failed-edge-gate.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
+  },
+  failedEdgeGateShare: {
+    // The share the fleet bar is made of. Read only at `fleet`, which is why it can ship at 0.5 without moving
+    // anything: the shipped bar is the constant.
+    flag: '--failed-edge-gate-share',
+    owner: 'failed-edge-gate.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
   },
   latWeight: {
     flag: '--lat-weight',

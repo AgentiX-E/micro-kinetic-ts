@@ -54,6 +54,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DROP_DEVIATION_MODES,
   DUAL_FAMILY_GATE_MODES,
+  FAILED_EDGE_GATE_MODES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   POOL_ADMISSIONS,
@@ -418,6 +419,11 @@ describe('every option the golden runner forwards can be set from the command li
       // Iteration 167: the SET the ranking covers, the sixth word-vocabulary and the first that is not a
       // property of the deduction at all. Probed from the union for the reason every other entry is.
       ...Object.keys(POOL_ADMISSIONS),
+      // Iteration 168: the direction term's BAR, the seventh word-vocabulary and the only one whose two members
+      // are a corpus-independent constant and a per-case statistic. Probed from the union for the reason every
+      // other entry is — and this one is why the probe set cannot be numeric: at `absolute` the shipped run and
+      // every arm are the same configuration, so only the other member can move the field.
+      ...Object.keys(FAILED_EDGE_GATE_MODES),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

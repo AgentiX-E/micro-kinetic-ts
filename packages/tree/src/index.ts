@@ -157,6 +157,8 @@ export {
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -177,6 +179,7 @@ export {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_TREE_PRUNER_OPTIONS,
   DEFAULT_VICTIM_WEIGHT,
+  FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
   ONSET_SHAPES,
@@ -185,11 +188,18 @@ export {
   classifyTermZero,
   computeOnsetSlopes,
   computeTemporalEarliness,
+  isFailedEdgeGateMode,
   isOnsetShape,
+  namesDurationChannel,
   sumScoreTerms,
   toRankingWeights,
 } from './pruning/pruner.js';
-export type { OnsetShape, TreePrunerOptions } from './pruning/pruner.js';
+export type {
+  FailedEdgeGate,
+  FailedEdgeGateMode,
+  OnsetShape,
+  TreePrunerOptions,
+} from './pruning/pruner.js';
 
 export {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -218,6 +228,7 @@ export {
   // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of
   // the admission test would be free to disagree with the map it is trying to explain.
   logLineAdmittedByMode,
+  maxInboundRise,
   // The trace vote's fleet baseline, exported because the `[trace-z]` instrument in `packages/kinetic` reports the
   // SAME quantity: a vote that read one median while the artifact beside it printed another would be two answers
   // to one question, and the census that explains a wrong vote would be explaining a number the rule never saw.

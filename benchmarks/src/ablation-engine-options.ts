@@ -38,6 +38,7 @@
 import type {
   BaselineAnchor,
   DualFamilyGateMode,
+  FailedEdgeGateMode,
   LogSignalMode,
   OnsetShape,
   PrismPooling,
@@ -48,6 +49,8 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -147,6 +150,17 @@ export interface AblationSignalOptions {
    * runners that share this record, so it cannot survive one of them adopting the field.
    */
   readonly failedEdgeWeight: number;
+  /**
+   * Which bar that weight's rise is read against.
+   *
+   * Held at the shipped `absolute` by every row, on the rule `selfTimeWeight` above is held at its own shipped
+   * value: no row of the battery varies the gate, and a configuration the artifact cannot state is one a reader
+   * has to guess. The field matters because the golden half can move it — on that corpus the absolute bar refuses
+   * every case — so an artifact that can only read `absolute` must say so rather than leave it to the default.
+   */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
+  /** The share that mode reads, held at the shipped value by every row. */
+  readonly failedEdgeGateShare: number;
   readonly poolMetricPenaltyWeight: number;
   readonly stabilityWeight: number;
   /**
@@ -355,6 +369,8 @@ export function buildAblationEngineOptions(
       logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
       latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
       failedEdgeWeight: overrides.failedEdgeWeight ?? DEFAULT_FAILED_EDGE_WEIGHT,
+      failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+      failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
       latMinRise: overrides.latMinRise ?? DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight:
         overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -409,6 +425,9 @@ export function formatAblationConfigLine(
     `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `failedEdgeWeight=${signals.failedEdgeWeight} ` +
+    // Named on the failed-edge rule: `absolute` is inert, so a field omitted at its default would render a fleet
+    // row and the shipped configuration identically — and the two artifacts are read against each other.
+    `failedEdgeGateMode=${signals.failedEdgeGateMode} failedEdgeGateShare=${signals.failedEdgeGateShare} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `selfAnomalyWeight=${signals.selfAnomalyWeight} ` +
     `victimWeight=${signals.victimWeight} ` +

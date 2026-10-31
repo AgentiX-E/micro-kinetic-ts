@@ -32,6 +32,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FailedEdgeGateMode,
   LogSignalMode,
   OnsetShape,
   PoolAdmission,
@@ -95,6 +96,10 @@ export interface RCAEvalSignalOptions {
    * not be asked for at all.
    */
   readonly failedEdgeWeight: number;
+  /** Which bar that weight's rise is read against — see `CliOptions.failedEdgeGateMode`. */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
+  /** The share of the case's own champion the rise must clear, read only at `fleet`. */
+  readonly failedEdgeGateShare: number;
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
@@ -236,6 +241,8 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
+      failedEdgeGateMode: opts.failedEdgeGateMode,
+      failedEdgeGateShare: opts.failedEdgeGateShare,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
@@ -303,6 +310,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // omitted-when-default rule would render the measured arm and the shipped configuration byte-identically —
     // the defect this line exists to prevent, one term over.
     `failedEdgeWeight=${opts.failedEdgeWeight} ` +
+    // The BAR that weight is read against, named on the failed-edge rule: `absolute` is inert, so an
+    // omitted-when-default field would render the fleet arm and the shipped run identically on the artifact
+    // whose whole job is to attribute the difference between them.
+    `failedEdgeGateMode=${opts.failedEdgeGateMode} failedEdgeGateShare=${opts.failedEdgeGateShare} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
     `dropDeviationMode=${opts.dropDeviationMode} baselineAnchor=${opts.baselineAnchor} ` +
     `traceWeight=${opts.traceWeight} ` +

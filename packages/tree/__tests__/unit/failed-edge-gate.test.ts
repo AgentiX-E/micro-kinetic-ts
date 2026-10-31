@@ -20,10 +20,16 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import type { FailedEdgeGate, FailedEdgeGateMode } from '@agentix-e/micro-kinetic-tree';
 import {
   admitsFailedEdgeTerm,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_LAT_MIN_RISE,
+  FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
+  isFailedEdgeGateMode,
+  maxInboundRise,
   TreePruner,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
@@ -266,5 +272,194 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
       3,
     );
     expect(unanchored[0]!.serviceId).toBe(CALLEE);
+  });
+});
+
+/**
+ * The gate's BAR — an absolute number measured on one corpus, and the form that survives a second one.
+ *
+ * Iteration 168. `FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300` is a rise measured on FSE'26, whose injections
+ * are hundreds of milliseconds against sub-millisecond baselines. The golden corpus's latencies are SECONDS
+ * (0.04 → 0.05), so its rank-1 rises live between 1.2 and 8 — three orders of magnitude below the bar — and
+ * the term with the largest weight in the formula reads `WEIGHT_ZERO` on 734 of 735 cases. The published
+ * artifact says so in two places that were never read together: `latency-routes` reports 1080 and 6781
+ * latency rows on the two RE2 cells whose traces carry them, and `[term-gap]` reports `failedEdge
+ * WEIGHT_ZERO 100.0%`.
+ *
+ * So the bar has two forms, and this block asserts the properties that make the second one a mechanism
+ * rather than a tuned number:
+ *
+ * 1. **Identity at the default.** `absolute` (and an absent gate) is the shipped predicate, bit for bit,
+ *    with the share unread — so no run that does not name the other mode can move.
+ * 2. **Fleet-relative, not an invented floor.** `fleet` reads `share × the case's own largest measured
+ *    inbound rise`, the construction `anomalyBreadthGate` and `dualFamilyGate` already use: the same
+ *    statement about a 14-service graph and a 69-service one.
+ * 3. **It fails closed.** A case with no measured rise, or a fleet whose champion is not positive and
+ *    finite, has no bar — and an absent measurement must never admit a term.
+ * 4. **It can only narrow as the share grows**, so a swept share is a monotone family rather than nine
+ *    unrelated predicates.
+ */
+describe('the gate bar — absolute versus fleet-relative', () => {
+  it('names exactly two modes, and the shipped one is the absolute bar', () => {
+    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'fleet']);
+    expect(DEFAULT_FAILED_EDGE_GATE_MODE).toBe('absolute');
+    for (const mode of Object.keys(FAILED_EDGE_GATE_MODES)) {
+      expect(isFailedEdgeGateMode(mode)).toBe(true);
+    }
+    for (const other of ['', 'FLEET', 'fleet ', 'absolute ', 'relative', 'sum']) {
+      expect(isFailedEdgeGateMode(other)).toBe(false);
+    }
+  });
+
+  it('is the shipped predicate at the default, and the share is UNREAD there', () => {
+    // An absent gate and an explicit `absolute` are one declaration of one configuration. If they
+    // could disagree, a caller that omitted the field would be running a different engine from the
+    // one the default table names — the defect this repository has published a number 24.2 pp off
+    // the best-measured value for.
+    for (const rise of [0, 1, 9, 299.999, 300, 300.001, 1e6]) {
+      const bare = admitsFailedEdgeTerm(DURATION, rise);
+      expect(admitsFailedEdgeTerm(DURATION, rise, undefined)).toBe(bare);
+      expect(admitsFailedEdgeTerm(DURATION, rise, { mode: 'absolute', share: 0 })).toBe(bare);
+      expect(admitsFailedEdgeTerm(DURATION, rise, { mode: 'absolute', share: 0.9 })).toBe(bare);
+      expect(admitsFailedEdgeTerm(DURATION, rise, { mode: 'absolute', share: 1 })).toBe(bare);
+    }
+  });
+
+  it('reads the bar as a SHARE of the case champion in fleet mode, at equality', () => {
+    const fleet = (fleetMax: number, share: number): FailedEdgeGate => ({
+      mode: 'fleet',
+      share,
+      fleetMax,
+    });
+    // 0.5 x 8 = 4: the boundary is admitted, one epsilon below it is not, and the epsilon is the
+    // smallest representable step rather than a tolerance this test invented.
+    expect(admitsFailedEdgeTerm(DURATION, 4, fleet(8, 0.5))).toBe(true);
+    expect(admitsFailedEdgeTerm(DURATION, 4 * (1 - 1e-12), fleet(8, 0.5))).toBe(false);
+    expect(admitsFailedEdgeTerm(DURATION, 6, fleet(8, 0.5))).toBe(true);
+    expect(admitsFailedEdgeTerm(DURATION, 3.9, fleet(8, 0.5))).toBe(false);
+    // The same rise changes verdict with the fleet, which is the whole point: the bar is relative.
+    expect(admitsFailedEdgeTerm(DURATION, 4, fleet(4, 0.5))).toBe(true);
+    expect(admitsFailedEdgeTerm(DURATION, 4, fleet(40, 0.5))).toBe(false);
+  });
+
+  it('fails CLOSED when the fleet has no champion or no measurement', () => {
+    // A missing measurement is not a measured zero, and neither is a champion of 0 — which is what an
+    // empty map would produce if the maximum were taken without a guard.
+    for (const fleetMax of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const gate: FailedEdgeGate = { mode: 'fleet', share: 0, fleetMax };
+      expect(admitsFailedEdgeTerm(DURATION, 1e9, gate)).toBe(false);
+    }
+    // And the rise half still has to exist: a case with no inbound measurement is refused at every share,
+    // including the degenerate one that admits every measured rise.
+    for (const share of [0, 0.5, 1]) {
+      expect(admitsFailedEdgeTerm(DURATION, undefined, { mode: 'fleet', share, fleetMax: 8 })).toBe(
+        false,
+      );
+      expect(
+        admitsFailedEdgeTerm(DURATION, Number.NaN, { mode: 'fleet', share, fleetMax: 8 }),
+      ).toBe(false);
+    }
+  });
+
+  it('is the unrestricted measured form at share 0 and the champion alone at share 1', () => {
+    // The two ends make the family's meaning checkable without a corpus: share 0 admits every case the
+    // OBSERVABLE can speak about, share 1 admits only the service the case's own champion names.
+    expect(admitsFailedEdgeTerm(DURATION, 0.001, { mode: 'fleet', share: 0, fleetMax: 8 })).toBe(
+      true,
+    );
+    expect(admitsFailedEdgeTerm(DURATION, 8, { mode: 'fleet', share: 1, fleetMax: 8 })).toBe(true);
+    expect(admitsFailedEdgeTerm(DURATION, 7.999, { mode: 'fleet', share: 1, fleetMax: 8 })).toBe(
+      false,
+    );
+  });
+
+  it('narrows monotonically as the share grows', () => {
+    const rises = [1, 1.5, 2, 3, 5, 8];
+    const fleetMax = Math.max(...rises);
+    const admittedAt = (share: number): number =>
+      rises.filter((rise) =>
+        admitsFailedEdgeTerm(DURATION, rise, { mode: 'fleet', share, fleetMax }),
+      ).length;
+    let previous = Number.POSITIVE_INFINITY;
+    for (const share of [0, 0.1, 0.25, 0.5, 0.75, 1]) {
+      const count = admittedAt(share);
+      expect(count).toBeLessThanOrEqual(previous);
+      previous = count;
+    }
+    expect(admittedAt(0)).toBe(rises.length);
+    expect(admittedAt(1)).toBe(1);
+  });
+
+  it('keeps the DURATION test in force in both modes, including at share 0', () => {
+    // The name half closes one residue and the magnitude half another; a share of 0 relaxes the second,
+    // never the first. A resource-dominant rank-1 refuses at every share and every rise.
+    for (const mode of Object.keys(FAILED_EDGE_GATE_MODES) as FailedEdgeGateMode[]) {
+      for (const share of [0, 0.5, 1]) {
+        expect(admitsFailedEdgeTerm(RESOURCE, 1e6, { mode, share, fleetMax: 8 })).toBe(false);
+        expect(admitsFailedEdgeTerm(undefined, 1e6, { mode, share, fleetMax: 8 })).toBe(false);
+      }
+    }
+  });
+
+  it('refuses a golden-corpus rise under the absolute bar and admits it fleet-relatively', () => {
+    // THE FENCE. The magnitudes are the golden half's own, and they are stated for what they ARE: the metric
+    // series behind `latWeight` gives case maxima of 1.01 (min), 7.68 (median), 121.01 (p90) and 482.5 (max)
+    // over RE1-OnlineBoutique's 125 cases, i.e. a distribution whose body sits one to two orders below the
+    // constant and whose tail crosses it. The per-EDGE map this gate reads is a different observable — and it is
+    // EMPTY on that cell (0 latency rows over 125 cases, measured), so no golden case is admitted at any bar
+    // there. That is the point of the fence: the two bars differ only in their bar, and on a case whose champion
+    // is 7.99 the absolute one refuses what the fleet one admits — while on a case with no map at all both
+    // refuse, which is what makes "the corpus cannot reach 300" a smaller claim than it looks.
+    const goldenFleetMax = 7.99;
+    for (const rise of [1.2, 1.81, 3.31, 4.17, 7.99]) {
+      expect(admitsFailedEdgeTerm(DURATION, rise, { mode: 'absolute', share: 0.5 })).toBe(false);
+    }
+    expect(
+      admitsFailedEdgeTerm(DURATION, goldenFleetMax, {
+        mode: 'fleet',
+        share: 0.5,
+        fleetMax: goldenFleetMax,
+      }),
+    ).toBe(true);
+    // And the corpus's LATENCY TERM, which reads the same per-edge ratio, credits rises from 10.3 up — an
+    // internal statement that 300 is not this engine's scale for the quantity: two thresholds on one statistic,
+    // fitted on two corpora, disagreeing by a factor of 29. It is the only part of the argument that does not
+    // depend on which of the two observables a reader has in mind.
+    expect(DEFAULT_LAT_MIN_RISE).toBeLessThan(FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR / 10);
+  });
+});
+
+describe('maxInboundRise — the case champion the fleet bar is a share of', () => {
+  it('is the largest POSITIVE finite rise over the measured callees', () => {
+    const map = new Map([
+      ['a', { rise: 1.5, count: 2 }],
+      ['b', { rise: 7.99, count: 1 }],
+      ['c', { rise: 0.4, count: 3 }],
+    ]);
+    expect(maxInboundRise(map)).toBe(7.99);
+  });
+
+  it('is absent when nothing measurable was recorded, which is what makes the bar fail closed', () => {
+    expect(maxInboundRise(undefined)).toBeUndefined();
+    expect(maxInboundRise(new Map())).toBeUndefined();
+    expect(
+      maxInboundRise(
+        new Map([
+          ['a', { rise: 0, count: 1 }],
+          ['b', { rise: Number.NaN, count: 1 }],
+          ['c', { rise: -2, count: 1 }],
+        ]),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('ignores a non-positive or non-finite entry rather than letting it become the maximum', () => {
+    const map = new Map([
+      ['a', { rise: Number.NaN, count: 1 }],
+      ['b', { rise: 3, count: 1 }],
+      ['c', { rise: Number.POSITIVE_INFINITY, count: 1 }],
+    ]);
+    // `Math.max` would answer NaN and Infinity respectively; both are bars no rise can be read against.
+    expect(maxInboundRise(map)).toBe(3);
   });
 });

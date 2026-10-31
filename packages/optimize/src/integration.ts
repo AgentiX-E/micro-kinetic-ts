@@ -75,6 +75,10 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
+  failedEdgeGateMode:
+    'the BAR that weight is read against (absolute | fleet): it changes which rise the gate admits rather than any term magnitude, so it is the same kind of discrete choice as the dual-family gate mode above — a dispatch axis, never a fusion coefficient',
+  failedEdgeGateShare:
+    'the share a fleet bar is made of, read only at `fleet` and inert at the shipped `absolute`: a population parameter like the dual-family gate, so a continuous search over it would be tuning a threshold on a term whose weight it does not move',
   topoDiscount:
     'the topological deduction, shipped ON at 1 since iteration 163 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and its weight is a dispatch question whose answer the occupancy of the candidate pool decides rather than a fusion coefficient a continuous search can interpolate',
   topoDiscountScope:

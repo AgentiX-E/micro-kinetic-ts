@@ -55,6 +55,8 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -73,7 +75,9 @@ import {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
   type DualFamilyGateMode,
+  type FailedEdgeGateMode,
   isDualFamilyGateMode,
+  isFailedEdgeGateMode,
   isOnsetShape,
 } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -294,6 +298,33 @@ export interface CliOptions {
    * `direction-gate[...]` beside the latency census for exactly that reason.
    */
   failedEdgeWeight: number;
+  /**
+   * Which BAR the direction term's rise is read against — `absolute` (shipped) or `fleet`
+   * (see `TreePrunerOptions.failedEdgeGateMode`).
+   *
+   * The absolute bar is 300 and was fitted on FSE'26, where an injection adds hundreds of milliseconds to a
+   * sub-millisecond baseline. The golden corpus's latencies are SECONDS, so its rank-1 rises are 1.2–8 and **no
+   * case can reach the bar** — the term reads `WEIGHT_ZERO` on 734 of 735 cases, which is the shape of a refusal
+   * and not of a measurement. The fleet bar is the same statement without the corpus in it (`share × this case's
+   * own champion`, the construction `anomalyBreadthGate` and `dualFamilyGate` already use), so this field is what
+   * makes the term EXPRESSIBLE on the half the kill criterion is measured on.
+   *
+   * Named unconditionally on the configuration line: at `absolute` the option is inert, and an omitted-when-
+   * default rule would render the fleet arm and the shipped run identically on the artifact whose whole job is to
+   * attribute the difference. Travels in the packed `anomaly_knobs` block as `failededgegate=<absolute|fleet>`
+   * because a `workflow_dispatch` accepts at most 25 inputs and this workflow is at that budget.
+   */
+  failedEdgeGateMode: FailedEdgeGateMode;
+  /**
+   * The share of the case's own champion the rank-1 rise must clear, read only at `failedEdgeGateMode: 'fleet'`
+   * (see `TreePrunerOptions.failedEdgeGateShare`).
+   *
+   * A share rather than a rise, because a rise is only comparable inside the corpus that produced it: at 1 the
+   * gate admits only the case's own largest rise, at 0 every measured rise. Travels as
+   * `failededgegateshare=<share>` beside the mode — the two are one configuration, and an artifact that named one
+   * without the other would describe a bar nobody read.
+   */
+  failedEdgeGateShare: number;
   /**
    * Strength of the DB-connection-pool dominance penalty (see
    * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
@@ -605,6 +636,11 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // The direction term's shipped weight, from the engine's own constant. 0 is what every published cell ran
     // with, so a bare dispatch still reproduces them; a non-zero value is the measurement this runner gained.
     failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
+    // The bar that weight is read against, from the engine's own constants. `absolute` is the bar the weight was
+    // measured under on FSE'26, so a bare dispatch still reproduces it; the goldens' units are why a dispatch has
+    // to be able to name the other one.
+    failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+    failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
@@ -742,6 +778,15 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // configuration (the term switched off is what the published cells ran), so a typo must reproduce the
       // published one rather than run that experiment under its name.
       opts.failedEdgeWeight = parseWeight(args[++i]!, DEFAULT_FAILED_EDGE_WEIGHT);
+    else if (args[i] === '--failed-edge-gate-mode' && hasValue(args, i + 1)) {
+      // The union's own guard, not a hand-written pair — the `--dual-family-gate-mode` rule. An unusable value
+      // falls back to the SHIPPED bar: a typo must reproduce the measured configuration rather than invent one.
+      const mode = args[++i]!;
+      opts.failedEdgeGateMode = isFailedEdgeGateMode(mode) ? mode : DEFAULT_FAILED_EDGE_GATE_MODE;
+    } else if (args[i] === '--failed-edge-gate-share' && hasValue(args, i + 1))
+      // A SHARE, so it takes the unit-interval parser: 1.5 is not a share of a champion and a negative one is
+      // not a bar.
+      opts.failedEdgeGateShare = parseUnitInterval(args[++i]!, DEFAULT_FAILED_EDGE_GATE_SHARE);
     else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
       // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
       // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.

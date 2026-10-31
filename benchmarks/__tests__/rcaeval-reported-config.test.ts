@@ -480,6 +480,13 @@ describe('the RCAEval configuration line carries the configuration that produced
     // DIRECTION can speak, this one picks the SEGMENT the directions are measured against — and it is printed
     // unconditionally on the same rule as every field above: it ships at `whole-file`, so a line that omitted
     // defaults would render the shipped run and an arm that re-anchored every metric byte-identically.
+    //
+    // …and in iteration 168 the direction term gained the BAR its rise is read against. The field is printed
+    // unconditionally although it ships at `absolute`, and that is the sharpest case of the rule in this file:
+    // at `absolute` the option is INERT, so a line that omitted defaults would render the fleet arm and the
+    // shipped run byte-identically — on the artifact whose entire job is to say whether the term acted. The
+    // acceptance is again the nine cells plus the FIELD: on the shipped bar the cells must be unmoved, which
+    // is checked on a run rather than argued here.
     expect(formatSignalLine(shipped)).toBe(
       // Iteration 190 added `topoDiscountScope` here, and iteration 163 enrolled the operator it scopes: the
       // deduction now ships at 1 with the boundary gate, so this line names three fields that a release ago
@@ -488,7 +495,7 @@ describe('the RCAEval configuration line carries the configuration that produced
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=1 ' +
         'topoDiscountScope=external logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
-        'failedEdgeWeight=3 ' +
+        'failedEdgeWeight=3 failedEdgeGateMode=absolute failedEdgeGateShare=0.5 ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'baselineAnchor=whole-file ' +
         'traceWeight=0 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +

@@ -71,7 +71,10 @@ import { inCaseOrder } from '../../packages/kinetic/src/benchmarks/case-order.js
 import { discoverCaseMetas } from './case-corpus-walk.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import {
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
+  TreePruner,
+} from '../../packages/tree/src/pruning/pruner.js';
 import { deriveAnchorCensus } from './anchor-census.js';
 // The mode union, from the package that OWNS it — the same guard the CLI accepts its flag with and the same
 // function the log census asks about admission, so one value means one thing along the whole chain.
@@ -92,6 +95,14 @@ import {
   createDualFamilyCensus,
   formatDualFamilyCensusLine,
 } from './dual-family-census.js';
+// The direction term's gate, as DECISIONS rather than as capability. The `direction-gate[...]` verdict above
+// reads the corpus (how many latency rows a view supplied); this reads the predicate's own verdicts, which is
+// the reading that says the term fired once in 735 cases while the corpus line said it COULD fire on four cells.
+import {
+  accumulateFailedEdgeGateCensus,
+  createFailedEdgeGateCensus,
+  formatFailedEdgeGateCensusLine,
+} from './failed-edge-gate-census.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
@@ -1411,6 +1422,16 @@ async function main(): Promise<void> {
     // POPULATION has to be printed at all (a constant membership only re-orders a cell whose family is a
     // strict subset, and no artifact said how large the family was where the cells did not move).
     const dualFamily = createDualFamilyCensus();
+    // The direction term's gate, counted as DECISIONS. Two numbers and not one, because the run's own bar and a
+    // hypothetical fleet bar are different questions and the artifact has to answer both: on the shipped absolute
+    // bar the cell reports the defect (refusals), and `fleet@<share>` states what an arm at that share would have
+    // admitted, which is the number a dispatch is decided on and which no dispatch has yet produced. The what-if
+    // is suppressed when the run's own bar IS a fleet bar — it would then restate the bar.
+    const failedEdgeGate = createFailedEdgeGateCensus(
+      opts.failedEdgeGateMode,
+      opts.failedEdgeGateShare,
+      opts.failedEdgeGateMode === 'absolute' ? DEFAULT_FAILED_EDGE_GATE_SHARE : undefined,
+    );
     for (const [ft, ftCases] of byFaultType) {
       if (ftCases.length === 0) continue;
       const suite: BenchmarkSuite = {
@@ -1425,6 +1446,7 @@ async function main(): Promise<void> {
           // that only ran under a flag would be absent from exactly the acceptance runs that must explain a
           // movement.
           accumulateDualFamilyCensus(dualFamily, record);
+          accumulateFailedEdgeGateCensus(failedEdgeGate, record);
           if (diagnoseDump !== undefined) {
             diagnoseDump.record(
               groupKey,
@@ -1441,6 +1463,12 @@ async function main(): Promise<void> {
     }
     const dualFamilyLine = formatDualFamilyCensusLine(dualFamily);
     if (dualFamilyLine !== undefined) console.log(dualFamilyLine);
+
+    // The gate's own decisions, beside the verdict that says the corpus COULD supply it. The two lines are one
+    // sentence and were printed as two paragraphs: `direction-gate` answers "did this view carry latency rows",
+    // and on four cells it answered yes while the predicate refused all but one of the 735 cases.
+    const failedEdgeGateLine = formatFailedEdgeGateCensusLine(failedEdgeGate);
+    if (failedEdgeGateLine !== undefined) console.log(failedEdgeGateLine);
 
     // The term-gap census for this cell: which ranking TERM the misses were lost on. The dual-family census above
     // says how wide one membership was; this says which term would have to change to win the case back, summed

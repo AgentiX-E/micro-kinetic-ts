@@ -1598,6 +1598,40 @@ export function computeEdgeLatencyByCallee(
 }
 
 /**
+ * The case's own strongest inbound rise — the CHAMPION a fleet-relative gate is a share of.
+ *
+ * ## Why this is a function of the map rather than a second pass over the edges
+ *
+ * The gate that decides whether the failed-edge direction term may act reads `computeEdgeLatencyByCallee`,
+ * the raw observable. A champion derived from `edgeLatency` directly would be a second implementation of
+ * one statistic, and the two would agree until one of them was edited — the defect this repository names
+ * as its oldest family. So this reads the map the decision already reads.
+ *
+ * ## Why the guards are on the VALUE and not on the map
+ *
+ * `rise` is `postMeanMs / preMeanMs`, so a callee whose pre-window mean is zero yields `Infinity`, and a
+ * row carrying a `NaN` propagates one through `Math.max`. Both are bars no rise can be compared against:
+ * `Infinity` would refuse every candidate and `NaN` would make every comparison false — two different
+ * refusals that look like one. Dropping them is not a tolerance; it is the statement that a rise which is
+ * not a positive finite number was not a measurement, and an unmeasured case has no champion at all
+ * (`undefined`) rather than a champion of 0.
+ *
+ * @param byCallee - The raw per-callee inbound rises, or `undefined` when the case carried none.
+ * @returns The largest positive finite rise, or `undefined` when nothing measurable was recorded.
+ */
+export function maxInboundRise(
+  byCallee: ReadonlyMap<ServiceId, InboundLatency> | undefined,
+): number | undefined {
+  if (byCallee === undefined) return undefined;
+  let max: number | undefined;
+  for (const { rise } of byCallee.values()) {
+    if (!Number.isFinite(rise) || rise <= 0) continue;
+    if (max === undefined || rise > max) max = rise;
+  }
+  return max;
+}
+
+/**
  * Per-callee inbound latency rise, max-normalised into [0, 1].
  *
  * The CONTINUOUS counterpart of {@link computeFailedEdgeScores}. That one counts
