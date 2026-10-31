@@ -362,3 +362,52 @@ gh workflow run benchmark-rcaeval.yml -f scopes=golden -f anomaly_knobs=topodisc
 #   41212474116  topodiscountgate=0.5        (this arm)
 #   41205151091  factory defaults            (the control: 641/735, nine cells 107/117/106 83/88/75 25/18/22)
 ```
+
+### 7.1 Readback — the arm is refused, on both halves of the criterion
+
+**Verdict: NO ENROL. `639/735` against the anchored `641`, four cells down and two up.** §7's bar was
+`735 > 641` with no cell down, and the arm fails both halves — so this is not a close call that a different
+reading of one cell could overturn. `topoDiscountGate` stays at its shipped `1`.
+
+| cell | anchored (`gate=1`) | arm (`gate=0.5`) | delta |
+| --- | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 107 | **110** | **+3** |
+| RE1:SockShop | 117 | 117 | 0 |
+| RE1:TrainTicket | 106 | **104** | **−2** |
+| RE2:OnlineBoutique | 83 | **82** | **−1** |
+| RE2:SockShop | 88 | **86** | **−2** |
+| RE2:TrainTicket | 75 | **74** | **−1** |
+| RE3:OnlineBoutique | 25 | 25 | 0 |
+| RE3:SockShop | 18 | 18 | 0 |
+| RE3:TrainTicket | 22 | **23** | **+1** |
+| **RE1** | 330 | 331 | +1 |
+| **RE2** | 246 | 242 | −4 |
+| **RE3** | 65 | 66 | +1 |
+| **TOTAL** | **641** | **639** | **−2** |
+
+**The mechanism, and why it is not the one §6 predicted.** §6's expected blocker was RE2:TrainTicket and the
+expected risk was RE1:TrainTicket; both behaved (75 → 74, 106 → 104). **What §6 did not predict is that the whole
+of RE2 falls.** The gate relaxes the condition under which a callee's explanation may charge a caller, and on the
+two systems with trace data that explanation is already being made — by `failedEdge` (weight `3`) and `lat` (weight
+`0.5615`), the two terms that carry a fault's DIRECTION. Charging the deduction again, more aggressively, is a
+second and disagreeing statement about the same evidence, and on RE2 it loses four cases net. RE1 has no traces,
+so there the gate is the only direction-ish term available and it wins three.
+
+**So the finding is the complement of `docs/topo-discount-gate.md` §6's, not a repeat of it.** §6 read the axis as
+"the operator is right and the gate costs one cell"; this arm reads it as **"incremental to nothing on RE1 and
+net-negative wherever an explicit direction term exists"**. That is a statement about the axis's POPULATION,
+which is what four of the nine cells moving between the two measurements was supposed to expose — and it is the
+reason the re-run was worth a dispatch rather than an inheritance.
+
+**What ships is nothing, and what it buys is a constraint on the next arm.** Any future attempt at this family
+has to be gated on the ABSENCE of an explicit direction term (`failedEdge`/`lat` both `WEIGHT_ZERO` or
+`INPUT_MAP_EMPTY`), i.e. it is a RE1-only mechanism wearing a global knob — and a knob that helps exactly the
+population where the engine has no better evidence is not a better estimate of direction, it is a fallback. The
+honest form of that idea is a per-case selection between the two, which is a different axis with its own
+pre-registration.
+
+```bash
+# read each arm's own signals line before reading its cells
+#   41205151091  factory defaults     641/735   107/117/106  83/88/75  25/18/22
+#   41212474116  topodiscountgate=0.5 639/735   110/117/104  82/86/74  25/18/23
+```
