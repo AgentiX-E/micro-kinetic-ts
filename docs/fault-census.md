@@ -155,15 +155,25 @@ makes askable, in the order the numbers rank them:
    channel that carries it is `latency-90` and it survives the guards (`1` of 12 misses loses a strong channel to
    `transient-return`), so this is not a filtering defect — it is that the injected service's own measurement is
    genuinely weaker than the propagated symptom's.
-2. **Is the deviation comparable across services?** The base term is `log1p` of a per-service anomaly, and the
-   anomaly is built from each service's own baseline. A service whose baseline is noisy reads a smaller anomaly for
-   the same absolute effect.
+2. **Is the deviation comparable across services? Half-answered here, and the answer is no.** The base term is
+   `log1p` of a per-service anomaly built from each service's own baseline, and on graphs of 20 nodes or more the
+   anomaly is **rank-normalised before it is scored** (`anomalyNormalizeNodeThreshold`) — which is exactly the
+   rescaling that removes a cross-service scale difference. TrainTicket is 63–69 nodes, so its base term is an
+   ordinal rank, and there the bucket is the same or slightly worse: **23 of 27** TT misses are `outweighed`, against
+   **35 of 43** on the small systems where no rescaling runs. Normalisation does not move the bucket, so the deficit
+   is not scale — it is the ordering itself.
 3. **Is a magnitude-free signal available?** Two already are, and they are the only two that appear in the
    `outvoted` bucket: `dualFamily` on all six cases and `stability` on five. The question is no longer whether such a
    signal exists but whether the shipped weights say anything true about it. `dualFamily` pays a flat `0.25` for
    instrumentation, which is large enough to decide a tie on its own; `stability` pays at most `0.007352`, which is
    small enough to decide one only when nothing else is left. Between them they hold six cases, and those six are the
    only cases in this corpus that any change to the formula can win.
+
+   The size of the bonus is worth stating in the base term's own units. On a rank-normalised graph the base term is
+   `log1p` of a rank in `[0, 1]`, so its whole range is `log1p(1) = 0.693` and one rank step near the top is about
+   `0.007`. `dualFamily` pays `0.25` for instrumentation — **36% of the entire measured range**, or roughly 34 rank
+   positions on a 68-node graph. That is not a tie-break; it is a second measurement, and it is the one that decides
+   every case in the bucket.
 
 ## 7. Limits
 

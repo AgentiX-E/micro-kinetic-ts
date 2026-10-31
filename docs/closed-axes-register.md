@@ -1310,7 +1310,10 @@ they were aimed at the one bucket the corpus does not populate — on `RE1:Onlin
 The six `outvoted` cases are therefore the whole of the reachable population, and they name two terms and no others:
 `dualFamily` on all six, `stability` on five. Both are the formula's only magnitude-free signals — a flat `0.25` for
 being instrumented in two metric families, and an ordinal rank in `[0, 1]` over the candidates' dispersion bonus. That
-is the clue the next iteration starts from rather than a result.
+is the clue the next iteration starts from rather than a result. Two numbers bound its worth: the bonus is `0.25` against a base term whose whole range is
+`log1p(1) = 0.693` on a rank-normalised graph — 36% of the measured range — and the rescaling that removes
+cross-service scale has already run on the large system, where **23 of 27** misses are `outweighed` all the same,
+against **35 of 43** on the small ones. The deficit is the ordering, not the scale.
 
 What the axis was standing in for is the question this census makes askable and the previous ones could not: **why is
 the truth quieter?** On `loss` the injected service's own tail latency rises a median **1.86×** against **12.6×** for
