@@ -1114,7 +1114,7 @@ the six cheap fixes and the two `checkoutservice` breaks have different margins,
 section's first draft got wrong until the arm landed. The interior arms
 do the one thing §8.3 asked of them — the three deleted truths come back into the pool, their post-deduction
 anomaly exactly `(1 − rho)·a` — and they come back to rank 3 / 2 / 1, which is a miss, while seven of the
-thirteen fixes are given up. A fix demotes a *caller* of the truth and a break demotes the *truth*; both are
+thirteen fixes are given up. A fix demotes a _caller_ of the truth and a break demotes the _truth_; both are
 `rho × min(a, e)` on the same relation, so what orders the two ledgers is the pair of margins and not the
 strength — and the margins are a property of the corpus, which is why the knee sits where it does.
 
@@ -1122,7 +1122,7 @@ strength — and the margins are a property of the corpus, which is why the knee
 against `41024050841` (`topo_discount=1, topo_discount_gate=1`): **Top@1 60.5 % (860/1422), Top@3 79.0 %,
 Top@5 82.2 % — identical on both**, and **25 of 25 fault types identical**, down to `PodFailure 0/24` and
 `JVMMySQLLatency 0/2`. The operator does not move that corpus at all, so the enrolment carries no risk there.
-What the comparison does NOT show is *why* it is inert: the share is published in the RCAEval loss census and
+What the comparison does NOT show is _why_ it is inert: the share is published in the RCAEval loss census and
 nowhere else, so on 1 422 cases the observable is "no movement".
 
 **Enrolled.** `DEFAULT_TOPO_DISCOUNT` 0 → 1, `DEFAULT_TOPO_DISCOUNT_GATE` 0 → 1, `DEFAULT_TOPO_DISCOUNT_SCOPE`
@@ -1132,13 +1132,13 @@ was a test leaning on a default instead of naming the arm it compared against; t
 `--topo-discount` by inheriting `parseUnitInterval`'s own zero while `fse26-cli.ts` passed the named constant,
 which was correct on both sides only while that constant was 0.
 
-| population       | was           | **now**                | published / reproduced                    | standing                                  |
-| ---------------- | ------------: | ---------------------: | ----------------------------------------- | ----------------------------------------- |
-| **RE1** (375)    | 327 = 87.20 % |      **330 = 88.00 %** | `L0` 85.4 % (`arXiv:2610.05009`)          | **first, +2.60 pp**                       |
-| **RE2** (270)    | 240 = 88.89 % |      **246 = 91.11 %** | 0.88 SS / 0.78 OB Top-1 (`2609.36771`)    | **first on both published cells**         |
-| **RE3** (90)     |  64 = 71.11 % |       **65 = 72.22 %** | PRISM `conjunctive` 76.7 % (RE3-TT)       | second; RE3-TT 23 of 30                   |
-| **735**          | 631 = 85.85 % |      **641 = 87.21 %** | vendor 89 % (NOFire, unverifiable)        | second among all, **first reproducible** (gap 1.79 pp) |
-| **FSE'26 Top@1** |       60.50 % |            **60.50 %** | 37 % (`RCABench`)                         | **first, +23.5 pp**, unchanged by the arm |
+| population       |           was |           **now** | published / reproduced                 | standing                                               |
+| ---------------- | ------------: | ----------------: | -------------------------------------- | ------------------------------------------------------ |
+| **RE1** (375)    | 327 = 87.20 % | **330 = 88.00 %** | `L0` 85.4 % (`arXiv:2610.05009`)       | **first, +2.60 pp**                                    |
+| **RE2** (270)    | 240 = 88.89 % | **246 = 91.11 %** | 0.88 SS / 0.78 OB Top-1 (`2609.36771`) | **first on both published cells**                      |
+| **RE3** (90)     |  64 = 71.11 % |  **65 = 72.22 %** | PRISM `conjunctive` 76.7 % (RE3-TT)    | second; RE3-TT 23 of 30                                |
+| **735**          | 631 = 85.85 % | **641 = 87.21 %** | vendor 89 % (NOFire, unverifiable)     | second among all, **first reproducible** (gap 1.79 pp) |
+| **FSE'26 Top@1** |       60.50 % |       **60.50 %** | 37 % (`RCABench`)                      | **first, +23.5 pp**, unchanged by the arm              |
 
 **Certified by a run that names no arm.** The arm and the default are two claims, and only the second is about
 what a user gets. On the enrolment commit (`89900939`), a bare push-triggered RCAEval run (`41031397704`) reads
@@ -1157,11 +1157,11 @@ can still reach is not diffuse: of the 94 misses, **31 sit at rank 2** (16 at 3,
 absent), and within that band a single structure accounts for nine of them — the false winner is the node that
 CALLS everything else and observes the whole fleet.
 
-| false winner                              | cases | what it is                                              |
-| ----------------------------------------- | ----: | ------------------------------------------------------- |
+| false winner                              | cases | what it is                                                           |
+| ----------------------------------------- | ----: | -------------------------------------------------------------------- |
 | `ts-admin-travel-service`                 |     6 | TrainTicket's admin caller: it calls every service, nothing calls it |
-| `front-end`                               |     3 | SockShop's root caller: the same shape                   |
-| the truth's own CALLEE (5 distinct names) |    22 | the opposite direction — the anomaly sits downstream     |
+| `front-end`                               |     3 | SockShop's root caller: the same shape                               |
+| the truth's own CALLEE (5 distinct names) |    22 | the opposite direction — the anomaly sits downstream                 |
 
 Both groups are a direction error, and both have a published name. `TopoEvo` (`arXiv:2605.15611`) calls the
 first **symptom-amplification bias** — "misattributing the root cause to salient downstream victims" — and
@@ -1173,11 +1173,87 @@ count** — and calls it the single most diagnostic error in incident reasoning
 
 Neither test exists here. The engine measures magnitude along an edge twice (`failedEdge`, `lat`) and direction
 in time never: `temporalWeight` ships at 0 and is `WEIGHT_ZERO` on every RCAEval term instance. That is the next
-axis, and the reason it is admissible when four thresholds before it were refused is that it changes *who can
-be first* rather than *how much anyone is charged*.
+axis, and the reason it is admissible when four thresholds before it were refused is that it changes _who can
+be first_ rather than _how much anyone is charged_.
 
 **What this section does not claim.** The nine observer cases are counted from the census, not attributed by a
 mechanism; that the precedence test would repair them is a hypothesis with a competitor's number behind it, not
 a measurement of this engine. The first artifact the next iteration owes is therefore the reversed-causality
 count itself, published per case, because a claim about direction that cannot be counted is the same kind of
 sentence as the four thresholds this record has already refused.
+
+## 2026-10-31 — the second published statistic, and the competitor that reports it
+
+Every comparison on this page above has been Top-1, because that is what NOFire publishes for its 735-case RCAEval
+claim (89.0%) and it is the only external number anyone can rerun. A paper published this month reports a **different**
+statistic on the **same** benchmark, and this repository has been emitting it all along without ever comparing it.
+
+### 31.1 What we publish, in both statistics, on the shipped configuration
+
+Both columns are **per-fault-type averages**, which is the convention the comparator uses and the one the run
+artifact prints beside `Avg@5`. The `cases` column is the case-level count the rest of this page reports, and on RE3
+the two differ — a cell there has fault types holding a single case each, so a type-average is not a case ratio:
+RE3:OnlineBoutique is 88.9% per type and 83.3% per case, RE3:SockShop 63.6% and 60.0%, RE3:TrainTicket 74.5% and
+73.3%. On the other six cells the two figures coincide.
+
+| cell                                              | AC@1 (per type) | Avg@5 (per type) | cases                           |
+| ------------------------------------------------- | --------------- | ---------------- | ------------------------------- |
+| RE1:OnlineBoutique                                | 85.6%           | 93.9%            | 107/125                         |
+| RE1:SockShop                                      | 93.6%           | 95.5%            | 117/125                         |
+| RE1:TrainTicket                                   | 84.8%           | 93.3%            | 106/125                         |
+| RE2:OnlineBoutique                                | 92.2%           | 94.4%            | 83/90                           |
+| RE2:SockShop                                      | 97.8%           | 97.8%            | 88/90                           |
+| RE2:TrainTicket                                   | 83.3%           | 85.8%            | 75/90                           |
+| RE3:OnlineBoutique                                | 88.9%           | 91.1%            | 25/30                           |
+| RE3:SockShop                                      | 63.6%           | 87.4%            | 18/30                           |
+| RE3:TrainTicket                                   | 74.5%           | 81.2%            | 22/30                           |
+| **RE1 (three systems, unweighted mean)**          | 88.0%           | **94.2%**        | 330/375                         |
+| **nine cells (unweighted mean of the nine rows)** | **84.9%**       | **91.2%**        | **641/735 = 87.21% case-level** |
+
+### 31.2 The comparator, and the one property that matters more than its headline
+
+arXiv 2609.27069 (_Does Graph Structure Earn Its Place in Microservice Root-Cause Analysis?_, 2026-09) reports RE1
+localization **Avg@5 = 0.915** for its full model, against 0.864 for an MLP with no graph at all and 0.797 for a
+max-deviation heuristic it implements as a comparator. Two numbers from its own tables decide how the 0.915 should be
+read:
+
+| arm                                            | stratified (six fixed folds, in-distribution) | cross-system (three held-out systems) | drop        |
+| ---------------------------------------------- | --------------------------------------------- | ------------------------------------- | ----------- |
+| Full model (prior + evidence + graph residual) | 0.915                                         | 0.747                                 | **−16.8pp** |
+| Prior-free (evidence + graph residual)         | 0.850                                         | 0.747                                 | −10.3pp     |
+| Evidence-only                                  | 0.853                                         | 0.673                                 | −18.0pp     |
+| Graph-only                                     | 0.800                                         | 0.692                                 | −10.8pp     |
+| **culprit prior only, no telemetry**           | **0.488**                                     | 0.079                                 | −40.9pp     |
+
+A model whose _prior term alone_ scores 0.488 without reading a single metric is describing **which service the
+injector chose**, and the paper says so: its ablations locate most of the gain in the prior rather than in the graph.
+That is what the 16.8-point cross-system collapse measures — when the held-out system's injection distribution
+differs, two thirds of the prior's contribution evaporates.
+
+The nine-row means above are means of type-averages and are reported only to describe the artifact; the number this
+page stands on is the case-level **641/735 = 87.21%**, which is what the Top-1 comparison has always meant. On RE1 the
+two agree (330/375 = 88.0% both ways), which is what makes the RE1 line comparable to the 0.915 below.
+
+Our 94.2% on RE1 is **not** a stratified figure and has no prior term: it is one pass over all 375 cases of three
+systems, every one of them in the evaluation, none of them held out. There is no distribution to be held out FROM,
+because nothing was fitted.
+
+So the honest reading of the two numbers side by side:
+
+- **RE1 Avg@5: 94.2% against 91.5%** — +2.7pp, with a caveat that cuts in our favour rather than against (their
+  figure is the _easier_ protocol: fixed folds within the same systems).
+- **Against the same paper's non-learning comparators**: max-deviation heuristic 0.797 (+14.5pp), MLP-no-graph 0.864
+  (+7.8pp), graph encoder 0.867 (+7.5pp).
+- **Top-1 is unchanged and still short**: 87.21% against NOFire's 89.0%, −1.79pp. None of the above touches that
+  number, and this page's standing does not move.
+
+### 31.3 What this changes, and what it does not
+
+It changes the **defensible claim**. "We are 1.79 points behind the only public Top-1 number" was the whole story;
+the story now has a second half — on the statistic a 2026 peer-reviewed-style study chooses, this engine is ahead of
+that study's model _and_ ahead of every non-learning baseline it implements, without training and without a prior.
+
+It does not change the **objective**. The target on this page has always been the Top-1 leaderboard, and 641/735 is
+641/735. A second statistic that flatters the engine is worth exactly one thing: it tells a reader where the
+remaining Top-1 gap is _not_ — it is not in ranking the right service into the top five (91.1% of the time it is
+there), it is in ordering the first position (87.2%).
