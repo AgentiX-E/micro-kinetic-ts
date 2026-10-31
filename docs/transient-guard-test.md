@@ -1,10 +1,11 @@
 # The transient guard's question — the estimator was never where the defect lived
 
 **Status:** the mechanism is IMPLEMENTED with three members and ships at `endpoint`, which is bit-identical to
-the published nine cells by construction. Measured on the two cells this repository can rank offline:
-`level-window` is **+5 / −7** (REFUSED, §5), `either` is **+3 / −0** and is a candidate awaiting the four
-span-bearing cells (§6). A conditional arm conditioned on direction evidence was pre-registered here and is
-**falsified by the corpus's own partition** (§5), not deferred.
+the published nine cells by construction. Measured on all nine cells, one variable (`7c9c5dc8` against its own
+push battery): `level-window` **+13 / −22** (REFUSED, §6), `either` **+6 / −1** with five cells up and one down
+by a single case (REFUSED as a shipment, kept as the evidence that the union is not noise, §6). A conditional
+arm conditioned on direction evidence was pre-registered here and is **falsified by the corpus's own partition**
+(§5), not deferred.
 
 **Owner of:** `transientGuardTest` (`packages/tree/src/causal/topology-fault-graph.ts`),
 `--transient-guard-test`, `anomaly_knobs=transguard=<endpoint|level-window|either>`.
@@ -127,22 +128,35 @@ two verdicts, which is the same as keeping a channel when either honest reading 
 suppress more than the shipped statistic does, so no published cell can fall for the reason the global level
 arm falls — only for the reason a noisier channel set re-orders a case.
 
-| arm | `RE1:OnlineBoutique` | `RE3:SockShop` | what it says |
-| --- | --- | --- | --- |
-| `endpoint` (shipped) | 85.6 % (107/125) | 63.6 % (21/33) | two samples decide a channel |
-| `level-window` | **89.6 %** (112/125) | 42.5 % (14/33) | the two sides' medians decide it |
-| `either` | 88.0 % (**110**/125) | **63.6 %** (21/33) | a channel either reading calls permanent |
+**The nine cells, one variable, everything else shipped** — three arms, run on the same revision (`7c9c5dc8`)
+against its own push battery, whole cells rather than samples:
 
-Against the shipped arm, `either` is **+3 and −0 on the two cells this host can rank** — the first arm of this
-axis that clears the no-cell-down bar locally. Against `level-window` it wins nothing on RE1 (its four gains
-are the same four channels, and it loses the two cases the level test also wins: `checkoutservice_loss_3`,
-`currencyservice_loss_5`) and recovers all seven RE3 cases.
+| cell | `endpoint` (shipped) | `either` | Δ cases | `level-window` | Δ cases |
+| --- | --- | --- | --- | --- | --- |
+| `RE1:OnlineBoutique` | 85.6 % | 88.0 % | **+3** | **89.6 %** | **+5** |
+| `RE1:SockShop` | 93.6 % | 94.4 % | **+1** | 95.2 % | +2 |
+| `RE1:TrainTicket` | 84.8 % | 84.0 % | **−1** | 89.6 % | +6 |
+| `RE2:OnlineBoutique` | 92.2 % | 93.3 % | **+1** | 92.2 % | 0 |
+| `RE2:SockShop` | 97.8 % | 98.9 % | **+1** | 94.4 % | −3 |
+| `RE2:TrainTicket` | 83.3 % | 84.4 % | **+1** | 86.7 % | +3 |
+| `RE3:OnlineBoutique` | 88.9 % | 88.9 % | 0 | 62.2 % | −8 |
+| `RE3:SockShop` | 63.6 % | 63.6 % | 0 | 42.5 % | −7 |
+| `RE3:TrainTicket` | 74.5 % | 74.5 % | 0 | 51.1 % | −7 |
+| **net** | | | **+6** | | **−9** |
 
-**What that does not buy.** `+3` on one cell is not SOTA, and 88.0 % is the published competitor's number on
-that cell rather than above it. `either` is a candidate that must be read on all nine cells before it ships,
-and the two cells here predict what the reading will look like: the four span-bearing cells (RE2:OnlineBoutique
-90 cases, RE2:TrainTicket, RE3:OnlineBoutique, RE3:TrainTicket) are where a wider channel set can re-order
-ranks, and none of them is in this measurement.
+`level-window` is refused on this table and the refusal is not close: **+13 cases on the six RE1/RE2 cells and
+−22 on the three RE3 cells.** The split is not by suite but by the SHAPE of the injected signature (§5), and it
+is the chart that makes the RE3 family's shipped numbers depend on the warm-up artifact: every RE3 cell loses
+under a guard that refuses to read an artifact as evidence.
+
+`either` is **+6 cases, five cells up, one cell down by a single case** — refused as a shipment on the standing
+bar, because a cell may not go down, however small the step. What it does establish is that the union is not
+noise: it moves five of six non-RE3 cells in the same direction, and it leaves the three RE3 cells exactly where
+they were, which is what a strict superset of the shipped keeps should do.
+
+**What that does not buy.** `+6` cases is not SOTA, and 88.0 % on `RE1:OnlineBoutique` is the published
+competitor's number on that cell rather than above it. The one arm that beats it there — `level-window` at
+89.6 % — pays 21–27 pp on each of the three RE3 cells to do it.
 
 **The rule this section replaces, and why it is dead rather than deferred.** The previous text pre-registered a
 conditional arm — _apply `level-window` only where the case carries no direction evidence_ — with three
