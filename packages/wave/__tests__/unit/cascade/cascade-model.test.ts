@@ -343,3 +343,78 @@ describe('WaveCascadeModel.computeDecayCurve', () => {
     expect(() => model.computeDecayCurve(single, -100)).toThrow();
   });
 });
+
+// ── Propagation distance ────────────────────────────────────
+//
+// `propagationDistance` is the one field of `CascadeResult` that describes the SPREAD of the cascade rather than the
+// intensity at a point, and every assertion on it in this file is `>= 0` — which a constant `0` satisfies. The BFS
+// that computes it assigns its maximum only when some service at distance ≥ 1 still carries intensity above 0.01 on
+// the LAST step, so a model that never propagated and a model that propagated would have been indistinguishable.
+
+describe('WaveCascadeModel.simulateCascade — propagation distance', () => {
+  // `propagationDistance` is the one field of `CascadeResult` that describes the SPREAD of a cascade rather than the
+  // intensity at a point, and every assertion on it before this block was `>= 0` — which a constant `0` satisfies.
+  // The BFS that computes it assigns its maximum only when some service at distance ≥ 1 still carries intensity
+  // above 0.01 on the LAST step, so a model that never propagated and one that did were indistinguishable.
+
+  const params = {
+    couplingStrength: 0.9,
+    propagationSpeed: 1.0,
+    decayTimeConstant: 60000,
+    cascadeThreshold: 0.01,
+    timeHorizon: 1000,
+  } as const;
+
+  it('reaches a neighbour that calls back — and then the Euler step pins it at zero', () => {
+    // The adjacency here is MUTUAL, which is the only shape that lets a neighbour draw energy at all (see the test
+    // below). Two facts come out of the same run and both were invisible:
+    //
+    // 1. The neighbour DOES rise: its intensity reaches the ceiling mid-trajectory, so the wave term is live.
+    // 2. `propagationDistance` is still 0, because the BFS reads intensity on the LAST step only, and by then the
+    //    explicit Euler update has overshot: `di = speed·ΣT − γ·n` is dominated by the negative self-interaction
+    //    term once `n` approaches 1, `n + di·dt` goes below 0, and the `Math.max(0, …)` clamp pins it there. The
+    //    distance field therefore reports 0 for a cascade that demonstrably happened.
+    //
+    // This is the reason the branch that assigns `maxDist` had never executed, and it is recorded as a measurement
+    // rather than papered over with an input that happens to land on the right step.
+    const mutual = makeServiceGraph(
+      ['svc-a', 'svc-b'],
+      [makeEdge('svc-a', 'svc-b', 1000), makeEdge('svc-b', 'svc-a', 1000)],
+    );
+    const result = new WaveCascadeModel().simulateCascade('svc-a', mutual, params);
+    const neighbour = result.intensityTrajectories.get('svc-b')!;
+
+    expect(Math.max(...neighbour.map((t) => t.intensity))).toBeGreaterThan(0.9);
+    expect(neighbour.at(-1)!.intensity).toBe(0);
+    expect(result.propagationDistance).toBe(0);
+  });
+
+  it('reports 0 for an isolated source, for a structural reason rather than a dead cascade', () => {
+    const isolated = makeServiceGraph(['svc-a'], []);
+    expect(new WaveCascadeModel().simulateCascade('svc-a', isolated).propagationDistance).toBe(0);
+  });
+
+  it('KNOWN DEFECT: a one-way call carries nothing downstream, so this is 0 where the physics says it is not', () => {
+    // This assertion records a defect rather than a requirement. `buildInteractionKernel` builds
+    // `T(i,j,k) = c · A(i,j) · A(i,k) · A(j,k)` from the OUT-EDGE matrix: for a downstream node `i`, `A(i,·)` holds
+    // the calls `i` MAKES, not the calls made TO it, so every triple that would let `i` draw energy from its caller
+    // has a zero factor and the interaction sum is zero or negative. Measured on a three-service chain a→b→c at
+    // coupling 0.9: `svc-b`'s intensity is 0 for the whole trajectory, and the same graph with the a→b edge made
+    // mutual saturates `svc-b` at 1.0. Direction, not magnitude, is what the cascade is missing.
+    //
+    // It is recorded here because the alternative — leaving the field unasserted — is how it stayed unnoticed: the
+    // pipeline publishes `cascadeResult` with a `propagationDistance` that is always 0 on any acyclic call graph.
+    // The repair is a change to the interaction kernel (a symmetrised adjacency, or an explicit in-edge term) and it
+    // moves every trajectory this package has ever produced, so it belongs to its own iteration with an A/B rather
+    // than to a coverage pass. `docs/cascade-propagation-direction.md` carries the argument.
+    const oneWay = makeServiceGraph(
+      ['svc-a', 'svc-b', 'svc-c'],
+      [makeEdge('svc-a', 'svc-b', 1000), makeEdge('svc-b', 'svc-c', 1000)],
+    );
+    const trajectory = new WaveCascadeModel()
+      .simulateCascade('svc-a', oneWay, { ...params, timeHorizon: 60000 })
+      .intensityTrajectories.get('svc-b')!;
+
+    expect(Math.max(...trajectory.map((t) => t.intensity))).toBe(0);
+  });
+});

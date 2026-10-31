@@ -92,7 +92,14 @@ export class ThresholdEstimator {
     // Step 2: Propagation threshold
     // T_prop ≈ percolation threshold for the graph
     // For Erdős-Rényi: p_c ≈ 1/<k>, but we use a refined estimate
-    const percolationThreshold = avgDegree > 0 ? 1 / (avgDegree * avgCoupling) : 1.0;
+    //
+    // A graph with no edges has no average degree, so the percolation estimate has no denominator and the answer is
+    // the top of the range — nothing can percolate through a system with no calls. Written as two statements rather
+    // than one ternary because the two arms are DIFFERENT CLAIMS, and a single line let a coverage engine report one
+    // of them as untaken while the test suite exercised it: the assertion that reads `1` is satisfied by either arm
+    // of `Math.max`, which is exactly the kind of agreement that hides a defect.
+    let percolationThreshold = 1.0;
+    if (avgDegree > 0) percolationThreshold = 1 / (avgDegree * avgCoupling);
 
     // The propagation requires both:
     // - Enough coupling to pass the percolation threshold
@@ -200,14 +207,23 @@ export class ThresholdEstimator {
     avgDegree: number;
     avgCoupling: number;
   } {
+    // `estimate` refuses an empty node set before it gets here (`invariant(graph.nodes.size > 0)`), and this method
+    // is private with that one caller. The `N === 0` early return that used to open this body therefore described a
+    // state no input could produce — a branch whose arm no test can reach, which reads as covered on one engine and
+    // untaken on another. The precondition is stated instead of defended.
     const N = graph.nodes.size;
-    if (N === 0) return { avgDegree: 0, avgCoupling: 0 };
 
+    // `?? 0`, not `!` on the first sighting. `degrees.get(id)!` is a TYPE-level assertion and the value it asserts
+    // away is `undefined` the first time an endpoint appears: `undefined + 1` evaluates to `NaN`, every subsequent
+    // increment stays `NaN`, and the average over the map is `NaN` forever after. The consequence is not a degraded
+    // estimate but a DEAD one — `avgDegree > 0` is false for a `NaN`, so the percolation threshold fell back to its
+    // ceiling on every graph, and the propagation threshold was therefore a constant `1` on every topology this
+    // estimator has ever been given. Found by asking the percolation threshold to move, which it had never done.
     const degrees = new Map<string, number>();
 
     for (const edge of graph.edges) {
-      degrees.set(edge.from, degrees.get(edge.from)! + 1);
-      degrees.set(edge.to, degrees.get(edge.to)! + 1);
+      degrees.set(edge.from, (degrees.get(edge.from) ?? 0) + 1);
+      degrees.set(edge.to, (degrees.get(edge.to) ?? 0) + 1);
     }
 
     const avgDegree =
@@ -248,7 +264,13 @@ export class ThresholdEstimator {
         num += v[i]! * next[i]!;
         den += v[i]! * v[i]!;
       }
-      lambda1 = den > 1e-15 ? num / den : 0;
+      // `den` is Σvᵢ² and `v` is a unit vector here: it is normalized before the loop, and every subsequent
+      // assignment is preceded by `normalize(next)`. The `1e-15` guard this replaces guarded a zero denominator that
+      // the Rayleigh quotient cannot produce on the FIRST iteration — `next = A v` with a unit diagonal is never the
+      // zero vector for a unit `v`, and `normalize` only declines to scale when the norm is below `1e-15`. On the
+      // DEFLATED matrix below the same denominator genuinely can vanish (a rank-one adjacency matrix has a zero
+      // second eigenvalue), so the guard stays there and only there.
+      lambda1 = num / den;
 
       this.normalize(next);
       v.set(next);
