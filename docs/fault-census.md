@@ -145,8 +145,9 @@ against those readings came back at **+2/−2** and **+2/−1/−1** — the sam
 multiplies a signal, the signal is one of the priors in `finalScore = base + Σ wᵢ·signalᵢ`, and on **75 of the 94
 misses the base term itself was already the smaller number** — so the arm is asked to overturn a magnitude deficit
 with a term that is scaled by the same magnitude it is supposed to overturn. The reachable population per cell is
-**1** of 18 (`RE1:OnlineBoutique`), **0** of 8 (`RE1:SockShop`), **4** of 19 (`RE1:TrainTicket`), **0** of 7, **0** of
-2, **1** of 15 (RE2), **0** of 5, **1** of 12, **0** of 8 (RE3) — seven cases in 735. An arm that can move at most one case per cell cannot be distinguished from the noise in a 25-case population, and
+**1** of 18 (`RE1:OnlineBoutique`), **0** of 8 (`RE1:SockShop`), **4** of 19 (`RE1:TrainTicket`), **0** of 7,
+**0** of 2, **1** of 15 (RE2), **0** of 5, **1** of 12, **0** of 8 (RE3) — seven cases in 735. An arm that can move at
+most one case cannot be told from the noise in a 25-case population, and
 the last eight iterations are that sentence measured eight times.
 
 That is also the honest reading of the eight iterations before this one. Each measured something real, and each was
@@ -176,10 +177,10 @@ makes askable, in the order the numbers rank them:
    against **38 of 52** (73.1%) on the small systems where no rescaling runs. Normalisation does not move the bucket,
    so the deficit is not scale — it is the ordering itself.
 3. **Is a magnitude-free signal available?** Two already are, and they are the only two that appear in the
-   `outvoted` bucket: `dualFamily` on all six cases and `stability` on five. The question is no longer whether such a
+   `outvoted` bucket: `dualFamily` on all seven cases and `stability` on five. The question is no longer whether such a
    signal exists but whether the shipped weights say anything true about it. `dualFamily` pays a flat `0.25` for
    instrumentation, which is large enough to decide a tie on its own; `stability` pays at most `0.007352`, which is
-   small enough to decide one only when nothing else is left. Between them they hold six cases, and those six are the
+   small enough to decide one only when nothing else is left. Between them they hold seven cases, and those seven are the
    only cases in this corpus that any change to the formula can win.
 
    The size of the bonus is worth stating in the base term's own units. On a rank-normalised graph the base term is
@@ -199,7 +200,7 @@ makes askable, in the order the numbers rank them:
 - **The base term is not the only measurement.** `log`, `trace`, `lat`, `pool` and `stability` are also measurements
   of a candidate, at non-zero weight. `outweighed` therefore means "the base measurement was smaller", and a case
   could in principle be won by one of the others — which is the `outvoted` bucket's job to reveal, and it holds six
-  cases across six cells, every one of them blamed on `dualFamily` and five on `stability`.
+  cases across all nine cells, every one of them blamed on `dualFamily` and five on `stability`.
 - **One battery, nine cells, one configuration.** The table is the shipped configuration on the corpora these two
   batteries carried. It is not a claim about a different weight, and it is not a claim about a corpus those jobs do not
   hold.
