@@ -1206,37 +1206,46 @@ CELL TOO LATE** (`docs/latent-term-census.md` §7–§8).
 `41172340473` at 0.02, both `6bd27da3`. The control reproduced the shipped nine cells **exactly** (RE1 85.6 / 93.6 /
 84.8, RE3 88.9 / 63.6 / 74.5, all six identical to the push battery's own), which is what makes the arm's reading
 causal rather than a second sample: **RE1-OnlineBoutique 85.6 → 86.4** (+1 case, the LOSS column 52.0 → 56.0),
-**RE1-TrainTicket 84.8 → 85.6** (+1, LOSS 48.0 → 52.0), **RE3-TrainTicket 74.5 → 71.0** (−1, CPU 100.0 → 85.7), and
-the other six cells byte-identical. Net **+1 case in a 2-for-1 trade**. The pre-registered criterion for this axis was
-*ship only on a zero-regression body*, so a body with one regression closes the axis rather than shipping it — and the
-temptation to find a weight that keeps the two gains and drops the loss is exactly the fitting the criterion forbids.
+**RE1-TrainTicket 84.8 → 85.6** (+1, LOSS 48.0 → 52.0), **RE2-TrainTicket 83.3 → 82.2** (−1, DISK 93.3 → 86.7),
+**RE3-TrainTicket 74.5 → 71.0** (−1, CPU 100.0 → 85.7), and the other five cells byte-identical: **+2 cases against −2,
+a wash that leaves the nine-cell total at exactly 641/735 = 87.21%**. The pre-registered criterion for this axis was
+*ship only on a zero-regression body*, so a body that redistributes without improving closes the axis rather than
+shipping it — and the fit that would keep the two gains and drop the two losses is exactly what the criterion forbids.
+The first read of this arm covered six cells because RE2's job had not finished, and it said "net +1": the correction
+is recorded here rather than quietly applied, because a partial battery is a number that looks like a result.
 
-**Why it cannot be tuned into a zero-regression body is arithmetic, and both runs carry it.** Of the 50 misses whose
-direction is decided, the term points the right way on **17** and the wrong way on **33** — and the split is per CELL:
-RE1-OnlineBoutique **5 right / 7 wrong**, RE1-TrainTicket **9 / 6**, RE1-SockShop **0 / 2**, RE3-OnlineBoutique
-**1 / 0**, RE3-SockShop **2 / 10**, RE3-TrainTicket **0 / 8**. The arm gained anyway, because a gain needs the term to
+**Why it cannot be tuned into a zero-regression body is arithmetic, and all three runs carry it.** Of the 66 misses
+whose direction is decided, the term points the right way on **25** and the wrong way on **41** — and the split is per
+CELL: RE1-OnlineBoutique **5 / 7**, RE1-SockShop **0 / 2**, RE1-TrainTicket **9 / 6**, RE2-OnlineBoutique **1 / 2**,
+RE2-SockShop **0 / 0**, RE2-TrainTicket **7 / 6**, RE3-OnlineBoutique **1 / 0**, RE3-SockShop **2 / 10**,
+RE3-TrainTicket **0 / 8**. The arm gained anyway, because a gain needs the term to
 be right only WHERE THE GAP IS CHEAP: the two positive cells' cheapest requirements are **0.016** and **0.017** with
 caps **0.123** and **0.069**, so their windows overlap on **[0.017, 0.069)** and 0.02 sits at the floor of that
 intersection. The loss comes from the cells with no evidence at all: on RE3-TrainTicket the term reads the truth
 higher than the winner on **0 of 8** misses, so its window there is empty at EVERY weight and any weight above its cap
-is pure risk. **A term can be net-positive while pointing right one miss in three, because the right cases are the
-cheap ones** — RE1 decides 29 misses and the term is right on 14, RE3 decides 21 and it is right on 3 — which is why
-"is the prior accurate" was the wrong question and the gap/slope arithmetic is the right one.
+is pure risk — the cap is **0.010**, which the shipped battery of `63c761a6` now prints for that cell as
+`temporal(cap=0.010,need=none)`. **A term can break even while pointing right on 25 of 66 decided misses, because the right cases are the
+cheap ones** — RE1 decides 29 and the term is right on 14, RE2 decides 16 and it is right on 8, RE3 decides 21 and it
+is right on 3 — which is why "is the prior accurate" was the wrong question and the gap/slope arithmetic is the right
+one.
 
 **The sibling arm also corrects the reason the previous one was refused.** `41165874503` ran
 `temporal_weight=0.05, onset_shape=earliest-only` and lost **16 cases on RE1-TrainTicket and 5 on RE3-TrainTicket**,
 which was read as "the pull scales with the candidate pool, so the term needs normalising by graph size". These two
 runs do not support that reading: **RE1-TrainTicket is the same 68-node graph and it GAINED a case at 0.02**, so node
 count does not separate the cell that gains from the cell that loses. What separates them is the SIGN, and it belongs
-to the fault regime rather than to the graph: RE1 is 14 right against 15 wrong across its three cells, while RE3 is
-3 against 18 and on RE3-TrainTicket alone **0 against 8**. Pool normalisation would fix the loudness of a term
+to the fault regime rather than to the graph: RE1 is 14 right against 15 wrong across its three cells, RE2 is 8
+against 8, and RE3 is 3 against 18 — on RE3-TrainTicket alone **0 against 8**. Both cells that lost are
+**RE2-TrainTicket and RE3-TrainTicket**, and on both the arm's own run puts the cheapest requirement at **0.212** while
+a case was lost at a weight of 0.02: the cap is under the weight and the requirement is ten times above it, which is a
+window that is empty at every weight below 0.21 — the exact reading the `shut:` segment now prints instead of dropping. Pool normalisation would fix the loudness of a term
 whose sign is already right; it cannot fix a term that is inverted on the cell it is applied to. The two successors
 are therefore different experiments — normalise for the scale, discriminate for the sign — and only the second can
 reach the cell that produced this loss.
 
 **The instrument failed on the one cell that decided the arm, and it is fixed rather than noted.** `[latent]` built
 its head from the terms with `flips > 0` and FILTERED OUT the rest, so the decisive reading on RE3-TrainTicket —
-`cap < 0.02, need = none`, i.e. a price with no upside — was dropped before the head was taken. The dispatch then
+`cap = 0.010, need = none`, i.e. a price with no upside — was dropped before the head was taken. The dispatch then
 chose 0.02 with no line saying the loss was coming, and the arm was the first place the number appeared. The line now
 carries a second segment ordered by the smallest CAP (the cell's weight budget) and counting its own truncation, so a
 term with a price and no evidence cannot be invisible again:
@@ -1247,6 +1256,23 @@ The same two runs also cross-validate the census against an offline replay of th
 requirement from `top1Terms` + `truthEvidence` reproduces the in-run `temporal=1(0.123,0.016)` on RE1-OnlineBoutique
 and `temporal=3(0.069,0.017)` on RE1-TrainTicket to the printed digit, so the reading is a function of the artifact
 and not of the run that wrote it.
+
+**And the reading is now a PRE-flight check rather than a post-mortem.** The shipped battery prints the temporal
+prior's own window on every cell, and the arm's nine-cell outcome is a function of those six numbers:
+
+| cell | temporal `cap` | cheapest `need` | window | arm at 0.02 |
+| --- | --- | --- | --- | --- |
+| RE1-OnlineBoutique | 0.123 | 0.016 | `[0.016, 0.123)` | gains 1 |
+| RE1-SockShop | 0.070 | none | empty | unchanged |
+| RE1-TrainTicket | 0.069 | 0.017 | `[0.017, 0.069)` | gains 1 |
+| RE3-OnlineBoutique | 0.049 | none | empty | unchanged |
+| RE3-SockShop | not in the printed head | 0.905 | empty | unchanged |
+| RE3-TrainTicket | **0.010** | none | **below the weight** | loses 1 |
+
+Five of the six caps are in the lines the battery already printed. RE3-SockShop's is not, because that cell's head is
+ordered by cap and its temporal entry sits below the third row — the row above says what the line says rather than what
+the cell implies. RE2's three land when its job does, and the verdict above does not depend on them. A weight can be chosen against this table before a dispatch is spent, which
+is the difference between an instrument and a scoreboard.
 
 What the axis waits on is unchanged and is now stated in one number per cell: a **per-case discriminator** that
 recognises the RE1-like onset signature before the weight is applied. That is the same conclusion the pool-family row

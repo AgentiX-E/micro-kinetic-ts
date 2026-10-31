@@ -148,6 +148,9 @@ are the weight's and not a second sample's:
 | RE1-OnlineBoutique | 85.6 | **86.4** | +1 case (LOSS 52.0 → 56.0) |
 | RE1-SockShop | 93.6 | 93.6 | 0 |
 | RE1-TrainTicket | 84.8 | **85.6** | +1 case (LOSS 48.0 → 52.0) |
+| RE2-OnlineBoutique | 92.2 | 92.2 | 0 |
+| RE2-SockShop | 97.8 | 97.8 | 0 |
+| RE2-TrainTicket | 83.3 | **82.2** | −1 case (DISK 93.3 → 86.7) |
 | RE3-OnlineBoutique | 88.9 | 88.9 | 0 |
 | RE3-SockShop | 63.6 | 63.6 | 0 |
 | RE3-TrainTicket | 74.5 | **71.0** | −1 case (CPU 100.0 → 85.7) |
@@ -156,28 +159,38 @@ Both gains were predicted. §4 read `temporal=1(0.123,0.016)` on RE1-OnlineBouti
 RE1-TrainTicket: the windows overlap on **[0.017, 0.069)**, 0.02 sits at the floor of that overlap, and one case per
 cell is what a weight at the floor buys. The loss was **not** predicted, and the reason is the subject of §8.
 
-The trade is +2 for −1, and the criterion this axis was registered against is *ship only on a zero-regression body*,
-so it does not ship — but the number worth recording is not the net. It is that the term **points the right way on 17
-misses and the wrong way on 33** of the 50 decided ones, with the split being a property of the cell rather than of
-the case (RE1 decides 29 and the term is right on 14 of them; RE3 decides 21 and it is right on 3):
+The trade is **+2 for −2** — a wash that leaves the nine-cell total at exactly **641/735**, the same 87.21% the
+shipped configuration reads — and the criterion this axis was registered against is *ship only on a zero-regression
+body*, so it does not ship. The first read of this arm covered six cells, because RE2's job had not finished, and it
+reported "net +1"; the corrected figure was known before the report and after the register paragraph had been
+written, which is why it is stated as a correction rather than folded in. The number worth recording is not the net
+anyway. It is that the term **points the right way on 25 misses and the wrong way on 41** of the 66 decided ones, with
+the split being a property of the cell rather than of the case (RE1 decides 29 and the term is right on 14 of them;
+RE2 decides 16 and it is right on 8; RE3 decides 21 and it is right on 3):
 
 | cell | misses | right | wrong | no input | cheapest requirement |
 | --- | --- | --- | --- | --- | --- |
 | RE1-OnlineBoutique | 18 | 5 | 7 | 6 | 0.016 |
 | RE1-SockShop | 8 | 0 | 2 | 6 | — |
 | RE1-TrainTicket | 19 | 9 | 6 | 4 | 0.017 |
+| RE2-OnlineBoutique | 7 | 1 | 2 | 4 | 0.588 |
+| RE2-SockShop | 2 | 0 | 0 | 2 | — |
+| RE2-TrainTicket | 15 | 7 | 6 | 2 | 0.084 |
 | RE3-OnlineBoutique | 5 | 1 | 0 | 4 | 0.172 |
 | RE3-SockShop | 12 | 2 | 10 | 0 | 0.905 |
 | RE3-TrainTicket | 8 | **0** | 8 | 0 | — |
 
-**A term can be net-positive while pointing right one miss in three.** The arm gained two cases because a
+**A term can break even while pointing right on 25 of 66 decided misses.** The arm gained two cases because a
 gain requires the term to be right only where the gap is CHEAP — 0.016 and 0.017 on the two RE1 cells — while the
 cases where it is wrong carry gaps large enough that 0.02 does not reach them. That is the whole reason "is the prior
 accurate?" was the wrong question: accuracy weights every miss equally, and a weight change does not.
 
 RE3-TrainTicket is where the asymmetry turns into a loss. The term reads the truth higher than the winner on **0 of 8**
 misses, so its window there is empty at every weight — and a weight above its cap is pure risk with no upside. 0.02 is
-above that cap, and one case was the price. The axis therefore closes as a global constant; what it waits on is a
+above that cap, and one case was the price. RE2-TrainTicket is the subtler case and the more useful one: the term does
+point right on 7 of its 15 misses, but the cheapest of those needs **0.084**, and 0.02 still cost it a case — so the
+cell has a cap below the weight and a requirement above it, i.e. a window that is empty for every weight in between.
+A cell does not have to be inverted to be a bad host for a prior; it only has to price it outside its own window. The axis therefore closes as a global constant; what it waits on is a
 per-case discriminator that recognises the RE1-like onset signature before the weight is applied, which is the same
 conclusion `closed-axes-register.md` reaches for the pool family and for PRISM's pooling.
 
