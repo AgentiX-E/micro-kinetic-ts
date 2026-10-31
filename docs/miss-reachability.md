@@ -129,3 +129,73 @@ this term win inside `(0.008, 0.013)`" is a lookup rather than an estimate. The 
 against the cell's own cap; the missing population is the distribution between them. Until it exists, a window's
 WIDTH is readable and its YIELD is not, and the difference between those two is the difference between an arm and a
 guess.
+
+## 8. The one arm this authorised, read back — and the window was empty
+
+§5 authorised exactly one arm on arithmetic a reader could check: **`dualFamilyWeight` 0.25 → 0.34, predicted +6
+cases with no cell's cap crossed**, with the stated caveat that the prediction holds only if `dualFamilyGate` does not
+read the weight. It does not (`dual(v) = m(v) > 0 && m(v) ≥ gate · m*` is a function of the membership signal, and the
+weight multiplies the predicate), so the arm was dispatched as `41218512485` on `e2a9c25d` with
+`anomaly_knobs=dualfam=0.34` against the push battery `41213454636` on `7f55ad4b`, whose only difference is documentation.
+
+**It reads `644/735` against `641`, and one cell down.** Both halves of the prediction are refuted: **+3, not +6**, and
+`RE1:OnlineBoutique 107 → 106` is a cell below its anchored value, which is the bar every refusal in this repository
+is made on.
+
+| cell | anchored (`0.25`) | arm (`0.34`) | delta |
+| --- | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 107 | **106** | **−1** |
+| RE1:SockShop | 117 | **118** | **+1** |
+| RE1:TrainTicket | 106 | 106 | 0 |
+| RE2:OnlineBoutique | 83 | 83 | 0 |
+| RE2:SockShop | 88 | 88 | 0 |
+| RE2:TrainTicket | 75 | 75 | 0 |
+| RE3:OnlineBoutique | 25 | **26** | **+1** |
+| RE3:SockShop | 18 | 18 | 0 |
+| RE3:TrainTicket | 22 | **24** | **+2** |
+| **TOTAL** | **641** | **644** | **+3** |
+
+**The mechanism is membership asymmetry, and it is the only thing this weight can move.** In all four gains the
+truth is a family member and the node that beat it is not, so raising the weight widens the truth's only advantage
+`0.25 → 0.34`. In the single loss the mirror holds: the truth is not a member and the challenger is, so the same
+increase hands the rank to the challenger. Neither direction is a new behaviour of the term — it is the term's existing
+defect and its existing benefit, paid 9 hundredths more.
+
+| case | cell | ctrl margin (winner − truth) | weight that reverses it | truth's bonus | winner's bonus | rank |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `re1ss_payment_loss_4` | RE1:SockShop | +0.08484 | **0.3348** | 0.25 | 0.00 | 2 → 1 |
+| `re3ob_cartservice_f1_2` | RE3:OnlineBoutique | +0.08040 | **0.3304** | 0.25 | 0.00 | 2 → 1 |
+| `re3tt_ts-route-service_f2_1` | RE3:TrainTicket | +0.00757 | **0.2576** | 0.25 | 0.00 | 3 → 1 |
+| `re3tt_ts-route-service_f2_2` | RE3:TrainTicket | +0.07758 | **0.3276** | 0.25 | 0.00 | 12 → 1 |
+| `re1ob_checkoutservice_loss_3` | RE1:OnlineBoutique | **0.00000** | **0.2500 + ε** | 0.00 | 0.00 | 1 → 2 |
+
+**The last row is the finding, and it retires this document's window table.** `checkoutservice_loss_3` is a correct
+case whose truth and challenger are **tied to five decimal places** on the recorded score at the shipped weight, and
+whose challenger is a member. Any weight above `0.25` hands it to the challenger, so the term's cap is **`0.25` — the
+shipped value itself, not `0.781`**. The cheapest win needs `0.2576`, so
+
+    window = (0.2576, 0.2500]  =  empty
+
+and no value of this weight buys the four gains without paying that tie. **The error in §4's arithmetic is one
+sentence wide: a cap was read as a weight ABOVE the shipped value at which something breaks, and a case tied at the
+shipped value breaks at every value above it — its cap IS the shipped value, and a table that prints caps must print
+`0.25` for it or it will report headroom that does not exist.** That is not a property of `dualFamily`. It is a
+property of any term weighed against a rank surface, where ties are not rare — the same census records three
+`RE1:TrainTicket` cases whose truth sits at `a = 1.000000` and loses on the priors alone, which is the same zero
+margin seen from the side that wins.
+
+**So the last coefficient with a window has none, and the coefficient space is closed.** Every term in the sum is now
+either at its measured optimum (`selfAnomalyLog1p` at `1`, `+113` cases against `0`), at a value no interior point
+improves on (`topoDiscount` `1` with `gate` `1`), shipped off after a measured refusal (`collision`, `prism`,
+`selfTime`, `victim`, `log`), or bounded by a tie at its own shipped value (`dualFamily`, `stability`). The remaining
+94 misses are not a re-weighting: `docs/fault-census.md` measures 75 of the 94 misses as `outweighed`, i.e.
+the truth's own base-term evidence is strictly lower than the winner's, and no coefficient can move a quantity the
+measurement already lost.
+
+**What the arm still bought is a number and a rule.** `644/735 = 87.62 %` is what this formula reads with the bonus at
+`0.34`, and it is NOT the standing figure, because the single case it costs is in `RE1:OnlineBoutique` — the one cell
+where a published competitor's `88.0 %` (`arXiv:2610.05009`) is above us. Four cases on cells we already lead for one
+case on the cell we are compared on is a bad trade in ranking terms even though the total rises, and the bar that says
+so is the one this repository has used for every refusal: **no cell down.** A future arm may propose a per-cell
+weight, and it will have to say why a term whose membership density varies from 9.2 % to 81.7 % across cells should
+carry one number at all.
