@@ -524,7 +524,12 @@ describe('the RCAEval configuration line carries the configuration that produced
         // property of the deduction: the filter applies at every weight, so it sits outside that family and is
         // printed even at `topoDiscount = 0`. `positive` is a value the published corpus ran under, and a line
         // that omitted it on the default would render a widened pool and the published run identically.
-        'poolAdmission=positive',
+        'poolAdmission=positive ' +
+        // Iteration 213 appended the deduction's fourth question, and it is printed at its shipped `off` on the
+        // rule `topoClosure` follows one field above: the arm this exists to make distinguishable is `onset`,
+        // and a field omitted at its default would render that arm and the shipped run byte-identically — on the
+        // artifact whose entire job is to attribute the difference between them.
+        'topoPrecedence=off',
     );
   });
 

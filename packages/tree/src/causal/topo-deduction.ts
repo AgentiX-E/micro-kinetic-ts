@@ -128,6 +128,16 @@ export interface TopoDeductionInput {
    * whether a call boundary can transmit it at all.
    */
   readonly dominantMetrics?: ReadonlyMap<ServiceId, { readonly label: string }>;
+  /**
+   * Per-node ONSET index — when the node's dominant metric first left its pre-change baseline.
+   *
+   * Read only under {@link TopoPrecedence} `onset`, and absent on a graph that measured none: an absent map
+   * leaves the operator exactly as it ships, because a guard that acted on a missing measurement would report
+   * a corpus gap as a measured ordering. The graph's own sentinel for "never left the baseline" is
+   * `Number.MAX_SAFE_INTEGER`, and it is read as an ABSENCE rather than as the latest possible onset — see
+   * {@link TopoPrecedence}.
+   */
+  readonly onsets?: ReadonlyMap<ServiceId, number>;
 }
 
 /**
@@ -172,6 +182,63 @@ export const DEFAULT_TOPO_CLOSURE: TopoClosure = 'max';
  */
 export function isTopoClosure(value: string): value is TopoClosure {
   return Object.prototype.hasOwnProperty.call(TOPO_CLOSURES, value);
+}
+
+/**
+ * Whether a call boundary may carry a movement BACKWARDS in time.
+ *
+ * ## What the operator assumes, and what it never checked
+ *
+ *     explained(v) = ⊕ over callees c with weight(v→c) > 0 of weight(v→c) × anomaly(c)
+ *
+ * is an INFLUX balance, and an influx has a direction in time as well as in the graph. A callee that started
+ * moving AFTER its caller cannot be why the caller moved, and until this axis existed the operator read only
+ * magnitudes: the call graph said which edges exist, and nothing said which way the movement travelled.
+ *
+ * ## The population it is for, counted rather than argued
+ *
+ * On battery `41188083576`, twelve of the corpus's ninety-four misses are cases whose truth is a node of the
+ * graph and is absent from the ranking. **Six of the twelve carry a pre-deduction anomaly of 0.73 to 1.87** —
+ * a node that had moved, deleted by an operator that found a louder callee one hop away. TopoEvo
+ * (`arXiv:2605.15611`) reports **3.44 pp** on root-cause localisation from adjudicating exactly this with two
+ * tests, temporal precedence and path consistency, and this is the first of them.
+ *
+ * ## Why the two values are these two
+ *
+ * - `off` is the shipped reading and the identity: the onsets are not read at all, so the nine published cells
+ *   are unchanged by construction rather than by the guard happening to abstain on them.
+ * - `onset` withholds an edge from the explanation when the callee's onset is **strictly later** than the
+ *   caller's. Two abstentions are part of the definition rather than of the implementation: a TIE is not an
+ *   order (two services in one sampling bucket cannot be told apart, so the shipped charge stands), and a
+ *   MISSING onset is not lateness (the graph's `MAX_SAFE_INTEGER` sentinel marks a metric that never left its
+ *   baseline, and a gap in the telemetry may not withhold a charge).
+ *
+ * The form is therefore monotone in a way that bounds any arm run with it: every withheld edge removes one term
+ * from a maximum (or a sum), so `discounted` under `onset` is never BELOW `discounted` under `off` on any node
+ * of any graph. The guard can only give anomaly back — which makes the cost population of an arm exactly the
+ * cases where a charge was withheld, and no case where the operator never acted at all.
+ */
+export type TopoPrecedence = 'off' | 'onset';
+
+/** The reachable values of {@link TopoPrecedence}, as a lookup so a parser cannot invent a third. */
+export const TOPO_PRECEDENCES: Readonly<Record<TopoPrecedence, true>> = { off: true, onset: true };
+
+/**
+ * The shipped {@link TopoPrecedence}.
+ *
+ * `off`, because the nine published cells were measured under an operator that read no onset and an arm is a
+ * claim about a configuration, not a claim that the shipped one was wrong.
+ */
+export const DEFAULT_TOPO_PRECEDENCE: TopoPrecedence = 'off';
+
+/**
+ * Whether a string names a {@link TopoPrecedence}.
+ *
+ * @param value - The string to test.
+ * @returns True when it is one of {@link TOPO_PRECEDENCES}'s keys.
+ */
+export function isTopoPrecedence(value: string): value is TopoPrecedence {
+  return Object.prototype.hasOwnProperty.call(TOPO_PRECEDENCES, value);
 }
 
 /** Fold one callee's contribution into a caller's explanation by taking the largest. @internal */
@@ -245,6 +312,9 @@ export interface TopoDeductionAudit {
  * @param closure - How a caller's explanation is aggregated over its callees — see {@link TopoClosure}.
  *   Required for the reason `gate` is: the two readings differ on exactly the nodes this operator's subject
  *   is about, so a caller that omitted it would be running an arm it did not name.
+ * @param precedence - Whether a call boundary may carry a movement backwards in time — see
+ *   {@link TopoPrecedence}. Required on the same rule as the three arguments above: it changes which edges the
+ *   explanation is built from, and a caller that omitted it would be running a configuration nobody declared.
  * @returns The discounted map and the share it was discounted by, both in the SAME space as
  *   `input.anomalies`; the input is untouched.
  * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, or if the weight vector is not
@@ -256,6 +326,7 @@ export function deductExplainedAnomalies(
   scope: TopoDiscountScope,
   gate: number,
   closure: TopoClosure,
+  precedence: TopoPrecedence,
 ): TopoDeductionResult {
   // `invariantFinite` first: `invariantRange` cannot see NaN — `NaN < 0` and `NaN > 1` are both false,
   // so a NaN weight would pass a range check and poison every anomaly downstream.
@@ -272,6 +343,13 @@ export function deductExplainedAnomalies(
   invariant(
     isTopoClosure(closure),
     `topoClosure must be one of ${Object.keys(TOPO_CLOSURES).join('|')}, got '${closure}'`,
+  );
+  // The precedence is checked for the reason the closure is, one step further: an unknown value would fall
+  // through to the branch that happened to be `else`, and the artifact's `signals:` line would report a guard
+  // the run did not use — while the operator silently ran the shipped arm.
+  invariant(
+    isTopoPrecedence(precedence),
+    `topoPrecedence must be one of ${Object.keys(TOPO_PRECEDENCES).join('|')}, got '${precedence}'`,
   );
   // The weight vector is aligned with the edge array by construction upstream, and this function is
   // public: a caller that hands over a shorter vector would otherwise read `undefined` and produce a
@@ -311,6 +389,31 @@ export function deductExplainedAnomalies(
     if (scope === 'all') return true;
     return isResponseChannelOf(nodeId);
   };
+  // ── The boundary's THIRD question: which way the movement travelled ────────────────────────────
+  //
+  // The two predicates above ask whether a channel crosses a call boundary. This one asks whether the
+  // boundary could have carried this particular movement at all, and its answer is a property of the PAIR
+  // rather than of either node: influx that started after the caller moved is not influx.
+  //
+  // The two abstentions are the definition and not an implementation detail. A TIE keeps the shipped charge
+  // because two services in one sampling bucket cannot be told apart, and withholding on "did not move first"
+  // would act on the absence of an order rather than on an order. A MISSING onset keeps it for the same
+  // reason one level down: the graph writes `Number.MAX_SAFE_INTEGER` where a metric never left its baseline,
+  // and read as a number that sentinel is the LATEST possible onset — which would let a gap in the telemetry
+  // withhold a charge the corpus never measured a reason for.
+  const onsetOf = (nodeId: ServiceId): number | undefined => {
+    const onset = input.onsets?.get(nodeId);
+    return onset === undefined || onset === Number.MAX_SAFE_INTEGER ? undefined : onset;
+  };
+  const canCarry = (caller: ServiceId, callee: ServiceId): boolean => {
+    if (precedence === 'off') return true;
+    const callerOnset = onsetOf(caller);
+    const calleeOnset = onsetOf(callee);
+    if (callerOnset === undefined || calleeOnset === undefined) return true;
+    // `<=` rather than `<`: a callee that moved in the SAME bucket as its caller has not been shown to be
+    // later, and the charge stands. An order is what licenses withholding, and a tie is not one.
+    return calleeOnset <= callerOnset;
+  };
 
   // The aggregation over callees, chosen once here rather than branched per edge: a `max` and a `sum` over the
   // same single term are the same number, which is why the closure is invisible on a tree and decisive on a
@@ -329,6 +432,7 @@ export function deductExplainedAnomalies(
     // nothing — so this default is reachable and stays.
     const calleeAnomaly = input.anomalies.get(edge.to) ?? 0;
     if (!(calleeAnomaly > 0)) continue;
+    if (!canCarry(edge.from, edge.to)) continue;
     fold(explained, edge.from, weight * calleeAnomaly);
   }
 

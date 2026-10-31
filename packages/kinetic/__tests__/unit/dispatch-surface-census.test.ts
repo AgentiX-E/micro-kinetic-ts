@@ -366,6 +366,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // and the term read `WEIGHT_ZERO` on 734 of 735. Packed for the reason every post-ceiling knob is — 25/25.
     '--failed-edge-gate-mode',
     '--failed-edge-gate-share',
+    // Iteration 213: the deduction's FOURTH question — which way the movement travelled. Packed on the same
+    // rule as every post-ceiling knob, and it is the first member of this family that is a RELATION between
+    // two nodes rather than a property of one.
+    '--topo-precedence',
   ],
 };
 
@@ -627,6 +631,21 @@ const KNOBS: Readonly<
     owner: 'topo-closure.md',
     fse26: 'ranking_knobs',
     rcaeval: 'topoclosure',
+  },
+  topoPrecedence: {
+    flag: '--topo-precedence',
+    // The deduction's FOURTH question, and its own document for the reason the closure has one: the three
+    // fields above ask HOW MUCH, WHETHER and THROUGH WHICH CHANNEL, the closure asks HOW the explanations add
+    // up, and this asks WHEN. `docs/topo-precedence.md` owns the operator, the six-case population it is for,
+    // and the monotonicity proposition that bounds what an arm can cost.
+    //
+    // FSE'26 is deliberately `null`: the deduction is measured INERT on that corpus (two dispatches, 25 of 25
+    // fault types identical), so a knob there would be a second place to keep in sync with no question it can
+    // answer. That is a scope decision resting on an observed zero rather than on an omission, and the
+    // document says so in its own §5.
+    owner: 'topo-precedence.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
   },
   poolAdmission: {
     flag: '--pool-admission',

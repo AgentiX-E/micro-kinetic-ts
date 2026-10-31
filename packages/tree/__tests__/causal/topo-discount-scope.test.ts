@@ -67,7 +67,7 @@ function pair(
 
 /** The discounted anomaly of the fixture's caller, at the maximal weight and no gate. */
 const charged = (input: TopoDeductionInput, scope: TopoDiscountScope): number =>
-  deductExplainedAnomalies(input, 1, scope, 0, 'max').discounted.get('caller')!;
+  deductExplainedAnomalies(input, 1, scope, 0, 'max', 'off').discounted.get('caller')!;
 
 describe('isResponseChannel', () => {
   it('admits every channel a call boundary carries', () => {

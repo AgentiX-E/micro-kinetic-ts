@@ -39,6 +39,7 @@ import type {
   PrismPooling,
   TopoClosure,
   TopoDiscountScope,
+  TopoPrecedence,
 } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
@@ -111,6 +112,8 @@ export interface RCAEvalSignalOptions {
   readonly topoDiscountGate: number;
   /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
   readonly topoClosure: TopoClosure;
+  /** Whether a call boundary may carry a movement backwards in time — see `TopoPrecedence`. */
+  readonly topoPrecedence: TopoPrecedence;
   /** Which SET of nodes the ranking may answer with — see `PoolAdmission`. */
   readonly poolAdmission: PoolAdmission;
   readonly logWeight: number;
@@ -250,6 +253,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
       topoClosure: opts.topoClosure,
+      topoPrecedence: opts.topoPrecedence,
       poolAdmission: opts.poolAdmission,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
@@ -359,6 +363,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // APPENDED on the same rule as the three fields above, and for the same reason: `positive` is a VALUE the
     // published corpus ran under, so a line that omitted it on the default would render the `graph` arm and the
     // published run identically on the one artifact whose job is to say which set a rank could index into.
-    ` poolAdmission=${opts.poolAdmission}`
+    ` poolAdmission=${opts.poolAdmission}` +
+    // APPENDED on the same rule as the four fields above, and unconditional for the same reason: `off` is a
+    // VALUE the published corpus ran under, so a line that omitted it on the default would render the `onset`
+    // arm and the published run identically on the one artifact whose job is to say which guard was armed.
+    ` topoPrecedence=${opts.topoPrecedence}`
   );
 }

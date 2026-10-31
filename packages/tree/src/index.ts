@@ -136,13 +136,17 @@ export type {
 // and map the result back, and the two halves of that round trip are separable problems.
 export {
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_PRECEDENCE,
   TOPO_CLOSURES,
+  TOPO_PRECEDENCES,
   applyAnomalyNormalization,
   deductExplainedAnomalies,
   isTopoClosure,
+  isTopoPrecedence,
   type TopoClosure,
   type TopoDeductionInput,
   type TopoDeductionResult,
+  type TopoPrecedence,
 } from './causal/topo-deduction.js';
 // `minMaxNormalizeScores` and `scoreRange` are public for the same reason `rankNormalizeScores` is:
 // they define what space a score is in, and the graph's `anomalyNormalization` names which of them ran.

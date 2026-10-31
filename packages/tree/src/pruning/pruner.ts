@@ -58,9 +58,10 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import type { TopoClosure, TopoDeductionAudit } from '../causal/topo-deduction.js';
+import type { TopoClosure, TopoDeductionAudit, TopoPrecedence } from '../causal/topo-deduction.js';
 import {
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_PRECEDENCE,
   applyAnomalyNormalization,
   deductExplainedAnomalies,
   isTopoClosure,
@@ -438,6 +439,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default: 'max'.
    */
   readonly topoClosure: TopoClosure;
+  /**
+   * Whether a call boundary may carry a movement BACKWARDS in time — see {@link TopoPrecedence}.
+   *
+   * `off` is the shipped reading: the deduction subtracts what a caller's callees explain, and it has never
+   * asked WHEN either side moved. `onset` withholds an edge from the explanation when the callee's onset is
+   * strictly later than the caller's, on the reading that influx which had not arrived when the caller moved
+   * is not influx. The population is counted rather than argued: on battery `41188083576` six of the corpus's
+   * ninety-four misses are truths that had moved (0.73 to 1.87 in deviation space) and were deleted by a
+   * deduction that found a louder callee one hop away.
+   *
+   * Read only when `topoDiscount > 0`, because the guard is a property of the explanation and there is no
+   * explanation to guard at `rho = 0`.
+   *
+   * Default {@link DEFAULT_TOPO_PRECEDENCE} = **off**.
+   */
+  readonly topoPrecedence: TopoPrecedence;
   /**
    * Which SET of nodes the ranking may answer with — see {@link PoolAdmission}.
    *
@@ -1670,6 +1687,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
   topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
   topoClosure: DEFAULT_TOPO_CLOSURE,
+  topoPrecedence: DEFAULT_TOPO_PRECEDENCE,
   poolAdmission: DEFAULT_POOL_ADMISSION,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
@@ -2269,11 +2287,16 @@ export class TreePruner {
         edges: graph.callGraph.edges,
         propagationWeights: graph.propagationWeights,
         dominantMetrics: graph.dominantMetrics,
+        // The onsets the graph measured, handed over unconditionally: the operator reads them only under
+        // `onset`, and a caller that filtered them here would be a second place that knows which arm is
+        // running — the defect the deduction's own `off` branch exists to avoid.
+        onsets: graph.anomalyOnsetTimes,
       },
       rho,
       this.options.topoDiscountScope,
       this.options.topoDiscountGate,
       this.options.topoClosure,
+      this.options.topoPrecedence,
     );
     // The share is reported in the space the operator computed it in and NOT mapped through the
     // normalisation below: `rankNormalizeScores` would turn it into a rank share, which is a different

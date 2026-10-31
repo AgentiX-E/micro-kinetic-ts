@@ -119,7 +119,7 @@ on:
         default: ''
         type: string
       anomaly_knobs:
-        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `selfanom`, `dualfam`, `dualfamgate`, `dualfamgatemode`, `traceskipsleader` (ranking terms; `selfanom` is the BASE term's coefficient, which ships at 1 — the one weight the formula used to carry as a literal, so 0 is its ablation and `docs/base-term-price.md` is the reading: −113 cases); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0); `topodiscount`, `toposcope`, `topodiscountgate`, `topoclosure` (the topological deduction's weight, the channels it may act on, the smallest share of a node's anomaly its callees must account for before the deduction may charge it, and how that share is AGGREGATED over the callees — `max` for a request that takes one branch of its fan-out, `sum` for one that fans out and waits — shipped 0, external and 0, so all three are inert until the weight is non-zero; the gate is the arm `docs/topo-discount-scope.md` §6 named and did not run, and `docs/anomaly-space.md` §6 is why it is the remaining one: at rho = 1 the ungated operator reads 635/735 with three cells down a case or two each); `failededgegate`, `failededgegateshare` (the BAR the direction term's rise is read against and the share it is made of — the shipped bar is the absolute 300 fitted on FSE'26, whose injected cases add hundreds of milliseconds to a sub-millisecond baseline, while the goldens' latencies are seconds and their rank-1 rises are 1.2 to 8, so on that half the term is refused on 734 of 735 cases and the weight is unmeasurable there; `fleet` bars the rise against a share of the CASE's own champion, the construction the anomaly-breadth and dual-family gates already use, and it is what makes the golden arm expressible at all — the per-cell `[failed-edge-gate]` census reports what it decided, beside the `direction-gate` verdict that reports whether the corpus COULD supply it). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget. `topo_discount` WAS retired from this budget after being measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25, `docs/dispatch-forwarding.md`); it returns here as `topodiscount` because the term itself was wrong rather than the weight: the old form scaled a node's WHOLE anomaly by what its callees explained, so on RE3/SockShop it deducted a callee-origin's own `cpu` reading. The form is now a DEDUCTION of explained RESPONSE channels only (`docs/topo-discount-scope.md`), which leaves RE3/SockShop unmoved and RE1/OnlineBoutique higher at the same weight"
+        description: "The ranking's packed knob block, as a comma-separated name=value list (empty = every shipped value). The keys, in the order they were added: `trend`, `burst`, `cv`, `breadth`, `gate` (the anomaly composition, shipped 0.15/0/0.05/0.05/0.8); `selftime`, `victim`, `selfanom`, `dualfam`, `dualfamgate`, `dualfamgatemode`, `traceskipsleader` (ranking terms; `selfanom` is the BASE term's coefficient, which ships at 1 — the one weight the formula used to carry as a literal, so 0 is its ablation and `docs/base-term-price.md` is the reading: −113 cases); `dropdev`, `ceil` (the drop-deviation pair and the rise ceiling); `zerolat`, `trendcap` (two guards, each taking 1 or 0); `topodiscount`, `toposcope`, `topodiscountgate`, `topoclosure` (the topological deduction's weight, the channels it may act on, the smallest share of a node's anomaly its callees must account for before the deduction may charge it, and how that share is AGGREGATED over the callees — `max` for a request that takes one branch of its fan-out, `sum` for one that fans out and waits — shipped 0, external and 0, so all three are inert until the weight is non-zero; the gate is the arm `docs/topo-discount-scope.md` §6 named and did not run, and `docs/anomaly-space.md` §6 is why it is the remaining one: at rho = 1 the ungated operator reads 635/735 with three cells down a case or two each); `failededgegate`, `failededgegateshare` (the BAR the direction term's rise is read against and the share it is made of — the shipped bar is the absolute 300 fitted on FSE'26, whose injected cases add hundreds of milliseconds to a sub-millisecond baseline, while the goldens' latencies are seconds and their rank-1 rises are 1.2 to 8, so on that half the term is refused on 734 of 735 cases and the weight is unmeasurable there; `fleet` bars the rise against a share of the CASE's own champion, the construction the anomaly-breadth and dual-family gates already use, and it is what makes the golden arm expressible at all — the per-cell `[failed-edge-gate]` census reports what it decided, beside the `direction-gate` verdict that reports whether the corpus COULD supply it). An unknown key fails the step rather than being ignored, because a typo that silently ran the shipped configuration would publish a number whose configuration line disagreed with the dispatch. The composition half IS the RCAEval RE1 ranking They ARE the RCAEval RE1 ranking — on that population every other term is WEIGHT_ZERO or INPUT_MAP_EMPTY on all 374 analysable cases, so the published RE1 number is `deviation + 0.15*trend + 0.1*deviation*burst + 0.05*cv` plus a 0.007352 tie-break — and before this input they were three literals inside `computeAnomalyFeatures` that no dispatch could vary. A weight above the engine's bound of 10 is refused at graph build rather than clamped. One input for three knobs because a `workflow_dispatch` accepts at most 25 inputs and this workflow is AT that budget. `topo_discount` WAS retired from this budget after being measured and refused on all 735 cases at two values (RE1 83.47 -> 68.53 at rho=0.25, `docs/dispatch-forwarding.md`); it returns here as `topodiscount` because the term itself was wrong rather than the weight: the old form scaled a node's WHOLE anomaly by what its callees explained, so on RE3/SockShop it deducted a callee-origin's own `cpu` reading. The form is now a DEDUCTION of explained RESPONSE channels only (`docs/topo-discount-scope.md`), which leaves RE3/SockShop unmoved and RE1/OnlineBoutique higher at the same weight; `topoprecedence` is the deduction’s FOURTH question and the one it never asked — which way the movement travelled — where `off` is the shipped reading and `onset` withholds an edge from a caller’s explanation when the callee’s onset is strictly later than the caller’s (a tie and a missing onset both keep the shipped charge, because neither is an order), the arm being the first of TopoEvo’s two adjudication tests on a population of six counted misses (`docs/topo-precedence.md`)"
         required: false
         default: ''
         type: string
@@ -339,6 +339,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
                 esac
                 ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
@@ -604,6 +613,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
                 esac
                 ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
@@ -896,6 +914,15 @@ jobs:
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
                 ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
+                esac
+                ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
               # the filter applies at every weight, and a widened pool has a different denominator, so a run that
               # changed it must say so here rather than leave it to be inferred from the accuracy column.
@@ -1168,6 +1195,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
                 esac
                 ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
@@ -1468,6 +1504,15 @@ jobs:
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
                 ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
+                esac
+                ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
               # the filter applies at every weight, and a widened pool has a different denominator, so a run that
               # changed it must say so here rather than leave it to be inferred from the accuracy column.
@@ -1732,6 +1777,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
                 esac
                 ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:
@@ -1999,6 +2053,15 @@ jobs:
                 case "${kv#topoclosure=}" in
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
+                esac
+                ;;
+              # WHICH WAY a call boundary may carry a movement. A closed word vocabulary on the same rule as
+              # the closure above: a value the engine silently resolved to the default would publish an `off`
+              # run labelled `onset`, which is the exact defect the guard exists to measure against.
+              topoprecedence=*)
+                case "${kv#topoprecedence=}" in
+                  off|onset) RANKING_ARG+=(--topo-precedence "${kv#topoprecedence=}") ;;
+                  *) echo "::error::anomaly_knobs: topoprecedence takes off or onset, got '${kv#topoprecedence=}'"; exit 1 ;;
                 esac
                 ;;
               # The SET the ranking covers. Not a member of the deduction family and not a term of the score:

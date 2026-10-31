@@ -60,6 +60,7 @@ import {
   POOL_ADMISSIONS,
   PRISM_POOLINGS,
   TOPO_CLOSURES,
+  TOPO_PRECEDENCES,
 } from '../../packages/tree/src/index.js';
 
 import { parseFSE26Args } from '../src/fse26-cli.js';
@@ -151,6 +152,9 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // member of `TopoClosure` — and the probe's job is to prove the option MOVES, so the value has to be one
   // the parser accepts. `sum` is the ablation, which is the arm this flag exists to be able to name.
   '--topo-closure': 'sum',
+  // Iteration 213: the deduction's PRECEDENCE. A word union of two, so `1` is refused and the probe would be
+  // testing the fallback rather than the arity — and `onset` is the arm, i.e. the value the flag exists to name.
+  '--topo-precedence': 'onset',
 };
 
 function argvFor(one: AcceptedFlag): string[] {
@@ -424,6 +428,10 @@ describe('every option the golden runner forwards can be set from the command li
       // other entry is — and this one is why the probe set cannot be numeric: at `absolute` the shipped run and
       // every arm are the same configuration, so only the other member can move the field.
       ...Object.keys(FAILED_EDGE_GATE_MODES),
+      // Iteration 213: the deduction's PRECEDENCE, the eighth word-vocabulary and the first that is a relation
+      // between two nodes rather than a property of one. Probed from the union for the reason every other entry
+      // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.
+      ...Object.keys(TOPO_PRECEDENCES),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

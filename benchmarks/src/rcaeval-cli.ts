@@ -89,6 +89,7 @@ import type {
   PoolAdmission,
   PrismPooling,
   TopoClosure,
+  TopoPrecedence,
 } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -110,6 +111,7 @@ import {
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_PRECEDENCE,
   DEFAULT_TRACE_SKIPS_LEADER,
   isBaselineAnchor,
   isDropDeviationMode,
@@ -117,6 +119,7 @@ import {
   isPoolAdmission,
   isPrismPooling,
   isTopoClosure,
+  isTopoPrecedence,
 } from '../../packages/tree/src/index.js';
 
 import {
@@ -362,6 +365,16 @@ export interface CliOptions {
    * under it.
    */
   topoClosure: TopoClosure;
+  /**
+   * Whether a call boundary may carry a movement BACKWARDS in time (see `TopoPrecedence`).
+   *
+   * `off` is the shipped reading and the identity: the deduction never read an onset. `onset` withholds an
+   * edge from a caller's explanation when the callee's onset is strictly later than the caller's, and the
+   * population it is for is counted rather than argued — six of the corpus's ninety-four misses on battery
+   * `41188083576` are truths that had moved (0.73 to 1.87 in deviation space) and were deleted by a deduction
+   * that found a louder callee one hop away (`docs/topo-precedence.md`).
+   */
+  topoPrecedence: TopoPrecedence;
   /**
    * Which SET of nodes the ranking may answer with (see `PoolAdmission`).
    *
@@ -648,6 +661,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    topoPrecedence: DEFAULT_TOPO_PRECEDENCE,
     poolAdmission: DEFAULT_POOL_ADMISSION,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
@@ -824,6 +838,11 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // unnameable closure must reproduce a published corpus rather than invent a third aggregation.
       const closure = args[++i]!;
       opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (args[i] === '--topo-precedence' && hasValue(args, i + 1)) {
+      // Falls back to the SHIPPED reading on an unusable value, on the rule the closure above follows: an
+      // unnameable guard must reproduce a published corpus rather than invent a third ordering rule.
+      const precedence = args[++i]!;
+      opts.topoPrecedence = isTopoPrecedence(precedence) ? precedence : DEFAULT_TOPO_PRECEDENCE;
     } else if (args[i] === '--pool-admission' && hasValue(args, i + 1)) {
       // Falls back to the SHIPPED admission on an unusable value, on the rule the scope and closure above
       // follow: a typo must reproduce a published corpus rather than widen the set a rank can index into.

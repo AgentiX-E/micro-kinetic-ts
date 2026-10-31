@@ -256,6 +256,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // record declares them in.
       'topoDiscountGate',
       'topoDiscountScope',
+      // The deduction's FIFTH member and the second to sort before `topoDiscountScope`: `topoPrecedence` is a
+      // relation in time between two nodes, held for the same reason the four above it are — it names an
+      // operator, not a coefficient a continuous search can interpolate.
+      'topoPrecedence',
       'traceSkipsLeader',
       'useTwoHopDecay',
       'victimWeight',

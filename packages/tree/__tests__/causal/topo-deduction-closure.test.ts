@@ -72,7 +72,7 @@ const deduct = (
   closure: TopoClosure,
   scope: TopoDiscountScope = 'external',
   gate = 0,
-) => deductExplainedAnomalies(input, rho, scope, gate, closure);
+) => deductExplainedAnomalies(input, rho, scope, gate, closure, 'off');
 
 /** Three callees, a third of the traffic each, every one of them as anomalous as the caller. */
 const OBSERVER = fanOut(
