@@ -154,6 +154,14 @@ bar, because a cell may not go down, however small the step. What it does establ
 noise: it moves five of six non-RE3 cells in the same direction, and it leaves the three RE3 cells exactly where
 they were, which is what a strict superset of the shipped keeps should do.
 
+**The one case it gives back is named, and it is this axis's own mechanism read in reverse.**
+`re1tt_ts-travel-service_loss_4`: the union restores `ts-food-service`'s `latency-90` (1.677) — the CALLER of the
+injected service — and that propagated channel lifts the caller's self-anomaly to `1.000` against the truth's
+`0.984`. It is the same event `docs/transient-guard-window.md` recorded when the window-MEAN arm restored both
+ends and lost 17 cases: the guard's second job, never named in its contract, is damping the magnitude advantage of
+a propagated symptom over its source. `level-window` loses that same case and six others' worth of gains
+nevertheless, which is why its `RE1:TrainTicket` reading is +6 while the union's is −1.
+
 **What that does not buy.** `+6` cases is not SOTA, and 88.0 % on `RE1:OnlineBoutique` is the published
 competitor's number on that cell rather than above it. The one arm that beats it there — `level-window` at
 89.6 % — pays 21–27 pp on each of the three RE3 cells to do it.
