@@ -113,6 +113,7 @@ import {
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_PRECEDENCE,
   DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   isBaselineAnchor,
   isDropDeviationMode,
   isLogSignalMode,
@@ -120,6 +121,7 @@ import {
   isPrismPooling,
   isTopoClosure,
   isTopoPrecedence,
+  isTransientGuardTest,
 } from '../../packages/tree/src/index.js';
 
 import {
@@ -489,6 +491,16 @@ export interface CliOptions {
    */
   suppressIdleTransients: boolean;
   /**
+   * Which statistic answers the transient guard's question — "did this channel SETTLE at a new level, or did it
+   * return to the one it started at".
+   *
+   * `endpoint` is the shipped statistic and it reads two of 721 samples; `level-window` compares the medians of
+   * the two sides of the injection boundary instead, so an off-beat at either end cannot decide a channel and an
+   * intermittent plateau that fills most of the post window survives. Transported in the packed `anomaly_knobs`
+   * block as `transguard=<endpoint|level>`; ships at `endpoint`, which is bit-identical by construction.
+   */
+  transientGuardTest: 'endpoint' | 'level-window';
+  /**
    * Suppress a metric whose baseline is essentially zero (≤ 0.001) from scoring
    * its RISE: a near-zero-baseline cpu/diskio fluctuation reads as a spurious
    * 32× "rise" and outranks a genuine crash drop (dev capped at ≈0.301). Opt-in;
@@ -697,6 +709,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // would leave a reader unable to tell a run that measured the flag from one that never consulted it.
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+    transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
     capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
@@ -924,6 +937,15 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.suppressIdleTransients = true;
     } else if (args[i] === '--no-suppress-idle-transients') {
       opts.suppressIdleTransients = false;
+    } else if (args[i] === '--transient-guard-test' && hasValue(args, i + 1)) {
+      const v = args[++i]!;
+      // The union's own guard rather than a hand-written pair: a value this flag cannot honour has to fail the
+      // dispatch that named it, because a silent fallback to `endpoint` would publish the shipped cells under a
+      // configuration the artifact claims was `level-window`.
+      if (!isTransientGuardTest(v)) {
+        throw new Error(`--transient-guard-test takes endpoint or level-window, got '${v}'`);
+      }
+      opts.transientGuardTest = v;
     } else if (args[i] === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
     else if (args[i] === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
     else if (args[i] === '--anomaly-trend-weight' && hasValue(args, i + 1))

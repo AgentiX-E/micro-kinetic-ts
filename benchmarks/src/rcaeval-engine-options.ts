@@ -167,6 +167,8 @@ export interface RCAEvalTopologyOptions {
    */
   readonly anomalyNormalizeNodeThreshold: number;
   readonly suppressIdleTransients: boolean;
+  /** The transient guard's statistic — `endpoint` (shipped) or `level-window`. */
+  readonly transientGuardTest: 'endpoint' | 'level-window';
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level — see `CliOptions`. */
   readonly suppressZeroBaselineLatency: boolean;
@@ -270,6 +272,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       rankNormalization: opts.rankNormalization,
       anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       suppressIdleTransients: opts.suppressIdleTransients,
+      transientGuardTest: opts.transientGuardTest,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
       suppressZeroBaselineLatency: opts.suppressZeroBaselineLatency,
       capTrendBonusAtDeviation: opts.capTrendBonusAtDeviation,
@@ -328,6 +331,7 @@ export function formatSignalLine(opts: CliOptions): string {
     `rankNormalization=${opts.rankNormalization} ` +
     `anomalyNormalizeNodeThreshold=${opts.anomalyNormalizeNodeThreshold} ` +
     `suppressIdleTransients=${opts.suppressIdleTransients} ` +
+    `transientGuardTest=${opts.transientGuardTest} ` +
     `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise} ` +
     `suppressZeroBaselineLatency=${opts.suppressZeroBaselineLatency} ` +
     `capTrendBonusAtDeviation=${opts.capTrendBonusAtDeviation} ` +

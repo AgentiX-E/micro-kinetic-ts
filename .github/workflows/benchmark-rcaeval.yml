@@ -325,6 +325,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -599,6 +604,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -898,6 +908,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -1181,6 +1196,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -1488,6 +1508,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -1763,6 +1788,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in
@@ -2039,6 +2069,11 @@ jobs:
               #   one question at two depths: the mode decides how a direction becomes a number, the anchor
               #   decides which samples that number is measured on.
               anchor=*) RANKING_ARG+=(--baseline-anchor "${kv#anchor=}") ;;
+              #   Which statistic answers the transient guard's question. `endpoint` reads two of 721
+              #   samples and ships; `level-window` compares the medians of the two sides of the injection boundary.
+              #   A key of its own rather than an `anchor` variant: the anchor decides WHICH samples the
+              #   deviation is measured on, this decides whether a channel is evidence at all.
+              transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
               topodiscount=*) RANKING_ARG+=(--topo-discount "${kv#topodiscount=}") ;;
               topodiscountgate=*)
                 case "${kv#topodiscountgate=}" in

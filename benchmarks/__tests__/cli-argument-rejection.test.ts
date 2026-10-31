@@ -61,6 +61,7 @@ import {
   PRISM_POOLINGS,
   TOPO_CLOSURES,
   TOPO_PRECEDENCES,
+  TRANSIENT_GUARD_TESTS,
 } from '../../packages/tree/src/index.js';
 
 import { parseFSE26Args } from '../src/fse26-cli.js';
@@ -155,6 +156,9 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // Iteration 213: the deduction's PRECEDENCE. A word union of two, so `1` is refused and the probe would be
   // testing the fallback rather than the arity — and `onset` is the arm, i.e. the value the flag exists to name.
   '--topo-precedence': 'onset',
+  // Iteration 214: the transient guard's STATISTIC. A word union of two like the two above, and the probe's
+  // job is to prove the option MOVES — `level-window` is the arm, i.e. the value the flag exists to name.
+  '--transient-guard-test': 'level-window',
 };
 
 function argvFor(one: AcceptedFlag): string[] {
@@ -432,6 +436,11 @@ describe('every option the golden runner forwards can be set from the command li
       // between two nodes rather than a property of one. Probed from the union for the reason every other entry
       // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.
       ...Object.keys(TOPO_PRECEDENCES),
+      // Iteration 214: the transient guard's QUESTION, the ninth word-vocabulary and the only one whose members
+      // are the same guard asking about the same series — the difference is which samples it reads, not whether
+      // it runs. Probed from the union for the reason every other entry is, and it needs `level-window`: the
+      // field already holds `endpoint`, so only the other member can move it.
+      ...Object.keys(TRANSIENT_GUARD_TESTS),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

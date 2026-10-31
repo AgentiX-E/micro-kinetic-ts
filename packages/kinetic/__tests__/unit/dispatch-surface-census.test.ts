@@ -370,6 +370,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // rule as every post-ceiling knob, and it is the first member of this family that is a RELATION between
     // two nodes rather than a property of one.
     '--topo-precedence',
+    // Iteration 214: the transient guard's QUESTION, packed on the same rule and for one further reason — the
+    // guard consumes the injection boundary this half's cases carry and FSE'26's do not, so the knob has no
+    // meaningful FSE'26 state to expose.
+    '--transient-guard-test',
   ],
 };
 
@@ -517,6 +521,16 @@ const KNOBS: Readonly<
     flag: '--baseline-anchor',
     owner: 'baseline-anchor.md',
     fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  transientGuardTest: {
+    // The guard's QUESTION, one level above the anchor: the anchor decides which samples a deviation is
+    // measured on, this decides whether a channel is evidence at all. Not mirrored on FSE'26 — that corpus
+    // carries no injection boundary in the units this test splits on, so the fallback would be the shipped
+    // statistic on every case and a `ranking_knobs` row would advertise a state it could never enter.
+    flag: '--transient-guard-test',
+    owner: 'transient-guard-test.md',
+    fse26: null,
     rcaeval: 'anomaly_knobs',
   },
   selfAnomalyWeight: {

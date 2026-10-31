@@ -17,12 +17,15 @@ import {
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
   isDemandMetric,
   isDropDeviationMode,
   isLatencyMetric,
+  isTransientGuardTest,
   rankNormalizeScores,
+  TRANSIENT_GUARD_TESTS,
 } from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
@@ -2966,6 +2969,88 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     ]);
   });
 
+  it('drops an intermittent plateau under the shipped endpoint statistic, whatever its off-beats are', () => {
+    // `re1ob_adservice_delay_3` in miniature: a channel that alternates between its baseline and a plateau over
+    // most of the post window. `permanence` is `|values[0] − values[n−1]| / range`, so an off-beat at the last
+    // index is enough to make a permanent-level shift look like an excursion that returned.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['latency-50', 'transient-return'],
+    ]);
+  });
+
+  it('keeps the same channel under the level test, because it did settle at a new level', () => {
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'level-window',
+    });
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['latency-50', 'kept'],
+    ]);
+  });
+
+  it('still drops a genuine excursion under the level test, because both sides sit at one level', () => {
+    const graph = makeCallGraph(['svc'], []);
+    const values = [1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 10000 });
+    const level = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 10000,
+      transientGuardTest: 'level-window',
+    });
+
+    expect(shipped.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+    expect(level.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+  });
+
+  it('falls back to the endpoint statistic where the boundary cannot be placed', () => {
+    // Two distinct refusals, both of which must leave the channel exactly where the shipped statistic puts it:
+    // no injection anchor at all, and an anchor so early that a side carries fewer than three samples.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const noAnchor = buildTopologyFaultGraph(graph, metrics, {
+      transientGuardTest: 'level-window',
+    });
+    const earlyAnchor = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 1000,
+      transientGuardTest: 'level-window',
+    });
+
+    expect(noAnchor.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+    expect(earlyAnchor.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+  });
+
   it('distinguishes the optional near-zero-baseline guard from the always-on ones', () => {
     const graph = makeCallGraph(['svc'], []);
     const metrics = makeMetrics([
@@ -3513,6 +3598,27 @@ describe('the trend-bonus ceiling — an amplifier may not exceed the signal it 
     expect(breakdownOf(collapse, { capTrendBonusAtDeviation: false }).trend).toBeCloseTo(
       breakdownOf(collapse).trend,
       12,
+    );
+  });
+});
+
+describe('the transient guard vocabulary — one owner, checked against its union', () => {
+  it('names exactly the two tests, refuses anything else, and ships the endpoint one', () => {
+    // The guard the RCAEval parser calls. The reason it is a union rather than a boolean is that the two
+    // members are not "on" and "off" — they are the same guard asking its question of different samples —
+    // so a third name has to be refused by name rather than coerced onto one of them.
+    expect(Object.keys(TRANSIENT_GUARD_TESTS).sort()).toEqual(['endpoint', 'level-window']);
+    expect(isTransientGuardTest('endpoint')).toBe(true);
+    expect(isTransientGuardTest('level-window')).toBe(true);
+    expect(isTransientGuardTest('window')).toBe(false);
+    expect(isTransientGuardTest('')).toBe(false);
+    // A prototype key is not a member: `hasOwnProperty` rather than `in`, or every object would answer true.
+    expect(isTransientGuardTest('toString')).toBe(false);
+    // And the shipped member is the one the published nine cells were measured on, stated here so an
+    // accidental flip of the default is red rather than a silent re-publication of every cell.
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('endpoint');
+    expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.transientGuardTest).toBe(
+      DEFAULT_TRANSIENT_GUARD_TEST,
     );
   });
 });

@@ -500,7 +500,8 @@ describe('the RCAEval configuration line carries the configuration that produced
         'baselineAnchor=whole-file ' +
         'traceWeight=0 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
-        'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
+        'suppressIdleTransients=false transientGuardTest=endpoint ' +
+        'suppressNearZeroBaselineRise=false ' +
         'suppressZeroBaselineLatency=false capTrendBonusAtDeviation=false ' +
         'suppressDemandMetrics=true ' +
         // The anomaly composition, named unconditionally: on this corpus it IS the ranking, so a line that

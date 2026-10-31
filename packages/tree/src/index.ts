@@ -91,6 +91,7 @@ export {
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
   // The stationarity guard's two constants and its ONE statistic, exported together because a census that
@@ -152,6 +153,14 @@ export {
 // they define what space a score is in, and the graph's `anomalyNormalization` names which of them ran.
 export { minMaxNormalizeScores, scoreRange } from './causal/topology-fault-graph.js';
 export type { AnomalyNormalization } from './causal/topology-fault-graph.js';
+// The transient guard's vocabulary, exported as a union for the reason the other word-vocabularies are: a
+// parser validating a hand-written pair of literals and a test probing values it can think of are two lists
+// that drift, and this flag decides which samples of a series the guard is allowed to read.
+export {
+  TRANSIENT_GUARD_TESTS,
+  isTransientGuardTest,
+  type TransientGuardTest,
+} from './causal/topology-fault-graph.js';
 
 // Pruning
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';

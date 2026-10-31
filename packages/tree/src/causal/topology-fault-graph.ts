@@ -264,6 +264,30 @@ export interface TopologyFaultGraphConfig {
    */
   readonly suppressIdleTransients: boolean;
   /**
+   * Which statistic answers the transient guard's question — "did this channel SETTLE at a new level, or did it
+   * return to the one it started at".
+   *
+   * `endpoint` is the shipped statistic and it reads two samples out of 721: `|values[0] − values[n−1]| / range`.
+   * `docs/transient-guard-window.md` measured what that costs — `re1ob_adservice_delay_3` injects an INTERMITTENT
+   * delay (`latency-50` alternates between its 5 ms baseline and a 106 ms plateau over 361 of 721 samples) and
+   * loses the channel that carries it, because the last sample happens to be an off-beat.
+   *
+   * `level-window` asks the question with two-sample level medians instead: `|median(post) − median(pre)| / range`,
+   * where the split is the injection boundary `injectTimeMs`. The medians are computed over every sample of their
+   * side, so an off-beat at either end cannot decide the channel, and an intermittent square wave whose plateau
+   * occupies the majority of the post window reads as the permanent shift it is. This is the SUPPRESSION the
+   * window-estimator arm was looking for, applied to the question rather than to the estimator: that arm replaced
+   * the two samples with window MEANS of the same endpoints, which restored the CALLER's propagated channel as
+   * well as the source's, and was reverted on the nine cells (RE1 83.47 → 82.93, 15 gained / 17 lost).
+   *
+   * The test needs a boundary to split on. Where `injectTimeMs` is unset or the series carries no timestamps, the
+   * guard falls back to `endpoint` for that series — stated rather than silently widening the population, because
+   * a corpus without an injection anchor is not a corpus this test can read.
+   *
+   * Default: `'endpoint'` (bit-identical to shipped behaviour).
+   */
+  readonly transientGuardTest: TransientGuardTest;
+  /**
    * Suppress a metric whose baseline is essentially ZERO (≤ `0.001`) from
    * scoring its RISE.
    *
@@ -532,6 +556,47 @@ export const DEFAULT_RANK_NORMALIZATION = true;
  * @see DEFAULT_COLLAPSE_DISCOUNT for what the first of them decides.
  */
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
+
+export type TransientGuardTest = 'endpoint' | 'level-window';
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
+ * statistic `docs/transient-guard-window.md` criticises and reverted a better ESTIMATOR of.
+ *
+ * The alternative is `'level-window'`, and the difference between the two arms is the difference between
+ * replacing an estimator and asking a better question: that arm kept the endpoint form and replaced the two
+ * samples with the means of the first and last tenth, which restored the CALLER's propagated latency channel
+ * along with the source's and lost 17 cases on the nine cells (eleven by exactly one rank step). The level
+ * test asks whether the channel SETTLED — medians of the two sides of the injection boundary — which is the
+ * question the guard exists to answer and the one an intermittent plateau can pass.
+ *
+ * Shipped `'endpoint'` so the published nine cells are bit-identical by construction, and reachable as
+ * `--transient-guard-test` on both runners.
+ */
+export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'endpoint';
+
+/**
+ * Every word {@link TopologyFaultGraphConfig.transientGuardTest} accepts.
+ *
+ * Exported as a `Record` rather than left as a union in the field's type for the reason the other
+ * word-vocabularies are: a parser that validates against a hand-written pair of literals, and a test that
+ * probes the values it can think of, are two lists that drift. The CLI reads this record's keys to reject a
+ * value, and `cli-argument-rejection` reads them to prove each member MOVES the option.
+ */
+export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> = {
+  endpoint: true,
+  'level-window': true,
+};
+
+/**
+ * Decide whether a string is one of {@link TRANSIENT_GUARD_TESTS}'s keys.
+ *
+ * @param value - The candidate word.
+ * @returns True when it is a member of the union.
+ */
+export function isTransientGuardTest(value: string): value is TransientGuardTest {
+  return Object.prototype.hasOwnProperty.call(TRANSIENT_GUARD_TESTS, value);
+}
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.suppressIdleTransients}, which is `false`.
@@ -950,6 +1015,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   rankNormalization: DEFAULT_RANK_NORMALIZATION, // the shipped value, named once
   anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
   suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
+  transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST, // two samples at the ends decide a channel (shipped)
   suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
   suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY, // no-traffic transport channels (opt-in)
   capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION, // the trend bonus may not exceed its evidence (opt-in)
@@ -1905,7 +1971,16 @@ function computeAnomalyFeatures(
     const range = max - min;
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
-    const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
+    // The channel's permanence, in units of its own range. `endpoint` reads the two samples the docblock above
+    // criticises and is the shipped statistic, bit-identical by construction; `level-window` asks the same
+    // question of the two SIDES of the injection boundary, so no single off-beat can decide a channel and an
+    // intermittent plateau that occupies the majority of the post window reads as the permanent shift it is.
+    // The fallback is `levelPermanence`'s own `undefined`, which is a series whose boundary cannot be placed.
+    const permanenceEndpoint = range > max * 1e-6 ? headTailSpread / range : 1;
+    const permanence =
+      (cfg.transientGuardTest === 'level-window'
+        ? levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range)
+        : undefined) ?? permanenceEndpoint;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
@@ -2290,6 +2365,52 @@ function computePostInjectOnsetDelay(
  *
  * @internal
  */
+/**
+ * The transient guard's question asked of the two SIDES of the injection boundary instead of two samples.
+ *
+ * `|median(post) − median(pre)| / range` — a two-sample level test in the units the guard already thresholds
+ * (`0.3` of the channel's own range). It exists because the shipped statistic is `|values[0] − values[n−1]|`,
+ * which is two samples out of 721 standing in for "did this channel settle", and
+ * `docs/transient-guard-window.md` measured the case that exposes it: `re1ob_adservice_delay_3` alternates
+ * between its 5 ms baseline and a 106 ms plateau over 361 of 721 samples and is discarded as a transient,
+ * because the sample at index `n − 1` happens to be an off-beat.
+ *
+ * The distinction from the REVERTED window-estimator arm is the whole point: that arm replaced an estimator of
+ * the same two endpoints with a better one (equal-length means of the first and last tenth) and restored every
+ * propagated CALLER channel along with the source's, losing 17 cases on the nine cells. A median over a side is
+ * not a better estimate of an endpoint — it is a different question, and the answer to it is the one the guard
+ * was always meant to give.
+ *
+ * @param values - The channel's samples, in order.
+ * @param timestamps - The same samples' epoch milliseconds; must be the same length as `values`.
+ * @param injectTimeMs - The injection boundary, in the same units. `0` means unknown.
+ * @param range - `max − min` over the channel, computed by the caller.
+ * @returns The permanence, or `undefined` when the boundary cannot be placed — in which case the caller keeps
+ *   the shipped statistic for this channel rather than silently widening the population.
+ * @internal
+ */
+function levelPermanence(
+  values: Float64Array,
+  timestamps: readonly number[],
+  injectTimeMs: number,
+  range: number,
+): number | undefined {
+  if (!(injectTimeMs > 0) || timestamps.length !== values.length) return undefined;
+  let split = -1;
+  for (let i = 0; i < timestamps.length; i++) {
+    if (timestamps[i]! >= injectTimeMs) {
+      split = i;
+      break;
+    }
+  }
+  // Three samples a side is the floor `preInjectionWindow` already uses, and it is the whole point of the
+  // statistic: a median of two is an average, and an average is what the two-sample form already is.
+  if (split < 3 || values.length - split < 3) return undefined;
+  const pre = medianOfRange(values, 0, split);
+  const post = medianOfRange(values, split, values.length);
+  return range > 0 ? Math.abs(pre - post) / range : 1;
+}
+
 export function medianOfRange(values: Float64Array, start: number, end: number): number {
   const slice = Array.from(values.slice(start, end)).sort((a, b) => a - b);
   const n = slice.length;
