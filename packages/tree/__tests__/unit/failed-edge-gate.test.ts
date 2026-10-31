@@ -28,6 +28,7 @@ import type {
 import {
   admitsFailedEdgeTerm,
   DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_LAT_MIN_RISE,
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
@@ -315,6 +316,41 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     expect(withMap[0]!.serviceId).not.toBe(withoutMap[0]!.serviceId);
   });
 
+  it('derives the shipped ranking from the defaults whether they are NAMED, omitted or spelled out as undefined', () => {
+    // The defaults table exists so that no caller holds a second opinion about what the engine ships, and the
+    // engine is the FIRST caller: its own two `??` fallbacks must land exactly where the exported constants
+    // point. Asserted on the ranking rather than on the table, because a fallback moved to a different number
+    // leaves both constants intact and changes every answer.
+    //
+    // The THIRD arm is why the fallbacks exist at all. An object spread copies a key whose value is `undefined`
+    // (`{ ...defaults, ...{ failedEdgeGateMode: undefined } }` has the key, with no value), so a caller that
+    // forwards an optional field it did not receive — a parser building the options object, which is exactly
+    // what `rcaeval-cli` does — would otherwise erase the default rather than leave it alone.
+    const scored = (options: Partial<TreePrunerOptions>) => {
+      const pruner = new TreePruner(options);
+      const [callGraph, metrics] = caseOf(DURATION);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: failures,
+        edgeLatency: inbound,
+      });
+      return pruner.analyze(graph, 3).map((r) => [r.serviceId, r.finalScore, r.rank]);
+    };
+    const omitted = scored({ failedEdgeWeight: 3 });
+    const named = scored({
+      failedEdgeWeight: 3,
+      failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+      failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
+    });
+    const explicitUndefined = scored({
+      failedEdgeWeight: 3,
+      failedEdgeGateMode: undefined,
+      failedEdgeGateShare: undefined,
+    });
+
+    expect(named).toEqual(omitted);
+    expect(explicitUndefined).toEqual(omitted);
+  });
+
   it('admits on a graph with no injection anchor, where the second pass reads 0 for it', () => {
     // The admitted pass is a SECOND ranking, and it must be able to run on the graphs the first one
     // ran on — including a case the engine had no anchor for. `injectTimeMs` is optional on the
@@ -423,6 +459,23 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     expect(admitsFailedEdgeTerm(DURATION, 8, { mode: 'fleet', share: 1, fleetMax: 8 })).toBe(true);
     expect(admitsFailedEdgeTerm(DURATION, 7.999, { mode: 'fleet', share: 1, fleetMax: 8 })).toBe(
       false,
+    );
+  });
+
+  it('reads a share it cannot use at the END of the interval rather than at a torn bar', () => {
+    // Both wrong answers here are silent and both look like a narrow gate: a NaN bar makes every comparison
+    // false, and an infinity bar refuses everything too — so a caller passing `NaN` would be told the case has
+    // no rise when it has one. The defined reading is the end that asserts nothing new: the champion alone.
+    for (const share of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(admitsFailedEdgeTerm(DURATION, 8, { mode: 'fleet', share, fleetMax: 8 })).toBe(true);
+      expect(admitsFailedEdgeTerm(DURATION, 7.999, { mode: 'fleet', share, fleetMax: 8 })).toBe(
+        false,
+      );
+    }
+    // A NEGATIVE share would compute a bar below zero and admit a case the observable never measured, so it is
+    // clamped to the opposite end — every measured rise.
+    expect(admitsFailedEdgeTerm(DURATION, 0.001, { mode: 'fleet', share: -3, fleetMax: 8 })).toBe(
+      true,
     );
   });
 

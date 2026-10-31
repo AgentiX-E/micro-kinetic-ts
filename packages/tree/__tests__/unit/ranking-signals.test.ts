@@ -842,6 +842,25 @@ describe('computeTopoSourceScores', () => {
     expect(scores.get('x')).toBe(1);
   });
 
+  it('treats an UNMEASURED callee as healthy, which is the opposite of what the rise terms do', () => {
+    // The two conventions meet here and disagree on purpose. A rise term that finds no measurement refuses,
+    // because "no evidence" must never be scored as "no rise". This term is a SUBTRACTION from a source score,
+    // so the same absence read the same way would discount a caller for a callee nobody instrumented — the
+    // penalty would fall on the service whose neighbourhood is least observed, which is the opposite of the
+    // term's meaning. The callee's anomaly is therefore 0 when it was never scored, and the caller keeps its
+    // full source score.
+    const edges = [makeEdge('frontend', 'third-party')];
+    const weights = new Float64Array([1.0]);
+    const anomaly = new Map<ServiceId, number>([['frontend', 0.9]]);
+
+    const scores = computeTopoSourceScores(edges, weights, anomaly);
+
+    expect(scores.get('frontend')).toBe(1);
+    // And the unmeasured callee is not in the result at all: the population is the caller's, so a node with
+    // no score cannot appear as a source merely because an edge mentions it.
+    expect(scores.has('third-party' as ServiceId)).toBe(false);
+  });
+
   it('falls back to weight 0 when propagationWeights is shorter than edges', () => {
     // A caller passing a weight array shorter than the edge list must not crash:
     // the missing weight defaults to 0, so the child is treated as unexplained.
