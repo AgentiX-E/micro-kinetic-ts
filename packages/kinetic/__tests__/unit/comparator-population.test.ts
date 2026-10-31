@@ -116,6 +116,14 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`census.gaps.entries()`, a Map keyed by term name',
     },
   ],
+  'benchmarks/src/latent-term-census.ts': [
+    // The latent census's per-term ordering. Its keys are `Map` keys (term names), so they are distinct and the
+    // two-arm tie-break never claims an order between equals — recorded for the reason the census beside it is.
+    {
+      signature: 'a.name < b.name',
+      population: '`census.terms.entries()`, a Map keyed by term name',
+    },
+  ],
   'benchmarks/src/log-route.ts': [
     // The unclassified-class histogram's tie-break. Its keys ARE Map keys, so they are distinct and the two-arm
     // `? -1 : 1` never claims an order between equals here — recorded rather than exempted, because the census's

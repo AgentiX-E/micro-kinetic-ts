@@ -186,13 +186,21 @@ function buildTerm(
   },
 ): ScoreTerm {
   const contribution = weight * value;
+  // The factors travel with the term whenever the term read a MEASUREMENT, for live and switched-off terms alike:
+  // a reader of one dump can then answer "at what weight would this term have decided the case" arithmetically —
+  // `score' = score + (w' − w) × slope` — instead of dispatching one run per weight. A contribution is the
+  // PRODUCT, and `weight === 0` and `value === 0` produce the same product, so a breakdown of contributions alone
+  // cannot tell "switched off" from "measured zero" and never could.
+  const factors: { weight?: number; slope?: number } =
+    facts.presence === 'PRESENT' ? { weight, slope: value } : {};
   // `!== 0` rather than a truthiness test: a contribution of `-0` is a zero and must be attributed, and
   // `NaN !== 0` keeps a broken term visible as a broken term instead of filing it under a cause.
-  if (contribution !== 0) return { name, contribution };
+  if (contribution !== 0) return { name, contribution, ...factors };
   const cause = classifyTermZero(weight, facts.presence, facts.masked ?? false);
   return {
     name,
     contribution,
+    ...factors,
     cause,
     // The `INPUT_` prefix is the union's own convention for "this cause names the OPTIONAL source it read", so
     // the name travels with the whole FAMILY rather than with an enumeration of its members: a fourth absence

@@ -107,6 +107,11 @@ import {
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
+import {
+  accumulateLatentTermCensus,
+  createLatentTermCensus,
+  formatLatentTermLine,
+} from './latent-term-census.js';
 import { buildMetricRows } from './rcaeval-metric-rows.js';
 import {
   accumulateRiser,
@@ -1490,6 +1495,19 @@ async function main(): Promise<void> {
     }
     const termGapLine = formatTermGapLine(termGap);
     if (termGapLine !== undefined) console.log(termGapLine);
+
+    // …and the same cases read as a WINDOW rather than as a sum. The line above says which term cost the truth the
+    // most in total; it cannot say whether any weight would have won the case back, because a contribution is a
+    // product and the factors were not recorded. They are now, so each term's per-candidate response is exact and
+    // the question "at what weight does this term win a case, and at what weight does it cost one" is arithmetic on
+    // a single run. Fourteen of the sixteen terms ship at weight 0, and this is the first artifact that can compare
+    // them to each other instead of to a table of arms.
+    const latent = createLatentTermCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) accumulateLatentTermCensus(latent, p);
+    }
+    const latentLine = formatLatentTermLine(latent);
+    if (latentLine !== undefined) console.log(latentLine);
 
     // The ONE binary term's decisions, scored. `trace` is pinned on for RE3 alone, the term-gap census reads it as
     // the largest cost on the blocking cell, and a removal arm reads the pin as worth ten cases over the suite —

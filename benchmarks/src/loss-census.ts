@@ -245,6 +245,10 @@ export interface ScoreTerm {
   readonly source?: string;
   /** For `MASKED`: the gate that forced the zero. */
   readonly mask?: string;
+  /** The weight the formula multiplied by, sign included; present only when the term read a measurement. */
+  readonly weight?: number;
+  /** The term's contribution per unit of {@link weight}; present exactly where {@link weight} is. */
+  readonly slope?: number;
 }
 
 /**

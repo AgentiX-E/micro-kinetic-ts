@@ -189,6 +189,39 @@ export interface ScoreTerm {
   readonly source?: string;
   /** For `MASKED`: the name of the gate that forced the zero, so the override is named. */
   readonly mask?: string;
+  /**
+   * The weight the formula multiplied by — **the term's own factor, sign included**.
+   *
+   * Present together with {@link slope} and only when the term read a MEASUREMENT for this candidate
+   * (`presence === 'PRESENT'`), so the pair's presence is the record's answer to a question a contribution cannot
+   * answer: *could this term have decided anything, and by how much per unit of weight?*
+   *
+   * The pair is what a weight decision needs and the product alone cannot supply. A contribution is
+   * `weight × value`, and both `weight === 0` and `value === 0` produce the same `0` — which is why fourteen terms
+   * that ship switched off had never been comparable to each other: the breakdown reported all of them as
+   * `WEIGHT_ZERO` with no number beside them, and "this term would have added 0.4 here" was invisible in every
+   * artifact. Recording the factors separately is what lets a report ask, per candidate, *at what weight would
+   * this term have moved the ranking past that one*, on ONE run rather than one run per weight.
+   *
+   * The sign is the formula's, not the option's: `collision` and `pool` are SUBTRACTED, so their recorded weight
+   * is negative when the knob is positive. Reporting the option's sign instead would make the arithmetic
+   * `contribution = weight × slope` false beside the name it is printed under.
+   */
+  readonly weight?: number;
+  /**
+   * The term's contribution PER UNIT of {@link weight}, i.e. the `value` the formula read.
+   *
+   * Its consumer is a counterfactual: changing the weight from `w` to `w'` moves the score by `(w' − w) × slope`
+   * exactly, because every term in a breakdown is affine in its own weight. That is a property of THIS list rather
+   * than an assumption about the engine: an operator that re-enters the pipeline between two terms (the
+   * topological deduction rescales the anomaly the base term reads) is not a member of the breakdown and cannot be
+   * read through one.
+   *
+   * Absent wherever the term had no measurement for the candidate — an absent entry, an empty tier or a missing
+   * map — because a slope of `0` is the claim "this term read something and it was zero", and the absences are
+   * different claims.
+   */
+  readonly slope?: number;
 }
 
 /** Options for RCA engine configuration. */

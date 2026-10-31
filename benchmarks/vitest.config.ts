@@ -75,6 +75,11 @@ export default defineConfig({
         // whole value is the four distinctions it draws — a cost, a help, an unmeasured side, and a name paid to
         // one side only. Every branch is measured rather than trusted.
         'src/term-gap-census.ts',
+        // Added with the module: the latent census turns each term's recorded SLOPE into the weight at which it wins
+        // a case back and the weight at which it costs one, so a weight decision stops needing an arm per value. Its
+        // value is the four distinctions it draws — a requirement, a cap taken from every candidate, a tie, and a
+        // side with no terms at all — so every branch is measured rather than trusted.
+        'src/latent-term-census.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
         'src/trace-vote-census.ts',

@@ -3101,6 +3101,61 @@ describe('the cause a zero term carries — and the ones it cannot carry', () =>
     expect(t.source).toBeUndefined();
   });
 
+  it('records the two FACTORS of every measured term, so one run can answer a question about the weight', () => {
+    // A contribution is the product of a weight and a value, and `weight === 0` and `value === 0` produce the same
+    // product — which is why fourteen terms that ship switched off had never been comparable: the breakdown
+    // reported all of them as `WEIGHT_ZERO` with no number beside them, and "this term would have added 0.4 here"
+    // was invisible in every artifact. The factors are recorded now, and the invariant that makes them usable is
+    // that the product RECONSTRUCTS the contribution exactly — a counterfactual `score + Δw × slope` is only exact
+    // if the slope it multiplies is the one the score was built from.
+    const results = build({ topoWeight: 0 });
+    let dormantWithFactors = 0;
+    let live = 0;
+    for (const r of results) {
+      for (const t of r.terms!) {
+        if (t.weight === undefined) {
+          // No measurement, so no factors: an absent entry, an empty tier and a missing map are claims about the
+          // input, and a slope of 0 would be the different claim that the input was read and was zero.
+          expect(t.slope, `${t.name} has no weight and must have no slope`).toBeUndefined();
+          continue;
+        }
+        expect(t.slope, `${t.name} has a weight and must carry its slope`).toBeDefined();
+        expect(t.contribution, `${t.name}: weight × slope must reconstruct the contribution`).toBe(
+          t.weight * t.slope!,
+        );
+        if (t.weight === 0) dormantWithFactors += 1;
+        else live += 1;
+      }
+    }
+    // Non-vacuity in both directions: a graph where every term were live, or where none carried a factor, would
+    // satisfy the loop without ever testing the pair.
+    expect(dormantWithFactors).toBeGreaterThan(0);
+    expect(live).toBeGreaterThan(0);
+  });
+
+  it('records no factors for a dormant term whose source the graph does not carry', () => {
+    // The READINESS question, which the cause cannot answer while the weight is zero: `classifyTermZero` reports
+    // `WEIGHT_ZERO` before it looks at the input — correctly, because the weight forces the zero on its own — so a
+    // term that has no input at all and one that has a measurement are the same record unless the factors
+    // distinguish them. They do: a measured input carries a slope and an unmeasured one carries nothing.
+    const pruner = new TreePruner({ defaultTopK: 4, topoWeight: 0 });
+    const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+    const graph = pruner.buildFaultGraph(
+      callGraph,
+      makeMetrics({ A: [1, 1, 9, 9], B: [1, 1, 2, 2] }),
+    );
+    const stripped = { ...graph, topoScores: undefined };
+    const absent = pruner.analyze(stripped, 2)[0]!.terms!.find((x) => x.name === 'topo')!;
+    expect(absent.cause).toBe('WEIGHT_ZERO');
+    expect(absent.slope).toBeUndefined();
+    // …and the SAME term on a graph that carries the map records the value it read, even though the weight makes
+    // its contribution zero either way.
+    const present = pruner.analyze(graph, 2)[0]!.terms!.find((x) => x.name === 'topo')!;
+    expect(present.cause).toBe('WEIGHT_ZERO');
+    expect(present.weight).toBe(0);
+    expect(typeof present.slope).toBe('number');
+  });
+
   it('reports the LEVEL of the absence, and names the field', () => {
     // With a non-zero weight and no injected map, the term reads `topoScores` and the whole map is missing —
     // which is `INPUT_MAP_ABSENT`, not an entry absence and not a zero weight.

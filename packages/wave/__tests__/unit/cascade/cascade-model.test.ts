@@ -462,13 +462,22 @@ describe('WaveCascadeModel.simulateCascade — intensity stays in [0, 1]', () =>
             cascadeThreshold: 0.1,
             timeHorizon,
           });
-          for (const [, trajectory] of result.intensityTrajectories) {
+          // The FIRST violation is recorded and asserted once, rather than three assertions per sample: the
+          // longest configuration here runs tens of thousands of steps per node, so a per-sample `expect` is
+          // hundreds of thousands of matcher calls for the same claim — and it timed out under a loaded suite.
+          // Recording also reports WHICH node, when, and at what value, which the first-asserted form cannot.
+          let violation: string | undefined;
+          for (const [node, trajectory] of result.intensityTrajectories) {
             for (const point of trajectory) {
-              expect(Number.isNaN(point.intensity)).toBe(false);
-              expect(point.intensity).toBeGreaterThanOrEqual(0);
-              expect(point.intensity).toBeLessThanOrEqual(1);
+              if (!(point.intensity >= 0 && point.intensity <= 1)) {
+                violation ??= `${node} at t=${point.time}: ${point.intensity}`;
+              }
             }
           }
+          expect(
+            violation,
+            `coupling ${couplingStrength} speed ${propagationSpeed} horizon ${timeHorizon}`,
+          ).toBeUndefined();
         }
       }
     }

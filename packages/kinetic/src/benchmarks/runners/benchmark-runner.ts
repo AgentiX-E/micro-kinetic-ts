@@ -311,6 +311,24 @@ export interface CasePrediction {
    */
   readonly top1Terms?: readonly ScoreTerm[] | undefined;
   /**
+   * EVERY ranked candidate's `finalScore`, broken into its named terms, in rank order.
+   *
+   * The other side of every margin, and the only field that makes a weight decision defensible from a single run.
+   * The truth's terms and the winner's answer "what would it take to win this case BACK"; they cannot answer "what
+   * would it cost", because on a CORRECT case the case that would be lost is the first candidate that a knob lifts
+   * over the truth — and which candidate that is depends on the knob. Recording the runner-up alone bounds that
+   * question against one candidate and is optimistic by construction: the weight that costs a cell a case is set by
+   * whichever candidate breaks first, and on a cell with eighteen correct cases there are eighteen chances for it
+   * to be a third place.
+   *
+   * The arrays are the engine's own, carried by reference rather than copied — the ranking already holds them, and a
+   * copy would double a suite's term allocation to state something the reference states exactly.
+   *
+   * Absent from records written before this field existed, which a census reports as a case it could not guard
+   * rather than as an infinite cap.
+   */
+  readonly rankedTerms?: readonly (readonly ScoreTerm[])[] | undefined;
+  /**
    * The service the TRACE-ACTIVITY term voted for on this case, or `undefined` when it abstained.
    *
    * The term pays a BINARY unit to the unique service whose span count rose while its peers held or fell
@@ -484,6 +502,10 @@ export interface ScoreTerm {
   readonly source?: string;
   /** For `MASKED`: the gate that forced the zero. */
   readonly mask?: string;
+  /** The weight the formula multiplied by, sign included; present only when the term read a measurement. */
+  readonly weight?: number;
+  /** The term's contribution per unit of {@link weight}; present exactly where {@link weight} is. */
+  readonly slope?: number;
 }
 
 /**
@@ -875,6 +897,9 @@ export class BenchmarkRunner {
           // And the winner's breakdown, so the two sides of the gap are recorded where both are still in
           // hand. Without it the census can say a case was lost and not what it was lost to.
           top1Terms: results[0]?.terms,
+          // …and every candidate's, by reference, so the cost side of a weight can be computed against the one that
+          // actually breaks first rather than against the runner-up.
+          rankedTerms: results.map((r) => r.terms ?? []),
           // The trace term's DECISION on this case, when it made one: the unique service the rule chose. `0` is
           // the term's abstention, which is a fact about the case and not about the term's weight.
           traceVote,
