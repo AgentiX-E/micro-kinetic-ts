@@ -20,7 +20,11 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { FailedEdgeGate, FailedEdgeGateMode } from '@agentix-e/micro-kinetic-tree';
+import type {
+  FailedEdgeGate,
+  FailedEdgeGateMode,
+  TreePrunerOptions,
+} from '@agentix-e/micro-kinetic-tree';
 import {
   admitsFailedEdgeTerm,
   DEFAULT_FAILED_EDGE_GATE_MODE,
@@ -208,6 +212,55 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     // No cause: the absence of a cause IS the statement that the term was live.
     expect(term!.contribution).toBeCloseTo(3, 12);
     expect(term!.cause).toBeUndefined();
+  });
+
+  it('admits at a fleet bar what a 300-constant refuses, on the same case and the same rise', () => {
+    // THE ENGINE-LEVEL FENCE for the bar, and the shape the golden corpus's four span-bearing cells have: a
+    // duration-dominant rank-1 whose rise is 5 — refused by the constant, admitted by a bar that is a share of the
+    // case's own champion. `share: 1` and champion 5, so the bar IS the rise and the comparison is the boundary.
+    const withRise = (options: Partial<TreePrunerOptions>) => {
+      const pruner = new TreePruner(options);
+      const [callGraph, metrics] = caseOf(DURATION);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: failures,
+        edgeLatency: [{ caller: GATEWAY, callee: CALLER, preMeanMs: 1, postMeanMs: 5 }],
+      });
+      return pruner.analyze(graph, 3);
+    };
+    const termOf = (results: ReturnType<typeof withRise>, id: string) =>
+      results.find((r) => r.serviceId === id)?.terms?.find((e) => e.name === 'failedEdge');
+
+    const refused = withRise({ failedEdgeWeight: 3 });
+    const admitted = withRise({
+      failedEdgeWeight: 3,
+      failedEdgeGateMode: 'fleet',
+      failedEdgeGateShare: 1,
+    });
+
+    // Same case, same rank-1, same observable: the only difference is the bar.
+    expect(termOf(refused, CALLEE)!.cause).toBe('WEIGHT_ZERO');
+    expect(termOf(admitted, CALLEE)!.contribution).toBeCloseTo(3, 12);
+    expect(termOf(admitted, CALLEE)!.cause).toBeUndefined();
+  });
+
+  it('reads neither the share nor the champion at `absolute`, so the shipped path is byte-identical', () => {
+    // The option being INERT is the property that makes the default safe, and it is asserted on the ranking rather
+    // than argued from the source: two shares that would be markedly different bars must produce the same results,
+    // bit for bit, at the shipped mode.
+    const scored = (options: Partial<TreePrunerOptions>) => {
+      const pruner = new TreePruner(options);
+      const [callGraph, metrics] = caseOf(DURATION);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: failures,
+        edgeLatency: inbound,
+      });
+      return pruner.analyze(graph, 3).map((r) => [r.serviceId, r.finalScore, r.rank]);
+    };
+    const shares = [0, 0.5, 1, 1e6].map((share) =>
+      scored({ failedEdgeWeight: 3, failedEdgeGateShare: share }),
+    );
+
+    for (const one of shares) expect(one).toEqual(shares[0]);
   });
 
   it('is inert at weight 0 whatever the observables say — the shipped default costs nothing', () => {
