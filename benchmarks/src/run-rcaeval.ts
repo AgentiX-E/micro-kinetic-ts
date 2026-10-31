@@ -102,6 +102,7 @@ import {
   accumulateFailedEdgeGateCensus,
   createFailedEdgeGateCensus,
   formatFailedEdgeGateCensusLine,
+  formatFailedEdgeInputLine,
 } from './failed-edge-gate-census.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
@@ -1469,6 +1470,13 @@ async function main(): Promise<void> {
     // and on four cells it answered yes while the predicate refused all but one of the 735 cases.
     const failedEdgeGateLine = formatFailedEdgeGateCensusLine(failedEdgeGate);
     if (failedEdgeGateLine !== undefined) console.log(failedEdgeGateLine);
+
+    // And the term's INPUT supply, which the gate line cannot see: the gate decides on `edgeLatencyByCallee`, while
+    // the term can only add a number from `failedEdgeScores`, built from spans whose status is ERROR. On the golden
+    // half those are two different maps, and the failure arm of §10 admitted 85 cases into a map with no entry for
+    // any of them — so the supply is printed as its own line rather than inferred from `acted 0`.
+    const failedEdgeInputLine = formatFailedEdgeInputLine(failedEdgeGate);
+    if (failedEdgeInputLine !== undefined) console.log(failedEdgeInputLine);
 
     // The term-gap census for this cell: which ranking TERM the misses were lost on. The dual-family census above
     // says how wide one membership was; this says which term would have to change to win the case back, summed

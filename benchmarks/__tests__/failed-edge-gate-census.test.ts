@@ -16,6 +16,7 @@ import {
   accumulateFailedEdgeGateCensus,
   createFailedEdgeGateCensus,
   formatFailedEdgeGateCensusLine,
+  formatFailedEdgeInputLine,
 } from '../src/failed-edge-gate-census.js';
 
 const generator = new SyntheticBenchmarkGenerator(11);
@@ -33,6 +34,13 @@ interface CaseSpec {
   readonly labels: ReadonlyMap<string, string | undefined>;
   /** Positions in the ranking whose `failedEdge` term carries a non-zero contribution. */
   readonly paid?: readonly number[];
+  /**
+   * Rows to put on the case's `failedTraceEdges` — one per caller→callee edge that carried an ERROR span
+   * after the injection. This is the INPUT side of the term, before the engine's `max(0, failed − baseline)`.
+   */
+  readonly failedRecords?: number;
+  /** Services the term has a positive score for, i.e. the keys of `failedEdgeScores`. */
+  readonly termSubjects?: readonly string[];
 }
 
 /**
@@ -45,8 +53,20 @@ interface CaseSpec {
  * @returns A record the gate census can read.
  */
 function recordOf(spec: CaseSpec): DiagnosedCaseRecord {
-  const benchCase = generator.generateRCAEvalCase('cpu', 5);
-  const ids = [...benchCase.callGraph.nodes.keys()];
+  const generated = generator.generateRCAEvalCase('cpu', 5);
+  const ids = [...generated.callGraph.nodes.keys()];
+  const benchCase =
+    spec.failedRecords === undefined
+      ? generated
+      : {
+          ...generated,
+          failedTraceEdges: Array.from({ length: spec.failedRecords }, (_, i) => ({
+            caller: ids[i % ids.length]!,
+            callee: ids[(i + 1) % ids.length]!,
+            failed: 3,
+            baseline: 0,
+          })),
+        };
   const paid = spec.paid ?? [];
   const ranking = ids.map((serviceId, index) => ({
     serviceId,
@@ -89,6 +109,9 @@ function recordOf(spec: CaseSpec): DiagnosedCaseRecord {
           { label: label ?? '', head: [], tail: [], transientSkipped: [] },
         ]),
       ),
+      ...(spec.termSubjects === undefined
+        ? {}
+        : { failedEdgeScores: new Map(spec.termSubjects.map((id) => [id, 2])) }),
     },
     ranking,
     callGraph: benchCase.callGraph,
@@ -343,5 +366,148 @@ describe('failed-edge gate census — the line', () => {
     const line = formatFailedEdgeGateCensusLine(unmeasured)!;
     expect(line).toContain('no measurement: 1 of 1 cases');
     expect(line).not.toContain('bar refused');
+  });
+});
+
+/**
+ * The INPUT side of the term, which the gate census cannot see.
+ *
+ * §10 of `docs/failed-edge-gate.md` established that 85 admissions moved nothing, and sampled the cause at three
+ * of 22 audited misses: `INPUT_MAP_EMPTY(failedEdgeScores)`. A sample is not a count. These tests pin the count —
+ * three quantities that separate the chain rather than restating its end:
+ *
+ * 1. **failed records** — rows on the case's `failedTraceEdges`. Zero here means the CORPUS carried no failed
+ *    call, which no downstream term can repair.
+ * 2. **term subjects** — keys of `failedEdgeScores`. Zero here with a non-zero row count means the engine's own
+ *    `max(0, failed − baseline)` filter consumed every record, i.e. the failures were all pre-injection or
+ *    matched by a baseline.
+ * 3. **admitted with entry** — of the cases the bar let through, how many carry a score for their FINAL rank-1.
+ *    A term can only move the service it has a number for, so this is the population `acted` is a subset of.
+ */
+describe('failed-edge gate census — the term\'s input, counted rather than sampled', () => {
+  it('counts failed records per CASE and per ROW, and only when a record exists', () => {
+    // Two counts, because they answer different questions: "how many cases carry a failed call" is the coverage
+    // question, and "how many failed edges is that" is the magnitude question. A cell with one case and nine rows
+    // is a different corpus from a cell with nine cases and one row, and one number cannot say which it is.
+    const census = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({ ...specOf(400, DURATION), failedRecords: 3, termSubjects: [] }),
+    );
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({ ...specOf(400, DURATION), failedRecords: 0, termSubjects: [] }),
+    );
+
+    expect(census.failedInputCases).toBe(1);
+    expect(census.failedInputRows).toBe(3);
+    expect(census.cases).toBe(2);
+  });
+
+  it('counts term subjects from the score map, not from the records the map was built from', () => {
+    // The two populations differ by exactly the engine's filter, and collapsing them would report a term with
+    // input for a term with none: `failedTraceEdges` non-empty is a fact about the corpus, `failedEdgeScores`
+    // non-empty is a fact about the term's reach.
+    const census = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({ ...specOf(400, DURATION), failedRecords: 4, termSubjects: [] }),
+    );
+
+    expect(census.failedInputCases).toBe(1);
+    expect(census.termFed).toBe(0);
+  });
+
+  it('counts an admitted rank-1 with an entry, and does NOT count one the bar refused', () => {
+    // `admittedFed` is the denominator of the only question that matters once a case is admitted: was there a
+    // number to add? A refused case is excluded because its answer is already the bar — counting it here would
+    // let a bar refusal masquerade as a missing input, which is the confusion this whole module exists to undo.
+    const ids = services();
+    const admitted = createFailedEdgeGateCensus('fleet', 0);
+    accumulateFailedEdgeGateCensus(
+      admitted,
+      recordOf({ ...specOf(4, DURATION), termSubjects: [ids[0]!] }),
+    );
+    const refused = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(
+      refused,
+      recordOf({ ...specOf(4, DURATION), termSubjects: [ids[0]!] }),
+    );
+
+    expect(admitted.admittedFed).toBe(1);
+    expect(refused.barRefused).toBe(1);
+    expect(refused.admittedFed).toBe(0);
+  });
+
+  it('counts an admitted rank-1 with NO entry, which is the 85-case finding as a number', () => {
+    // The case the fleet arm produced 85 of: the bar passes on the latency rise, and the term has no score for
+    // the service it passed on. `admittedFed 0` with `admissible 1` is the state, and `acted 0` follows from it.
+    const census = createFailedEdgeGateCensus('fleet', 0);
+    accumulateFailedEdgeGateCensus(census, recordOf({ ...specOf(4, DURATION), termSubjects: [] }));
+
+    expect(census.rankOneMeasured).toBe(1);
+    expect(census.barRefused).toBe(0);
+    expect(census.admittedFed).toBe(0);
+    expect(census.acted).toBe(0);
+  });
+
+  it('never counts more admitted-with-entry cases than admitted cases', () => {
+    // The invariant that makes the two columns comparable at all: one is a subset of the other by construction,
+    // so a violation is a defect in the accumulator rather than an odd cell. Checked over a mixed population so a
+    // single branch cannot satisfy it alone.
+    const ids = services();
+    const census = createFailedEdgeGateCensus('fleet', 0);
+    for (const termSubjects of [[ids[0]!], [], [ids[1]!], [ids[0]!, ids[1]!]]) {
+      accumulateFailedEdgeGateCensus(
+        census,
+        recordOf({ ...specOf(4, DURATION), failedRecords: 2, termSubjects }),
+      );
+    }
+    const admissible = census.rankOneMeasured - census.nameRefused - census.barRefused;
+
+    expect(admissible).toBe(4);
+    expect(census.admittedFed).toBeLessThanOrEqual(admissible);
+    expect(census.admittedFed).toBe(2);
+  });
+});
+
+describe('failed-edge gate census — the input line', () => {
+  it('says `none` for a cell whose corpus carried no failed call, rather than printing a zero', () => {
+    // `0 cases / 0 rows` reads exactly like a measurement that came out zero, and it is not one: the corpus
+    // carried no ERROR span on any observed edge. This repository's oldest defect is a number standing in for an
+    // absence, so the absence gets a word.
+    const census = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(census, recordOf(specOf(4, DURATION)));
+
+    const line = formatFailedEdgeInputLine(census)!;
+    expect(line).toContain('failed records none');
+    expect(line).not.toContain('failed records 0 cases');
+  });
+
+  it('prints both counts when the corpus did carry failed calls', () => {
+    const census = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({ ...specOf(4, DURATION), failedRecords: 5, termSubjects: [] }),
+    );
+
+    expect(formatFailedEdgeInputLine(census)).toContain('failed records 1 cases / 5 rows');
+  });
+
+  it('reports the admitted-with-entry fraction against its own denominator', () => {
+    // Stated as `0 of 1` rather than `0`, because a bare zero and a zero out of nothing are the two readings this
+    // line exists to keep apart — and a cell where nothing was admitted has no denominator to divide by at all.
+    const ids = services();
+    const one = createFailedEdgeGateCensus('fleet', 0);
+    accumulateFailedEdgeGateCensus(one, recordOf({ ...specOf(4, DURATION), termSubjects: [] }));
+    const none = createFailedEdgeGateCensus('absolute', 0.5);
+    accumulateFailedEdgeGateCensus(none, recordOf(specOf(4, DURATION)));
+
+    expect(formatFailedEdgeInputLine(one)).toContain('admitted rank-1 with entry 0 of 1');
+    expect(formatFailedEdgeInputLine(none)).toContain('admitted rank-1 with entry 0 of 0');
+  });
+
+  it('says nothing for a cell with no cases, like the gate line', () => {
+    expect(formatFailedEdgeInputLine(createFailedEdgeGateCensus('absolute', 0.5))).toBeUndefined();
   });
 });

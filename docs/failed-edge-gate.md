@@ -342,3 +342,77 @@ run whose artifact was readable (RE1, 204 cases) it printed `with traces=0`, whi
 the answer. `failedEdgeMinRecords` is the knob that already exists for the other half of the question and no arm has
 varied it. Until one of those two facts is settled, the honest status of this term on the golden half is *unmeasured*
 rather than *unhelpful*, and the fleet bar is an instrument waiting for an input.
+
+## 11. The instrument for the open question, and the third arm's verdict
+
+§10 ended with a question the gate census structurally cannot answer: *does the corpus carry failed-call records at
+all?* It cannot, because the gate judges `edgeLatencyByCallee` while the term spends `failedTraceEdges`, and one
+census reading one map cannot say what a different map held. So the census grew three counts and a second line.
+
+### 11.1 Three counts, one filter apart
+
+| column | read from | zero means |
+| --- | --- | --- |
+| `failed records n cases / m rows` | `case.failedTraceEdges` | the CORPUS recorded no ERROR span on a comparable edge |
+| `term subjects n cases` | `graph.failedEdgeScores` | the engine's `max(0, failed − baseline)` consumed every record |
+| `admitted rank-1 with entry a of b` | `graph.failedEdgeScores.has(rank-1)` | the gate let a case through that the term has no number for |
+
+They are three different findings and the report prints them as three columns rather than one, because collapsing
+them is the defect this whole document is about one level up. `failed records none` is a word rather than `0 cases`,
+for the reason §2 gives: a number reads as a measurement.
+
+The third column is the one that costs the least to read and says the most. `admitted 8 | rank-1 fed 0 of 8` is the
+§10 finding — 85 admissions, 0 payments — stated as arithmetic instead of sampled from an audit of misses.
+
+### 11.2 The third arm: `lat_min_rise=1`
+
+Dispatch `41156831668`, `scopes=golden`, all nine cells, one knob moved from the shipped `10.3` to `1`. The
+prediction was registered in `micro-kinetic-ts-docs` §202.6 **before** the run, from the ablation battery's row of
+the same name.
+
+| cell | shipped (`10.3`) | arm (`1`) | Δ |
+| --- | --- | --- | --- |
+| RE1:OnlineBoutique | 107/125 | 107/125 | 0 |
+| RE1:SockShop | 117/125 | 117/125 | 0 |
+| RE1:TrainTicket | 106/125 | 106/125 | 0 |
+| RE2:OnlineBoutique | 83/90 | **82/90** | −1 |
+| RE2:SockShop | 88/90 | 88/90 | 0 |
+| RE2:TrainTicket | 75/90 | **72/90** | −3 |
+| RE3:OnlineBoutique | 25/30 | **21/30** | −4 |
+| RE3:SockShop | 18/30 | 18/30 | 0 |
+| RE3:TrainTicket | 22/30 | **27/30** | +5 |
+| **total** | **641/735 = 87.21%** | **638/735 = 86.80%** | **−3** |
+
+Three of the four predictions were wrong, and the fourth was wrong in the direction that matters:
+
+- **P1 confirmed.** RE1 does not move — 330/375 in both arms, cell for cell. It has no traces, so a floor on a
+  latency rise has nothing to mask.
+- **P2 refuted.** It predicted RE2:TrainTicket would RISE and RE2:OnlineBoutique would give back a case or two. RE2
+  gave back four cases, three of them on TrainTicket.
+- **P3 open, and the answer is self-cancelling.** RE3 moved by +5 on TrainTicket and −4 on OnlineBoutique. A cell
+  that gains five and a cell that loses four is a redistribution, and the refusal rule written down before the run
+  says a redistribution does not ship.
+- **Refusal rule applied.** The nine-cell total falls by three cases, from 87.21% to 86.80%. The knob stays at
+  `10.3`.
+
+### 11.3 The ablation said +2.22 and the arm said −1.48
+
+That gap is the most valuable thing this arm produced, because both numbers are correct. The ablation battery
+measured `latMinRise=1` against **its own baseline**, a 34-configuration grid whose baseline differs from the shipped
+configuration in several other flags; its RE2:TrainTicket row starts at 78.9% (71/90) and the shipped configuration
+starts at 83.3% (75/90). Moving the same knob on those two starting points moves TrainTicket by **+7** cases in one
+and **−3** in the other.
+
+So the knob's effect is not additive. A single-variable ablation answers *"what does this flag do on this baseline"*,
+and the shipped configuration is not that baseline — which means an ablation table cannot be summed into a shipping
+decision. The cell-level agreement that does hold (RE2:OnlineBoutique, −1 in both) is not enough to rescue the rest.
+
+This is why the arm was dispatched at all rather than read off the ablation: an ablation is a measurement about a
+grid, and a dispatch is a measurement about the thing that ships.
+
+### 11.4 What is still owed
+
+`failedEdgeMinRecords` remains unvaried — it is the knob for the half of the question the new columns can now see:
+if a cell reports `failed records n cases / m rows` with `term subjects 0`, the records exist and the filter ate them,
+and raising the minimum would make that worse rather than better. The next dispatch therefore has a precondition
+rather than a hypothesis: read the two columns, and only dispatch if they disagree.

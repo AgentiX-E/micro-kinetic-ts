@@ -90,6 +90,19 @@ export interface FailedEdgeGateCensus {
   acted: number;
   /** Of the population, cases a fleet bar at `whatIfShare` would admit; 0 when no column was asked for. */
   whatIfAdmit: number;
+  /** Cases whose INPUT carried at least one failed call (`failedTraceEdges` non-empty). */
+  failedInputCases: number;
+  /** Failed-call rows across the cell, summed before the engine's `max(0, failed − baseline)` filter. */
+  failedInputRows: number;
+  /** Cases where the term has at least one scoring subject, i.e. `failedEdgeScores` is non-empty. */
+  termFed: number;
+  /**
+   * Of the cases the bar ADMITTED, how many carry a term score for their final rank-1.
+   *
+   * The population `acted` is a subset of, and the quantity that separates the two ways an admission can fail to
+   * pay: no input for the service the gate let through, versus input that the scoring layer then diluted.
+   */
+  admittedFed: number;
   /** Every measured rank-1 rise, for the quantiles. */
   rises: number[];
 }
@@ -119,6 +132,10 @@ export function createFailedEdgeGateCensus(
     barRefused: 0,
     acted: 0,
     whatIfAdmit: 0,
+    failedInputCases: 0,
+    failedInputRows: 0,
+    termFed: 0,
+    admittedFed: 0,
     rises: [],
   };
 }
@@ -137,6 +154,18 @@ export function accumulateFailedEdgeGateCensus(
   record: DiagnosedCaseRecord,
 ): void {
   census.cases++;
+
+  // The INPUT side, counted for every case and before any exclusion. These numbers are the chain §10 of
+  // `docs/failed-edge-gate.md` could only SAMPLE: the corpus's own failed-call records, and the term's subjects
+  // after the engine's `max(0, failed − baseline)` filter. Two populations one filter apart, so both are counted —
+  // a non-zero row count with zero subjects is a corpus whose failures all fell before the injection, which is a
+  // different finding from a corpus that never recorded one.
+  const failedRows = record.case.failedTraceEdges?.length ?? 0;
+  if (failedRows > 0) {
+    census.failedInputCases++;
+    census.failedInputRows += failedRows;
+  }
+  if ((record.graph.failedEdgeScores?.size ?? 0) > 0) census.termFed++;
 
   // The engine's own answer, counted before any exclusion: whether the term moved SOMETHING is a fact about the
   // run, not about the subject this census happens to judge. Reading `!== 0` rather than a truthiness test keeps
@@ -175,6 +204,10 @@ export function accumulateFailedEdgeGateCensus(
     })
   ) {
     census.barRefused++;
+  } else if (record.graph.failedEdgeScores?.has(rankOne.serviceId) === true) {
+    // Only on the admitted side: a refused case's answer is already the bar, and counting it here would let a bar
+    // refusal read as a missing input — the exact confusion this module exists to undo, one layer down.
+    census.admittedFed++;
   }
   if (
     census.whatIfShare !== undefined &&
@@ -266,5 +299,46 @@ export function formatFailedEdgeGateCensusLine(census: FailedEdgeGateCensus): st
       ? 'rise none measured'
       : `rise p10/p50/p90/max ${q(0.1)}/${q(0.5)}/${q(0.9)}/${q(1)}`) +
     whatIf
+  );
+}
+
+/**
+ * Render the term's INPUT supply beside the gate's decisions — a second line, not more columns.
+ *
+ * ## Why it is a line of its own
+ *
+ * The gate line reports what the predicate decided on a subject the corpus supplied (`edgeLatencyByCallee`). This
+ * line reports whether the term had anything to ADD once those decisions were made (`failedTraceEdges` →
+ * `failedEdgeScores`). The two are different questions about different maps, and appending them to one row made a
+ * single string carry two subjects — the reading §10 of `docs/failed-edge-gate.md` had to reconstruct by hand
+ * because no artifact printed the second one at all.
+ *
+ * ## Why the absence gets a word
+ *
+ * `failed records 0 cases / 0 rows` is indistinguishable from a corpus that carried failed calls and contributed
+ * none, and it is not that: on a text corpus this branch means no ERROR span was ever observed on a comparable
+ * edge. `none` states the absence and a number states a measurement, which is the rule the `no measurement`
+ * sentence already follows one function up.
+ *
+ * ## Why the last column is a fraction
+ *
+ * `admitted rank-1 with entry 0 of 25` is the population `acted` is a subset of. A bare `0` would be true of a
+ * cell that admitted nothing as well, and those two cells mean opposite things: one has a term that cannot reach
+ * what the gate let through, the other has no gate output to reach.
+ *
+ * @param census - The cell's totals.
+ * @returns One line, or `undefined` when the runner handed over no case.
+ */
+export function formatFailedEdgeInputLine(census: FailedEdgeGateCensus): string | undefined {
+  if (census.cases === 0) return undefined;
+  const records =
+    census.failedInputCases === 0
+      ? 'none'
+      : `${census.failedInputCases} cases / ${census.failedInputRows} rows`;
+  const admitted = census.rankOneMeasured - census.nameRefused - census.barRefused;
+  return (
+    `  [failed-edge-input] cases=${census.cases} | failed records ${records} | ` +
+    `term subjects ${census.termFed} cases | ` +
+    `admitted rank-1 with entry ${census.admittedFed} of ${admitted}`
   );
 }
