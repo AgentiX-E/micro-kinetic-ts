@@ -223,6 +223,28 @@ describe('the census reads the source it claims to read', () => {
     ]);
   });
 
+  it('reads a score written with a slash as a number, not as a repository', () => {
+    // The defect this case was written for: `75/90` and `OWNER/REPO` are the same four characters to the
+    // shorthand grammar, so a document that quotes its own cells in backticks gets five phantom artefacts and
+    // the inventory is asked for a row about `75/90`. **The distinction the grammar was missing is that the
+    // shorthand has exactly two legitimate shapes** — a repository path, which contains a letter, and a short
+    // DOI, which begins `10.` and a registrant number. A ratio is neither.
+    expect(artefactTokens('the cell reads `75/90` today')).toEqual([]);
+    expect(artefactTokens('`64/90`, `66/90`, `80/90`, `83/90`')).toEqual([]);
+    // The rule is about which shape the token is, not about length, so a repository that is mostly digits
+    // still parses — otherwise the fix would take real artefacts out of the population to hide a false one.
+    expect(artefactTokens('`a1/b2`')).toEqual(['a1/b2']);
+    expect(artefactTokens('`edgedelta/project-arena`')).toEqual(['edgedelta/project-arena']);
+    // …and a short DOI has NO letter at all, which is why "a path contains a letter" could not have been the
+    // rule: `10.1145/3808137` is registered in the inventory today and had to survive the same filter.
+    expect(artefactTokens('`10.1145/3808137`')).toEqual(['10.1145/3808137']);
+    // The population has the shape the rule assumes, asserted rather than assumed: every artefact this record
+    // registers is one of the two shapes. If a third is ever needed, this fails and the decision has to be made
+    // in the open instead of by a regex that quietly stopped seeing something.
+    for (const token of verdictOf.keys())
+      expect(token, `${token} is neither a path nor a short DOI`).toMatch(/[A-Za-z]|^10\.\d{4,}\//);
+  });
+
   it('sees the one hosting shape a method-less artefact uses', () => {
     // A project page is where a paper that ships NOTHING puts its figures, and it matched none of the four
     // grammars — so the inventory could not judge it. `arXiv:2610.05009` is the case that made it matter: its

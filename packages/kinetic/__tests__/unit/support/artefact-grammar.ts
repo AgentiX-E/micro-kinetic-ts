@@ -42,6 +42,25 @@ export const OWN_PATH_PREFIXES = [
 ];
 
 /**
+ * The two shapes a backticked slash form may have to count as somebody else's artefact.
+ *
+ * The shorthand is the one alternative that must GUESS, because `OWNER/REPO` and a score written with a slash
+ * are the same characters: the moment `docs/sota-comparison.md` started quoting its own cells as `` `75/90` ``,
+ * this census reported five artefacts nobody had ever heard of and asked the inventory for a row about a
+ * fraction. Length and shape cannot separate them, so the rule names the two things the shorthand is FOR:
+ *
+ * - **a repository path**, which contains a letter (`edgedelta/project-arena`, `a1/b2`);
+ * - **a short DOI**, which begins `10.` and a registrant number (`10.1145/3808137`) and has no letter at all —
+ *   which is why "a path contains a letter" could not have been the rule.
+ *
+ * A ratio is neither. The trade-off is stated rather than hidden: a purely numeric GitHub repository would now
+ * be invisible to the shorthand. Numeric owner/repo pairs are legal on GitHub and no artefact this record cites
+ * is one, so the cost is theoretical while the false positive was measured — and the fence asserts that every
+ * REGISTERED token is one of these two shapes, so a third would have to be decided in the open.
+ */
+const SHORTHAND_SHAPES = /[A-Za-z]|^10\.\d{4,}\//;
+
+/**
  * Every artefact token in `text`, in first-appearance order.
  *
  * @param text - Markdown source.
@@ -52,6 +71,9 @@ export function artefactTokens(text: string): string[] {
   for (const m of text.matchAll(ARTEFACT_TOKEN)) {
     const token = m[1] ?? m[0];
     if (m[1] !== undefined && OWN_PATH_PREFIXES.some((p) => token.startsWith(p))) continue;
+    // Only the guessed alternative is filtered: the four unambiguous grammars (`arXiv:`, `github.com/`, a
+    // `github.io` page, a Zenodo DOI) already state what they are.
+    if (m[1] !== undefined && !SHORTHAND_SHAPES.test(token)) continue;
     if (!found.includes(token)) found.push(token);
   }
   return found;

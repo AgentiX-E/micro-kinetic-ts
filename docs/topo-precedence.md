@@ -124,6 +124,75 @@ it is recorded here rather than left to be inferred from an absent field.
 
 ## 6. Readback
 
-_(This section is filled by the arm's own artifact. Until it is, this document is a pre-registration and the
-claim it makes is the one §1–§3 can carry: the operator takes an ordering it never used, and here is what that
-ordering costs and buys on the cell it was counted on.)_
+**The verdict is NO ENROL.** The arm was run and it is `636/735 = 86.53 %` against the factory's
+`641/735 = 87.21 %` — five cases down, two cells down, none up. The pre-registered criterion in §4 was
+`735 > 641` with no cell down; it is not met, so `topoPrecedence` stays at its factory value `off` and nothing in
+the engine changes. This section is the readback, and §1–§5 above were written before it, which is the only
+reason it can be read as a test rather than as a story.
+
+**Both runs, and why there are two.** The control is a dispatch of the same commit with the knob at its default,
+so the comparison does not depend on a reading taken days earlier:
+
+| run | commit | configuration | total |
+| --- | --- | --- | --- |
+| `41205151091` | `f97de4a0` | factory (`topoPrecedence=off`) | **641/735 = 87.21 %** |
+| `41205245084` | `f97de4a0` | `anomaly_knobs=topoprecedence=onset` | **636/735 = 86.53 %** |
+
+The control is also the fourth independent reproduction of the anchor: the nine cells it reads are
+`107/117/106`, `83/88/75`, `25/18/22`, which are the numbers `docs/sota-comparison.md` §0p is held to. The arm
+differs from it only in the knob — which is what makes the delta attributable, and is the reason this section
+does not have to argue about whether the corpus moved underneath it.
+
+| cell | `off` | `onset` | delta |
+| --- | --- | --- | --- |
+| RE1:OnlineBoutique | 107 | 107 | 0 |
+| RE1:SockShop | 117 | 117 | 0 |
+| RE1:TrainTicket | 106 | **104** | **−2** |
+| RE2:OnlineBoutique | 83 | **80** | **−3** |
+| RE2:SockShop | 88 | 88 | 0 |
+| RE2:TrainTicket | 75 | 75 | 0 |
+| RE3:OnlineBoutique | 25 | 25 | 0 |
+| RE3:SockShop | 18 | 18 | 0 |
+| RE3:TrainTicket | 22 | 22 | 0 |
+| **RE1** | 330 | 328 | −2 |
+| **RE2** | 246 | 243 | −3 |
+| **RE3** | 65 | 65 | 0 |
+| **TOTAL** | **641** | **636** | **−5** |
+
+**The five cases, joined by `caseId` rather than by count.** Both census lines are read, so the delta is a set of
+named cases and not the difference of two totals — `0` won and `5` lost, and the five are:
+
+| case | truth | `off` predicted | `onset` predicted | truth's rank |
+| --- | --- | --- | --- | --- |
+| `re1tt_ts-train-service_loss_4` | `ts-train-service` | `ts-train-service` | `ts-travel-service` | 1 → 2 |
+| `re1tt_ts-travel-service_delay_4` | `ts-travel-service` | `ts-travel-service` | `ts-admin-travel-service` | 1 → 2 |
+| `re2ob_currencyservice_delay_3` | `currencyservice` | `currencyservice` | `checkoutservice` | 1 → 2 |
+| `re2ob_productcatalogservice_delay_1` | `productcatalogservice` | `productcatalogservice` | `recommendationservice` | 1 → 2 |
+| `re2ob_productcatalogservice_socket_1` | `productcatalogservice` | `productcatalogservice` | `recommendationservice` | 1 → 2 |
+
+**What the five have in common is the mechanism, and it is the mechanism working as specified.** In every one the
+truth was ranked FIRST and fell to SECOND, its own anomaly reading is unchanged (`truthAnomalyBefore` is equal to
+the control's in all five — `1` and `1`, `2.214`, `2.21`, `2.29`), and the case is won by the truth's own
+**callee** — `ts-train-service`'s and `ts-travel-service`'s callee on the PCA graph, `productcatalogservice`'s
+recommender, `currencyservice`'s checkout. Withholding the edge does exactly one thing: the callee stops being
+discounted by the caller and its charge rises past a truth that did not move. **§3.1's monotonicity proposition
+predicted this direction and is not refuted by it** — `discounted_onset(v) >= discounted_off(v)` holds in all
+735 cases, and that is precisely why five truths can be overtaken by their own dependents. The proposition is
+about the bill; accuracy was never implied by it, and this document said so before the arm ran.
+
+**So the rule is wrong in a way that is now priced.** `onset(callee) <= onset(caller)` was derived from "a
+boundary cannot carry motion that has not happened yet", and on this corpus the premise fails where it matters:
+the culprit is the caller in these five, and its callee is the service that visibly reacted first because it is the
+one doing the work. **A callee that moves first is a victim, not a cause** — treating earlier-onset as license to
+withhold the discount inverts the customer/supplier relation on exactly the cases the deduction was built to fix.
+That is a statement about the ordering's SIGN, and no amount of tuning the gate can repair a sign.
+
+**What is kept, and why not a revert.** The code stays with `off` as its default: the arm is reproducible from
+one dispatch, `off` is proven identical to the pre-existing engine by construction (the `off` path never reads
+`onsets`, and the test asserts it), and the alternative — deleting the axis — would remove the only quantified
+answer to the fourth question the operator asks. What is NOT kept is any claim that this ordering helps: §4's
+criterion was pre-registered, it failed, and the failure is recorded here rather than reframed as a finding about
+the corpus. The one thing this readback buys is the constraint on the NEXT hypothesis: whatever replaces
+`onset`-as-a-gate has to explain why `productcatalogservice` losing to `recommendationservice` is wrong, and
+"the callee moved first" cannot be that explanation.
+
