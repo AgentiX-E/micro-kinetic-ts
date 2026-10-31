@@ -55,9 +55,11 @@ absolute score can be read against the floor a random ranker would reach on the 
 | **RCAEval RE1-OB (125 cases)**          | service Top-1 | **85.6%** (107/125)   | `arXiv:2610.05009` **88.0%** (`L2+L3` / `L1+L2+L3`) and **86.4%** (`L0`) | **−2.4 / −0.8 pp — THE ONE CELL WHERE A PUBLISHED REFERENCE IS ABOVE US ON OUR OWN POPULATION**                                                                                                                                                                                                                 | cross-paper, the same 125 cases; read 2026-10-29 from that paper's per-system Table 5 (§0a entry 5). Three cases of 125, unchanged by the boundary gate, which did not reach this cell. Named rather than averaged away: every earlier reading of this reference compared OVERALL figures, where we lead by 2.60 pp                                                                                                                                                                                                                                                                                          |
 
 
-**Ranking: first on RCAEval's 735 overall, first on FSE'26, first on RE2-OnlineBoutique, first on RE2-TrainTicket,
-first on RE1 overall and first on RE1-SockShop and RE1-TrainTicket — and SECOND on one cell, RE1-OnlineBoutique,
-where `arXiv:2610.05009`'s per-system Table 5 is above us by 2.4 pp (88.0 against 85.6, three cases of 125).**
+**Ranking: FIRST AMONG REPRODUCIBLE METHODS on RCAEval's 735 — `641/735 = 87.21%`, **second overall** to a
+vendor's self-reported `89%` that ships no per-case results (§0a entry 1, **gap 1.79 pp**) — first on FSE'26, first on
+RE2-OnlineBoutique, first on RE2-TrainTicket, first on RE1 overall and first on RE1-SockShop and RE1-TrainTicket — and
+SECOND on one cell, RE1-OnlineBoutique, where `arXiv:2610.05009`'s per-system Table 5 is above us by 2.4 pp (88.0
+against 85.6, three cases of 125).**
 
 That last clause is the correction of 2026-10-29 and it is worth stating how it was missed. Every previous reading of
 that reference compared **overall** figures: its `L0` 85.4 against our RE1, which has been **330/375 = 88.00 %**

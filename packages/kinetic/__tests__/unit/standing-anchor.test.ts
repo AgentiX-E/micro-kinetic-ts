@@ -164,7 +164,7 @@ describe('the standing document is anchored to one battery', () => {
     // a basis cell saying "\u006071.1\u0060 before iteration 129" is a table printing 71.1, and a reader skimming the row
     // sees the number without the clause. That is how this defect survived four earlier readings.
     const current = [
-      section('| evaluation                              | metric', '**Ranking: first on RCAEval'),
+      section('| evaluation                              | metric', '**Ranking: FIRST AMONG'),
       section('| suite                         | OnlineBoutique', '**Every number above'),
       section('| method                     | Top-1', '> Two traps avoided here'),
       section(
@@ -184,6 +184,19 @@ describe('the standing document is anchored to one battery', () => {
       expect(current, `${retired} is retired and may not appear in a table`).not.toContain(retired);
       expect(correction, `${retired} is retired, and \u00a70p does not say so`).toContain(retired);
     }
+  });
+
+  it('does not claim first place on the 735 without the vendor gap beside it', () => {
+    // The ranking sentence said "first on RCAEval's 735 overall" while \u00a70a entry 1 and two rows of \u00a73 said
+    // SECOND to a vendor's self-reported 89 % — three statements, one fact, two answers. The defect is not that
+    // the vendor figure is weak (it is: no per-case results, and its own page says to rerun it) but that the
+    // ranking sentence dropped the qualifier while the tables kept it, so the sentence a reader meets first was
+    // the only one that flattered us. A ranking may not be simpler than its own evidence.
+    const ranking = section('**Ranking:', 'That last clause');
+    expect(ranking).toMatch(/first among reproducible/i);
+    expect(ranking, 'the ranking names the number above us').toMatch(/89/);
+    expect(ranking, 'the ranking names the gap').toMatch(/1\.79/);
+    expect(ranking).not.toMatch(/first on RCAEval's 735 overall/i);
   });
 
   it('reports the GALA+ cell as a lead with our own fraction beside it', () => {
