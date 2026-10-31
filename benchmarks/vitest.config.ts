@@ -80,6 +80,11 @@ export default defineConfig({
         // value is the four distinctions it draws — a requirement, a cap taken from every candidate, a tie, and a
         // side with no terms at all — so every branch is measured rather than trusted.
         'src/latent-term-census.ts',
+        // Added with the module: the fault census reads every miss on the axis that names an owner — a truth the
+        // ranking never surfaced, a truth that deviated less than the one that beat it, or a truth that deviated at
+        // least as much and was outvoted by a named term — so its value is the three exclusive buckets and the blame
+        // map, and every branch is measured rather than trusted.
+        'src/fault-census.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
         'src/trace-vote-census.ts',

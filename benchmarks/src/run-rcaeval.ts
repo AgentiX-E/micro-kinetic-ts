@@ -104,6 +104,7 @@ import {
   formatFailedEdgeGateCensusLine,
   formatFailedEdgeInputLine,
 } from './failed-edge-gate-census.js';
+import { accumulateFaultCensus, createFaultCensus, formatFaultLine } from './fault-census.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
@@ -1508,6 +1509,19 @@ async function main(): Promise<void> {
     }
     const latentLine = formatLatentTermLine(latent);
     if (latentLine !== undefined) console.log(latentLine);
+
+    // …and the same misses read along the axis that names an OWNER. The lines above are per CELL, and a cell is five
+    // fault types averaged together: a permanent resource shift and a fractional network degradation are not the same
+    // population, and an accuracy over both is moved by whichever is larger. This split says, per fault type, whether
+    // a miss was a candidate the ranking never surfaced, a truth that deviated LESS than the one that beat it (which
+    // no re-weighting can repair, because the base term is what every weight multiplies), or a truth that deviated at
+    // least as much and was outvoted — in which case it names the term that did the outvoting.
+    const faultCensus = createFaultCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) accumulateFaultCensus(faultCensus, p);
+    }
+    const faultLine = formatFaultLine(faultCensus);
+    if (faultLine !== undefined) console.log(faultLine);
 
     // The ONE binary term's decisions, scored. `trace` is pinned on for RE3 alone, the term-gap census reads it as
     // the largest cost on the blocking cell, and a removal arm reads the pin as worth ten cases over the suite —

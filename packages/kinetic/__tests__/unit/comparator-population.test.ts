@@ -116,6 +116,20 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`census.gaps.entries()`, a Map keyed by term name',
     },
   ],
+  'benchmarks/src/fault-census.ts': [
+    // The fault-type ordering on the line. Its keys are `Map` keys (fault labels), so they are distinct and the
+    // two-arm tie-break never claims an order between equals — recorded for the reason the censuses beside it are.
+    {
+      signature: 'a < b',
+      population: '`census.byFault.entries()`, a Map keyed by fault label',
+    },
+    // The blame order inside one type's entry, reached only after the count arm has answered: it settles two terms
+    // blamed on the same number of cases, never which term was blamed more.
+    {
+      signature: 'a < b',
+      population: '`tally.blame.entries()`, a Map keyed by term name',
+    },
+  ],
   'benchmarks/src/latent-term-census.ts': [
     // The latent census's per-term ordering. Its keys are `Map` keys (term names), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded for the reason the census beside it is.

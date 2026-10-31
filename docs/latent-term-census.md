@@ -185,14 +185,15 @@ gain requires the term to be right only where the gap is CHEAP — 0.016 and 0.0
 cases where it is wrong carry gaps large enough that 0.02 does not reach them. That is the whole reason "is the prior
 accurate?" was the wrong question: accuracy weights every miss equally, and a weight change does not.
 
-RE3-TrainTicket is where the asymmetry turns into a loss. The term reads the truth higher than the winner on **0 of 8**
-misses, so its window there is empty at every weight — and a weight above its cap is pure risk with no upside. 0.02 is
-above that cap, and one case was the price. RE2-TrainTicket is the subtler case and the more useful one: the term does
-point right on 7 of its 15 misses, but the cheapest of those needs **0.084**, and 0.02 still cost it a case — so the
-cell has a cap below the weight and a requirement above it, i.e. a window that is empty for every weight in between.
-A cell does not have to be inverted to be a bad host for a prior; it only has to price it outside its own window. The axis therefore closes as a global constant; what it waits on is a
-per-case discriminator that recognises the RE1-like onset signature before the weight is applied, which is the same
-conclusion `closed-axes-register.md` reaches for the pool family and for PRISM's pooling.
+RE3-TrainTicket is where the asymmetry turns into a loss. The term reads the truth higher than the winner on **0 of
+8** misses, so its window there is empty at every weight — and a weight above its cap is pure risk with no upside.
+0.02 is above that cap, and one case was the price. RE2-TrainTicket is the subtler case and the more useful one: the
+term does point right on 7 of its 15 misses, but the cheapest of those needs **0.084**, and 0.02 still cost it a case
+— so the cell has a cap below the weight and a requirement above it, i.e. a window that is empty for every weight in
+between. A cell does not have to be inverted to be a bad host for a prior; it only has to price it outside its own
+window. The axis therefore closes as a global constant; what it waits on is a per-case discriminator that recognises
+the RE1-like onset signature before the weight is applied, which is the same conclusion `closed-axes-register.md`
+reaches for the pool family and for PRISM's pooling.
 
 ## 8. Two segments, because a filter that prints only the wins hides the cost
 

@@ -329,6 +329,19 @@ export interface CasePrediction {
    */
   readonly rankedTerms?: readonly (readonly ScoreTerm[])[] | undefined;
   /**
+   * The fault type this case injects, as the suite labels it (`cpu`, `delay`, `loss`, `f1` …).
+   *
+   * The axis a miss has to be read on, because the populations are not comparable: a `cpu` fault is a permanent
+   * resource shift whose signature is a large stable deviation at the injected service, and a `loss` fault is a
+   * fractional degradation that reads as a modest tail-latency rise there and a larger one at its callers. An
+   * accuracy averaged over the two is moved by whichever is larger and cannot say whether a change addressed a
+   * defect or exchanged one population for another.
+   *
+   * Absent when the suite carries no label. Kept absent rather than defaulted to a string, so a census can report
+   * "unlabelled" as its own bucket instead of inventing a fault type.
+   */
+  readonly faultType?: string | undefined;
+  /**
    * The service the TRACE-ACTIVITY term voted for on this case, or `undefined` when it abstained.
    *
    * The term pays a BINARY unit to the unique service whose span count rose while its peers held or fell
@@ -877,6 +890,9 @@ export class BenchmarkRunner {
           truth: caseTruth,
           top1: predTop1,
           correct: predTop1 !== undefined && predTop1 === caseTruth,
+          // The population this case belongs to, so a miss can be read on the axis that names its owner rather
+          // than averaged into a cell's five types at once.
+          faultType: benchCase.groundTruth.faultType,
           top2: results[1]?.serviceId,
           top1Score: results[0]?.finalScore,
           top2Score: results[1]?.finalScore,
@@ -1163,6 +1179,10 @@ export class BenchmarkRunner {
           truth: benchCase.groundTruth.serviceId,
           top1: undefined,
           correct: false,
+          // The label travels even on this path: an engine failure is not exempt from the population it failed
+          // on, and a fault-type census that silently lost the errored cases would report a rate over the cases
+          // that happened to run.
+          faultType: benchCase.groundTruth.faultType,
           // No ranking exists and no graph was necessarily built, so the census must be able to say
           // "the engine failed" rather than filing this as a truth absent from a pool. The two are
           // different failures and only one of them is about the data.
