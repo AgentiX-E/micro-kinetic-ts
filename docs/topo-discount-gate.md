@@ -3,9 +3,14 @@
 **Status:** the operator is built, fenced, dispatchable **and measured on the nine cells.** At `rho = 1` the
 gate reads **637 / 639 / 639** of 735 at `gate = 0.25 / 0.5 / 0.75` against a 635 control and a 631 published
 run — eight cells at or above the published value and **one below** (RE2:TrainTicket, by one case), so the arm
-is refused by the same "no cell down" bar that refused its ungated parent, and the shipped default stays 0.
-§6 is the reading, its three predictions scored, what it bought by fault type, and the two things it provably
-cannot see.
+was refused by the same "no cell down" bar that refused its ungated parent, and the shipped default **is `1`**
+— not the `0` this line asserted until 2026-10-31. That was a documentation defect with a measured cost: at
+`gate = 1` the charge almost never fires, so the shipped operator is inert *in practice* while `rho = 1` *in
+configuration*, and a reader who reproduced from this sentence ran `rho = 1, gate = 0`, which reads **635/735**
+(`docs/anomaly-space.md` §6) — six cases below the 641 the standing document reports. `DEFAULT_TOPO_DISCOUNT`'s
+docblock carried the same error and is corrected with it; the value never moved, which is why no cell ever
+disagreed with the prose. §6 is the reading on the 631 baseline, and **§7 is the same arm re-pre-registered on
+the anchored 641 baseline**, because four of the five cells the refusal was decided on have since moved.
 
 **Owner of:** `TreePrunerOptions.topoDiscountGate`, `DEFAULT_TOPO_DISCOUNT_GATE`, the `topodiscountgate` /
 `topo_discount_gate` dispatch names, and the config-line field `topoDiscountGate`.
@@ -316,3 +321,44 @@ pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir ~/RCAEval-json --suite re
 Read each arm's `signals:` line from its own job log before reading its cells. The field is on the line
 precisely so that the configuration a number was produced under is a fact about the run rather than an
 assumption about the dispatch.
+
+## 7. The arm re-run on the anchored baseline — pre-registered 2026-10-31
+
+§6 refused this axis against a **635 control** on nine cells that summed to **631**, and the single cell that
+blocked adoption was RE2:TrainTicket, `74` against a published `75`. **Neither of those numbers is the baseline
+any more.** The anchored reading is `641/735`, and the cells that moved to get there are exactly the ones the
+refusal was decided on: RE2:OnlineBoutique `80 → 83`, RE2:SockShop `85 → 88`, RE1:TrainTicket `104 → 106`,
+RE3:TrainTicket `21 → 22`. A refusal is a statement about a population, and that population was replaced by the
+boundary-gate enrolment this document's §6 predates, so the arm has to be re-read rather than inherited.
+
+**The local evidence, taken before the arm and recorded here so it cannot be read as a consequence of it.** On
+the one cell that can be assembled in a workspace (`--suite re1 --system ob`), the gate is a monotone one-parameter
+family and the shipped end of it is the worst end:
+
+| `topoDiscountGate` | RE1:OnlineBoutique |
+| --- | ---: |
+| `1` (shipped) | 107 / 125 = 85.6 % |
+| `0.9` | 109 / 125 = 87.2 % |
+| `0.75` | 109 / 125 = 87.2 % |
+| `0.5` | **110 / 125 = 88.0 %** |
+| `0.25` | **110 / 125 = 88.0 %** |
+| `0` (ungated) | **110 / 125 = 88.0 %** |
+
+`110/125` is `88.0 %`, which is the `arXiv:2610.05009` per-system figure this cell is currently **behind by
+2.4 pp**. Two facts had to be checked before that number could mean anything, and both hold: `rho` is inert
+here (`--topo-discount 0` also reads 107, because at `gate = 1` the charge never fires), so the gate is the only
+thing that moved; and the local runner reproduces the CI cell exactly at the shipped value (107), so the
+`+3` is the gate's and not a workspace artifact.
+
+**Pre-registered verdict — the same bar as §6, on the new baseline.** Enrol `gate = 0.5` only if
+`735 > 641` with **no cell down**. The cell to watch is RE2:TrainTicket, the one that blocked §6, and the risk
+is RE1:TrainTicket, where the deduction's thirteen fixes were bought. If the arm reads `649` with RE2:TrainTicket
+at `75` or better, the axis is re-opened by the same rule that closed it; if any cell is below its anchored
+value, the refusal stands and this section's table is the second measurement of the same sign.
+
+```bash
+# the arm, dispatched on 51b84de3 with the knob as the only difference from the control
+gh workflow run benchmark-rcaeval.yml -f scopes=golden -f anomaly_knobs=topodiscountgate=0.5
+#   41212474116  topodiscountgate=0.5        (this arm)
+#   41205151091  factory defaults            (the control: 641/735, nine cells 107/117/106 83/88/75 25/18/22)
+```

@@ -184,7 +184,7 @@ Three readings.
 2. **Raising the weight still does not meet the bar, and now for a different reason.** ρ = 1 buys **+4
    cases** over shipped (635/735, 86.4% case-level) and is the highest total this project has recorded, but
    three cells give up one or two cases each (RE1:TrainTicket −2, RE2:TrainTicket −1, RE3:SockShop −1),
-   so "no cell down" is still unmet and `topoDiscount` stays 0. What changed is the argument: it is no
+   so "no cell down" is still unmet and `topoDiscount` stays at its shipped **`1`** — the value this line called `0` until 2026-10-31, when the reading moved to `641/735` and the gate (shipped `1`) was separated from the weight; `docs/topo-discount-gate.md` §7 is the correction and the arm re-pre-registered on that baseline. What changed is the argument: it is no
    longer "the operator is wrong", it is "the operator is right and its weight still costs three cells a
    case apiece" — a statement about the TERM's coverage of response channels, not about its space.
 3. **The scope finding replicates in cases as well as in points.** `all` costs RE3:SockShop **4 of 30

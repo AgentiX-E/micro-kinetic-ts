@@ -1321,7 +1321,13 @@ export const DEFAULT_TRACE_SKIPS_LEADER = false;
 export const DEFAULT_TOPO_WEIGHT = 0.0;
 
 /**
- * The shipped topological DISCOUNT — off.
+ * The shipped topological DISCOUNT — `1`, and this docblock said "off" for a year while the value was `1`.
+ *
+ * The pair with {@link DEFAULT_TOPO_DISCOUNT_GATE} is what made the mistake invisible: at `gate = 1` a node is
+ * charged only where its callees account for ALL of its anomaly, so the charge almost never fires and the
+ * operator is inert IN PRACTICE while `rho` is `1` IN CONFIGURATION. The published `641/735` is measured under
+ * this value — every dispatch that anchors it prints `topoDiscount=1` — and `docs/topo-discount-gate.md` §7 is
+ * the correction of the three documents that said `0`.
  *
  * A name rather than a literal in two files, for the reason `DEFAULT_TOPO_WEIGHT` has one: the value is
  * written in the engine's defaults table and in both runners' option objects, and a numeric literal in
@@ -1330,15 +1336,21 @@ export const DEFAULT_TOPO_WEIGHT = 0.0;
 export const DEFAULT_TOPO_DISCOUNT = 1;
 
 /**
- * The shipped {@link TreePrunerOptions.topoDiscountGate} — no gate.
+ * The shipped {@link TreePrunerOptions.topoDiscountGate} — `1`, the strictest gate the axis has.
  *
- * A name rather than a literal for the reason `DEFAULT_TOPO_DISCOUNT` has one, and it is a SEPARATE
- * name rather than a shared zero because the two knobs answer different questions and a census that
- * could not tell them apart could not require a claimant for either. `0` is not a placeholder: it is
- * the ungated operator, which is what the nine published cells were measured with, and the gate is
- * inert there by construction rather than by agreement.
+ * **The value is `1` and the number matters**: `gate = 1` charges a node only where its callees account for
+ * every bit of its anomaly, which is why the shipped deduction is inert on the corpus and why the published
+ * `641/735` is identical to what the ungated operator would give ONLY by coincidence — `rho = 1, gate = 0`
+ * reads **635/735** (`docs/anomaly-space.md` §6), six cases below it. Three documents used to say `0` was the
+ * measured configuration; a reader reproducing from them would have run that 635 and never seen the 641.
+ *
+ * A name rather than a literal for the reason `DEFAULT_TOPO_DISCOUNT` has one, and it is a SEPARATE name
+ * rather than a shared value because the two knobs answer different questions and a census that could not tell
+ * them apart could not require a claimant for either.
  *
  * @see DEFAULT_TOPO_DISCOUNT — the pair, and the axis they arm together.
+ * @see docs/topo-discount-gate.md §7 — the arm this value is being re-measured against, pre-registered on the
+ * anchored baseline rather than on the 635 control the axis was first refused on.
  */
 export const DEFAULT_TOPO_DISCOUNT_GATE = 1;
 
