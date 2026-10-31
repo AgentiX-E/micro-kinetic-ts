@@ -1,0 +1,117 @@
+# SOTA populations — which population each reference reports on, and who owns that fact
+
+## Why this document exists
+
+Three iterations carried this sentence in `sota-comparison.md` §0a:
+
+> **Filed as a CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED** … `375 = 3 × 125` is RE1's signature
+> (RE2 is 270, RE3 is 90, FSE'26 is 1430) … **so if the cohort is RCAEval's RE1, this would be the first
+> reference to exceed our 80.27% on a population we can name**, by **5.1pp**.
+
+**The reading it was waiting for took one fetch.** The paper's own full text evaluates *"the three RCAEval
+diagnostic environments"*, and the authors' own project page names *"RCAEval RE1 failure cases (375)"* — so the
+population is ours, the gap is real, and it is quoted now (+5.13pp at `L0`, +2.53pp at `L3`, against our 80.27%
+on RE1). What three iterations had instead was a **shape match** — a case COUNT and a metric NAME agreeing with
+ours — which is the strongest thing those two facts can establish and is not a population.
+
+The register's law 10 says **a paper's own artefact statement is the authority on whether its artefact is
+public.** This document is that law's corollary, one surface over, and it is now the register's law 37:
+
+> **The artefact that states a paper's population is its own full text or its own project page; a search of its
+> abstract cannot settle it.**
+
+Both searches the record ran were abstract searches, and the population is in neither the abstract nor any index
+of it. This is iteration 99's finding — *a plan-restricting fact must be resolved, not transcribed* — arriving at
+the same place from the population side, which is why the two are one law with two names rather than two laws.
+
+## The three verdicts
+
+| verdict | what it means | what a reader may do with it |
+| --- | --- | --- |
+| `OURS` | the reference reports on a population that **is** one of ours — RCAEval RE1 (375), RE2 (270, or 90 per system), RE3 (90), FSE'26 RCABench (1422), or a named slice of them, under a metric we headline | quote a gap, in either direction, with the population named beside it |
+| `OTHER` | the reference reports on a named population that is **not** ours — another benchmark, another split, another unit, or a mixture | its number is recorded and **no gap may be read from it** |
+| `UNVERIFIED` | our record **cannot place** the population, and the next paragraph says which artefact would place it | nothing may be inferred; the row is a work item, not a shrug |
+
+## The inventory
+
+Every artefact token `sota-comparison.md` names — an `arXiv:` identifier, a `github.com/OWNER/REPO` URL, an
+`OWNER.github.io/…` project page, a `10.…/zenodo.…` DOI, or a backticked `OWNER/REPO` that is not a path into
+this repository — is the table below, one row each, and the fence in
+`packages/kinetic/__tests__/unit/sota-population-claims.test.ts` requires every one of them to have exactly one
+row here. (The prose in `competitor-artefact-availability.md` said 22 while the tree it described named 23; the
+one it was short of, and the project page added here, are both recorded rather than quietly counted again.)
+
+| token | verdict | the population it reports on | verified |
+| --- | --- | --- | --- |
+| `arXiv:2610.05009` | **OURS** | **RCAEval RE1 — 375 = 3 × 125 (OnlineBoutique, SockShop, TrainTicket)**, service `top-1`. Its own full text: *"the three RCAEval diagnostic environments"*; its own project page: *"RCAEval RE1 failure cases (375)"* | 2026-10-14, arXiv HTML full text + the authors' own project page |
+| `luoyu100.github.io/projects/toolrca/project` | **OURS** | the project page of the entry above. It **resolves** and names *"RCAEval RE1 failure cases (375)"*, so it is what the population verdict rests on | 2026-10-14, project page |
+| `DeltaRCA` (ASE'26, `10.1145/3832783.3837424`) | **OTHER** | "two microservice benchmarks with **200 injected fault cases**" — 63% Top-1 / 79% Top-3 over that corpus, which is neither RCAEval's 735 nor its nine cells | 2026-10-26, DOI resolution + paper abstract |
+| `arXiv:2609.36771` | **OURS** | RE1 SockShop / OnlineBoutique, **125 cases each**, service Top-1 | 2026-10-10, paper text + `github.com/Musfiqshohan/RCA-DCM` |
+| `github.com/Musfiqshohan/RCA-DCM` | **OURS** | the artefact of the row above; its README states the two systems' shared five-fault composition, which is what fixes 125 | 2026-10-13, GitHub API + README |
+| `arXiv:2605.15611` | **OTHER** | `TopoEvo` reports **relative gains on datasets of its own choosing** — "absolute 3.44 % on root-cause localization and 4.39–16.81 % on fault-type classification" — with no aggregate case count, no per-cell table and no per-case artefact, so its population is neither RCAEval's 735 nor any corpus this record can name. Its value here is the FAILURE MODE it names and the two tests it adjudicates it with, not a number: see `docs/sota-comparison.md` §2026-10-30 (5) and `docs/competitor-artefact-availability.md` | 2026-10-30, arXiv HTML full text; no per-case file published |
+| `arXiv:2601.21359` | **OURS** | **RCAEval all 735 cases**, service Top-1 — the benchmark author's own method | 2026-10-13, paper text; and our reimplementation on the identical 735 (`prism-head-to-head.md`) |
+| `arXiv:2605.14866` | **OURS** | **RESOLVED 2026-10-19 from the paper's own full text and its own project page, and this row resolves in the direction that STRENGTHENS our standing rather than weakening it.** `RCLAgent` evaluates on **three** datasets and one of them is **RCAEval (RE2-OB)** by name — the other two are AIOPS-2022 (6 subsets, ~263 fault cases) and Augmented-TrainTicket (the Nezha 2023-01-30 subset). So its population **includes ours**, and the `AC@1 56.67%` our §2b table carries on RE2-OnlineBoutique is a figure on the corpus we report on. Two qualifications travel with it: the paper's own headline metrics are **MRR / R@1 / R@3 / R@5 / R@10** (69.73% MRR with Claude-3.5-Sonnet and 73.24% with Qwen-3.6-Plus on AIOPS-2022), **not top-1 on our aggregate**; and an independent 2026 leaderboard that re-runs it over **all nine RCAEval subsets** reports **10% top-1 overall** against PRISM's 68% — a re-measurement rather than the paper's own claim, and either way below our 78.75%. | 2026-10-19, the paper's own full text (`arXiv:2605.14866` HTML) and its own project page (`github.com/LLM4AIOps/RCLAgent-V2`) |
+| `arXiv:2310.16340` | **OTHER** | **RESOLVED 2026-10-15 from the paper's own full text, and the resolution is stronger than `OTHER`.** `RCAgent`'s evaluation population is **161 anomalous jobs from Alibaba Cloud's Flink real-time compute platform** — 15 616 anomalous jobs collected over one month, filtered to ~5 000 non-trivial, then reduced to the offline set of 161 under a class-balance constraint (*"no more than two jobs have identical root causes"*). **And its metrics are SEMANTIC SCORES** — METEOR, EmbScore, BLEURT, BARTScore and two GPT-4 judgements — so it **reports no top-1 localization percentage at all**. Its inputs are Alibaba-internal (SLS logs at three levels, an advisor-service history database, code repositories) and the paper publishes no artefact. **So the `25.32%` our §2b carries cannot be this paper's figure**: it is either a third party's re-measurement or another corpus, and the independent 2026 baseline table's placement on AIOPS-2022 is a THIRD attribution again. | 2026-10-15, arXiv HTML full text |
+| `arXiv:2404.12135` | **OTHER** | **RESOLVED 2026-10-17 from the paper's own full text, and it is not a top-1 paper at all.** `mABC` evaluates on **a curated TrainTicket of its own** — the Fudan TrainTicket system with 41 micro-services, **233 111 call chains / 800 656 spans across 112 time periods and 53 nodes, and 900 alert events** (plus 294 induced by external nodes) — **and the 2020 International AIOps Challenge dataset** (14 days, **145 907 050** log entries). Its metric is **RA / PA**, whose penalty hyper-parameters are σ = 0.1 and τ = 0.2 **and whose definition caps an anomaly at four root causes**: so it reports **no top-1 localization percentage at all**. A nine-hundred-alert curated TrainTicket is not RCAEval's RE2-TrainTicket (90 cases), so no gap may be read against our 71.1%, and the `39.98%` our §2b table carries is another group's re-measurement rather than this paper's figure — the same shape `RCAgent` had. | 2026-10-17, the paper's own full text (ar5iv/arXiv HTML) |
+| `arXiv:2508.12472` | **OURS** | RE2-OnlineBoutique, **90 injected-fault scenarios**, `AC@1` / `Avg@3` / `Avg@5` — its own text: *"We choose the RE2-OnlineBoutique (OB) dataset from the RCAEval benchmark"*, and the 90 is read off its own *"each service–fault combination was executed in three independent rounds, yielding 90 distinct incidents"* | 2026-10-14, arXiv HTML full text |
+| `arXiv:2608.08968` | **OURS** | **RE2, 90 cases per system** — the population is read off its own `AC@3` (`98.89% = 89/90`, `85.56% = 77/90`) and its own text, which also names a third corpus (`AegisLab`, 100 sampled cases) that carries **no** figure of ours | 2026-10-14, arXiv HTML full text |
+| `github.com/EvanTian233/GALA-for-RCA` | **OURS** | the artefact of the two GALA rows; it withholds the method and carries an annotated dataset for the same populations | 2026-10-13, GitHub API + README |
+| `arXiv:2510.04711` | **OURS** | the **FSE'26 RCABench** fault set this repository leads by +16pp — the same 1422-case population our own published FSE'26 number is on | 2026-10-13, paper text |
+| `arXiv:2609.27069` | **OTHER** | its own **six-fixed-fold split**, read under `Avg@5` — not our 375-case RE1 read under Top-1. Its `0.915` is the in-distribution mean; its cross-system number is `0.747` | 2026-10-10, paper's own tables; **re-read 2026-10-15**, which added its own WITHDRAWAL of every RE2 claim (*"an earlier PSC run labelled RE2 was scored on RE1 folds"*) and the seed spread its `0.915` sits in (0.914-0.928, mean 0.921) |
+| `10.5281/zenodo.22832168` | **OTHER** | the artefact of the row above — same split, same metric | 2026-10-13, DOI resolution |
+| `arXiv:2609.36686` | **OTHER** | **RCAEval *and* WADI / SWaT / HVAC** — the `+12pp` it is most quoted for is a **CPS** margin; what is comparable is the decomposition, not a gap | 2026-10-13, paper text + survey of its own data description |
+| `github.com/cruiseresearchgroup/DecompRCA` | **OTHER** | the artefact the row above names, and it **404s** — so even the population it would be read on is unreachable | 2026-10-13, GitHub API |
+| `arXiv:2608.21310` | **OTHER** | **no absolute top-1 at all, and its unit is a DELTA between agent configurations.** *Beyond Fault Localization* analyses **5 000 trajectories from ten framework–backbone configurations** on RCABench and a defence prototype's `Acc@1` improvement of **3.5–35.1 pp across two held-out benchmarks and six diagnostic frameworks**. Its subject is how a diagnostic PROCESS grounds evidence, not which service a ranker names first, so nothing here is a population of ours under a metric we headline — and the `3.5–35.1 pp` is a within-paper comparison of agent set-ups rather than a figure any external method can be placed against. Recorded 2026-10-25 because `sota-comparison.md` now names it in the October claims table | 2026-10-25, arXiv abstract + full-text abstract |
+| `arXiv:2606.27154` | **OTHER** | `PAVE` / OpenRCA 2.0 — **500 instances** on a step-wise-annotated corpus that is not ours; its `20.7%` exact-set recovery is the paper's own figure, not a top-1 | 2026-10-13, paper text |
+| `arXiv:2609.19825` | **OTHER** | `EviRCA` — **OpenRCA**, Bank 136 / Telecom 51 / Market 148 = **335 cases**, under Correct/Partial rather than Top-1 | 2026-10-13, paper text |
+| `arXiv:2510.22613` | **OTHER** | `DynaCausal` — mixed public benchmarks, **not RCAEval-only**, so no population of ours is a subset of it | 2026-10-13, §2c of `sota-comparison.md` |
+| `10.1145/3808137` / `arXiv:2604.13522` (TORAI, FSE'26) | **UNVERIFIED** | **its metric is `Avg@5` and its case count is nowhere in the material read**, so even its shape cannot be matched to ours: the abstract establishes three benchmark systems (Online Boutique, Sock Shop, Train Ticket) with injected resource and network faults, `Avg@5` **0.89** on Train-Ticket against `CausalRCA` 0.43 and `CIRCA` 0.46. A secondary summary read on 2026-10-28 describes its deployments as **11-service Online Boutique and 11-service Sock Shop with zero trace data** — which would be a modified deployment rather than RCAEval's 12- and 15-service ones — and that detail is part of what the full text owes. Resolution artefact: §Datasets of the full text, which states the case counts per system | 2026-10-28, ACM record (`doi.org/10.1145/3808137`) + `arXiv:2604.13522` abstract + a third-party summary page |
+| `arXiv:2607.28545` | **OTHER** | ORCA-bench — a fault-propagation-aware benchmark with its own agents' 25.3% Medium figure | 2026-10-13, §3 of `sota-comparison.md` |
+| `edgedelta/project-arena` | **OTHER** | **21 injected scenarios** on OTel Demo under Kubernetes — a candidate INSTRUMENT, not a candidate number | 2026-10-13, GitHub API + the vendor's own page |
+| `arXiv:2606.05636` | **OTHER** | `StableRCA`'s **77%** is Top-1 on **Sock-Shop `[soc, 2022]`** — a standalone corpus its own text lists **separately from RCAEval**, among *"five datasets across retail services, microservices, manufacturing, and physical systems"* (ProRCA, Sock-Shop, RCAEval, CausalMan, CausalChambers). **It is not RE1-SS** and its own text states no case count, so `77%` is not a number of ours and no gap may be read against our 92.8% | 2026-10-14, arXiv HTML full text |
+| `arXiv:2608.25661` | **OTHER** | `OpsHarness`'s **59.0%** is *"top-1 accuracy on average across **four backbones**"* over **OpenRCA**, **RCAEval** *and* an industrial deployment. **RCAEval IS in the mix** — so our corpus is a COMPONENT of the figure and the figure is still not ours: a cross-backbone average over three populations with no per-population number. Below our 78.75% in any case | 2026-10-14, arXiv HTML full text |
+| `arXiv:2610.08622` | **OTHER** | **RESOLVED 2026-10-19 from the paper's own abstract, and the number it reports is not an accuracy at all.** `E4` is *"Agentic RCA for Internet-Scale Services Using Constrained Creativity"*, and its own abstract says it *"achieves up to 62% BETTER accuracy compared to state-of-the-art solutions"* on *"a mix of synthetic and real-world workloads"*. **That `62%` is a RELATIVE improvement over an unnamed baseline, not an absolute top-1 on any corpus** — so there was never a number here to compare with ours, and the record's earlier reading of it as a `62%` accuracy was a misreading of a ratio. Its population is Internet-scale production services with no published case set, so it is neither our corpus nor a measurable one. | 2026-10-19, the paper's own abstract (`arXiv:2610.08622` abs page) |
+| `10.11772/j.issn.1001-9081.2026060665` | **OTHER** | `MICA` — *Journal of Computer Applications* 2026; cross-modal attention over metrics/logs/traces, transfer-entropy-weighted causal graph, mixed-expert modality routing, counterfactual validation of the candidate. Evaluated on **GAIA and the standalone TrainTicket corpus, not RCAEval**, and every figure it states is a **delta against MicroRank / SwissLog / MicroRCA / DiagFusion / MicroCause / Sage on those two corpora** — no absolute Top-1 is stated in either abstract, and the two language versions of that abstract assign the SAME six numbers to DIFFERENT metrics — the Chinese text calls them Top-1 and MRR gains, the English calls them MRR and RCL@3 | 2026-10-29, the publisher's own article page (both language abstracts); the full text's per-system table was not reached |
+| `10.1109/DSN-S70715.2026.00023` (DSN-S 2026) | **UNVERIFIED** | its abstract names "the RCAEval benchmark (735 failure cases, 12-64 services)" under service Top-1 — our count, our metric, our service range — so every field a number can be filed by MATCHES and the population STILL cannot be placed: 94.7% Top-1 is 26.1 pp above the benchmark author's own method on that corpus, and a shared protocol cannot produce that. Resolution artefact: the full text's own evaluation section | 2026-10-30, DOI resolution (abstract only; the full text is not served) |
+## What the verdicts change, stated rather than implied
+
+**One standing moves.** `arXiv:2610.05009` was the only `UNVERIFIED` row whose resolution could change a RANK,
+and it does: **RE1 is a cell we are now second on**, at −5.13pp (`L0`) and −2.53pp (`L3`) against our 80.27%.
+That is recorded in `sota-comparison.md` §0's standing table, and the two figures travel with the paper's own
+error bar — **its `L0`-against-`L3` ordering is under one standard deviation**, so the gap is quotable and the
+ordering inside it is not.
+
+**Two of the rows this inventory was created with are no longer unquotable, and both resolved to `OTHER`.** The
+2026-10-14 pass read them from the papers' own full texts: **`StableRCA`'s 77% is on a Sock-Shop corpus its own
+text lists separately from RCAEval** — so it was never our RE1-SS number — and **`OpsHarness`'s 59.0% is an
+average across four backbones over OpenRCA, RCAEval and an industrial deployment**, so RCAEval is a component of
+its figure and the figure is still not ours. Reading them changed no standing; it changed *"we have not read
+this"* into *"we read it and it is not ours"*, which is the distinction this inventory exists to hold.
+
+**And the rows that remain `UNVERIFIED`** are two, and they are unverified in opposite directions. `10.1145/3808137` / `arXiv:2604.13522` — TORAI, FSE'26, recorded 2026-10-28 — is unverified for a reason none of the rows before it had: **its metric is `Avg@5` and its case count appears nowhere in the material read**, so it cannot even be SHAPE-matched to a cell of ours, and its resolution artefact is the full text's own dataset section rather than an abstract or an index. `10.1109/DSN-S70715.2026.00023` — DSN-S 2026, recorded 2026-10-30 — is unverified in the mirror image: **every field a number can be filed by MATCHES** (the RCAEval 735, service Top-1, a 12–64 service range), and the figure still cannot be placed, because 94.7% Top-1 is 26.1 pp above the benchmark author's own method on that same corpus, which a shared protocol cannot produce. Resolution artefact: the full text's own evaluation section, which the DOI page does not serve. Every other row resolved as a READING: `RCAgent` and `mABC` are `OTHER`, each carrying a figure our table had inherited from another group's re-measurement on another corpus; `RCLAgent` is `OURS`, since it evaluates on RCAEval RE2-OB by name and an independent re-run over all nine subsets puts it at 10% against our 78.75%; and `E4` is `OTHER` on a relative *"up to 62% better"* over *"a mix of synthetic and real-world workloads"* — a ratio over an unnamed baseline, which is not an accuracy and not our corpus.
+
+**The emptiness is ASSERTED, not merely reached.** The fence that holds this paragraph to the table reads in both
+directions: while the set is non-empty the paragraph must name exactly it, and when the set is EMPTY the paragraph
+must say so in this sentence and the older wording must be gone — so retiring the last row cannot quietly delete the
+question the paragraph exists to answer. **This sentence used to name two of them and open with "the rows that remain",
+which was false against the table twenty lines above**: a count had been restated in prose, which is the register's
+law 16 one document over. The enumeration is now held to the table **by the fence** — the test derives the
+`UNVERIFIED` set from the table and compares it to the references this paragraph names, in both directions — rather
+than by care. The three are the inventory's next readings.
+
+**And the inventory is what makes the difference legible.** Before it, the difference between *"we have not read
+this"* and *"we read it and it is not ours"* lived in whichever sentence a reader happened to open. Both are
+negative and only one of them is a finding.
+
+## What this document does not cover, stated rather than implied
+
+- **It is not an availability inventory.** Whether an artefact RESOLVES, and what it carries, is owned by
+  `docs/competitor-artefact-availability.md` — the same tokens, the other question.
+- **It does not resolve the three `UNVERIFIED` rows it still holds.** Each names the artefact that would, and
+  reading them is work this document schedules rather than performs.
+- **It does not fence the references' AFFILIATIONS.** The fifth entry's institution was stated in five places
+  under two different attributions, and it is corrected in all five as part of this iteration — but no rule here
+  can check one, because an affiliation is a fact about a paper that only the paper carries, and a rule that
+  compared our prose to our prose would agree with itself. It is recorded as a finding, and the fifth entry now
+  carries the authors' own three affiliations (Nankai, Huawei, Tsinghua) where it used to carry the two that
+  omitted the seven-authors' institution.

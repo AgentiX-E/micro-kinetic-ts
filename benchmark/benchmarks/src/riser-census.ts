@@ -1,0 +1,203 @@
+/**
+ * The trace-riser census: WHY the rule did not choose the truth, case by case.
+ *
+ * ## The question this instrument exists for
+ *
+ * The trace term pays a binary unit to the unique service that rose. On TrainTicket RE3 it votes on 20 of 30
+ * cases and is right on 15; **all five wrong votes became the top-1**. Three earlier instruments narrowed this
+ * down and then stopped:
+ *
+ * - `term-gap-census.ts` charges the term a full unit on 5 of the cell's 11 misses — and a removal arm prices the
+ *   pin at +10 cases over the suite, so the term wins more than it loses;
+ * - `[trace-vote]`'s rank histogram (`atMax=2/2, rank2-3=0/0, rank4-10=3/0, rank11+=15/13`) kills every
+ *   rank-shaped explanation, including `traceSkipsLeader` (the mask's population is two votes and both are
+ *   correct) and `traceTailOnly` (the non-tail votes are 2 of 2 right);
+ * - what remains is a property of the CANDIDATE, not of its standing: a riser that is a SOURCE does more work per
+ *   request, and a riser that is a VICTIM is re-routed traffic or a retry storm.
+ *
+ * So this census prints the evidence the rule had beside the rise and did not read, for the vote AND for the
+ * truth, and then attributes every wrong vote to the guard that excluded the truth. Since iteration 152 the vote's
+ * segment also carries the FLEET's drift and the quotient `growth / drift`: the reading that came back is that the
+ * two populations differ in the fleet's move (0.05-0.11 under the hits, 0.79-0.99 under the misses) and not in
+ * the rise (1.16-2.22 against 1.16-1.47), so a line that printed the rise alone would be printing the one number
+ * that does not separate them.
+ *
+ * ## The attribution, and the invariant in it
+ *
+ * The rule has two stages. A service is a CANDIDATE iff `pre >= minPreCount`, `post/pre >= riseThreshold` (and it
+ * emitted a baseline at all); a vote is cast iff EXACTLY ONE candidate exists, the case is silent (no self-caused
+ * logic exception anywhere in the graph), and the candidate out-rises the fleet's median by `minFleetShare`. A
+ * wrong vote therefore means the truth failed one of the first two conditions — if the truth had passed both it
+ * would have been a candidate, so either it would have been the vote (a hit) or there would have been two
+ * candidates and no vote at all.
+ *
+ * The census walks the SAME two guards in the SAME order, and prints a bucket for each, plus `truth-qualified`:
+ * wrong votes whose truth met both. That bucket **must be zero**, and printing it is how the two implementations
+ * stay tied — a non-zero value would mean the rule and this census disagree about what the rule accepts, which is
+ * a defect in one of them and not a finding about the corpus.
+ *
+ * The fleet contrast deliberately does NOT get a bucket here, and the reason is structural rather than an
+ * omission: it is a test on the CANDIDATE, so it can only remove a vote, never explain a wrong one. A wrong vote
+ * already means the truth was not a candidate, and a truth that is not a candidate never reaches the contrast.
+ * Filing such cases under a fourth bucket would move cases out of an invariant that must stay zero into a bucket
+ * that cannot be violated — the census would stop being able to detect the disagreement it exists to detect.
+ *
+ * The thresholds are imported rather than written into the labels, so a change to the rule's own default cannot
+ * leave this artifact naming a number the rule no longer uses.
+ *
+ * @module benchmarks/riser-census
+ */
+
+import { DEFAULT_TRACE_ACTIVITY_OPTIONS } from '@agentix-e/micro-kinetic-tree';
+
+import type {
+  CasePrediction,
+  RiserVector,
+} from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import { shareOf } from './trace-share-census.js';
+
+/** How one wrong vote's truth was excluded by the rule, in the rule's own order. */
+export interface RiserCensus {
+  /** Cases where the term cast a vote. */
+  votes: number;
+  /** Votes that named the ground truth. */
+  hits: number;
+  /** Wrong votes whose truth carries no span measurement at all — nothing can be said about why. */
+  truthUnmeasured: number;
+  /** Wrong votes whose truth failed the rule's `pre` guard. */
+  truthBelowPre: number;
+  /** Wrong votes whose truth passed `pre` and failed the `rise` guard, or whose rise is not measurable. */
+  truthBelowRise: number;
+  /** Wrong votes whose truth passed BOTH guards — the invariant, which must stay zero. */
+  truthQualified: number;
+}
+
+/**
+ * A census with nothing in it.
+ *
+ * @returns Zeroed totals, ready for {@link accumulateRiser}.
+ */
+export function createRiserCensus(): RiserCensus {
+  return {
+    votes: 0,
+    hits: 0,
+    truthUnmeasured: 0,
+    truthBelowPre: 0,
+    truthBelowRise: 0,
+    truthQualified: 0,
+  };
+}
+
+/**
+ * Fold one case's prediction into the census.
+ *
+ * @param census - The running totals, mutated in place.
+ * @param prediction - The runner's record for one case. Cases without a vote are skipped: the term did not speak,
+ *   and a silence is already counted by the trace-vote census rather than being re-counted here as an absence.
+ */
+export function accumulateRiser(census: RiserCensus, prediction: CasePrediction): void {
+  const vote = prediction.traceVote;
+  if (vote === undefined) return;
+  census.votes += 1;
+  if (vote === prediction.truth) {
+    census.hits += 1;
+    return;
+  }
+  const truth = prediction.traceRiser?.truth;
+  if (truth === undefined) {
+    census.truthUnmeasured += 1;
+    return;
+  }
+  // The rule's own order, reproduced: the pre guard is tested first, so a truth with no baseline at all is
+  // attributed to the guard that actually rejected it rather than to a ratio it never had.
+  if (truth.pre < DEFAULT_TRACE_ACTIVITY_OPTIONS.minPreCount) {
+    census.truthBelowPre += 1;
+    return;
+  }
+  const growth = truth.growth;
+  if (growth === undefined || growth < DEFAULT_TRACE_ACTIVITY_OPTIONS.riseThreshold) {
+    census.truthBelowRise += 1;
+    return;
+  }
+  census.truthQualified += 1;
+}
+
+/**
+ * Render a signed failure count, or `-`.
+ *
+ * The sign is explicit so `+0` cannot be read as an absence. The producer clamps the net at zero, so a negative
+ * value cannot arise from a case — the arm is kept because this function is total over the record it is handed,
+ * and a malformed record should print its sign rather than lose it.
+ */
+function signed(value: number | undefined): string {
+  if (value === undefined) return '-';
+  return value < 0 ? String(value) : `+${String(value)}`;
+}
+
+/** Render a ratio to two places, or `-` when it does not exist. */
+function ratio(value: number | undefined): string {
+  return value === undefined ? '-' : value.toFixed(2);
+}
+
+/**
+ * One vote as a line, with the truth beside it when the vote was wrong.
+ *
+ * The truth's own vector is omitted on a hit **because it is the vote's vector**: printing the same numbers twice
+ * would suggest two measurements were taken, and the two sides are only a comparison when they differ.
+ *
+ * @param prediction - The runner's record for one case.
+ * @returns The line, or `undefined` when the case carried no vote.
+ */
+export function formatRiserCaseLine(prediction: CasePrediction): string | undefined {
+  const vote = prediction.traceVote;
+  if (vote === undefined) return undefined;
+  const verdict = vote === prediction.truth ? 'HIT' : 'MISS';
+  const voted = prediction.traceRiser?.vote;
+  // The FLEET's own move beside the candidate's, because the rise alone cannot be read: 1.16 is a real rise on a
+  // fleet that lost 92% of its spans and noise on a fleet that held. `share` is the quotient, and it is what
+  // `trace-share-census` counts; printing both here keeps ONE line per vote rather than two artifacts that a
+  // reader has to join by case id.
+  const drift = prediction.traceSignificance?.drift;
+  const share =
+    drift === undefined || voted?.growth === undefined
+      ? undefined
+      : shareOf({ growth: voted.growth, drift });
+  const fleet = `drift=${ratio(drift)} share=${ratio(share)}`;
+  const parts = [
+    `[trace-riser] ${prediction.caseId} ${verdict} vote=${vote}`,
+    voted === undefined
+      ? `pre=- growth=- ${fleet} failedIn=- failedOut=-`
+      : `pre=${voted.pre} growth=${ratio(voted.growth)} ${fleet} ` +
+        `failedIn=${signed(voted.failedIn)} failedOut=${signed(voted.failedOut)}`,
+  ];
+  const truth = prediction.traceRiser?.truth;
+  if (truth !== undefined && vote !== prediction.truth) {
+    parts.push(
+      `|| truth=${truth.service} pre=${truth.pre} growth=${ratio(truth.growth)} ` +
+        `failedIn=${signed(truth.failedIn)} failedOut=${signed(truth.failedOut)}`,
+    );
+  }
+  return parts.join(' ');
+}
+
+/**
+ * The whole cell as one line, or `undefined` when the term never voted.
+ *
+ * @param census - The running totals.
+ */
+export function formatRiserCensusLine(census: RiserCensus): string | undefined {
+  if (census.votes === 0) return undefined;
+  // Four exclusive buckets that must SUM to the wrong votes, and the last of them is the invariant: a truth that
+  // passed both guards would have been a candidate, so a non-zero `qualified` means this census and the rule
+  // disagree rather than that the corpus is strange.
+  return (
+    `[trace-riser] total votes=${census.votes} hits=${census.hits} ` +
+    `wrong=${census.votes - census.hits} | truth-unmeasured=${census.truthUnmeasured} ` +
+    `truth-pre<${DEFAULT_TRACE_ACTIVITY_OPTIONS.minPreCount}=${census.truthBelowPre} ` +
+    `truth-rise<${DEFAULT_TRACE_ACTIVITY_OPTIONS.riseThreshold}=${census.truthBelowRise} ` +
+    `truth-qualified=${census.truthQualified}`
+  );
+}
+
+/** Re-exported so a reader of the artifact can name the vector's fields without importing the runner. */
+export type { RiserVector };

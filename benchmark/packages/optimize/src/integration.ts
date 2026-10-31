@@ -1,0 +1,236 @@
+/**
+ * Integration bridge: wire RCAConfiguration into the RCA pipeline.
+ *
+ * Provides factory functions that create configured engine instances
+ * without modifying existing package internals.  The TreePruner
+ * constructor already accepts partial TreePrunerOptions — we map
+ * RCAConfiguration's fields onto those options.
+ *
+ * This keeps the optimize package decoupled from the tree/kinetic
+ * packages: only this single file imports from them.
+ */
+
+import type { TreePrunerOptions } from '@agentix-e/micro-kinetic-tree';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
+  TreePruner,
+} from '@agentix-e/micro-kinetic-tree';
+import type { RCAConfiguration } from './config-space.js';
+import { DEFAULT_CONFIG } from './config-space.js';
+
+/**
+ * The `TreePrunerOptions` fields {@link configToPrunerOptions} does NOT set, each with the reason.
+ *
+ * A field that a mapping does not set is not absent from the run — it INHERITS the engine's default — and
+ * this record is what turns that inheritance from invisible into stated. It exists because of what its
+ * absence cost: the L2 weight search builds its engine through this mapping, and its artifact reported
+ * *"baseline (default weights)"* and *"tuned weights: source=… log=1.00 …"* — seven of the twenty-seven
+ * options the engine was actually constructed with. A reader could not tell that `latWeight`,
+ * `latMinRise`, `poolMetricPenaltyWeight` and `stabilityWeight` — the four terms that dominate the shipped
+ * ranking — were ON in that search, inherited, and outside its search space.
+ *
+ * `Record` rather than a list, for the reason `OPERATIONAL_OPTIONS` is not a list: "deliberately not
+ * searched" and "forgotten" are the same shape in a set, and the reason is the only thing that separates
+ * them. The guard asserts the exact key set, so a field that starts being mapped — or stops — has to be
+ * moved here on purpose.
+ */
+export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
+  defaultTopK: 'pruning breadth; the search space does not carry it',
+  maxPropagationDepth: 'pruning depth; the search space does not carry it',
+  decayBeta: 'the second decay exponent; only decayAlpha is a search axis',
+  useTwoHopDecay: 'a propagation shape the search space does not carry',
+  maxCycles: 'a cycle-solver bound, not a ranking decision',
+  onsetShape: 'the temporal shape; the search tunes temporalWeight, not its shape',
+  logSignalMode: 'which log lines count; the search tunes the log WEIGHT only',
+  edgeLatency: 'whether the latency term reads per-edge durations at all',
+  selfAnomalyWeight:
+    "the BASE term's coefficient, held at the engine's 1: it is the UNIT the other weights are expressed " +
+    'against, so a search that moved it would make every coefficient it reports relative to a moving scale ' +
+    'and none of them identifiable. Its value is a dispatch question (docs/base-term-price.md)',
+  latWeight:
+    'the largest shipped ranking weight, solved by an FSE-26 screen and held OUT of this search space',
+  latMinRise:
+    'the latency term\u2019s rise floor; measured as a PAIR with latWeight, so never searched alone',
+  poolMetricPenaltyWeight: 'the pool penalty, solved outside this search space',
+  prismPooling:
+    'which of PRISM\u2019s two combination functions its signal uses; the search tunes the PRISM WEIGHT only, and the pooling is a per-context CHOICE rather than a weight',
+  stabilityWeight: 'the decisive-stability prior, solved outside this search space',
+  dualFamilyWeight:
+    'the dual-family presence bonus, shipped OFF and measured outside this search space: it is a 0/1 shape indicator whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
+  dualFamilyGate:
+    'the dual-family membership\u2019s population, shipped at 0.25: it does not scale any term but selects WHO is paid the 0/1 bonus, so a search over weights could only move it by accident \u2014 a discrete population belongs to a dispatch, where its effect is one number per arm',
+  dualFamilyGateMode:
+    'the dual-family gate\u2019s comparison (min | channel), shipped at channel: it changes WHICH bar the gate sets rather than any term\u2019s magnitude, so it is a discrete population choice a dispatch states and a weight search cannot move',
+  victimWeight:
+    'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
+  selfTimeWeight:
+    'the self-time prior, shipped OFF and measured outside this search space: it is a transport-causality term whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
+  traceSkipsLeader:
+    'the trace vote\u2019s leader mask, shipped false: it withholds a BINARY unit from one named candidate rather than scaling any term, so a weight search could only move it by accident \u2014 a discrete precondition belongs to a dispatch',
+  failedEdgeWeight:
+    "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
+  failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
+  failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
+  failedEdgeGateMode:
+    'the BAR that weight is read against (absolute | fleet): it changes which rise the gate admits rather than any term magnitude, so it is the same kind of discrete choice as the dual-family gate mode above — a dispatch axis, never a fusion coefficient',
+  failedEdgeGateShare:
+    'the share a fleet bar is made of, read only at `fleet` and inert at the shipped `absolute`: a population parameter like the dual-family gate, so a continuous search over it would be tuning a threshold on a term whose weight it does not move',
+  topoDiscount:
+    'the topological deduction, shipped ON at 1 since iteration 163 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and its weight is a dispatch question whose answer the occupancy of the candidate pool decides rather than a fusion coefficient a continuous search can interpolate',
+  topoDiscountScope:
+    'the deduction QUANTITY rather than a number: `all` and `external` are two physical claims about which channels cross a call boundary, so it is a dispatch axis and not a fusion coefficient the search can interpolate',
+  topoDiscountGate:
+    'a SUPPORT CONDITION on the deduction rather than a weight: it decides which nodes the operator may charge at all, so it belongs to the same dispatch axis as the weight and the scope above',
+  topoClosure:
+    'the deduction’s AGGREGATION rather than a number: `max` and `sum` are two claims about the request shape of a fan-out (one branch, or all of them), so it is a dispatch axis like the scope above — a continuous search has nothing to interpolate between two named operators',
+  topoPrecedence:
+    'the deduction’s relation in TIME rather than a number: `off` and `onset` are two claims about whether a call boundary can carry a movement that had not happened yet, so it belongs to the same dispatch axis as the weight, the scope, the gate and the closure above — a continuous search has nothing to interpolate between two readings, and its shipped `off` is the identity that leaves every published cell unmoved',
+  poolAdmission:
+    'the SET the ranking covers rather than a coefficient: `positive` and `graph` admit different candidate sets, so the two readings have different denominators and a search that interpolated between them would be reporting a rate over a population it changed — dispatched, never tuned',
+};
+
+/**
+ * The engine's SECOND constructor argument, which {@link createEngineWithConfig} does not pass at all.
+ *
+ * `TreePruner(options, topologyConfig)` takes two, and this mapping supplies one, so the fault graph is
+ * built with ITS OWN defaults.
+ *
+ * **That used to be a mismatch and is no longer one.** When this constant was added, the engine's default for
+ * `rankNormalization` was `false` while the golden set `true` from its parser's default — so the search and
+ * the published numbers were different configurations in an axis this repository keeps ON, and nothing in
+ * either artifact said so. Iteration 52 made the ENGINE's default the shipped value
+ * (`DEFAULT_RANK_NORMALIZATION`), which is what it should always have been: a caller who passes nothing now
+ * gets the configuration the published numbers were measured under. The flag is inert below
+ * `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes, so the correction moves small topologies not at all.
+ *
+ * The constant stays, with the field it names, because the FACT is still true and still worth stating: this
+ * path supplies one argument, so every topology option it does not name is the engine's default, and a
+ * reader of the search's artifact should be able to see that rather than infer it.
+ */
+export const UNPASSED_SECOND_ARGUMENT = true;
+
+/** The held fields {@link formatEngineConfigLine} names by value; the rest it refers to by record. */
+const HELD_PRINTED: readonly string[] = [
+  'latWeight',
+  'latMinRise',
+  'poolMetricPenaltyWeight',
+  'stabilityWeight',
+  'onsetShape',
+];
+
+/**
+ * Map an RCAConfiguration to TreePrunerOptions.
+ * Returns DEFAULT_TREE_PRUNER_OPTIONS overridden by config values.
+ *
+ * Every field it does not return is named in {@link HELD_AT_ENGINE_DEFAULT}: the mapping's coverage of the
+ * engine's option surface is the union of the two, and the guard asserts that partition rather than trusting
+ * this comment.
+ */
+export function configToPrunerOptions(config: RCAConfiguration): Partial<TreePrunerOptions> {
+  return {
+    decayAlpha: config.continuous.decayAlpha,
+    pruneEpsilon: config.continuous.pruneEpsilon,
+    enableCollisionAggregation: config.discrete.enableCollisionAggregation,
+    criticalLoadThreshold: 0.7,
+    // Ranking fusion weights — the L2 optimizer tunes these directly.
+    sourceWeight: config.ranking.sourceWeight,
+    temporalWeight: config.ranking.temporalWeight,
+    collisionWeight: config.ranking.collisionWeight,
+    topoWeight: config.ranking.topoWeight,
+    logWeight: config.ranking.logWeight,
+    riseWeight: config.ranking.riseWeight ?? 0,
+    traceWeight: config.ranking.traceWeight ?? 0,
+    prismWeight: config.ranking.prismWeight ?? 0,
+  };
+}
+
+/**
+ * Create a TreePruner instance configured from an RCAConfiguration.
+ */
+export function createEngineWithConfig(config: RCAConfiguration): TreePruner {
+  const options = configToPrunerOptions(config);
+  return new TreePruner(options);
+}
+
+/**
+ * The configuration an engine built by {@link createEngineWithConfig} actually runs, as one line.
+ *
+ * Written where the mapping lives, so the line and the mapping cannot disagree — and written at all because
+ * they DID: the L2 weight search's artifact reported a baseline and a tuned set of SEVEN weights while the
+ * engine was constructed with twenty-seven options, and the four terms that dominate the shipped ranking
+ * were among the ones it did not name.
+ *
+ * Three parts, in the order a reader needs them:
+ *
+ * 1. what the SEARCH sets,
+ * 2. what is held at the engine's default and is therefore ON (or off) in every candidate it evaluates —
+ *    the four dominant ranking terms among them,
+ * 3. the engine's second constructor argument, which this path does not pass, and the term that costs.
+ *
+ * @param config - The configuration to describe.
+ * @returns One line, without a trailing newline.
+ */
+export function formatEngineConfigLine(config: RCAConfiguration): string {
+  const o = configToPrunerOptions(config);
+  return (
+    `engine: sourceWeight=${o.sourceWeight} temporalWeight=${o.temporalWeight} ` +
+    `collisionWeight=${o.collisionWeight} topoWeight=${o.topoWeight} logWeight=${o.logWeight} ` +
+    `riseWeight=${o.riseWeight} traceWeight=${o.traceWeight} prismWeight=${o.prismWeight} | ` +
+    `held at the engine default: latWeight=${DEFAULT_LAT_WEIGHT} latMinRise=${DEFAULT_LAT_MIN_RISE} ` +
+    `poolMetricPenaltyWeight=${DEFAULT_POOL_METRIC_PENALTY_WEIGHT} ` +
+    `stabilityWeight=${DEFAULT_STABILITY_WEIGHT} onsetShape=${DEFAULT_ONSET_SHAPE} ` +
+    // `logSignalMode` is held too and is enumerated in HELD_AT_ENGINE_DEFAULT with its reason, but it is not
+    // printed here: this package consumes the engine through its BUILT typings, so a constant the engine
+    // exported after the last build is not nameable from here. Naming it as a literal would be a second
+    // owner of a value the engine ships, which is worse than a reader following the record. The count is
+    // DERIVED, so a held field added below needs no edit here.
+    `(plus ${Object.keys(HELD_AT_ENGINE_DEFAULT).length - HELD_PRINTED.length} more, ` +
+    `see HELD_AT_ENGINE_DEFAULT) | ` +
+    `second constructor argument NOT PASSED: every topology option is the engine's default, which since ` +
+    `iteration 52 IS the shipped configuration`
+  );
+}
+
+/**
+ * Create a TreePruner with default configuration.
+ * Equivalent to `new TreePruner()`.
+ */
+export function createDefaultEngine(): TreePruner {
+  return createEngineWithConfig(DEFAULT_CONFIG);
+}
+
+/**
+ * Map RCAConfiguration to TopologyFaultGraphConfig for
+ * use in buildTopologyFaultGraph().  The TreePruner's
+ * buildFaultGraph() passes this config through.
+ */
+export interface TopologyFaultGraphConfig {
+  readonly minDataPoints: number;
+  readonly temporalBonus: number;
+  readonly defaultWeight: number;
+  readonly useTemporalCausality: boolean;
+  readonly baselineStrategy: 'auto' | 'q25' | 'sliding-window';
+  readonly correlationMethod: 'pearson' | 'spearman';
+  readonly adaptiveDecay: boolean;
+  readonly usePropagationVelocity: boolean;
+}
+
+/**
+ * Extract topology-level config from RCAConfiguration.
+ */
+export function configToTopologyConfig(config: RCAConfiguration): TopologyFaultGraphConfig {
+  return {
+    minDataPoints: 3,
+    temporalBonus: config.continuous.temporalBonus,
+    defaultWeight: config.continuous.defaultWeight,
+    useTemporalCausality: config.discrete.useTemporalCausality,
+    baselineStrategy: config.discrete.baselineStrategy,
+    correlationMethod: config.discrete.correlationMethod,
+    adaptiveDecay: true,
+    usePropagationVelocity: true,
+  };
+}
