@@ -1288,14 +1288,18 @@ already decided. Measured on the six cells the batteries have run — `RE1` and 
 **58 of the 70 misses are `outweighed`** (82.9%), against **6 `blank`** and **6 `outvoted`**. Per cell, misses and the
 weighed/blank/outvoted split:
 
-| cell | n | rate | miss | outweighed | blank | outvoted |
-| --- | --- | --- | --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 125 | 85.6% | 18 | 16 | 1 | 1 |
-| `RE1:SockShop` | 125 | 93.6% | 8 | 6 | 2 | 0 |
-| `RE1:TrainTicket` | 125 | 84.8% | 19 | 15 | 0 | 4 |
-| `RE3:OnlineBoutique` | 30 | 83.3% | 5 | 2 | 3 | 0 |
-| `RE3:SockShop` | 30 | 60.0% | 12 | 11 | 0 | 1 |
-| `RE3:TrainTicket` | 30 | 73.3% | 8 | 8 | 0 | 0 |
+| cell | n | pooled | published | miss | outweighed | blank | outvoted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `RE1:OnlineBoutique` | 125 | 85.6% | 85.6% | 18 | 16 | 1 | 1 |
+| `RE1:SockShop` | 125 | 93.6% | 93.6% | 8 | 6 | 2 | 0 |
+| `RE1:TrainTicket` | 125 | 84.8% | 84.8% | 19 | 15 | 0 | 4 |
+| `RE3:OnlineBoutique` | 30 | 83.3% | 88.9% | 5 | 2 | 3 | 0 |
+| `RE3:SockShop` | 30 | 60.0% | 63.6% | 12 | 11 | 0 | 1 |
+| `RE3:TrainTicket` | 30 | 73.3% | 74.5% | 8 | 8 | 0 | 0 |
+
+The two rate columns are different units, and the difference is the same problem one level down: `pooled` is cases
+over cases, while `published` is the unweighted mean of the per-type rates — so on `RE3:OnlineBoutique` a three-case
+type carries the same weight as a ten-case one and the cell reads 88.9% against a pooled 83.3%.
 
 The consequence is not a new hypothesis; it is a retirement. A weight on a dormant term can only move a candidate by
 `Δw × slope`, and on these cells it must also overcome a base-term deficit that is already larger than the gaps the

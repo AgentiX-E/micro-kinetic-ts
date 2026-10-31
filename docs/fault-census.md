@@ -55,15 +55,21 @@ The census costs nothing at run time — it is a function of the per-case breakd
 every RCAEval job prints it. Six of the nine cells have been read, all of them under the shipped protocol
 (`injectTime` ON), all from the battery on `d030fb2d`:
 
-| cell | n | correct | rate | miss | blank | outweighed | outvoted |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 125 | 107 | 85.6% | 18 | 1 | 16 | 1 |
-| `RE1:SockShop` | 125 | 117 | 93.6% | 8 | 2 | 6 | 0 |
-| `RE1:TrainTicket` | 125 | 106 | 84.8% | 19 | 0 | 15 | 4 |
-| `RE3:OnlineBoutique` | 30 | 25 | 83.3% | 5 | 3 | 2 | 0 |
-| `RE3:SockShop` | 30 | 18 | 60.0% | 12 | 0 | 11 | 1 |
-| `RE3:TrainTicket` | 30 | 22 | 73.3% | 8 | 0 | 8 | 0 |
-| **total** | **465** | **395** | **84.9%** | **70** | **6** | **58** | **6** |
+| cell | n | correct | pooled | published | miss | blank | outweighed | outvoted |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `RE1:OnlineBoutique` | 125 | 107 | 85.6% | 85.6% | 18 | 1 | 16 | 1 |
+| `RE1:SockShop` | 125 | 117 | 93.6% | 93.6% | 8 | 2 | 6 | 0 |
+| `RE1:TrainTicket` | 125 | 106 | 84.8% | 84.8% | 19 | 0 | 15 | 4 |
+| `RE3:OnlineBoutique` | 30 | 25 | 83.3% | 88.9% | 5 | 3 | 2 | 0 |
+| `RE3:SockShop` | 30 | 18 | 60.0% | 63.6% | 12 | 0 | 11 | 1 |
+| `RE3:TrainTicket` | 30 | 22 | 73.3% | 74.5% | 8 | 0 | 8 | 0 |
+| **total** | **465** | **395** | **84.9%** | — | **70** | **6** | **58** | **6** |
+
+Both rates are printed because they are **different units**, and the difference is §1's problem one level down. `pooled`
+is cases over cases; `published` is the number the campaign reports, which is the **unweighted mean of the per-type
+rates**. On RE1 the two coincide because every type holds 25 cases. On `RE3:OnlineBoutique` they do not: a three-case
+`f2` carries the same weight as a ten-case `f3`, so the cell reads 88.9% published against 83.3% pooled — and the
+three `blank`s, all on a nine-case type, cost the published number **6.7 pp** where they cost the pooled one **10 pp**.
 
 **58 of the 70 misses are `outweighed`** — 82.9%, and 86.2% once `RE3:OnlineBoutique`, the cell with the three
 `blank`s, is set aside. Six are `blank`: three on `RE3:OnlineBoutique`'s `f1`, which is the only cell where the ranking
