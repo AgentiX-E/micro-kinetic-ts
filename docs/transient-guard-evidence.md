@@ -309,13 +309,61 @@ kept apart on purpose: a corpus that knows no injection time and a corpus that k
 and can still split none of them are the same ratio and opposite findings, which is why the line names four
 numbers and no percentage.
 
-### 9.3 What is still owed
+### 9.3 The reading: three runs on one commit, and the axis is bigger on the other half
 
-The knob exists, the census exists, and **neither has been run on FSE'26 yet** — this document is written at
-the commit that makes the question askable, not at the one that answers it. The prediction is **0 cases**,
-with the reasoning stated so it can be wrong: the FSE'26 corpus is the large-graph one (51–52 services on
-every case) and its series carry timestamps, so `placeable` should be high and the arm should resolve to
-`endpoint` on nearly every case — but "should" is what the census row said before, and the dispatch's first
-job is the `[guard] boundary` line rather than the two `Top@1` figures.
+Three full FSE'26 dispatches on `f92e88f`, one variable, 1422 cases each:
 
-Until that line is read, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.
+| arm | `Top@1` | `Top@3` | `Top@5` | Δ Top@1 |
+| --- | ---: | ---: | ---: | ---: |
+| `endpoint` (shipped) | 60.5 % (860/1422) | 79.0 % | 82.2 % | — |
+| `evidence-aware` | 60.5 % (860/1422) | 79.0 % | 82.2 % | **0** |
+| `level-window` | **63.1 % (897/1422)** | **80.8 %** | **85.0 %** | **+37 cases** |
+
+and the census line every one of them printed:
+
+```
+[guard] boundary placeable=1422/1422 injectTime=1422 noSplit=0
+```
+
+**Two claims die here and one is born.**
+
+*The census row was false.* Every FSE'26 case places an injection boundary — `placeable=1422/1422`, not the
+"no injection boundary in the units this test splits on" that `dispatch-surface-census.test.ts` had carried
+since the axis existed. The row has been corrected, and the correction is the cheap half of this finding:
+the sentence was checkable with one grep for two iterations.
+
+*`evidence-aware` is a no-op on FSE'26, as designed and as measured.* It resolves to `endpoint` there (the
+corpus observes a call boundary on 1222 of 1422 cases through failed edges alone, and the rest through logs),
+so it reproduces 60.5 % exactly — which is the zero-debt property the arm was built for, now demonstrated on
+the half that had never been read rather than asserted from the half that had.
+
+*And the level test is worth **+37 cases** there.* Not inert, not a no-op: FSE'26's `Top@1` goes **60.5 % →
+63.1 %**, `Top@3` 79.0 → 80.8, `Top@5` 82.2 → 85.0, with **one regressed fault type out of 26** — `DNSRandom`,
+1/1 → 0/1, a single case in a single-case type. Every other type is up or flat:
+
+| type | Δ | type | Δ | type | Δ |
+| --- | ---: | --- | ---: | --- | ---: |
+| `JVMMemoryStress` | **+7** | `HTTPResponseReplaceCode` | +4 | `NetworkPartition` | +3 |
+| `ContainerKill` | **+7** | `HTTPRequestReplaceMethod` | +5 | `HTTPResponseDelay` | +3 |
+| `HTTPResponseReplaceBody` | +2 | `HTTPRequestDelay` | +1 | `HTTPResponseAbort` | +1 |
+| `HTTPRequestReplacePath` | +1 | `PodFailure` | +1 | `PodKill` | +1 |
+| `NetworkDelay` | +1 | `TimeSkew` | +1 | `DNSRandom` | **−1** |
+| 10 types | 0 | | | | |
+
+**So `sideChannelObserved` is not the separator it was believed to be.** It partitions RCAEval correctly —
+the three RE1 cells (0 side channels) gain 13 and the six cells that observe a boundary stay byte-identical —
+and it partitions FSE'26 exactly wrong: that corpus observes a boundary on every case, resolves to `endpoint`,
+and forfeits 37 cases that `level-window` wins. The predicate correlates with the split on one corpus and
+anti-correlates on the other, which is what a proxy does when the real cause is something else.
+
+That is now the blocking question, and it is a measurement rather than an argument: a case-level predicate
+that separates FSE'26's 37 gains from RCAEval's RE3 losses (7, 8 and 7 cases on the three cells). Until it
+exists, three arms are on the table and none of them is shippable:
+
+| arm | golden nine cells | FSE'26 | verdict |
+| --- | --- | --- | --- |
+| `endpoint` (shipped) | 641/735 = 87.21 % | 60.5 % | the incumbent |
+| `evidence-aware` | **654/735 = 88.98 %** (+13) | 60.5 % (0) | +13 and no debt, **and it leaves 37 on the table** |
+| `level-window` | 619/735 (−22) | **63.1 %** (+37) | rejected on the golden half, and the best FSE'26 number ever measured here |
+
+Until the predicate is found, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.
