@@ -2461,7 +2461,35 @@ function levelPermanence(
   injectTimeMs: number,
   range: number,
 ): number | undefined {
-  if (!(injectTimeMs > 0) || timestamps.length !== values.length) return undefined;
+  const split = injectionSplitIndex(timestamps, values.length, injectTimeMs);
+  if (split === undefined) return undefined;
+  const pre = medianOfRange(values, 0, split);
+  const post = medianOfRange(values, split, values.length);
+  return range > 0 ? Math.abs(pre - post) / range : 1;
+}
+
+/**
+ * Where the injection boundary falls in a channel's sample array — `undefined` when it cannot be placed.
+ *
+ * This is the ONE owner of the precondition the level test refuses on, extracted because a second reader
+ * appeared: the FSE'26 runner prints how many cases on its corpus can place a boundary at all, and a
+ * census that retyped these four lines would answer a slightly different question than the estimator it
+ * claims to describe. The refusals are, in order: the boundary is unknown (`injectTimeMs <= 0`), the
+ * channel carries no timestamps (`timestamps` shorter than the samples), or one side holds fewer than
+ * three samples — the floor `preInjectionWindow` uses, because a median of two is an average and an
+ * average is what the two-sample statistic already is.
+ *
+ * @param timestamps - Epoch milliseconds, ascending, one per sample.
+ * @param sampleCount - The number of samples the caller holds (`values.length`).
+ * @param injectTimeMs - The injection boundary in the same units. `0` means unknown.
+ * @returns The index of the first post-injection sample, or `undefined`.
+ */
+export function injectionSplitIndex(
+  timestamps: readonly number[],
+  sampleCount: number,
+  injectTimeMs: number,
+): number | undefined {
+  if (!(injectTimeMs > 0) || timestamps.length !== sampleCount) return undefined;
   let split = -1;
   for (let i = 0; i < timestamps.length; i++) {
     if (timestamps[i]! >= injectTimeMs) {
@@ -2469,12 +2497,8 @@ function levelPermanence(
       break;
     }
   }
-  // Three samples a side is the floor `preInjectionWindow` already uses, and it is the whole point of the
-  // statistic: a median of two is an average, and an average is what the two-sample form already is.
-  if (split < 3 || values.length - split < 3) return undefined;
-  const pre = medianOfRange(values, 0, split);
-  const post = medianOfRange(values, split, values.length);
-  return range > 0 ? Math.abs(pre - post) / range : 1;
+  if (split < 3 || sampleCount - split < 3) return undefined;
+  return split;
 }
 
 export function medianOfRange(values: Float64Array, start: number, end: number): number {

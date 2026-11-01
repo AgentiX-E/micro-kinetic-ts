@@ -42,6 +42,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_BASELINE_ANCHOR,
@@ -64,6 +65,7 @@ import {
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   DEFAULT_VICTIM_WEIGHT,
   type DropDeviationMode,
 } from '../../packages/tree/src/index.js';
@@ -238,6 +240,16 @@ export interface AblationTopologyOptions {
    * from the shipped one.
    */
   readonly baselineAnchor: BaselineAnchor;
+  /**
+   * Which STATISTIC decides a channel moved for good, held at the shipped `endpoint`.
+   *
+   * Named on the constant rule every field of this object follows, and it is the field for which that rule
+   * is least decorative: the two statistics are byte-identical on every case whose injection boundary
+   * cannot be placed, so a row that varied this one on such a corpus would produce an artifact
+   * indistinguishable from the row it is read against. No row VARIES it — the study's subject is Deng Yu's
+   * terms — so it appears here as a constant and on the line as a stated one.
+   */
+  readonly transientGuardTest: TransientGuardTest;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -397,6 +409,7 @@ export function buildAblationEngineOptions(
       metricRiseCeiling: overrides.metricRiseCeiling ?? DEFAULT_METRIC_RISE_CEILING,
       dropDeviationMode: overrides.dropDeviationMode ?? DEFAULT_DROP_DEVIATION_MODE,
       baselineAnchor: overrides.baselineAnchor ?? DEFAULT_BASELINE_ANCHOR,
+      transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
     },
   };
 }
@@ -437,6 +450,10 @@ export function formatAblationConfigLine(
     `metricRiseCeiling=${topology.metricRiseCeiling} ` +
     `dropDeviationMode=${topology.dropDeviationMode} ` +
     `baselineAnchor=${topology.baselineAnchor} ` +
+    // The guard's statistic, named on the anchor's rule: the two statistics are byte-identical on every
+    // case whose injection boundary cannot be placed, so a battery row that switched it would otherwise
+    // render an artifact indistinguishable from the row it is compared against.
+    `transientGuardTest=${topology.transientGuardTest} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
     `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +

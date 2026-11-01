@@ -102,6 +102,10 @@ export {
   POOL_ADMISSIONS,
   PRE_WINDOW_GUARDS,
   TOPO_DISCOUNT_SCOPES,
+  // The level test's PRECONDITION, exported because a census now counts cases that can place an
+  // injection boundary at all — and a census that retyped the four refusals would answer a slightly
+  // different question than the estimator it claims to describe.
+  injectionSplitIndex,
   isBaselineAnchor,
   isDemandMetric,
   isDropDeviationMode,

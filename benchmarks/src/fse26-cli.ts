@@ -41,6 +41,7 @@ import type {
   PoolAdmission,
   TopoClosure,
   TopoDiscountScope,
+  TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -86,8 +87,8 @@ import {
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRACE_WEIGHT,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   DEFAULT_VICTIM_WEIGHT,
-  type DualFamilyGateMode,
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
@@ -97,6 +98,9 @@ import {
   isPrismPooling,
   isTopoClosure,
   isTopoDiscountScope,
+  isTransientGuardTest,
+  TRANSIENT_GUARD_TESTS,
+  type DualFamilyGateMode,
   type OnsetShape,
   type PrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -452,6 +456,24 @@ export interface Fse26CliOptions {
    */
   readonly baselineAnchor: BaselineAnchor;
   /**
+   * The transient guard's QUESTION — which statistic decides whether a channel moved for good.
+   *
+   * This half carried no such flag, and `dispatch-surface-census.test.ts` recorded the omission as a
+   * property of the corpus: *"that corpus carries no injection boundary in the units this test splits on,
+   * so the fallback would be the shipped statistic on every case and a `ranking_knobs` row would advertise
+   * a state it could never enter."* **That was never measured.** The loader reconstructs every series'
+   * timestamps from the bridge's compact `{start, step, values}` form and forwards `raw.injectTimeMs`
+   * verbatim, which are exactly the two inputs `levelPermanence` needs — so whether the boundary can be
+   * placed here is an open question that presented itself as a closed one, which is this repository's
+   * most-repeated defect shape. The flag exists so the question can be answered by a run instead of by a
+   * sentence, and `--transient-guard-test`'s docblock in `rcaeval-cli.ts` carries the measurement that
+   * makes the answer matter.
+   *
+   * Refused by NAME on an unknown value rather than falling back: every member of the union is a
+   * published configuration, so a typo between two of them is a silent re-pairing of the experiment.
+   */
+  readonly transientGuardTest: TransientGuardTest;
+  /**
    * The anomaly composition's four coefficients — see `CliOptions.anomalyTrendWeight` in the RCAEval
    * runner, where they are measured. Exposed here so the kill criterion, which is an AND over the two
    * benchmarks, can be evaluated: a candidate that moves one half and not the other is undecidable.
@@ -598,6 +620,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
     dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
     baselineAnchor: DEFAULT_BASELINE_ANCHOR,
+    transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
     anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
     anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
     anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
@@ -784,6 +807,17 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const raw = argv[++i]!;
       if (isBaselineAnchor(raw)) opts.baselineAnchor = raw;
       else throw new Error(`--baseline-anchor expects whole-file|pre-injection, got '${raw}'`);
+    } else if (arg === '--transient-guard-test' && hasValue(argv, i + 1)) {
+      // The refusal names the value AND the vocabulary, reading the union's own table rather than a copy of
+      // it: a second spelling here would drift the moment a member was added, and the error message is the
+      // only place a dispatcher learns the accepted set. The golden half's branch is the same rule in the
+      // same words on purpose — two halves that refuse differently teach a dispatcher two vocabularies.
+      const raw = argv[++i]!;
+      if (isTransientGuardTest(raw)) opts.transientGuardTest = raw;
+      else
+        throw new Error(
+          `--transient-guard-test takes ${Object.keys(TRANSIENT_GUARD_TESTS).join(', ')}, got '${raw}'`,
+        );
     } else if (arg === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
     else if (arg === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
     else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;

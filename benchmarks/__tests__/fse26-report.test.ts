@@ -27,6 +27,7 @@ import {
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRANSIENT_GUARD_TEST,
 } from '../../packages/tree/src/index.js';
 
 import type { FSE26RunConfig } from '../src/fse26-report.js';
@@ -106,6 +107,10 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     prismPooling: 'additive',
     collapseDiscount: 0,
     baselineAnchor: 'whole-file',
+    // The guard's statistic, at the shipped value: the fixture has to describe the engine a default run
+    // builds, and the field is REQUIRED for the reason the composition's four are — an optional one is a
+    // fixture that silently describes a different engine.
+    transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
     dropDeviationMode: 'bounded',
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
@@ -198,6 +203,11 @@ describe('FSE26 report — attribution', () => {
       // ranking covers, so an artifact that admitted the whole graph cannot be read back into a run whose
       // ranking was a subset — the two have different denominators, and `pool` alone cannot say which.
       'poolAdmission',
+      // Iteration 215: and the guard's statistic, appended rather than grouped with the anchor it belongs
+      // beside — the ORDER of `REPORTED_CONFIG_FIELDS` is what this list mirrors, and a reader comparing an
+      // artifact against it reads a set, not a sequence. The shipped statistic and the arm measured at +13
+      // cases on the golden half produce byte-identical artifacts without a field that names which one ran.
+      'transientGuardTest',
     ]);
   });
 
@@ -248,6 +258,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // `whole-file`, so an omitted-when-default field would render the shipped run and a run that measured
         // every metric against the pre-injection segment byte-identically — the exact confusion the line is for.
         'baselineAnchor=whole-file ' +
+        'transientGuardTest=endpoint ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
         `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +

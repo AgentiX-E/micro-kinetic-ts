@@ -74,6 +74,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     metricRiseCeiling: opts.metricRiseCeiling,
     dropDeviationMode: opts.dropDeviationMode,
     baselineAnchor: opts.baselineAnchor,
+    transientGuardTest: opts.transientGuardTest,
     metricFleetBaseline: opts.metricFleetBaseline,
     suppressDemandMetrics: opts.suppressDemandMetrics,
     failedEdgeWeight: opts.failedEdgeWeight,

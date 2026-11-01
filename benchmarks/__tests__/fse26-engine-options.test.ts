@@ -33,6 +33,7 @@ import {
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
@@ -251,6 +252,12 @@ describe('buildFse26EngineOptions', () => {
       // which DIRECTION may speak, and which SEGMENT it is measured against — and a field the mapping
       // remembered to omit would read exactly like the shipped pole here.
       baselineAnchor: 'whole-file',
+      // The guard's statistic at its shipped value on a dispatch that says nothing about it. It is the
+      // seventh field in this object that is a WORD rather than a number, and the one whose omission
+      // would be least visible: the shipped statistic and the level test are byte-identical on every
+      // case whose injection boundary cannot be placed, so a dropped forwarding here would reproduce
+      // the shipped ranking exactly and read as "the arm did nothing".
+      transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
       // The anomaly composition, at its shipped values on a dispatch that says nothing about them. The breadth
       // term is the interesting one: it ships OFF, and this assertion is what makes "OFF" a value that reaches
       // the builder rather than a field the mapping remembered to omit.

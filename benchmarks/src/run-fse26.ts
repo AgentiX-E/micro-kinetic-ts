@@ -51,6 +51,12 @@ import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
 
+import {
+  boundaryPlaceable,
+  formatBoundaryCensus,
+  summariseBoundaryCensus,
+  type BoundaryObservation,
+} from './fse26-boundary-census.js';
 import { parseFSE26Args } from './fse26-cli.js';
 import {
   buildFSE26Report,
@@ -181,6 +187,11 @@ async function main(): Promise<void> {
     failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
     metricKeys: ReadonlySet<string>;
   }> = [];
+  // …and one projection of the same shape for the level test's PRECONDITION. A `transientGuardTest`
+  // arm measures zero on a corpus whose injection boundary cannot be placed, and that zero is
+  // indistinguishable from the two statistics agreeing — so the population is counted next to the
+  // number, on the rule `summariseFailedEdgeCoverage` records above. See fse26-boundary-census.
+  const boundaryObservations: BoundaryObservation[] = [];
   const faultCells = new Map<string, FaultCell>();
   let loadErrors = 0;
   let engineErrors = 0;
@@ -208,6 +219,10 @@ async function main(): Promise<void> {
     failedEdgeCases.push({
       failedTraceEdges: benchCase.failedTraceEdges,
       metricKeys: new Set(benchCase.callGraph.nodes.keys()),
+    });
+    boundaryObservations.push({
+      injectTime: benchCase.injectTime,
+      placeable: boundaryPlaceable(benchCase.metrics, benchCase.injectTime),
     });
     // Dual-label accepted set: the raw case's full ground-truth list (two
     // labels for network faults, one otherwise).
@@ -297,6 +312,9 @@ async function main(): Promise<void> {
       `engineErrors=${engineErrors} emptyGraphs=${emptyGraphs}`,
   );
   console.log(`  ${failedEdgeCoverage}`);
+  // Printed for the reason above, one axis over: this line is what a zero on a
+  // `transientGuardTest` arm has to be read against.
+  console.log(`  ${formatBoundaryCensus(summariseBoundaryCensus(boundaryObservations))}`);
   console.log('');
   console.log(`  vs published anchor: SOTA avg ${pct(ANCHOR_AVG)} / best ${pct(ANCHOR_BEST)}`);
   const delta = top1 - ANCHOR_AVG;

@@ -33,6 +33,7 @@ import type {
   PrismPooling,
   TopoClosure,
   TopoDiscountScope,
+  TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_POOL_ADMISSION,
@@ -217,6 +218,16 @@ export interface FSE26RunConfig {
   readonly dropDeviationMode: DropDeviationMode;
   /** Which WINDOW the deviation is measured between; `whole-file` is the shipped value. */
   readonly baselineAnchor: BaselineAnchor;
+  /**
+   * Which STATISTIC decides a channel moved for good — the guard's question.
+   *
+   * Named unconditionally like its neighbours on the anchor's rule, because the shipped reading and the
+   * arm that buys 13 cases on the golden half are otherwise byte-identical artifacts. The union has four
+   * members and `evidence-aware` resolves per case from what the case observed, so this field records the
+   * POLICY a run was launched under rather than the statistic any individual case used; the resolved arm
+   * is a property of the case and is recorded by `--diagnose-dump`, not here.
+   */
+  readonly transientGuardTest: TransientGuardTest;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level; `false` is the shipped value. */
@@ -393,6 +404,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'topoDiscountGate',
   'topoClosure',
   'poolAdmission',
+  'transientGuardTest',
 ] as const;
 
 /**
@@ -457,6 +469,7 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   line += ` metricRiseCeiling=${config.metricRiseCeiling}`;
   line += ` dropDeviationMode=${config.dropDeviationMode}`;
   line += ` baselineAnchor=${config.baselineAnchor}`;
+  line += ` transientGuardTest=${config.transientGuardTest}`;
   if (config.metricFleetBaseline) {
     line += ' fleetBaseline=true';
   }

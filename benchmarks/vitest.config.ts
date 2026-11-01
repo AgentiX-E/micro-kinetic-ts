@@ -71,6 +71,11 @@ export default defineConfig({
         // through into an empty map — plus the engine's own `acted` read against the predicate it was predicted
         // from, so every branch is measured rather than trusted.
         'src/failed-edge-gate-census.ts',
+        // Added with the module: the boundary census counts how many cases can place the level test's
+        // precondition at all, and its whole value is the distinction a RATIO collapses — a corpus that knows
+        // no injection time against one that knows every injection time and can still split none of them.
+        // Every branch of the predicate and of the summary is measured rather than trusted.
+        'src/fse26-boundary-census.ts',
         // Added with the module: the term-gap census subtracts the two sides of every miss, term by term, and its
         // whole value is the four distinctions it draws — a cost, a help, an unmeasured side, and a name paid to
         // one side only. Every branch is measured rather than trusted.

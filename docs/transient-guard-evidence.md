@@ -257,3 +257,65 @@ untouched by it:
   truth's own reading.
 
 So the arm is **+13 cases and no debt**, not SOTA. `docs/sota-comparison.md` §0p carries the standing table.
+
+## 9. The other half of the AND was never unreachable — it was unmeasured, and one sentence stood in for it
+
+`dispatch-surface-census.test.ts` carried this row for the axis:
+
+> `transientGuardTest` … **Not mirrored on FSE'26** — that corpus carries no injection boundary in the units
+> this test splits on, so the fallback would be the shipped statistic on every case and a `ranking_knobs` row
+> would advertise a state it could never enter.
+
+and the golden half's own flag table repeated it from the other side — *"the guard consumes the injection
+boundary this half's cases carry and FSE'26's do not, so the knob has no meaningful FSE'26 state to expose"*.
+**Neither sentence cites a measurement, and both are about a corpus fact that costs one grep to check.** The
+loader rebuilds every series' timestamps from the bridge's compact `{start, step, values}` form
+(`expandMetricTimestamps`) and forwards the case's own `raw.injectTimeMs` — the two inputs `levelPermanence`
+reads. So the axis may well be reachable there, and if it is, an arm measured at **+13 / −0** on the golden
+half has had one side of the kill criterion's AND refused on the strength of a comment.
+
+That is the most-repeated defect shape in this repository — an artifact describing a configuration nobody
+ran, a workflow input a runner dropped, a semantics label nothing enforced — and the only difference here is
+that the artifact is a **sentence**.
+
+### 9.1 What was built
+
+- `--transient-guard-test` on `fse26-cli.ts`, refusing an unknown member by name and listing the union's own
+  vocabulary (read from `TRANSIENT_GUARD_TESTS`, so a fifth member cannot become unparseable silently).
+- `transientGuardTest` forwarded in `fse26-engine-options.ts`'s `topology` object, rendered on the `Config:`
+  line and recorded in the JSON `config` block, and named on the ablation battery's line — the last of those
+  matters more here than anywhere: **the two statistics are byte-identical on every case whose boundary
+  cannot be placed**, so a field that varied and was not printed produces an artifact indistinguishable from
+  the row it is read against.
+- `transient_guard_test` in the FSE'26 workflow's packed `ranking_knobs` block, with an unknown value
+  exiting non-zero like every other name in that block.
+- The census row moved from `fse26: null` to `'ranking_knobs'`, and `transientGuardTest` therefore joined
+  `DISPATCHABLE_ON_BOTH` — which is the whole point: the AND is now askable on both halves.
+
+### 9.2 The census that makes a zero interpretable
+
+Adding the knob is not enough to read the result, because **a zero has two causes that look identical**:
+the level test agreed with the endpoint test on every case, or the level test never ran. So the FSE'26 runner
+now prints a second census line beside the failed-edge coverage one:
+
+```
+[guard] boundary placeable=N/M injectTime=P noSplit=Q
+```
+
+`N` counts cases where any channel can actually be split — the predicate is `injectionSplitIndex`, which was
+**extracted from `levelPermanence` rather than retyped** and now has two readers, so the census and the
+estimator cannot drift apart on the three-sample floor or on the timestamp-alignment rule. `P` and `Q` are
+kept apart on purpose: a corpus that knows no injection time and a corpus that knows every injection time
+and can still split none of them are the same ratio and opposite findings, which is why the line names four
+numbers and no percentage.
+
+### 9.3 What is still owed
+
+The knob exists, the census exists, and **neither has been run on FSE'26 yet** — this document is written at
+the commit that makes the question askable, not at the one that answers it. The prediction is **0 cases**,
+with the reasoning stated so it can be wrong: the FSE'26 corpus is the large-graph one (51–52 services on
+every case) and its series carry timestamps, so `placeable` should be high and the arm should resolve to
+`endpoint` on nearly every case — but "should" is what the census row said before, and the dispatch's first
+job is the `[guard] boundary` line rather than the two `Top@1` figures.
+
+Until that line is read, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.

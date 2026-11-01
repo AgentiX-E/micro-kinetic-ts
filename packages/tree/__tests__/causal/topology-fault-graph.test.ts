@@ -21,6 +21,7 @@ import {
   DEFAULT_TRANSIENT_GUARD_TEST,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
+  injectionSplitIndex,
   isDemandMetric,
   isDropDeviationMode,
   isLatencyMetric,
@@ -3989,5 +3990,55 @@ describe('isLatencyMetric — the transport family, and the ONE owner of that qu
 
     expect(hypothesis?.category).toBe('DELAY');
     expect(hypothesis?.evidence.join(' ')).toContain('latency-90');
+  });
+});
+
+describe('the level test’s precondition has one owner', () => {
+  // `injectionSplitIndex` was extracted so that a census counting how many cases can place a boundary reads
+  // the SAME four refusals the estimator refuses on. Every case below is one of them, and the count matters
+  // because a census with a re-derived threshold answers a slightly different question than the estimator it
+  // claims to describe — the defect `docs/baseline-anchor.md` §7b records for the stationarity guard.
+  const AT = 1_000_000;
+  const EVEN = [AT - 3000, AT - 2000, AT - 1000, AT, AT + 1000, AT + 2000];
+
+  it('answers the first post-injection index when both sides clear the floor', () => {
+    // Three before, three after — the floor itself, because a median of two is an average and an average is
+    // what the two-sample statistic already is.
+    expect(injectionSplitIndex(EVEN, EVEN.length, AT)).toBe(3);
+  });
+
+  it('refuses an unknown boundary before looking at the samples', () => {
+    expect(injectionSplitIndex(EVEN, EVEN.length, 0)).toBeUndefined();
+    expect(injectionSplitIndex(EVEN, EVEN.length, -1)).toBeUndefined();
+  });
+
+  it('refuses a channel whose timestamps do not align with its samples', () => {
+    // This is the second refusal and the one an off-by-one in a loader produces: the arrays are independently
+    // sourced, so a truncated timestamp list must fall back rather than split at a guessed index.
+    expect(injectionSplitIndex(EVEN, EVEN.length + 1, AT)).toBeUndefined();
+    expect(injectionSplitIndex([], 6, AT)).toBeUndefined();
+  });
+
+  it('refuses a boundary at either end of the series', () => {
+    // A boundary before the first sample leaves the pre window empty; one after the last leaves the post
+    // window empty. Both are a level test with nothing on one side of it.
+    expect(injectionSplitIndex(EVEN, EVEN.length, AT - 5000)).toBeUndefined();
+    expect(injectionSplitIndex(EVEN, EVEN.length, AT + 5000)).toBeUndefined();
+  });
+
+  it('refuses the short side alone, not the pair', () => {
+    // Four before and three after is ASYMMETRIC and accepted — the floor is per side, not a balance.
+    expect(
+      injectionSplitIndex(
+        [AT - 4000, AT - 3000, AT - 2000, AT - 1000, AT, AT + 1000, AT + 2000],
+        7,
+        AT,
+      ),
+    ).toBe(4);
+    // …while a long pre window does NOT license a two-sample post, which is the same refusal `preInjectionWindow`
+    // makes and the reason the floor is stated twice rather than once on the whole series.
+    expect(
+      injectionSplitIndex([AT - 9000, AT - 5000, AT - 4000, AT - 3000, AT, AT + 1000], 6, AT),
+    ).toBeUndefined();
   });
 });

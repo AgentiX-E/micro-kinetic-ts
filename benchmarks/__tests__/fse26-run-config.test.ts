@@ -128,6 +128,11 @@ const KNOBBED = parseFSE26Args([
   'log',
   '--baseline-anchor',
   'pre-injection',
+  // The guard's statistic, off its shipped default so the line-vs-record parity check exercises it: the
+  // two arms are byte-identical on every case that cannot place an injection boundary, which is exactly
+  // the pair a record must be able to tell apart.
+  '--transient-guard-test',
+  'level-window',
   '--suppress-demand-metrics',
   '--suppress-idle-transients',
   '--suppress-near-zero-baseline-rise',

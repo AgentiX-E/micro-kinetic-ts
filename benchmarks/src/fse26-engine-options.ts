@@ -221,6 +221,10 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       collapseDiscount: opts.collapseDiscount,
       dropDeviationMode: opts.dropDeviationMode,
       baselineAnchor: opts.baselineAnchor,
+      // The guard's QUESTION, on the same unconditional-forwarding rule as every field above: a PARTIAL
+      // with a key left out is a silent revert to the engine's default, and on this half that default is
+      // the very value the flag was added to make measurable.
+      transientGuardTest: opts.transientGuardTest,
       anomalyTrendWeight: opts.anomalyTrendWeight,
       anomalyBurstWeight: opts.anomalyBurstWeight,
       anomalyCvWeight: opts.anomalyCvWeight,

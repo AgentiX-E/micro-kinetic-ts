@@ -318,6 +318,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // third and last field of the deduction: the weight says HOW MUCH, the scope says WHICH CHANNELS, and the
     // gate says WHICH NODES, which is the only one of the three that can separate a symptom from a source.
     '--topo-discount-gate',
+    // Iteration 215: the guard's QUESTION reached this half after the census recorded it as unreachable —
+    // see the `transientGuardTest` row's comment. Its `fse26` column read `null` on the strength of a
+    // corpus fact that had never been measured, so this entry is not a new knob but a corrected reach.
+    '--transient-guard-test',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -525,12 +529,19 @@ const KNOBS: Readonly<
   },
   transientGuardTest: {
     // The guard's QUESTION, one level above the anchor: the anchor decides which samples a deviation is
-    // measured on, this decides whether a channel is evidence at all. Not mirrored on FSE'26 — that corpus
-    // carries no injection boundary in the units this test splits on, so the fallback would be the shipped
-    // statistic on every case and a `ranking_knobs` row would advertise a state it could never enter.
+    // measured on, this decides whether a channel is evidence at all.
+    //
+    // This row read `fse26: null` and its justification was a CORPUS FACT asserted in a comment — *"that
+    // corpus carries no injection boundary in the units this test splits on, so the fallback would be the
+    // shipped statistic on every case"* — and nobody had measured it. The loader rebuilds every series'
+    // timestamps from the bridge's compact `{start, step, values}` form and forwards the case's own
+    // `injectTimeMs`; those are the two inputs `levelPermanence` reads, so the boundary may well be
+    // placeable there and the "unreachable" row may have been hiding an unmeasured axis behind a plausible
+    // sentence. Mirrored now so a dispatch can settle it; the value is unchanged either way, because the
+    // row is about REACH and not about a shipped default.
     flag: '--transient-guard-test',
     owner: 'transient-guard-test.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   selfAnomalyWeight: {
@@ -914,6 +925,11 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'topoWeight',
   'traceWeight',
   'traceSkipsLeader',
+  // Iteration 215: the guard's STATISTIC. It joins this list only because the FSE'26 half's reach was
+  // restored — the row had said `null` on an unmeasured corpus claim — and the criterion's AND is the reason
+  // that restoration was worth making: the arm that buys 13 cases on the golden half had one side it could
+  // not be asked on, so a flip would have been undecidable rather than refused.
+  'transientGuardTest',
 ];
 
 /**

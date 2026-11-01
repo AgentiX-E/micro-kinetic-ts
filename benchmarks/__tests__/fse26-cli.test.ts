@@ -24,7 +24,9 @@ import {
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TRANSIENT_GUARD_TEST,
   ONSET_SHAPES,
+  TRANSIENT_GUARD_TESTS,
 } from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
@@ -667,5 +669,44 @@ describe("the FSE'26 half's two mode flags", () => {
     const signals = buildFse26EngineOptions(parseFSE26Args(['--dual-family-gate-mode', 'neither']))
       .signals as unknown as Record<string, unknown>;
     expect(signals.dualFamilyGateMode).toBe(DEFAULT_DUAL_FAMILY_GATE_MODE);
+  });
+});
+
+describe("the guard's statistic reached this half after being recorded as unreachable", () => {
+  // The census row for this axis carried `fse26: null` and a justification that was a CORPUS FACT — *"that
+  // corpus carries no injection boundary in the units this test splits on"* — which nobody had measured. The
+  // block below is what turns the claim into a question a run can answer, and it asserts the two properties
+  // that make the answer interpretable: the flag MOVES the engine's configuration, and it moves it to exactly
+  // the value the golden half would have used, so a cross-half comparison is a comparison of one axis.
+
+  it('accepts every member of the union, and forwards the one it was given', () => {
+    // Iterated over the union's own table rather than over a list retyped here: a fifth member added to the
+    // engine would otherwise be unparseable on this half with nothing failing.
+    for (const member of Object.keys(TRANSIENT_GUARD_TESTS)) {
+      const parsed = parseFSE26Args(['--transient-guard-test', member]);
+      expect(parsed.transientGuardTest, `${member} did not parse`).toBe(member);
+      const topology = buildFse26EngineOptions(parsed).topology as Record<string, unknown>;
+      expect(topology['transientGuardTest'], `${member} did not reach the fault graph`).toBe(
+        member,
+      );
+    }
+  });
+
+  it('REFUSES an unknown member by name, listing the vocabulary it does accept', () => {
+    // A silent fallback here would publish the shipped cells under a configuration the artifact claims was
+    // `level-window` — the same defect the golden half's branch refuses, in the same words.
+    expect(() => parseFSE26Args(['--transient-guard-test', 'level'])).toThrow(
+      /takes endpoint, level-window, either, evidence-aware, got 'level'/,
+    );
+    // …and the flag with no value at all is a stray token, not a value.
+    expect(() => parseFSE26Args(['--transient-guard-test'])).toThrow();
+  });
+
+  it('ships the SAME statistic on both halves, so the pair is one axis and not two', () => {
+    // The criterion every knob on this axis is judged by is an AND over the two benchmarks. Two halves that
+    // defaulted to different statistics would make that AND compare two configurations while its artifacts
+    // both printed a bare `AC@1`, which is how a cross-half reading stops being a reading.
+    expect(parseFSE26Args([]).transientGuardTest).toBe(DEFAULT_TRANSIENT_GUARD_TEST);
+    expect(parseFSE26Args([]).transientGuardTest).toBe(parseRCAEvalArgs([]).transientGuardTest);
   });
 });
