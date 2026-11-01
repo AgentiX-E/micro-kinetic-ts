@@ -168,7 +168,7 @@ export interface RCAEvalTopologyOptions {
    */
   readonly anomalyNormalizeNodeThreshold: number;
   readonly suppressIdleTransients: boolean;
-  /** The transient guard's statistic — `endpoint` (shipped) or `level-window`. */
+  /** The transient guard's statistic — see `TransientGuardTest`; ships at `endpoint`. */
   readonly transientGuardTest: TransientGuardTest;
   readonly suppressNearZeroBaselineRise: boolean;
   /** Discard a transport channel whose head window has no level — see `CliOptions`. */

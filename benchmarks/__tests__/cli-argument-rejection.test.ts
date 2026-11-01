@@ -159,6 +159,11 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // Iteration 214: the transient guard's STATISTIC. A word union of two like the two above, and the probe's
   // job is to prove the option MOVES — `level-window` is the arm, i.e. the value the flag exists to name.
   '--transient-guard-test': 'level-window',
+  // Iteration 218: the SYSTEM filter. It took any token and ignored it until this iteration — the comparison
+  // that consumed the value named the three systems instead of the filter — so the probe passed on `1` and
+  // proved only that the branch existed. It is now a vocabulary (`RCAEVAL_SYSTEM_CODES`), and `ss` is a
+  // member: the filter's refusal is covered in `system-filter.test.ts`, which asserts it BY NAME.
+  '--system': 'ss',
 };
 
 function argvFor(one: AcceptedFlag): string[] {

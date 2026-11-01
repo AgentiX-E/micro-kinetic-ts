@@ -158,7 +158,7 @@ import {
   summarizeWinnerDirection,
   type LossRecord,
 } from './loss-census.js';
-import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
+import { parseRCAEvalArgs, systemMatches, type CliOptions } from './rcaeval-cli.js';
 import {
   buildRCAEvalEngineOptions,
   formatSignalLine,
@@ -1260,13 +1260,11 @@ async function main(): Promise<void> {
   // Group by system + suite
   const groups = new Map<string, CaseMeta[]>();
   for (const c of allCases) {
-    if (
-      opts.system !== 'all' &&
-      c.system !== 'OnlineBoutique' &&
-      c.system !== 'SockShop' &&
-      c.system !== 'TrainTicket'
-    )
-      continue;
+    // `systemMatches`, not an inline comparison: the comparison that stood here named the three systems
+    // instead of the filter, so it could never be true for a case a corpus contains and `--system` filtered
+    // nothing — see `RCAEVAL_SYSTEM_CODES`. A predicate the CLI's own tests can call is the difference
+    // between a knob and a flag that prints itself.
+    if (!systemMatches(opts.system, c.system)) continue;
     // Suite filter
     if (opts.suite !== 'all' && c.suite !== `RE${opts.suite.replace(/^re/i, '')}`) continue;
     const groupKey = `${c.system}:${c.suite}`;
@@ -1307,9 +1305,18 @@ async function main(): Promise<void> {
   const semanticConfig = await createSemanticConfig();
   await initRCAEvalTopology(undefined, semanticConfig);
   const useSemantic = Boolean(semanticConfig.embeddingProvider);
+  // Which provider REACHED the run, not which one the environment could have produced. The line used to
+  // read `useSemantic ? 'Zhipu embedding-3' : …`, and `createSemanticConfig` ALWAYS returns a provider — the
+  // TF-IDF fallback is a provider — so a local run with `BENCHMARK_USE_TFIDF=1` printed "Zhipu embedding-3"
+  // while aligning with TF-IDF. `meta.backend` is the provider's own answer, and both built-ins report it.
+  const semanticBackend = semanticConfig.embeddingProvider?.meta?.backend;
   console.log(
     `Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})` +
-      (useSemantic ? ' + semantic enhancement (Zhipu embedding-3)' : ''),
+      (useSemantic
+        ? semanticBackend === 'api'
+          ? ' + semantic enhancement (Zhipu embedding-3, network)'
+          : ' + semantic enhancement (local TF-IDF, no network)'
+        : ''),
   );
   console.log('═'.repeat(65));
 

@@ -138,6 +138,89 @@ import {
 // `--prism-pooling` was repaired for, moved to the third vocabulary on this surface.
 import { DEFAULT_LATENCY_SOURCE, isLatencySource, type LatencySource } from './rcaeval-corpus.js';
 
+/** The three benchmark systems, spelt as the loader stamps them on a case. */
+export type CaseSystemName = 'OnlineBoutique' | 'SockShop' | 'TrainTicket';
+
+/** What `--system` may select: one of the three, or all of them. */
+export type SystemFilter = 'all' | CaseSystemName;
+
+/**
+ * The codes `--system` is documented to take, mapped to the names a case carries.
+ *
+ * A `Record` for the reason every other word-vocabulary in this repository is one: `--system` used to be
+ * stored as the raw token and compared, in the ONE place it was read, against the three canonical names
+ * rather than against itself —
+ *
+ *     if (opts.system !== 'all' && c.system !== 'OnlineBoutique' && c.system !== 'SockShop' &&
+ *         c.system !== 'TrainTicket') continue;
+ *
+ * — which is false for every case any corpus contains, so the flag filtered nothing, `--system xyz`
+ * included, and the banner printed the filter it had been asked for instead of the one it applied. Both
+ * manual dump workflows dispatch this flag, so their artifacts named one system and held three.
+ *
+ * The repair is a parsed value rather than a corrected comparison: a comparison in place is exactly what
+ * rotted, because nothing could call it.
+ */
+export const RCAEVAL_SYSTEM_CODES: Readonly<Record<string, CaseSystemName>> = {
+  ob: 'OnlineBoutique',
+  ss: 'SockShop',
+  tt: 'TrainTicket',
+};
+
+/**
+ * Fold a dispatched `--system` value to the canonical name, or refuse it by name.
+ *
+ * Case-insensitive, and both spellings of each system are accepted: a dispatch's spelling is not a ranking
+ * input, so `tt`, `TT` and `TrainTicket` name the same cell and refusing one of them would be a refusal of
+ * a filter the runner can honour. `all` is its own value rather than a system name, because it selects the
+ * LOADER's leftovers too (a case whose system could not be read is kept by `all` and by nothing else).
+ *
+ * @param value - The token that followed `--system`.
+ * @returns The canonical filter.
+ * @throws Error naming the token and listing the accepted codes, because a silent fallback to `all` would
+ * publish nine cells under a flag that claims one.
+ */
+export function parseSystemFilter(value: string): SystemFilter {
+  const folded = value.trim().toLowerCase();
+  if (folded === 'all') return 'all';
+  for (const [code, name] of Object.entries(RCAEVAL_SYSTEM_CODES)) {
+    if (folded === code || folded === name.toLowerCase()) return name;
+  }
+  throw new Error(
+    `--system takes ${Object.keys(RCAEVAL_SYSTEM_CODES).join(', ')}, or all, got '${value}'`,
+  );
+}
+
+/**
+ * Whether a token is one {@link parseSystemFilter} would accept.
+ *
+ * @param value - The candidate token.
+ * @returns `true` when the value names a system or `all`.
+ */
+export function isSystemFilter(value: string): boolean {
+  try {
+    parseSystemFilter(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Apply a `--system` filter to one case.
+ *
+ * A predicate rather than an inline condition so the rule is reachable from a test: the population this
+ * decides is the whole basis of a cell's number, and the version that was only reachable through a
+ * nine-cell run was wrong for as long as it existed.
+ *
+ * @param filter - The parsed filter.
+ * @param system - The case's system, as the loader stamped it.
+ * @returns `true` when the case belongs to the requested population.
+ */
+export function systemMatches(filter: SystemFilter, system: string): boolean {
+  return filter === 'all' || filter === system;
+}
+
 /**
  * Every option the RCAEval runner reads off its command line.
  *
@@ -147,8 +230,13 @@ import { DEFAULT_LATENCY_SOURCE, isLatencySource, type LatencySource } from './r
 export interface CliOptions {
   dataDir: string;
   maxCases: number;
-  /** Filter to specific system: 'ob', 'ss', 'tt', or 'all' */
-  system: string;
+  /**
+   * Filter to one system, or `all`.
+   *
+   * Canonical rather than the raw token: see {@link RCAEVAL_SYSTEM_CODES} for the run that stored `'tt'`
+   * here and then compared it against system NAMES, which filtered nothing.
+   */
+  system: SystemFilter;
   /** Filter to specific suite: 're1', 're2', 're3', or 'all' */
   suite: string;
   /**
@@ -499,7 +587,14 @@ export interface CliOptions {
    * `endpoint` is the shipped statistic and it reads two of 721 samples; `level-window` compares the medians of
    * the two sides of the injection boundary instead, so an off-beat at either end cannot decide a channel and an
    * intermittent plateau that fills most of the post window survives. Transported in the packed `anomaly_knobs`
-   * block as `transguard=<endpoint|level>`; ships at `endpoint`, which is bit-identical by construction.
+   * block as `transguard=<member>`; ships at `endpoint`, which is bit-identical by construction.
+   *
+   * `evidence-aware` is accepted here for the same reason as the other two: it is a member of
+   * {@link TransientGuardTest}, and a dispatch that names it has to reach the engine rather than fall back. It
+   * needs no CLI field of its own — the second input it reads, `sideChannelObserved`, is not a knob but a fact
+   * about the case, and `TreePruner.buildFaultGraph` derives it from the loader arrays (`logs`, `traceActivity`,
+   * `failedTraceEdges`, `edgeLatency`) before the graph is built. A flag that let a caller assert the fact
+   * independently of the corpus would be a way to publish a suite under a claim the corpus contradicts.
    */
   transientGuardTest: TransientGuardTest;
   /**
@@ -750,7 +845,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     if (args[i] === '--data-dir' && hasValue(args, i + 1)) opts.dataDir = args[++i]!;
     else if (args[i] === '--max-cases' && hasValue(args, i + 1))
       opts.maxCases = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--system' && hasValue(args, i + 1)) opts.system = args[++i]!;
+    else if (args[i] === '--system' && hasValue(args, i + 1))
+      // Through the vocabulary, which is also the refusal: the raw token reached the run for as long as
+      // this line stored it, and the comparison that consumed it could not match anything.
+      opts.system = parseSystemFilter(args[++i]!);
     else if (args[i] === '--suite' && hasValue(args, i + 1)) opts.suite = args[++i]!;
     else if (args[i] === '--no-inject-time') opts.noInjectTime = true;
     else if (args[i] === '--temporal-weight' && hasValue(args, i + 1))

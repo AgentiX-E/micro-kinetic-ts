@@ -18,6 +18,8 @@
  * @module benchmarks/__tests__/semantic-config
  */
 
+import { readFileSync } from 'node:fs';
+
 import { ApiEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -258,5 +260,35 @@ describe('Semantic configuration factory — the empty key is the CI case', () =
         true,
       ]);
     }
+  });
+});
+
+describe('the run’s banner names the provider that reached it', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('answers which backend is in use, on the provider itself', async () => {
+    // The banner's only honest source. `createSemanticConfig` ALWAYS returns a provider (the TF-IDF fallback
+    // is one), so `Boolean(provider)` cannot tell the two apart — the line printed "Zhipu embedding-3" on a
+    // TF-IDF run for as long as it asked that question instead of this one.
+    process.env = { ...originalEnv, ZHIPU_API_KEY: 'k', BENCHMARK_USE_TFIDF: '1' };
+    expect((await createSemanticConfig()).embeddingProvider?.meta?.backend).toBe('tfidf');
+
+    process.env = { ...originalEnv };
+    delete process.env['ZHIPU_API_KEY'];
+    delete process.env['BENCHMARK_USE_TFIDF'];
+    expect((await createSemanticConfig()).embeddingProvider?.meta?.backend).toBe('tfidf');
+  });
+
+  it('prints that backend rather than a hard-coded vendor name', async () => {
+    const source = readFileSync(new URL('../src/run-rcaeval.ts', import.meta.url), 'utf-8');
+
+    expect(source).toContain('embeddingProvider?.meta?.backend');
+    // The defect, as text: a ternary on presence ALONE cannot distinguish the two providers, so every string
+    // it can produce is a name the run may not have used.
+    expect(source).not.toMatch(/useSemantic \? ' \+ semantic enhancement \(Zhipu embedding-3\)'/);
   });
 });

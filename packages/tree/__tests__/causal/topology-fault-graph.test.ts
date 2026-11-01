@@ -16,6 +16,7 @@ import {
   DEFAULT_ANOMALY_BREADTH_GATE,
   DEFAULT_ANOMALY_BREADTH_WEIGHT,
   DEFAULT_ANOMALY_BURST_WEIGHT,
+  DEFAULT_SIDE_CHANNEL_OBSERVED,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
   DEFAULT_TRANSIENT_GUARD_TEST,
   DEMAND_METRIC_LABELS,
@@ -3051,6 +3052,93 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     expect(earlyAnchor.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
   });
 
+  it('answers with the level statistic where the case observed no call boundary', () => {
+    // `evidence-aware` is a POLICY rather than a fourth estimator: it names which of the two above to run. A case
+    // whose loader filled no logs and no spans carries no `failedEdge`, no `lat` and no `trace` — the direction
+    // terms are silent by construction — so the guard's second job, damping a propagated symptom's magnitude
+    // advantage, is the only mechanism doing it, and the reading that looks at a LEVEL is the honest one. The
+    // series is the plateau above, which the shipped endpoint statistic drops over a single off-beat.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'evidence-aware',
+      sideChannelObserved: false,
+    });
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['latency-50', 'kept'],
+    ]);
+  });
+
+  it('answers with the shipped endpoint statistic where the case DID observe the boundary', () => {
+    // The other half of the policy, on the same series: once a log line or a span exists, a term reads direction
+    // directly and the guard's endpoint statistic is back to answering "did this channel move" — the question it
+    // answers on the published nine cells. Without this case the policy would be indistinguishable from
+    // `level-window`, which is the arm the nine-cell dispatch refused.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'evidence-aware',
+      sideChannelObserved: true,
+    });
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['latency-50', 'transient-return'],
+    ]);
+  });
+
+  it('reads the observation flag ONLY under `evidence-aware`, so a shipped run cannot move', () => {
+    // The claim the two cases above cannot make on their own: the new field is read by one arm and by no other.
+    // Asserted as an identity over both statistics and both flag values rather than as four literal outcomes,
+    // because a measurement that happens to agree is not the same statement as a branch that is not taken —
+    // and only the second one is what "the published cells are unchanged by construction" means.
+    const graph = makeCallGraph(['svc'], []);
+    const plateau = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+      5,
+    ];
+    const warmUp = [25, 20, 15, 10, 8, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6];
+    for (const values of [plateau, warmUp]) {
+      const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+      for (const test of ['endpoint', 'level-window', 'either'] as const) {
+        const observed = buildTopologyFaultGraph(graph, metrics, {
+          injectTimeMs: 15000,
+          transientGuardTest: test,
+          sideChannelObserved: true,
+        });
+        const unobserved = buildTopologyFaultGraph(graph, metrics, {
+          injectTimeMs: 15000,
+          transientGuardTest: test,
+          sideChannelObserved: false,
+        });
+        expect(unobserved.anomalyScores.get('svc')).toBe(observed.anomalyScores.get('svc'));
+        expect(unobserved.metricDiagnostics.get('svc')).toEqual(
+          observed.metricDiagnostics.get('svc'),
+        );
+      }
+    }
+  });
+
   it('keeps a channel that EITHER statistic calls permanent, because their blind spots do not coincide', () => {
     // The two statistics fail on disjoint shapes, and both failures are measured on the corpora this repository
     // ranks. `level-window` is blind to a channel whose medians coincide while its ends do not — a series that
@@ -3684,6 +3772,7 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     expect(Object.keys(TRANSIENT_GUARD_TESTS).sort()).toEqual([
       'either',
       'endpoint',
+      'evidence-aware',
       'level-window',
     ]);
     expect(isTransientGuardTest('endpoint')).toBe(true);
@@ -3692,6 +3781,12 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     // verdicts already computed, which is why the vocabulary is honest as a set of three questions asked of
     // the same series.
     expect(isTransientGuardTest('either')).toBe(true);
+    // The fourth is not a statistic at all: it SELECTS between the first two from what the case observed, so a
+    // reader who counts members is counting three questions and one policy rather than four estimators.
+    expect(isTransientGuardTest('evidence-aware')).toBe(true);
+    expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.sideChannelObserved).toBe(
+      DEFAULT_SIDE_CHANNEL_OBSERVED,
+    );
     expect(isTransientGuardTest('window')).toBe(false);
     expect(isTransientGuardTest('')).toBe(false);
     // A prototype key is not a member: `hasOwnProperty` rather than `in`, or every object would answer true.

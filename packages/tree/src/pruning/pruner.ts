@@ -1811,9 +1811,20 @@ export class TreePruner {
     // topology edges and computes real cross-service correlation for edge weights.
     // The fault injection time (when known) is forwarded so the builder can anchor
     // each service's anomaly onset to a clean pre-injection baseline.
+    // Whether this case observed anything ACROSS a call boundary, answered from the arrays the loader filled
+    // rather than from the graph's own score maps: an empty `edgeLatencyScores` cannot distinguish "the corpus
+    // ships no spans" from "the spans named no in-graph edge", and the two are the difference between a case
+    // whose direction terms are silent and one whose direction terms measured zero. Read only by the
+    // `evidence-aware` arm of the transient guard — see `DEFAULT_SIDE_CHANNEL_OBSERVED`.
+    const sideChannelObserved =
+      (options?.logs?.length ?? 0) > 0 ||
+      (options?.traceActivity?.size ?? 0) > 0 ||
+      (options?.failedTraceEdges?.length ?? 0) > 0 ||
+      (options?.edgeLatency?.length ?? 0) > 0;
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
       ...this.topologyConfig,
       injectTimeMs,
+      sideChannelObserved,
     });
     const {
       anomalyScores,

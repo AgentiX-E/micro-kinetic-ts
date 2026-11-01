@@ -85,6 +85,7 @@ export {
   // The demand guard: an ENROLMENT, not an opt-in, and the only member of its family list is `workload`.
   // Exported with the classifier because a caller that wants to ask "is this metric fault evidence" must
   // ask the same function the guard asks, not a substring test of its own.
+  DEFAULT_SIDE_CHANNEL_OBSERVED,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,

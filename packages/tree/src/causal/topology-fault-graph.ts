@@ -288,6 +288,17 @@ export interface TopologyFaultGraphConfig {
    */
   readonly transientGuardTest: TransientGuardTest;
   /**
+   * Whether this case carried an observation across a call boundary — see
+   * {@link DEFAULT_SIDE_CHANNEL_OBSERVED}, which is the value and the argument.
+   *
+   * Read by the `evidence-aware` arm of {@link transientGuardTest} and by NOTHING else, so a caller that leaves
+   * it at its default cannot move a shipped number. The field is on the CONFIG rather than computed here because
+   * the answer belongs to the case's loader: a builder handed `metrics` alone cannot see whether a `logs.csv` was
+   * empty or absent, and inferring it from an empty score map would report a corpus gap as a measured absence —
+   * the same defect `presenceOf`'s three tiers exist to prevent one level down.
+   */
+  readonly sideChannelObserved: boolean;
+  /**
    * Suppress a metric whose baseline is essentially ZERO (≤ `0.001`) from
    * scoring its RISE.
    *
@@ -557,7 +568,7 @@ export const DEFAULT_RANK_NORMALIZATION = true;
  */
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 
-export type TransientGuardTest = 'endpoint' | 'level-window' | 'either';
+export type TransientGuardTest = 'endpoint' | 'level-window' | 'either' | 'evidence-aware';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
@@ -587,7 +598,27 @@ export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> =
   endpoint: true,
   'level-window': true,
   either: true,
+  'evidence-aware': true,
 };
+
+/**
+ * Whether the case carried an observation ACROSS services — a log line or a span — as opposed to metrics alone.
+ *
+ * The value is the answer to "could anything in this case have measured a call boundary", and it exists because
+ * the four statistics above are not the same instrument under the two answers. On a corpus of metrics only,
+ * every channel is the service's own reading: a caller's latency rise and a callee's cannot be told apart, and
+ * the guard's second job — damping the magnitude advantage of a propagated symptom — is the ONLY mechanism that
+ * does it, because the direction terms (`failedEdge`, `lat`, `trace`) have no input at all. Where logs or spans
+ * exist, that job is already done by a term that reads the boundary directly, and the guard's 721-sample
+ * endpoint statistic stops being the last line of defence and starts being a coin flip over two samples.
+ *
+ * **This is a property of the CASE, not of the benchmark.** The answer is derived from the arrays the loader
+ * actually filled (`logs`, `traceActivity`, `failedTraceEdges`, `edgeLatency`) — `toFaultGraphOptions` forwards
+ * all four and `TreePruner.buildFaultGraph` reads them to decide — so a case that ships an empty `logs.csv` is
+ * metrics-only whatever suite it belongs to, and the two arms of the union below are chosen by what was
+ * OBSERVED rather than by which corpus the case came from.
+ */
+export const DEFAULT_SIDE_CHANNEL_OBSERVED = true;
 
 /**
  * Decide whether a string is one of {@link TRANSIENT_GUARD_TESTS}'s keys.
@@ -1017,6 +1048,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
   suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
   transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST, // two samples at the ends decide a channel (shipped)
+  sideChannelObserved: DEFAULT_SIDE_CHANNEL_OBSERVED, // read by `evidence-aware` only (shipped: true)
   suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
   suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY, // no-traffic transport channels (opt-in)
   capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION, // the trend bonus may not exceed its evidence (opt-in)
@@ -1838,6 +1870,26 @@ function computeAnomalyFeatures(
     };
   }
 
+  // The statistic this graph's guard will use, resolved ONCE for the whole service rather than per metric: the
+  // choice is a property of the CASE's observation set, so re-deriving it inside the loop would be a branch that
+  // could only ever disagree with itself.
+  //
+  // `evidence-aware` is not a fifth estimator. It is the admission that the two statistics above are instruments
+  // for different corpora, which the nine-cell dispatch measured rather than argued: the level test buys 13 cases
+  // on the six RE1/RE2 cells and pays 22 on the three RE3 cells, and what separates them is not a suite label but
+  // whether anything in the case can see a call boundary. A case whose loader filled no logs and no spans has no
+  // `failedEdge`, no `lat`, no `trace` — the direction terms are silent by construction — and there the guard's
+  // second job (damping a propagated symptom's magnitude advantage) is the only mechanism doing it, so the honest
+  // statistic is the one that reads a LEVEL. A case that did observe the boundary already has a term for
+  // direction, and the endpoint statistic's job shrinks back to "did this channel move" — which is the question it
+  // answers for the published cells.
+  const guardTest =
+    cfg.transientGuardTest === 'evidence-aware'
+      ? cfg.sideChannelObserved
+        ? 'endpoint'
+        : 'level-window'
+      : cfg.transientGuardTest;
+
   let bestScore = 0;
   let bestMetricLabel = '';
   let bestMetricHead: number[] = [];
@@ -1990,9 +2042,9 @@ function computeAnomalyFeatures(
     const permanenceEndpoint = range > max * 1e-6 ? headTailSpread / range : 1;
     const permanenceLevel = levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range);
     const permanence =
-      cfg.transientGuardTest === 'level-window'
+      guardTest === 'level-window'
         ? (permanenceLevel ?? permanenceEndpoint)
-        : cfg.transientGuardTest === 'either'
+        : guardTest === 'either'
           ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
           : permanenceEndpoint;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
