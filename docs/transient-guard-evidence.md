@@ -230,6 +230,14 @@ repair, a "per-cell" local run silently evaluated all three systems and reported
   observed and leaves it at `endpoint`; a finer predicate would send it to `level-window`, where it scores
   51.1 % against 30.6 %. Whether that is a gain or an artifact of the metric is unmeasured, and it is the
   single most valuable open question this table exposes.
+- **One of the six zeros rests on the coarseness of the predicate, and it is the one that would go the other
+  way.** `RE2:SockShop` has no traces, no per-edge latency and no failed edges; its only side channel is a log
+  file of which **2 rows in the whole cell** are admitted in-graph. The term therefore does not really fire
+  there, and a predicate written as "the direction terms had content" would send that cell to `level-window` —
+  where it reads **94.4 % against 97.8 %**, i.e. **−3 cases**. So the arm's zero on that cell is bought by
+  reading the ARRAY rather than the term, and the coarse reading is the conservative one here by luck rather
+  than by argument. Any move to a finer predicate has to carry this cell as its first test, and the honest
+  default until then is the coarse one, which costs nothing on the six cells it does not gain on.
 - **The gain is still a verdict, not a magnitude.** No channel is made louder than its own deviation, so
   nothing here moves a case lost on amplitude.
 
