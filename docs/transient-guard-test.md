@@ -6,7 +6,7 @@ push battery): `level-window` **+13 / −22** (REFUSED, §6), `either` **+6 / �
 by a single case (REFUSED as a shipment, kept as the evidence that the union is not noise, §6). A conditional
 arm conditioned on direction evidence was pre-registered here and is **falsified by the corpus's own partition**
 (§5), not deferred — and the falsification was in the WORD: `evidence-aware`, the fourth member, reads the
-loader's four arrays instead of `edgeLatency` alone and measures **+12 / −0** on eight cells
+loader's four arrays instead of `edgeLatency` alone and measures **+13 / −0** on all nine cells
 (`docs/transient-guard-evidence.md`).
 
 **Owner of:** `transientGuardTest` (`packages/tree/src/causal/topology-fault-graph.ts`),
@@ -182,7 +182,7 @@ shape of the injected signature, which is a property of the corpus's fault and n
 `edgeLatency` alone, and the two cells the dead rule would have sent to `level-window` are exactly the two whose
 only window onto a call boundary is a LOG FILE — `RE2:SockShop` (90/90 cases, 134 903 ERROR/FATAL entries) and
 `RE3:SockShop` (30/30, 43 102) — where the arm loses 3 and 7 cases. `evidence-aware`, the fourth member, is that
-rule with the corrected word: **+12 / −0** across the eight cells this host can read.
+rule with the corrected word: **+13 / −0** across all nine cells, `641/735` -> `654/735`.
 ## 7. Limits
 
 - **Two cells, one corpus.** The measurement covers the two cells this host can rank. `RE1:SockShop`,

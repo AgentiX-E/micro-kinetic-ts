@@ -1,26 +1,28 @@
 # The guard's statistic is an instrument for a corpus, not a theorem about one
 
-**Status:** the seventh member of the guard's vocabulary — `evidence-aware` — is IMPLEMENTED and the shipped
-default is unchanged (`endpoint`), because a default moves only after all nine cells have been read and the
-ninth (`RE2:TrainTicket`) could not be completed on this host. Measured locally on the 723-case corpus, one
-variable, whole cells:
+**Status:** the fourth member of the union — `evidence-aware` — is IMPLEMENTED, **measured on all nine cells**
+(dispatch `41263011254`, one variable, whole cells, both arms on the anchored protocol), and it is the first arm
+on this axis with **no cell down**:
 
-| family                 | `endpoint` (shipped) | `evidence-aware` |         Δ |
+| cell                   | `endpoint` (shipped) | `evidence-aware` |         Δ |
 | ---------------------- | -------------------: | ---------------: | --------: |
 | `RE1:OnlineBoutique`   |     85.6 % (107/125) | 89.6 % (112/125) |   **+5** |
-| `RE1:SockShop`         |     93.3 % (112/120) | 95.0 % (114/120) |   **+2** |
-| `RE1:TrainTicket`      |     85.0 % (102/120) | 89.2 % (107/120) |   **+5** |
-| `RE2:OnlineBoutique`   |                92.0 % |           92.0 % |     **0** |
-| `RE2:SockShop`         |                97.8 % |           97.8 % |     **0** |
-| `RE2:TrainTicket`      |                    — |                — | unmeasured |
-| `RE3:OnlineBoutique`   |                87.5 % |           87.5 % |     **0** |
-| `RE3:SockShop`         |                63.6 % |           63.6 % |     **0** |
-| `RE3:TrainTicket`      |                30.6 % |           30.6 % |     **0** |
+| `RE1:SockShop`         |     93.6 % (117/125) | 95.2 % (119/125) |   **+2** |
+| `RE1:TrainTicket`      |     84.8 % (106/125) | 89.6 % (112/125) |   **+6** |
+| `RE2:OnlineBoutique`   |      92.2 % (83/90)  |     92.2 % (83/90) |     **0** |
+| `RE2:SockShop`         |      97.8 % (88/90)  |     97.8 % (88/90) |     **0** |
+| `RE2:TrainTicket`      |      83.3 % (75/90)  |     83.3 % (75/90) |     **0** |
+| `RE3:OnlineBoutique`   |     88.9 %           |           88.9 % |     **0** |
+| `RE3:SockShop`         |     63.6 %           |           63.6 % |     **0** |
+| `RE3:TrainTicket`      |     74.5 %           |           74.5 % |     **0** |
+| **total**              | **87.21 % (641/735)** | **88.98 % (654/735)** | **+13** |
 
-**This is the first arm on this axis that costs nothing anywhere it can be read.** The global `level-window`
-arm bought the same 12 cases and paid 22 (`docs/transient-guard-test.md` §6); the pre-registered conditional
-arm would have bought 12 and paid 10 (§1); this one pays 0 on the five cells it does not gain on, and the two
-cells it gains most on are the two weakest cells in the family.
+**This is the first arm on this axis that costs nothing anywhere.** The global `level-window` arm bought 13 cases
+and paid 22 (`docs/transient-guard-test.md` §6); the pre-registered conditional arm would have bought 13 and paid
+10 (§1); this one pays 0 on the six cells it does not gain on. It is measured and **not yet shipped as the
+default**: the default moves when the FSE'26 half is read too, because `sideChannelObserved` is derived per case
+there rather than known per suite, and a default that moved one half without the other would be the defect this
+repository keeps finding.
 
 **Owner of:** `transientGuardTest: 'evidence-aware'` and `sideChannelObserved`
 (`packages/tree/src/causal/topology-fault-graph.ts`), the derivation in `TreePruner.buildFaultGraph`
@@ -147,16 +149,17 @@ values rather than four literal outcomes, because the claim is that the field is
 
 ## 5. The flip census
 
-Both runs carry `--diagnose-dump`, so the 25 cases that moved can be read one at a time (dump-derived case
-counts; the printed `AC@1` differs on `RE1:TrainTicket` by the three cases its classifiable population
-excludes, which are wins in both arms).
+Both arms of the local 723-case run carry `--diagnose-dump`, so the cases that moved can be read one at a time
+(dump-derived case counts; the printed `AC@1` differs on `RE1:TrainTicket` by the three cases its classifiable
+population excludes, which are wins in both arms). The numbers below are that run's; the dispatch reproduces the
+same **+13 net** on the full 735-case corpus, where `RE1:SockShop` is 125 cases rather than 120:
 
-| cell | gains | losses | net |
-| --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 7 | 2 | **+5** |
-| `RE1:SockShop` | 2 | 0 | **+2** |
-| `RE1:TrainTicket` | 6 | 1 | **+5** |
-| `RE2:OnlineBoutique`, `RE2:SockShop`, `RE3:OnlineBoutique`, `RE3:SockShop`, `RE3:TrainTicket` | 0 | 0 | **0** |
+| cell | gains | losses | net | CI Δ cases |
+| --- | --- | --- | --- | --- |
+| `RE1:OnlineBoutique` | 7 | 2 | **+5** | **+5** |
+| `RE1:SockShop` | 2 | 0 | **+2** | **+2** |
+| `RE1:TrainTicket` | 6 | 1 | **+5** | **+6** |
+| `RE2:OnlineBoutique`, `RE2:SockShop`, `RE2:TrainTicket`, `RE3:OnlineBoutique`, `RE3:SockShop`, `RE3:TrainTicket` | 0 | 0 | **0** | **0** |
 
 Every gain is the event `docs/transient-guard-test.md` §4 already names: **the truth's own latency channel was
 dropped by the endpoint statistic and is kept by the level test** — `re1ob_adservice_delay_3` (an intermittent
@@ -203,12 +206,13 @@ repair, a "per-cell" local run silently evaluated all three systems and reported
 
 ## 7. Limits
 
-- **One cell unread.** `RE2:TrainTicket` was killed at graph construction on this host — rc=137, ~3.5 GB
-  resident, four attempts: default heap, `--max-old-space-size=16384`, and `BENCHMARK_USE_TFIDF=1`. The last of
-  those rules out the embedding API (`Zhipu embedding-3` is at its quota) and locates the cause in the cell's own
-  size — 90 cases against a 63–69 service graph. It is the one cell that could falsify the arm on the RE2 family
-  and it is the dispatch's first job. The prediction is **0**: its traces cover the cell (`RE2` carries spans on
-  every other system), so it resolves to `endpoint`.
+- **The one cell this host cannot read is read elsewhere, and it agreed.** `RE2:TrainTicket` was killed at graph
+  construction locally — rc=137, ~3.5 GB resident, four attempts: default heap, `--max-old-space-size=16384`, and
+  `BENCHMARK_USE_TFIDF=1`. The last of those rules out the embedding API (`Zhipu embedding-3` is at its quota) and
+  locates the cause in the cell's own size — 90 cases against a 63–69 service graph. `41263011254` measured it at
+  **83.3 %, unchanged**, i.e. the prediction held and the cell resolves to `endpoint` as the census said it would.
+  A local-harness limit is not a corpus fact, and this is the first time the difference was demonstrated rather
+  than asserted.
 - **A banner that named a provider the run was not using.** Found while producing the line above: the topology
   line printed `+ semantic enhancement (Zhipu embedding-3)` on a `BENCHMARK_USE_TFIDF=1` run, because
   `createSemanticConfig` always returns a provider and the line tested the provider's PRESENCE rather than its
@@ -244,4 +248,4 @@ untouched by it:
 - `re3ss_carts_f1_2` and its siblings: the truth loses to `front-end` on an `error` channel at 1.7× the
   truth's own reading.
 
-So the arm is **+12 cases and no debt**, not SOTA. `docs/sota-comparison.md` §0p carries the standing table.
+So the arm is **+13 cases and no debt**, not SOTA. `docs/sota-comparison.md` §0p carries the standing table.
