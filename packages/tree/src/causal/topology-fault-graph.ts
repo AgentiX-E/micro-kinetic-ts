@@ -284,15 +284,20 @@ export interface TopologyFaultGraphConfig {
    * guard falls back to `endpoint` for that series — stated rather than silently widening the population, because
    * a corpus without an injection anchor is not a corpus this test can read.
    *
-   * Default: `'endpoint'` (bit-identical to shipped behaviour).
+   * Default: {@link DEFAULT_TRANSIENT_GUARD_TEST} — the POLICY that reads this case's observation and asks the
+   * per-case statistic, not one statistic for the corpus. It is the first shipped value on this axis that is not
+   * `'endpoint'`, and the two corpora are why: a corpus-wide statistic is a statement about the population, and
+   * the same statistic wins and loses on cells of ONE corpus (`docs/transient-guard-evidence.md` §10.3).
    */
   readonly transientGuardTest: TransientGuardTest;
   /**
    * Whether this case carried an observation across a call boundary — see
    * {@link DEFAULT_SIDE_CHANNEL_OBSERVED}, which is the value and the argument.
    *
-   * Read by the `evidence-aware` arm of {@link transientGuardTest} and by NOTHING else, so a caller that leaves
-   * it at its default cannot move a shipped number. The field is on the CONFIG rather than computed here because
+   * Read by the two evidence policies of {@link transientGuardTest} — `'evidence-aware'` and
+   * `'evidence-trimmed'`, which is the DEFAULT — and by nothing else. It therefore DOES move a shipped number,
+   * and that is the point: the arm it selects is chosen per case rather than per corpus. The field is on the
+   * CONFIG rather than computed here because
    * the answer belongs to the case's loader: a builder handed `metrics` alone cannot see whether a `logs.csv` was
    * empty or absent, and inferring it from an empty score map would report a corpus gap as a measured absence —
    * the same defect `presenceOf`'s three tiers exist to prevent one level down.
@@ -572,26 +577,42 @@ export type TransientGuardTest =
   'endpoint' | 'level-window' | 'trimmed-ends' | 'either' | 'evidence-aware' | 'evidence-trimmed';
 
 /**
- * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
- * statistic `docs/transient-guard-window.md` criticises and reverted a better ESTIMATOR of.
+ * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'evidence-trimmed'`, the policy
+ * `sideChannelObserved ? 'trimmed-ends' : 'level-window'`.
  *
- * The alternative is `'level-window'`, and the difference between the two arms is the difference between
- * replacing an estimator and asking a better question: that arm kept the endpoint form and replaced the two
- * samples with the means of the first and last tenth, which restored the CALLER's propagated latency channel
- * along with the source's and lost 17 cases on the nine cells (eleven by exactly one rank step). The level
- * test asks whether the channel SETTLED — medians of the two sides of the injection boundary — which is the
- * question the guard exists to answer and the one an intermittent plateau can pass.
+ * The three statistics this union holds answer the guard's question three ways, and the axis was closed twice on
+ * the assumption that one of them is the right one for a corpus. It is not: **the same statistic wins and loses on
+ * cells of ONE corpus**, which is the reading that retired the question rather than the arms
+ * (`docs/transient-guard-evidence.md` §10.3):
  *
- * Shipped `'endpoint'` so the published nine cells are bit-identical by construction, and reachable as
- * `--transient-guard-test` on both runners.
+ * - `'level-window'` is worth **+37 cases** on FSE'26 (63.1 % against 60.5 %) and **−22** on the golden half,
+ *   because the RE3 cells are won by a channel whose FIRST sample sits on a warm-up and the two-sided median
+ *   reads that channel as settled.
+ * - `'trimmed-ends'` is worth **+9** on FSE'26 and **+3** on the golden half with no cell down — the only member
+ *   that is a strict refinement of the shipped statistic rather than a different question — and it recovers 9 of
+ *   the level test's 37, which is how the "single-sample artifact" hypothesis was eliminated rather than assumed.
+ * - **The two arms' gains are DISJOINT**: `evidence-aware` buys its 13 cases on the three cells that resolve to
+ *   the level test, `trimmed-ends` buys its 3 on cells that resolve to the endpoint statistic, and FSE'26
+ *   resolves to the observed side on 1422 of 1422 cases. So the policy that reads the case's own observation and
+ *   asks the matching instrument is the composition, not a third guess.
  *
- * `'trimmed-ends'` is the only member that keeps this statistic's QUESTION and replaces its ESTIMATE without
- * widening its window: the median of the first and last {@link END_WINDOW_SAMPLES} samples instead of the
- * first and last one. The distinction from the reverted tenth-window arm is the whole of its argument — that
- * arm's window reached 72 samples into the interior and restored a propagated caller's channel; this one
- * cannot leave the ends.
+ * Measured, one commit, whole cells, both halves, both runs reproduced independently:
+ *
+ * | corpus | `'endpoint'` | this value | Δ |
+ * | --- | ---: | ---: | ---: |
+ * | RCAEval, nine cells, 735 cases | 641 = 87.21 % | **656 = 89.25 %** | **+15, no cell down** |
+ * | FSE'26, 1422 cases, `Top@1` | 60.5 % (860) | **61.1 % (869)** | **+9** |
+ *
+ * Both readings are reused dispatches of ONE revision (`docs/sota-comparison.md` §0p carries the battery and the
+ * fifteen per-cell counts), and the second run of the golden half reproduced every cell to the case.
+ *
+ * `'either'` — the max of the two statistics per channel — is measured and NOT shipped: it reads 60.6 % on FSE'26
+ * against this value's 61.1 % and 547/633 locally against 556, because admitting every channel either statistic
+ * keeps also admits the channels the level test was right to drop. That is the reading
+ * `docs/transient-guard-evidence.md` §11 records as the arm that fails on both halves for the reason it looked
+ * like the safe union.
  */
-export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'endpoint';
+export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'evidence-trimmed';
 
 /**
  * Every word {@link TopologyFaultGraphConfig.transientGuardTest} accepts.

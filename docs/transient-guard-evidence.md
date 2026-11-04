@@ -505,8 +505,60 @@ corpus observes its boundary, so `evidence-trimmed` resolves to `trimmed-ends` t
 composite that improved on one half by behaving differently on the other would be a second variable.
 
 **So this is the first configuration on the axis that improves both halves**: +15 cases on the nine cells with no
-cell down, +9 on FSE'26. It is measured and **not yet the default** — the flip needs the standing anchor moved
-from per-cell COUNTS rather than from these percentages, because the cell rate is the mean of its fault types
-(`docs/accuracy-aggregation.md`) and 88.9 % of a 30-case cell is not 26 2/3 cases. That extraction, the anchor
-block, `sota-comparison.md` §0p and the default itself belong in ONE commit, which is the next iteration's first
-task and is pre-registered here with its numbers.
+cell down, +9 on FSE'26. It is **the shipped default** from §12, and the reason it was not flipped on the strength
+of the percentages is the reason §0p now carries the fifteen counts: the cell rate is the mean of its fault types
+(`docs/accuracy-aggregation.md`), so 88.9 % of a 30-case cell is not 26 2/3 cases and a standing anchor cannot be
+written from a printed percentage. The counts, the anchor block, §0p and the default therefore went in ONE commit —
+the pre-registration this paragraph carried, discharged with the numbers it named.
+
+---
+
+## 11. `either` is refuted on both halves, and the reason is the shape of the statistic rather than its tuning
+
+`either` is the member a reader expects to be safe: per channel it takes `max(endpoint, level)`, so it keeps every
+channel either statistic keeps. The union looks like it cannot lose, and it does not lose *channels* — it loses
+cases, on both halves, for exactly the reason the union looks safe.
+
+| arm | FSE'26 `Top@1` | local nine-cell hits (633) |
+| --- | ---: | ---: |
+| `endpoint` | 60.5 % (860/1422) | 542 = 85.62 % |
+| `either` | **60.6 %** | 547 = 86.41 % |
+| `trimmed-ends` | 61.1 % (869/1422) | 545 = 86.10 % |
+| `evidence-trimmed` (shipped) | **61.1 %** (869/1422) | **556 = 87.84 %** |
+
+On FSE'26 the union buys **one case out of thirty-seven**: the level test alone is worth +37 and the union is worth
++1, so admitting the channels `endpoint` keeps but the level test drops gives back 36 of them. That is the whole
+finding, and it is the corpus saying the opposite of what the arm assumes: on FSE'26, evidence is not scarce — a
+channel the level test drops is a channel whose post-window median did not move, and adding it back adds a candidate
+whose anomaly is a two-sample artifact.
+
+The local half says the same thing in the other direction. `either` recovers 8 cases and loses 3 against `endpoint`
+(net +5), while `trimmed-ends` recovers 4 and loses 2 (net +3) — and the two gain sets are only partly the same. So
+the union is not a superset in CASES even though it is a superset in CHANNELS: a candidate added to the pool changes
+who outranks whom, and three cases where `endpoint` was right were re-ranked by a channel `either` admitted.
+
+Two things follow, and the second is the general rule this axis has now paid for twice:
+
+1. **`max` of two statistics is a UNION-INTERSECTION move, and it is not free.** The multiple-testing literature
+   prices exactly this: an intersection-union test needs no multiplicity adjustment *because every hypothesis must
+   reject*, while a union-intersection (max-t) test pays for its extra power in size. Here the "size" is measured in
+   candidates admitted, and it is paid in cases on the half where the narrower statistic was right.
+2. **The statistic that wins is a property of the CASE, so the composition has to read the case.** That is what
+   `evidence-trimmed` does and what `either` cannot: `either` averages the two verdicts' admission sets per channel,
+   while the policy picks one instrument per case from what the case observed.
+
+## 12. The flip is landed, and both halves were read twice
+
+`DEFAULT_TRANSIENT_GUARD_TEST` is `'evidence-trimmed'` from `1c18c76`'s successor onward. The two dispatches were
+independent and neither re-used the other's artifact:
+
+| corpus | run | reading |
+| --- | --- | --- |
+| golden half, 735 cases | `41853861726` (16:15) | 656/735 = 89.25 %, per cell `112/119/112 · 84/88/75 · 25/19/22` |
+| golden half, 735 cases | `41865456632` (16:57) | **identical to the case, all fifteen counts and all four totals** |
+| FSE'26, 1422 cases | `41853854321` | 61.1 % (869/1422), `Top@3` 79.3 %, `Top@5` 83.3 % |
+
+`docs/sota-comparison.md` §0p carries the fifteen counts, the retired set and the reason the retired numbers were
+right for the configuration that produced them. The **`either` reading is the pre-registered refusal**: it was
+measured before the flip so that the flip could be stated as the best of four measured arms rather than as the
+first one that worked.

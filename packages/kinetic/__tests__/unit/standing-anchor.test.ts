@@ -90,6 +90,22 @@ const byKey = (key: string): Reading => {
  * retirement that was announced and not enforced.
  */
 const RETIRED = [
+  // ── Retired by the transient-guard POLICY (`1c18c76` onward): the nine cells and FSE'26 as they read under the
+  // two-sample `endpoint` statistic, in both forms the document prints them.
+  // Fractions and two-decimal percentages only. A bare `92.2` or `85.6` is refused as a retirement token on
+  // purpose: those strings occur inside counts and other populations throughout the document, and a fence that
+  // fires on `92.2%` inside a competitor's row would forbid a correct table rather than a stale one.
+  '641/735',
+  '87.21',
+  '330/375',
+  '88.00',
+  '83/90',
+  '246/270',
+  '65/90',
+  '18/30',
+  '860/1422',
+  '60.50',
+  // ── Retired by the boundary-gate enrolment: the readings one enrolment behind it.
   // The overall total, both forms.
   '631/735',
   '85.85',
@@ -139,7 +155,7 @@ describe('the standing document is anchored to one battery', () => {
     expect(leaderboard, 'the leaderboard quotes the anchored total').toContain(`(${fraction})`);
     // And §1's own table, whose overall row is the one a reader checks against the table above it.
     expect(section('## 1. Our result', '## 2.')).toContain(
-      `**87.21%** (${byKey('TOTAL').correct})`,
+      `**89.25%** (${byKey('TOTAL').correct})`,
     );
   });
 
@@ -164,7 +180,7 @@ describe('the standing document is anchored to one battery', () => {
     // a basis cell saying "\u006071.1\u0060 before iteration 129" is a table printing 71.1, and a reader skimming the row
     // sees the number without the clause. That is how this defect survived four earlier readings.
     const current = [
-      section('| evaluation                              | metric', '**Ranking: FIRST AMONG'),
+      section('| evaluation                              | metric', '**Ranking: FIRST ON'),
       section('| suite                         | OnlineBoutique', '**Every number above'),
       section('| method                     | Top-1', '> Two traps avoided here'),
       section(
@@ -174,8 +190,8 @@ describe('the standing document is anchored to one battery', () => {
       section('| population                     | GALA+ AC@1', '> **This table was wrong'),
     ].join('\n');
     // Non-vacuity: five tables, and each one carries at least one of our own readings.
-    expect(current).toContain('641/735');
-    expect(current).toContain('330/375');
+    expect(current).toContain('656/735');
+    expect(current).toContain('343/375');
     expect(current).toContain('75/90');
     // The two directions of the same fact. Above: no table prints a retired reading. Below: \u00a70p names every
     // reading it retires, so the list cannot grow past the correction or the correction past the list.
@@ -193,9 +209,9 @@ describe('the standing document is anchored to one battery', () => {
     // ranking sentence dropped the qualifier while the tables kept it, so the sentence a reader meets first was
     // the only one that flattered us. A ranking may not be simpler than its own evidence.
     const ranking = section('**Ranking:', 'That last clause');
-    expect(ranking).toMatch(/first among reproducible/i);
+    expect(ranking).toMatch(/first on RCAEval's 735 among every method with per-case results/i);
     expect(ranking, 'the ranking names the number above us').toMatch(/89/);
-    expect(ranking, 'the ranking names the gap').toMatch(/1\.79/);
+    expect(ranking, 'the ranking names the gap').toMatch(/0\.25/);
     expect(ranking).not.toMatch(/first on RCAEval's 735 overall/i);
   });
 

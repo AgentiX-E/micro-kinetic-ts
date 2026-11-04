@@ -1487,7 +1487,16 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
      * breadth term" — a test comparing against the default would be comparing against the ENROLLED
      * configuration, which is a different question. Every assertion here states its own zero.
      */
-    const OFF_BREADTH = { anomalyBreadthWeight: 0, anomalyBreadthGate: 0 } as const;
+    // The guard is pinned to the endpoint statistic here, and that is a SCOPING decision rather than a
+    // convenience: every fixture in this block is a series whose LAST sample is the excursion (`jump(10, 60)`,
+    // a single spike), which the shipped policy now reads with the medians of the end windows and therefore
+    // drops as a transient. That is the guard doing its job on a shape the breadth term never claimed to
+    // measure, and leaving it unpinned would make every breadth assertion depend on the guard's default.
+    const OFF_BREADTH = {
+      anomalyBreadthWeight: 0,
+      anomalyBreadthGate: 0,
+      transientGuardTest: 'endpoint',
+    } as const;
     /** The shipped pair, read from the module's own constants rather than retyped. */
     const DEFAULT_BREADTH_PAIR = {
       weight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
@@ -1547,14 +1556,21 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     /** The one metric's diagnostic entry, from a graph built with `config`. */
     function scoreOf(
       values: readonly number[],
-      config?: Record<string, number>,
+      config?: Record<string, number | string>,
     ): { score: number; trend: number; burst: number; cv: number } {
       const graph = makeCallGraph(['svc', 'idle'], []);
       const metrics = makeMetrics([
         ['svc', [makeTimeSeries('cpu', [...values])]],
         ['idle', [makeTimeSeries('cpu', pristine)]],
       ]);
-      const result = buildTopologyFaultGraph(graph, metrics, config);
+      // The three coefficients below are properties of the ANOMALY COMPOSITION, and the guard decides whether a
+      // channel reaches it at all. Two of these fixtures (`burst`, `wide`) end on a sample their first three
+      // windows do not share, so the shipped policy reads them as transients and drops the channel — a verdict
+      // about the guard, not about a coefficient. Pinning the statistic keeps each assertion about one thing.
+      const result = buildTopologyFaultGraph(graph, metrics, {
+        transientGuardTest: 'endpoint',
+        ...config,
+      });
       const entry = result.metricDiagnostics.get('svc')!.find((d) => d.label === 'cpu')!;
       const breakdown = entry.breakdown!;
       return {
@@ -3043,14 +3059,24 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     ];
     const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
 
-    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    const endpoint = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'endpoint',
+    });
     const trimmed = buildTopologyFaultGraph(graph, metrics, {
       injectTimeMs: 15000,
       transientGuardTest: 'trimmed-ends',
     });
+    // The SHIPPED policy joins the two arms by reading THIS case's observation rather than the corpus's, and on
+    // this fixture that resolves to `trimmed-ends` — a side channel is present at the shipped default — so the
+    // shipped verdict is the trimmed one. Asserted rather than assumed: the policy is what the default IS.
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
 
-    expect(shipped.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
-    expect(trimmed.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+    const verdict = (r: ReturnType<typeof buildTopologyFaultGraph>) =>
+      r.metricDiagnostics.get('svc')![0]!.outcome;
+    expect(verdict(endpoint)).toBe('transient-return');
+    expect(verdict(trimmed)).toBe('kept');
+    expect(verdict(shipped)).toBe('kept');
   });
 
   it('keeps the start-of-series warm-up for the same reason the shipped statistic keeps it', () => {
@@ -3892,10 +3918,10 @@ describe('the trend-bonus ceiling — an amplifier may not exceed the signal it 
 });
 
 describe('the transient guard vocabulary — one owner, checked against its union', () => {
-  it('names exactly the two tests, refuses anything else, and ships the endpoint one', () => {
-    // The guard the RCAEval parser calls. The reason it is a union rather than a boolean is that the two
-    // members are not "on" and "off" — they are the same guard asking its question of different samples —
-    // so a third name has to be refused by name rather than coerced onto one of them.
+  it('names exactly its members, refuses anything else, and ships the composition', () => {
+    // The guard the RCAEval parser calls. The reason it is a union rather than a boolean is that its members are
+    // not "on" and "off" — they are the same guard asking its question of different samples, twice over — so a
+    // seventh name has to be refused by name rather than coerced onto one of them.
     expect(Object.keys(TRANSIENT_GUARD_TESTS).sort()).toEqual([
       'either',
       'endpoint',
@@ -3917,6 +3943,16 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     // The fourth is not a statistic at all: it SELECTS between the first two from what the case observed, so a
     // reader who counts members is counting three questions and one policy rather than four estimators.
     expect(isTransientGuardTest('evidence-aware')).toBe(true);
+    // The sixth is the same POLICY with the trimmed statistic on the observed side, and it is the SHIPPED value
+    // for the one reason that survives both corpora: the two arms' gains are disjoint, so the composition holds
+    // the 13 cases the observed-side `endpoint` cannot reach and the 3 the level test gives back, on cells of
+    // the same corpus. A single statistic is a statement about a population, and this axis was closed twice on
+    // the assumption that one of them is the right one for one (`docs/transient-guard-evidence.md` §10.3).
+    expect(isTransientGuardTest('evidence-trimmed')).toBe(true);
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
+    expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.transientGuardTest).toBe(
+      DEFAULT_TRANSIENT_GUARD_TEST,
+    );
     expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.sideChannelObserved).toBe(
       DEFAULT_SIDE_CHANNEL_OBSERVED,
     );
@@ -3925,8 +3961,10 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     // A prototype key is not a member: `hasOwnProperty` rather than `in`, or every object would answer true.
     expect(isTransientGuardTest('toString')).toBe(false);
     // And the shipped member is the one the published nine cells were measured on, stated here so an
-    // accidental flip of the default is red rather than a silent re-publication of every cell.
-    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('endpoint');
+    // accidental flip of the default is red rather than a silent re-publication of every cell. The reading it
+    // moves is named in the constant's own docblock (656/735 against 641, 61.1 % against 60.5 % on FSE'26);
+    // what this line holds is that the two declarations of the default cannot drift apart.
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
     expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.transientGuardTest).toBe(
       DEFAULT_TRANSIENT_GUARD_TEST,
     );

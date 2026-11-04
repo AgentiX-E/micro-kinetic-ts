@@ -258,7 +258,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // `whole-file`, so an omitted-when-default field would render the shipped run and a run that measured
         // every metric against the pre-injection segment byte-identically — the exact confusion the line is for.
         'baselineAnchor=whole-file ' +
-        'transientGuardTest=endpoint ' +
+        'transientGuardTest=evidence-trimmed ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
         `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
