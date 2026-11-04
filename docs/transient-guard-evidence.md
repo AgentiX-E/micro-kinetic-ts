@@ -452,3 +452,61 @@ because a channel it keeps is a channel `endpoint` dropped over one sample, and 
 `endpoint` dropped too.** If it recovers most of them, the AND over the two halves is met by one arm for the
 first time; if it recovers few, the level test's 37 are not single-sample artifacts and the predicate search
 continues with that eliminated.
+
+### 10.3 The composition the two censuses imply, and what it reads on both halves
+
+The two arms' gains are disjoint by construction: `evidence-aware` buys its cases on the three cells that
+resolve to the level test, `trimmed-ends` buys its three on cells that resolve to the endpoint statistic, and
+FSE'26 resolves to the observed side on all 1422 cases. So the policy with a second observed-side instrument is
+one branch wide:
+
+```
+guardTest = sideChannelObserved ? 'trimmed-ends' : 'level-window'      // evidence-trimmed
+```
+
+and it is measured rather than presumed. Local 633-classifiable-case view, one commit, whole cells, dumps on:
+
+| arm | hits | AC@1 |
+| --- | ---: | ---: |
+| `endpoint` (shipped) | 542 | 85.62 % |
+| `evidence-aware` | 554 | 87.52 % |
+| `trimmed-ends` | 545 | 86.10 % |
+| **`evidence-trimmed`** | **556** | **87.84 %** |
+
+**The composite is the sum of the two arms' disjoint gains and nothing else** — 542 + 13 + ... = 556 is the
+`evidence-aware` column plus the two observed-side cases it could not reach, which is the additivity claim stated
+as arithmetic rather than as a hope.
+
+On the 735-case corpus (`anomaly_knobs=transguard=evidence-trimmed`, run `41853861726` on `50d314e`):
+
+| cell | shipped | `evidence-trimmed` | Δ |
+| --- | ---: | ---: | ---: |
+| `RE1:OnlineBoutique` | 85.6 % | **89.6 %** | **+5** |
+| `RE1:SockShop` | 93.6 % | **95.2 %** | **+2** |
+| `RE1:TrainTicket` | 84.8 % | **89.6 %** | **+6** |
+| `RE2:OnlineBoutique` | 92.2 % | **93.3 %** | **+1** |
+| `RE2:SockShop` | 97.8 % | 97.8 % | 0 |
+| `RE2:TrainTicket` | 83.3 % | 83.3 % | 0 |
+| `RE3:OnlineBoutique` | 88.9 % | 88.9 % | 0 |
+| `RE3:SockShop` | 63.6 % | **66.1 %** | **+1** |
+| `RE3:TrainTicket` | 74.5 % | 74.5 % | 0 |
+| **total** | **641/735 = 87.21 %** | **656/735 = 89.25 %** | **+15** |
+
+and on FSE'26 (`ranking_knobs=transient_guard_test=evidence-trimmed`, run `41853854321` on `50d314e`):
+
+| arm | `Top@1` | `Top@3` | `Top@5` |
+| --- | ---: | ---: | ---: |
+| `endpoint` (shipped) | 60.5 % (860/1422) | 79.0 % | 82.2 % |
+| `trimmed-ends` | **61.1 % (869/1422)** | 79.3 % | 83.3 % |
+| **`evidence-trimmed`** | **61.1 % (869/1422)** | **79.3 %** | **83.3 %** |
+
+The two arms reading the SAME FSE'26 number is the consistency check, not a disappointment: every case on that
+corpus observes its boundary, so `evidence-trimmed` resolves to `trimmed-ends` there by construction, and a
+composite that improved on one half by behaving differently on the other would be a second variable.
+
+**So this is the first configuration on the axis that improves both halves**: +15 cases on the nine cells with no
+cell down, +9 on FSE'26. It is measured and **not yet the default** — the flip needs the standing anchor moved
+from per-cell COUNTS rather than from these percentages, because the cell rate is the mean of its fault types
+(`docs/accuracy-aggregation.md`) and 88.9 % of a 30-case cell is not 26 2/3 cases. That extraction, the anchor
+block, `sota-comparison.md` §0p and the default itself belong in ONE commit, which is the next iteration's first
+task and is pre-registered here with its numbers.
