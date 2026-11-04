@@ -3208,7 +3208,31 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     ]);
   });
 
-  it('reads the observation flag ONLY under `evidence-aware`, so a shipped run cannot move', () => {
+  it('answers with the trimmed statistic on the observed side and the level test on the other', () => {
+    // `evidence-trimmed` is the same POLICY as `evidence-aware` with a different instrument on the observed
+    // side, so the discriminator has to be a series both members read differently: the warm-up below keeps its
+    // channel under `endpoint` and under `trimmed-ends` (the first three samples are all warm-up) and drops it
+    // under the level test (the two sides' medians coincide). Observed therefore keeps, unobserved drops.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [25.8, 26, 12, ...Array.from({ length: 15 }, () => 4), 5.6];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+
+    const observed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'evidence-trimmed',
+      sideChannelObserved: true,
+    });
+    const unobserved = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'evidence-trimmed',
+      sideChannelObserved: false,
+    });
+
+    expect(observed.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+    expect(unobserved.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+  });
+
+  it('reads the observation flag ONLY under the two evidence policies, so a shipped run cannot move', () => {
     // The claim the two cases above cannot make on their own: the new field is read by one arm and by no other.
     // Asserted as an identity over both statistics and both flag values rather than as four literal outcomes,
     // because a measurement that happens to agree is not the same statement as a branch that is not taken —
@@ -3223,7 +3247,7 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     const warmUp = [25, 20, 15, 10, 8, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6];
     for (const values of [plateau, warmUp]) {
       const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
-      for (const test of ['endpoint', 'level-window', 'either'] as const) {
+      for (const test of ['endpoint', 'level-window', 'trimmed-ends', 'either'] as const) {
         const observed = buildTopologyFaultGraph(graph, metrics, {
           injectTimeMs: 15000,
           transientGuardTest: test,
@@ -3876,6 +3900,7 @@ describe('the transient guard vocabulary — one owner, checked against its unio
       'either',
       'endpoint',
       'evidence-aware',
+      'evidence-trimmed',
       'level-window',
       'trimmed-ends',
     ]);

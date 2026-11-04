@@ -569,7 +569,7 @@ export const DEFAULT_RANK_NORMALIZATION = true;
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 
 export type TransientGuardTest =
-  'endpoint' | 'level-window' | 'trimmed-ends' | 'either' | 'evidence-aware';
+  'endpoint' | 'level-window' | 'trimmed-ends' | 'either' | 'evidence-aware' | 'evidence-trimmed';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
@@ -607,6 +607,7 @@ export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> =
   'trimmed-ends': true,
   either: true,
   'evidence-aware': true,
+  'evidence-trimmed': true,
 };
 
 /**
@@ -1910,12 +1911,22 @@ function computeAnomalyFeatures(
   // statistic is the one that reads a LEVEL. A case that did observe the boundary already has a term for
   // direction, and the endpoint statistic's job shrinks back to "did this channel move" — which is the question it
   // answers for the published cells.
+  //
+  // `evidence-trimmed` is the SAME policy with the observed side read by `trimmed-ends` instead of `endpoint`,
+  // and it exists because the two arms' gains are additive rather than redundant: `evidence-aware` buys its 13
+  // cases on the three cells that resolve to the level test, `trimmed-ends` buys its 3 on cells that resolve to
+  // the endpoint statistic, and FSE'26 resolves to the observed side on all 1422 cases — so the pair is the one
+  // combination that improves both halves with no cell down, which is the AND this axis has been judged by.
   const guardTest =
     cfg.transientGuardTest === 'evidence-aware'
       ? cfg.sideChannelObserved
         ? 'endpoint'
         : 'level-window'
-      : cfg.transientGuardTest;
+      : cfg.transientGuardTest === 'evidence-trimmed'
+        ? cfg.sideChannelObserved
+          ? 'trimmed-ends'
+          : 'level-window'
+        : cfg.transientGuardTest;
 
   let bestScore = 0;
   let bestMetricLabel = '';

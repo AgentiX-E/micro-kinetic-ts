@@ -455,11 +455,11 @@ jobs:
                 # settled by a run; an unknown member exits non-zero like every other name.
                 transient_guard_test)
                   case "$value" in
-                    endpoint|level-window|trimmed-ends|either|evidence-aware)
+                    endpoint|level-window|trimmed-ends|either|evidence-aware|evidence-trimmed)
                       KNOB_ARGS+=(--transient-guard-test "$value")
                       ;;
                     *)
-                      echo "::error::ranking_knobs: transient_guard_test takes endpoint, level-window, trimmed-ends, either or evidence-aware, got '$value'"
+                      echo "::error::ranking_knobs: transient_guard_test takes endpoint, level-window, trimmed-ends, either, evidence-aware or evidence-trimmed, got '$value'"
                       exit 1
                       ;;
                   esac
