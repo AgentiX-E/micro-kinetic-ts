@@ -694,9 +694,12 @@ describe("the guard's statistic reached this half after being recorded as unreac
 
   it('REFUSES an unknown member by name, listing the vocabulary it does accept', () => {
     // A silent fallback here would publish the shipped cells under a configuration the artifact claims was
-    // `level-window` — the same defect the golden half's branch refuses, in the same words.
+    // `level-window` — the same defect the golden half's branch refuses, in the same words. The expected
+    // message is BUILT from the union rather than retyped: a list copied into this assertion would go stale
+    // the moment the union grew, and it would go stale silently on the half that has the fewer readers.
+    const vocabulary = Object.keys(TRANSIENT_GUARD_TESTS).join(', ');
     expect(() => parseFSE26Args(['--transient-guard-test', 'level'])).toThrow(
-      /takes endpoint, level-window, either, evidence-aware, got 'level'/,
+      new RegExp(`takes ${vocabulary}, got 'level'`),
     );
     // …and the flag with no value at all is a stray token, not a value.
     expect(() => parseFSE26Args(['--transient-guard-test'])).toThrow();

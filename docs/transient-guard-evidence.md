@@ -367,3 +367,88 @@ exists, three arms are on the table and none of them is shippable:
 | `level-window` | 619/735 (−22) | **63.1 %** (+37) | rejected on the golden half, and the best FSE'26 number ever measured here |
 
 Until the predicate is found, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.
+
+---
+
+## 10. The fifth arm — the same question, an estimate that cannot be decided by one sample
+
+§9.3 ends on a predicate that would separate FSE'26's 37 gains from RCAEval's losses. The search for it started
+from the ONE property the two corpora's flip censuses share and that the four existing arms cannot express:
+
+| arm | what decides a channel | what it costs on the corpus that disagrees |
+| --- | --- | --- |
+| `endpoint` | `values[0]` and `values[n−1]` — **two samples out of 721** | drops `re1ob_adservice_delay_3` (a 361-of-721 plateau whose last sample returns) |
+| `level-window` | the medians of the two sides of the boundary | fixes that, and also drops a channel the corpus was WON on, because the sides' medians coincide while the ends do not |
+| `either` | the larger of the two | keeps everything both keep, including a warm-up spike at index 0 |
+| `evidence-aware` | which of the two to ask, chosen from what the case observed | correct on RCAEval, **exactly wrong on FSE'26** |
+
+Every one of those failures is a failure of the ESTIMATE at one END, not of the question: the shipped statistic
+lets a single draw decide whether a channel "returned", and both of its documented failure shapes — the plateau
+whose last sample is an off-beat, and the warm-up whose first sample is one — are single-draw artifacts. The
+level test removes them by changing the question, which is why it also removes the evidence the RE3 cells win on.
+
+`trimmed-ends` removes them without changing the question. It compares the **medians of the first and last
+`END_WINDOW_SAMPLES` samples** instead of the first and last one. It is the only member of the union that is a
+strict refinement of the shipped statistic rather than a different question, and the refinement is exact: it can
+disagree with `endpoint` only on a channel where one of the two samples `endpoint` reads is an isolated off-beat
+within its own three-sample window.
+
+Three design decisions, each with the number that fixes it:
+
+1. **Three samples, not a proportion.** `injectionSplitIndex` already refuses a side with fewer than three
+   samples for the reason this file gives twice: *a median of two is an average, and an average is what the
+   two-sample statistic already is*. At three the estimate tolerates exactly one off-beat in three — the
+   artifact class above — and no more.
+2. **Fixed, not windowed.** The arm that replaced the two ends with the means of the first and last TENTH was
+   measured and reverted (15 gained, 17 lost): a 72-sample window reaches the interior and restores the CALLER's
+   propagated `latency-90` along with the source's resource metric. A three-sample window cannot leave the ends,
+   so the guard's second job — damping a propagated symptom's magnitude advantage — is untouched.
+3. **A floor at `n > 2k`.** On six samples the two three-sample windows PARTITION the series, and a split in
+   halves is the level test wearing the trimmed statistic's name. Below the floor the arm returns `undefined`
+   and the caller keeps the shipped statistic for that channel, so a corpus of short series is not silently
+   re-ranked.
+
+### 10.1 The golden half, one commit, both arms, whole cells
+
+Local 723-case view (the five cases this checkout lacks are in the dispatch's 735), `--diagnose-dump` on both
+arms, the same commit and the same configuration:
+
+| cell | `endpoint` (shipped) | `trimmed-ends` | Δ cases |
+| --- | ---: | ---: | ---: |
+| `RE1:OnlineBoutique` | 85.6 % (107/125) | **86.4 %** (108/125) | **+1** |
+| `RE1:SockShop` | 93.3 % (112/120) | 93.3 % (112/120) | 0 |
+| `RE1:TrainTicket` | 85.0 % (105/123) | 85.0 % (105/123) | 0 |
+| `RE2:OnlineBoutique` | 92.0 % (80/87) | **93.1 %** (81/87) | **+1** |
+| `RE2:SockShop` | 97.8 % (88/90) | 97.8 % (88/90) | 0 |
+| `RE3:OnlineBoutique` | 87.5 % (23/28) | 87.5 % (23/28) | 0 |
+| `RE3:SockShop` | 63.6 % (18/30) | **66.1 %** (19/30) | **+1** |
+| `RE3:TrainTicket` | 30.6 % (9/30) | 30.6 % (9/30) | 0 |
+| **total** | **641 hits** | **644 hits** | **+3** |
+
+**No cell down, and the three RE3 cells do not move for the reason §5 gives** — the warm-up that carries them is
+still the first sample's neighbours rather than the first sample, so the verdict is the same. The four gains and
+two losses are named:
+
+| case | what moved |
+| --- | --- |
+| `re1ob_adservice_delay_4` | rank 3 → 1 — the plateau §4 names, whose last sample returns |
+| `re1ob_adservice_loss_2` | rank 2 → 1 — same shape, different channel |
+| `re2ob_currencyservice_loss_3` | 999 → 1 — the truth had been erased from the evidence entirely |
+| `re3ss_carts_f3_4` | rank 2 → 1 |
+| `re1ob_adservice_loss_3` | 1 → 2 — the one loss, the same artifact read the other way |
+| `re3tt_ts-auth-service_f1_1` / `_f1_4` | 48 → 1 and 1 → 48 — the cell's quiet-truth inversion, unchanged in net |
+
+### 10.2 What this arm is and is not
+
+It is **not** a better arm than `evidence-aware` on the golden half: +3 against +13, and the two are not
+additive because they act on disjoint cells (`evidence-aware` only leaves `endpoint` where a side channel was
+observed, which is exactly the six cells `trimmed-ends` barely moves). It is also **not** a predicate — it does
+not decide *which* statistic to ask; it removes the variance from the one the corpus already ships.
+
+That is why its question is not the golden half at all. §9.3's 37 cases are FSE'26's, and the class it names is
+`endpoint`'s single-draw failure — the exact class this arm is built for. The pre-registered prediction, stated
+so it can be wrong: **`trimmed-ends` recovers a positive fraction of the 37 and pays nothing on the nine cells,
+because a channel it keeps is a channel `endpoint` dropped over one sample, and a channel it drops is a channel
+`endpoint` dropped too.** If it recovers most of them, the AND over the two halves is met by one arm for the
+first time; if it recovers few, the level test's 37 are not single-sample artifacts and the predicate search
+continues with that eliminated.

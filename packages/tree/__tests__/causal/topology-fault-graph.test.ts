@@ -3028,6 +3028,89 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     expect(level.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
   });
 
+  it('keeps a settled plateau whose only off-beat is the ONE sample the endpoint statistic reads', () => {
+    // `re1ob_adservice_delay_3` exactly: 361 of 721 samples at the plateau and a single off-beat at the last
+    // index. The endpoint statistic divides the head-to-tail spread by the range, so that one sample decides
+    // the channel; the trimmed statistic asks the same question of the last three samples' median, which a
+    // single off-beat cannot move. The window is unchanged — it still reads the END of the series, which is
+    // the property the reverted window-MEAN arm did not have (it reached 72 samples into the interior and
+    // restored the caller's propagated latency along with the source's).
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 15 }, () => 5),
+      ...Array.from({ length: 12 }, () => 106),
+      5,
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    const trimmed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'trimmed-ends',
+    });
+
+    expect(shipped.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+    expect(trimmed.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+  });
+
+  it('keeps the start-of-series warm-up for the same reason the shipped statistic keeps it', () => {
+    // `re3ss_carts_f1_2`, the case the level test gives back: the channel opens on a warm-up (25.8) and
+    // settles at 5.6, so both ends differ by 0.92 of the range while the two sides' medians coincide. The
+    // trimmed statistic reads the first three samples, which are all warm-up, so it answers the shipped
+    // statistic's verdict — the three RE3 cells cannot move on this arm.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [25.8, 26, 12, ...Array.from({ length: 15 }, () => 4), 5.6];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    const trimmed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'trimmed-ends',
+    });
+
+    expect(shipped.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+    expect(trimmed.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+  });
+
+  it('falls back to the endpoint statistic on a series too short for two END windows', () => {
+    // The floor is structural rather than statistical: on six samples the first three and the last three
+    // PARTITION the series, so the "two ends" are really two halves and the estimate is the level test with a
+    // three-sample median. The arm must be the shipped statistic exactly there, so a corpus of short series is
+    // not silently re-ranked by the trim.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [5, 5, 5, 106, 106, 5];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 4000 });
+    const trimmed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 4000,
+      transientGuardTest: 'trimmed-ends',
+    });
+
+    expect(trimmed.anomalyScores.get('svc')).toBe(shipped.anomalyScores.get('svc'));
+    expect(trimmed.metricDiagnostics.get('svc')).toEqual(shipped.metricDiagnostics.get('svc'));
+  });
+
+  it('still drops a genuine excursion under the trimmed statistic, because both ends sit at one level', () => {
+    // The arm must not become the level test by another route: an excursion that returns is not evidence at
+    // either end, and a burst in the MIDDLE never reaches a three-sample end window.
+    const graph = makeCallGraph(['svc'], []);
+    const values = [
+      ...Array.from({ length: 9 }, () => 1),
+      10,
+      10,
+      ...Array.from({ length: 9 }, () => 1),
+    ];
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+
+    const trimmed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 10000,
+      transientGuardTest: 'trimmed-ends',
+    });
+
+    expect(trimmed.metricDiagnostics.get('svc')![0]!.outcome).toBe('transient-return');
+  });
+
   it('falls back to the endpoint statistic where the boundary cannot be placed', () => {
     // Two distinct refusals, both of which must leave the channel exactly where the shipped statistic puts it:
     // no injection anchor at all, and an anchor so early that a side carries fewer than three samples.
@@ -3775,7 +3858,12 @@ describe('the transient guard vocabulary — one owner, checked against its unio
       'endpoint',
       'evidence-aware',
       'level-window',
+      'trimmed-ends',
     ]);
+    // The fifth is an ESTIMATOR of the shipped one's own two quantities rather than a third question: the
+    // median of the first and last three samples instead of the first and last one, so a single off-beat
+    // cannot decide a channel while a mid-window burst that returns still cannot be read as a shift.
+    expect(isTransientGuardTest('trimmed-ends')).toBe(true);
     expect(isTransientGuardTest('endpoint')).toBe(true);
     expect(isTransientGuardTest('level-window')).toBe(true);
     // The third member is the UNION of the other two rather than a third estimator: it is the larger of two

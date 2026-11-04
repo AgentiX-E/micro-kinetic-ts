@@ -568,7 +568,8 @@ export const DEFAULT_RANK_NORMALIZATION = true;
  */
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 
-export type TransientGuardTest = 'endpoint' | 'level-window' | 'either' | 'evidence-aware';
+export type TransientGuardTest =
+  'endpoint' | 'level-window' | 'trimmed-ends' | 'either' | 'evidence-aware';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'endpoint'`, the two-sample
@@ -583,6 +584,12 @@ export type TransientGuardTest = 'endpoint' | 'level-window' | 'either' | 'evide
  *
  * Shipped `'endpoint'` so the published nine cells are bit-identical by construction, and reachable as
  * `--transient-guard-test` on both runners.
+ *
+ * `'trimmed-ends'` is the only member that keeps this statistic's QUESTION and replaces its ESTIMATE without
+ * widening its window: the median of the first and last {@link END_WINDOW_SAMPLES} samples instead of the
+ * first and last one. The distinction from the reverted tenth-window arm is the whole of its argument — that
+ * arm's window reached 72 samples into the interior and restored a propagated caller's channel; this one
+ * cannot leave the ends.
  */
 export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'endpoint';
 
@@ -597,9 +604,29 @@ export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'endpoint';
 export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> = {
   endpoint: true,
   'level-window': true,
+  'trimmed-ends': true,
   either: true,
   'evidence-aware': true,
 };
+
+/**
+ * How many samples each end of a channel contributes to {@link trimmedEndPermanence} — the width of the two
+ * level estimates the trimmed statistic compares.
+ *
+ * Three is the floor this file already uses for a median that means something: {@link injectionSplitIndex}
+ * refuses a side with fewer than three samples for the same reason (`a median of two is an average, and an
+ * average is what the two-sample statistic already is`). At three the estimate tolerates exactly one off-beat
+ * in three, which is the artifact the shipped statistic is decided by: `re1ob_adservice_delay_3` is a
+ * 361-of-721 plateau whose LAST sample returns, and one sample out of 721 is what drops it.
+ *
+ * The width is deliberately FIXED rather than proportional. The arm that replaced the two ends with the means
+ * of the first and last TENTH — 72 samples on a 721-sample window — was measured and reverted (15 gained, 17
+ * lost, `docs/transient-guard-window.md`): a window that reaches into the interior restores the CALLER's
+ * propagated `latency-90` along with the source's resource metric, and the caller's rise is larger. A
+ * three-sample window cannot reach the interior, so the guard's second job — damping the magnitude advantage
+ * of a propagated symptom — is untouched by this arm.
+ */
+export const END_WINDOW_SAMPLES = 3;
 
 /**
  * Whether the case carried an observation ACROSS services — a log line or a span — as opposed to metrics alone.
@@ -2041,12 +2068,15 @@ function computeAnomalyFeatures(
     // where a shift was found.
     const permanenceEndpoint = range > max * 1e-6 ? headTailSpread / range : 1;
     const permanenceLevel = levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range);
+    const permanenceTrimmed = trimmedEndPermanence(ts.values, range);
     const permanence =
       guardTest === 'level-window'
         ? (permanenceLevel ?? permanenceEndpoint)
-        : guardTest === 'either'
-          ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
-          : permanenceEndpoint;
+        : guardTest === 'trimmed-ends'
+          ? (permanenceTrimmed ?? permanenceEndpoint)
+          : guardTest === 'either'
+            ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
+            : permanenceEndpoint;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
@@ -2466,6 +2496,42 @@ function levelPermanence(
   const pre = medianOfRange(values, 0, split);
   const post = medianOfRange(values, split, values.length);
   return range > 0 ? Math.abs(pre - post) / range : 1;
+}
+
+/**
+ * The permanence of a channel measured at its two ends with a three-sample median instead of a single sample.
+ *
+ * The shipped statistic compares `values[0]` with `values[n−1]`, so on a 721-sample window ONE sample decides
+ * whether a channel is evidence. `re1ob_adservice_delay_3` is the measurement: a 106 ms plateau occupying 361
+ * of 721 samples is dropped because the last sample happens to return, and `docs/transient-guard-test.md` §4
+ * lists five more cases of the same event.
+ *
+ * This estimator keeps the question ("did the channel move between its start and its end") and the window
+ * ("the start and the end", never the interior), and replaces only the LEVEL ESTIMATE at each end: the median
+ * of {@link END_WINDOW_SAMPLES} samples, which tolerates one off-beat in three. It is therefore strictly a
+ * refinement of the shipped statistic — it can only disagree with it on a channel where one of the two samples
+ * the shipped statistic reads is an isolated off-beat, which is exactly the class the reverted window-MEAN arm
+ * was built for and the class that arm over-reached on.
+ *
+ * @param values - The channel's samples, in order.
+ * @param range - `max − min` over the channel, computed by the caller.
+ * @returns The permanence, or `undefined` when the series is no longer than two end windows — in which case
+ *   the caller keeps the shipped statistic rather than letting a split in halves pass for an estimate of two
+ *   ends.
+ * @internal
+ */
+function trimmedEndPermanence(values: Float64Array, range: number): number | undefined {
+  const n = values.length;
+  const k = END_WINDOW_SAMPLES;
+  // At most two windows' worth of samples leaves no interior between them, so a "first three" and a "last
+  // three" that partition the series is a split in halves rather than an estimate of two ENDS — which is the
+  // level test, one sample at a time. The floor is structural rather than a tuning constant: below it the
+  // arm IS the shipped statistic.
+  if (n <= 2 * k) return undefined;
+  if (!(range > 0)) return 1;
+  const head = medianOfRange(values, 0, k);
+  const tail = medianOfRange(values, n - k, n);
+  return Math.abs(head - tail) / range;
 }
 
 /**

@@ -95,6 +95,9 @@ export {
   DEFAULT_TRANSIENT_GUARD_TEST,
   DEMAND_METRIC_LABELS,
   DROP_DEVIATION_MODES,
+  // The trimmed statistic's window width, exported for the reason the stationarity constants are: an arm
+  // whose estimate depends on a number a reader cannot see is an arm that cannot be argued about.
+  END_WINDOW_SAMPLES,
   // The stationarity guard's two constants and its ONE statistic, exported together because a census that
   // counts refusals must read the same number the engine refuses on — a re-derived drift is a second
   // definition of "stationary", which is the defect `docs/baseline-anchor.md` §7b exists to prevent.
