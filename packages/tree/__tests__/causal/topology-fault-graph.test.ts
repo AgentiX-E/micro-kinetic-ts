@@ -3091,6 +3091,25 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     expect(trimmed.metricDiagnostics.get('svc')).toEqual(shipped.metricDiagnostics.get('svc'));
   });
 
+  it('reads the same "range worth dividing by" rule as the shipped statistic', () => {
+    // A channel whose range is under the shipped statistic's own epsilon is not a channel either arm may divide
+    // by: the endpoint verdict is `1` (kept) by construction there, and a trimmed verdict computed against a
+    // range the shipped statistic REFUSES would make the two arms disagree on a degenerate series for a reason
+    // that has nothing to do with the estimate.
+    const graph = makeCallGraph(['svc'], []);
+    const ripple = Array.from({ length: 20 }, (_, i) => 5 + (i % 2) * 1e-9);
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', ripple)]]]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    const trimmed = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'trimmed-ends',
+    });
+
+    expect(trimmed.anomalyScores.get('svc')).toBe(shipped.anomalyScores.get('svc'));
+    expect(trimmed.metricDiagnostics.get('svc')).toEqual(shipped.metricDiagnostics.get('svc'));
+  });
+
   it('still drops a genuine excursion under the trimmed statistic, because both ends sit at one level', () => {
     // The arm must not become the level test by another route: an excursion that returns is not evidence at
     // either end, and a burst in the MIDDLE never reaches a three-sample end window.

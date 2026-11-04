@@ -2066,9 +2066,15 @@ function computeAnomalyFeatures(
     // level test is decided by the medians of the two sides, so a channel whose ends move and whose median does
     // not is dropped even though it was permanent. A channel one honest reading calls permanent is a channel
     // where a shift was found.
-    const permanenceEndpoint = range > max * 1e-6 ? headTailSpread / range : 1;
+    // One owner for the "this channel has a range worth dividing by" rule, read by all three statistics: a
+    // trimmed verdict measured against a range the shipped statistic REFUSES would make the two arms differ on
+    // a degenerate channel for a reason that has nothing to do with the estimate.
+    const rangeIsMeasurable = range > max * 1e-6;
+    const permanenceEndpoint = rangeIsMeasurable ? headTailSpread / range : 1;
     const permanenceLevel = levelPermanence(ts.values, ts.timestamps, cfg.injectTimeMs ?? 0, range);
-    const permanenceTrimmed = trimmedEndPermanence(ts.values, range);
+    const permanenceTrimmed = rangeIsMeasurable
+      ? trimmedEndPermanence(ts.values, range)
+      : undefined;
     const permanence =
       guardTest === 'level-window'
         ? (permanenceLevel ?? permanenceEndpoint)
