@@ -124,3 +124,81 @@ artifact unjoinable against the source it describes. The line was fixed; the ass
   read-site count is therefore necessary and not sufficient: the site must also be on the path the ranking
   takes, and the shipped corpus is now owned by `benchmarks/src/rcaeval-corpus.ts`, where no feature flag
   reaches it.
+
+## 4. The row that was mistaken for the shipped engine
+
+**Found by reading the artifact against the dispatch, iteration 226.** `ablation-re1-results` and
+`ablation-re3-results` each carry a row labelled **`FULL STACK (all ON)`**. It turns on **three of the
+twelve flags** — `collisionAggregation`, `extraTraceValidation`, `selfLearning` — and leaves all six
+ranking signals at weight 0. Its measured consequence is not a small delta:
+
+| artifact | systems | rows value-identical to `BASELINE (flags OFF)` |
+| --- | --- | --- |
+| `ablation-re1-results` | OnlineBoutique / SockShop / TrainTicket | 21 / 22 / 21 of 34 |
+| `ablation-re3-results` | OnlineBoutique / SockShop / TrainTicket | 18 / 20 / 15 of 34 |
+
+The eight-row legacy cluster — `BASELINE`, `+Collision Q(f,f)`, `+Trace Topo`, `+SelfLearn`, the three
+pairwise combinations, and `FULL STACK (all ON)` — collapses to **one distinct value-string across all
+six system blocks**, i.e. 224 printed cells carrying one configuration under two names. The row a reader
+would take for the stack is the control.
+
+### 4.1 What this corrupted
+
+Every `Δ` in the artifact was computed against `allRuns[0]` — the stripped control — so a contribution
+table read off it answered "what does this term buy over an engine nobody publishes?" rather than "what
+does it buy over the engine we ship?". The two are not close: the control is 20.0% `AC@1` on
+`RE3:TrainTicket` where the published configuration is 73.3%.
+
+### 4.2 The configuration the published cells are actually taken with
+
+It is **not a point in the battery's cube**. `logWeight` is 1 and `rankNormalization` is ON everywhere,
+`prismWeight` / `collisionWeight` / `topoWeight` are the shipped 0 — but `traceWeight` is a **per-suite
+pin**: `benchmark-rcaeval.yml` states `RANKING_ARG+=(--trace-weight 1)` inside the `re3` step, and the
+`re1` / `re2` steps inherit the runner default `0`. `productionFlags(suite)` states both vectors, and a
+fence proves the pin from the workflow rather than from a second copy of the claim: exactly one literal
+`--trace-weight 1` exists, and the next `run-rcaeval.ts --suite` after it is `re3`.
+
+Two rows now carry those vectors — `PRODUCTION (RE1+RE2: log + rank)` and
+`PRODUCTION (RE3: log + trace + rank)` — and the artifact **marks** the one that is production for the
+suite being measured. `isProductionFlags` compares all thirteen members, so a row that differs in the one
+switch nobody watches is not production.
+
+### 4.3 The grid is a valid counterfactual, and this is the first evidence for it
+
+Two independent readings say the battery reproduces the published numbers where it should:
+
+| suite | published cell | battery row | battery | published |
+| --- | --- | ---: | ---: | ---: |
+| `RE1:OnlineBoutique` | 112/125 | `BASELINE` (≡ production: no logs, no traces) | 89.6% | 89.6% |
+| `RE1:SockShop` | 119/125 | same | 95.2% | 95.2% |
+| `RE1:TrainTicket` | 112/125 | same | 89.6% | 89.6% |
+| `RE3:OnlineBoutique` | 25/30 | `PRODUCTION (RE3)` | 83.3% | 83.3% |
+| `RE3:SockShop` | 19/30 | same | 63.3% | 63.3% |
+| `RE3:TrainTicket` | 22/30 | same | 73.3% | 73.3% |
+
+Six of nine cells match to the printed digit, on **both** anchors — which is what licenses reading the
+remaining rows as counterfactuals over the engine rather than as an experiment on a stripped toy.
+
+### 4.4 The first reading taken against production
+
+`+Log +Trace +Rank +PRISM (conj)` against `PRODUCTION (RE3)`, same run, same corpus:
+
+| system | production | +PRISM conj | Δ |
+| --- | ---: | ---: | ---: |
+| OnlineBoutique | 83.3% | 86.7% | **+3.3** |
+| SockShop | 63.3% | 43.3% | **−20.0** |
+| TrainTicket | 73.3% | 93.3% | **+20.0** |
+| RE3 pooled | 73.3% | 74.4% | +1.1 |
+
+**Not adopted.** It buys 6 cases on the cell this project most needs (`RE3:TrainTicket`, the wrong-value
+class) and loses 6 on the cell it can least afford (`RE3:SockShop`), and the only rule that would separate
+them is the suite label — which does not exist at inference time. The row is kept as the measurement it
+is, and the gate it needs is a property of the CASE (evidence sufficiency), not of the suite.
+
+### 4.5 Residue
+
+- `run-ablation.ts` still calls `main()` at import time, so the row table is fenced by reading its source;
+  a test that asserted on `CONFIGS` directly would be a stronger fence and needs the runner split.
+- The four anomaly-shape weights the published run passes (`anomalyTrendWeight` 0.15, `anomalyCvWeight`
+  0.05, `anomalyBreadthWeight` 0.05, `anomalyBurstWeight` 0) are still **not fields of this record**, so
+  the battery can neither state nor vary them. They are the last configuration the artifact cannot name.

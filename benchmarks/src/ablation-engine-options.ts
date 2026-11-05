@@ -354,6 +354,126 @@ export interface AblationEngineOverrides {
 }
 
 /**
+ * The three published RCAEval suites, spelled as the artifact's own `suite=` filter spells them.
+ *
+ * A suite is an INPUT to the published configuration rather than a label on it — see
+ * {@link productionFlags} — so the vocabulary has to live beside the flags, not in the runner that
+ * happens to filter by it.
+ */
+export type AblationSuite = 're1' | 're2' | 're3';
+
+/**
+ * The configuration the PUBLISHED nine cells are taken with.
+ *
+ * ## Why this function has to exist, and what it refuted
+ *
+ * A reader of `ablation-*-results` had exactly one row that could be mistaken for the production
+ * configuration — `FULL STACK (all ON)` — and it is not production and is not all on: it turns on the
+ * three LEGACY flags (`collisionAggregation`, `extraTraceValidation`, `selfLearning`) and leaves all
+ * six ranking signals off, so it is **value-identical to `BASELINE (flags OFF)` in every fault-type
+ * column of every system** — measured, not argued: the eight-row legacy cluster that contains it is one
+ * distinct value-string across all three systems of both `ablation-re1-results` and
+ * `ablation-re3-results`, i.e. 224 printed cells that carry one configuration twice.
+ * A row that cannot move is not a measurement of the stack; it is the stripped baseline under a second
+ * name, and every delta the artifact printed was measured from that stripped point rather than from
+ * what this project ships.
+ *
+ * ## The configuration, stated
+ *
+ * Production is `logWeight = 1`, `rankNormalization = true`, `prismWeight = 0`, and every collision /
+ * topology / shape switch at its shipped pole — but `traceWeight` is **not** one value: the dispatch
+ * pins it to `1` inside the `re3` step (`benchmark-rcaeval.yml`, `RANKING_ARG+=(--trace-weight 1)`)
+ * while `re1` and `re2` take the runner default `0`. The published configuration is therefore **not a
+ * point in the battery's cube**: it is a per-suite pin, which is why one flat grid could not express it
+ * and why the row that reproduced the published numbers on `RE3` (83.3 / 63.3 / 73.3) was labelled
+ * after its three flags instead.
+ *
+ * `RE1` cannot see the difference — that suite has no `logs.csv` and no `traces.csv`, so both signals
+ * are starved there and the two production vectors rank identically (measured: `112/125`, `119/125`,
+ * `112/125`). `RE2` has traces and takes `traceWeight = 0`, which is the one cell in the nine where a
+ * row of this battery could test the pin itself.
+ *
+ * @param suite - The suite whose published configuration is wanted.
+ * @returns The flags the published run for that suite is taken with.
+ */
+export function productionFlags(suite: AblationSuite): AblationFeatureFlags {
+  return {
+    collisionAggregation: false,
+    extraTraceValidation: false,
+    selfLearning: false,
+    logSignal: true,
+    topoSignal: false,
+    collisionSignal: false,
+    collapseDiscount: false,
+    riseSignal: false,
+    // The pin. `re3` states `--trace-weight 1` in its own step; the other two inherit the runner's
+    // `DEFAULT_TRACE_WEIGHT`, which is 0. A corpus with no spans makes the distinction unobservable, and
+    // `RE1` is that corpus.
+    traceSignal: suite === 're3',
+    rankNormalization: true,
+    suppressIdleTransients: false,
+    suppressDemandMetrics: true,
+    prismSignal: false,
+  };
+}
+
+/**
+ * Whether a flag vector is the published configuration for a suite.
+ *
+ * Compares every member rather than a subset: a row that differed in the one switch nobody watches would
+ * be reported as production while measuring something else, which is the defect {@link productionFlags}
+ * documents in the row it replaced.
+ *
+ * @param flags - The row's flags.
+ * @param suite - The suite being measured, as the artifact spells it. An unknown suite answers `false`
+ *   rather than throwing: the caller is a `find` over the battery, and "no row is production here" is a
+ *   fact it has to be able to hold.
+ * @returns `true` when every member matches.
+ */
+export function isProductionFlags(
+  flags: AblationFeatureFlags,
+  suite: AblationSuite | string,
+): boolean {
+  if (suite !== 're1' && suite !== 're2' && suite !== 're3') return false;
+  const want = productionFlags(suite);
+  return (Object.keys(want) as Array<keyof AblationFeatureFlags>).every(
+    (key) => flags[key] === want[key],
+  );
+}
+
+/**
+ * The battery rows that ARE the published configuration, one per suite, owned here so a test can hold
+ * them to {@link productionFlags} without importing the runner (which executes at import time).
+ *
+ * Two rows rather than one because the published configuration is two: the `RE3` trace pin is a fact
+ * about that suite. The rows differ in exactly one flag, which is the measurement this pairing makes
+ * available — on `RE2`, where the `re1` vector is production, the `re3` vector is a single-flag
+ * counterfactual, and it is the only one the nine cells ever needed.
+ */
+export interface AblationProductionRow {
+  /** The label the artifact prints. */
+  readonly label: string;
+  /** The suites this row is the published configuration OF. */
+  readonly suites: readonly AblationSuite[];
+  /** The flags, exactly {@link productionFlags} of those suites. */
+  readonly flags: AblationFeatureFlags;
+}
+
+/** The two production rows, in the order the battery states them. */
+export const PRODUCTION_ROWS: readonly AblationProductionRow[] = [
+  {
+    label: 'PRODUCTION (RE1+RE2: log + rank)',
+    suites: ['re1', 're2'],
+    flags: productionFlags('re1'),
+  },
+  {
+    label: 'PRODUCTION (RE3: log + trace + rank)',
+    suites: ['re3'],
+    flags: productionFlags('re3'),
+  },
+];
+
+/**
  * Build BOTH of the engine's constructor arguments for one ablation configuration.
  *
  * @param flags - The configuration's feature flags.

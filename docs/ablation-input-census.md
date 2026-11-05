@@ -178,3 +178,59 @@ was that neither label said which it was. The field is renamed `casesWithReadabl
 `readable`, so the two can no longer be read for one another — and a fence asserts the label, because a number
 alone cannot distinguish them. **Having two instruments is not the defect; having two instruments with one word
 is.**
+
+## 9. The channel matrix, and the weight it leaves without an input
+
+Iteration 226 read the census lines of all nine cells out of one battery (`41948289279`, `fc85b1c8`) instead of
+per cell. The result is a coverage matrix, and its shape is not what the roadmap assumed:
+
+| cell | cases | metrics | logs (readable) | spans | edge-latency rows |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `RE1:OnlineBoutique` | 125 | 125/125 | 0/125 | 0/125 | 0 |
+| `RE1:SockShop` | 125 | 125/125 | 0/125 | 0/125 | 0 |
+| `RE1:TrainTicket` | 125 | 125/125 | 0/125 | 0/125 | 0 |
+| `RE2:OnlineBoutique` | 90 | 90/90 | 90/90 (21 readable) | 90/90 | 1080 in 90/90 |
+| `RE2:SockShop` | 90 | 90/90 | 90/90 | **0/90** | **0** |
+| `RE2:TrainTicket` | 90 | 90/90 | 90/90 | 90/90 | 6781 in 89/90 |
+| `RE3:OnlineBoutique` | 30 | 30/30 | 30/30 | 30/30 | 356 in 30/30 |
+| `RE3:SockShop` | 30 | 30/30 | 30/30 | **0/30** | **0** |
+| `RE3:TrainTicket` | 30 | 30/30 | 30/30 | 30/30 | 2006 in 30/30 |
+
+### 9.1 SockShop carries no `traces.csv`, on either suite
+
+`input-coverage[SockShop]` reads `spans 0/30` beside `logs 30/30 readable (43102 entries)` on RE3 and `spans
+0/90` beside `logs 90/90` on RE2, and `latency-routes[SockShop]` resolves it: `capped spans 0 … whole-file 0`,
+`VERDICT: STARVED — the capped list holds no spans at all`. The case directory is the right one — the log file,
+which sits beside the trace file, reads cleanly in all 120 cases — so this is a property of the corpus, not of the
+loader. Every published `SockShop` cell is therefore ranked on **metrics and logs only**.
+
+### 9.2 What that costs: `latWeight` is inert on 67.3% of the corpus
+
+`latWeight` is **0.561495**, the largest weight in the ranking. Its input is `edgeLatencyScores`, derived from the
+case's own spans, and spans exist in exactly four cells:
+
+| | cases | share |
+| --- | ---: | ---: |
+| corpus where the latency term has an input | 240 | 32.7% |
+| corpus where it does not (`RE1` 375 + all SockShop 120) | **495** | **67.3%** |
+
+This is not new behaviour — it is what the artifacts have always recorded — but it had never been multiplied out,
+and the consequence is a statement about what the model *is* on two thirds of the corpus: with the directional
+term absent, those 495 cases are ranked by the base anomaly term, its shape weights (`trend` 0.15, `cv` 0.05,
+`breadth` 0.05), the pool penalty, `stability`, and on `SockShop` the log signal. No kinetic term is present at
+all, because `collisionWeight`, `topoWeight` and `selfTimeWeight` ship at 0 and the trace pin does not reach a
+corpus with no spans.
+
+### 9.3 The constraint this puts on the next lever
+
+`RE3:SockShop` — the lowest lift in the nine cells (38.9%) — is one of the starved cells, and its ten losses
+decompose as `f4 1/7 (5 outweighed, 1 outvoted) · f3 7/10 · f1 8/10 · f2 3/3` — **eleven of eleven misses are
+ranked decisions, not absent evidence: `blank 0` in every fault type.** Ten are `outweighed` and one `outvoted`, so
+the true service was scored and lost every time. Every arm the battery can reach has been measured on it and every
+one is a loss: `+Topo Signal` 60.0%, `+Collision Signal` 60.0%, `+Rise Signal` 46.7%, `+Collapse Discount`
+60.0%, `+PRISM` 50.0% and `+PRISM (conj)` 43.3%, against the published 63.3%.
+
+So the cell cannot be moved by any switch this battery owns, and it cannot be moved by anything that reads spans
+or edges, because it has neither. **What `RE3:SockShop` needs is a discriminator that runs on metrics and logs
+alone** — and the fact that `RE1` (also starved) is at 87.0–94.0% lift says the metric-only regime is not
+intrinsically weak; it is weak on the wrong-value class, which is exactly what `f4` is.

@@ -14,7 +14,9 @@
  * ## Methodology
  *
  * For each feature toggle combination, run ALL benchmark cases × 3 repetitions.
- * Compute mean A@1 and standard deviation. Report Δ vs baseline (all OFF).
+ * Compute mean A@1 and standard deviation. Report Δ against the row that IS the published
+ * configuration for the suite being measured (`PRODUCTION_ROWS`), not against the stripped control —
+ * see the anchor block before the systems table.
  *
  * @module benchmarks/run-ablation
  */
@@ -65,6 +67,9 @@ import {
   buildAblationEngineOptions,
   configDiff,
   formatAblationConfigLine,
+  isProductionFlags,
+  PRODUCTION_ROWS,
+  productionFlags,
   type AblationEngineOverrides,
   type AblationFeatureFlags,
 } from './ablation-engine-options.js';
@@ -401,7 +406,13 @@ const CONFIGS: Array<{
       suppressDemandMetrics: true,
       prismSignal: false,
     },
-    label: 'FULL STACK (all ON)',
+    // The label said `FULL STACK (all ON)`, and the flags below are three of twelve: the legacy trio, with
+    // `collisionWeight`, `topoWeight`, `logWeight`, `traceWeight`, `riseWeight` and `prismWeight` all at 0. The
+    // measured consequence is that this row is value-identical to `BASELINE (flags OFF)` in every fault-type
+    // column of all three systems on both suites — 224 cells carrying one configuration under two names, which
+    // is what a row that cannot move looks like. The name now states how many of the twelve it turns on,
+    // because a reader took the old one for the shipped engine.
+    label: 'LEGACY FLAGS ON (3 of 12: Q(f,f) aggregator + extra trace validation + self-learning)',
   },
   // ── New ranking signals (marginal over BASELINE, one at a time) ──
   // Each measures the marginal contribution of a single ranking signal.
@@ -577,28 +588,36 @@ const CONFIGS: Array<{
     },
     label: '+Trace Activity +Rank',
   },
+  // ── The published configuration, stated instead of implied ──
+  // These two rows replaced a slice labelled `+Log +Trace Activity +Rank`, whose own comment claimed the main
+  // benchmark "ships logWeight=1 + traceWeight=1 (production defaults)". Half true: the trace weight is 1 on
+  // RE3, where the dispatch pins it, and 0 on RE1 and RE2, where it is the runner default. A row whose label is
+  // a flag list can only be read by someone who already knows the pin, so the rows are now named for the claim
+  // they carry and their flags come from `productionFlags` rather than from a second hand-written copy.
+  ...PRODUCTION_ROWS.map((row) => ({ flags: row.flags, label: row.label })),
   {
-    // Combination slice: the production log + trace backstop, plus rank
-    // normalization. The main benchmark ships logWeight=1 + traceWeight=1
-    // (production defaults); this slice mirrors that on top of rank
-    // normalization to answer whether rank lifts the production configuration's
-    // TT RE3 (currently f3 = 10%) without regressing OB/SS/RE1/RE2.
+    // The row the old `FULL STACK (all ON)` was believed to be. Every one of the twelve flags on, which is a
+    // configuration nobody ships and no record has ever measured: the old row turned on the THREE legacy flags
+    // and left all six ranking signals off, so it was bit-identical to `BASELINE (flags OFF)` in all
+    // thirty-six printed column-cells of the RE1 and RE3 artifacts. Its value is that it bounds the cube — if
+    // the twelve-way point is worse than production, no subset search over this battery's arms can be the
+    // whole story.
     flags: {
-      collisionAggregation: false,
-      extraTraceValidation: false,
-      selfLearning: false,
+      collisionAggregation: true,
+      extraTraceValidation: true,
+      selfLearning: true,
       logSignal: true,
-      topoSignal: false,
-      collisionSignal: false,
-      collapseDiscount: false,
-      riseSignal: false,
+      topoSignal: true,
+      collisionSignal: true,
+      collapseDiscount: true,
+      riseSignal: true,
       traceSignal: true,
       rankNormalization: true,
-      suppressIdleTransients: false,
+      suppressIdleTransients: true,
       suppressDemandMetrics: true,
-      prismSignal: false,
+      prismSignal: true,
     },
-    label: '+Log +Trace Activity +Rank',
+    label: 'ALL TWELVE FLAGS ON (cube corner)',
   },
   {
     // Rank-based anomaly-score normalization (rankNormalization), the P1 fix
@@ -610,8 +629,8 @@ const CONFIGS: Array<{
     // the deterministic trace/topo signals that already point at the silent
     // source can tip the ranking. Affects only large topologies (≥ 20 nodes).
     // NOTE: in isolation this slice is a no-op (monotonic transform, all
-    // weights 0); the +Trace Activity +Rank and +Log +Trace Activity +Rank
-    // slices above are where its effect is actually measured.
+    // weights 0); the +Trace Activity +Rank slice above and both PRODUCTION
+    // rows are where its effect is actually measured.
     flags: {
       collisionAggregation: false,
       extraTraceValidation: false,
@@ -687,8 +706,8 @@ const CONFIGS: Array<{
     // fusion ceiling showed it is strongly complementary (union 87.5% vs
     // 76.1% engine / 76.7% PRISM separately), with the strongest complement in
     // RE2 resource faults and RE3. This slice measures PRISM's marginal effect
-    // alone; the +Log +Trace Activity +Rank +PRISM slice measures whether the
-    // gain survives on top of the production configuration.
+    // alone; `+Log +Trace +Rank +PRISM (conj)` measures whether the gain
+    // survives on top of the published configuration for RE3.
     //
     // The flags are spread from a NAMED constant because the pooling rows below are its siblings: a
     // difference between this row and `PRISM Signal (conjunctive)` must be the pooling and nothing else.
@@ -899,24 +918,12 @@ const PRISM_SWEEP_AXIS: readonly AxisPoint[] = PRISM_SWEEP_POOLINGS.flatMap((poo
   PRISM_SWEEP_WEIGHTS.map((weight) => axisPoint(weight, pooling)),
 );
 
-// The production configuration (logWeight=1 + traceWeight=1 + rankNorm=true),
-// whose prismWeight the sweep varies. Mirrors the '+Log +Trace Activity +Rank'
-// ablation slice.
-const PRISM_SWEEP_FLAGS: FeatureFlags = {
-  collisionAggregation: false,
-  extraTraceValidation: false,
-  selfLearning: false,
-  logSignal: true,
-  topoSignal: false,
-  collisionSignal: false,
-  collapseDiscount: false,
-  riseSignal: false,
-  traceSignal: true,
-  rankNormalization: true,
-  suppressIdleTransients: false,
-  suppressDemandMetrics: true,
-  prismSignal: false,
-};
+// The configuration the sweep varies `prismWeight` ON TOP OF: the published configuration for RE3, which is
+// the suite this sweep runs on. It used to be a hand-written copy of that vector, described as "the production
+// configuration (logWeight=1 + traceWeight=1 + rankNorm=true)" — true of RE3 and false of the two other suites,
+// whose trace pin is the runner default 0. The copy is gone; `productionFlags` is the one owner, so a change to
+// the pin moves the sweep's base with it instead of leaving a second vector to drift.
+const PRISM_SWEEP_FLAGS: FeatureFlags = productionFlags('re3');
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -1551,6 +1558,18 @@ async function main(): Promise<void> {
       // attributed. Printed for every row, including the ones that take the published view.
       const latencyView = config.latencyView ?? DEFAULT_LATENCY_SOURCE;
       console.log(`Corpus: edgeLatency from ${latencyView}`);
+      // WHICH ROW IS THE SHIPPED ENGINE. Without this line the artifact's most consequential fact — that its
+      // deltas are measured from the stripped baseline rather than from what this project publishes — is
+      // invisible, and the row a reader took for the stack was the one labelled "all ON". The test is the flag
+      // vector itself (`isProductionFlags`), not a label, and it is asked per suite because the answer is per
+      // suite: the trace pin is 1 on RE3 and 0 elsewhere.
+      if (
+        isProductionFlags(config.flags, suiteFilter) &&
+        Object.keys(config.overrides ?? {}).length === 0 &&
+        latencyView === DEFAULT_LATENCY_SOURCE
+      ) {
+        console.log('  ← this row IS the published configuration for this suite');
+      }
       console.log(`${'─'.repeat(60)}`);
 
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
@@ -1741,7 +1760,33 @@ async function main(): Promise<void> {
   console.log(header);
   console.log('─'.repeat(80));
 
-  const baseline = allRuns[0]!;
+  // ── THE ANCHOR IS THE SHIPPED CONFIGURATION, NOT THE STRIPPED ONE ──
+  //
+  // Every `Δ` this artifact prints used to be measured from `allRuns[0]`, the row that turns twelve flags off.
+  // That anchor is not a configuration this project ships — it is the control the study uses to isolate a
+  // switch — so a reader asking "what does the collision term buy me?" was answered with a number relative to
+  // an engine nobody publishes, and the row that looked like the stack (`FULL STACK (all ON)`) was that same
+  // control under a second name. Both defects have the same repair: name the row that IS the published
+  // configuration for this suite, and measure from it.
+  //
+  // The anchor is resolved by FLAGS (`isProductionFlags`), never by label, and it is per suite because the
+  // published configuration is: `traceWeight` is pinned to 1 in the `re3` dispatch step and left at the
+  // runner default 0 elsewhere. A run that filtered no single suite has no published configuration to anchor
+  // on and says so instead of pretending, which is the only case in which the stripped control is still used.
+  const suiteKey = suiteFilter.toLowerCase();
+  const productionRun = allRuns.find(
+    (run) =>
+      isProductionFlags(run.flags, suiteKey) &&
+      Object.keys(run.overrides).length === 0 &&
+      run.latencyView === DEFAULT_LATENCY_SOURCE,
+  );
+  const baseline = productionRun ?? allRuns[0]!;
+  console.log(
+    productionRun
+      ? `Δ anchor: ${productionRun.label} — the published configuration for ${suiteKey}`
+      : `Δ anchor: ${baseline.label} — NO row is the published configuration for suite=${suiteFilter}, so ` +
+          `every Δ below is relative to the stripped control and is NOT a contribution over production`,
+  );
   const baselineAvgs = new Map<string, number>();
   for (const [ds, r] of baseline.results) baselineAvgs.set(ds, r.publishedA1);
 

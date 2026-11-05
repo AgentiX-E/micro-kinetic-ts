@@ -50,8 +50,11 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import {
+  PRODUCTION_ROWS,
   buildAblationEngineOptions,
   formatAblationConfigLine,
+  isProductionFlags,
+  productionFlags,
   type AblationFeatureFlags,
 } from '../src/ablation-engine-options.js';
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
@@ -547,5 +550,154 @@ describe('the sweep axis is two-dimensional, and its first column is the shipped
     // `N cases` line — and it must name both the factor and its source rather than only the word.
     expect(RUNNER).toContain('(n) = case-reps: cases x REPETITIONS');
     expect(RUNNER).toMatch(/cases x REPETITIONS \(\$\{REPETITIONS\}\)/);
+  });
+});
+
+describe('the row that IS the published configuration, and the label that was not', () => {
+  /** The runner's source, for the same reason the block above reads it: `main()` runs at import time. */
+  const RUNNER_SRC = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../src/run-ablation.ts'),
+    'utf8',
+  );
+  // Two levels up: this file lives in `benchmarks/__tests__`, and the workflow is at the repository root.
+  const WORKFLOW_SRC = readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../.github/workflows/benchmark-rcaeval.yml',
+    ),
+    'utf8',
+  );
+
+  it('states the published configuration as a per-suite pin rather than as one point', () => {
+    // The pin is the point: `traceWeight` is 1 on RE3 — the dispatch states it inside that step — and 0 on the
+    // other two, where it is the runner default. A single flag vector could therefore not be "production", and
+    // the row that looked like it was production was a THREE-flag row with every ranking signal at zero.
+    expect(productionFlags('re1').traceSignal, 'RE1 takes the runner default').toBe(false);
+    expect(productionFlags('re2'), 'RE2 does too').toEqual(productionFlags('re1'));
+    expect(productionFlags('re3').traceSignal, 'RE3 is pinned ON').toBe(true);
+    for (const suite of ['re1', 're2', 're3'] as const) {
+      const flags = productionFlags(suite);
+      expect(flags.logSignal, `${suite}: logWeight is 1 everywhere`).toBe(true);
+      expect(flags.rankNormalization, `${suite}: rank normalisation is ON`).toBe(true);
+      expect(flags.prismSignal, `${suite}: prismWeight is the shipped 0`).toBe(false);
+      expect(flags.collisionSignal, `${suite}: collisionWeight is the shipped 0`).toBe(false);
+      expect(flags.topoSignal, `${suite}: topoWeight is the shipped 0`).toBe(false);
+      expect(flags.suppressDemandMetrics, `${suite}: the demand guard ships ON`).toBe(true);
+      // Three switches plus the demand guard: four of the thirteen are true, against twelve in the row the
+      // artifact used to call the stack. The count is asserted rather than described, because "the published
+      // configuration" is exactly the vector the count is over.
+      expect(Object.values(flags).filter(Boolean), `${suite}: four on`).toHaveLength(
+        suite === 're3' ? 4 : 3,
+      );
+    }
+    // …and the two vectors differ in ONE member. That is the whole of the suite dependence, so a later edit
+    // that made production suite-dependent in some second way has to say so here.
+    const differing = (
+      Object.keys(productionFlags('re1')) as Array<keyof AblationFeatureFlags>
+    ).filter((key) => productionFlags('re1')[key] !== productionFlags('re3')[key]);
+    expect(differing).toEqual(['traceSignal']);
+  });
+
+  it('proves the pin from the workflow, in the step that runs the suite it applies to', () => {
+    // A constant asserted only in TypeScript would be a second opinion about the dispatch. The pin is a fact of
+    // `benchmark-rcaeval.yml`, so it is READ from there: exactly one literal `--trace-weight 1`, and the next
+    // `--suite` command after it is the RE3 run. (The pin sits in the guard block preceding that command, so
+    // the nearest FOLLOWING suite is the one it applies to — the nearest preceding one is RE2's.)
+    const lines = WORKFLOW_SRC.split('\n');
+    const pinLines = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /RANKING_ARG\+=\(--trace-weight 1\)/.test(line));
+    expect(pinLines, 'exactly one hard-coded trace pin').toHaveLength(1);
+    const runSuites = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => line.includes('run-rcaeval.ts --suite'))
+      .map(({ line, index }) => ({ index, suite: /--suite (\w+)/.exec(line)![1]! }));
+    const next = runSuites.find((entry) => entry.index > pinLines[0]!.index);
+    expect(next?.suite, 'the pin applies to the suite that runs next').toBe('re3');
+    // No other suite pins a constant weight, i.e. the asymmetry is RE3's alone.
+    const otherPins = lines.filter((line) => /--(log|topo|prism|collision)-weight 1\b/.test(line));
+    expect(otherPins, 'no other signal is pinned by a literal').toEqual([]);
+  });
+
+  it('answers the production question by FLAGS, never by a label', () => {
+    expect(isProductionFlags(productionFlags('re2'), 're2')).toBe(true);
+    expect(isProductionFlags(productionFlags('re1'), 're1')).toBe(true);
+    expect(isProductionFlags(productionFlags('re3'), 're3')).toBe(true);
+    // The one-member difference is enough to separate them, in both directions.
+    expect(isProductionFlags(productionFlags('re1'), 're3')).toBe(false);
+    expect(isProductionFlags(productionFlags('re3'), 're2')).toBe(false);
+    // A row that differs only in the switch nobody watches is not production either: the comparison is over
+    // EVERY member, which is the rule the docblock states and this asserts.
+    expect(isProductionFlags({ ...productionFlags('re3'), riseSignal: true }, 're3')).toBe(false);
+    // A suite-less filter ('all') has no published configuration to name, and the caller is a `find` over the
+    // battery, so "no row is production here" has to be an answer rather than a throw.
+    expect(isProductionFlags(productionFlags('re3'), 'all')).toBe(false);
+  });
+
+  it('carries one row per suite, and the rows differ in exactly the pinned member', () => {
+    const claimed = PRODUCTION_ROWS.flatMap((row) => row.suites);
+    expect([...claimed].sort(), 'every suite is claimed exactly once').toEqual([
+      're1',
+      're2',
+      're3',
+    ]);
+    for (const row of PRODUCTION_ROWS) {
+      for (const suite of row.suites) {
+        expect(row.flags, `${row.label} is production for ${suite}`).toEqual(
+          productionFlags(suite),
+        );
+      }
+    }
+    expect(PRODUCTION_ROWS.map((row) => row.label)).toEqual([
+      'PRODUCTION (RE1+RE2: log + rank)',
+      'PRODUCTION (RE3: log + trace + rank)',
+    ]);
+    // The two rows are the single-flag counterfactual pair; a battery that had only one of them could not
+    // measure what the trace pin buys on the only suite that has spans and does not pin it.
+    expect(PRODUCTION_ROWS[0]!.flags.traceSignal).toBe(false);
+    expect(PRODUCTION_ROWS[1]!.flags.traceSignal).toBe(true);
+  });
+
+  it('prints the production row differently from the other rows, and says which one it is', () => {
+    // The statement has to reach the ARTIFACT, not only the flag table: the defect was an artifact in which no
+    // row was identified as the shipped engine, so the annotation is part of the repair.
+    const code = stripComments(RUNNER_SRC);
+    expect(code).toContain('this row IS the published configuration for this suite');
+    // The anchor of every Δ is that row, resolved by flags and per suite — and the artifact says which anchor
+    // it used, including the case where there is none.
+    expect(code).toMatch(/const productionRun = allRuns\.find/);
+    expect(code).toMatch(/isProductionFlags\(run\.flags, suiteKey\)/);
+    expect(code).toContain('Δ anchor:');
+    expect(code).toContain('is NOT a contribution over production');
+    // The anchor is `productionRun`, not `allRuns[0]`: a fallback that silently returned to the stripped control
+    // would restore the defect with the annotation still in place.
+    expect(code).toMatch(/const baseline = productionRun \?\? allRuns\[0\]!/);
+  });
+
+  it('no longer ships a row that claims to be the whole stack while turning on three of twelve', () => {
+    // The defect, stated as what it did rather than as what it was called: `FULL STACK (all ON)` turned on
+    // `collisionAggregation`, `extraTraceValidation` and `selfLearning`, with `collisionWeight`, `topoWeight`,
+    // `logWeight`, `traceWeight`, `riseWeight` and `prismWeight` all at 0 — and measured value-identical to
+    // `BASELINE (flags OFF)` in every fault-type column of all three systems on both RE1 and RE3: the eight-row
+    // legacy cluster is one distinct value-string across all six system blocks, 224 cells.
+    const code = stripComments(RUNNER_SRC);
+    expect(code, 'the label that lied').not.toContain('FULL STACK');
+    expect(code, 'the rows come from their owner').toContain('...PRODUCTION_ROWS.map');
+    // And the corner of the cube is measured under a name that states how many flags it turns on.
+    expect(code).toContain('ALL TWELVE FLAGS ON (cube corner)');
+    expect(code).toContain('LEGACY FLAGS ON (3 of 12');
+  });
+
+  it('renders the two production vectors as the configurations they are', () => {
+    const re3 = formatAblationConfigLine(productionFlags('re3'));
+    expect(re3).toContain('logWeight=1');
+    expect(re3).toContain('traceWeight=1');
+    expect(re3).toContain('rankNormalization=true');
+    expect(re3).toContain('prismWeight=0');
+    const re1 = formatAblationConfigLine(productionFlags('re1'));
+    expect(re1).toContain('traceWeight=0');
+    // The engine arguments follow the flags, which is the mapping the artifact is read through.
+    expect(buildAblationEngineOptions(productionFlags('re3')).signals.traceWeight).toBe(1);
+    expect(buildAblationEngineOptions(productionFlags('re2')).signals.traceWeight).toBe(0);
   });
 });
