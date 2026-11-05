@@ -151,6 +151,19 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     // own rule is that every `? -1 : 1` site states the list it sorts.
     { signature: 'a[0] < b[0]', population: '`classCounts.entries()`, a Map keyed by class name' },
   ],
+  'benchmarks/src/prior-floor.ts': [
+    // The prior census's support ranking. Its first arm compares COUNTS, so the tie-break is reached on every
+    // pair of services with equal support — the common case in these cells rather than the corner one, which
+    // is why this one is recorded with its list rather than exempted. It is safe for the reason the audit
+    // argues from and not for a stronger one: `a[0]` is the Map's KEY, so the operands of the tie-break are
+    // never equal on the path that reaches it. The order is total by construction, which is what lets the
+    // census turn support into a RANK (`rank.get(serviceId)! <= k`) and score the frequency baseline at all.
+    {
+      signature: 'a[0] < b[0]',
+      population:
+        '`census.support.entries()`, a Map keyed by service id (unique), after the count arm',
+    },
+  ],
   'benchmarks/src/fse26-separator.ts': [
     { signature: 'a.row.faultType < b.row.faultType', population: '`byType.entries()`, a Map' },
     { signature: 'a.name < b.name', population: '`candidates`, one per signal' },

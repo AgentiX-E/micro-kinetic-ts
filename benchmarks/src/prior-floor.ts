@@ -29,9 +29,21 @@
  *   ordered:     AC@k = #{cases whose truth has frequency-rank ≤ k} / n
  * ```
  *
- * The two coincide on a balanced cell, which every RCAEval cell is, and the ordered form is reported beside
- * the uniform one so that a later unbalanced corpus cannot silently make the floor a fitted quantity: the
- * difference between the two is the part of the floor that came from the labels rather than from the size.
+ * The two coincide on a balanced cell, and the ordered form is reported beside the uniform one so that an
+ * unbalanced cell cannot silently make the floor a fitted quantity: the difference between the two is the part
+ * of the floor that came from the LABELS rather than from the SIZE.
+ *
+ * **The margin is taken against the frequency baseline, not the uniform one, and that distinction is measured
+ * rather than stylistic.** `AC@k` under the ordered rule is `#{cases whose truth has frequency-rank ≤ k} / n`,
+ * and the top `k` services hold at least `k/S` of the cases (`k` of `S` shares of a mean of `1/S`), so the
+ * ordered rule dominates the uniform one at EVERY cutoff — the second is the first at its weakest. A majority-
+ * class answer needs nothing but the corpus's label counts, so on a cell where the truths are imbalanced it is
+ * the baseline a competitor can actually implement, and taking the margin against `1/S` there would report a
+ * flattering number exactly where the corpus gives the most away. This module therefore prints `lift` against
+ * {@link PriorFloor.baseline} — the ordered rule — and keeps `uniform` as the closed-form control that says how
+ * much of the floor came from the pool size alone. The six `RE1`/`RE2` cells are five-way and balanced, so for
+ * them the two are the same number to twelve digits; the three `RE3` cells are not, and that is where the
+ * choice bites (RE3:OnlineBoutique's frequency prior is 50.0 % against a uniform 25.0 %).
  *
  * ## What the floor says about this corpus, in advance of any run
  *
@@ -42,11 +54,11 @@
  *     S = 5:  Avg@5 = 15 / 25 = 0.60                        Top@5 = 1
  *     S = 6:  Avg@5 = 15 / 30 = 0.50                        Top@5 = 5/6
  *
- * Every published cell of this corpus has `S ≤ 6`, so **`Avg@5` at its floor is 0.50–0.60 and `Top@5` is
- * 0.83–1.00 before the engine reads a single metric** — the top-five family cannot separate methods on a
- * benchmark whose culprit pool fits inside five candidates. The line this module prints states the floor
- * beside the reading rather than the one number the engine happens to win on, and it says so explicitly when
- * `Top@5` is saturated.
+ * Every published cell of this corpus has `S ≤ 5` (measured on all nine: five-way `RE1`/`RE2`, and 4 / 3 / 2 on
+ * `RE3`), so **`Avg@5` at its floor is 0.60–0.90 and `Top@5` is 1.00 before the engine reads a single metric** —
+ * the top-five family cannot separate methods on a benchmark whose culprit pool fits inside five candidates. The
+ * line this module prints states the floor beside the reading rather than the one number the engine happens to
+ * win on, and it says so explicitly when `Top@5` is saturated.
  *
  * @module benchmarks/prior-floor
  */
@@ -77,6 +89,12 @@ export interface PriorFloor {
   readonly uniform: PriorOperatingPoint;
   /** A ranker that ranks by the corpus's own truth frequency. */
   readonly ordered: PriorOperatingPoint & { readonly order: readonly string[] };
+  /**
+   * The baseline the margin is taken against: the ordered rule, which dominates the uniform one at every
+   * cutoff. It is the SAME OBJECT as {@link PriorFloor.ordered} rather than a recomputation, so the two cannot
+   * drift — a "stronger baseline" that is computed twice is two numbers with one name.
+   */
+  readonly baseline: PriorOperatingPoint & { readonly order: readonly string[] };
 }
 
 /** The three rates a baseline is compared on. */
@@ -153,16 +171,14 @@ export function priorFloor(census: PriorFloorCensus): PriorFloor | undefined {
     return hits / total;
   };
 
-  return {
-    candidates,
-    uniform,
-    ordered: {
-      ac1: byRankAtOrAbove(1),
-      avg5: meanOverCutoffs(byRankAtOrAbove),
-      top5: byRankAtOrAbove(5),
-      order,
-    },
+  const ordered = {
+    ac1: byRankAtOrAbove(1),
+    avg5: meanOverCutoffs(byRankAtOrAbove),
+    top5: byRankAtOrAbove(5),
+    order,
   };
+
+  return { candidates, uniform, ordered, baseline: ordered };
 }
 
 /**
@@ -205,12 +221,12 @@ export function formatPriorFloorLine(
     `[prior-floor] ${system}/${suite}:`,
     `S=${floor.candidates}`,
     `telemetry-free AC@1 ${pct(floor.uniform.ac1)} (uniform) ${pct(floor.ordered.ac1)} (frequency)`,
-    `Avg@5 ${pct(floor.uniform.avg5)}`,
-    `Top@5 ${pct(floor.uniform.top5)}`,
+    `Avg@5 ${pct(floor.uniform.avg5)} (uniform) ${pct(floor.ordered.avg5)} (frequency)`,
+    `Top@5 ${pct(floor.ordered.top5)}`,
     `engine AC@1 ${pct(engine)}`,
-    liftClause(engine, floor.uniform.ac1, census.cases),
+    liftClause(engine, floor.baseline.ac1, census.cases),
   ];
-  if (floor.uniform.top5 === 1) {
+  if (floor.baseline.top5 === 1) {
     parts.push('— Top@5 is SATURATED by the prior here, so it is not evidence for this cell');
   }
   return parts.join(' | ');
@@ -219,24 +235,32 @@ export function formatPriorFloorLine(
 /**
  * The lift, or the reason there is none.
  *
- * The reachable range is what is left of the unit interval after the prior has taken `ac1`, so the second
+ * The reachable range is what is left of the unit interval after the baseline has taken `ac1`, so the second
  * number is the share of the ACHIEVABLE margin the engine holds — a rate cannot be called "89 %" and "87 % of
- * what was available" in one cell without both being printed. A single-candidate cell has no range at all: the
- * prior takes the whole interval and the engine is necessarily right, so a lift of `0/0` is reported as the
- * degenerate quantity it is rather than as `0.0 %`, which would read as a failure.
+ * what was available" in one cell without both being printed. The baseline named in the clause is the
+ * FREQUENCY one, because that is the ranker a competitor can implement from the label counts alone; on a
+ * balanced cell it equals the uniform rule and the clause still names it, so the reader never has to infer
+ * which denominator produced the percentage.
+ *
+ * A single-candidate cell has no range at all: the prior takes the whole interval and the engine is necessarily
+ * right, so a lift of `0/0` is reported as the degenerate quantity it is rather than as `0.0 %`, which would
+ * read as a failure.
  *
  * @param engine - The engine's `AC@1` over the same cases.
- * @param prior - The uniform baseline's `AC@1`.
+ * @param baseline - The stronger baseline's `AC@1` ({@link PriorFloor.baseline}).
  * @param cases - The population, used only to word the degenerate case.
  * @returns The clause the line joins, never empty.
  */
-function liftClause(engine: number, prior: number, cases: number): string {
-  const headroom = 1 - prior;
+function liftClause(engine: number, baseline: number, cases: number): string {
+  const headroom = 1 - baseline;
   if (headroom <= 0) {
     return `lift n/a (the prior takes the whole interval over ${cases} cases, so there is no margin to hold)`;
   }
-  const lift = (engine - prior) / headroom;
-  return `lift ${(lift * 100).toFixed(1)}% of the reachable margin`;
+  const lift = (engine - baseline) / headroom;
+  return (
+    `lift ${(lift * 100).toFixed(1)}% of the reachable margin above the ` +
+    `${(baseline * 100).toFixed(1)}% frequency prior`
+  );
 }
 
 /**
@@ -244,8 +268,10 @@ function liftClause(engine: number, prior: number, cases: number): string {
  *
  * Cells are pooled by CASES, not by their rates: a 30-case cell and a 125-case cell are not equal evidence,
  * and averaging their rates is the defect `accuracy-aggregation` §208 records at the published level. The
- * pooled prior is the case-weighted mixture of the per-cell uniform rates, which is the floor of a ranker that
- * knows each system's support.
+ * pooled prior is the case-weighted mixture of the per-cell BASELINE rates — the frequency rule, for the reason
+ * {@link PriorFloor.baseline} gives — which is the floor of a ranker that knows each system's label support and
+ * nothing else. (For the uniform rule the same mixture would be a ranker that knows each system's pool SIZE,
+ * a strictly weaker one; a pooled margin taken against it would be the sum of nine flattering per-cell choices.)
  *
  * @param cells - One census per cell.
  * @returns A one-line summary, or `undefined` when no cell held any case.
@@ -260,15 +286,15 @@ export function formatPriorFloorSummary(cells: readonly PriorFloorCensus[]): str
     if (floor === undefined) continue;
     cases += census.cases;
     engineCorrect += census.engineCorrect;
-    priorHits += floor.uniform.ac1 * census.cases;
-    top5Hits += floor.uniform.top5 * census.cases;
+    priorHits += floor.baseline.ac1 * census.cases;
+    top5Hits += floor.baseline.top5 * census.cases;
   }
   if (cases === 0) return undefined;
   const engine = engineCorrect / cases;
   const prior = priorHits / cases;
   const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
   return (
-    `[prior-floor] ALL CELLS (${cases} cases): telemetry-free AC@1 ${pct(prior)}, Top@5 ${pct(top5Hits / cases)}; ` +
-    `engine AC@1 ${pct(engine)} → ${liftClause(engine, prior, cases)}`
+    `[prior-floor] ALL CELLS (${cases} cases): telemetry-free AC@1 ${pct(prior)} (frequency), ` +
+    `Top@5 ${pct(top5Hits / cases)}; engine AC@1 ${pct(engine)} → ${liftClause(engine, prior, cases)}`
   );
 }

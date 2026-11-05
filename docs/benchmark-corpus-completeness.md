@@ -839,6 +839,17 @@ say the same thing from the other side: the trace term's fifteen hits on RE3-Tra
 `ts-auth-service`, i.e. one of that cell's two truths, and its five misses are all the other one. A term that
 recovers the prior within a cell, and nothing across cells, is exactly what a prior-driven benchmark rewards.
 
+**Correction, iteration 225 — the `ours` column above is the `641`-era reading, and the floor is now a READING
+rather than a section.** The label columns of the table are dataset facts and stand unchanged; the accuracy column
+belongs to the run it was read from and has moved with the engine: `RE1` `89.6 / 95.2 / 89.6`, `RE2`
+`93.3 / 97.8 / 83.3`, `RE3` `83.3 / 63.3 / 73.3`, `656 / 735 = 89.25 %`. `benchmarks/src/prior-floor.ts` now
+computes both baselines — uniform and majority-class, which coincide on the six balanced cells and separate on the
+three `RE3` cells — from each cell's own truth support, and every run prints them beside its rate with the share
+of the reachable margin the engine occupies. `docs/prior-floor.md` owns that record. The per-class split it adds
+is the sharper form of finding 2 above: on `RE3:SockShop` this engine is `9 / 9` on `front-end`, `5 / 12` on
+`carts` and `5 / 9` on `orders`, so **on the majority class it is seven cases behind a constant answer**, and its
+whole lead on that cell comes from the one class a prior cannot name.
+
 ### 9.1 What this does not license
 
 - **It does not lower any published number.** 85.85% Top-1 on 735 cases stands, and the floors above are beside it
@@ -877,6 +888,29 @@ labels, which this record has not established; and a 90-case fold cannot enter t
 735 without a caveat that would dominate its own number. What would make it worth the acquisition work is a
 per-case result file from any reference on it, because that is the artifact that turns "different populations"
 into a measurable gap.
+
+### 10.1 The availability check — 2026-11-05, and it answers the question the paragraph above left open
+
+The paragraph above said the labels were "not established". They are not established because **the release is not
+the dataset**: the authors' distribution link (`ufile.io/5ww9iyfb`, discovered 2026-11-05) serves a single
+**51.3 KB** `rcatlas_release.tar.gz`, created 2026-10-26 and **expiring 2026-11-15** — one link, twenty days. A
+per-case telemetry footprint of "3.7万 to 560万 rows" across 90 cases cannot fit in 51 KB, so what is published is
+the manifest, the labels and the harness, and the telemetry must be re-assembled from the eight upstream public
+datasets the core set was drawn from.
+
+Three consequences, and the first is why the §10 verdict does not change:
+
+1. **The corpus is not reproducible from a stable artifact.** An expiring file-sharing link is not a dataset
+   release, and a manifest without a pinned upstream revision per case is not a re-runnable benchmark. Adopting it
+   would mean depending on a link that has already been counted down by nine days.
+2. **No per-case result file was published either**, so the second condition §10 sets — a per-case artifact from a
+   reference — is also unmet, and the `PR@1 65–77 %` band cannot be put on the same axis as this project's numbers.
+3. **The class floor is the useful part and it is already recorded**, in §10 finding 1. The 90-case population
+   cannot carry a standing-table row at 11 cases per dataset.
+
+Recorded rather than pursued, and re-checkable: the link, its size and its expiry date are the whole of the
+evidence, and a later release that ships per-case telemetry with pinned upstream revisions would reopen §10 on its
+merits.
 
 ## 11. Two more corpora found on 2026-10-30, and the one metric this record should publish next
 

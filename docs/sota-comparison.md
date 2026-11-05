@@ -745,10 +745,25 @@ This does not lower our published 89.25% and does not raise a competitor's: it s
 measured above. The two RE3 cells with the largest headline gap to the leaders (SockShop, TrainTicket) are exactly
 the two whose floors are highest, and that coincidence is the reason this section exists.
 
-**Read against the floor, the three RE3 cells now stand at +33.3 (OnlineBoutique 83.3 over 50.0), +20.0 (SockShop
-60.0 over 40.0) and +20.0 (TrainTicket 70.0 over 50.0)** — the last of which is iteration 153's three cases. The
-remaining RE3 deficit is concentrated where the floor is highest, which is a statement about what that cell can
-prove rather than about how far behind the engine is.
+**Read against the floor, the three RE3 cells now stand at +33.3 (OnlineBoutique 83.3 over 50.0), +23.3 (SockShop
+63.3 over 40.0) and +23.3 (TrainTicket 73.3 over 50.0)** — the last of which is iteration 153's three cases plus
+two. The remaining RE3 deficit is concentrated where the floor is highest, which is a statement about what that
+cell can prove rather than about how far behind the engine is.
+
+**The floor is a READING from iteration 225, not a section.** The paragraph above was computed by hand from one
+artifact and then quoted, so the column below went stale the moment the engine moved, and a later run could print
+a rate on a new configuration without the baseline that made it readable. `benchmarks/src/prior-floor.ts` now
+computes both baselines from the cell's own truth support — the uniform one and the majority-class one, which
+coincide on the six balanced cells and separate on the three `RE3` cells — and `run-rcaeval.ts` prints them, with
+the share of the reachable margin the engine occupies (`lift`), beside every cell and once for the run.
+`docs/prior-floor.md` owns the record. Two consequences for this document: an `Avg@5` row is now annotated with
+its floor rather than ranked, because the floor is `1.00` on every cell of this corpus; and a cell is ranked by
+`lift` rather than by rate, which moves `RE3:SockShop` — the lowest cell — to the lowest lift by a factor of two
+(`38.9 %` of the margin above the `40.0 %` majority-class rule, against `66.7 %` and `46.7 %` on its own suite).
+**The lift is taken against the FREQUENCY baseline and not the uniform one**, because the majority-class rule is
+what a competitor can implement from the label counts alone; taking it against the weaker baseline is the defect
+`docs/prior-floor.md` §3.2 records, and on the three imbalanced cells it overstated the margin by `11.1`, `6.1`
+and `0` points.
 
 ## 1. Our result — re-anchored 2026-10-31 on battery `41188083576` at `25b4279b`
 

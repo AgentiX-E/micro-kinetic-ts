@@ -114,6 +114,39 @@ describe('priorFloor — the frequency-ordered baseline', () => {
   });
 });
 
+describe('priorFloor — the baseline the margin is taken against', () => {
+  it('is the ordered rule object itself, so the two cannot drift', () => {
+    // Not a copy and not a recomputation: a "stronger baseline" computed twice is two numbers with one name,
+    // which is the defect class this package records as a term that silently stopped agreeing with itself.
+    const floor = priorFloor(censusOf({ carts: 12, orders: 9, 'front-end': 9 }))!;
+    expect(floor.baseline).toBe(floor.ordered);
+  });
+
+  it('dominates the uniform rule at both cutoffs it is compared on, over random label spaces', () => {
+    // The claim the module's docblock makes in prose — "the top `k` services hold at least `k/S` of the cases,
+    // so the ordered rule dominates the uniform one at every cutoff" — checked as arithmetic rather than
+    // asserted. A deterministic generator, because a law that holds on a random draw is not a law.
+    let seed = 0x2f6e2b1;
+    const next = (bound: number): number => {
+      seed = (seed * 1103515245 + 12345) % 0x80000000;
+      return seed % bound;
+    };
+    let checked = 0;
+    for (let trial = 0; trial < 240; trial += 1) {
+      const candidates = 1 + next(8);
+      const support: Record<string, number> = {};
+      for (let i = 0; i < candidates; i += 1) support[`svc-${i}`] = 1 + next(40);
+      const floor = priorFloor(censusOf(support))!;
+      expect(floor.baseline.ac1).toBeGreaterThanOrEqual(floor.uniform.ac1 - 1e-12);
+      expect(floor.baseline.avg5).toBeGreaterThanOrEqual(floor.uniform.avg5 - 1e-12);
+      expect(floor.baseline.top5).toBeGreaterThanOrEqual(floor.uniform.top5 - 1e-12);
+      checked += 1;
+    }
+    // Non-vacuity: a generator that produced no trials would pass every assertion above.
+    expect(checked).toBe(240);
+  });
+});
+
 describe('accumulatePriorFloor', () => {
   it('counts cases, correct cases and support together', () => {
     const census = createPriorFloorCensus();
@@ -150,7 +183,35 @@ describe('formatPriorFloorLine', () => {
   it('reports the lift as a share of the margin the prior left', () => {
     // S=2: the prior takes half the unit interval, so an engine at 80 % holds 60 % of the reachable margin.
     const line = formatPriorFloorLine('X', 'Y', censusOf({ a: 25, b: 25 }, 40))!;
-    expect(line).toContain('lift 60.0% of the reachable margin');
+    expect(line).toContain('lift 60.0% of the reachable margin above the 50.0% frequency prior');
+  });
+
+  it('takes the margin against the FREQUENCY prior, not the uniform one it also prints', () => {
+    // The defect this test was written for, measured on the cell that exposed it: RE3:SockShop is 12 / 9 / 9,
+    // so the uniform floor is 33.3 % and a majority-class answer scores 40.0 %. The line printed both and then
+    // divided by the weaker one — `(63.3 - 33.3)/66.7 = 45.0 %` instead of `(63.3 - 40.0)/60.0 = 38.9 %` — so
+    // on exactly the cells where the labels give the most away the claim was the most flattering. Both numbers
+    // are asserted, in opposite directions, so a reader cannot get the old one back by accident.
+    const line = formatPriorFloorLine(
+      'SockShop',
+      'RE3',
+      censusOf({ carts: 12, orders: 9, 'front-end': 9 }, 19),
+    )!;
+    expect(line).toContain('telemetry-free AC@1 33.3% (uniform) 40.0% (frequency)');
+    expect(line).toContain('lift 38.9% of the reachable margin above the 40.0% frequency prior');
+    expect(line).not.toContain('45.0%');
+  });
+
+  it('prints both Avg@5 floors, because on an unbalanced cell they are not the same number', () => {
+    // The uniform mean is `(1 + 2 + 3 + 1 + 1)/15`… here: `(12 + 21 + 30)/30` over the first three cutoffs then
+    // saturation — 0.82 against the uniform 0.80. One number would leave the reader unable to tell which
+    // baseline the rate is above, which is the whole reason the line carries a floor at all.
+    const line = formatPriorFloorLine(
+      'SockShop',
+      'RE3',
+      censusOf({ carts: 12, orders: 9, 'front-end': 9 }, 19),
+    )!;
+    expect(line).toContain('Avg@5 80.0% (uniform) 82.0% (frequency)');
   });
 
   it('says a single-candidate cell has no margin rather than reporting a zero lift', () => {
@@ -178,6 +239,20 @@ describe('formatPriorFloorSummary', () => {
     const expected = (30 * (1 / 3) + 125 * (1 / 5)) / 155;
     expect(line).toContain('155 cases');
     expect(line).toContain(`telemetry-free AC@1 ${(expected * 100).toFixed(1)}%`);
+  });
+
+  it('pools the FREQUENCY prior, so an unbalanced cell is not counted at its weakest baseline', () => {
+    // The same 30-case RE3 cell beside a balanced five-way one: `(30·0.40 + 125·0.20)/155 = 23.9 %` against the
+    // uniform mixture's 22.6 %. Nine cells of this corpus include three unbalanced ones, so a pooled margin
+    // taken against the uniform mixture would be the sum of nine flattering per-cell choices rather than one
+    // decision applied nine times.
+    const unbalanced = censusOf({ carts: 12, orders: 9, 'front-end': 9 }, 0);
+    const balanced = censusOf({ a: 25, b: 25, c: 25, d: 25, e: 25 }, 0);
+    const line = formatPriorFloorSummary([unbalanced, balanced])!;
+    expect(line).toContain('155 cases');
+    const pooledPrior = ((30 * 0.4 + 125 * 0.2) / 155) * 100;
+    expect(line).toContain('telemetry-free AC@1 ' + pooledPrior.toFixed(1) + '% (frequency)');
+    expect(line).not.toContain('22.6%');
   });
 
   it('is undefined when no cell held a case', () => {
