@@ -27,6 +27,7 @@ import {
   isPropagatedExceptionMessage,
   isStackTraceMessage,
   normalizeSpanStatus,
+  normalizeTraceStartTime,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -2476,5 +2477,75 @@ describe('countDirectionalInputs', () => {
       source.indexOf('export async function countDirectionalInputs('),
     );
     expect(view, 'and the view opens no reader of its own').not.toContain('createInterface(');
+  });
+});
+
+describe('normalizeTraceStartTime', () => {
+  // The typed columns short-circuit the ladder, and they must keep doing so: every
+  // corpus that already loads reads one of them, so a change here would be a change
+  // to a published cell rather than to a robustness rule.
+  it('reads the typed columns at the scale their names state', () => {
+    expect(normalizeTraceStartTime('1692665535000', undefined, undefined, undefined)).toBe(
+      1692665535000,
+    );
+    expect(normalizeTraceStartTime(undefined, '1692665535000000', undefined, undefined)).toBe(
+      1692665535000,
+    );
+    expect(normalizeTraceStartTime(undefined, undefined, '1692665535000000', undefined)).toBe(
+      1692665535000,
+    );
+  });
+
+  it('places a bare timestamp on the right rung of s / ms / µs / ns', () => {
+    // One instant, four exports. The old ladder answered two of these and mis-scaled
+    // the other two by 1000x in opposite directions, which moved every span out of the
+    // window the injection-time filter tests.
+    const instantMs = 1692665535000;
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '1692665535')).toBe(instantMs);
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '1692665535000')).toBe(
+      instantMs,
+    );
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '1692665535000000')).toBe(
+      instantMs,
+    );
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '1692665535000000000')).toBe(
+      instantMs,
+    );
+  });
+
+  it('returns 0 for an absent, empty or nonsensical cell rather than a scale guess', () => {
+    // 0 is the loader's "no clock" value and every consumer filters on it; returning a
+    // magnitude-derived guess for `NaN` would put spans in 1970 and count them as
+    // pre-injection, which is the silent failure this ladder exists to end.
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, undefined)).toBe(0);
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '')).toBe(0);
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, 'not-a-number')).toBe(0);
+    expect(normalizeTraceStartTime(undefined, undefined, undefined, '-1')).toBe(0);
+  });
+
+  it('reads a bare `ts` column, which is how a converted corpus exports its clock', () => {
+    // End to end through the loader, because the cell-name list and the ladder are two
+    // halves of one behaviour: the RCABench conversion wrote `ts`, no branch read it,
+    // and 60 of 60 cases reported `post=0` with 5,000 spans sitting in the file.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcaeval-ts-'));
+    try {
+      const caseDir = path.join(dir, 're3tt_svc_rrc_1');
+      fs.mkdirSync(caseDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(caseDir, 'metrics.json'),
+        JSON.stringify({ svc: [{ timestamp: 1692665535, value: 1, metric_name: 'cpu' }] }),
+      );
+      fs.writeFileSync(
+        path.join(caseDir, 'traces.csv'),
+        'ts,trace_id,span_id,parent_span_id,service,operation,duration,status\n' +
+          '1692665535000,t1,s1,p1,svc,GET,10,Ok\n' +
+          '1692665540000,t1,s2,s1,svc,GET,10,Error\n',
+      );
+      const loader = new RCAEvalLoader();
+      const spans = loader.loadCase(caseDir).traces ?? [];
+      expect(spans.map((span) => span.startTime)).toEqual([1692665535000, 1692665540000]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

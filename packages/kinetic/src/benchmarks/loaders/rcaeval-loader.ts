@@ -163,15 +163,68 @@ const SERVICE_COLUMN_ALIASES = new Set([
  * Jaeger traces.csv carries BOTH `startTimeMillis` (milliseconds, ~1.7e12) and
  * `startTime` (microseconds, ~1.7e15). Prefer `startTimeMillis` (already ms);
  * otherwise `startTime`/`start_time` are microseconds and must be divided by
- * 1000. A bare `timestamp` column is magnitude-inferred: >1e15 is nanoseconds
- * (÷1e6); anything else is already milliseconds.
+ * 1000. A bare timestamp column — {@link BARE_TIMESTAMP_HEADERS} — is
+ * magnitude-inferred, because it is the column a corpus that is NOT Jaeger
+ * exports lands in.
  *
- * The column values are read from the four candidate columns as pre-trimmed
+ * The column values are read from the candidate columns as pre-trimmed
  * strings (or undefined when a column is absent), so the streaming counter
  * can reuse the exact same normalisation without materialising a row object.
  */
 function normalizeTraceStartTimeMs(row: Record<string, string>): number {
-  return normalizeTraceStartTime(row.startTimeMillis, row.startTime, row.start_time, row.timestamp);
+  return normalizeTraceStartTime(
+    row.startTimeMillis,
+    row.startTime,
+    row.start_time,
+    bareTimestampCell(row),
+  );
+}
+
+/**
+ * The header names a span's start time may arrive under when it is not one of the
+ * two typed columns.
+ *
+ * `ts` is the one that mattered: a converted corpus (RCABench, see
+ * `docs/rcabench-first-reading.md`) exports `ts`, and before this list existed the
+ * column was read by NONE of the branches, so every span normalised to start time
+ * `0` — no error, no warning, and every span counted as pre-injection. The trace
+ * channels then reported `post=0` on 60 of 60 cases while the spans sat in the file.
+ */
+const BARE_TIMESTAMP_HEADERS = ['timestamp', 'ts', 'time'] as const;
+
+/**
+ * The first bare-timestamp cell present in a row, in {@link BARE_TIMESTAMP_HEADERS}
+ * order, or undefined when the row carries none of them.
+ *
+ * @param row - One parsed CSV row.
+ * @returns The raw cell, or undefined.
+ */
+function bareTimestampCell(row: Record<string, string>): string | undefined {
+  for (const name of BARE_TIMESTAMP_HEADERS) {
+    const value = row[name];
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
+}
+
+/**
+ * The index of the first bare-timestamp column present in a header, in
+ * {@link BARE_TIMESTAMP_HEADERS} order, or -1.
+ *
+ * The streaming readers index cells by position rather than materialising rows, and
+ * they have to agree with {@link bareTimestampCell} or the two paths disagree about
+ * what a span's start time is — the same disagreement this file already records once
+ * for the log clock.
+ *
+ * @param header - The parsed header names.
+ * @returns The column index, or -1.
+ */
+function bareTimestampIndex(header: readonly string[]): number {
+  for (const name of BARE_TIMESTAMP_HEADERS) {
+    const idx = header.indexOf(name);
+    if (idx >= 0) return idx;
+  }
+  return -1;
 }
 
 /**
@@ -180,9 +233,9 @@ function normalizeTraceStartTimeMs(row: Record<string, string>): number {
  * @param startTimeMillis - `startTimeMillis` cell (already milliseconds).
  * @param startTime - `startTime` cell (microseconds).
  * @param startTimeSnake - `start_time` cell (microseconds).
- * @param timestamp - bare `timestamp` cell (magnitude-inferred).
+ * @param timestamp - bare timestamp cell (magnitude-inferred).
  */
-function normalizeTraceStartTime(
+export function normalizeTraceStartTime(
   startTimeMillis: string | undefined,
   startTime: string | undefined,
   startTimeSnake: string | undefined,
@@ -199,8 +252,16 @@ function normalizeTraceStartTime(
   }
   if (timestamp !== undefined && timestamp !== '') {
     const ts = parseInt(timestamp, 10);
-    if (ts > 1e15) return Math.floor(ts / 1e6); // ns → ms
-    return ts; // already ms
+    if (!Number.isFinite(ts) || ts <= 0) return 0;
+    // A four-rung ladder rather than two: the old code answered `ns` and `ms` and
+    // silently mis-scaled the other two, so a SECONDS column landed 1000x in the
+    // future (every span post-injection, every window empty) and a MICROSECONDS
+    // column 1000x in the past. Both are silent, and both change every downstream
+    // channel that filters on the injection time.
+    if (ts >= 1e17) return Math.floor(ts / 1e6); // ns → ms
+    if (ts >= 1e14) return Math.floor(ts / 1e3); // µs → ms
+    if (ts >= 1e11) return ts; // already ms
+    return ts * 1000; // seconds → ms
   }
   return 0;
 }
@@ -1135,7 +1196,7 @@ export async function countTraceActivityByService(
         startMillisIdx = header.indexOf('startTimeMillis');
         startIdx = header.indexOf('startTime');
         startSnakeIdx = header.indexOf('start_time');
-        timestampIdx = header.indexOf('timestamp');
+        timestampIdx = bareTimestampIndex(header);
         isHeader = false;
         continue;
       }
@@ -1345,7 +1406,7 @@ export async function countDirectionalInputs(
         startMillisIdx = header.indexOf('startTimeMillis');
         startIdx = header.indexOf('startTime');
         startSnakeIdx = header.indexOf('start_time');
-        timestampIdx = header.indexOf('timestamp');
+        timestampIdx = bareTimestampIndex(header);
         isHeader = false;
         continue;
       }
