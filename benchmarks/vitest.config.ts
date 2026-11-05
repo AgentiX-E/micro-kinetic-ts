@@ -90,6 +90,12 @@ export default defineConfig({
         // least as much and was outvoted by a named term — so its value is the three exclusive buckets and the blame
         // map, and every branch is measured rather than trusted.
         'src/fault-census.ts',
+        // Added with the module: the prior floor is the only baseline in this package that is a property of the
+        // CORPUS rather than of the engine — the closed forms behind "a ranker reading no telemetry scores
+        // `Avg@5 = 3/S` here" — so its whole value is arithmetic a reader must be able to recompute by hand.
+        // Every branch is measured rather than trusted: the two cutoff regimes, the empty census, the
+        // single-candidate degeneration, the support tie-break, and the case-weighted pool.
+        'src/prior-floor.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
         'src/trace-vote-census.ts',

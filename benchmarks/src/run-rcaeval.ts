@@ -113,6 +113,13 @@ import {
   createLatentTermCensus,
   formatLatentTermLine,
 } from './latent-term-census.js';
+import {
+  accumulatePriorFloor,
+  createPriorFloorCensus,
+  formatPriorFloorLine,
+  formatPriorFloorSummary,
+  type PriorFloorCensus,
+} from './prior-floor.js';
 import { buildMetricRows } from './rcaeval-metric-rows.js';
 import {
   accumulateRiser,
@@ -1339,6 +1346,10 @@ async function main(): Promise<void> {
   const diagnoseDump =
     opts.diagnoseDump === '' ? undefined : new DiagnoseDump(opts.diagnoseDump, configuration);
 
+  // One prior-floor census per cell, kept so the run can close with the pooled floor beside the pooled rate.
+  // Declared outside the cell loop because the summary is over the WHOLE run: a per-cell floor answers "is this
+  // cell's rate above what the corpus gives away", and only the pool answers it for the headline.
+  const priorFloorCells: PriorFloorCensus[] = [];
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
@@ -1532,6 +1543,22 @@ async function main(): Promise<void> {
       opts.noInjectTime ? 'dataset-decoupled' : 'inject-time',
     );
     if (faultLine !== undefined) console.log(faultLine);
+
+    // …and the cell read against the only baseline that is a property of the CORPUS rather than of the engine.
+    // A benchmark that injects at `S` services makes "top five" a question with `S` possible answers, so a ranker
+    // reading no telemetry scores `Avg@5 = 3/S` and `Top@5 = 5/S` (or 1 when `S ≤ 5`) before any metric is read.
+    // Every number this project publishes is a rate over that pool, so the floor is what the rate has to be
+    // compared with — random is not it. The census costs one pass over the predictions the lines above already
+    // read, and it is printed unconditionally for the reason every other census is.
+    const priorFloorCensus = createPriorFloorCensus();
+    for (const r of results.values()) {
+      for (const p of r.casePredictions) {
+        accumulatePriorFloor(priorFloorCensus, { truth: p.truth, correct: p.correct });
+      }
+    }
+    const priorFloorLine = formatPriorFloorLine(systemName, suiteName, priorFloorCensus);
+    if (priorFloorLine !== undefined) console.log(priorFloorLine);
+    priorFloorCells.push(priorFloorCensus);
 
     // The ONE binary term's decisions, scored. `trace` is pinned on for RE3 alone, the term-gap census reads it as
     // the largest cost on the blocking cell, and a removal arm reads the pin as worth ten cases over the suite —
@@ -1731,6 +1758,13 @@ async function main(): Promise<void> {
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+
+  // The pooled floor, after the last cell and before any optional artifact: the headline this run publishes is a
+  // rate over the whole corpus, and the only baseline that rate can be compared with is the one the corpus gives
+  // away. Printed even on a single-cell run, where it restates the cell — a summary that appears only sometimes
+  // is a summary a reader has to know the conditions of.
+  const priorFloorSummary = formatPriorFloorSummary(priorFloorCells);
+  if (priorFloorSummary !== undefined) console.log(priorFloorSummary);
 
   // ── The diagnostic dump ──
   // Written once, after the last group: the file is a function of the whole invocation, and the
