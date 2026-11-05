@@ -125,11 +125,12 @@ Three readings follow, and none of them is available from the rates alone:
 2. **`RE3:SockShop` is the worst cell by a factor of two in the comparable unit** — `38.9 %` against `66.7 %`
    and `46.7 %` on its own suite and `79 – 97 %` on the other two — and it is *also* the cell whose floor eats
    the most: `40.0 %` of it is available to a constant answer.
-3. **`RE3:OnlineBoutique` is the cell whose RANK moves most.** By rate it is joint sixth of nine (`83.3 %`,
-   tied with `RE2:TrainTicket`); by margin it is **third worst** (`66.7 %`), because half of it is one class
-   (`15/30`), so the floor takes `50.0 %` before the engine reads anything. It stays the best of the three `RE3`
-   cells on both readings — the correction here is that "best of a weak suite" is `12.5 pp` below the *worst*
-   `RE1`/`RE2` cell, which is the fact a rate ranking hides and a single-suite reading cannot see.
+3. **`RE3:OnlineBoutique` and `RE2:TrainTicket` are tied on the rate and not on the margin.** Both report
+   `83.3 %` — joint sixth of nine — but their floors are not the same object: `RE3:OnlineBoutique`'s prior takes
+   `50.0 %` of its cell (half of it is one class, `15/30`) against `20.0 %` for `RE2:TrainTicket`, so their
+   margins are `66.7 %` and `79.2 %` and the cell with more room is `RE2:TrainTicket`. **Every other cell keeps
+   its place**, which is what makes the instrument a correction rather than a re-ranking: it breaks one tie and
+   moves nothing else.
 
 `RE1:OnlineBoutique` is the case §9 makes in the engine's favour: a perfectly balanced five-way cell, so the
 frequency baseline collapses onto the uniform one and the whole `69.6 pp` above it was bought by reading
