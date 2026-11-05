@@ -125,9 +125,11 @@ Three readings follow, and none of them is available from the rates alone:
 2. **`RE3:SockShop` is the worst cell by a factor of two in the comparable unit** — `38.9 %` against `66.7 %`
    and `46.7 %` on its own suite and `79 – 97 %` on the other two — and it is *also* the cell whose floor eats
    the most: `40.0 %` of it is available to a constant answer.
-3. **`RE3:OnlineBoutique` is the trap a rate reading sets.** It is the best `RE3` cell at `83.3 %` and only
-   `66.7 %` of the margin, because half of that cell is one class (`15/30`), so the headline looks like the
-   strongest `RE3` result and the margin says it is the second weakest.
+3. **`RE3:OnlineBoutique` is the cell whose RANK moves most.** By rate it is joint sixth of nine (`83.3 %`,
+   tied with `RE2:TrainTicket`); by margin it is **third worst** (`66.7 %`), because half of it is one class
+   (`15/30`), so the floor takes `50.0 %` before the engine reads anything. It stays the best of the three `RE3`
+   cells on both readings — the correction here is that "best of a weak suite" is `12.5 pp` below the *worst*
+   `RE1`/`RE2` cell, which is the fact a rate ranking hides and a single-suite reading cannot see.
 
 `RE1:OnlineBoutique` is the case §9 makes in the engine's favour: a perfectly balanced five-way cell, so the
 frequency baseline collapses onto the uniform one and the whole `69.6 pp` above it was bought by reading
@@ -174,10 +176,14 @@ one of them — will be re-proposed by whoever adds a third baseline.
 3. **A competitor's `89 % / 96 % / 99 %` is now readable.** On the same 735 cases those three numbers sit above
    floors of roughly `0.20 / 0.60 / 1.00`; the first is a result and the third is arithmetic. And the prior
    floor of the corpus as a whole is `23.3 %`, not the `13.7 %` a uniform-random reading would give.
-4. **The next cell is chosen by lift, not by rate.** `RE3:SockShop` was already the lowest cell; it is the lowest
-   lift by a factor of two (`38.9 %` against `66.7 %`/`46.7 %` on its suite), and its deficit is concentrated on
-   the majority class. `RE3:OnlineBoutique` leaves the priority list for the same reason, despite the higher
-   rate.
+4. **The next cell is chosen by lift, not by rate, and the bottom of the queue is where the two disagree.**
+   Worst first by margin: `RE3:SockShop` `38.9`, `RE3:TrainTicket` `46.7`, `RE3:OnlineBoutique` `66.7`,
+   `RE2:TrainTicket` `79.2`, then `RE1:OnlineBoutique` and `RE1:TrainTicket` at `87.0`, `RE2:OnlineBoutique`
+   `91.7`, `RE1:SockShop` `94.0`, `RE2:SockShop` `97.2`. Worst first by rate the bottom **three are the same three
+   cells in the same order** (`63.3`, `73.3`, `83.3`), so the suite to work on is `RE3` under either reading —
+   what the margin changes is the next two places: `RE3:OnlineBoutique` and `RE2:TrainTicket` are **equal at
+   `83.3 %` on the rate and `12.5 pp` apart on the margin**, so the tie a rate ranking reports is not a tie, and
+   `RE2:TrainTicket` moves from joint sixth to fourth worst.
 
 ## 5. What it does not license
 
