@@ -39,7 +39,7 @@ on:
         default: ''
         type: string
       trace_weight:
-        description: "Weight on the trace-activity term (empty = the runner default, which is 0 on every suite but RE3 — where this step's own pin sets 1 inside the guard below, so a dispatch that states this input still wins and no state states the flag twice). It is BINARY (exactly 0 or exactly 1, with no magnitude), and that scale is the finding: on rank-normalised TrainTicket the base term's adjacent-rank gap is 0.0083 at 68 nodes, so this term can override ~100 rank positions. A per-case read of the 159 reranking misses found it moving a deciding gap 6 times and pushing for the WRONG service on ALL SIX; the RE3 pin was established against a control that also had noInjectTime on, so dispatching trace_weight=0 here is the first UNCONFOUNDED test of it. See docs/rank-collapse-falsified.md"
+        description: "Weight on the trace-activity term (empty = the runner default, which is the SHIPPED 1 on every suite — the RE3 pin that used to live in that step's `else` branch is now `DEFAULT_TRACE_WEIGHT`, so an empty input and a dispatch that states 1 mean the same thing, and 0 is the ablation arm). It is BINARY (exactly 0 or exactly 1, with no magnitude): on rank-normalised TrainTicket the base term's adjacent-rank gap is 0.0083 at 68 nodes, so the term can override ~100 rank positions. The nine-cell A/B that moved the default — both arms with injectTime on, 13 cases gained on RE3:TrainTicket and none lost, not one case flipped on the other eight cells — is on the constant and in docs/trace-weight-default.md"
         required: false
         default: ''
         type: string
