@@ -127,6 +127,12 @@ import {
   formatRiserCaseLine,
   formatRiserCensusLine,
 } from './riser-census.js';
+import {
+  formatInertSignalsNotice,
+  formatInertSuffix,
+  inertPrintedSignals,
+  type PrintedSignalWeights,
+} from './signal-evidence.js';
 import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
 import {
   accumulateTraceShare,
@@ -855,9 +861,15 @@ function printFailureDiagnostics(
   systemName: string,
   suiteName: string,
   results: Map<string, RunResult>,
+  weights: PrintedSignalWeights,
 ): void {
   const MAX = 5;
   let total = 0;
+  // Printed once per cell, before the first case, and only when something IS inert: the six comparisons below
+  // are read by `weight x signal`, and on the shipped configuration three of those weights are zero, which
+  // makes half of this block a description of mechanisms the run did not use. See `signal-evidence.ts`.
+  const inert = inertPrintedSignals(weights);
+  const inertNotice = formatInertSignalsNotice(weights);
 
   for (const [_ft, r] of results) {
     const failing = r.failures.filter((f) => f.diag);
@@ -869,6 +881,7 @@ function printFailureDiagnostics(
       console.log(
         `\n── Failure Diagnostics: ${systemName}/${suiteName} (top ${show}/fault type) ──`,
       );
+      if (inertNotice !== undefined) console.log(inertNotice);
     }
 
     for (let i = 0; i < show && total < MAX * results.size; i++, total++) {
@@ -917,7 +930,7 @@ function printFailureDiagnostics(
       }
       if (d.gtOnset !== undefined && d.topOnset !== undefined) {
         console.log(
-          `    onset GT=${d.gtOnset} top1=${d.topOnset} (${d.gtOnset < d.topOnset ? 'source earlier ✓' : d.gtOnset > d.topOnset ? 'source later ✗' : 'tie'})`,
+          `    onset GT=${d.gtOnset} top1=${d.topOnset} (${d.gtOnset < d.topOnset ? 'source earlier ✓' : d.gtOnset > d.topOnset ? 'source later ✗' : 'tie'})${formatInertSuffix(inert, 'onset')}`,
         );
       }
       if (d.gtInjectDelay !== undefined && d.topInjectDelay !== undefined) {
@@ -931,21 +944,23 @@ function printFailureDiagnostics(
               : d.gtInjectDelay > d.topInjectDelay
                 ? 'source later ✗'
                 : 'tie';
-        console.log(`    injectDelay GT=${gtD} top1=${topD} (${verdict})`);
+        console.log(
+          `    injectDelay GT=${gtD} top1=${topD} (${verdict})${formatInertSuffix(inert, 'injectDelay')}`,
+        );
       }
       if (d.gtLogScore !== undefined || d.topLogScore !== undefined) {
         console.log(
-          `    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}`,
+          `    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'logScore')}`,
         );
       }
       if (d.gtRatioContrib !== undefined || d.topRatioContrib !== undefined) {
         console.log(
-          `    ratioContrib GT=${d.gtRatioContrib?.toFixed(3) ?? '-'} top1=${d.topRatioContrib?.toFixed(3) ?? '-'}`,
+          `    ratioContrib GT=${d.gtRatioContrib?.toFixed(3) ?? '-'} top1=${d.topRatioContrib?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'ratioContrib')}`,
         );
       }
       if (d.gtTopoSource !== undefined || d.topTopoSource !== undefined) {
         console.log(
-          `    topoSource GT=${d.gtTopoSource?.toFixed(3) ?? '-'} top1=${d.topTopoSource?.toFixed(3) ?? '-'}`,
+          `    topoSource GT=${d.gtTopoSource?.toFixed(3) ?? '-'} top1=${d.topTopoSource?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'topoSource')}`,
         );
       }
       // Trace span-activity rise diagnostics. The signal awards one vote to the
@@ -960,7 +975,8 @@ function printFailureDiagnostics(
         const top = d.topTraceActivity;
         console.log(
           `    traceActivity GT=${gt ? `pre=${gt.pre} post=${gt.post} ratio=${gt.ratio.toFixed(3)}` : '-'}` +
-            ` top=${top ? `${top.service} pre=${top.pre} post=${top.post} ratio=${top.ratio.toFixed(3)}` : '-'}`,
+            ` top=${top ? `${top.service} pre=${top.pre} post=${top.post} ratio=${top.ratio.toFixed(3)}` : '-'}` +
+            formatInertSuffix(inert, 'traceActivity'),
         );
       }
       console.log(`    Reason: ${f.reason}`);
@@ -1350,6 +1366,7 @@ async function main(): Promise<void> {
   // Declared outside the cell loop because the summary is over the WHOLE run: a per-cell floor answers "is this
   // cell's rate above what the corpus gives away", and only the pool answers it for the headline.
   const priorFloorCells: PriorFloorCensus[] = [];
+
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
@@ -1746,7 +1763,7 @@ async function main(): Promise<void> {
     }
 
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
-    printFailureDiagnostics(systemName, suiteName, results);
+    printFailureDiagnostics(systemName, suiteName, results, opts);
 
     // Release loaded cases between system groups to prevent OOM.
     // Each system's 245 cases with trace spans + call graphs + embeddings

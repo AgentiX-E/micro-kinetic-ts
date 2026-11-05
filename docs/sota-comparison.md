@@ -1448,3 +1448,35 @@ Two consequences, and the second is uncomfortable:
 2. **None of the three publishes per-case results**, so none can be re-scored on the 735. The ranking in §1 stands
    as "first among methods with per-case results", and that qualifier is now doing more work than it did last
    week: it is a statement about the published field's reproducibility, not about the field's accuracy.
+
+**A fourth reference, and it is the first one measured on the configuration that blocks this project**
+(checked 2026-11-05): **TORAI** — Pham, Ha, Zhang & Zhang, *Multi-source Root Cause Analysis for Blind Spots in
+Microservice Service Call Graph*, Proc. ACM Softw. Eng. 2026, `10.1145/3808137`.
+
+| what it reports | number | why it is not a leaderboard row |
+| --- | --- | --- |
+| **SockShop with traces REMOVED (100 % blind spots)** — metrics + logs only | **`Avg@5` 0.94** | its SockShop is an 11-service deployment against the 15 this project ranks, the case count is not stated, and neither code nor per-case results are published |
+| TrainTicket `Avg@5` | 0.89 | same corpus caveats; baselines it beats (CausalRCA 0.43, CIRCA 0.46) are not in §1 either |
+| production ISP corpus, 10 incidents | `AC@3` 1.00 | private |
+
+This one is uncomfortable in a specific way, and it is the reason it is recorded rather than filed:
+
+- **It is the cell this project cannot move.** `RE3:SockShop` is `66.1 %` `AC@1` and **`87.4 %` `Avg@5`**, its
+  ranking is metric-and-log only because the corpus carries no `traces.csv`
+  (`docs/ablation-input-census.md` §9.1), and §4.8 of `docs/ablation-config-audit.md` has just measured the
+  additive source credit making it **worse** (`63.3 → 60.0 → 46.7`). TORAI reports **0.94** on that same
+  configuration and reaches it by a SHAPE this engine does not have: GMM-cluster the anomalous services first,
+  run a local causal search *inside* each cluster, aggregate, then re-rank fine-grained indicators with
+  **median/IQR** rather than mean/σ.
+- **It therefore refutes the corpus-ceiling reading.** The prior floor on that cell is `Avg@5` 82.0 % (frequency)
+  against a saturated `Top@5` of 100 %, so `87.4` is 5.4 of 18 available points. A published method claims 12 of
+  them without traces. The headroom is real and it is reachable.
+- **It does not license a rank.** No `AC@1` is reported at all, so the headline metric of this table cannot be
+  compared; the corpora differ in service count and the case count is unstated.
+
+**Debt this entry creates, named rather than hidden:** TORAI's only identifier is a DOI, and
+`packages/kinetic/__tests__/unit/support/artefact-grammar.ts` recognises `arXiv:` ids, repository URLs,
+`*.github.io` pages and **zenodo** DOIs — not journal DOIs. So this paragraph is **not** checked by the
+`sota-populations` / `competitor-artefact-availability` fences that §0a is, and neither inventory carries a row
+for it. Extending the grammar to `10.\d{4,}/…` would put six already-cited DOIs into scope at once, which is the
+next iteration's fence work and not a change to make silently here.

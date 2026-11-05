@@ -255,6 +255,11 @@ against production's 76.5 / 73.3**, a **−14.6 pp** swing from one dispatch arg
 
 ### 4.7 An arm measured on the target cell and refused, and what its refusal re-diagnosed
 
+> **Read §4.8 before acting on this section.** Its observation is sound and its conclusion is not: the field it
+> names as the separator, `topoSource`, is multiplied by `topoWeight = 0` in the configuration that produced the
+> table, so it enters no score. The section is left as written because the misreading is the finding — the
+> artifact printed a signal without the weight that reads it — and §4.8 measures both halves of the correction.
+
 `RE3:SockShop` is the weakest of the nine cells (66.1% published, lift 38.9% over the frequency prior) and its
 `f4` type is the weakest block inside it: **1 of 7**, with five misses classified *outweighed* and one *outvoted*.
 The displayed evidence of those five has a common shape — the winner's `base` is near zero and its `rise` is
@@ -300,3 +305,57 @@ a sink, and the term that says "nothing upstream moved" has to be read against a
 is a statement about the operator's domain, and it is falsifiable by the same table: an arm that gates the credit
 on `≥ 1 anomalous parent exists` should move `RE3:SockShop` and leave `RE1` alone, and if it does not, the
 mechanism is wrong and the row above will say so.
+
+### 4.8 The lever §4.7 named could not have worked, and the artifact said so on its second line
+
+§4.7 is **wrong in its conclusion and right in its observation**, and the error is worth more than the finding.
+
+The observation stands: on the five `RE3:SockShop` `f4` cases the winner's decisive metric is a near-zero-baseline
+channel, and the truth's is a genuine rise. The conclusion — "the field that separates them is `topoSource`" —
+cannot be true, because **`topoSource` has weight zero in the configuration that produced the table**. Line 6 of
+the same artifact reads:
+
+```
+signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=1 ... temporalWeight=0 ...
+```
+
+`finalScore(v) += topoWeight × topoSource(v)`, so at `topoWeight = 0` the term is not small, it is **absent**. A
+quantity that enters no score cannot separate two candidates, and a table of its values is a table of a mechanism
+this run did not use. The observation was read off a printed field; the field was never connected to the order
+above it.
+
+**Both halves were then measured.** If the mechanism were the missing discriminator and merely "starved" at zero,
+turning it on should help the cell it explains. It does the opposite, and the dose makes it monotone:
+
+| arm (`RE3`, `--trace-weight 1` held) | OB | SS | TT | 88 cases |
+| --- | ---: | ---: | ---: | ---: |
+| `topoWeight = 0` (shipped) | 82.1 | **63.3** | 73.3 | 64 = 72.7 % |
+| `topoWeight = 0.1` | 82.1 | 60.0 | 73.3 | 63 = 71.6 % |
+| `topoWeight = 0.3` | 82.1 | 46.7 | 73.3 | 59 = 67.0 % |
+
+Two facts, and the second is the one to keep:
+
+1. **The additive source credit is refused at both weights**, with a monotone loss on exactly the cell it was
+   proposed to fix — 63.3 → 60.0 → 46.7 — and no movement on the other two. Whatever decides `RE3:SockShop`, it is
+   not that this term is switched off.
+2. **The loss lands only where the trace signal is absent.** OB and TT are byte-identical at all three weights
+   while SS falls by 16.6 pp. SockShop carries no `traces.csv` (`docs/ablation-input-census.md` §9.1), so its
+   ranking is the metric-and-log score alone — which is where an additive bonus of `[0, 1] × weight` on a scale
+   the other cells do not share reorders a leader it was never calibrated against. The term is not "inert and
+   then starved"; it is **uncalibrated on the one cell that has nothing else**, which is the additive form's
+   documented defect (`pruner.ts`, `topoWeight`: "at `topoWeight = 0.1` its term is 3 % of one cell's score scale
+   and six rank steps of another's") measured a second time from the other direction.
+
+So §4.7's proposed arm — parent-gating the credit — is **withdrawn before it was run**. Gating a term that is
+multiplied by zero changes zero. What the two arms above establish is narrower and harder: on a cell with no
+transport channel, the ordering has no source/symptom term it can use, and the first attempt to give it one made
+things worse by an amount proportional to the weight.
+
+**The instrument defect this exposed is fixed in the same commit.** The failure block now prints, once per cell,
+which of its six per-case comparisons cannot move the ranking, and marks each such line `[INERT: weight 0]`
+(`benchmarks/src/signal-evidence.ts`). On the published configuration that is **four of the six** — `onset`,
+`injectDelay`, `ratioContrib`, `topoSource` — and on a dispatch without the RE3 trace pin it is five, because
+`traceWeight` also ships at zero. Half of what a reader has been reading as causal evidence in these artifacts
+describes mechanisms the run did not use, and until this commit nothing on the line said so. A number printed
+without the weight that reads it is not evidence, which is `docs/accuracy-aggregation.md` §8's rule one surface
+over: **a quantity cannot assert its own unit, and a signal cannot assert its own weight.**

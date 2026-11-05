@@ -189,6 +189,12 @@ export default defineConfig({
         'src/router-validation.ts',
         'src/validate-routing-frontier.ts',
         'src/loss-census.ts',
+        // Added with the module: the failure block's six per-case comparisons are read by `weight × signal`, and
+        // four of those weights are zero on the published configuration — so a comparison a reader takes as
+        // evidence may be a description of a mechanism the run did not use. The module's whole output is a
+        // label, and a label is only worth what its coverage is: every branch here decides whether a printed
+        // number arrives with the weight that reads it.
+        'src/signal-evidence.ts',
         // Added with the module: the corpus traversal and the ORDER it returns, which is a property of the
         // CORPUS and must not be a property of the filesystem. Two runners' `discoverAllCases` used to return
         // `readdirSync` order while every sibling canonicalised — and the two that did not are the ones whose
