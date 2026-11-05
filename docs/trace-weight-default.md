@@ -4,12 +4,12 @@
 step no longer states `--trace-weight 1`, and `PRODUCTION_ROWS` is one row plus the single-flag counterfactual
 that prices the term. This document is the measurement that moved it, and the two things it does NOT show.
 
-| what | where |
-| --- | --- |
-| the constant | `DEFAULT_TRACE_WEIGHT` (`packages/tree/src/pruning/pruner.ts`) |
+| what         | where                                                                          |
+| ------------ | ------------------------------------------------------------------------------ |
+| the constant | `DEFAULT_TRACE_WEIGHT` (`packages/tree/src/pruning/pruner.ts`)                 |
 | the dispatch | `.github/workflows/benchmark-rcaeval.yml`, `trace_weight` input, no `else` pin |
-| the battery | `PRODUCTION_ROWS` (`benchmarks/src/ablation-engine-options.ts`) |
-| the corpus | `/root/RCAEval-all`, 723 cases, nine cells |
+| the battery  | `PRODUCTION_ROWS` (`benchmarks/src/ablation-engine-options.ts`)                |
+| the corpus   | `/root/RCAEval-all`, 723 cases, nine cells                                     |
 
 ## 1. The state that made this measurable
 
@@ -30,17 +30,17 @@ differed in two things. This table differs in one: both arms run the RCAEval bas
 known), the shipped defaults, and only the weight changes. Cell rates are the published type-mean; `flips`
 counts CASES whose top-1 answer changed, which a cell rate can hide in a two-way swap.
 
-| cell | cases | `traceWeight = 0` | `traceWeight = 1` | flips |
-| --- | ---: | ---: | ---: | ---: |
-| RE1 OnlineBoutique | 125 | 89.6 | 89.6 | 0 (no `traces.csv`) |
-| RE1 SockShop | 120 | 95.0 | 95.0 | 0 (no `traces.csv`) |
-| RE1 TrainTicket | 123 | 89.2 | 89.2 | 0 (no `traces.csv`) |
-| RE2 OnlineBoutique | 87 | 93.1 | 93.1 | 0 of 87 |
-| RE2 SockShop | 90 | 97.8 | 97.8 | 0 (no `traces.csv`) |
-| RE2 TrainTicket | 90 | 83.3 (published) | see §4 | 0 of the first 30 |
-| RE3 OnlineBoutique | 28 | 87.5 | 87.5 | 0 of 28 |
-| RE3 SockShop | 30 | 66.1 | 66.1 | 0 (no `traces.csv`) |
-| RE3 TrainTicket | 30 | **30.6** | **74.5** | **13 of 30, all gains, none lost** |
+| cell               | cases | `traceWeight = 0` | `traceWeight = 1` |                              flips |
+| ------------------ | ----: | ----------------: | ----------------: | ---------------------------------: |
+| RE1 OnlineBoutique |   125 |              89.6 |              89.6 |                0 (no `traces.csv`) |
+| RE1 SockShop       |   120 |              95.0 |              95.0 |                0 (no `traces.csv`) |
+| RE1 TrainTicket    |   123 |              89.2 |              89.2 |                0 (no `traces.csv`) |
+| RE2 OnlineBoutique |    87 |              93.1 |              93.1 |                            0 of 87 |
+| RE2 SockShop       |    90 |              97.8 |              97.8 |                0 (no `traces.csv`) |
+| RE2 TrainTicket    |    90 |  83.3 (published) |            see §4 |                  0 of the first 30 |
+| RE3 OnlineBoutique |    28 |              87.5 |              87.5 |                            0 of 28 |
+| RE3 SockShop       |    30 |              66.1 |              66.1 |                0 (no `traces.csv`) |
+| RE3 TrainTicket    |    30 |          **30.6** |          **74.5** | **13 of 30, all gains, none lost** |
 
 Every flip is listed by the case-level diff, not summarised: thirteen cases, all `ts-auth-service`, all
 `MISS -> hit`. Not one case moved the other way on any cell.
@@ -68,7 +68,7 @@ post-injection ERROR lines and the winner carrying none. That is the next proble
   the arm. The row above is the first 30 cases, where the two arms flip nothing; CI is the first place the
   whole cell is measured at the new default, and a regression there reverts this change rather than being
   explained away.
-- **It does not show the term is a good signal.** It shows the term is a *strong* one, and that the ranking it
+- **It does not show the term is a good signal.** It shows the term is a _strong_ one, and that the ranking it
   overrides was worse on the one cell that has spans. A future direction signal (failed spans, per-edge status)
   would have to beat this prior, not merely complement it.
 
@@ -89,19 +89,35 @@ leader — and a discrete rule is not a weight, so it does not need the register
 It was screened over all 728 case dumps before any code was written, in three variants of "best-evidenced"
 (largest anomaly, most lines, exception-class weighted):
 
-| variant | fires | gains | losses |
-| --- | ---: | ---: | ---: |
-| promote the connected emitter, best by anomaly | 103 | 9 | **68** |
-| …best by volume | 109 | 2 | **68** |
-| …best by exception class | 103 | 9 | **68** |
+| variant                                        | fires | gains | losses |
+| ---------------------------------------------- | ----: | ----: | -----: |
+| promote the connected emitter, best by anomaly |   103 |     9 | **68** |
+| …best by volume                                |   109 |     2 | **68** |
+| …best by exception class                       |   103 |     9 | **68** |
 
 The losses are not noise and they are not spread: **61 of the 68 are `RE2:SockShop`**, where the leader is the
 correct answer and a victim floods 15–1,143 error lines beside it, and 6 more are `RE3:OnlineBoutique`, where
 `checkoutservice` floods 127–146 lines against a silent `emailservice` truth. The gains are `RE3:SockShop` (7)
 and `RE3:TrainTicket` (2). A rule that must separate source from victim on this evidence has the same conflict
-the register already records twice, and it loses on the population where the victim's flood is *dense* — which
+the register already records twice, and it loses on the population where the victim's flood is _dense_ — which
 is also why the "sparse error channel" refinement (promote only when the candidate's error channel was dropped
 as `duty-cycled-idle`) still loses: 4 gains against 9 losses.
 
 **Recorded so it is not proposed a third time.** The population that a per-case discriminator needs is not
 missing from the ranking; it is missing from the corpus, and §5 is what that looks like.
+
+## 7. Read back in CI, on the commit that removed the pin
+
+Run `42036486315` on `69df626b`, the commit that deletes the `else` pin:
+
+| cell                    | CI reading at the new default |          published | verdict                                                                                                                                                                                             |
+| ----------------------- | ----------------------------: | -----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RE1 OnlineBoutique      |                         89.6% |              89.6% | unmoved                                                                                                                                                                                             |
+| RE3 OnlineBoutique      |                         88.9% |              88.9% | unmoved                                                                                                                                                                                             |
+| RE3 SockShop            |                         66.1% |              66.1% | unmoved                                                                                                                                                                                             |
+| RE3 TrainTicket         |                     **74.5%** |              74.5% | **reproduced without the pin**                                                                                                                                                                      |
+| RE2 (all three systems) |                      not read | 93.3 / 97.8 / 83.3 | the job died at step 6, `Restore cached RCAEval JSON`, before any case was evaluated — a runner failure rather than a gate, and the cell this document flags as unmeasured (§4) is still unmeasured |
+
+That is the whole of the claim: the four cells that could be read are identical to the published table, and the
+one that moved locally is the one the pin used to move. A number that changes when you remove the mechanism you
+believe was producing it is a number you did not understand; these four do not change.
