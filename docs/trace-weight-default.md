@@ -30,17 +30,17 @@ differed in two things. This table differs in one: both arms run the RCAEval bas
 known), the shipped defaults, and only the weight changes. Cell rates are the published type-mean; `flips`
 counts CASES whose top-1 answer changed, which a cell rate can hide in a two-way swap.
 
-| cell               | cases | `traceWeight = 0` | `traceWeight = 1` |                              flips |
-| ------------------ | ----: | ----------------: | ----------------: | ---------------------------------: |
-| RE1 OnlineBoutique |   125 |              89.6 |              89.6 |                0 (no `traces.csv`) |
-| RE1 SockShop       |   120 |              95.0 |              95.0 |                0 (no `traces.csv`) |
-| RE1 TrainTicket    |   123 |              89.2 |              89.2 |                0 (no `traces.csv`) |
-| RE2 OnlineBoutique |    87 |              93.1 |              93.1 |                            0 of 87 |
-| RE2 SockShop       |    90 |              97.8 |              97.8 |                0 (no `traces.csv`) |
-| RE2 TrainTicket    |    90 |  83.3 (published) |            see §4 |                  0 of the first 30 |
-| RE3 OnlineBoutique |    28 |              87.5 |              87.5 |                            0 of 28 |
-| RE3 SockShop       |    30 |              66.1 |              66.1 |                0 (no `traces.csv`) |
-| RE3 TrainTicket    |    30 |          **30.6** |          **74.5** | **13 of 30, all gains, none lost** |
+| cell               | cases | `traceWeight = 0` | `traceWeight = 1` |                                                                               flips |
+| ------------------ | ----: | ----------------: | ----------------: | ----------------------------------------------------------------------------------: |
+| RE1 OnlineBoutique |   125 |              89.6 |              89.6 |                                                                 0 (no `traces.csv`) |
+| RE1 SockShop       |   120 |              95.0 |              95.0 |                                                                 0 (no `traces.csv`) |
+| RE1 TrainTicket    |   123 |              89.2 |              89.2 |                                                                 0 (no `traces.csv`) |
+| RE2 OnlineBoutique |    87 |              93.1 |              93.1 |                                                                             0 of 87 |
+| RE2 SockShop       |    90 |              97.8 |              97.8 |                                                                 0 (no `traces.csv`) |
+| RE2 TrainTicket    |    90 |              83.3 |              83.3 | 0 of 90 — the first 30 locally, all 90 in CI at the new default (run `42039524547`) |
+| RE3 OnlineBoutique |    28 |              87.5 |              87.5 |                                                                             0 of 28 |
+| RE3 SockShop       |    30 |              66.1 |              66.1 |                                                                 0 (no `traces.csv`) |
+| RE3 TrainTicket    |    30 |          **30.6** |          **74.5** |                                                  **13 of 30, all gains, none lost** |
 
 Every flip is listed by the case-level diff, not summarised: thirteen cases, all `ts-auth-service`, all
 `MISS -> hit`. Not one case moved the other way on any cell.
@@ -63,11 +63,11 @@ post-injection ERROR lines and the winner carrying none. That is the next proble
 
 ## 4. What this measurement does NOT show
 
-- **`RE2:TrainTicket` was not measured at full size.** The 90-case cell exhausts a 6 GB heap on BOTH arms in
-  this container (`FATAL ERROR: Reached heap limit`), which is a resource fact about the runner and not about
-  the arm. The row above is the first 30 cases, where the two arms flip nothing; CI is the first place the
-  whole cell is measured at the new default, and a regression there reverts this change rather than being
-  explained away.
+- **`RE2:TrainTicket` is measured in CI, not here.** The 90-case cell exhausts a 6 GB heap on BOTH arms in this
+  container (`FATAL ERROR: Reached heap limit`), which is a resource fact about the runner and not about the arm;
+  locally only the first 30 cases ran, and the two arms flipped nothing there. The full cell was read at the new
+  default in CI (run `42039524547`): OnlineBoutique 93.3, SockShop 97.8, TrainTicket 83.3 — the published table,
+  cell for cell.
 - **It does not show the term is a good signal.** It shows the term is a _strong_ one, and that the ranking it
   overrides was worse on the one cell that has spans. A future direction signal (failed spans, per-edge status)
   would have to beat this prior, not merely complement it.

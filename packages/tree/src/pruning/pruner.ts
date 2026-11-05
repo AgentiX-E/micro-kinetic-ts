@@ -1295,7 +1295,7 @@ export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
  * | RE1 OnlineBoutique / SockShop / TrainTicket | 89.6 / 95.0 / 89.2 | identical | 0 (no `traces.csv` in any RE1 pack) |
  * | RE2 OnlineBoutique | 93.1 | 93.1 | 0 of 87 |
  * | RE2 SockShop | 97.8 | 97.8 | 0 (no `traces.csv`) |
- * | RE2 TrainTicket | 83.3 (published) | not measured | 0 of the first 30 cases — the 90-case cell exhausts a 6 GB heap on BOTH arms, so this row is a subset and is labelled as one |
+ * | RE2 TrainTicket | 83.3 | 83.3 | 0 of 90 — measured in CI at the new default (`fe04af96`); the 90-case cell exhausts a 6 GB heap on both arms locally, which is why the local row is a 30-case subset |
  * | RE3 OnlineBoutique | 87.5 | 87.5 | 0 of 28 |
  * | RE3 SockShop | 66.1 | 66.1 | 0 (no `traces.csv`) |
  * | RE3 TrainTicket | **30.6** | **74.5** | **13 of 30, all gains, none lost** |
