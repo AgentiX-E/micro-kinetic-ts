@@ -568,53 +568,41 @@ describe('the row that IS the published configuration, and the label that was no
     'utf8',
   );
 
-  it('states the published configuration as a per-suite pin rather than as one point', () => {
-    // The pin is the point: `traceWeight` is 1 on RE3 — the dispatch states it inside that step — and 0 on the
-    // other two, where it is the runner default. A single flag vector could therefore not be "production", and
-    // the row that looked like it was production was a THREE-flag row with every ranking signal at zero.
-    expect(productionFlags('re1').traceSignal, 'RE1 takes the runner default').toBe(false);
-    expect(productionFlags('re2'), 'RE2 does too').toEqual(productionFlags('re1'));
-    expect(productionFlags('re3').traceSignal, 'RE3 is pinned ON').toBe(true);
+  it('states the published configuration as ONE point, which is what moving the pin into the engine bought', () => {
+    // The defect this replaces was a per-suite pin: `traceWeight` was 1 on RE3 because the dispatch said so and
+    // 0 on the other two because the runner default said so, so no single flag vector could be "production" and
+    // the row that looked like it was production was a THREE-flag row with every ranking signal at zero. With
+    // the pin inside `DEFAULT_TRACE_WEIGHT` the published configuration is one vector, and the assertion below
+    // is what makes a second suite dependence impossible to introduce silently.
+    expect(productionFlags('re1')).toEqual(productionFlags('re3'));
+    expect(productionFlags('re2')).toEqual(productionFlags('re3'));
     for (const suite of ['re1', 're2', 're3'] as const) {
       const flags = productionFlags(suite);
       expect(flags.logSignal, `${suite}: logWeight is 1 everywhere`).toBe(true);
+      expect(flags.traceSignal, `${suite}: traceWeight is 1 everywhere`).toBe(true);
       expect(flags.rankNormalization, `${suite}: rank normalisation is ON`).toBe(true);
       expect(flags.prismSignal, `${suite}: prismWeight is the shipped 0`).toBe(false);
       expect(flags.collisionSignal, `${suite}: collisionWeight is the shipped 0`).toBe(false);
       expect(flags.topoSignal, `${suite}: topoWeight is the shipped 0`).toBe(false);
       expect(flags.suppressDemandMetrics, `${suite}: the demand guard ships ON`).toBe(true);
-      // Three switches plus the demand guard: four of the thirteen are true, against twelve in the row the
-      // artifact used to call the stack. The count is asserted rather than described, because "the published
-      // configuration" is exactly the vector the count is over.
-      expect(Object.values(flags).filter(Boolean), `${suite}: four on`).toHaveLength(
-        suite === 're3' ? 4 : 3,
-      );
+      // Two signals, rank normalisation and the demand guard: four of the thirteen are true, against twelve in
+      // the row the artifact used to call the stack.
+      expect(Object.values(flags).filter(Boolean), `${suite}: four on`).toHaveLength(4);
     }
-    // …and the two vectors differ in ONE member. That is the whole of the suite dependence, so a later edit
-    // that made production suite-dependent in some second way has to say so here.
-    const differing = (
-      Object.keys(productionFlags('re1')) as Array<keyof AblationFeatureFlags>
-    ).filter((key) => productionFlags('re1')[key] !== productionFlags('re3')[key]);
-    expect(differing).toEqual(['traceSignal']);
   });
 
-  it('proves the pin from the workflow, in the step that runs the suite it applies to', () => {
-    // A constant asserted only in TypeScript would be a second opinion about the dispatch. The pin is a fact of
-    // `benchmark-rcaeval.yml`, so it is READ from there: exactly one literal `--trace-weight 1`, and the next
-    // `--suite` command after it is the RE3 run. (The pin sits in the guard block preceding that command, so
-    // the nearest FOLLOWING suite is the one it applies to — the nearest preceding one is RE2's.)
+  it('no longer pins the weight in the workflow, because the engine owns it now', () => {
+    // The pin used to be a fact of `benchmark-rcaeval.yml`: exactly one literal `--trace-weight 1`, in the guard
+    // block that precedes the RE3 command. It moved into `DEFAULT_TRACE_WEIGHT`, and the measurement that moved
+    // it is a nine-cell A/B on that constant. What is asserted here is the absence — a dispatch that restated
+    // the value would be a SECOND owner of the published configuration, which is the defect rather than the fix.
     const lines = WORKFLOW_SRC.split('\n');
     const pinLines = lines
       .map((line, index) => ({ line, index }))
       .filter(({ line }) => /RANKING_ARG\+=\(--trace-weight 1\)/.test(line));
-    expect(pinLines, 'exactly one hard-coded trace pin').toHaveLength(1);
-    const runSuites = lines
-      .map((line, index) => ({ line, index }))
-      .filter(({ line }) => line.includes('run-rcaeval.ts --suite'))
-      .map(({ line, index }) => ({ index, suite: /--suite (\w+)/.exec(line)![1]! }));
-    const next = runSuites.find((entry) => entry.index > pinLines[0]!.index);
-    expect(next?.suite, 'the pin applies to the suite that runs next').toBe('re3');
-    // No other suite pins a constant weight, i.e. the asymmetry is RE3's alone.
+    expect(pinLines, 'no hard-coded trace pin survives in the workflow').toHaveLength(0);
+    // The input still exists and still forwards an explicit value: it is how an ABLATION states the other arm.
+    expect(WORKFLOW_SRC).toContain('--trace-weight "${{ inputs.trace_weight }}"');
     const otherPins = lines.filter((line) => /--(log|topo|prism|collision)-weight 1\b/.test(line));
     expect(otherPins, 'no other signal is pinned by a literal').toEqual([]);
   });
@@ -623,9 +611,10 @@ describe('the row that IS the published configuration, and the label that was no
     expect(isProductionFlags(productionFlags('re2'), 're2')).toBe(true);
     expect(isProductionFlags(productionFlags('re1'), 're1')).toBe(true);
     expect(isProductionFlags(productionFlags('re3'), 're3')).toBe(true);
-    // The one-member difference is enough to separate them, in both directions.
-    expect(isProductionFlags(productionFlags('re1'), 're3')).toBe(false);
-    expect(isProductionFlags(productionFlags('re3'), 're2')).toBe(false);
+    // One vector serves every suite, so a vector that is production for one suite IS production for the others —
+    // the separation the old per-suite pin bought is gone by construction, which is the point of the move.
+    expect(isProductionFlags(productionFlags('re1'), 're3')).toBe(true);
+    expect(isProductionFlags(productionFlags('re3'), 're2')).toBe(true);
     // A row that differs only in the switch nobody watches is not production either: the comparison is over
     // EVERY member, which is the rule the docblock states and this asserts.
     expect(isProductionFlags({ ...productionFlags('re3'), riseSignal: true }, 're3')).toBe(false);
@@ -634,7 +623,7 @@ describe('the row that IS the published configuration, and the label that was no
     expect(isProductionFlags(productionFlags('re3'), 'all')).toBe(false);
   });
 
-  it('carries one row per suite, and the rows differ in exactly the pinned member', () => {
+  it('carries ONE production row and the single-flag counterfactual that prices the trace term', () => {
     const claimed = PRODUCTION_ROWS.flatMap((row) => row.suites);
     expect([...claimed].sort(), 'every suite is claimed exactly once').toEqual([
       're1',
@@ -649,13 +638,17 @@ describe('the row that IS the published configuration, and the label that was no
       }
     }
     expect(PRODUCTION_ROWS.map((row) => row.label)).toEqual([
-      'PRODUCTION (RE1+RE2: log + rank)',
-      'PRODUCTION (RE3: log + trace + rank)',
+      'PRODUCTION (log + trace + rank)',
+      'PRODUCTION LESS TRACE (log + rank)',
     ]);
-    // The two rows are the single-flag counterfactual pair; a battery that had only one of them could not
-    // measure what the trace pin buys on the only suite that has spans and does not pin it.
-    expect(PRODUCTION_ROWS[0]!.flags.traceSignal).toBe(false);
-    expect(PRODUCTION_ROWS[1]!.flags.traceSignal).toBe(true);
+    // The counterfactual claims NO suite: it is not the published configuration of anything, and a row that
+    // claimed one would be reported as production while measuring the other arm.
+    expect(PRODUCTION_ROWS[1]!.suites).toEqual([]);
+    // The two rows are a single-flag pair, which is what makes the battery able to price the term at all.
+    const differing = (
+      Object.keys(PRODUCTION_ROWS[0]!.flags) as Array<keyof AblationFeatureFlags>
+    ).filter((key) => PRODUCTION_ROWS[0]!.flags[key] !== PRODUCTION_ROWS[1]!.flags[key]);
+    expect(differing).toEqual(['traceSignal']);
   });
 
   it('prints the production row differently from the other rows, and says which one it is', () => {
@@ -688,16 +681,19 @@ describe('the row that IS the published configuration, and the label that was no
     expect(code).toContain('LEGACY FLAGS ON (3 of 12');
   });
 
-  it('renders the two production vectors as the configurations they are', () => {
+  it('renders the production vector and its counterfactual as the configurations they are', () => {
     const re3 = formatAblationConfigLine(productionFlags('re3'));
     expect(re3).toContain('logWeight=1');
     expect(re3).toContain('traceWeight=1');
     expect(re3).toContain('rankNormalization=true');
     expect(re3).toContain('prismWeight=0');
     const re1 = formatAblationConfigLine(productionFlags('re1'));
-    expect(re1).toContain('traceWeight=0');
+    expect(re1).toContain('traceWeight=1');
+    // The counterfactual is the only row that renders a zero here, and it renders it because it states the
+    // OTHER arm rather than because a suite inherits a different default.
+    expect(formatAblationConfigLine(PRODUCTION_ROWS[1]!.flags)).toContain('traceWeight=0');
     // The engine arguments follow the flags, which is the mapping the artifact is read through.
     expect(buildAblationEngineOptions(productionFlags('re3')).signals.traceWeight).toBe(1);
-    expect(buildAblationEngineOptions(productionFlags('re2')).signals.traceWeight).toBe(0);
+    expect(buildAblationEngineOptions(productionFlags('re2')).signals.traceWeight).toBe(1);
   });
 });

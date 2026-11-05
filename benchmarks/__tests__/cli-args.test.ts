@@ -328,10 +328,13 @@ describe('the trace weight has one owner, and both runners read it', () => {
     }
   });
 
-  it('is ZERO, because that is the value the shipped configuration states', () => {
-    // Not a tautology: the constant exists so a reader can tell the shipped value from the RE3 JOB'S PIN,
-    // which is a workflow-side `1` and cannot be read from here. Fixing the number in a test means a change to
-    // it is a deliberate edit to this line rather than a silent move of the published configuration.
-    expect(DEFAULT_TRACE_WEIGHT).toBe(0);
+  it('is ONE, because that is the value the published configuration states', () => {
+    // Not a tautology: fixing the number in a test means a change to it is a deliberate edit to this line
+    // rather than a silent move of the published configuration. The value used to be `0` with the golden RE3
+    // job pinning `1` on its own command line, so the constant answered "what does the engine ship" and the
+    // workflow answered a different question for one suite. The nine-cell A/B on the constant's docblock
+    // (both arms with `injectTime` on) is what moved the pin into the engine: `RE3:TrainTicket` gained 13
+    // cases and lost none, and the six cells that can see a trace term did not flip a single case.
+    expect(DEFAULT_TRACE_WEIGHT).toBe(1);
   });
 });

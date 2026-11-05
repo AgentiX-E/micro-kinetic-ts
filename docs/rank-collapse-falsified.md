@@ -1,5 +1,11 @@
 # rank-collapse hypothesis — falsified by readback (net-neutral)
 
+> **Read `docs/trace-weight-default.md` first if you are here for the pin.** This document argues about
+> `traceWeight` under the configuration it shipped in — `0` by default with the golden RE3 job pinning `1` on
+> its command line. That pin is gone: the weight is `1` on every suite, moved by an unconfounded nine-cell A/B
+> (13 cases gained on `RE3:TrainTicket`, none lost, no case flipped on the other eight cells). The scale
+> argument below still holds; the "every suite but RE3 already runs `traceWeight = 0`" premise does not.
+
 ## Hypothesis (carried over from `bothwrong-evidence-verdict.md`)
 
 `rankNormalizeScores` maps the top anomaly to exactly `1.0`. The `finalScore` base

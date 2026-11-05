@@ -1,6 +1,8 @@
 # The trace vote — a binary term scored on its decisions, and the mask that withholds it from the leader
 
-**Status:** the term SHIPS ON for RE3 and OFF everywhere else, unchanged. `traceSkipsLeader` ships **`false`** and
+**Status:** the term ships ON on every suite — `DEFAULT_TRACE_WEIGHT` is `1` since `docs/trace-weight-default.md`,
+which is where the per-suite pin this document was written against went. Everything below about the MASK
+(`traceSkipsLeader`) is unchanged and still measured at that weight. `traceSkipsLeader` ships **`false`** and
 its arm is **REFUSED**: measured on all nine cells the mask moves nothing at all, and the rank census shows why —
 the two votes it can act on are both votes for the TRUTH. What lands here is the arm's numbers, the three
 instruments that explain them, and the disagreement between this document's own prediction and its measurement.

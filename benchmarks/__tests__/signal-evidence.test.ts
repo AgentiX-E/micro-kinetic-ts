@@ -30,42 +30,41 @@ const REPO = join(import.meta.dirname, '..', '..');
 const shipped = (): PrintedSignalWeights => parseRCAEvalArgs([]);
 
 /**
- * The configuration the RE3 step of the battery runs — the shipped defaults plus the one pin the workflow
- * applies (`--trace-weight 1`). It is a DISPATCH and not a default: `traceWeight` ships at zero, so the five
- * cells that run without the pin are not this configuration and their artifacts say so on the `signals:` line.
+ * The SAME configuration stated as an explicit argument instead of inherited. It exists to prove the notice is
+ * computed from the dispatch and not from the project: an arm that says `--trace-weight 1` and the shipped
+ * defaults must produce the same evidence rows, because the default IS 1. The two were different numbers
+ * until the pin moved out of the workflow and into `DEFAULT_TRACE_WEIGHT`; keeping the assertion means the
+ * next change to that constant fails here rather than silently re-labelling the failure block.
  */
 const re3Pinned = (): PrintedSignalWeights => parseRCAEvalArgs(['--trace-weight', '1']);
 
 describe('the shipped dispatch, read for what the failure block can and cannot explain', () => {
-  it('leaves FIVE of the six printed comparisons at zero weight on a dispatch that says nothing', () => {
-    // Named, not counted: a count would pass if the wrong five were inert. `logScore` is the only comparison
-    // the shipped defaults weight — `traceWeight` ships at zero too, and the RE3 step pins it, which the next
-    // test states.
+  it('leaves FOUR of the six printed comparisons at zero weight on a dispatch that says nothing', () => {
+    // Named, not counted: a count would pass if the wrong four were inert. `logScore` and `traceActivity` are
+    // the two comparisons the shipped defaults weight, and the two terms they name are the two the nine cells
+    // were measured with — the trace term was a workflow pin until it became the engine's default.
     expect(inertPrintedSignals(shipped())).toEqual([
       'onset',
       'injectDelay',
       'ratioContrib',
       'topoSource',
-      'traceActivity',
     ]);
     expect(
       printedSignalEvidence(shipped())
         .filter((e) => !e.inert)
         .map((e) => e.signal),
-    ).toEqual(['logScore']);
+    ).toEqual(['logScore', 'traceActivity']);
   });
 
-  it('is four of six under the RE3 pin, which is the configuration the trace cell was measured in', () => {
-    // The pin is an ARGUMENT, not a default, and this is where that matters: the notice is computed from the
-    // dispatch, so the same source prints two different headers on two cells of one battery — which is what
-    // makes it a measurement of the run rather than a statement about the project.
-    expect(inertPrintedSignals(re3Pinned())).toEqual([
-      'onset',
-      'injectDelay',
-      'ratioContrib',
-      'topoSource',
-    ]);
+  it('states the shipped configuration the same way whether it is inherited or spelled out', () => {
+    // The notice is computed from the DISPATCH, so this is a property of the run and not of the project: an
+    // arm that states the weight it wants and an arm that inherits the same weight must agree, and an arm that
+    // sets it back to zero must print the fifth inert row. Both directions are asserted below.
+    expect(inertPrintedSignals(re3Pinned())).toEqual(inertPrintedSignals(shipped()));
     expect(inertPrintedSignals(re3Pinned())).not.toContain('traceActivity');
+    expect(inertPrintedSignals(parseRCAEvalArgs(['--trace-weight', '0']))).toContain(
+      'traceActivity',
+    );
   });
 
   it('reads the weight from the option field it names, so a reader can find the number', () => {

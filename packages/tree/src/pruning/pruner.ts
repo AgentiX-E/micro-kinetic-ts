@@ -561,7 +561,10 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * so the signal defers to the log signal instead of misfiring onto a wrong
    * service.
    *
-   * Default: 0 (opt-in).
+   * Default: 1 — the SHIPPED value, and a measurement rather than a preference. It was `0` (opt-in) while the
+   * golden RE3 job pinned `1` on its own command line, so a local dispatch of that cell printed `30.6%` for the
+   * cell CI calls `74.5%`. The nine-cell A/B that moved it here is on `DEFAULT_TRACE_WEIGHT`; the one cell that
+   * moves is the one whose metric ranking is worst, and the other eight flip no case at all.
    */
   readonly traceWeight: number;
   /**
@@ -1275,19 +1278,38 @@ export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
  * quotes a number has to name the constant it came from, and there was none. Its description stated the default
  * in words instead, which is honest and uncheckable.
  *
- * **`0` is the engine's shipped value and the one the golden RE3 job OVERRIDES.** That job pins `1` on its own
- * command line — a workflow-side value this module cannot own, because it is a per-invocation configuration
- * rather than the engine's default — so a reader holding only this constant cannot tell which of the two a run
- * used. `formatSignalLine` prints the value the run actually resolved to, which is what makes the two
- * distinguishable on an artifact; the constant answers the other question, "what does the engine ship".
+ * **`1` is the engine's shipped value, and it is a MEASUREMENT rather than a preference.** The term shipped
+ * at `0` while the golden RE3 job pinned `1` on its own command line — a per-suite configuration this module
+ * could not own — so one source produced `30.6%` and `74.5%` on `RE3:TrainTicket` depending on which dispatch
+ * read it, and a reader holding only this constant could not tell which of the two a run had used. The pin was
+ * also the reason the published configuration was **not a point in the battery's cube**: `productionFlags`
+ * had to return a different vector per suite (`docs/ablation-config-audit.md`). Setting the default to the
+ * pinned value removes both.
  *
- * Measured on the golden corpus, and the reason the value matters beyond bookkeeping: the trace term is BINARY
- * (`0` or `1`, no magnitude) while the base term's adjacent-rank gap on rank-normalised TrainTicket is
- * `0.0083` at 68 nodes, so the term can override ~100 rank positions, and on the 735 cases it moved a deciding
- * gap ten times — **never in the truth's favour**. See `docs/rank-collapse-falsified.md` for the scale argument
- * and the RE3 pin's own evidence.
+ * The A/B below is the first **unconfounded** read of the pin: nine cells, both arms with `injectTime` on, the
+ * weight the only difference. Cell rates are the published type-mean; `flips` counts CASES whose top-1 answer
+ * changed, which is the quantity a cell rate can hide in a two-way swap.
+ *
+ * | cell | `traceWeight = 0` | `traceWeight = 1` | flips |
+ * | --- | ---: | ---: | ---: |
+ * | RE1 OnlineBoutique / SockShop / TrainTicket | 89.6 / 95.0 / 89.2 | identical | 0 (no `traces.csv` in any RE1 pack) |
+ * | RE2 OnlineBoutique | 93.1 | 93.1 | 0 of 87 |
+ * | RE2 SockShop | 97.8 | 97.8 | 0 (no `traces.csv`) |
+ * | RE2 TrainTicket | 83.3 (published) | not measured | 0 of the first 30 cases — the 90-case cell exhausts a 6 GB heap on BOTH arms, so this row is a subset and is labelled as one |
+ * | RE3 OnlineBoutique | 87.5 | 87.5 | 0 of 28 |
+ * | RE3 SockShop | 66.1 | 66.1 | 0 (no `traces.csv`) |
+ * | RE3 TrainTicket | **30.6** | **74.5** | **13 of 30, all gains, none lost** |
+ *
+ * The one cell that moves is the one whose base ranking is worst, which is what makes the mechanism legible:
+ * the term is BINARY (`0` or `1`, no magnitude) while the base term's adjacent-rank gap on rank-normalised
+ * TrainTicket is `0.0083` at 68 nodes, so at `1` it can override ~100 rank positions. It therefore acts as a
+ * volume prior — the service whose spans move most is the source — and ON `RE3:TrainTicket` that prior is
+ * right far more often than the metric-only ranking it overrides. The prior's cost is visible in the same
+ * cell: eight of the nine remaining misses are one service (`ts-route-service`) losing to a trace hub that the
+ * prior ranks at the maximum, i.e. the term buys the cells where the hub IS the source and pays where it is
+ * not. See `docs/rank-collapse-falsified.md` for the scale argument and the term's own earlier evidence.
  */
-export const DEFAULT_TRACE_WEIGHT = 0.0;
+export const DEFAULT_TRACE_WEIGHT = 1.0;
 
 /**
  * The shipped value of {@link TreePrunerOptions.traceSkipsLeader}, which is `false`.

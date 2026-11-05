@@ -498,7 +498,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         'failedEdgeWeight=3 failedEdgeGateMode=absolute failedEdgeGateShare=0.5 ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'baselineAnchor=whole-file ' +
-        'traceWeight=0 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
+        'traceWeight=1 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
         'suppressIdleTransients=false transientGuardTest=evidence-trimmed ' +
         'suppressNearZeroBaselineRise=false ' +

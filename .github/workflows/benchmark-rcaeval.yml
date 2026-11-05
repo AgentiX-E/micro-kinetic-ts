@@ -1472,13 +1472,12 @@ jobs:
           #   either. That is what makes this block's acceptance exact rather than argued.
           if [ -n "${{ inputs.trace_weight }}" ]; then
             RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
-          else
-            #   This step's own pin, moved inside the guard. An input and a command-line literal naming the
-            #   same flag is a step that states one knob TWICE, and the dispatch-surface census forbids it
-            #   because the meaning would then depend on the parser's tie-break — the hazard the block above
-            #   records for `--log-signal-mode`. One statement per state, and a dispatch wins over the pin.
-            RANKING_ARG+=(--trace-weight 1)
           fi
+          #   No `else` pin. This step used to add `--trace-weight 1` here, which made the published
+          #   configuration of this suite a fact of THIS FILE rather than of the engine: the same source
+          #   produced 30.6% on TrainTicket through a runner default and 74.5% through the pin. The value moved
+          #   into `DEFAULT_TRACE_WEIGHT` — the nine-cell A/B is on that constant — so an empty input now means
+          #   the engine's answer, and a dispatch that states the other arm still wins.
           if [ -n "${{ inputs.topo_weight }}" ]; then
             RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
           fi

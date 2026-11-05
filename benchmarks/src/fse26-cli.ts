@@ -343,9 +343,13 @@ export interface Fse26CliOptions {
    * without growing the set of answerable questions, because the FSE'26 half would still be
    * unreachable* — and the kill criterion is an AND over the two halves.
    *
-   * `0` is the shipped value, so this follows the line's `omit when default` rule. It is BINARY on the
-   * golden corpus (exactly `0` or exactly `1`, with no magnitude) and it pushed for the WRONG service on
-   * all six occasions it moved a deciding gap there, which is why the default stayed at 0.
+   * `1` is the shipped value: the field follows the line's `omit when default` rule at whatever
+   * `DEFAULT_TRACE_WEIGHT` states, and that constant moved from `0` to `1` when the golden RE3 job's
+   * command-line pin was folded back into the engine. It is BINARY on the golden corpus (exactly `0` or exactly
+   * `1`, with no magnitude). The earlier reading — "it pushed for the wrong service on all six occasions it
+   * moved a deciding gap, which is why the default stayed at 0" — was taken against a control that also had
+   * `noInjectTime` on; the unconfounded nine-cell A/B is on the constant and on
+   * `docs/trace-weight-default.md`.
    */
   readonly traceWeight: number;
   /**

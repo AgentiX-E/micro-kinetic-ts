@@ -33,6 +33,7 @@ import {
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRACE_WEIGHT,
   DEFAULT_TRANSIENT_GUARD_TEST,
   DEFAULT_VICTIM_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -78,7 +79,9 @@ describe('buildFse26EngineOptions', () => {
       // and this one proves it lands in the RIGHT object. A value forwarded into `topology` when the pruner
       // reads it from `signals` is accounted for and still a no-op, which is the defect
       // `rcaeval-engine-options.ts` records having been built to prevent.
-      traceWeight: 0,
+      // The shipped value, read from the owner rather than written as a literal: it moved from 0 to 1 when the
+      // golden RE3 job's pin was folded into the engine, and a literal here would have had to be edited twice.
+      traceWeight: DEFAULT_TRACE_WEIGHT,
       topoWeight: 0,
       // The deduction pair. Both are read from `signals` by the pruner, so both have to land there — and the
       // weight is 0, which is exactly why a silent drop would be invisible and why the row exists.

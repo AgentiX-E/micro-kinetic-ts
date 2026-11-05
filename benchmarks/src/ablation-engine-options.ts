@@ -380,18 +380,17 @@ export type AblationSuite = 're1' | 're2' | 're3';
  *
  * ## The configuration, stated
  *
- * Production is `logWeight = 1`, `rankNormalization = true`, `prismWeight = 0`, and every collision /
- * topology / shape switch at its shipped pole — but `traceWeight` is **not** one value: the dispatch
- * pins it to `1` inside the `re3` step (`benchmark-rcaeval.yml`, `RANKING_ARG+=(--trace-weight 1)`)
- * while `re1` and `re2` take the runner default `0`. The published configuration is therefore **not a
- * point in the battery's cube**: it is a per-suite pin, which is why one flat grid could not express it
- * and why the row that reproduced the published numbers on `RE3` (83.3 / 63.3 / 73.3) was labelled
- * after its three flags instead.
+ * Production is `logWeight = 1`, `traceWeight = 1`, `rankNormalization = true`, `prismWeight = 0`, and every
+ * collision / topology / shape switch at its shipped pole. That is **one vector for all three suites**, and it
+ * became one when the trace pin moved out of the dispatch and into `DEFAULT_TRACE_WEIGHT`; before that the
+ * published configuration was a per-suite pin that no flat grid could express, which is why the row that
+ * reproduced the published `RE3` numbers was labelled after its three flags instead.
  *
- * `RE1` cannot see the difference — that suite has no `logs.csv` and no `traces.csv`, so both signals
- * are starved there and the two production vectors rank identically (measured: `112/125`, `119/125`,
- * `112/125`). `RE2` has traces and takes `traceWeight = 0`, which is the one cell in the nine where a
- * row of this battery could test the pin itself.
+ * `RE1` and both SockShop packs carry no `traces.csv`, so the term is unobservable there and the vector is the
+ * same vector either way; the cells that DO carry spans are where the term is a measurement rather than a
+ * label, and on all of them but one the two arms rank every case identically (the A/B table is on
+ * `DEFAULT_TRACE_WEIGHT`). The suite argument survives because the published per-suite configuration is what
+ * callers ask for by name, not because the answer depends on it.
  *
  * @param suite - The suite whose published configuration is wanted.
  * @returns The flags the published run for that suite is taken with.
@@ -406,10 +405,11 @@ export function productionFlags(suite: AblationSuite): AblationFeatureFlags {
     collisionSignal: false,
     collapseDiscount: false,
     riseSignal: false,
-    // The pin. `re3` states `--trace-weight 1` in its own step; the other two inherit the runner's
-    // `DEFAULT_TRACE_WEIGHT`, which is 0. A corpus with no spans makes the distinction unobservable, and
-    // `RE1` is that corpus.
-    traceSignal: suite === 're3',
+    // The pin is GONE. `traceWeight` is `DEFAULT_TRACE_WEIGHT` = 1 on every suite, so the published
+    // configuration is one vector instead of three; a corpus with no spans makes the term unobservable, and
+    // `RE1` (and both SockShop packs) are that corpus. The nine-cell A/B that moved the default out of the
+    // dispatch and into the engine is on the constant's own docblock.
+    traceSignal: true,
     rankNormalization: true,
     suppressIdleTransients: false,
     suppressDemandMetrics: true,
@@ -442,13 +442,14 @@ export function isProductionFlags(
 }
 
 /**
- * The battery rows that ARE the published configuration, one per suite, owned here so a test can hold
- * them to {@link productionFlags} without importing the runner (which executes at import time).
+ * The battery rows that ARE the published configuration, owned here so a test can hold them to
+ * {@link productionFlags} without importing the runner (which executes at import time).
  *
- * Two rows rather than one because the published configuration is two: the `RE3` trace pin is a fact
- * about that suite. The rows differ in exactly one flag, which is the measurement this pairing makes
- * available — on `RE2`, where the `re1` vector is production, the `re3` vector is a single-flag
- * counterfactual, and it is the only one the nine cells ever needed.
+ * One production row now that the configuration is one vector, plus the single-flag **counterfactual** the nine
+ * cells needed: `PRODUCTION LESS TRACE` claims no suite, because it is not the published configuration of any —
+ * it is the arm that prices the term. Keeping it as a row is what lets the battery answer "what does
+ * `traceWeight` buy" without a dispatch argument, and marking it as claiming nothing is what keeps
+ * `isProductionFlags` from ever calling it production.
  */
 export interface AblationProductionRow {
   /** The label the artifact prints. */
@@ -459,17 +460,19 @@ export interface AblationProductionRow {
   readonly flags: AblationFeatureFlags;
 }
 
-/** The two production rows, in the order the battery states them. */
+/** The production row and its single-flag counterfactual, in the order the battery states them. */
 export const PRODUCTION_ROWS: readonly AblationProductionRow[] = [
   {
-    label: 'PRODUCTION (RE1+RE2: log + rank)',
-    suites: ['re1', 're2'],
-    flags: productionFlags('re1'),
+    label: 'PRODUCTION (log + trace + rank)',
+    suites: ['re1', 're2', 're3'],
+    flags: productionFlags('re3'),
   },
   {
-    label: 'PRODUCTION (RE3: log + trace + rank)',
-    suites: ['re3'],
-    flags: productionFlags('re3'),
+    label: 'PRODUCTION LESS TRACE (log + rank)',
+    // No suite is this configuration: it exists to price the trace term, which is the one member the two rows
+    // differ in.
+    suites: [],
+    flags: { ...productionFlags('re3'), traceSignal: false },
   },
 ];
 
