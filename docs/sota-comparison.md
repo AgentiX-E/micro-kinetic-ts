@@ -1372,3 +1372,42 @@ It does not change the **objective**. The target on this page has always been th
 641/735. A second statistic that flatters the engine is worth exactly one thing: it tells a reader where the
 remaining Top-1 gap is _not_ — it is not in ranking the right service into the top five (91.1% of the time it is
 there), it is in ordering the first position (87.2%).
+
+## 2026-11-05 — two 2026 competitors, and the channel one of them does not have either
+
+Iteration 226's competitor sweep found two entries the table did not carry. Neither is placed in the
+leaderboard, and the reason is different for each.
+
+**DeCoR / RICE-CM** ([DOI 10.1186/s13677-026-01009-x](https://link.springer.com/article/10.1186/s13677-026-01009-x),
+peer-reviewed, 2026). Service-level localisation from multivariate metrics, evaluated on a **300-case subset** of
+RCAEval (Sock Shop 1, Sock Shop 2, Online Boutique), and it reports `Avg@5` only:
+
+| dataset | `Avg@5` |
+| --- | ---: |
+| Sock Shop 1 | 0.6000 |
+| Sock Shop 2 | 0.7040 |
+| Online Boutique | 0.4864 |
+
+Its own headline is that this is the highest `Avg@5` **among the methods it evaluates** — against RUN, RICE-only,
+RICE-MX and fixed-coupling ablations. The bound that matters for this table is arithmetic rather than a
+comparison: `Avg@5 = (1/5)·Σ_{k=1..5} AC@k` and `AC@k` is non-decreasing in `k`, so **`Avg@5 ≥ AC@1` for every
+ranker**. An `Avg@5` of 0.4864 on Online Boutique therefore bounds that method's `AC@1` **at 48.6% or below**,
+against this project's 89.6% (RE1), 93.3% (RE2) and 83.3% (RE3) on the same system. It is not a leaderboard
+entry because the statistic and the case subset differ, and because a self-selected 300-case subset is not the
+published 735 — the same reason RCA-DCM is recorded with its numbers and no rank.
+
+**TORAI** (2026, unsupervised, graph-free). It is the closest published statement of the problem this project
+found *first by measurement*: "Sock Shop … configured with zero trace data (100% blind spots)" and
+"Online Boutique … 4 default blind spots", with severity scoring, GMM symptom clustering, cluster-local causal
+inference and rank aggregation, evaluated on all three of the same systems. Two things follow.
+
+1. **§9.1 of `ablation-input-census.md` has independent corroboration.** This project measured
+   `spans 0/90` and `spans 0/30` on SockShop, with `latency-routes STARVED`, and concluded the corpus carries no
+   traces there. A 2026 paper states the same property of the benchmark as a premise of its design, which means
+   the fact is a property of RCAEval rather than a defect in this loader.
+2. **It names the shape of the missing lever.** TORAI's `Avg@5` is reported as 0.94 on SockShop and 0.89 on
+   TrainTicket using metrics and logs alone. Those are `Avg@5` figures from its own harness and are not
+   comparable here — but the *design* is: cluster the anomalous services first, then rank inside a cluster, and
+   use median/IQR rather than mean/σ so a late trigger does not poison the baseline. That is a discriminator
+   that needs no spans, which is exactly what `RE3:SockShop` — the lowest lift in the nine cells, at 38.9% with
+   **eleven of eleven misses ranked rather than blank** — cannot get from any arm this battery already owns.
