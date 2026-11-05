@@ -218,6 +218,14 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       signature: 'a.detail < b.detail',
       population: 'the same rows, guarded by `a.detail !== b.detail` — never equal on that path',
     },
+    // The per-fault-type tally's order, added when the loss census began carrying its own population: it sorts
+    // `byType.entries()` — a Map keyed by fault type, so the keys are unique and the tie-break cannot be reached
+    // with equal operands. The order is not cosmetic: it decides the per-type breakdown a reader diffs between
+    // artifacts, so a list order that depended on insertion would make two identical runs print differently.
+    {
+      signature: 'a.faultType < b.faultType',
+      population: '`byType.entries()`, a Map keyed by fault type (unique)',
+    },
   ],
   'packages/kinetic/src/benchmarks/fse26-diagnose.ts': [
     { signature: 'a.label < b.label', population: '`kept` outcomes, one per metric' },

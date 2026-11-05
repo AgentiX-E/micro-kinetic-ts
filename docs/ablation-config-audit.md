@@ -202,3 +202,101 @@ is, and the gate it needs is a property of the CASE (evidence sufficiency), not 
 - The four anomaly-shape weights the published run passes (`anomalyTrendWeight` 0.15, `anomalyCvWeight`
   0.05, `anomalyBreadthWeight` 0.05, `anomalyBurstWeight` 0) are still **not fields of this record**, so
   the battery can neither state nor vary them. They are the last configuration the artifact cannot name.
+
+### 4.6 Read back on all three suites, in both conventions, and the ladder it yields
+
+The rows §4 added were verified on run `41964724908` (`fccc87fd`, 13/13 jobs green, 10:57 → 06:25 next day).
+The anchor line is now printed by the battery itself, and it names the configuration rather than a label:
+
+```
+Δ anchor: PRODUCTION (RE3: log + trace + rank) — the published configuration for re3
+```
+
+**Convention first.** The battery's `AVG` column is the published convention (mean over fault types), its `CW`
+column is the case-weighted one. §4.3's table is the case-level reading of the same cells — `25/30` and
+`19/30` are counts of cases — so on RE3 the two columns of this section differ by up to 5.6 pp on the same row
+(`docs/accuracy-aggregation.md` §8). Both are printed; neither is a correction of the other.
+
+| suite | baseline (flags off) | +log | +trace | +trace +rank | **production** | Δ over baseline |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RE1 `AVG` | 91.5 | 91.5 | 91.5 | 91.5 | **91.5** | **0.0** |
+| RE2 `AVG` | 90.0 | 90.0 | 90.0 | 91.5 | **91.5** | +1.5 |
+| RE3 `AVG` | 52.9 | 54.0 | 67.6 | 75.4 | **76.5** | **+23.6** |
+| RE3 `CW` | 50.0 | 51.1 | 64.4 | 72.2 | **73.3** | +23.3 |
+
+Read across a row, that ladder is this project's entire measured advantage, and it says something the earlier
+tables could not:
+
+| term | RE1 | RE2 | RE3 | estimate |
+| --- | ---: | ---: | ---: | --- |
+| `logSignal` | 0.0 | 0.0 | +1.1 | two independent readings on RE3: alone (52.9→54.0) and on top of trace+rank (75.4→76.5) — **they agree** |
+| `rankNormalization` | 0.0 | +1.5 | +7.8 | alone on RE3 (52.9→60.7) and on top of trace (67.6→75.4) — **+7.8 both times** |
+| trace activity | 0.0 | 0.0 | +14.7 | 52.9→67.6; the only term whose effect is larger than everything else combined |
+| `enableCollisionAggregation`, `extraTraceValidation`, `selfLearning` | 0.0 | 0.0 | 0.0 | **inert, not starved**: these three gate weights that the shipped configuration sets to zero |
+
+Three findings, and the third is the one that costs:
+
+1. **No shipped term moves RE1.** Its baseline IS production to the printed digit. The three terms the shipped
+   configuration pays for contribute exactly zero on the suite where 51% of the corpus lives — whatever wins
+   there wins in the unmodified term set. (Rows that *add* a weight the shipped configuration does not use do
+   move RE1 — `+Topo Signal` reads 90.1, `+Collision Signal` 89.9 — which is the sharper statement: the
+   engine's advantage on RE1 is the term set it ships WITHOUT, and adding any of them costs it.)
+2. **RE3 is the whole of the margin**, and the trace activity signal is 62% of it.
+3. **Half the cube is inert on this corpus.** `+Collision Q(f,f)`, `+Trace Topo`, `+SelfLearn` and their seven
+   combinations all read the baseline exactly, because each gates a weight the shipped configuration holds at
+   `0`. An ablation of a flag whose weight is zero measures the flag's *plumbing*, not its *idea*, and this
+   battery can be read as confirming only the former. That is why the three quantified terms in the table above
+   are the three whose weights are non-zero, and why no other row in the six-hundred-line artifact may be
+   quoted as a contribution.
+
+Finally, the per-suite pin this section exists for is now measured rather than argued: on RE3,
+`PRODUCTION (RE1+RE2)` — i.e. the same engine **without** `--trace-weight 1` — reads **61.9 `AVG` / 58.9 `CW`
+against production's 76.5 / 73.3**, a **−14.6 pp** swing from one dispatch argument in the workflow file.
+
+### 4.7 An arm measured on the target cell and refused, and what its refusal re-diagnosed
+
+`RE3:SockShop` is the weakest of the nine cells (66.1% published, lift 38.9% over the frequency prior) and its
+`f4` type is the weakest block inside it: **1 of 7**, with five misses classified *outweighed* and one *outvoted*.
+The displayed evidence of those five has a common shape — the winner's `base` is near zero and its `rise` is
+large (`base=0.000 rise=32.0`, `base=0.000 rise=21.9`), which is the pathology
+`suppressNearZeroBaselineRise` exists to remove: `deviation = log₁₀(1 + |max − base| / base)` is unbounded as
+`base → 0`, so a series idling at 1e-4 that ticks to 3e-3 outranks a series at 30 that moves 30%.
+
+So the lever was cheap and pre-registered: one flag, no code, measured on the cell it targets.
+
+| arm | OB | SS | TT | corpus (88 cases) |
+| --- | ---: | ---: | ---: | ---: |
+| `--trace-weight 1` (shipped for re3) | 82.1 | 63.3 | 73.3 | 72.7 |
+| `+ --suppress-near-zero-baseline-rise` | 82.1 | 63.3 | 73.3 | 72.7 |
+
+**Bit-identical on all 88 cases**, including the seven `RE3:SockShop` `f4` cases it was aimed at — the second
+independent measurement of this flag as a no-op, the first having been taken on a different corpus state
+(`docs/re3-fault-ceiling.md`). Rejected, and recorded rather than dropped, for the reason every refused arm here
+is recorded: a flag that *sounds* like the mechanism you diagnosed and changes nothing is evidence that the
+diagnosis was read off the wrong field.
+
+**What the refusal re-diagnosed.** The breakdown prints the *largest* contributing metric, not the one that decides
+the ranking: dropping a label leaves the service's other metrics in place, and these winners carry a second one.
+The field that actually separates them is `topoSource`:
+
+| case | winner | `topoSource` winner | truth | `topoSource` truth | `dev` winner | `dev` truth |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| `re3ss_carts_f4_1` | `rabbitmq-exporter` | 1.000 | `carts` | 0.437 | 1.519 | 0.290 |
+| `re3ss_carts_f4_2` | `orders-db` | 1.000 | `carts` | 0.671 | 0.466 | 0.301 |
+| `re3ss_carts_f4_3` | `rabbitmq-exporter` | 1.000 | `carts` | 0.682 | 1.360 | 0.301 |
+| `re3ss_orders_f4_1` | `front-end` | 0.262 | `orders` | 0.474 | 0.615 | 0.505 |
+| `re3ss_orders_f4_2` | `orders-db` | 1.000 | `orders` | 0.446 | 0.740 | 0.300 |
+
+Four of five winners sit at `topoSource = 1.000` while the truth sits at 0.44–0.68, and the gap is larger than
+the `dev` gap in every one of them. `topoSource = 1.000` means *nothing upstream of me deviates* — which a
+**leaf** satisfies trivially, because it has nothing downstream in the call graph to be the source of, and its
+metric families (`diskio` on a DB, exporter counters) are exactly the ones whose idle level is noise. The
+`orders_f4_1` row is the counter-example that makes this a mechanism rather than a story: its winner is
+`front-end`, the only winner here that is **not** a leaf, and it is the one row where `topoSource` favours the
+truth.
+
+So the next lever is not a baseline guard. It is the source credit: `topoSource` must not be obtainable by being
+a sink, and the term that says "nothing upstream moved" has to be read against a parent set that can move. That
+is a statement about the operator's domain, and it is falsifiable by the same table: an arm that gates the credit
+on `≥ 1 anomalous parent exists` should move `RE3:SockShop` and leave `RE1` alone, and if it does not, the
+mechanism is wrong and the row above will say so.

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { deriveAnchorCensus } from '../src/anchor-census.js';
 import type { LatencyRouteEntry } from '../src/directional-evidence.js';
 import {
+  cellConventions,
   classifyDeepEvidence,
   classifyLoss,
   compareTermZeroRows,
@@ -286,20 +287,68 @@ describe('formatLossReport — the reading is the split, not the accuracy', () =
   });
 
   it('names the aggregation convention, because the published percentage is a DIFFERENT quantity', () => {
-    // Two conventions, one noun, and they disagree on one of the three suites: this report weights every
-    // case equally, while the published cell `AVERAGE` is the unweighted mean of the fault-type accuracies
-    // (`docs/accuracy-aggregation.md`). Read side by side without a label, 78.10% here and 78.75% there look
-    // like a regression. The label is the fix, and the assertion is that the label is PRESENT rather than
-    // that the number is right — a number cannot assert its own unit.
+    // Two conventions, one noun, and they disagree wherever a cell's fault types carry unequal case counts:
+    // this report weights every case equally, while the published cell `AVERAGE` is the unweighted mean of
+    // the fault-type accuracies (`docs/accuracy-aggregation.md`). Read side by side without a label, the same
+    // cell looks like a regression. The label is the fix, and the assertion is that the label is PRESENT
+    // rather than that a number is right — a number cannot assert its own unit.
     const text = formatLossReport(rows, 5).join('\n');
     expect(text).toContain('CASE-LEVEL');
     expect(text).toContain('unweighted mean of the');
     expect(text).toContain('docs/accuracy-aggregation.md');
-    // And the suite where they part company is named with BOTH of its values, so a reader can tell which
-    // one a quoted figure is rather than having to re-derive it.
-    expect(text).toContain('RE3');
-    expect(text).toContain('53.33%');
-    expect(text).toContain('58.69%');
+  });
+
+  it('prints ITS OWN pair of readings, per cell, where the two conventions separate', () => {
+    // Two cases of `cpu` (both right) and three of `disk` (all wrong): 2/5 = 40.0% case-level, while the
+    // types read 100% and 0% and their unweighted mean is 50.0%. Both numbers come from this row's own
+    // population — which is the point. The block used to carry 53.33% / 58.69% from an earlier study and
+    // print them inside every later run, including runs whose own cells read 20 points higher.
+    const unequal = summarizeLoss(
+      [
+        record({ caseId: 'a', faultType: 'cpu', correct: true, truthRank: 1 }),
+        record({ caseId: 'b', faultType: 'cpu', correct: true, truthRank: 1 }),
+        record({ caseId: 'c', faultType: 'disk', truthRank: 40, pool: 42 }),
+        record({ caseId: 'd', faultType: 'disk', truthRank: 40, pool: 42 }),
+        record({ caseId: 'e', faultType: 'disk', truthRank: 40, pool: 42 }),
+      ],
+      5,
+    );
+    const text = formatLossReport(unequal, 5).join('\n');
+    expect(text).toContain('RE1:SockShop');
+    expect(text).toContain('40.0% case-level');
+    expect(text).toContain('50.0% per fault type');
+    expect(text).toContain('2 types (2/3 cases)');
+  });
+
+  it('says no cell diverges rather than quoting a figure from another run', () => {
+    // Every record in this fixture is one fault type, so both conventions read 25.0%.
+    const text = formatLossReport(rows, 5).join('\n');
+    expect(text).toContain('none — every cell of this run reads the same figure both ways');
+    expect(text).not.toContain('53.33');
+    expect(text).not.toContain('58.69');
+  });
+
+  it('computes both readings from the row it is given, and says how many types it averaged', () => {
+    const [equal] = summarizeLoss([record({ correct: true, truthRank: 1 })], 5);
+    expect(cellConventions(equal!)).toEqual({ caseLevel: 1, typeMean: 1, typeCells: 1 });
+    const [mixed] = summarizeLoss(
+      [
+        // `mem` FIRST, so the tally's sort meets a reversed pair and not only an already-ordered one.
+        record({ caseId: 'b', faultType: 'mem', truthRank: 40, pool: 42 }),
+        record({ caseId: 'c', faultType: 'mem', truthRank: 40, pool: 42 }),
+        record({ caseId: 'd', faultType: 'mem', truthRank: 40, pool: 42 }),
+        record({ caseId: 'a', faultType: 'cpu', correct: true, truthRank: 1 }),
+      ],
+      5,
+    );
+    // 1/4 case-level against (1 + 0)/2 = 0.5 over the two types.
+    expect(cellConventions(mixed!)).toEqual({ caseLevel: 0.25, typeMean: 0.5, typeCells: 2 });
+    // The tally is ordered by name, so the printed breakdown does not depend on insertion order.
+    expect(mixed!.faultTypes.map((t) => t.faultType)).toEqual(['cpu', 'mem']);
+    expect(mixed!.faultTypes).toEqual([
+      { faultType: 'cpu', cases: 1, correct: 1 },
+      { faultType: 'mem', cases: 3, correct: 0 },
+    ]);
   });
 
   it('names the shallow depth it used, so the split is reproducible', () => {

@@ -265,6 +265,12 @@ this iteration adds is that it is **reproducible on demand from one artifact**, 
 its own convention** — the fix for a pair of numbers that differ under one noun is a label, and a percentage
 cannot assert its own unit. **Neither figure is wrong; quoting one as the other is.**
 
+**Correction (iteration 227).** The two figures in the paragraph above — 80.27/53.33 and 78.75/58.69 — are run
+`37764638225`'s, and the formatter printed them inside *every* subsequent run, including runs whose own RE3 read
+**73.3% case-level against 76.5% per fault type**. The pair is now computed from the row it is printed for
+(`docs/accuracy-aggregation.md` §8), and on the shipped engine the two conventions diverge on **all three RE3
+cells and no others**: 88.9/66.1/74.5 published against 83.3/63.3/73.3 case-level.
+
 ### 4.4 What is NOT claimed
 
 `retrievalNotRanked` is **0** in every group and `retrievalNotInGraph` is **0** as well, so the 2 retrieval

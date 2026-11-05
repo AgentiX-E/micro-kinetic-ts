@@ -61,6 +61,22 @@ per-case results, no harness and no seed — first on FSE'26, first on RE2-Onlin
 first on RE1 overall, first on all three RE1 cells including OnlineBoutique (`arXiv:2610.05009`'s per-system Table 5
 reads 88.0 there against our 89.6, two cases of 125).**
 
+> **What `89.25%` is, and what the number beside it is (correction, iteration 227).** `656/735` weights every case
+> equally over a corpus in which **RE1 is 51% of the cases (375 of 735)** and RE3 is 12% (90) — so it is closest to
+> the *easiest* suite's rate and furthest from the published table's convention, which is the unweighted mean of
+> the per-cell `AVERAGE` columns. Both of this project's own instruments print the case-weighted figure
+> (`docs/accuracy-aggregation.md` §8 measures the gap), and the two readings of the same run `41964724908` are:
+>
+> | reading | RE1 | RE2 | RE3 | corpus |
+> | --- | ---: | ---: | ---: | ---: |
+> | case-weighted (`656/735`, the one this document quotes) | 91.5 | 91.5 | 73.3 | **89.25** |
+> | mean of the nine published cells (RCAEval's convention) | 91.5 | 91.5 | **76.5** | **86.48** |
+>
+> The ranking claim above survives under the second reading — no competitor reports a per-cell-mean corpus figure
+> that this project has been able to find, and the per-suite comparisons in the rows above are cell-for-cell and
+> unaffected — but a reader who recomputes from our artifacts will get **86.5**, not 89.25, and the difference is
+> this document's choice of fold, not the engine's accuracy. Quote the row you mean; both are printed by the run.
+
 That last clause is the correction of 2026-10-29 and it is worth stating how it was missed. Every previous reading of
 that reference compared **overall** figures: its `L0` 85.4 against our RE1, which has been **330/375 = 88.00 %**
 since the boundary-gate enrolment and **327/375 = 87.20 %** before it — and which this document had left anchored
@@ -1411,3 +1427,24 @@ inference and rank aggregation, evaluated on all three of the same systems. Two 
    use median/IQR rather than mean/σ so a late trigger does not poison the baseline. That is a discriminator
    that needs no spans, which is exactly what `RE3:SockShop` — the lowest lift in the nine cells, at 38.9% with
    **eleven of eleven misses ranked rather than blank** — cannot get from any arm this battery already owns.
+
+**Three 2026 references verified this iteration, and one of them is a number this project should be measured
+against** (checked 2026-11-05; none of them evaluates on RCAEval, so none of them is a leaderboard row).
+
+| reference | corpus | best reported | why it is not a row in §1 |
+| --- | --- | --- | --- |
+| `arXiv:2608.21310`, *Beyond Fault Localization: a trajectory-level study of LLM agents for RCA* | **RCABench** (1 430 cases, 500 sampled; TrainTicket call graph), AIOps 2025 (400 events), RCA100 (57 propagation cases) | **Acc@1 90.0%** — ThinkDepth.ai + `claude-sonnet-4.6`; top band otherwise 77.6–79.6% (Qwen); RCA-specific agents 42.6–53.4% | different corpus and a **different label space** (service- and code-level labels from a re-annotated propagation graph, not RCAEval's injected-service label), and no per-case results published yet |
+| `arXiv:2607.01788`, **KRCA** (Kuaishou + Tsinghua) | Kuaishou production, hyper-scale, in-house | AC@1 **0.88** service / 0.79 failure type; −77.3% diagnosis time over six months | private system, no public corpus, no reproduction path |
+| **OpenRCA 2.0** (Fang et al., 2026), as cited by the above | OpenRCA | 76.0% of agents find the service; 61.5% follow a verified propagation path | no per-case results in the citing summary; the path metric has no counterpart in this project's artifacts yet |
+
+Two consequences, and the second is uncomfortable:
+
+1. **The 90.0% is on TrainTicket**, this project's hardest system: `RE1` 89.6%, `RE2` 83.3%, `RE3` **74.5%**. If
+   RCABench's service-level task is of comparable difficulty, its best configuration is **15.5 pp above this
+   project's RE3-TrainTicket cell** — which is the same cell `docs/ablation-config-audit.md` §4.4 shows the PRISM
+   conjunctive arm lifting by +20.0. That is directional, not a rank: the corpora differ, the labels differ, and
+   the reference pays a frontier LLM per case where this engine pays a deterministic score. But it is the first
+   published 2026 number that sits above one of this project's nine cells on the system both measure.
+2. **None of the three publishes per-case results**, so none can be re-scored on the 735. The ranking in §1 stands
+   as "first among methods with per-case results", and that qualifier is now doing more work than it did last
+   week: it is a statement about the published field's reproducibility, not about the field's accuracy.

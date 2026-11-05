@@ -30,6 +30,8 @@
 
 import type { ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
 
+import { rollupSuiteAccuracy } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
+
 import type { AnchorCensus } from './anchor-census.js';
 import type { LatencyRouteEntry } from './directional-evidence.js';
 
@@ -486,6 +488,29 @@ export interface LossRow {
   readonly deepAttributionUnavailable: number;
   /** The median candidate-pool size, so the retrieval half has a denominator. */
   readonly poolMedian: number;
+  /**
+   * The same cases, tallied by fault type.
+   *
+   * Carried on the row because the published cell `AVERAGE` is the UNWEIGHTED MEAN of the per-type
+   * accuracies while {@link cases}/{@link correct} weight every case equally — two quantities under one
+   * noun, agreeing on RE1 and separating on RE2 and RE3. Printing the pair needs the population, and a
+   * formatter that recomputes it from counts alone cannot have it: the mean over types is not a function
+   * of the two totals. Before this field the report quoted **another run's** pair as if it described the
+   * run printing it, which is the defect this row exists to close.
+   *
+   * Ordered by fault type, so the printed breakdown is stable across artifacts.
+   */
+  readonly faultTypes: readonly FaultTypeTally[];
+}
+
+/** One fault type's share of a cell: the denominator and numerator of its own accuracy. */
+export interface FaultTypeTally {
+  /** Lowercase fault type, as the record declared it. */
+  readonly faultType: string;
+  /** Cases of this type in the cell. */
+  readonly cases: number;
+  /** Of those, the ones answered correctly — classified by {@link classifyLoss}, the same rule `correct` uses. */
+  readonly correct: number;
 }
 
 /** The suite and system a cell key declares, or `('unrecognised', 'unrecognised')`. */
@@ -534,12 +559,20 @@ export function summarizeLoss(
     // The attribution, accumulated in the same pass for the same reason.
     const lostOn = new Map<string, number>();
     let deepUnattributed = 0;
+    // The per-fault-type tally, in the SAME pass: a second walk would be a second answer to "how many of
+    // this type are correct", and the two agree until one of them is edited. The numerator is the class,
+    // not the record's own `correct` flag, so the tally and the case-level numerator cannot disagree.
+    const byType = new Map<string, { cases: number; correct: number }>();
     const bump = (m: Map<string, number>, k: string): void => {
       m.set(k, (m.get(k) ?? 0) + 1);
     };
     for (const m of members) {
       const cls = classifyLoss(m, shallowDepth);
       counts[cls]++;
+      const tally = byType.get(m.faultType) ?? { cases: 0, correct: 0 };
+      tally.cases++;
+      if (cls === 'CORRECT') tally.correct++;
+      byType.set(m.faultType, tally);
       if (cls === 'RETRIEVAL' && !m.truthInGraph) notInGraph++;
       if (cls === 'RERANK_DEEP') {
         deepEvidence[classifyDeepEvidence(m.truthEvidence)]++;
@@ -567,6 +600,9 @@ export function summarizeLoss(
         .sort((a, b) => b.count - a.count || (a.term < b.term ? -1 : 1)),
       deepAttributionUnavailable: deepUnattributed,
       poolMedian: median(members.map((m) => m.pool)),
+      faultTypes: [...byType.entries()]
+        .map(([faultType, t]) => ({ faultType, cases: t.cases, correct: t.correct }))
+        .sort((a, b) => (a.faultType < b.faultType ? -1 : 1)),
     });
   }
   return rows;
@@ -593,6 +629,41 @@ function median(values: readonly number[]): number {
 
 const pct = (hit: number, of: number): string =>
   of === 0 ? 'n/a' : `${((hit / of) * 100).toFixed(1)}%`;
+
+/**
+ * The two conventions a cell's accuracy can be read under, from the row's own population.
+ *
+ * `caseLevel` is `correct / cases` — every case weighted equally, which is what this report's totals are.
+ * `typeMean` is the unweighted mean of the per-fault-type accuracies, which is what RCAEval's `AVERAGE`
+ * column prints and therefore what every published cell of ours is quoted as. They coincide if and only if
+ * every fault type holds the same number of cases, which is RE1 and is neither RE2 nor RE3.
+ *
+ * Computed rather than quoted: the pair a report prints has to be the pair its own rows produce. A version
+ * of this block that carried a historical figure read as a statement about the run printing it, and was
+ * wrong by 20 points on the suite it named once the engine improved.
+ *
+ * @param row - One (suite, system) cell.
+ * @returns Both readings, and how many fault-type cells the mean was taken over.
+ */
+export function cellConventions(row: LossRow): {
+  readonly caseLevel: number;
+  readonly typeMean: number;
+  readonly typeCells: number;
+} {
+  // Both conventions from the OWNER, not from a fifth copy of the fold. `rollupSuiteAccuracy` returns the
+  // published mean and the case-weighted one together, which is the whole point of that module — and its
+  // case-weighted arm is `Σ(accuracy × cases) / Σcases`, i.e. exactly `correct / cases` here, so this is
+  // value-preserving rather than a re-derivation. There is no zero-case guard below, and the reason is the
+  // one {@link median} gives: a group is created by pushing its first member, so `cases >= 1`.
+  const rollup = rollupSuiteAccuracy(
+    row.faultTypes.map((t) => ({ accuracy: t.correct / t.cases, cases: t.cases })),
+  );
+  return {
+    caseLevel: rollup.caseWeighted,
+    typeMean: rollup.faultTypeMean,
+    typeCells: rollup.faultTypes,
+  };
+}
 
 /**
  * The report, as lines. Pure, so every arm of it is testable without a corpus.
@@ -655,6 +726,24 @@ export function formatLossReport(
     );
   }
   const misses = cases - correct;
+  // Both readings, for every cell where this run's two conventions disagree at the printed precision. The
+  // printed precision is the comparison unit rather than a tolerance: a pair that rounds to the same figure
+  // cannot mislead a reader who quotes it, and a 0.04 pp gap would otherwise be printed forever as a
+  // disagreement nobody can act on.
+  const diverging = rows
+    .map((r) => ({ cell: `${r.suite}:${r.system}`, row: r, ...cellConventions(r) }))
+    .filter((d) => (d.caseLevel * 100).toFixed(1) !== (d.typeMean * 100).toFixed(1));
+  const conventionLines =
+    diverging.length === 0
+      ? [
+          '    none — every cell of this run reads the same figure both ways (types carry equal case counts).',
+        ]
+      : diverging.map(
+          (d) =>
+            `    ${d.cell.padEnd(22)} ${`${(d.caseLevel * 100).toFixed(1)}%`.padStart(6)} case-level · ` +
+            `${`${(d.typeMean * 100).toFixed(1)}%`.padStart(6)} per fault type · ` +
+            `${d.typeCells} types (${d.row.faultTypes.map((t) => t.cases).join('/')} cases)`,
+        );
   lines.push(
     `  ${'TOTAL'.padEnd(6)} ${''.padEnd(15)} ${String(cases).padStart(6)} ${String(correct).padStart(8)} ` +
       `${String(retrieval).padStart(10)} ${String(shallow).padStart(8)} ${String(deep).padStart(6)} ` +
@@ -662,15 +751,16 @@ export function formatLossReport(
     // The convention is named BEFORE the reading, because it is the context the reading is in — and the
     // reading line stays LAST, which is where a caller that reads only the final line expects it.
     //
-    // This line and the published cell `AVERAGE` are the same word for two different quantities, and they
-    // differ on one suite. Every case is weighted equally here; the published `AVERAGE` column is the
-    // UNWEIGHTED MEAN OF THE FAULT-TYPE ACCURACIES (`docs/accuracy-aggregation.md`), which agrees with this
-    // to the printed precision on RE1 and RE2 and separates on RE3, whose fault types do not carry equal case
-    // counts: **53.33% case-level against 58.69% per fault type**. Two conventions that disagree on one of
-    // three suites, under one noun, is the shape an instrument must not contribute to — so the reading states
-    // which one it is and where the other lives.
+    // This line and the published cell `AVERAGE` are the same word for two different quantities. Every case
+    // is weighted equally here; the published `AVERAGE` column is the UNWEIGHTED MEAN OF THE FAULT-TYPE
+    // ACCURACIES (`docs/accuracy-aggregation.md`), so the two separate wherever a cell's fault types carry
+    // unequal case counts. Two conventions under one noun is the shape an instrument must not contribute to,
+    // so the reading states which one it is — and prints the other from ITS OWN rows.
     '  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the',
-    '  fault-type accuracies and differs from this on RE3 (53.33% case-level vs 58.69% per fault type);',
+    '  fault-type accuracies; the pair this run produces, cell by cell, where the two differ:',
+    // The pair itself, or the fact that there is no pair to print. A run on RE1 alone reads the same figure
+    // both ways, and saying so is the difference between "no divergence" and "not looked at".
+    ...conventionLines,
     '  see `docs/accuracy-aggregation.md`, and read the SPLIT below against either.',
     // The deep half split, and the sentence it exists for: a deep miss whose origin never cleared the
     // engine's OWN threshold is not reachable by reweighting, and the two blocks want opposite work.
@@ -911,7 +1001,9 @@ function hopsBetween(
   from: string,
   to: string,
 ): number | undefined {
-  if (from === to) return 0;
+  // No `from === to` guard, and the reason is the one {@link median} gives for its missing empty-list arm:
+  // the only caller has already returned `self` for that pair, so the guard is a branch no input reaches —
+  // and an unreachable branch is dead code that the coverage gate would then be reporting as a gap.
   // Built per call rather than cached: a case's graph is walked ONCE, and a cache keyed on a graph object would
   // be a second lifetime to reason about for a saving of one O(E) pass over at most a few hundred edges.
   const next = new Map<string, string[]>();

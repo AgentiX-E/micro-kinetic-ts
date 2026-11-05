@@ -213,3 +213,71 @@ isolated `Δ`, every per-fault-type cell and every census line.
 *An artifact that carries a duration cannot be compared byte-for-byte; it has to be compared on the quantity
 anyone reads.* Stating that is the difference between "the run was green" and "the refactor was value-preserving",
 and only the second is a claim about the repair.
+
+---
+
+## 8. The census quoted another run's pair, and printed it inside every later one
+
+§7 repaired the folds. It did not repair the **sentence the census prints about them** — and that sentence was
+worse than a missing label, because it carried numbers.
+
+### 8.1 The defect
+
+`formatLossReport` printed:
+
+```
+  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the
+  fault-type accuracies and differs from this on RE3 (53.33% case-level vs 58.69% per fault type);
+```
+
+Both figures are real, and both are from **run `37764638225`** — §2's baseline, measured before the log and
+trace signals shipped. The block was written as documentation of §2's finding and then printed as if it
+described whatever run was printing it. By the time it was caught, the RE3 suite read **73.3% case-level
+against 76.5% per fault type**, so three artifacts in a row carried a sentence that contradicted the table
+directly above it — and the table was right.
+
+This is the same failure as §1 one level up: a quantity with two conventions, and a place that states the
+convention using the wrong pair. A label that quotes a stale number is not a label.
+
+### 8.2 The repair
+
+`LossRow` now carries the population it was folded over — `faultTypes: {faultType, cases, correct}[]`,
+accumulated in the **same pass** as the class counts (`classifyLoss` is read once, so the tally's numerator and
+the case-level numerator cannot disagree). `cellConventions(row)` folds that population through
+`rollupSuiteAccuracy`, the §7 owner, and returns both readings; the report prints, per cell, both figures
+whenever they differ at the printed precision, and says so when none do:
+
+```
+  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the
+  fault-type accuracies; the pair this run produces, cell by cell, where the two differ:
+    RE3:SockShop             63.3% case-level ·  66.1% per fault type · 4 types (10/3/10/7 cases)
+  see `docs/accuracy-aggregation.md`, and read the SPLIT below against either.
+```
+
+The printed precision is the comparison unit, not a tolerance: a pair that rounds to the same figure cannot
+mislead a reader who quotes it, and a 0.04 pp gap would otherwise be printed forever as a disagreement nobody
+can act on.
+
+Two arms were removed rather than covered, on the rule §7.3 states: `hopsBetween`'s `from === to` guard is
+unreachable (its only caller returns `self` for that pair) and a `cases === 0` guard in `cellConventions` is
+unreachable (a group is created by pushing its first member). An unreachable branch is dead code, and the
+coverage gate reporting it as a gap is the gate working.
+
+### 8.3 The reading this changes
+
+The nine published cells are the **type-mean**; the case-level figure is the census's own. Where a suite's
+fault types carry equal case counts the two coincide — RE1 (25 per type) and RE2 (15 per type) do, RE3 does
+not. The shipped engine, run `41964724908` on `fccc87fd`:
+
+| suite | cases | case-level | **published (type-mean)** | divergence |
+| --- | ---: | ---: | ---: | --- |
+| RE1 | 375 | 91.5% | **91.5%** | none |
+| RE2 | 270 | 91.5% | **91.5%** | none |
+| RE3 | 90 | 73.3% | **76.5%** | all three cells: 88.9/66.1/74.5 against 83.3/63.3/73.3 |
+| mean of the three suites | 735 | 85.4% | **86.5%** | |
+
+**The corpus case-rate is not the headline.** `656/735 = 89.3%` was quoted as the project's number in earlier
+iterations, and it is a case-count-weighted rate over a corpus in which RE1 is 51% of the cases — the easiest
+suite, weighted heaviest. RCAEval publishes per-system `AVERAGE` columns and averages them; the defensible
+corpus figure is the mean of the three suite numbers, **86.5% under the published convention**, 85.4% under the
+census's. Both are lower than the number they replace, which is the only reason to write this down.

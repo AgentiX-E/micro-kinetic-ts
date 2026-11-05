@@ -143,6 +143,15 @@ describe('classifyWinnerRelation — the direction of a loss, from the graph alo
     expect(classifyWinnerRelation(ring, 'b', 'a')).toEqual({ relation: 'caller', hops: 1 });
   });
 
+  it('terminates on a cycle when the target is unreachable, and says unrelated', () => {
+    // The breadth-first walk has to survive re-entering a node it has already expanded. Without the visited
+    // set this pair never terminates; with it the walk exhausts the component and reports no path.
+    expect(classifyWinnerRelation(graphOf(['a', 'b'], ['b', 'a']), 'a', 'ghost')).toEqual({
+      relation: 'unrelated',
+      hops: 0,
+    });
+  });
+
   it('is total on the degenerate inputs a corpus actually produces', () => {
     const g = graphOf(['a', 'b']);
     // The winner is the truth: a correct case, and the only reading at zero hops.
@@ -205,6 +214,16 @@ describe('summarizeWinnerDirection — the counter, per cell, with its absences'
     // A record whose `predicted` is absent has no winner to place relative to the truth, whatever the
     // neighbouring field says; the ordering of the two checks is the assertion.
     expect(rows[0]).toMatchObject({ misses: 1, unrelated: 0, unstated: 1 });
+  });
+
+  it('files a `self` relation on a miss as unstated, because the two fields contradict', () => {
+    // `self` says the winner IS the truth; `correct: false` says the ranking missed. One of the two fields is
+    // wrong and this instrument cannot tell which, so the case is counted where the report already counts
+    // "cannot be placed" rather than being given a direction it may not have.
+    const rows = summarizeWinnerDirection([
+      { ...miss('a', 'a'), correct: false, winnerRelation: 'self' as const, winnerHops: 0 },
+    ]);
+    expect(rows[0]).toMatchObject({ misses: 1, caller: 0, callee: 0, unrelated: 0, unstated: 1 });
   });
 
   it('groups by cell, in the order the report prints', () => {
