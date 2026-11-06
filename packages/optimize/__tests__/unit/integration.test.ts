@@ -237,6 +237,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'failedEdgeGateShare',
       'failedEdgeMinRecords',
       'failedEdgeMode',
+      // Iteration 236: the MUTUAL-PAIR rule. Held for the credit's reason — it decides whether both charges of
+      // a pair exist, not how large one of them is, so a search has nothing to interpolate between `credit` and
+      // `drop`.
+      'failedEdgeMutualRule',
       'failedEdgeWeight',
       'latMinRise',
       'latWeight',

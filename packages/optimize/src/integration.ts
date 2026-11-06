@@ -79,6 +79,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the BAR that weight is read against (absolute | fleet): it changes which rise the gate admits rather than any term magnitude, so it is the same kind of discrete choice as the dual-family gate mode above — a dispatch axis, never a fusion coefficient',
   failedEdgeCredit:
     'the CREDIT that bar scales, shipped at `constant` (the term keeps its full weight for the promoted callee): a discrete rule about how much of a fixed weight the evidence buys, so it is a dispatch axis like the bar above rather than a coefficient, and a search interpolating between two credit rules would be averaging two populations',
+  failedEdgeMutualRule:
+    'the rule a mutually failing PAIR is read under, shipped at `credit`: it decides whether both charges are kept or dropped, so it is a discrete choice about which evidence exists at all rather than a coefficient — a search interpolating between two rules would be averaging two populations',
   failedEdgeGateShare:
     'the share a fleet bar is made of, read only at `fleet` and inert at the shipped `absolute`: a population parameter like the dual-family gate, so a continuous search over it would be tuning a threshold on a term whose weight it does not move',
   topoDiscount:

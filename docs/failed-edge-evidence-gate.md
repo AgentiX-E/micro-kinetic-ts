@@ -157,16 +157,16 @@ whose calls were never counted scores 0, on the same refusal direction the gate 
 default and is byte-identical to the shipped behaviour, and the configuration line names the field unconditionally
 because at `constant` it is inert.
 
-**What was predicted.** The breaks are dominated by cases where the promoted service is a *victim* (§234.8: in 16 of
+**What was predicted.** The breaks are dominated by cases where the promoted service is a _victim_ (§234.8: in 16 of
 26 the truth never appears in the channel), so its failure RATE should be lower than the source's and the credit
 should demote it without touching the 184 cases where the channel names the truth.
 
 **What happened.** Paired over the 1 243 cases both arms reached:
 
-| arm | configuration | paired | control | arm | net | fixed / broken | regressed families |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `ev10` | `evidence @ 0.10`, constant credit | 1 243 | 527 | 686 | **+159** | 184 / 25 | `st` −9, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
-| `cal10` | `evidence @ 0.10`, proportional credit | 1 243 | 527 | 679 | **+152** | 183 / **31** | `st` −8, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
+| arm     | configuration                          | paired | control | arm |      net | fixed / broken | regressed families                           |
+| ------- | -------------------------------------- | -----: | ------: | --: | -------: | -------------: | -------------------------------------------- |
+| `ev10`  | `evidence @ 0.10`, constant credit     |  1 243 |     527 | 686 | **+159** |       184 / 25 | `st` −9, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
+| `cal10` | `evidence @ 0.10`, proportional credit |  1 243 |     527 | 679 | **+152** |   183 / **31** | `st` −8, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
 
 And it is not a weight artifact either: on the 1 125 cases all three arms reached, the proportional credit breaks 27 at
 weight 3 and 28 at weight 6 where the constant credit breaks 21, with the fixes flat at 167 / 168 / 168. Raising the
@@ -176,14 +176,14 @@ The credit makes it **worse**: six more breaks and one fewer fix. The mechanism 
 and is worth stating precisely, because it inverts what §5 assumed about the same number:
 
 > **A victim's failure rate is the HIGHEST in the case, not the lowest.** A service saturated by propagated load
-> fails nearly every call it receives — 100% of them in 11 of the 26 breaks (their failing calls are *all* beyond
+> fails nearly every call it receives — 100% of them in 11 of the 26 breaks (their failing calls are _all_ beyond
 > their own pre-window p99). The source, still answering most of its traffic, fails at a moderate rate. So the rate
 > is anti-correlated with being the source on this corpus, and multiplying by it promotes the victim harder than the
 > constant credit did.
 
-That kills the reading of `fraction` as a *strength* of evidence. It is an **admission** statistic — it answers "is
+That kills the reading of `fraction` as a _strength_ of evidence. It is an **admission** statistic — it answers "is
 anything failing here at all", which is the question the name half could not answer — and it is not a confidence in
-the *direction*. The two uses are not interchangeable and this arm is the measurement that says so.
+the _direction_. The two uses are not interchangeable and this arm is the measurement that says so.
 
 ### 9.1 The pre-registered falsification, and its result
 
@@ -211,6 +211,104 @@ targeted conclusion is specific and it is the one worth carrying forward:
 
 > **On this corpus the failed-call channel cannot say whether it is looking at the source or at a victim, from span
 > data alone.** Counts, timings, durations, durations relative to a service's own healthy distribution, and the
-> parent-child shape of the failing span are all exhausted. What remains is corroboration from a *different* channel
+> parent-child shape of the failing span are all exhausted. What remains is corroboration from a _different_ channel
 > — the promoted callee must carry a metric or log anomaly of its own — and that is a cross-modal conjunction rather
 > than another statistic on the same rows.
+
+## 10. The cross-modal conjunction, and why it cannot be the next step either
+
+§9.3 named the next hypothesis before this iteration ran: the term may speak only when the promoted callee carries
+a metric or log anomaly **of its own**. The registration was specific — remove at least half of the breaks with ≥ 180
+of the 195 fixes kept and no family regressing — and the hypothesis is refuted at three strengths, two of them
+without a benchmark run.
+
+The population throughout is the 221 cases the `ev10` arm moved (195 fixed, 26 broken) on the 1 303-case paired
+RE3:TrainTicket sweep. Four new measurements were taken on the corpus itself, at the per-edge level the engine
+cannot print: net failed calls after the pre-injection baseline, per ordered pair, per callee.
+
+### 10.1 The literal predicate is total, so it admits nothing back
+
+Every rankable node in these cases carries a metric anomaly, and none of the 26 breaks carries a log one:
+
+| population | promoted callee's `selfAnomalyLog1p` contribution | log contribution                                     |
+| ---------- | ------------------------------------------------- | ---------------------------------------------------- |
+| 195 fixes  | min 0.021 · p25 0.617 · median 0.672 · max 0.693  | —                                                    |
+| 26 breaks  | min 0.031 · median 0.545 · max 0.693              | `0.000` in 26/26 (`INPUT_MAP_EMPTY` or `VALUE_ZERO`) |
+
+So "carries a metric or log anomaly of its own" is true of 26 of 26 breaks. The predicate is not a filter, it is a
+tautology on this corpus, and the falsification condition is met at the definition rather than at an arm.
+
+### 10.2 The two forms with teeth, both of which cost more than they buy
+
+The hypothesis deserves its strongest readings before it is dismissed, so both were measured exactly — a rule that
+only refuses is exactly evaluable offline, because a refused case returns to the control ranking, which is known per
+case.
+
+| reading of "carries an anomaly of its own"              | fixes kept / 195 | breaks killed / 26 | net vs the arm's 725 |
+| ------------------------------------------------------- | ---------------: | -----------------: | -------------------: |
+| magnitude: promoted anomaly ≥ 0.65                      |              135 |                 10 |              **−60** |
+| magnitude: promoted anomaly ≥ 0.30                      |              175 |                  7 |                  −25 |
+| ordering: promoted anomaly ≥ the displaced candidate's  |               55 |                 17 |             **−140** |
+| structure: promoted callee needs ≥ 2 contributing edges |               88 |                 19 |                 −107 |
+| structure: ≥ 2 distinct callers (identical population)  |               88 |                 19 |                 −107 |
+
+The ordering row is the one that matters, because it inverts the premise the whole hypothesis rests on:
+
+> In **140 of the 195** cases the term gets right, the service it promotes has a **lower** anomaly than the one it
+> displaces. That is not a defect — it is the collision-source picture working: the propagation victim carries the
+> larger response anomaly, and the source carries the smaller, earlier one. A rule that requires the promoted
+> candidate to be at least as anomalous as the displaced one therefore deletes the term's successes and keeps its
+> failures.
+
+### 10.3 The channel's ceiling, measured
+
+The per-edge ledger also answers why no gate ever fixed these 26. In **15 of the 26 breaks the truth carries
+ZERO net failed-call charge**: no caller reported more failures against it after the injection than before, so the
+channel has no row about the service at all. Those cases are not mis-ranked by the direction term, they are
+_invisible_ to it — the best available answer is the baseline's, and the term can only be told to stay silent.
+
+| where the 26 breaks come from                 | cases |
+| --------------------------------------------- | ----: |
+| truth has no charge at all (channel is blind) |    15 |
+| truth has a charge, promoted callee has more  |    11 |
+
+That is the channel's ceiling on this corpus: **206 of the 221 moves are recoverable, 15 are not.** A gate can at
+most convert those 15 into refusals, which is a different acceptance question from the one the arm was measured
+against.
+
+### 10.4 Three further refutations, recorded so they are not re-proposed
+
+- **Edge structure.** Contributing edges and distinct callers per promoted callee have identical distributions in
+  the two populations — median 1 edge and top-edge share 1.0 in both. The channel is thin everywhere; thinness is
+  not the discriminator.
+- **Flux conservation.** Charging a callee only for what its own outgoing failures do not explain
+  (`max(0, raw − out)`), and the exact push-down variant that moves the explained charge to the callee it left
+  through, both recover **3 of the 26** breaks and change nothing on the fixes. The propagation is real but only
+  partial: in the breaks the promoted callers explain 5–30% of their own inbound charge, not all of it.
+- **Topological relation.** The FSE'26 note that the promoted callee is an ancestor of the truth holds on 25 of 26
+  breaks — and on 45 of the 195 fixes as well, where the term moved _up_ correctly. Direction of the move does not
+  separate the two populations either.
+
+## 11. The one rule the measurement does support: a mutually failing pair
+
+The ledger's per-pair view exposes a defect none of the case-level statistics could see. The direction term charges
+a failed call to its **callee**, so `a → b` failing names `b`; when `b → a` fails as well, the same two services
+support both statements, and the only thing that can order them is traffic — a property of the graph, not a
+hypothesis about the fault.
+
+`failedEdgeMutualRule` makes that a decision:
+
+- `credit` — the shipped behaviour. Both charges stand, as if each had spoken alone.
+- `drop` — both charges of the pair are removed **before normalisation**, so neither end is credited with a
+  direction it cannot support and the survivors are rescaled against what remains. The term goes on to speak about
+  the next candidate instead of falling silent, which is why this is a rule and not a gate.
+
+The rule is a statement about a PAIR rather than a callee: a service that fails in both directions with one
+neighbour may still be the right answer for another neighbour's failures. And `mutual` is read after every filter
+the signal already applies — baseline subtraction, self-edges, endpoints outside the rankable graph, the record
+floor — so a row the engine never counted cannot mute one it did.
+
+Measured offline on the same 221 cases: the rule fires on **8 of the 26 breaks and on none of the 195 fixes**. It is
+not enough to make the arm shippable — 18 breaks and the family regressions they cause remain — and it is the first
+change in this family that removes failures at zero measured cost. It ships off by default, arm-ready, with the
+ledger, the runner flag and the configuration line carrying it.

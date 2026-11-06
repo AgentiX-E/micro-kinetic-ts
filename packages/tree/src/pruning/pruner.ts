@@ -87,11 +87,17 @@ import {
   computePrismScores,
   type DualFamilyGateMode,
 } from './prism-signal.js';
-import type { FailedEdgeCredit, FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
+import type {
+  FailedEdgeCredit,
+  FailedEdgeMode,
+  FailedEdgeMutualRule,
+  LogSignalMode,
+} from './ranking-signals.js';
 import {
   DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
+  DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
@@ -112,9 +118,13 @@ import {
 // consumer holding a pruner option should not need a second import path to name its own subject.
 export {
   DEFAULT_FAILED_EDGE_CREDIT,
+  DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   FAILED_EDGE_CREDITS,
+  FAILED_EDGE_MUTUAL_RULES,
   isFailedEdgeCredit,
+  isFailedEdgeMutualRule,
   type FailedEdgeCredit,
+  type FailedEdgeMutualRule,
 } from './ranking-signals.js';
 
 /**
@@ -727,6 +737,15 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * tenth of its calls and one failing all of them are indistinguishable to every other term in the fusion.
    */
   readonly failedEdgeCredit?: FailedEdgeCredit;
+  /**
+   * What a pair of services that fail each other's calls contributes — see {@link FailedEdgeMutualRule}.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_MUTUAL_RULE} (`credit`), which is the behaviour every published cell was
+   * measured with, so the field is inert until a run names it. `drop` removes BOTH charges of such a pair: the
+   * two services support "each one is the source" with the same evidence, and the only thing that could order
+   * them is traffic.
+   */
+  readonly failedEdgeMutualRule?: FailedEdgeMutualRule;
   /**
    * Weight of the per-edge inbound latency rise.
    *
@@ -1809,6 +1828,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
   failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
   failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
+  failedEdgeMutualRule: DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -2137,6 +2157,7 @@ export class TreePruner {
       this.options.failedEdgeMinRecords,
       options?.failedEdgeCalls,
       this.options.failedEdgeCredit ?? DEFAULT_FAILED_EDGE_CREDIT,
+      this.options.failedEdgeMutualRule ?? DEFAULT_FAILED_EDGE_MUTUAL_RULE,
     );
     // The two views of ONE walk: the scores the term reads, and the channel's own volume for the gate that
     // decides whether the term may speak. Two walks would be two definitions of which edges counted.

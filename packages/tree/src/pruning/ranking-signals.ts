@@ -1521,6 +1521,36 @@ export function isFailedEdgeCredit(value: unknown): value is FailedEdgeCredit {
   return typeof value === 'string' && (FAILED_EDGE_CREDITS as readonly string[]).includes(value);
 }
 
+/**
+ * What the channel does with a pair of services that fail each other's calls.
+ *
+ * The term charges a failed call to its CALLEE, so `a → b` failing is a statement about `b`. When `b → a` fails
+ * as well, the same two services support both statements at once and the ranking can only break the tie by
+ * volume — which is a property of the graph, not a hypothesis about the fault.
+ *
+ * `credit` is the shipped behaviour: both ends are charged as if each had spoken alone. `drop` removes BOTH
+ * charges of the pair, so neither end is credited with a direction it cannot support, and the term goes on to
+ * speak about the next candidate instead of falling silent.
+ *
+ * The rule is deliberately a statement about a PAIR rather than about a callee: a service that fails in both
+ * directions with one neighbour may still be a perfectly good candidate for another neighbour's failures, and
+ * dropping its whole charge would throw that away.
+ */
+export type FailedEdgeMutualRule = 'credit' | 'drop';
+
+/** The mutual-pair vocabulary, in the order the documentation presents it. */
+export const FAILED_EDGE_MUTUAL_RULES: readonly FailedEdgeMutualRule[] = ['credit', 'drop'];
+
+/** The shipped rule. `drop` is arm-ready and off, so no published cell can move by omission. */
+export const DEFAULT_FAILED_EDGE_MUTUAL_RULE: FailedEdgeMutualRule = 'credit';
+
+/** Whether an untrusted value names a mutual-pair rule. Total, for parsers and for callers holding `string`. */
+export function isFailedEdgeMutualRule(value: unknown): value is FailedEdgeMutualRule {
+  return (
+    typeof value === 'string' && (FAILED_EDGE_MUTUAL_RULES as readonly string[]).includes(value)
+  );
+}
+
 /** An evidence report with nothing in it, shared so an empty case allocates nothing. */
 const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
   topService: undefined,
@@ -1558,6 +1588,9 @@ export interface FailedEdgeLedger {
  *   that callee ZERO. It never changes the scores under the default credit.
  * @param credit - How much of the weight the evidence buys: `constant` (the shipped behaviour, the winner at
  *   `1.0`) or `proportional` (the winner at its own failure rate). See {@link FailedEdgeCredit}.
+ * @param mutualRule - What a pair of services that fail each other's calls contributes: `credit` (the shipped
+ *   behaviour, both ends charged) or `drop` (neither end charged, and the survivors rescaled). See
+ *   {@link FailedEdgeMutualRule}.
  * @returns Both views. An empty channel returns an empty map and an empty report.
  */
 export function computeFailedEdgeLedger(
@@ -1567,6 +1600,7 @@ export function computeFailedEdgeLedger(
   minRecords = DEFAULT_FAILED_EDGE_MIN_RECORDS,
   calls?: ReadonlyMap<ServiceId, number> | undefined,
   credit: FailedEdgeCredit = DEFAULT_FAILED_EDGE_CREDIT,
+  mutualRule: FailedEdgeMutualRule = DEFAULT_FAILED_EDGE_MUTUAL_RULE,
 ): FailedEdgeLedger {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) {
@@ -1581,6 +1615,14 @@ export function computeFailedEdgeLedger(
   // Distinct callers per callee. Only needed for `mean`, but tracked
   // unconditionally so the two modes cannot disagree about which edges counted.
   const callers = new Map<ServiceId, Set<ServiceId>>();
+  // The counted rises, kept in edge order so that the aggregation below iterates exactly the sequence it always
+  // has. The mutual-pair rule needs to know WHERE a charge came from, which a per-callee sum cannot answer, and
+  // rebuilding the map from a second pass over `edges` would put the filter logic in two places — the class of
+  // defect this repository has paid for repeatedly. One array answers both without changing any order.
+  const counted: Array<{ caller: ServiceId; callee: ServiceId; contribution: number }> = [];
+  // Caller → the callees it reported a NET rise against, filled by the same pass, so "mutual" is defined on
+  // exactly the rows the scores are built from: a baseline-subtracted, self-edge-free, in-graph, above-floor row.
+  const reported = new Map<ServiceId, Set<ServiceId>>();
 
   for (const edge of edges) {
     // A `null`/`undefined` count out of a JSON tuple would make the difference
@@ -1600,13 +1642,34 @@ export function computeFailedEdgeLedger(
     const contribution = Math.max(0, edge.failed - edge.baseline);
     if (contribution <= 0) continue;
 
-    net.set(edge.callee, (net.get(edge.callee) ?? 0) + contribution);
-    records.set(edge.callee, (records.get(edge.callee) ?? 0) + 1);
-    const seen = callers.get(edge.callee);
-    if (seen) {
-      seen.add(edge.caller);
+    counted.push({ caller: edge.caller, callee: edge.callee, contribution });
+    const against = reported.get(edge.caller);
+    if (against === undefined) {
+      reported.set(edge.caller, new Set([edge.callee]));
     } else {
-      callers.set(edge.callee, new Set([edge.caller]));
+      against.add(edge.callee);
+    }
+  }
+
+  // ── The aggregation, now over the counted rows rather than over the edges ───
+  //
+  // Same order, same filters, same sums: the array above is filled in edge order and replayed in it, so the
+  // mutual-pair rule can remove a row without any other row moving. The rule is the whole reason this is a second
+  // loop instead of one: a charge belongs to a PAIR, and a per-callee sum has forgotten which pair it came from.
+  const mutual = mutualRule === 'drop';
+  for (const row of counted) {
+    // A pair that fails in BOTH directions states "the callee is the source" and "the caller is the source" at
+    // once. Neither statement is better supported than the other — the ranking could only break the tie by
+    // volume, which is a property of the graph rather than a hypothesis about the fault — so both charges are
+    // dropped and the term goes on to the next candidate.
+    if (mutual && (reported.get(row.callee)?.has(row.caller) ?? false)) continue;
+    net.set(row.callee, (net.get(row.callee) ?? 0) + row.contribution);
+    records.set(row.callee, (records.get(row.callee) ?? 0) + 1);
+    const seen = callers.get(row.callee);
+    if (seen) {
+      seen.add(row.caller);
+    } else {
+      callers.set(row.callee, new Set([row.caller]));
     }
   }
 

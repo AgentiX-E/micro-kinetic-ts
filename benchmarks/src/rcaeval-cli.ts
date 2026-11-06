@@ -58,6 +58,7 @@ import {
   DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
+  DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -78,10 +79,12 @@ import {
   isDualFamilyGateMode,
   isFailedEdgeCredit,
   isFailedEdgeGateMode,
+  isFailedEdgeMutualRule,
   isOnsetShape,
   type DualFamilyGateMode,
   type FailedEdgeCredit,
   type FailedEdgeGateMode,
+  type FailedEdgeMutualRule,
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
@@ -443,6 +446,17 @@ export interface CliOptions {
    */
   failedEdgeCredit: FailedEdgeCredit;
   /**
+   * What a pair of services that fail each other's calls contributes — `credit` (shipped) or `drop` (see
+   * `TreePrunerOptions.failedEdgeMutualRule`).
+   *
+   * The direction term charges a failed call to its callee, so `a → b` failing names `b`. When `b → a` fails as
+   * well, the same two services support both statements and only traffic can order them, which is a property of
+   * the graph rather than a hypothesis about the fault. `drop` removes both charges of such a pair and lets the
+   * term speak about the next candidate. Always printed, like the credit, because a default-valued field that is
+   * omitted from the line makes two different arms produce byte-identical artifacts.
+   */
+  failedEdgeMutualRule: FailedEdgeMutualRule;
+  /**
    * Strength of the DB-connection-pool dominance penalty (see
    * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
    *
@@ -786,6 +800,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
     failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
     failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
+    failedEdgeMutualRule: DEFAULT_FAILED_EDGE_MUTUAL_RULE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
@@ -942,6 +957,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // because a typo must reproduce the measured configuration rather than invent a half-applied one.
       const credit = args[++i]!;
       opts.failedEdgeCredit = isFailedEdgeCredit(credit) ? credit : DEFAULT_FAILED_EDGE_CREDIT;
+    } else if (args[i] === '--failed-edge-mutual-rule' && hasValue(args, i + 1)) {
+      // The vocabulary's own guard again: an unusable value falls back to the SHIPPED rule, never to a
+      // half-applied one.
+      const mutual = args[++i]!;
+      opts.failedEdgeMutualRule = isFailedEdgeMutualRule(mutual)
+        ? mutual
+        : DEFAULT_FAILED_EDGE_MUTUAL_RULE;
     } else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
       // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
       // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.

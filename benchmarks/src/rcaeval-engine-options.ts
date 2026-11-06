@@ -34,6 +34,7 @@ import type {
   DualFamilyGateMode,
   FailedEdgeCredit,
   FailedEdgeGateMode,
+  FailedEdgeMutualRule,
   LogSignalMode,
   OnsetShape,
   PoolAdmission,
@@ -105,6 +106,8 @@ export interface RCAEvalSignalOptions {
   readonly failedEdgeGateShare: number;
   /** How much of the term's weight the failed-call channel's evidence buys — see `TreePrunerOptions.failedEdgeCredit`. */
   readonly failedEdgeCredit: FailedEdgeCredit;
+  /** What a mutually failing pair contributes — see `TreePrunerOptions.failedEdgeMutualRule`. */
+  readonly failedEdgeMutualRule: FailedEdgeMutualRule;
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
@@ -253,6 +256,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       failedEdgeGateMode: opts.failedEdgeGateMode,
       failedEdgeGateShare: opts.failedEdgeGateShare,
       failedEdgeCredit: opts.failedEdgeCredit,
+      failedEdgeMutualRule: opts.failedEdgeMutualRule,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
@@ -330,6 +334,9 @@ export function formatSignalLine(opts: CliOptions): string {
     // inert, and a line that printed only non-defaults would render the proportional arm and the shipped run
     // byte-identically — on the artifact whose whole job is to say how much of the weight the evidence bought.
     `failedEdgeCredit=${opts.failedEdgeCredit} ` +
+    // The MUTUAL-PAIR rule, unconditional for the credit's reason: it ships at `credit`, where it is inert, and a
+    // line that printed only non-defaults would render the drop arm and the shipped run identically.
+    `failedEdgeMutualRule=${opts.failedEdgeMutualRule} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
     `dropDeviationMode=${opts.dropDeviationMode} baselineAnchor=${opts.baselineAnchor} ` +
     `traceWeight=${opts.traceWeight} ` +

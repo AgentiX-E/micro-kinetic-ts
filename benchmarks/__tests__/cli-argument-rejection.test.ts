@@ -56,6 +56,7 @@ import {
   DUAL_FAMILY_GATE_MODES,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_GATE_MODES,
+  FAILED_EDGE_MUTUAL_RULES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   POOL_ADMISSIONS,
@@ -443,6 +444,10 @@ describe('every option the golden runner forwards can be set from the command li
       // other entry is, and it needs both members: `constant` is what the field already holds, so only
       // `proportional` can move it — which is exactly the arm that has to be reachable from a dispatch.
       ...FAILED_EDGE_CREDITS,
+      // Iteration 236: the MUTUAL-PAIR rule, and it is the same kind of question as the credit — the field
+      // already holds `credit`, so only `drop` can move it, and a set that probed only the shipped member would
+      // pass over a flag that never reaches the ledger.
+      ...FAILED_EDGE_MUTUAL_RULES,
       // Iteration 213: the deduction's PRECEDENCE, the eighth word-vocabulary and the first that is a relation
       // between two nodes rather than a property of one. Probed from the union for the reason every other entry
       // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.
