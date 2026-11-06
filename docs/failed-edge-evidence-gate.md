@@ -168,6 +168,10 @@ should demote it without touching the 184 cases where the channel names the trut
 | `ev10` | `evidence @ 0.10`, constant credit | 1 243 | 527 | 686 | **+159** | 184 / 25 | `st` −9, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
 | `cal10` | `evidence @ 0.10`, proportional credit | 1 243 | 527 | 679 | **+152** | 183 / **31** | `st` −8, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
 
+And it is not a weight artifact either: on the 1 125 cases all three arms reached, the proportional credit breaks 27 at
+weight 3 and 28 at weight 6 where the constant credit breaks 21, with the fixes flat at 167 / 168 / 168. Raising the
+weight does not buy back what the rate demotes.
+
 The credit makes it **worse**: six more breaks and one fewer fix. The mechanism is the opposite of the prediction
 and is worth stating precisely, because it inverts what §5 assumed about the same number:
 
