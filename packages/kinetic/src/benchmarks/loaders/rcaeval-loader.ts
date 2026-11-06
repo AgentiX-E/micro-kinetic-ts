@@ -728,7 +728,8 @@ export class RCAEvalLoader {
         // Absent (every RCAEval directory, which declares one root cause), `serviceIds` stays `undefined` and
         // the accepted set is `{serviceId}` — see `acceptedTruthServiceIds`. So this branch cannot move a
         // published RCAEval cell.
-        const declared = raw.root_cause_services ?? raw.rootCauseServices ?? raw.ground_truth_services;
+        const declared =
+          raw.root_cause_services ?? raw.rootCauseServices ?? raw.ground_truth_services;
         const declaredIds: string[] = Array.isArray(declared)
           ? declared.filter((id: unknown): id is string => typeof id === 'string' && id !== '')
           : [];

@@ -11,11 +11,11 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { BenchmarkGroundTruth } from '../../../src/benchmarks/loaders/types.js';
 import {
   acceptedTruthServiceIds,
   bestAcceptedRank,
 } from '../../../src/benchmarks/loaders/types.js';
-import type { BenchmarkGroundTruth } from '../../../src/benchmarks/loaders/types.js';
 
 /** A ground truth with the fields the rule reads. */
 function gt(serviceId: string, serviceIds?: readonly string[]): BenchmarkGroundTruth {

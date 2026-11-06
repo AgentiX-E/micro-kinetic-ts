@@ -1061,9 +1061,7 @@ export class BenchmarkRunner {
         const topOnset = faultGraph.anomalyOnsetTimes.get(topAnomaly[0]?.serviceId ?? '');
         // Injection-anchored onset delays (ms after inject_time) for the same
         // pair — the temporal causal signal's actual input.
-        const gtInjectDelay = faultGraph.postInjectOnsetDelays?.get(
-          caseTruth,
-        );
+        const gtInjectDelay = faultGraph.postInjectOnsetDelays?.get(caseTruth);
         const topInjectDelay = faultGraph.postInjectOnsetDelays?.get(
           topAnomaly[0]?.serviceId ?? '',
         );
@@ -1073,9 +1071,7 @@ export class BenchmarkRunner {
         // (symptom > GT) the source/symptom separation.
         const gtLogScore = faultGraph.logScores?.get(caseTruth);
         const topLogScore = faultGraph.logScores?.get(topAnomaly[0]?.serviceId ?? '');
-        const gtRatioContrib = faultGraph.collisionEnergy?.get(
-          caseTruth,
-        )?.ratioContrib;
+        const gtRatioContrib = faultGraph.collisionEnergy?.get(caseTruth)?.ratioContrib;
         const topRatioContrib = faultGraph.collisionEnergy?.get(
           topAnomaly[0]?.serviceId ?? '',
         )?.ratioContrib;
