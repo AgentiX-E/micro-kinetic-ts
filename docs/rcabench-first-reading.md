@@ -143,9 +143,16 @@ What is priced so far:
 | --- | --- | --- |
 | metric families `core` → `full` (adds `jvm.gc.*`, `jvm.memory.used`, every pod gauge, plus trace-derived error rate and latency) | paired 158 cases | **30.4% → 37.3% (+6.9 pp)**; `ck` 0/10 → 4/10, `st` 5/15 → 9/15 |
 | scoring rule single-label → declared set | 1 422 cases | **32.28% → 42.69% (+10.4 pp)** |
-| **failed-edge direction term, weight 3, `fleet` bar, `whole-file` latency view** | **paired 1 421 cases** | **42.72% → 45.81% (+44 cases; 59 fixed / 15 broken)** — **a candidate, not a ship** (six families regress) |
+| **direction term's BAR read against the case's own champion (`fleet`) + `whole-file` latency view, at the shipped weight 3** | **paired 1 421 cases** | **42.72% → 45.81% (+44 cases; 59 fixed / 15 broken)** — **a candidate, not a ship** (six families regress) |
 
 ### The direction arm, and what its own gate says about the ceiling
+
+**What this arm changes is not the weight.** The shipped configuration has carried the direction term at
+`failedEdgeWeight = 3` with `failedEdgeGateMode = absolute` since iteration 125, and on this corpus the absolute
+bar — 300 ms, fitted on FSE'26 injections that add hundreds of milliseconds to a sub-millisecond baseline — is
+almost never met by goldens whose latencies are seconds. The arm keeps the weight and changes the two things that
+decide whether the term may speak: the BAR (a share of the case's own champion, `fleet`) and the VIEW that supplies
+its second observable (`whole-file`, because the shipped view supplies zero `edgeLatency` rows).
 
 The arm is live rather than nominal, and the run's own census says exactly how live: `direction-gate[whole-file]`
 reports the view supplied **4 457 latency rows over 60 cases** (the shipped view supplies zero, which is why a
