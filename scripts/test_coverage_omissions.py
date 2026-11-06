@@ -180,6 +180,7 @@ class TheGateReadsWhatItClaims(unittest.TestCase):
 #: being assumed.
 COVERED_BY_ANOTHER_TEST = {
     'convert-parquet-to-json.py': 'test_convert_parquet_to_json.py',
+    'convert-rcabench-to-rcaeval.py': 'test_convert_rcabench_to_rcaeval.py',
     'fse26_convert_tar.py': 'test_fse26_convert.py',
 }
 

@@ -115,7 +115,7 @@ FAULT_CODES = {
     "return": "rt",
 }
 
-SERVICE_STOPWORDS = {"mysql", "rabbitmq", "redis", "dashboard", "exporter"}
+SERVICE_STOPWORDS = {"mysql", "rabbitmq", "redis", "dashboard", "exporter", "loadgenerator"}
 
 
 def epoch_seconds(values) -> np.ndarray:
@@ -129,6 +129,12 @@ def read_metrics(pack: Path, window: str) -> dict[str, dict[str, list[tuple[int,
     if not path.exists():
         return {}
     table = pq.read_table(path).to_pandas()
+    # Guard BEFORE the filter, not after it. A window file that exists and carries no rows has no
+    # `metric` column at all, and `table["metric"]` on a columnless frame raises KeyError -- so the
+    # emptiness check placed below the filter never runs. A pack that recorded its windows as empty
+    # is not an error; it is a pack with nothing to convert.
+    if table.empty or "metric" not in table.columns:
+        return {}
     table = table[table["metric"].isin(METRIC_MAP)]
     if table.empty:
         return {}
@@ -245,7 +251,10 @@ def parse_name(name: str) -> tuple[str, str, str]:
             cut = i
             break
     if cut is None:
-        return namespace, toks[0], body
+        # No service boundary in the name. The three parts must still be disjoint, so the fault is
+        # everything after the first token rather than the whole body -- otherwise the target is
+        # repeated inside the fault and a caller comparing the two sees a name that matches itself.
+        return namespace, toks[0], "-".join(toks[1:])
     return namespace, "-".join(toks[: cut + 1]), "-".join(toks[cut + 1 :])
 
 
@@ -259,6 +268,12 @@ def main() -> int:
     args = ap.parse_args()
 
     src, dst = Path(args.src), Path(args.dst)
+    # A mistyped `--src` used to surface as a traceback from `iterdir()`, which reads like a bug in
+    # the converter rather than a bad argument -- and on a conversion that takes tens of minutes a
+    # reader cannot tell the two apart. Named, and non-zero.
+    if not src.is_dir():
+        print(f"--src {src} is not a directory", file=sys.stderr)
+        return 2
     packs = sorted(p for p in src.iterdir() if p.is_dir() and (p / ".finished").exists())
     chosen = packs[:: args.stride]
     if args.limit:
@@ -279,13 +294,15 @@ def main() -> int:
         point = display.get("injection_point") or {}
         primary = point.get("source_service") or point.get("app_name") or target
 
+        metrics = merge_windows(pack)
+        if not metrics:
+            # Checked BEFORE the directory exists: this used to `mkdir` first and then skip, which
+            # left a case directory holding every artefact except `metrics.json` -- a stray the
+            # runner's discovery walks past and a reader counts.
+            continue
         fault_code = FAULT_CODES.get(fault, "".join(w[0] for w in fault.split("-")))
         case_dir = dst / f"{args.case_prefix}_{primary}_{fault_code}_{index}"
         case_dir.mkdir(parents=True, exist_ok=True)
-
-        metrics = merge_windows(pack)
-        if not metrics:
-            continue
         (case_dir / "metrics.json").write_text(json.dumps(metrics))
         (case_dir / "inject_time.txt").write_text(env["ABNORMAL_START"])
         (case_dir / "ground_truth.json").write_text(
