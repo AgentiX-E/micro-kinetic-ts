@@ -50,6 +50,7 @@ absolute score can be read against the floor a random ranker would reach on the 
 | **RCAEval RE2-OB (90 cases)**           | AC@1          | **93.3%** (84/90)     | RCLAgent **56.67%** (arXiv:2605.14866)                                   | **+36.6 pp**                                                                                                                                                                                                                                                                                                    | cross-paper (§2b), re-anchored 2026-10-31 on battery `41188083576`: the boundary-gate enrolment took this cell up by three cases, and every table in this document now prints the post-gate reading — §2b's own row included                                                                                                                                                                                                                                                                          |
 | **RCAEval RE2-TT (90 cases)**           | AC@1          | **83.3%** (75/90)     | GALA+ **73.3%**                                                          | **+10.0 pp**                                                                                                                                                                                                                                                                                                    | cross-paper, **the same 90-case TrainTicket population** — and the **first time this cell has been ahead**: the pre-129 reading was an RE3 SUITE average rather than a cell, moved by the corpus view (`40128592846`). §2b-ii's prose, which read this cell as a −2.2 pp DEFICIT, is the second correction of §0p                                                                                                                                                                                     |
 | **FSE'26 RCABench**                     | Top@1         | **61.10%** (869/1422) | field avg **21%**, best **37%** (arXiv:2510.04711)                       | **+23.5 pp over the best**                                                                                                                                                                                                                                                                                      | cross-paper, and the benchmark is a _different_ fault set — see the caveat below. Re-anchored on `41034020065`; the row carried a pre-gate reading, and the gate moved this population not at all (25 of 25 fault types identical), so this is a re-anchor rather than a gain                                                                                                                                                                                                                         |
+| **RCABench, agentic LLM class**         | Acc@1         | **not applicable**    | **90.0%** (Sonnet + ThinkDepth.ai), 79.6% / 79.2% / 77.6% for the next three (arXiv:2608.21310) | **−28.9 pp, and this row is the correction of the one above**                                                                                                                                                                                                                                  | **THIS IS A DEFICIT.** A 2026 trajectory study evaluates ten LLM-agent configurations on RCABench under the SAME set-valued rule (`Acc@1 = 1[r̂ ∈ R*]`, `|R*| ∈ {1,2}`) and reports 42.6 → 90.0%. The row above compares against a **model-only** panel (11 models, no tool use); it is not the same class and must never be read as the standing on this benchmark. §2c |
 | **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **95.2% / 89.6%**     | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771)                               | **+6.2 / +11.6 pp**                                                                                                                                                                                                                                                                                             | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b)                                                                                                                                                                                                                                                                                                                                                                         |
 | **RCAEval RE1 (375 cases)**             | service Top-1 | **91.5%** (343/375)   | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)**                       | **+6.07 / +8.67 pp**                                                                                                                                                                                                                                                                                            | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5). Re-anchored 2026-10-31 on battery `41188083576`: the cell has been **330** since the boundary-gate enrolment, and the row's `327` was that enrolment behind — the same defect, one line down. **The OVERALL figure still hides a per-system deficit** — the same paper's Table 5 reports `AC@1` per system and we are BEHIND on OnlineBoutique; the row beneath this one is that cell           |
 | **RCAEval RE1-OB (125 cases)**          | service Top-1 | **89.6%** (112/125)   | `arXiv:2610.05009` **88.0%** (`L2+L3` / `L1+L2+L3`) and **86.4%** (`L0`) | **+1.6 / +3.2 pp — the cell that WAS the one place a published reference stood above us**                                                                                                                                                                                                                       | cross-paper, the same 125 cases; read 2026-10-29 from that paper's per-system Table 5 (§0a entry 5). THE SIGN OF THIS ROW CHANGED with the transient-guard policy (§0p): the cell was `85.6% (107/125)` and `−2.4 / −0.8 pp` behind on the shipped `endpoint` statistic, and the five cases the guard was dropping were a plateau whose last sample returns. `89.6` against that paper's best `88.0` is two cases of 125 (`112` against `110`), and against its `L0` it is four (`112` against `108`) |
@@ -941,36 +942,88 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 ---
 
-## The RCABench archive read through a SECOND path: 32.28% (459/1422) against this row's 61.10% (869/1422)
+## 2c. The class the FSE'26 row was never compared against — 90.0% Acc@1 on RCABench
+
+`arXiv:2510.04711` (the benchmark paper) evaluates **eleven models**, none of them with tool use, and reports a
+mean Top@1 of 21% with a best of 37%. That panel is what the STANDING row above measures against, and it is the
+wrong panel for this benchmark as of 2026.
+
+`arXiv:2608.21310` — a trajectory-level study **on RCABench** — evaluates **ten LLM-agent framework/backbone
+configurations** under the benchmark's own scoring rule, which it states explicitly:
+
+> Each case has a ground-truth root-cause set `R*_i` of one or two services. `Acc@1 = (1/N) Σ 1[r̂_i ∈ R*_i]`
+
+| configuration (backbone · framework) | Acc@1 |
+| --- | ---: |
+| Sonnet · ThinkDepth.ai | **90.0%** |
+| Qwen · ClaudeCode | 79.6% |
+| Qwen · ThinkDepth.ai | 79.2% |
+| Qwen · AIQ | 77.6% |
+| Qwen · TaskWeaver | 65.2% |
+| Qwen · RCLAgent V2 | 53.4% |
+| Qwen · GoS | 48.2% |
+| Qwen · OpenRCA | 46.6% |
+| Qwen · OpsAgent | 45.8% |
+| Qwen · mABC | 42.6% |
+
+Three things follow, and only the third is comfortable:
+
+1. **We are not first on RCABench.** 61.10% sits between the fourth and fifth agentic configurations, and 28.9 pp
+   below the best. The STANDING row's "+23.5 pp over the best" is a margin over a panel that cannot query
+   telemetry; it is not a standing on this benchmark and the row now says so.
+2. **The population is a 500-case sample**, drawn without replacement from the 1,430 cases, so the two figures are
+   not case-for-case comparable — but the direction is not in doubt at this distance.
+3. **Their comparison boundary contains no non-LLM method at all.** The paper compares agent frameworks and
+   backbones; the statistical/graph/causal class appears only in its related work, with no numbers. So on RCABench
+   there is exactly one non-LLM entry with per-case results, and it is ours — and being alone in a class is not the
+   same as leading a benchmark. The class distinction is recorded here so that neither reading is mistranslated
+   into the other.
+
+What the agentic arms have that this engine does not is **evidence navigation**: 30–140 rounds of re-querying
+telemetry per case, at $0.01–$4.64 per case (their table). The engine is one deterministic pass over a
+pre-extracted feature set with **zero per-case cost**, and the honest summary of the gap is that the pass is
+currently leaving 18–29 pp of retrievable evidence on the table. The two levers that are *measured* rather than
+assumed are the input-side losses named in §2d.
+
+## 2d. The RCABench archive read through a SECOND path: 42.69% (607/1422) against this row's 61.10% (869/1422)
 
 The FSE'26 row above (61.10%, 869/1422) is read through the FSE'26 harness. `docs/rcabench-first-reading.md`
 builds a second path to the same archive — the raw Zenodo datapacks (`10.5281/zenodo.17105974`, 13.4 GB,
 **1 422 packs**) converted into the RCAEval case layout and scored by the shipped runner and the shipped loader,
 with no second ranking code.
 
-| reading (whole archive, injection source only, shipped configuration) |                     value |
-| -------------------------------------------------------------------- | ------------------------: |
-| AC@1                                                                 | **32.28%** (**459/1422**) |
-| Top@5                                                                |         53.30% (758/1422) |
-| cases whose ground truth is not a node of the graph                   |               **0 of 1422** |
-| of the 963 misses, the winner is a caller or callee of the truth       |  **633 (65.7%)**          |
-| paired arm: `--families core` → `--families full` (158 cases)          |     30.4% → **37.3%** (+6.9 pp) |
+| reading (whole archive, shipped configuration) | value |
+| --- | ---: |
+| AC@1 | **42.69% (607/1 422)** |
+| Top@5 | 68.70% (977/1 422) |
+| cases whose ground truth is not a node of the graph | **0 of 1 422** |
+| of the 815 misses, the winner is a caller or callee of the truth | **547 (67.1%)** |
+| paired arm: `--families core` → `--families full` (158 cases) | 30.4% → **37.3%** (+6.9 pp) |
 
-**The two paths disagree by 28.8 pp on the SAME 1 422 injections, and that is the finding.** A first draft read
-40.0% on a 60-case stride sample and listed "population" as the first candidate cause; both numbers are now read
-on the whole archive, so **that candidate is dead**. What survives is the loader contract: the FSE'26 loader
-hands the engine `traceEdges` and `failedTraceEdges` (caller → callee, calls, failed calls) and metrics from
-four parquet sources plus trace-derived golden signals, while the RCAEval loader hands it raw spans and one
-metric source. The metric-source half of that difference is **priced at +6.9 pp** by a paired 158-case arm
-(`ck` container-kill 0/10 → 4/10, `st` 5/15 → 9/15, `rq` 2/5 → 4/5); the trace-statistics half is the next arm.
+**This row read 32.28% until 2026-11-06, and the 10.4 pp between the two is a defect in THIS runner, not a gain.**
+`BenchmarkGroundTruth.serviceIds` documents that "ranking is scored against the accepted set"; `run-fse26.ts` obeyed
+and `benchmark-runner.ts` — the runner behind every RCAEval cell — scored `rank[0] === serviceId`. The corpus
+declares two-element ground truth on **1 053 of 1 422 packs** (an edge-injected fault is neither endpoint alone), so
+one label at a time threw away 148 cases. Fixed at the single owner `acceptedTruthServiceIds`, with the nine RCAEval
+cells re-read afterwards and unchanged (RE1-OnlineBoutique 89.6%, byte-identical).
 
-Until then **neither number should be quoted on its own**, and neither is a leaderboard row: RCABench's published
-frame is a 40/30/30 composite over a set-valued ground truth, not Top@1.
+**The two paths still disagree by 18.4 pp on the SAME 1 422 injections, and that is the finding.** The population
+candidate is dead — both numbers are whole-archive. The loader contract survives: the FSE'26 loader hands the engine
+`traceEdges` and `failedTraceEdges` (caller → callee, calls, failed calls) and metrics from four parquet sources plus
+trace-derived golden signals; the RCAEval loader hands it raw spans, a topology document it then *prunes* (−23% of
+edges) and one metric source. The metric-source half is **priced at +6.9 pp** by a paired 158-case arm (`ck`
+container-kill 0/10 → 4/10, `st` 5/15 → 9/15, `rq` 2/5 → 4/5); the **call-graph half is unpriced**, and it can only
+widen the gap, never close it by itself.
 
-What the reading does establish is narrower and still new: `attr.status_code` is POPULATED here (the RCAEval RE3
-TrainTicket packs carry 189,488 spans with it empty), so `failedEdge` has a subject on this corpus that it never
-had on those; two thirds of the misses name a caller or callee of the source; and `rrc` — 231 cases, the largest
-family in the archive — reads 11.3%, which is the family whose only signature is a failure RATE.
+Until then **neither number should be quoted on its own**, and **neither is a leaderboard row**: RCABench's published
+frame is a 40/30/30 composite over a set-valued ground truth, not Top@1 — and §2c above is the panel this row was
+never compared against.
+
+What the reading establishes beyond the number: `attr.status_code` is POPULATED here (the RCAEval RE3 TrainTicket
+packs carry 189,488 spans with it empty), so `failedEdge` has a subject on this corpus that it never had on those;
+two thirds of the misses name a caller or callee of the source; and **`rrc` — 231 cases, the largest family in the
+archive — reads 21.2%**, the family whose only signature is a failure RATE, with `failedEdge` (weight 3.0) *costing*
+rather than earning where it acts.
 
 ## 3. Corrected verdict
 

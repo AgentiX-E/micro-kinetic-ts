@@ -1,213 +1,234 @@
-# The RCABench archive read in full through the RCAEval loader: 459/1422 against the other path's 869/1422
+# The RCABench archive, read through a second data path
 
-**Status:** measured on the **whole archive** — 1 422 datapacks, the same 1 422 injections the FSE'26 row is
-scored on. The reading is **32.28% (459/1422)** and the other path reads **61.10% (869/1422)** on the same
-injections. **This document opens that 28.8 pp; it does not explain all of it.** One of the four candidate
-causes the first draft listed is now **dead**, one has a **measured effect** (+6.9 pp, paired), and the
-remaining structural difference is named in §5 as the object of the next arm. **Instruments:**
-`scripts/convert-rcabench-to-rcaeval.py`, the shipped runner, the shipped loader, and four repairs the reading
-forced (two in the engine, two in the bridge).
+**Status:** reading of OUR instrument, not a competitor ranking. Established 2026-11-05, corrected 2026-11-06.
 
-> **Two corrections, in the order they were earned.**
->
-> **(1)** An earlier draft called this "a corpus the engine has never been scored on". That was false and the
-> repository already said so: `docs/sota-comparison.md` §2 publishes **61.10% (869/1422) Top@1 on FSE'26
-> RCABench**. What is new is a **second data path** to that corpus, not a new corpus.
->
-> **(2)** That same draft read **40.0% (24/60)** on a stride sample and called it a reading. It was not a
-> reading of the archive — it was a reading of **893 of the 1 422 packs**, because the download was still in
-> flight when the sample was drawn (namespaces `ts0`–`ts5` only; `ts6`, `ts7` and most of `ts8` were absent). A
-> sample's population is a property of the download, and nobody had said which download. **The full-archive
-> reading below supersedes it and does not agree with it**: 32.28% against 40.0%.
+This document exists because this project made **two different claims about one corpus** and only the second was
+checked against the corpus itself. Everything below is either a measured number with the command that produced it,
+or a named hypothesis with the arm that would settle it. Nothing here is entered in `sota-comparison.md`'s
+leaderboard, and §2c there says why.
 
 ---
 
-## 1. What was built, and what it costs to run
+## 0. Two corrections, both in the direction that flattered the earlier number
 
-RCABench publishes its raw datapacks on Zenodo (`10.5281/zenodo.17105974`, CC-BY-4.0, 13.4 GB): one directory
-per fault injection with `{normal,abnormal}_{metrics,logs,traces}.parquet`,
-`{normal,abnormal}_metrics_{histogram,sum}.parquet`, `env.json`, `injection.json` and `conclusion.parquet`.
+| reading | population | rule | value | why it moved |
+| --- | --- | --- | ---: | --- |
+| iteration 230 | 60 cases, **stride-7 sample of the 893 packs that had finished downloading** | single declared label | 40.0% | the download was at 12.3 GB of 13.4 GB, so namespaces `ts6/ts7/ts8` were **absent from the sample frame**, not sampled |
+| iteration 231 | **1 422 cases — the whole archive** | single declared label | 32.28% (459) | the frame was repaired; the rule was not |
+| iteration 232 | **1 422 cases** | **the corpus's declared set** | **42.69% (607)** | the rule was wrong: 1 053 of 1 422 packs declare a TWO-element truth |
 
-`scripts/convert-rcabench-to-rcaeval.py` converts a datapack into the RCAEval case layout, so the shipped
-runner and the shipped loader score it with **no second harness and no second ranking code**. Every mapping is
-a stated decision in the script's header; the two that matter for interpretation:
+The 40.0% was never a reading of this corpus. The 32.28% was a reading of this corpus **through a scoring rule the
+corpus does not use**. The number to quote is **42.69%**, and the rest of this document is what it is made of, what
+it is not comparable to, and what the remaining 18.4 pp are.
 
-- **metrics** are the families the engine has channels for, renamed to the RCAEval vocabulary
-  (`hubble_http_request_duration_p{50,90,95,99}_seconds` → `latency-50/90/95/99`, `container.cpu.usage` →
-  `cpu`, `container.memory.working_set` → `mem`, `queueSize` → `queue-size`). The hubble family is an **edge**
-  measurement — `service_name` is the caller, `attr.destination_workload` the callee — so a per-service series
-  is the per-second **maximum over callers into** that service.
-- **traces** are carried whole, including `attr.status_code`, which is the column the RCAEval RE3 TrainTicket
-  packs do not carry (189 488 spans, none with a status).
+---
 
-Everything else in the pack is dropped **rather than renamed**: a renamed gauge the engine has no estimator for
-would sit in the case looking like evidence and score nothing. §4 prices that rule and finds it was too broad.
+## 1. The defect: one type, two runners, two rules
 
-**The archive is 1 422 packs, and the run is 1 422 cases.** Two facts about running it are worth recording
-because both cost hours:
+`BenchmarkGroundTruth.serviceIds` has carried this docblock since it was written:
 
-- **The loader materialises every case before ranking any.** A single 1 422-case run was killed twice: first
-  `FATAL ERROR: Ineffective mark-compacts near heap limit` at the default 4 GB heap, then `SIGKILL` (exit 137)
-  at `--max-old-space-size=12288`, because this container's memory limit is **8 GiB** and the heap flag does
-  not raise it. The reading below is **24 shards of ≤60 cases**, each shard a full run of the shipped
-  configuration, aggregated per case from `--loss-census` rows. The sharding is a paging device, not a
-  different experiment: no shard contains a second copy of a case, and the 24 shards together are the archive.
-- **One pack was unreadable, and it was this environment's fault, not the archive's.** `ts5-mysql-bandwidth-r5tp67/
-  normal_traces.parquet` was 1 247 744 bytes where the tarball's member is 5 246 265 — truncated by an
-  interrupted extraction that had already written the pack's `.finished` marker. A footer scan of all
-  **15 642** parquet files found exactly this one bad; the member was re-extracted and the pack converted.
+> Some benchmarks mark MULTIPLE services as correct for a single case. … `serviceIds` is the complete accepted
+> set and `serviceId` is its first member … **Ranking is scored against the accepted set, not against
+> `serviceId` alone.**
 
-## 2. What it reads
+Two runners read that type.
+
+| runner | scoring expression | path |
+| --- | --- | --- |
+| `benchmarks/src/run-fse26.ts` | `accepted.includes(ranking[0].serviceId)` | FSE'26 harness |
+| `packages/kinetic/…/benchmark-runner.ts` | `ranking[0].serviceId === groundTruth.serviceId` | **every RCAEval cell, and every loss-census row** |
+
+So the 61.10% FSE'26 row and the 32.28% second-path row were read under **different scoring rules**, and the
+divergence was invisible because it lived between two files rather than between two branches of one expression. The
+repair is one owner — `acceptedTruthServiceIds` in `loaders/types.ts` — called by both, with `bestAcceptedRank`
+beside it so the rank a diagnostic reports and the verdict the counters take cannot be two readings of two rules.
+
+### Why 1 053 packs declare two answers
+
+`injection.json` carries the corpus's own ground truth, keyed by injection layer:
+
+```json
+"ground_truth": { "container": ["mysql"], "pod": ["mysql-0"], "service": ["mysql", "ts-order-service"] }
+```
+
+For an **edge-injected** fault the fault is between two services, so neither endpoint alone is the answer. Counted
+over all 1 422 packs: **369 declare one service, 1 053 declare two.** The bridge that writes these directories had
+been recording the set in `rcabench_ground_truth` as provenance and writing only its first member into
+`root_cause_service` — the field the loader reads. The set was already on disk, and nothing read it.
+
+---
+
+## 2. The reading
 
 ```
+python3 scripts/convert-rcabench-to-rcaeval.py --src ~/RCABench-raw --dst ~/RCABench-full   # 1 422 cases
+pnpm exec tsx benchmarks/src/run-rcaeval.ts --data-dir .../t<k> --suite re3 --system tt --loss-census ...
+```
+
+| reading, 1 422 cases, shipped configuration | value |
+| --- | ---: |
+| **AC@1** | **42.69% (607/1 422)** |
+| Top@5 | 68.70% (977/1 422) |
+| truth absent from the graph | **0 / 1 422** |
+| truth ranked 2–3 | 253 |
+| truth ranked 4–5 | 117 |
+| truth ranked 6–10 | 137 |
+| truth ranked 11+ | 305 |
+| truth in the graph but not ranked (pool admission) | 3 |
+
+**Retrieval is not the problem; ranking is.** Not one truth is missing from the graph and 68.7% are inside the first
+five — so 26.0 pp of the 57.3 pp miss is a **reranking** problem, and only the 305 cases ranked 11+ are a scoring
+problem.
+
+### Per fault family
+
+| family | n | correct | AC@1 | family | n | correct | AC@1 |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| `rrb` response-replace-body | 51 | 48 | 94.1% | `rq` request-abort | 88 | 52 | 59.1% |
+| `dly` delay | 21 | 19 | 90.5% | `rd` response-delay | 89 | 49 | 55.1% |
+| `ex` exception | 43 | 37 | 86.0% | `rt` return | 21 | 10 | 47.6% |
+| `co` corrupt | 46 | 34 | 73.9% | `rrm` request-replace-method | 190 | 83 | 43.7% |
+| `l` latency | 7 | 5 | 71.4% | `rrp` request-replace-path | 39 | 10 | 25.6% |
+| `lo` loss | 48 | 34 | 70.8% | `st` stress | 173 | 44 | 25.4% |
+| `pa` partition | 97 | 65 | 67.0% | `ra` response-abort | 60 | 15 | 25.0% |
+| `bw` bandwidth | 42 | 26 | 61.9% | `rrc` response-replace-code | 231 | 49 | 21.2% |
+| `rsa` request-replace-* | 44 | 9 | 20.5% | `ck` container-kill | 89 | 13 | 14.6% |
+| `pf` pod-failure | 24 | 3 | 12.5% | `pk` pod-kill | 10 | 1 | 10.0% |
+| `rpb` response-patch-body | 4 | 1 | 25.0% | `t`/`m`/`d` | 5 | 0 | 0.0% |
+
+Where the misses point: of **815** misses, **547 (67.1%)** name a caller or a callee of the truth (`caller` 263,
+`callee` 284) and 268 name something unrelated. The engine is not lost in the graph; it is one hop away.
+
+### Why the 10.4 pp is not a ranking change
+
+The set rule does not touch the order. It was verified two ways that must agree, and they do:
+
+1. **Analytically** — the 1 422 per-case predictions from the *previous* (single-label) run, re-scored against the
+   sets declared in `injection.json`: **607/1 422 = 42.69%**.
+2. **By re-running the shipped engine** after the fix, on 24 shards of ≤60 cases: **607/1 422 = 42.69%**.
+
+Shards, not one run, because the loader materialises every case before ranking any: one 1 422-case run is killed at
+the cgroup's **8 GiB** limit (first `FATAL … mark-compacts near heap limit` at the 4 GB default heap, then `SIGKILL`
+exit 137 at `--max-old-space-size=12288`). Sharding is a paging device; no case appears twice. That was checked and
+not assumed — the first aggregate read `1 482` rows for `1 422` cases, because one shard had been run twice, and the
+duplicate was found by counting unique case IDs rather than by trusting the file count.
+
+### And the nine published cells did not move
+
+`RE1-OnlineBoutique`, re-run after the change: **89.6% (112/125)**, byte-identical to the published cell. The reason
+is structural rather than lucky — the loader records `serviceIds` **only when the declared list has more than one
+member**, and no RCAEval directory declares one. A unit test pins the no-op by running one suite twice, once with no
+set and once with an explicit single-member set, and requiring case-for-case agreement.
+
+---
+
+## 3. What the remaining gap is — and it is not 18.4 pp of scoring rule
+
+The FSE'26 harness reads **61.10% (869/1 422)** on the same injections. After the repair both paths use the same
+*form* of rule, and the residual is **18.4 pp**. Two things about that residual matter:
+
+1. **Our rule is now the MORE permissive of the two.** `scripts/fse26_convert.py` grants a dual label only to fault
+   types whose name starts with `Network`; `HTTPResponseReplaceCode` — 231 cases here, our worst family at 21.2% — is
+   category `HTTP` and gets a **single** label on that path. So the FSE'26 reading is achieved under a *stricter*
+   rule than the one that produced 42.69%. The gap is not an artefact of truth width in our favour; it runs against
+   it.
+2. **The difference is in the input contract, not in the ranking code.** The FSE'26 loader hands the engine
+   `traceEdges` / `failedTraceEdges` (caller → callee, calls, failed calls) and metrics from four parquet sources
+   plus trace-derived golden signals; the RCAEval loader hands it raw spans, a topology document, and — in `core`
+   mode — one metric source.
+
+What is priced so far:
+
+| arm | population | effect |
+| --- | --- | --- |
+| metric families `core` → `full` (adds `jvm.gc.*`, `jvm.memory.used`, every pod gauge, plus trace-derived error rate and latency) | paired 158 cases | **30.4% → 37.3% (+6.9 pp)**; `ck` 0/10 → 4/10, `st` 5/15 → 9/15 |
+| scoring rule single-label → declared set | 1 422 cases | **32.28% → 42.69% (+10.4 pp)** |
+
+Unpriced: the call-graph contract. The FSE'26 path builds the graph from every observed caller → callee edge; this
+path builds it from a topology document and then **prunes** it (`71 → 55` edges, −23%, on 59 of 60 cases in one
+shard). Pruning never removes the truth — `truthInGraph` is 0 of 1 422 — but it removes the *competition*, and the
+competition is what a rank-1 verdict is made of. That arm is the next measurement.
+
+---
+
+## 4. The class this benchmark is now led by
+
+`arXiv:2608.21310` evaluates **ten LLM-agent configurations on RCABench** under the same set-valued rule, and its
+table runs **42.6% → 90.0% Acc@1** (Sonnet · ThinkDepth.ai at the top; `Qwen · ClaudeCode` 79.6%, `Qwen · AIQ`
+77.6%). Our 42.69% is level with the *worst* of them and 47 pp below the best.
+
+Three qualifications, none of which rescues the number:
+
+- Their population is a **500-case random sample** of the 1 430, so it is not case-for-case comparable.
+- Their comparison boundary contains **no non-LLM method** — the statistical / graph / causal class appears only in
+  their related work, with no numbers. On RCABench the only non-LLM entry with per-case results is this one.
+- They pay **$0.01–$4.64 per case** and 30–140 rounds of tool use; this engine is **one deterministic pass with zero
+  per-case cost**.
+
+Being alone in a class is not leading a benchmark. The honest statement of where this project stands on RCABench is
+**mid-field among agents, and unopposed among engines** — and §2c of `sota-comparison.md` carries the deficit.
+
+---
+
+## 5. A hypothesis this corpus kills
+
+`docs/evidence-starvation-audit.md` records availability faults as *the* case where evidence is an **absence**: a
+killed container's telemetry stops, so an anomaly-maximising ranker cannot see it. That predicts a mass-sink
+operator — "the service whose mass went to zero is the source, not the victim" — and it is the most attractive
+Deng-Yu-flavoured lever left.
+
+Measured, over every case in the five families it would apply to, counting the truth service's spans before and
+after the injection (`normal_traces.parquet` / `abnormal_traces.parquet`, `service_name` column):
+
+| family | n | truth vanishes (pre>0, post=0) | halved | stable | grew |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `response-replace-code` | 231 | 1 | 20 | 115 | 95 |
+| `stress` | 173 | 1 | 47 | 121 | 4 |
+| `container-kill` | 89 | **0** | 17 | 69 | 1 |
+| `pod-failure` | 24 | **12** | 10 | 0 | 0 |
+| `pod-kill` | 10 | **0** | 1 | 8 | 0 |
+| **total** | **527** | **14** | 95 | 313 | 100 |
+
+**`container-kill`, the family the hypothesis was built for, vanishes in ZERO of 89 cases.** TrainTicket runs
+replicas, so killing one container does not remove the service from the trace — it keeps answering. Only
+`pod-failure` behaves as the audit predicted, and only for half of its 24 cases.
+
+A disappearance operator therefore caps at **14 of 1 422 cases (1.0 pp)**. It is not the lever. What does move `ck`
+is the `k8s.pod.*` availability gauge set — the `full` family arm took it from 0/10 to 4/10 — which is a *presence*
+signal about the pod, not an absence signal about the service.
+
+---
+
+## 6. What is still open
+
+1. **Price the call-graph contract.** Emit the FSE'26 loader's `traceEdges` shape from this path (unpruned) and pair
+   the arm: the largest named, unmeasured part of the 18.4 pp.
+2. **Run `--families full` on all 1 422 cases.** Priced at +6.9 pp on 158 cases (±7.7 pp at 95%); the family-level
+   effect (`ck` 0/10 → 4/10) is the part that matters, and it has been seen on ten cases.
+3. **`rrc`, 231 cases at 21.2%.** The largest family and the worst. Its only distinctive evidence is the response
+   code, and `attr.status_code` is populated here (240-second window sample: 4 738 `Unset`, 237 `Ok`, **128
+   `Error`**). `failedEdge` (weight 3.0) is live on this corpus — `[term-gap] costs: failedEdge=+50.625(17)` on one
+   shard — and it is *costing*, not earning. That is a weight or a gate question, not a data question.
+4. **`st`, 173 cases at 25.4%.** Resource faults; the pod gauges lifted `st` from 5/15 to 9/15 on the paired arm.
+5. **`conclusion.parquet`** — per-span-name duration and success-rate deltas across both windows — is still read by
+   no reader. It is the only artefact that states both windows per edge.
+
+---
+
+## 7. Reproducing it
+
+```bash
+# 1. archive → RCAEval case layout (1 422 cases; --start resumes, --stride subsamples, --families full widens)
 python3 scripts/convert-rcabench-to-rcaeval.py --src ~/RCABench-raw --dst ~/RCABench-full
-pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --system tt --data-dir <shard> --loss-census <shard>.jsonl
+
+# 2. score. The loader materialises every case, so shard to ≤60 on an 8 GiB cgroup.
+pnpm exec tsx benchmarks/src/run-rcaeval.ts \
+    --data-dir ~/RCABench-full-shard-00 --suite re3 --system tt --loss-census loss-00.jsonl
 ```
 
-| reading (whole archive, injection source only, shipped configuration) |                     value |
-| -------------------------------------------------------------------- | ------------------------: |
-| **AC@1**                                                             | **32.28%** (**459/1422**) |
-| Top@5                                                                |         53.30% (758/1422) |
-| truth ranked 2–3 / 4–5 / 6–10 / 11+ / unranked                        |    205 / 94 / 127 / 533 / 4 |
-| cases whose ground truth is **not a node** of the graph               |               **0 of 1422** |
-| of the 963 misses, the winner is a **caller or callee** of the truth   |  **633 (65.7%)** — 330 unrelated |
-
-Per family (cases won / cases): `rrb` **48/51**, `ex` **37/43**, `l` 5/7, `dly` 13/21, `rt` 10/21, `rq`
-**50/88**, `rd` **49/89**, `lo` 19/48, `rrm` **69/190**, `pa` 27/97, `co` 12/46, `st` **44/173**, `ra` 14/60,
-`bw` 7/42, `ck` 13/89, `rsa` 6/44, `rrc` **26/231**, `rrp` 5/39, `pf` 3/24, `pk` 1/10, `rpb` 1/4.
-
-Three things in that table are the reading rather than decoration:
-
-1. **Nothing is lost to retrieval.** Every one of the 1 422 ground truths is a node the ranking could return.
-   The loss is a ranking loss in all 1 422 cases, which makes it the same class of problem the nine RCAEval
-   cells pose, and unlike a corpus where a third of the truths are simply absent from the graph.
-2. **`rrc` is 231 cases at 11.3%** — the largest single family in the archive and the worst. A
-   `response-replace-code` fault rewrites the response a service returns; its only signature is that the
-   service's calls START FAILING, and failure rate is the one channel this path did not carry (§4).
-3. **Two thirds of the misses name a NEIGHBOUR.** The winner is a caller or a callee of the injected service in
-   633 of 963 misses. That is the direction problem `docs/evidence-starvation-audit.md` describes — a symptom
-   beside the source outranking the source — quantified here on 1 422 cases with `attr.status_code` present.
-
-## 3. The 28.8 pp the two paths do not share
-
-| path                                       | harness                        | cases    |              AC@1 |
-| ------------------------------------------ | ------------------------------ | -------- | ----------------: |
-| FSE'26 RCABench (`sota-comparison.md` §2)  | `run-fse26.ts` + FSE26 loader   | 1 422    | **61.10%** (869)  |
-| RCABench through the RCAEval loader        | `run-rcaeval.ts` + RCAEval loader | 1 422  | **32.28%** (459)  |
-
-**The population cause is dead.** The first draft's first candidate was that 60 cases cannot represent 1 422.
-Both numbers are now read on the same 1 422 injections, and the gap is 28.8 pp.
-
-What is left is the **loader contract**, and it is not a small difference. The two loaders read the same
-archive into **different sufficient statistics**:
-
-| the FSE'26 loader hands the engine                                             | the RCAEval loader hands the engine            |
-| ------------------------------------------------------------------------------ | ---------------------------------------------- |
-| `traceEdges`: distinct caller → callee pairs                                    | raw spans (`traces.csv`, one row per span)      |
-| `failedTraceEdges`: caller → callee, call count, **failed-call count**           | spans with a `status` string, aggregated by the engine into `traceActivity` per service |
-| metrics from **four** sources: gauges, `_metrics_sum`, `_metrics_histogram` (`{metric}.max`), and trace-derived golden signals (`http.server.request.duration`, `http.response.error_rate`) | metrics from ONE source: seven families, §4 |
-
-That table is the whole of the remaining question, and §4 prices the last row of it.
-
-## 4. The families this path was dropping, and what they are worth (paired)
-
-A census of the archive says the "drop rather than rename" rule was too broad:
-
-| family                        | lives in                 | packs carrying it |
-| ----------------------------- | ------------------------ | ----------------: |
-| `jvm.gc.duration`             | `*_metrics_histogram`    | **40 of 40**      |
-| `jvm.memory.used`             | `*_metrics_sum`          | **40 of 40**      |
-| `hubble_http_request_duration_*` | `*_metrics` (the only source carried) | **23 of 40** |
-| `attr.status_code`            | `*_traces`               | **40 of 40**, values `Unset`/`Ok`/`Error` |
-
-So the core mode deleted the only two channels a JVM fault has, and — because hubble latency is in 23 of 40
-packs — **17 of 40 packs had no latency channel at all**. `--families full` carries all three parquet sources
-(mapped families keep their mapped name, so the modes differ only by what `full` ADDS) plus two signals derived
-from the spans: a per-service **error rate** and a per-service **latency**, in 10-second buckets, attributed to
-the span's own service.
-
-Two arms, **same 158 cases**, one flag apart (`--stride 9` of the same archive, paired case by case):
-
-| arm                    |              AC@1 | truth at rank 1 | truth at rank 11+ |
-| ---------------------- | ----------------: | --------------: | ----------------: |
-| `--families core`      | **30.4%** (48/158) |              48 |                65 |
-| `--families full`      | **37.3%** (59/158) |          **59** |            **49** |
-
-**+6.9 pp, +11 cases net: 15 gained, 4 lost.** The movement is out of the deep ranks into rank 1, which is the
-signature of a ranking term finding evidence rather than a candidate appearing. By family, the gains land where
-the added families describe the fault: `ck` container-kill **0/10 → 4/10**, `st` **5/15 → 9/15**, `rq`
-**2/5 → 4/5**, `rrm` **6/23 → 8/23**, `rrc` **5/27 → 6/27**; the four lost cases are `pa` 1, `pf` 1, `ra` 1,
-`rrc` 1. `ck` at 0/10 was the family §2's predecessor called unwinnable on magnitude — it is winnable on the
-`k8s.pod.*` availability gauges, which this path was throwing away.
-
-**This is 7 of the 28.8 points.** The remaining ≈22 pp is not explained here, and the next arm is the row of §3
-that has not been priced: **the trace statistics**. The FSE'26 loader hands the engine `failedTraceEdges` —
-caller, callee, count, failed-count — and this path hands it raw spans and lets the engine re-derive a per-service
-count. Whether that difference is the remaining 22 pp is a question with a measurement, not a paragraph.
-
-## 5. What the reading establishes, and what it does not
-
-**Establishes.**
-
-- The second path reads **32.28%** of the archive, exactly, with no case lost to retrieval and no case lost to a
-  load error (`1422 discovered / 1422 scored`).
-- **Metric-family starvation costs 6.9 pp** on a paired 158-case read, concentrated on the availability and
-  JVM-adjacent families — measured, not argued, and the first time this project has priced a family set rather
-  than a weight.
-- On this corpus two thirds of the misses name a caller or callee of the source, and `attr.status_code` is
-  populated where the RCAEval RE3 TrainTicket packs carry it empty. The `failedEdge` term (weight 3) has a
-  subject here that it never had there.
-
-**Does not establish.**
-
-- **Not a leaderboard row.** RCABench's published frame scores root-cause identification, topology distance and
-  evidence jointly (40/30/30) over a **set-valued** ground truth; `AC@1` asks whether the injection point's
-  source is top-ranked. 32.28% and their 21%-average / 37%-best are different statistics of the same runs, and
-  the 61.10% comparison is between two of OUR harnesses, not between us and the field.
-- **Not a resolution of the 28.8 pp.** One cause is dead and one is priced; ≈22 pp is unattributed.
-- **Not a tuning result.** Nothing was fitted to these cases; the engine is the shipped configuration. The four
-  repairs below change no published cell — the nine RCAEval cells read `startTime`/`start_time`, which
-  short-circuit the ladder, and none of them reads a republished file.
-
-## 6. The four instrument defects the reading found
-
-Two were in the **engine**, and they would outlive this corpus:
-
-- **A span clock the loader could not read, and did not say so.** The converter's first version wrote its clock
-  in a column called `ts`; the loader reads `startTimeMillis`, `startTime`, `start_time`, `timestamp` and
-  nothing else, so every span normalised to `0` and the run reported `traceActivity … post=0` on 60 of 60 cases
-  while ~5 000 spans sat in each file. `BARE_TIMESTAMP_HEADERS` (`timestamp`, `ts`, `time`) is now consulted by
-  the row-object reader and both streaming readers.
-- **The magnitude ladder had two rungs, not four.** `ns` and `ms` were answered and the other two were silently
-  mis-scaled in opposite directions — seconds landed 1000× in the future (every span post-injection, every
-  window empty), microseconds 1000× in the past. `normalizeTraceStartTime` now reads s → ms → µs → ns by
-  magnitude, refuses a non-positive or unparsable cell instead of guessing, and is exported so the unit test
-  pins one instant at all four scales.
-
-Two were in the **bridge**, and both are about surviving a corpus rather than a file:
-
-- **`NaN` is not JSON.** Missing hubble observations arrive as `NaN`; `json.dumps` writes the literal and the
-  loader rejects the whole case — 5 of 5 sampled cases on the first conversion. Dropped at the boundary.
-- **One unreadable pack ended a 1 422-pack walk.** The first full conversion died at pack 1 059 on the truncated
-  parquet of §1 — after writing 59 GB, naming nothing, and taking the remaining 363 packs with it. A corpus is
-  an input; an input with one bad member is a fact to report, not an exception to propagate. Skipped packs are
-  now counted and printed last, because that count is the denominator every later percentage is a share of, and
-  `--start N` resumes without renumbering the cases already on disk.
-
-A third unit trap is converter-side and permanent: RCABench durations are **nanoseconds** and RCAEval's are
-Jaeger **microseconds**, so a plausible gRPC span reads `88 089 622` instead of `88 089`.
-
-## 7. What it changes
-
-Three steps, in dependency order:
-
-1. **Price the trace statistics** (§3's last row). Emit `traceEdges` / `failedTraceEdges` equivalents on this
-   path — or feed the engine the same aggregate from the RCAEval loader — and pair the arm. This is the largest
-   unattributed part of the 28.8 pp and the only one left with a mechanism rather than a suspicion.
-2. **Re-open `failedEdge` (weight 3) and `logSignalMode='logicHttp'`** on this corpus, where both have a
-   subject: the status column is populated, 65.7% of misses name a neighbour, and on RCAEval the first was
-   data-inert and the second a measured regression.
-3. **Run `--families full` on the whole archive.** The arm here is 158 cases (±7.7 pp at 95%); the effect is
-   large enough to survive that interval but not large enough to stop there, and the availability families
-   (`ck`, `pk`, `pf`, `pa`) are the ones whose mechanism — the source goes ABSENT rather than up — still has no
-   channel of its own.
+A case directory carries `metrics.json`, `traces.csv` (`startTimeMillis,…`), `logs.csv`, `inject_time.txt` and
+`ground_truth.json`, whose `root_cause_services` is the declared set and whose `root_cause_service` is its first
+member. Four instrument defects were found and repaired by taking this reading, and all four are pinned by tests:
+`NaN` is not valid JSON in `metrics.json`; a `ts` clock column that **no branch read**; a timestamp ladder that
+mis-scaled seconds and microseconds by 1000×; and a bridge that let one unreadable pack end a 1 422-pack walk after
+writing 59 GB.
