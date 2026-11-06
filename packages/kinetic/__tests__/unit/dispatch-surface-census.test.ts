@@ -450,6 +450,16 @@ const KNOBS: Readonly<
     fse26: 'failed_edge_min_records',
     rcaeval: null,
   },
+  failedEdgeCredit: {
+    // The CREDIT the bar scales, appended in iteration 235 beside the bar it multiplies. Named on every
+    // artifact and accepted by the runner, but the packed `anomaly_knobs` block is at its input budget, so no
+    // dispatch can state it yet — the row is `rcaeval`-null for the same reason `failedEdgeMinRecords` above is,
+    // which is a statement about the surface and not about the field.
+    flag: '--failed-edge-credit',
+    owner: 'failed-edge-evidence-gate.md',
+    fse26: null,
+    rcaeval: null,
+  },
   failedEdgeGateMode: {
     // The weight's OTHER axis, and the one that decided whether the term could act on the golden half at all:
     // `absolute` is the 300 fitted on FSE'26's injection strength, `fleet` a share of each case's own champion.
@@ -996,6 +1006,12 @@ function axisOf(option: string): string {
  */
 const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--fusion-ceiling',
+  // Iteration 235: the credit the direction term's bar scales. Unlike the two poles below this is a real axis —
+  // `constant` and `proportional` are different credit rules, not two spellings of one — and it is on this list
+  // only because the packed block that carries the direction term's configuration has no spare input. It travels
+  // as `failedEdgeCredit=<value>` on the configuration line, so a run that sets it is attributable; it simply
+  // cannot be asked for from a dispatch yet.
+  '--failed-edge-credit',
   // The POSITIVE pole. The axis itself IS dispatchable — through `no_rank_normalization`, the negated switch —
   // and exposing only that pole is what the FSE'26 parser does too, so one value means one thing in both
   // workflows. This member therefore records a flag the runner accepts and the workflow cannot spell, not an

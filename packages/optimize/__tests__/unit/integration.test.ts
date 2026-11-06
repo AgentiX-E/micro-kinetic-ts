@@ -229,6 +229,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // Iteration 168: the direction term's BAR and the share it is made of. Held for the reason the dual-family
       // gate mode above is held — a search interpolates coefficients, and these two pick WHICH rise a fixed
       // weight may act on, so there is nothing between `absolute` and a share of a case's own champion.
+      // Iteration 235: the credit the bar scales. Held for the reason the bar is — it picks HOW MUCH of a
+      // fixed weight the evidence buys rather than moving the weight, so there is nothing for a search to
+      // interpolate between `constant` and `proportional`.
+      'failedEdgeCredit',
       'failedEdgeGateMode',
       'failedEdgeGateShare',
       'failedEdgeMinRecords',
