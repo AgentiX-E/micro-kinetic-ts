@@ -27,6 +27,7 @@ The module is loaded by PATH because its name is not importable — which is why
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import pathlib
 import runpy
@@ -56,6 +57,219 @@ def _ts(seconds: int) -> pd.Timestamp:
 def _write_metrics(path: pathlib.Path, rows: list[dict]) -> None:
     frame = pd.DataFrame(rows)
     pq.write_table(pa.Table.from_pandas(frame, preserve_index=False), path)
+
+
+class FullFamilies(unittest.TestCase):
+    """`--families full`: the three parquet sources and the two signals derived from the spans.
+
+    The core mode was the reading of record, and a census of the archive is what reopened it: the
+    families it dropped are `jvm.gc.duration` (40 of 40 sampled packs, in `*_metrics_histogram`) and
+    `jvm.memory.used` (40 of 40, in `*_metrics_sum`), and the hubble latency it keeps is present in only
+    23 of 40 -- so 17 packs had no latency channel at all. These tests pin each addition to its own
+    decision, because a family carried without a reason is the defect the core mode was built to avoid.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.pack = pathlib.Path(self.tmp.name)
+        self.out = pathlib.Path(self.tmp.name) / 'case'
+        self.out.mkdir()
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _family_names(self, rows: dict, entity: str) -> list[str]:
+        return sorted({row['metric_name'] for row in rows.get(entity, [])})
+
+    def test_core_drops_the_histogram_family_and_full_carries_it_with_a_max_suffix(self) -> None:
+        # `jvm.gc.duration` is the JVM fault's only direct signature in this archive, and it lives in a
+        # file the core mode never opens. The `.max` suffix is the FSE'26 bridge's name for the same
+        # column, so one archive does not end up with two vocabularies.
+        pq.write_table(
+            pa.Table.from_pandas(
+                pd.DataFrame(
+                    [
+                        {
+                            'time': _ts(1000),
+                            'metric': 'jvm.gc.duration',
+                            'value': 12.0,
+                            'service_name': 'ts-order-service',
+                            'attr.destination_workload': None,
+                        }
+                    ]
+                ),
+                preserve_index=False,
+            ),
+            self.pack / 'normal_metrics_histogram.parquet',
+        )
+        self.assertNotIn('jvm.gc.duration.max', self._family_names(bridge.merge_windows(self.pack), 'ts-order-service'))
+        full = bridge.merge_windows(self.pack, 'full')
+        self.assertIn('jvm.gc.duration.max', self._family_names(full, 'ts-order-service'))
+
+    def test_full_carries_a_sum_family_under_its_own_name(self) -> None:
+        pq.write_table(
+            pa.Table.from_pandas(
+                pd.DataFrame(
+                    [
+                        {
+                            'time': _ts(1000),
+                            'metric': 'jvm.memory.used',
+                            'value': 512.0,
+                            'service_name': 'ts-order-service',
+                            'attr.destination_workload': None,
+                        }
+                    ]
+                ),
+                preserve_index=False,
+            ),
+            self.pack / 'normal_metrics_sum.parquet',
+        )
+        self.assertEqual(self._family_names(bridge.merge_windows(self.pack), 'ts-order-service'), [])
+        self.assertIn('jvm.memory.used', self._family_names(bridge.merge_windows(self.pack, 'full'), 'ts-order-service'))
+
+    def _spans(self, rows: list[dict]) -> None:
+        pq.write_table(
+            pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False),
+            self.pack / 'abnormal_traces.parquet',
+        )
+
+    def _span(self, second: int, service: str, duration: int, status: str | None, span: str) -> dict:
+        return {
+            'time': _ts(second),
+            'trace_id': 't-' + span,
+            'span_id': span,
+            'parent_span_id': '',
+            'span_name': 'GET /x',
+            'service_name': service,
+            'duration': duration,
+            'attr.status_code': status,
+        }
+
+    def test_derives_a_per_service_error_rate_from_the_spans(self) -> None:
+        # The archive carries no error-rate gauge -- `hubble_http_requests_total` is a counter -- so a
+        # replace-code fault has no series in `core` mode at all. One failing span of three is 1/3, and
+        # the rate is attributed to the span's OWN service, which is where the fault was injected.
+        self._spans(
+            [
+                self._span(1000, 'ts-order-service', 1_000_000, 'Error', 's1'),
+                self._span(1001, 'ts-order-service', 1_000_000, 'Ok', 's2'),
+                self._span(1002, 'ts-order-service', 1_000_000, 'Unset', 's3'),
+            ]
+        )
+        signals = bridge.derive_span_signals(bridge.load_traces(self.pack))
+        rates = signals['ts-order-service'][bridge.DERIVED_ERROR_RATE]
+        self.assertEqual(len(rates), 1)
+        self.assertAlmostEqual(rates[0][1], 1 / 3, places=6)
+
+    def test_derives_latency_in_milliseconds_from_nanosecond_durations(self) -> None:
+        # RCABench durations are nanoseconds. A derived series in the wrong unit is the defect the
+        # loader already carries a rung for; there is no rung here, so the conversion is pinned.
+        self._spans([self._span(1000, 'ts-order-service', 88_089_000, 'Ok', 's1')])
+        signals = bridge.derive_span_signals(bridge.load_traces(self.pack))
+        latency = signals['ts-order-service'][bridge.DERIVED_LATENCY]
+        self.assertEqual(latency[0][0], 1000)
+        self.assertAlmostEqual(latency[0][1], 88.089, places=6)
+
+    def test_a_bucket_with_no_span_is_absent_rather_than_zero(self) -> None:
+        # Two spans 20 s apart are two buckets, and the bucket between them is NOT written as `0.0`:
+        # an absent observation and a measured zero are different facts, and only one of them is true.
+        self._spans(
+            [
+                self._span(1000, 'ts-order-service', 1_000_000, 'Error', 's1'),
+                self._span(1030, 'ts-order-service', 1_000_000, 'Ok', 's2'),
+            ]
+        )
+        signals = bridge.derive_span_signals(bridge.load_traces(self.pack))
+        rates = signals['ts-order-service'][bridge.DERIVED_ERROR_RATE]
+        self.assertEqual([bucket for bucket, _ in rates], [1000, 1030])
+        self.assertEqual([value for _, value in rates], [1.0, 0.0])
+
+    def test_reads_a_numeric_status_against_the_400_boundary(self) -> None:
+        # A pack may record the code rather than the word. `500` is the same event as `Error`, and a
+        # string comparison would call it a success.
+        self.assertTrue(bridge.is_error_status('500'))
+        self.assertTrue(bridge.is_error_status('Error'))
+        self.assertFalse(bridge.is_error_status('200'))
+        self.assertFalse(bridge.is_error_status('Unset'))
+        self.assertFalse(bridge.is_error_status(None))
+        self.assertFalse(bridge.is_error_status(''))
+
+    def test_a_span_file_without_a_status_column_still_yields_a_latency_series(self) -> None:
+        # A missing column is a different observation from a column of `Unset`, and neither is a reason
+        # to lose the pack. The latency stands; the error rate is 0/1 rather than absent, because one
+        # span WAS observed and it did not report a failure.
+        pq.write_table(
+            pa.Table.from_pandas(
+                pd.DataFrame(
+                    [
+                        {
+                            'time': _ts(1000),
+                            'trace_id': 't1',
+                            'span_id': 's1',
+                            'parent_span_id': '',
+                            'span_name': 'GET /x',
+                            'service_name': 'ts-order-service',
+                            'duration': 2_000_000,
+                        }
+                    ]
+                ),
+                preserve_index=False,
+            ),
+            self.pack / 'normal_traces.parquet',
+        )
+        signals = bridge.derive_span_signals(bridge.load_traces(self.pack))
+        self.assertEqual(signals['ts-order-service'][bridge.DERIVED_ERROR_RATE], [(1000, 0.0)])
+        self.assertAlmostEqual(signals['ts-order-service'][bridge.DERIVED_LATENCY][0][1], 2.0, places=6)
+
+    def test_a_pack_with_no_span_file_derives_nothing(self) -> None:
+        self.assertEqual(bridge.derive_span_signals(bridge.load_traces(self.pack)), {})
+
+    def test_spans_with_no_service_name_derive_nothing(self) -> None:
+        # A span whose `service_name` is absent cannot be attributed to a service, and inventing an entity
+        # for it would put a candidate in the graph that no service ID matches. Absent, not `unknown`.
+        self._spans([self._span(1000, '', 1_000_000, 'Error', 's1')])
+        self.assertEqual(bridge.derive_span_signals(bridge.load_traces(self.pack)), {})
+
+    def test_full_mode_writes_the_derived_families_into_metrics_json(self) -> None:
+        # End to end through `main`, because the flag is only real if the CLI reaches it.
+        root = pathlib.Path(self.tmp.name) / 'raw'
+        pack = root / 'ts0-ts-order-service-response-replace-code-abc123'
+        pack.mkdir(parents=True)
+        (pack / '.finished').write_text('')
+        (pack / 'env.json').write_text(json.dumps({'ABNORMAL_START': '2000'}))
+        (pack / 'injection.json').write_text(json.dumps({'display_config': '{}', 'ground_truth': {}}))
+        _write_metrics(
+            pack / 'normal_metrics.parquet',
+            [
+                {
+                    'time': _ts(1000),
+                    'metric': 'container.cpu.usage',
+                    'value': 1.0,
+                    'service_name': 'ts-order-service',
+                    'attr.destination_workload': None,
+                }
+            ],
+        )
+        pq.write_table(
+            pa.Table.from_pandas(
+                pd.DataFrame([self._span(1000, 'ts-order-service', 5_000_000, 'Error', 's1')]),
+                preserve_index=False,
+            ),
+            pack / 'abnormal_traces.parquet',
+        )
+        dst = pathlib.Path(self.tmp.name) / 'conv'
+        argv = sys.argv
+        sys.argv = ['convert', '--src', str(root), '--dst', str(dst), '--families', 'full']
+        try:
+            self.assertEqual(bridge.main(), 0)
+        finally:
+            sys.argv = argv
+        case = next(p for p in dst.iterdir() if p.is_dir())
+        metrics = json.loads((case / 'metrics.json').read_text())
+        families = {point['metric_name'] for point in metrics['ts-order-service']}
+        self.assertIn(bridge.DERIVED_ERROR_RATE, families)
+        self.assertIn(bridge.DERIVED_LATENCY, families)
+        self.assertIn('cpu', families)
 
 
 class ParseName(unittest.TestCase):
@@ -462,6 +676,46 @@ class Main(unittest.TestCase):
             finally:
                 sys.argv = argv
             self.assertEqual([p for p in dst.iterdir() if p.is_dir()], [])
+
+    def test_one_unreadable_pack_does_not_take_the_walk_down(self) -> None:
+        # Not hypothetical: the first full conversion of the archive died at pack 1,059 on a truncated
+        # `normal_traces.parquet` and took the remaining 363 packs with it, after writing 59 GB and
+        # naming nothing. The population a reading is taken over has to survive one bad member, and the
+        # member has to be REPORTED -- a silent skip would make every later percentage a share of a
+        # denominator nobody named.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / 'raw'
+            self._pack(src, 'ts0-ts-order-service-stress-aaa111')
+            broken = self._pack(src, 'ts0-ts-order-service-stress-zzz999')
+            (broken / 'normal_metrics.parquet').write_bytes(b'not a parquet file at all')
+            dst = pathlib.Path(tmp) / 'conv'
+            argv, stderr = sys.argv, sys.stderr
+            sys.argv = ['convert', '--src', str(src), '--dst', str(dst)]
+            sys.stderr = io.StringIO()
+            try:
+                self.assertEqual(bridge.main(), 0)
+                reported = sys.stderr.getvalue()
+            finally:
+                sys.argv, sys.stderr = argv, stderr
+            self.assertEqual(len([p for p in dst.iterdir() if p.is_dir()]), 1)
+            self.assertIn('ts0-ts-order-service-stress-zzz999', reported)
+            self.assertIn('skipped 1 pack(s)', reported)
+
+    def test_start_resumes_without_renumbering_the_cases(self) -> None:
+        # A walk interrupted at pack 1,059 must be resumable without rewriting 1,058 cases -- and the
+        # case directory name carries the pack's position in the selection, so the count cannot restart.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / 'raw'
+            for n in range(3):
+                self._pack(src, f'ts0-ts-order-service-stress-{n:04d}')
+            dst = pathlib.Path(tmp) / 'conv'
+            argv = sys.argv
+            sys.argv = ['convert', '--src', str(src), '--dst', str(dst), '--start', '2']
+            try:
+                self.assertEqual(bridge.main(), 0)
+            finally:
+                sys.argv = argv
+            self.assertEqual([p.name for p in dst.iterdir() if p.is_dir()], ['re3tt_ts-order-service_st_3'])
 
 
 class Entrypoint(unittest.TestCase):

@@ -35,6 +35,11 @@ one is stated here rather than left to the reader of the output.
             service's worst observed inbound latency, which is the quantity a
             server-side p90 in the RCAEval packs measures.
 
+            That is `--families core`, the default and the mode of every reading taken so
+            far. `--families full` carries the `_sum` and `_metrics_histogram` sources as
+            well, plus two signals derived from the spans; the reason is a census rather
+            than a preference, and it is written above `FAMILY_MODES`.
+
   traces    Carried whole, INCLUDING `attr.status_code`. That column is the channel
             the RCAEval RE3 TrainTicket packs do not carry (189,488 spans, no status),
             and it is what makes a failed edge observable at all.
@@ -62,7 +67,7 @@ one is stated here rather than left to the reader of the output.
 
 Usage:
   python3 scripts/convert-rcabench-to-rcaeval.py \\
-      --src ~/RCABench-raw --dst ~/RCABench-conv [--stride 7] [--limit 60]
+      --src ~/RCABench-raw --dst ~/RCABench-conv [--stride 7] [--limit 60] [--families core|full]
 """
 
 from __future__ import annotations
@@ -123,23 +128,96 @@ def epoch_seconds(values) -> np.ndarray:
     return values.astype("datetime64[s]").astype("int64").to_numpy()
 
 
-def read_metrics(pack: Path, window: str) -> dict[str, dict[str, list[tuple[int, float]]]]:
-    """The families {@link METRIC_MAP} keeps, per entity and family, for one window."""
-    path = pack / f"{window}_metrics.parquet"
-    if not path.exists():
+# ── The two family modes ────────────────────────────────────────────────────────────────
+#
+# `core` carries the seven families of {@link METRIC_MAP} and nothing else. That is the mode
+# every reading taken so far used, and it is the default so no published number moves.
+#
+# The `_sum` and `_metrics_histogram` files were DROPPED from `core` on the reasoning that a
+# gauge with no estimator would look like evidence and score nothing. A census of the archive
+# says that reasoning was too broad: it also deleted the only two channels a JVM fault has.
+#
+#   jvm.gc.duration            `*_metrics_histogram`   40 of 40 sampled packs
+#   jvm.memory.used            `*_metrics_sum`         40 of 40
+#   hubble_http_request_duration_*  `*_metrics`        only 23 of 40 -- 17 of 40 packs had NO
+#                                                    latency channel at all in `core` mode
+#
+# `full` carries the same three sources under the names the engine's keyword channels already
+# read, plus two signals derived from the spans (a per-service error rate and a per-service
+# latency, both in 10-second buckets). The derived pair is what gives a `response-replace-code`
+# fault a signature at all: the archive carries no error-rate gauge -- `hubble_http_requests_total`
+# is a counter -- while the spans carry `attr.status_code` on every pack sampled.
+#
+# The names follow the FSE'26 bridge (`scripts/fse26_convert.py`), which reads the SAME archive
+# through a different loader: histogram families get a `.max` suffix, sums and gauges keep their
+# own name. That is deliberate -- two readers of one archive should not invent two vocabularies.
+FAMILY_MODES = ("core", "full")
+
+# Histogram families collapse to one scalar per bucket: the archive's histogram row carries the
+# bucket's max, which is the quantity `fse26_convert.py` emits as `{metric}.max`.
+HIST_SUFFIX = ".max"
+
+# Ten seconds. `fse26_convert.py` buckets the same derived signals at this width, and the whole
+# archive's scrape interval is 5 s or 10 s, so a narrower bucket would carry single spans.
+DERIVED_BUCKET_SECONDS = 10
+
+DERIVED_ERROR_RATE = "http.response.error_rate"
+DERIVED_LATENCY = "http.server.request.duration"
+
+
+def is_error_status(value) -> bool:
+    """Whether an OTEL status cell names a failure.
+
+    Both spellings the archive uses are accepted (`Error`), and a numeric code is measured against
+    400 rather than string-compared, because a pack that records `500` in this column is reporting the
+    same event as one that records `Error`.
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    if not text:
+        return False
+    if text.isdigit():
+        return int(text) >= 400
+    return text.lower() in ("error", "fail", "failed", "failure")
+
+
+def read_metrics(pack: Path, window: str, families: str = "core") -> dict[str, dict[str, list[tuple[int, float]]]]:
+    """The carried families, per entity and family, for one window."""
+    frames = []
+    for source, mode in (("metrics", "core"), ("metrics_sum", "full"), ("metrics_histogram", "full")):
+        if mode == "full" and families != "full":
+            continue
+        path = pack / f"{window}_{source}.parquet"
+        if not path.exists():
+            continue
+        table = pq.read_table(path).to_pandas()
+        # Guard BEFORE the filter, not after it. A window file that exists and carries no rows has no
+        # `metric` column at all, and `table["metric"]` on a columnless frame raises KeyError -- so the
+        # emptiness check placed below the filter never runs. A pack that recorded its windows as empty
+        # is not an error; it is a pack with nothing to convert.
+        if table.empty or "metric" not in table.columns:
+            continue
+        if families == "core":
+            table = table[table["metric"].isin(METRIC_MAP)]
+            if table.empty:
+                continue
+            table = table.assign(family=table["metric"].map(METRIC_MAP))
+        else:
+            # MAPPED FAMILIES KEEP THEIR MAPPED NAME. `container.cpu.usage` is still `cpu` and the hubble
+            # p90 is still `latency-90`, exactly as in `core`, so the only difference between the two
+            # modes is the families `full` ADDS. An arm that also renamed the families it shares would be
+            # changing two things at once and could not price either.
+            suffix = HIST_SUFFIX if source == "metrics_histogram" else ""
+            table = table.assign(family=table["metric"].astype(str).map(lambda m: METRIC_MAP.get(m, m)) + suffix)
+        table = table.assign(source=source)
+        frames.append(table)
+    if not frames:
         return {}
-    table = pq.read_table(path).to_pandas()
-    # Guard BEFORE the filter, not after it. A window file that exists and carries no rows has no
-    # `metric` column at all, and `table["metric"]` on a columnless frame raises KeyError -- so the
-    # emptiness check placed below the filter never runs. A pack that recorded its windows as empty
-    # is not an error; it is a pack with nothing to convert.
-    if table.empty or "metric" not in table.columns:
-        return {}
-    table = table[table["metric"].isin(METRIC_MAP)]
-    if table.empty:
-        return {}
-    table = table.assign(family=table["metric"].map(METRIC_MAP))
-    hubble = table["metric"].str.startswith(HUBBLE_PREFIX)
+    import pandas as pd
+
+    table = pd.concat(frames, ignore_index=True)
+    hubble = table["metric"].astype(str).str.startswith(HUBBLE_PREFIX)
     table.loc[hubble, "entity"] = table.loc[hubble, "attr.destination_workload"]
     table.loc[~hubble, "entity"] = table.loc[~hubble, "service_name"]
     table = table[table["entity"].notna() & (table["entity"] != "")]
@@ -156,25 +234,80 @@ def read_metrics(pack: Path, window: str) -> dict[str, dict[str, list[tuple[int,
     return out
 
 
-def merge_windows(pack: Path) -> dict[str, list[dict]]:
+def derive_span_signals(traces) -> dict[str, dict[str, list[tuple[int, float]]]]:
+    """Per-service error rate and mean latency, in {@link DERIVED_BUCKET_SECONDS} buckets.
+
+    Attributed to the span's OWN service: a `response-replace-code` fault is visible because the
+    injected service's own server spans start returning failures, and the archive carries
+    `attr.status_code` on every pack sampled. Both signals are between 0 and 1 or in milliseconds, so
+    neither brings a scale the calibration has not seen.
+
+    An empty bucket is ABSENT rather than zero: a service that emitted no span in a bucket has no error
+    rate, and writing `0.0` there would be an observation the archive never made.
+    """
+    import pandas as pd
+
+    if traces is None or traces.empty:
+        return {}
+    # `attr.status_code` is present on every pack in the archive, but a pack without it must produce a
+    # latency series and NO error rate rather than raise -- a missing column is a different observation
+    # from a column of `Unset`, and neither is a reason to lose the pack.
+    table = traces.copy()
+    if "attr.status_code" not in table.columns:
+        table["attr.status_code"] = None
+    table = table[["time", "service_name", "duration", "attr.status_code"]]
+    table = table[table["service_name"].notna() & (table["service_name"] != "")]
+    if table.empty:
+        return {}
+    table["ts"] = epoch_seconds(table["time"].dt.tz_localize(None))
+    table["bucket"] = (table["ts"] // DERIVED_BUCKET_SECONDS) * DERIVED_BUCKET_SECONDS
+    table["failed"] = table["attr.status_code"].map(is_error_status).astype(float)
+    grouped = table.groupby(["service_name", "bucket"], sort=True).agg(
+        spans=("failed", "size"),
+        failed=("failed", "sum"),
+        duration=("duration", "mean"),
+    )
+    out: dict[str, dict[str, list[tuple[int, float]]]] = {}
+    for (service, bucket), row in grouped.iterrows():
+        out.setdefault(str(service), {}).setdefault(DERIVED_ERROR_RATE, []).append(
+            (int(bucket), float(row["failed"]) / float(row["spans"]))
+        )
+        # RCABench durations are nanoseconds; the derived latency is milliseconds so that it carries
+        # the unit `inferUnit` assigns to a `latency`/`duration` name.
+        out[str(service)].setdefault(DERIVED_LATENCY, []).append(
+            (int(bucket), float(row["duration"]) / 1_000_000.0)
+        )
+    return out
+
+
+def merge_windows(pack: Path, families: str = "core") -> dict[str, list[dict]]:
     """Both windows as one `metrics.json` body, as the RCAEval packs carry it."""
     merged: dict[str, dict[str, list[tuple[int, float]]]] = {}
     for window in ("normal", "abnormal"):
-        for entity, families in read_metrics(pack, window).items():
-            for family, points in families.items():
+        for entity, entity_families in read_metrics(pack, window, families).items():
+            for family, points in entity_families.items():
+                merged.setdefault(entity, {}).setdefault(family, []).extend(points)
+    if families == "full":
+        for entity, entity_families in derive_span_signals(load_traces(pack)).items():
+            for family, points in entity_families.items():
                 merged.setdefault(entity, {}).setdefault(family, []).extend(points)
     rows: dict[str, list[dict]] = {}
-    for entity, families in merged.items():
+    for entity, entity_families in merged.items():
         out = []
-        for family, points in families.items():
+        for family, points in entity_families.items():
             for ts, value in sorted(points):
                 out.append({"timestamp": ts, "value": value, "metric_name": family})
         rows[entity] = out
     return rows
 
 
-def write_traces(pack: Path, dest: Path) -> int:
-    """Both windows as `traces.csv`, in the column names the loader reads."""
+def load_traces(pack: Path):
+    """Both windows of spans as one frame, or `None` when the pack carries no span file.
+
+    Read ONCE and shared by the two products it feeds -- `traces.csv` for the loader's own span
+    channels, and the derived per-service signals -- because a pack can hold a million spans and the
+    walk this bridge does over the archive is hours long.
+    """
     import pandas as pd
 
     frames = []
@@ -183,9 +316,15 @@ def write_traces(pack: Path, dest: Path) -> int:
         if path.exists():
             frames.append(pq.read_table(path).to_pandas())
     if not frames:
-        return 0
+        return None
     table = pd.concat(frames, ignore_index=True)
-    if table.empty:
+    return None if table.empty else table
+
+
+def write_traces(pack: Path, dest: Path) -> int:
+    """Both windows as `traces.csv`, in the column names the loader reads."""
+    table = load_traces(pack)
+    if table is None:
         return 0
     # `startTimeMillis` is read VERBATIM by the loader; a bare name it does not know
     # (`ts`) is read by no branch and leaves every span at start time 0.
@@ -264,7 +403,21 @@ def main() -> int:
     ap.add_argument("--dst", required=True, help="Directory to write RCAEval-layout cases to")
     ap.add_argument("--stride", type=int, default=1, help="Keep every Nth pack (sampling)")
     ap.add_argument("--limit", type=int, default=0, help="Stop after this many packs (0 = all)")
+    ap.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help="Resume: skip the first N packs of the selection. Case numbering does NOT restart, so a "
+        "walk interrupted at pack 1059 can be continued without rewriting the 1058 cases already on disk.",
+    )
     ap.add_argument("--case-prefix", default="re3tt", help="Case directory prefix")
+    ap.add_argument(
+        "--families",
+        choices=FAMILY_MODES,
+        default="core",
+        help="core: the seven mapped families. full: every family in the pack, plus the two derived "
+        "span signals. See the header.",
+    )
     args = ap.parse_args()
 
     src, dst = Path(args.src), Path(args.dst)
@@ -278,52 +431,73 @@ def main() -> int:
     chosen = packs[:: args.stride]
     if args.limit:
         chosen = chosen[: args.limit]
+    # `--start` slices the SELECTION but not the NUMBERING: the case directory name carries the pack's
+    # position in the selection, so restarting the count would publish a second case for one pack.
+    chosen = chosen[args.start :]
     dst.mkdir(parents=True, exist_ok=True)
 
     written = 0
-    for index, pack in enumerate(chosen, start=1):
-        namespace, target, fault = parse_name(pack.name)
-        injection = json.loads((pack / "injection.json").read_text())
-        env = json.loads((pack / "env.json").read_text())
-        gt = injection.get("ground_truth") or {}
-        services = [s for s in (gt.get("service") or []) if s]
+    skipped: list[tuple[str, str]] = []
+    for index, pack in enumerate(chosen, start=args.start + 1):
+        # ONE UNREADABLE PACK MUST NOT END A 1,400-PACK WALK. This is not hypothetical: the first full
+        # conversion of the archive died at pack 1,059 on a `normal_traces.parquet` whose footer was
+        # truncated by an interrupted extraction, and it died AFTER writing 59 GB -- with nothing said
+        # about which pack, how far it had got, or that 1,058 cases were already on disk. A corpus is an
+        # input; an input with one bad member is a fact to report, not an exception to propagate.
         try:
-            display = json.loads(injection.get("display_config") or "{}")
-        except json.JSONDecodeError:
-            display = {}
-        point = display.get("injection_point") or {}
-        primary = point.get("source_service") or point.get("app_name") or target
+            namespace, target, fault = parse_name(pack.name)
+            injection = json.loads((pack / "injection.json").read_text())
+            env = json.loads((pack / "env.json").read_text())
+            gt = injection.get("ground_truth") or {}
+            services = [s for s in (gt.get("service") or []) if s]
+            try:
+                display = json.loads(injection.get("display_config") or "{}")
+            except json.JSONDecodeError:
+                display = {}
+            point = display.get("injection_point") or {}
+            primary = point.get("source_service") or point.get("app_name") or target
 
-        metrics = merge_windows(pack)
-        if not metrics:
-            # Checked BEFORE the directory exists: this used to `mkdir` first and then skip, which
-            # left a case directory holding every artefact except `metrics.json` -- a stray the
-            # runner's discovery walks past and a reader counts.
-            continue
-        fault_code = FAULT_CODES.get(fault, "".join(w[0] for w in fault.split("-")))
-        case_dir = dst / f"{args.case_prefix}_{primary}_{fault_code}_{index}"
-        case_dir.mkdir(parents=True, exist_ok=True)
-        (case_dir / "metrics.json").write_text(json.dumps(metrics))
-        (case_dir / "inject_time.txt").write_text(env["ABNORMAL_START"])
-        (case_dir / "ground_truth.json").write_text(
-            json.dumps(
-                {
-                    "root_cause_service": primary,
-                    "root_cause_metric": fault_code,
-                    "rcabench_fault": fault,
-                    "rcabench_ground_truth": services,
-                    "rcabench_injection_point": point,
-                    "rcabench_namespace": namespace,
-                    "rcabench_pack": pack.name,
-                }
+            metrics = merge_windows(pack, args.families)
+            if not metrics:
+                # Checked BEFORE the directory exists: this used to `mkdir` first and then skip, which
+                # left a case directory holding every artefact except `metrics.json` -- a stray the
+                # runner's discovery walks past and a reader counts.
+                continue
+            fault_code = FAULT_CODES.get(fault, "".join(w[0] for w in fault.split("-")))
+            case_dir = dst / f"{args.case_prefix}_{primary}_{fault_code}_{index}"
+            case_dir.mkdir(parents=True, exist_ok=True)
+            (case_dir / "metrics.json").write_text(json.dumps(metrics))
+            (case_dir / "inject_time.txt").write_text(env["ABNORMAL_START"])
+            (case_dir / "ground_truth.json").write_text(
+                json.dumps(
+                    {
+                        "root_cause_service": primary,
+                        "root_cause_metric": fault_code,
+                        "rcabench_fault": fault,
+                        "rcabench_ground_truth": services,
+                        "rcabench_injection_point": point,
+                        "rcabench_namespace": namespace,
+                        "rcabench_pack": pack.name,
+                    }
+                )
             )
-        )
-        spans = write_traces(pack, case_dir)
-        lines = write_logs(pack, case_dir)
-        written += 1
-        if index % 25 == 0:
-            print(f"[{index}/{len(chosen)}] {pack.name} spans={spans} logs={lines}", flush=True)
+            spans = write_traces(pack, case_dir)
+            lines = write_logs(pack, case_dir)
+            written += 1
+            if index % 25 == 0:
+                print(f"[{index}/{len(chosen)}] {pack.name} spans={spans} logs={lines}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - the reason is RECORDED, not swallowed
+            skipped.append((pack.name, f"{type(exc).__name__}: {exc}"))
+            print(f"[{index}/{len(chosen)}] SKIPPED {pack.name}: {type(exc).__name__}: {exc}",
+                  file=sys.stderr, flush=True)
     print(f"converted {written} packs -> {dst}", flush=True)
+    if skipped:
+        # Printed LAST and in full, because the count is the population a reading is taken over: a
+        # conversion that silently dropped a member would make every later percentage a share of a
+        # denominator nobody named.
+        print(f"skipped {len(skipped)} pack(s):", file=sys.stderr, flush=True)
+        for name, reason in skipped:
+            print(f"  {name}: {reason}", file=sys.stderr, flush=True)
     return 0
 
 
