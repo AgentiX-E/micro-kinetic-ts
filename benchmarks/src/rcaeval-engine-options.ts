@@ -32,6 +32,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FailedEdgeCredit,
   FailedEdgeGateMode,
   LogSignalMode,
   OnsetShape,
@@ -102,6 +103,8 @@ export interface RCAEvalSignalOptions {
   readonly failedEdgeGateMode: FailedEdgeGateMode;
   /** The share of the case's own champion the rise must clear, read only at `fleet`. */
   readonly failedEdgeGateShare: number;
+  /** How much of the term's weight the failed-call channel's evidence buys — see `TreePrunerOptions.failedEdgeCredit`. */
+  readonly failedEdgeCredit: FailedEdgeCredit;
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
@@ -249,6 +252,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       failedEdgeWeight: opts.failedEdgeWeight,
       failedEdgeGateMode: opts.failedEdgeGateMode,
       failedEdgeGateShare: opts.failedEdgeGateShare,
+      failedEdgeCredit: opts.failedEdgeCredit,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
@@ -322,6 +326,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // omitted-when-default field would render the fleet arm and the shipped run identically on the artifact
     // whose whole job is to attribute the difference between them.
     `failedEdgeGateMode=${opts.failedEdgeGateMode} failedEdgeGateShare=${opts.failedEdgeGateShare} ` +
+    // The CREDIT, named unconditionally on the bar's own rule one field above: it ships at `constant`, where it is
+    // inert, and a line that printed only non-defaults would render the proportional arm and the shipped run
+    // byte-identically — on the artifact whose whole job is to say how much of the weight the evidence bought.
+    `failedEdgeCredit=${opts.failedEdgeCredit} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
     `dropDeviationMode=${opts.dropDeviationMode} baselineAnchor=${opts.baselineAnchor} ` +
     `traceWeight=${opts.traceWeight} ` +

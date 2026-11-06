@@ -495,7 +495,11 @@ describe('the RCAEval configuration line carries the configuration that produced
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=1 ' +
         'topoDiscountScope=external logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
+        // Iteration 235 appended the CREDIT behind the bar it scales. Unconditional for the reason the bar is:
+        // it ships at `constant`, where it is inert, so a line that omitted defaults would render the
+        // proportional arm and the shipped run byte-identically.
         'failedEdgeWeight=3 failedEdgeGateMode=absolute failedEdgeGateShare=0.5 ' +
+        'failedEdgeCredit=constant ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'baselineAnchor=whole-file ' +
         'traceWeight=1 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +

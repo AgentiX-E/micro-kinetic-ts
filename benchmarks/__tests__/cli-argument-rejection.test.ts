@@ -54,6 +54,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DROP_DEVIATION_MODES,
   DUAL_FAMILY_GATE_MODES,
+  FAILED_EDGE_CREDITS,
   FAILED_EDGE_GATE_MODES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
@@ -437,6 +438,11 @@ describe('every option the golden runner forwards can be set from the command li
       // other entry is — and this one is why the probe set cannot be numeric: at `absolute` the shipped run and
       // every arm are the same configuration, so only the other member can move the field.
       ...Object.keys(FAILED_EDGE_GATE_MODES),
+      // Iteration 235: the credit the bar scales, the tenth word-vocabulary and the first that is not a
+      // question about WHETHER a term speaks but about HOW MUCH. Probed from the union for the reason every
+      // other entry is, and it needs both members: `constant` is what the field already holds, so only
+      // `proportional` can move it — which is exactly the arm that has to be reachable from a dispatch.
+      ...FAILED_EDGE_CREDITS,
       // Iteration 213: the deduction's PRECEDENCE, the eighth word-vocabulary and the first that is a relation
       // between two nodes rather than a property of one. Probed from the union for the reason every other entry
       // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.

@@ -133,3 +133,80 @@ and this mode gets no exemption from it.
 | TheDex (ZOOZ), 2026   | 90% on RCAEval, blind, deterministic; "find the failing span with no failing children"; explicitly excludes pure-latency and resource faults | a claim with no per-case artifact, and the same family split this document measures (§4). Its 90% is stated over an unstated subset of 735 cases |
 | `arXiv:2608.21310`    | ten agent configurations on RCABench, Acc@1 42.6% → 90.0%; "correct localization can hide deficiencies in causal reconstruction"             | the frontier on this corpus, and a 500-case random sample rather than a full pass                                                                |
 | Alibaba RCA Benchmark | four-layer ground truth including a **causal propagation chain** and evidence checkpoints                                                    | if the chain is released per case, the 547 one-hop misses in §4 stop being a residual and become a measurable target                             |
+
+## 9. The credit: how much of the weight the evidence buys, and why it does not rescue the population
+
+§6 ends with the arm refused: +169 cases and 26 broken, five families regressed. The bar was not the lever
+(`ev30`: +166, `st` still −7) and neither was the weight (iteration 234 §234.8: weights 1 / 3 / 6 give 24 / 26 / 28
+breaks and 184 / 195 / 195 fixes, with **21 breaks common to all three**). What neither dial touched is the size of
+what the term says:
+
+```
+contribution(promoted) = failedEdgeWeight × 1.0        — the winner is 1.0 BY CONSTRUCTION
+selfAnomaly contribution, median over the same cases   — 0.617
+```
+
+A max-normalised score cannot express doubt. The callee failing a tenth of its calls and the callee failing all of
+them take the full 3.000, so on every admitted case the term is not a vote but an override, and every break costs a
+case the baseline had already answered. The rate that the gate reads — `net / calls` — was used as a boolean and
+then discarded.
+
+**The change.** `failedEdgeCredit: 'proportional'` multiplies the normalised standing by that rate and deliberately
+does **not** renormalise, so a lone callee failing one call in a thousand scores 0.001 rather than 1.0. A callee
+whose calls were never counted scores 0, on the same refusal direction the gate takes. `constant` remains the
+default and is byte-identical to the shipped behaviour, and the configuration line names the field unconditionally
+because at `constant` it is inert.
+
+**What was predicted.** The breaks are dominated by cases where the promoted service is a *victim* (§234.8: in 16 of
+26 the truth never appears in the channel), so its failure RATE should be lower than the source's and the credit
+should demote it without touching the 184 cases where the channel names the truth.
+
+**What happened.** Paired over the 1 243 cases both arms reached:
+
+| arm | configuration | paired | control | arm | net | fixed / broken | regressed families |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ev10` | `evidence @ 0.10`, constant credit | 1 243 | 527 | 686 | **+159** | 184 / 25 | `st` −9, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
+| `cal10` | `evidence @ 0.10`, proportional credit | 1 243 | 527 | 679 | **+152** | 183 / **31** | `st` −8, `ck` −2, `pf` −1, `rpb` −1, `rq` −1 |
+
+The credit makes it **worse**: six more breaks and one fewer fix. The mechanism is the opposite of the prediction
+and is worth stating precisely, because it inverts what §5 assumed about the same number:
+
+> **A victim's failure rate is the HIGHEST in the case, not the lowest.** A service saturated by propagated load
+> fails nearly every call it receives — 100% of them in 11 of the 26 breaks (their failing calls are *all* beyond
+> their own pre-window p99). The source, still answering most of its traffic, fails at a moderate rate. So the rate
+> is anti-correlated with being the source on this corpus, and multiplying by it promotes the victim harder than the
+> constant credit did.
+
+That kills the reading of `fraction` as a *strength* of evidence. It is an **admission** statistic — it answers "is
+anything failing here at all", which is the question the name half could not answer — and it is not a confidence in
+the *direction*. The two uses are not interchangeable and this arm is the measurement that says so.
+
+### 9.1 The pre-registered falsification, and its result
+
+Iteration 234 §234.9 registered the condition before the arm ran: the change is falsified if the paired sweeps do
+not (a) keep at least 180 of the 195 fixes and (b) remove at least half of the 16 blind breaks, with no family
+regressing. Measured: (a) 183 kept — passed; (b) blind breaks not reduced, total breaks 25 → 31, families still
+regressing — **failed**. The change is retained, tested and off by default, as the recorded answer to the question
+rather than a live option, on the same terms `mean` was kept in `failedEdgeMode`.
+
+### 9.2 The last span observable, measured and also empty
+
+Before closing the axis, the client/server split was measured as the remaining form of "which side of the edge the
+failure started on". A failing span whose PARENT belongs to its own service is a caller giving up (a deadline); one
+whose parent belongs to another service is an interface answering with an error. On the 221 break-and-fix cases the
+share of failures that are caller-side is **0.66–0.67 in both populations** (fix p10 0.65, p90 0.67; break p50
+0.66). It is a structural property of how these traces are instrumented — roughly two server spans per client span —
+and carries no information about the fault. Refuted, cheaply.
+
+### 9.3 What this closes
+
+Five observables have now been measured against the same 16 blind breaks and the same 10 within-channel
+mis-rankings: failure onset order, the caller's own onset, the failure-duration ratio, the callee's own p99-ruler
+expiry share, the client/server side of the failing span, and the failure rate as a credit. None separates them. The
+targeted conclusion is specific and it is the one worth carrying forward:
+
+> **On this corpus the failed-call channel cannot say whether it is looking at the source or at a victim, from span
+> data alone.** Counts, timings, durations, durations relative to a service's own healthy distribution, and the
+> parent-child shape of the failing span are all exhausted. What remains is corroboration from a *different* channel
+> — the promoted callee must carry a metric or log anomaly of its own — and that is a cross-modal conjunction rather
+> than another statistic on the same rows.

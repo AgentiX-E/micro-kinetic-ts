@@ -55,6 +55,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
@@ -75,9 +76,11 @@ import {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_VICTIM_WEIGHT,
   isDualFamilyGateMode,
+  isFailedEdgeCredit,
   isFailedEdgeGateMode,
   isOnsetShape,
   type DualFamilyGateMode,
+  type FailedEdgeCredit,
   type FailedEdgeGateMode,
 } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -427,6 +430,19 @@ export interface CliOptions {
    */
   failedEdgeGateShare: number;
   /**
+   * How much of `failedEdgeWeight` the failed-call channel's evidence buys — `constant` (shipped) or
+   * `proportional` (see `TreePrunerOptions.failedEdgeCredit`).
+   *
+   * The bar says whether the term may speak; this says how loudly. Under `constant` the promoted callee takes the
+   * term's full weight on every admitted case — 3.000 against a `selfAnomalyLog1p` contribution whose median is
+   * 0.617 — so a callee failing a tenth of its calls outranks a source whose own anomaly is maximal exactly as
+   * hard as one failing all of them. `proportional` multiplies the normalised score by the callee's own failure
+   * rate, which is the quantity the bar already reads and was discarding. Named on the configuration line only
+   * when it is not the shipped value, because at `constant` the artifact must stay byte-identical to the cells it
+   * already explains.
+   */
+  failedEdgeCredit: FailedEdgeCredit;
+  /**
    * Strength of the DB-connection-pool dominance penalty (see
    * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
    *
@@ -769,6 +785,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // to be able to name the other one.
     failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
     failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
+    failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
@@ -920,7 +937,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // A SHARE, so it takes the unit-interval parser: 1.5 is not a share of a champion and a negative one is
       // not a bar.
       opts.failedEdgeGateShare = parseUnitInterval(args[++i]!, DEFAULT_FAILED_EDGE_GATE_SHARE);
-    else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
+    else if (args[i] === '--failed-edge-credit' && hasValue(args, i + 1)) {
+      // The vocabulary's own guard, like the gate mode above: an unusable value falls back to the SHIPPED credit,
+      // because a typo must reproduce the measured configuration rather than invent a half-applied one.
+      const credit = args[++i]!;
+      opts.failedEdgeCredit = isFailedEdgeCredit(credit) ? credit : DEFAULT_FAILED_EDGE_CREDIT;
+    } else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
       // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
       // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.
       opts.poolMetricPenaltyWeight = parseWeight(args[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);

@@ -1496,6 +1496,31 @@ export function computeFailedEdgeScores(
  */
 export type { FailedEdgeEvidence };
 
+/**
+ * How much of its weight the failed-call channel is allowed to buy.
+ *
+ * `constant` is the shipped behaviour: the callee with the most net failures is credited `1.0` and the term's
+ * contribution is its full weight. `proportional` multiplies that standing by the callee's own failure RATE, so
+ * weak evidence adds a fraction of the weight and strong evidence keeps all of it.
+ *
+ * The distinction is not cosmetic. A max-normalised score is `1.0` for the winner BY CONSTRUCTION, so the term
+ * cannot express "I am not sure" — and on the RCABench archive that means the promoted service wins every case by
+ * 3.000 against a `selfAnomalyLog1p` contribution of 0.617. The rate was already computed for the gate and then
+ * used as a boolean; see `docs/failed-edge-evidence-gate.md` §5 and iteration 234 §234.9.
+ */
+export type FailedEdgeCredit = 'constant' | 'proportional';
+
+/** The credit vocabulary, in the order the documentation presents it. */
+export const FAILED_EDGE_CREDITS: readonly FailedEdgeCredit[] = ['constant', 'proportional'];
+
+/** The shipped credit. `proportional` is arm-ready and off, so no published cell can move by omission. */
+export const DEFAULT_FAILED_EDGE_CREDIT: FailedEdgeCredit = 'constant';
+
+/** Whether an untrusted value names a credit. Total, for parsers and for callers holding `string`. */
+export function isFailedEdgeCredit(value: unknown): value is FailedEdgeCredit {
+  return typeof value === 'string' && (FAILED_EDGE_CREDITS as readonly string[]).includes(value);
+}
+
 /** An evidence report with nothing in it, shared so an empty case allocates nothing. */
 const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
   topService: undefined,
@@ -1508,7 +1533,10 @@ const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
 
 /** The scores and the evidence, from one walk — so the map and the report cannot disagree about what counted. */
 export interface FailedEdgeLedger {
-  /** The normalised per-callee scores the term reads; identical to {@link computeFailedEdgeScores}. */
+  /**
+   * The per-callee scores the term reads. Under the default `constant` credit these are identical to
+   * {@link computeFailedEdgeScores}; under `proportional` each one is that value times the callee's failure rate.
+   */
   readonly scores: Map<ServiceId, number>;
   /** The channel's own strength, in failed calls and in calls. */
   readonly evidence: FailedEdgeEvidence;
@@ -1526,7 +1554,10 @@ export interface FailedEdgeLedger {
  * @param mode - `sum` (default, the measured one) or `mean` (fan-in normalised).
  * @param minRecords - Minimum number of contributing edges a callee needs before it is credited at all.
  * @param calls - Calls that reached each callee at or after the injection. Absent or `0` leaves the evidence's
- *   `fraction` undefined and therefore refuses the evidence bar; it never changes the scores.
+ *   `fraction` undefined and therefore refuses the evidence bar; under the `proportional` credit it also credits
+ *   that callee ZERO. It never changes the scores under the default credit.
+ * @param credit - How much of the weight the evidence buys: `constant` (the shipped behaviour, the winner at
+ *   `1.0`) or `proportional` (the winner at its own failure rate). See {@link FailedEdgeCredit}.
  * @returns Both views. An empty channel returns an empty map and an empty report.
  */
 export function computeFailedEdgeLedger(
@@ -1535,6 +1566,7 @@ export function computeFailedEdgeLedger(
   mode: FailedEdgeMode = DEFAULT_FAILED_EDGE_MODE,
   minRecords = DEFAULT_FAILED_EDGE_MIN_RECORDS,
   calls?: ReadonlyMap<ServiceId, number> | undefined,
+  credit: FailedEdgeCredit = DEFAULT_FAILED_EDGE_CREDIT,
 ): FailedEdgeLedger {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) {
@@ -1604,8 +1636,21 @@ export function computeFailedEdgeLedger(
   // positive, and `mean` divides by a caller count >= 1), and an empty
   // `aggregate` skips the loop entirely — so the division below never sees a
   // zero denominator and never emits NaN.
+  //
+  // The PROPORTIONAL credit multiplies that standing by the rate the gate reads, and deliberately does NOT
+  // renormalise afterwards: rescaling the winner back to 1.0 would restore exactly the saturation the credit
+  // exists to remove. A callee with no counted calls is credited 0 rather than left at its standing — a missing
+  // divisor is an absent measurement, and the refusal direction here is the same one the gate takes.
+  const rate = credit === 'proportional';
   for (const [callee, value] of aggregate) {
-    scores.set(callee, value / max);
+    const standing = value / max;
+    if (!rate) {
+      scores.set(callee, standing);
+      continue;
+    }
+    const counted = calls?.get(callee) ?? 0;
+    const fraction = counted > 0 && Number.isFinite(counted) ? net.get(callee)! / counted : 0;
+    scores.set(callee, standing * fraction);
   }
 
   // The evidence is read from the RAW nets over the callees the scores credited, so it is a statement about the

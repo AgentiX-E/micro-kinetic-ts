@@ -87,8 +87,9 @@ import {
   computePrismScores,
   type DualFamilyGateMode,
 } from './prism-signal.js';
-import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
+import type { FailedEdgeCredit, FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
+  DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   computeDeepestExceptions,
@@ -104,6 +105,16 @@ import {
   computeTraceActivityScores,
   gatedRiseContribution,
   maxInboundRise,
+} from './ranking-signals.js';
+
+// The credit vocabulary is DEFINED beside the ledger that applies it, and re-exported here because the option that
+// selects it is declared in this module: every runner reads the engine's constants from the options module, and a
+// consumer holding a pruner option should not need a second import path to name its own subject.
+export {
+  DEFAULT_FAILED_EDGE_CREDIT,
+  FAILED_EDGE_CREDITS,
+  isFailedEdgeCredit,
+  type FailedEdgeCredit,
 } from './ranking-signals.js';
 
 /**
@@ -705,6 +716,17 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * caller that constructs the gate object directly.
    */
   readonly failedEdgeGateShare?: number;
+  /**
+   * How much of `failedEdgeWeight` the evidence buys — see {@link FailedEdgeCredit}.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_CREDIT} (`constant`), which is the behaviour every published cell was
+   * measured with, so the field is inert until a run names it. `proportional` multiplies the normalised score by
+   * the callee's own failure rate, and the measurement that motivated it is the reason it exists rather than
+   * another weight: the constant credit makes the promoted service win by the term's FULL weight on every case the
+   * gate admits — 3.000 against a `selfAnomalyLog1p` contribution whose median is 0.617 — so a callee failing a
+   * tenth of its calls and one failing all of them are indistinguishable to every other term in the fusion.
+   */
+  readonly failedEdgeCredit?: FailedEdgeCredit;
   /**
    * Weight of the per-edge inbound latency rise.
    *
@@ -1786,6 +1808,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
   failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
   failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
+  failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -2113,6 +2136,7 @@ export class TreePruner {
       this.options.failedEdgeMode,
       this.options.failedEdgeMinRecords,
       options?.failedEdgeCalls,
+      this.options.failedEdgeCredit ?? DEFAULT_FAILED_EDGE_CREDIT,
     );
     // The two views of ONE walk: the scores the term reads, and the channel's own volume for the gate that
     // decides whether the term may speak. Two walks would be two definitions of which edges counted.

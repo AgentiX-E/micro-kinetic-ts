@@ -225,13 +225,15 @@ export type {
 // interface the channel's counts are declared beside; re-exported here because the gate that reads it lives in
 // this package and a consumer holding a gate should not need a second import path to name its subject.
 export type { FailedEdgeEvidence } from '@agentix-e/micro-kinetic-core';
-export type { FailedEdgeLedger } from './pruning/ranking-signals.js';
+export type { FailedEdgeCredit, FailedEdgeLedger } from './pruning/ranking-signals.js';
 
 export {
+  DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
+  FAILED_EDGE_CREDITS,
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   computeDeepestExceptions,
@@ -250,6 +252,7 @@ export {
   computeTopoSourceScores,
   computeTraceActivityScores,
   gatedRiseContribution,
+  isFailedEdgeCredit,
   isLogSignalMode,
   // Level 1 of the log gate, exported because the census that attributes an EMPTY log tier has to read the same
   // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of
