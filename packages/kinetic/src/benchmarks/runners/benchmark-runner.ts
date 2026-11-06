@@ -26,9 +26,10 @@ import {
 import type { TimeSeries, TraceSpan } from '@agentix-e/micro-kinetic-core';
 
 import type { BenchmarkCase, BenchmarkSuite } from '../loaders/types.js';
+import { acceptedTruthServiceIds, bestAcceptedRank } from '../loaders/types.js';
 
 import { toFaultGraphOptions } from './fault-graph-options.js';
-import { computeAvgAtK, computeTA } from './metrics.js';
+import { computeAvgAtKMultiLabel, computeTA } from './metrics.js';
 import type { RiserVector } from './riser-vector.js';
 import { riserVectorOf } from './riser-vector.js';
 import { caseWeightedMean } from './suite-accuracy.js';
@@ -223,11 +224,24 @@ export interface FailedCase {
 export interface CasePrediction {
   /** Case identifier. */
   readonly caseId: string;
-  /** Ground-truth service id. */
+  /** Ground-truth service id — the corpus's FIRST declared label, the one a frequency prior is over. */
   readonly truth: string;
+  /**
+   * Every accepted label, when the corpus declares more than one.
+   *
+   * Present only for multi-label ground truth, exactly as on {@link BenchmarkGroundTruth.serviceIds}. It is
+   * recorded because two consumers need it and neither can reconstruct it: `correct` is a statement about the
+   * SET, and a reader that only has `truth` cannot recompute it — the archive reads 42.69% against the sets
+   * and 32.28% against their first members, and those two numbers differ by 148 cases with nothing else
+   * changed.
+   */
+  readonly accepted?: readonly string[] | undefined;
   /** The engine's top-1 prediction, or `undefined` when analysis threw. */
   readonly top1: string | undefined;
-  /** Whether `top1` matches `truth`. */
+  /**
+   * Whether `top1` is an accepted answer — `accepted.includes(top1)` when a set is declared, `top1 === truth`
+   * otherwise. With one label the two forms are the same statement.
+   */
   readonly correct: boolean;
   /**
    * The engine's top-2 prediction, or `undefined` when fewer than two
@@ -811,11 +825,18 @@ export class BenchmarkRunner {
 
     // Collect all predictions and ground truths
     const predictions: RootCauseResult[] = [];
-    const truthServiceIds: string[] = [];
+    /**
+     * The ACCEPTED SET per case, aligned with `predictions` by push order.
+     *
+     * One array, not a `truthServiceIds` beside it: every accuracy the run reports is scored against the
+     * accepted set, so a parallel single-label array would be state nothing reads — which is exactly the
+     * shape of dead weight the registers hunt. It was that array until the set rule was applied here.
+     */
+    const acceptedPerCase: string[][] = [];
     const truthFaultTypes: string[] = [];
     const failures: FailedCase[] = [];
     // Full ranked service-ID list per case (for correct Avg@K computation).
-    // Aligned with `predictions` and `truthServiceIds` by push order.
+    // Aligned with `predictions` and `acceptedPerCase` by push order.
     const caseRankedPredictions: string[][] = [];
     // Per-case top-1 record (caseId / truth / top1), aligned with the cases,
     // for downstream fusion-ceiling analysis. Populated once per case — in the
@@ -878,7 +899,29 @@ export class BenchmarkRunner {
         caseRankedPredictions.push(results.slice(0, topK).map((r) => r.serviceId));
 
         // Per-case top-1 record for fusion analysis (success path).
-        const caseTruth = benchCase.groundTruth.serviceId;
+        //
+        // `caseTruth` is the ACCEPTED LABEL THE ENGINE PLACED BEST. It is NOT the record's `truth` field —
+        // that one stays the corpus's first declared label, because a frequency prior is over the corpus and
+        // not over the engine's answers. `caseTruth` exists for the EVIDENCE fields (the truth's own anomaly,
+        // its riser vector, its trace significance, its rank), each of which describes one service and must
+        // describe the accepted service the run actually reached.
+        //
+        // One definition here makes every downstream site set-correct without touching any of them:
+        //
+        //   top1 ∈ accepted  ⟺  top1 == caseTruth
+        //
+        // because if the top prediction is an accepted answer then it IS the best-placed accepted answer
+        // (nothing outranks rank 1). So `truthRank`, the truth's own anomaly, its riser vector and its trace
+        // significance all inherit the accepted-set rule from this one line, and `correct` — which is written
+        // as `accepted.includes(top1)` — cannot disagree with them.
+        //
+        // With a single label — every RCAEval directory — this is `benchCase.groundTruth.serviceId`, byte for
+        // byte. That is why the nine published cells are unchanged, and it is why `correct === (top1 === truth)`
+        // still holds on every single-label corpus (the record's `truth` IS `caseTruth` there).
+        const accepted = acceptedTruthServiceIds(benchCase.groundTruth);
+        const acceptedRank = bestAcceptedRank(results, accepted);
+        const caseTruth =
+          acceptedRank > 0 ? results[acceptedRank - 1]!.serviceId : benchCase.groundTruth.serviceId;
         const predTop1 = results[0]?.serviceId;
         // One search of the full ranking for both the truth's rank and its own evidence.
         const placement = truthPlacementIn(results, caseTruth);
@@ -887,9 +930,14 @@ export class BenchmarkRunner {
         const traceVote = traceVoteIn(faultGraph.traceActivityScores);
         casePredictionRecords.push({
           caseId: benchCase.id,
-          truth: caseTruth,
+          // The DECLARED first label, not `caseTruth`. A frequency prior is over the corpus's labels, and a
+          // prior computed over "the accepted label the engine reached" would be the engine's own output
+          // wearing the truth's name — circular on every case the run got right. `truthRank` below is the
+          // field that describes the best-placed accepted answer; this one is the declared label.
+          truth: benchCase.groundTruth.serviceId,
+          ...(accepted.length > 1 ? { accepted } : {}),
           top1: predTop1,
-          correct: predTop1 !== undefined && predTop1 === caseTruth,
+          correct: predTop1 !== undefined && accepted.includes(predTop1),
           // The population this case belongs to, so a miss can be read on the axis that names its owner rather
           // than averaged into a cell's five types at once.
           faultType: benchCase.groundTruth.faultType,
@@ -948,7 +996,7 @@ export class BenchmarkRunner {
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────
-        gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
+        gtAnomaly = faultGraph.anomalyScores.get(caseTruth) ?? 0;
         maxAnomaly = Math.max(...faultGraph.anomalyScores.values());
         topPredictions = results.slice(0, topK).map((r) => ({
           serviceId: r.serviceId,
@@ -969,7 +1017,7 @@ export class BenchmarkRunner {
         // so we pick the GT's most-deviating metric by value range instead of
         // relying on the (often absent) ground-truth metric name.
         const gtMetricName = benchCase.groundTruth.metric;
-        const gtMetricSeries = benchCase.metrics.get(benchCase.groundTruth.serviceId);
+        const gtMetricSeries = benchCase.metrics.get(caseTruth);
         const gtTs =
           (gtMetricName ? gtMetricSeries?.find((ts) => ts.label === gtMetricName) : undefined) ??
           pickDominantMetric(gtMetricSeries);
@@ -980,7 +1028,7 @@ export class BenchmarkRunner {
         // transient-spike guard) rather than being genuinely small. This is
         // distinct from the root_cause_metric label above, which for RE3's
         // generic f1..f5 labels is often absent or misleading.
-        const gtDominant = faultGraph.dominantMetrics?.get(benchCase.groundTruth.serviceId);
+        const gtDominant = faultGraph.dominantMetrics?.get(caseTruth);
         const gtDominantLabel = gtDominant?.label ?? '';
         const gtDominantHead = gtDominant?.head ?? [];
         const gtDominantTail = gtDominant?.tail ?? [];
@@ -1009,12 +1057,12 @@ export class BenchmarkRunner {
         const top1Breakdown = formatBreakdown(top1Dominant?.breakdown);
         // Onset indices for the GT vs the top-anomaly service, to validate
         // whether the source changed earlier than the symptom.
-        const gtOnset = faultGraph.anomalyOnsetTimes.get(benchCase.groundTruth.serviceId);
+        const gtOnset = faultGraph.anomalyOnsetTimes.get(caseTruth);
         const topOnset = faultGraph.anomalyOnsetTimes.get(topAnomaly[0]?.serviceId ?? '');
         // Injection-anchored onset delays (ms after inject_time) for the same
         // pair — the temporal causal signal's actual input.
         const gtInjectDelay = faultGraph.postInjectOnsetDelays?.get(
-          benchCase.groundTruth.serviceId,
+          caseTruth,
         );
         const topInjectDelay = faultGraph.postInjectOnsetDelays?.get(
           topAnomaly[0]?.serviceId ?? '',
@@ -1023,15 +1071,15 @@ export class BenchmarkRunner {
         // service — log volume, collision ratio, and topological source. These
         // reveal whether each signal is helping (GT > symptom) or hurting
         // (symptom > GT) the source/symptom separation.
-        const gtLogScore = faultGraph.logScores?.get(benchCase.groundTruth.serviceId);
+        const gtLogScore = faultGraph.logScores?.get(caseTruth);
         const topLogScore = faultGraph.logScores?.get(topAnomaly[0]?.serviceId ?? '');
         const gtRatioContrib = faultGraph.collisionEnergy?.get(
-          benchCase.groundTruth.serviceId,
+          caseTruth,
         )?.ratioContrib;
         const topRatioContrib = faultGraph.collisionEnergy?.get(
           topAnomaly[0]?.serviceId ?? '',
         )?.ratioContrib;
-        const gtTopoSource = faultGraph.topoScores?.get(benchCase.groundTruth.serviceId);
+        const gtTopoSource = faultGraph.topoScores?.get(caseTruth);
         const topTopoSource = faultGraph.topoScores?.get(topAnomaly[0]?.serviceId ?? '');
         // Trace span-activity rise diagnostics: the GT's pre/post span counts
         // and rise ratio, plus the highest-ratio service (the signal's top
@@ -1041,7 +1089,7 @@ export class BenchmarkRunner {
         let topTraceActivity:
           { service: string; pre: number; post: number; ratio: number } | undefined;
         if (benchCase.traceActivity && benchCase.traceActivity.size > 0) {
-          const gtCounts = benchCase.traceActivity.get(benchCase.groundTruth.serviceId);
+          const gtCounts = benchCase.traceActivity.get(caseTruth);
           if (gtCounts) {
             gtTraceActivity = {
               pre: gtCounts.pre,
@@ -1067,6 +1115,11 @@ export class BenchmarkRunner {
           : results;
         const enrichedTop = enrichedResults[0];
 
+        // The accepted answers for this case were computed above, beside `caseTruth`, so the Top-1 counter,
+        // the Top-5 counter, the Avg@5 accumulator, the location accuracy and the diagnostic's rank are five
+        // readings of one rule — five copies of a rule is how the rule drifted from `run-fse26.ts` in the
+        // first place.
+
         // Track prediction
         predictions.push(
           enrichedTop ?? {
@@ -1080,7 +1133,7 @@ export class BenchmarkRunner {
             viaTreeSearch: false,
           },
         );
-        truthServiceIds.push(benchCase.groundTruth.serviceId);
+        acceptedPerCase.push([...accepted]);
         truthFaultTypes.push(benchCase.groundTruth.faultType);
 
         // Check correctness
@@ -1092,19 +1145,25 @@ export class BenchmarkRunner {
         }
         tracker.cases++;
 
-        // Check if correct at Top-1 (the ground-truth service is the single
-        // highest-ranked prediction). This value feeds perFaultType.accuracy,
-        // which is reported as AC@1 and must therefore be Top-1, NOT Top-K.
+        // Check if correct at Top-1 (an accepted service is the single highest-ranked prediction).
+        // This value feeds perFaultType.accuracy, which is reported as AC@1 and must therefore be
+        // Top-1, NOT Top-K.
+        //
+        // Scored against the ACCEPTED SET, not against `serviceId` alone. The two are the same on every
+        // single-label corpus — which is why the nine published RCAEval cells do not move — and differ on
+        // any corpus that declares an edge-injected fault as neither endpoint alone. `run-fse26.ts` always
+        // used the set; this runner used the single ID, and on the 1,422-pack RCABench corpus that cost
+        // 148 cases (32.28% -> 42.69%). One rule, one owner: `acceptedTruthServiceIds`.
         const top1Service = results[0]?.serviceId;
         // The hit-at-5 share and the fault-type share are counted here, beside the Top-1 count and
         // from the same ranking, so the three printed rows describe one run rather than three passes.
-        if (results.slice(0, 5).some((r) => r.serviceId === benchCase.groundTruth.serviceId)) {
+        if (results.slice(0, 5).some((r) => accepted.includes(r.serviceId))) {
           tracker.top5++;
         }
         // RCAEval's `Avg@5`: the mean of Acc@1..Acc@5 for THIS case, summed and divided by cases below.
         let accSum = 0;
         for (let k = 1; k <= 5; k++) {
-          if (results.slice(0, k).some((r) => r.serviceId === benchCase.groundTruth.serviceId)) {
+          if (results.slice(0, k).some((r) => accepted.includes(r.serviceId))) {
             accSum++;
           }
         }
@@ -1113,25 +1172,28 @@ export class BenchmarkRunner {
         if (topResult !== undefined && computeTA(topResult, faultTypeKey) === 1) {
           tracker.type++;
         }
-        if (top1Service === benchCase.groundTruth.serviceId) {
+        if (top1Service !== undefined && accepted.includes(top1Service)) {
           tracker.correct++;
         } else if (enrichedTop) {
           failures.push({
             caseId: benchCase.id,
-            expectedService: benchCase.groundTruth.serviceId,
+            expectedService: caseTruth,
             expectedFaultType: benchCase.groundTruth.faultType,
             actualTop: enrichedTop.serviceId,
             actualFaultType: formatFaultType(enrichedTop.faultType),
-            reason: `Top prediction "${enrichedTop.serviceId}" does not match ground truth "${benchCase.groundTruth.serviceId}"`,
+            reason:
+              accepted.length > 1
+                ? `Top prediction "${enrichedTop.serviceId}" is none of the accepted answers [${accepted.join(', ')}]`
+                : `Top prediction "${enrichedTop.serviceId}" does not match ground truth "${benchCase.groundTruth.serviceId}"`,
             diag: {
               gtAnomaly: gtAnomaly,
               maxAnomaly: maxAnomaly,
               // `results` is the ranking the correctness checks above were counted from, so the rank and the
               // verdict are two readings of ONE array rather than two passes over the engine.
-              gtRank: results.findIndex((r) => r.serviceId === benchCase.groundTruth.serviceId) + 1,
+              gtRank: bestAcceptedRank(results, accepted),
               candidateCount: results.length,
               topK: topPredictions,
-              gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
+              gtInGraph: accepted.some((id) => effectiveCallGraph.nodes.has(id)),
               edges: effectiveCallGraph.edges.length,
               gtMetric: gtMetricName ?? gtTs?.label ?? '',
               gtMetricHead,
@@ -1164,13 +1226,13 @@ export class BenchmarkRunner {
         } else {
           failures.push({
             caseId: benchCase.id,
-            expectedService: benchCase.groundTruth.serviceId,
+            expectedService: caseTruth,
             expectedFaultType: benchCase.groundTruth.faultType,
             reason: 'No predictions generated',
           });
         }
       } catch (err) {
-        // Keep index alignment with truthServiceIds for this failed case.
+        // Keep index alignment with `predictions` for this failed case.
         caseRankedPredictions.push([]);
         // Per-case top-1 record for fusion analysis (error path): analysis
         // threw before producing a ranking, so the prediction is undefined.
@@ -1191,6 +1253,9 @@ export class BenchmarkRunner {
         });
         failures.push({
           caseId: benchCase.id,
+          // The DECLARED label, not `caseTruth`: this branch is the engine throwing before any ranking
+          // exists, so there is no best-placed accepted answer to name and the corpus's first label is the
+          // only honest answer available.
           expectedService: benchCase.groundTruth.serviceId,
           expectedFaultType: benchCase.groundTruth.faultType,
           reason:
@@ -1221,15 +1286,20 @@ export class BenchmarkRunner {
     // only the first element, Top-3/Top-5 use the corresponding prefix.
     const casePredictions: ReadonlyArray<readonly string[]> = caseRankedPredictions;
 
-    const avgTop1 = computeAvgAtK(casePredictions, truthServiceIds, 1);
-    const avgTop3 = computeAvgAtK(casePredictions, truthServiceIds, 3);
-    const avgTop5 = computeAvgAtK(casePredictions, truthServiceIds, 5);
+    // The MULTI-LABEL variants, because the accepted set is what a case's answer is scored against. On
+    // a single-label corpus `acceptedPerCase[i]` is `[serviceId]` for every case and these are
+    // numerically identical to `computeAvgAtK` — the nine published cells were re-read after this change
+    // and did not move. On a corpus with declared edge labels they differ, and the single-label variant
+    // was reporting 32.28% for rankings that score 42.69%.
+    const avgTop1 = computeAvgAtKMultiLabel(casePredictions, acceptedPerCase, 1);
+    const avgTop3 = computeAvgAtKMultiLabel(casePredictions, acceptedPerCase, 3);
+    const avgTop5 = computeAvgAtKMultiLabel(casePredictions, acceptedPerCase, 5);
 
     // LA and TA
     let laCorrect = 0;
     let taCorrect = 0;
     for (let i = 0; i < predictions.length; i++) {
-      if (predictions[i]!.serviceId === truthServiceIds[i]!) laCorrect++;
+      if (acceptedPerCase[i]?.includes(predictions[i]!.serviceId) === true) laCorrect++;
       taCorrect += computeTA(predictions[i]!, truthFaultTypes[i]!);
     }
     const locationAccuracy = predictions.length > 0 ? laCorrect / predictions.length : 0;
@@ -1269,7 +1339,9 @@ export class BenchmarkRunner {
         faultType: benchCase.groundTruth.faultType,
         predictedConfidence: predicted?.confidence ?? 0,
         collisionType: undefined, // Populated by the collision aggregator internally
-        isCorrect: predicted?.serviceId === benchCase.groundTruth.serviceId,
+        isCorrect:
+          predicted !== undefined &&
+          (acceptedPerCase[i] ?? [benchCase.groundTruth.serviceId]).includes(predicted.serviceId),
       });
     }
 

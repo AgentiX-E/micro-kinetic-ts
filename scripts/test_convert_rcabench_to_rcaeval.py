@@ -548,7 +548,15 @@ class TracesAndLogs(unittest.TestCase):
 class Main(unittest.TestCase):
     """The CLI, executed rather than skipped."""
 
-    def _pack(self, root: pathlib.Path, name: str, *, display: str = '{}', metrics: bool = True) -> pathlib.Path:
+    def _pack(
+        self,
+        root: pathlib.Path,
+        name: str,
+        *,
+        display: str = '{}',
+        metrics: bool = True,
+        truth: tuple[str, ...] = ('ts-order-service',),
+    ) -> pathlib.Path:
         """One synthetic datapack, the shape `main()` walks."""
         pack = root / name
         pack.mkdir(parents=True)
@@ -557,7 +565,7 @@ class Main(unittest.TestCase):
             json.dumps({'ABNORMAL_START': '2000', 'NORMAL_START': '1000', 'NORMAL_END': '2000', 'ABNORMAL_END': '3000'})
         )
         (pack / 'injection.json').write_text(
-            json.dumps({'display_config': display, 'ground_truth': {'service': ['ts-order-service']}})
+            json.dumps({'display_config': display, 'ground_truth': {'service': list(truth)}})
         )
         if metrics:
             _write_metrics(
@@ -622,10 +630,87 @@ class Main(unittest.TestCase):
             self.assertEqual((cases[0] / 'inject_time.txt').read_text(), '2000')
             ground = json.loads((cases[0] / 'ground_truth.json').read_text())
             self.assertEqual(ground['root_cause_service'], 'ts-order-service')
+            # The DECLARED set, under the plural of the field the loader reads. Two members here, because an
+            # edge-injected fault is neither endpoint alone: a scorer reading only `root_cause_service` counts
+            # the other endpoint as a miss, which is the 148 cases between 32.28% and 42.69% on the archive.
+            self.assertEqual(ground['root_cause_services'], ['ts-order-service', 'ts-basic-service'])
             self.assertEqual(ground['rcabench_fault'], 'response-replace-code')
             self.assertEqual(ground['rcabench_ground_truth'], ['ts-order-service', 'ts-basic-service'])
             metrics = json.loads((cases[0] / 'metrics.json').read_text())
             self.assertEqual([row['metric_name'] for row in metrics['ts-order-service']], ['cpu'])
+
+    def test_the_declared_ground_truth_outranks_the_injection_point_when_they_disagree(self) -> None:
+        # A real pack (`ts4-ts-food-service-container-kill-lv5htg`) whose `injection_point` names one service
+        # while the benchmark's own `ground_truth.service` names another. The benchmark scores its declaration,
+        # so the declaration is what `root_cause_service` must carry: a disagreement between a config field and
+        # a published label is settled by the publisher, not by the field.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / 'raw'
+            pack = src / 'ts4-ts-food-service-container-kill-lv5htg'
+            pack.mkdir(parents=True)
+            (pack / '.finished').write_text('')
+            (pack / 'env.json').write_text(
+                json.dumps({'NORMAL_START': '1000', 'NORMAL_END': '2000',
+                            'ABNORMAL_START': '2000', 'ABNORMAL_END': '3000'})
+            )
+            (pack / 'injection.json').write_text(
+                json.dumps(
+                    {
+                        'display_config': json.dumps(
+                            {'injection_point': {'app_label': 'ts-food-service', 'pod_name': 'ts-food-service-0'}}
+                        ),
+                        'ground_truth': {'service': ['ts-config-service']},
+                    }
+                )
+            )
+            _write_metrics(
+                pack / 'normal_metrics.parquet',
+                [
+                    {
+                        'time': _ts(1500),
+                        'metric': 'container.cpu.usage',
+                        'value': 1.0,
+                        'service_name': 'ts-config-service',
+                        'attr.destination_workload': None,
+                    }
+                ],
+            )
+            dst = pathlib.Path(tmp) / 'conv'
+            argv = sys.argv
+            sys.argv = ['convert', '--src', str(src), '--dst', str(dst)]
+            try:
+                self.assertEqual(bridge.main(), 0)
+            finally:
+                sys.argv = argv
+            case = next(p for p in dst.iterdir() if p.is_dir())
+            ground = json.loads((case / 'ground_truth.json').read_text())
+            self.assertEqual(ground['root_cause_service'], 'ts-config-service')
+            self.assertEqual(ground['root_cause_services'], ['ts-config-service'])
+            self.assertEqual(ground['rcabench_injection_point']['app_label'], 'ts-food-service')
+
+    def test_a_pack_that_declares_no_service_truth_falls_back_to_the_injection_point(self) -> None:
+        # `ground_truth.service` empty happens for faults whose declared layer is a pod or a span. The case must
+        # still convert, with the injection point as its single label and an EMPTY declared set -- not with a
+        # set of one invented element, which would claim a declaration the pack never made.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / 'raw'
+            self._pack(
+                src,
+                'ts0-ts-order-service-stress-abc123',
+                display=json.dumps({'injection_point': {'app_name': 'ts-order-service'}}),
+                truth=(),
+            )
+            dst = pathlib.Path(tmp) / 'conv'
+            argv = sys.argv
+            sys.argv = ['convert', '--src', str(src), '--dst', str(dst)]
+            try:
+                self.assertEqual(bridge.main(), 0)
+            finally:
+                sys.argv = argv
+            case = next(p for p in dst.iterdir() if p.is_dir())
+            ground = json.loads((case / 'ground_truth.json').read_text())
+            self.assertEqual(ground['root_cause_service'], 'ts-order-service')
+            self.assertEqual(ground['root_cause_services'], [])
 
     def test_reads_a_display_config_that_is_not_json_and_falls_back_to_the_name(self) -> None:
         # `display_config` is a JSON STRING inside `injection.json`, and a pack whose inner string is

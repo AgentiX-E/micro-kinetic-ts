@@ -1685,6 +1685,84 @@ describe('rcaeval ground-truth fallbacks', () => {
     expect(gt.serviceId).toBe('cartservice');
     expect(gt.faultType).toBe('cpu');
   });
+
+  // ── The declared accepted set ──────────────────────────
+  //
+  // A corpus that injects a fault on an EDGE cannot state its ground truth in one name, and RCABench
+  // says so: 1,053 of its 1,422 packs declare a two-element `service`. Reading one of them and scoring
+  // the other as a miss is what this loader did before it read `root_cause_services`, and it cost 148
+  // cases (32.28% vs 42.69%) on the archive those packs come from.
+
+  it('carries the declared multi-label set through as `serviceIds`', () => {
+    const casePath = createCaseDir(tempDir, 're3tt_mysql_bw_1', {
+      metrics: { mysql: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: {
+        root_cause_service: 'mysql',
+        root_cause_services: ['mysql', 'ts-order-service'],
+        root_cause_metric: 'bw',
+      },
+    });
+
+    const gt = loader.getGroundTruth(casePath);
+    // `serviceId` stays the FIRST member — the docblock on the type promises it, and every diagnostic
+    // that prints both reads the pair in that order.
+    expect(gt.serviceId).toBe('mysql');
+    expect(gt.serviceIds).toEqual(['mysql', 'ts-order-service']);
+  });
+
+  it('records no set when the declared list has a single member', () => {
+    // A one-member list says nothing `serviceId` does not. Recording it would put `serviceIds` on a
+    // directory that never declared a set, which is the distinction the scoring rule reads to keep
+    // single-label corpora numerically identical.
+    const casePath = createCaseDir(tempDir, 're3tt_mysql_bw_1', {
+      metrics: { mysql: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: { root_cause_service: 'mysql', root_cause_services: ['mysql'] },
+    });
+
+    const gt = loader.getGroundTruth(casePath);
+    expect(gt.serviceIds).toBeUndefined();
+  });
+
+  it('records no set when the field is absent, empty, or not a list of names', () => {
+    const cases: Array<Record<string, unknown>> = [
+      { root_cause_service: 'mysql' },
+      { root_cause_service: 'mysql', root_cause_services: [] },
+      { root_cause_service: 'mysql', root_cause_services: 'mysql,ts-order-service' },
+      // A list carrying a hole is filtered rather than carried: a non-string in the accepted set would
+      // be compared against a ranking of strings and silently never match.
+      { root_cause_service: 'mysql', root_cause_services: [null, 'mysql', ''] },
+    ];
+    for (const [index, groundTruth] of cases.entries()) {
+      const casePath = createCaseDir(tempDir, `re3tt_mysql_bw_${index + 1}`, {
+        metrics: { mysql: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+        groundTruth,
+      });
+      expect(loader.getGroundTruth(casePath).serviceIds).toBeUndefined();
+    }
+  });
+
+  it('accepts the camelCase spelling of the declared set', () => {
+    // The field is written by our own bridge in snake_case, but a corpus exported by another tool is
+    // free to use the camelCase spelling the loader already accepts for `root_cause_service`.
+    const casePath = createCaseDir(tempDir, 're3tt_mysql_bw_1', {
+      metrics: { mysql: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: { rootCauseService: 'mysql', rootCauseServices: ['mysql', 'ts-basic-service'] },
+    });
+
+    expect(loader.getGroundTruth(casePath).serviceIds).toEqual(['mysql', 'ts-basic-service']);
+  });
+
+  it('drops a non-string member and keeps the remaining declared set', () => {
+    const casePath = createCaseDir(tempDir, 're3tt_mysql_bw_1', {
+      metrics: { mysql: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: {
+        root_cause_service: 'mysql',
+        root_cause_services: ['mysql', 42, 'ts-order-service'],
+      },
+    });
+
+    expect(loader.getGroundTruth(casePath).serviceIds).toEqual(['mysql', 'ts-order-service']);
+  });
 });
 
 describe('rcaeval metrics-file validation', () => {

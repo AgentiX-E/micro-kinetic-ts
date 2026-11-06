@@ -63,6 +63,8 @@ export type {
   RCA100Suite,
   RCAEvalCase,
   RCAEvalSuite,
+  acceptedTruthServiceIds,
+  bestAcceptedRank,
 } from './loaders/types.js';
 
 // ── SOTA Leaderboard ──────────────────────────────────────

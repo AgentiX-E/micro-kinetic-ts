@@ -658,12 +658,123 @@ describe('BenchmarkRunner', () => {
         expect(p.caseId).toBeTruthy();
         expect(p.truth).toBeTruthy();
         expect(typeof p.correct).toBe('boolean');
-        // `correct` is exactly "top-1 equals ground truth".
+        // On a single-label corpus — this one — `correct` is exactly "top-1 equals the declared label". The
+        // general statement is membership in `accepted` (absent here, because one label is not a set).
+        expect(p.accepted).toBeUndefined();
         expect(p.correct).toBe(p.top1 === p.truth);
       }
       // The number of correct predictions must reconcile with avgTop1.
       const correctCount = result.casePredictions.filter((p) => p.correct).length;
       expect(correctCount / result.casePredictions.length).toBeCloseTo(result.avgTop1, 10);
+    });
+  });
+
+  describe('multi-label ground truth', () => {
+    /**
+     * The rule `BenchmarkGroundTruth.serviceIds` has always documented and that this runner alone did not
+     * implement: an answer is correct when it is ANY accepted label, not only the corpus's first.
+     *
+     * The corpus that exposed it is RCABench, where 1,053 of 1,422 packs declare a two-element truth
+     * because an edge-injected fault is neither endpoint alone. Read one label at a time the archive scored
+     * 32.28%; read against the declared sets the same rankings score 42.69%. The mock engine answers
+     * `service_1` at rank 1 on every case, so "is the second label accepted" is decided exactly here
+     * rather than by whatever the real engine happens to rank.
+     */
+    const engineTop1 = 'service_1';
+
+    /** One generated suite, re-stated with an explicit accepted set per case. */
+    function withAcceptedSet(
+      suite: ReturnType<typeof generator.generateRCAEvalSuite>,
+      choose: (caseIndex: number) => readonly string[],
+    ): ReturnType<typeof generator.generateRCAEvalSuite> {
+      return {
+        ...suite,
+        cases: suite.cases.map((benchCase, index) => ({
+          ...benchCase,
+          groundTruth: { ...benchCase.groundTruth, serviceIds: choose(index) },
+        })),
+      };
+    }
+
+    it('counts a top-1 that is the SECOND accepted label as correct, in every counter', async () => {
+      const seed = generator.generateRCAEvalSuite('multi-label', 4);
+      const result = await new BenchmarkRunner(createContainer()).runSuite(
+        withAcceptedSet(seed, (index) => {
+          const declared = seed.cases[index]!.groundTruth.serviceId;
+          // The engine's answer first only when it is not the declared label, so every case here is one
+          // the single-label rule called a miss.
+          return declared === engineTop1 ? [declared] : [declared, engineTop1];
+        }),
+      );
+      for (const [index, prediction] of result.casePredictions.entries()) {
+        const declared = seed.cases[index]!.groundTruth.serviceId;
+        expect(prediction.top1).toBe(engineTop1);
+        // `truth` stays the DECLARED first label — a frequency prior is over the corpus, not over the
+        // engine's answers — and the accepted set travels beside it so `correct` is recomputable.
+        expect(prediction.truth).toBe(declared);
+        expect(prediction.accepted).toEqual([declared, engineTop1]);
+        expect(prediction.correct).toBe(true);
+      }
+      // All three aggregates are one rule, not three: Avg@K, location accuracy and per-fault-type AC@1.
+      expect(result.avgTop1).toBe(1);
+      expect(result.locationAccuracy).toBe(1);
+      for (const cell of result.perFaultType.values()) {
+        expect(cell.correct).toBe(cell.cases);
+      }
+      // And no failure was recorded — a case counted correct must not also appear in the failure list,
+      // which is the shape a half-applied rule takes.
+      expect(result.failures).toHaveLength(0);
+    });
+
+    it('honours a declared set that excludes the declared label', async () => {
+      // The set is the rule, not a hint: a corpus that declares `service_1` accepted and its own
+      // `root_cause_service` not accepted must be scored the way it declared.
+      const seed = generator.generateRCAEvalSuite('declared-wins', 1);
+      const declared = seed.cases[0]!.groundTruth.serviceId;
+      if (declared === engineTop1) return; // nothing to distinguish on this seed
+      const result = await new BenchmarkRunner(createContainer()).runSuite(
+        withAcceptedSet(seed, () => [engineTop1]),
+      );
+      expect(result.casePredictions[0]?.correct).toBe(true);
+      expect(result.avgTop1).toBe(1);
+    });
+
+    it('is a no-op for a single-label corpus, which is every published RCAEval cell', async () => {
+      // The nine cells are read through this path, so the set rule must not move them: the same suite run
+      // with no `serviceIds` and with an explicitly single-member set must agree case for case.
+      const seed = generator.generateRCAEvalSuite('single-label', 5);
+      const plain = await new BenchmarkRunner(createContainer()).runSuite(seed);
+      const explicit = await new BenchmarkRunner(createContainer()).runSuite(
+        withAcceptedSet(seed, (index) => [seed.cases[index]!.groundTruth.serviceId]),
+      );
+      expect(explicit.avgTop1).toBeCloseTo(plain.avgTop1, 12);
+      expect(explicit.avgTop5).toBeCloseTo(plain.avgTop5, 12);
+      expect(explicit.locationAccuracy).toBeCloseTo(plain.locationAccuracy, 12);
+      expect(explicit.casePredictions.map((p) => p.correct)).toEqual(
+        plain.casePredictions.map((p) => p.correct),
+      );
+      expect(explicit.failures).toHaveLength(plain.failures.length);
+    });
+
+    it('scores a case the engine misses as a miss even when a set is declared', async () => {
+      // The negative arm. Without it, "the set makes everything correct" would pass this file.
+      const seed = generator.generateRCAEvalSuite('never-accepted', 2);
+      const result = await new BenchmarkRunner(createContainer()).runSuite(
+        withAcceptedSet(seed, (index) => [
+          seed.cases[index]!.groundTruth.serviceId,
+          'service-never-ranked',
+        ]),
+      );
+      for (const [index, prediction] of result.casePredictions.entries()) {
+        expect(prediction.top1).toBe(engineTop1);
+        expect(prediction.correct).toBe(false);
+        // A miss keeps the declared label AND the accepted set, so a census can say which of the two
+        // answers the engine failed to reach rather than only that it failed.
+        expect(prediction.truth).toBe(seed.cases[index]!.groundTruth.serviceId);
+        expect(prediction.accepted).toHaveLength(2);
+      }
+      expect(result.avgTop1).toBe(0);
+      expect(result.failures).toHaveLength(2);
     });
   });
 

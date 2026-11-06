@@ -41,6 +41,57 @@ export interface BenchmarkGroundTruth {
   readonly rca100Layers?: RCA100GroundTruthLayers;
 }
 
+/**
+ * The set of service IDs that count as a correct answer for one case.
+ *
+ * ## Why this is a function and not an `??`
+ *
+ * The docblock on {@link BenchmarkGroundTruth.serviceIds} has said since it was written that
+ * "ranking is scored against the accepted set, not against `serviceId` alone". Two runners read
+ * this type and only ONE of them obeyed: `run-fse26.ts` scores `accepted.includes(rank[0])`, while
+ * `benchmark-runner.ts` — the runner behind every RCAEval cell and every loss-census row — scored
+ * `rank[0] === serviceId`. One shared type, two scoring rules, and the divergence was invisible
+ * because it is a difference between *files* rather than between branches of one expression.
+ *
+ * That divergence was not cosmetic. On the 1,422-pack RCABench corpus, **1,053 packs (74%)** declare
+ * a TWO-element ground truth (an edge-injected fault is neither endpoint alone), and the RCAEval
+ * path read **32.28% (459/1422)** where the same rankings scored against the declared set read
+ * **42.69% (607/1422)** — 148 cases, 10.4 pp, attributable to the rule and to nothing about the
+ * engine. See `docs/rcabench-first-reading.md`.
+ *
+ * The returned array is `serviceIds` when it is non-empty, `[serviceId]` otherwise. It is NOT
+ * deduplicated or sorted: the declared order is the corpus's, and `serviceId` is documented to be its
+ * first member, so re-ordering here would break that invariant for every reader downstream.
+ *
+ * A case whose `serviceId` is empty (a corpora quirk, not a valid label) yields `['']`, which no
+ * ranking can contain — the same verdict the single-label rule gave it, deliberately.
+ *
+ * @param groundTruth - The case's ground truth record.
+ * @returns The accepted service IDs, in the corpus's own order.
+ */
+export function acceptedTruthServiceIds(groundTruth: BenchmarkGroundTruth): readonly string[] {
+  const declared = groundTruth.serviceIds;
+  return declared !== undefined && declared.length > 0 ? declared : [groundTruth.serviceId];
+}
+
+/**
+ * Rank of the best accepted answer in a ranking, 1-based; `0` when no accepted ID is ranked.
+ *
+ * The single owner of "how far down did the truth sit", so that the rank a failure diagnostic
+ * reports and the verdict the accuracy counters take cannot be two readings of two different rules.
+ *
+ * @param ranking - The engine's ranking, best first.
+ * @param accepted - The accepted service IDs.
+ * @returns 1-based rank of the first ranked accepted ID, or 0.
+ */
+export function bestAcceptedRank(
+  ranking: readonly { readonly serviceId: string }[],
+  accepted: readonly string[],
+): number {
+  const index = ranking.findIndex((entry) => accepted.includes(entry.serviceId));
+  return index < 0 ? 0 : index + 1;
+}
+
 /** 4-layer ground truth for RCA100. */
 export interface RCA100GroundTruthLayers {
   /** Layer 1: Fault type category. */

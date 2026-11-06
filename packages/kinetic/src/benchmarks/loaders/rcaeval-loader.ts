@@ -714,8 +714,30 @@ export class RCAEvalLoader {
     if (fs.existsSync(gtPath)) {
       try {
         const raw = JSON.parse(fs.readFileSync(gtPath, 'utf-8'));
+        const serviceId = raw.root_cause_service ?? raw.rootCauseService ?? raw.service;
+        // The DECLARED accepted set, when the corpus states one.
+        //
+        // `root_cause_service` is a single name, and a corpus that injects a fault on an EDGE cannot express
+        // its ground truth in one name: the fault is between two services, so either endpoint is a correct
+        // answer. RCABench says so explicitly — 1,053 of its 1,422 packs declare a two-element `service`, and
+        // the earlier form of this loader read one of them and scored the other as a miss. The bridge that
+        // writes these directories declares the set as `root_cause_services`, the plural of the field this
+        // loader already reads; it is passed through unchanged, in the corpus's own order, because
+        // `serviceId` is documented to be its first member.
+        //
+        // Absent (every RCAEval directory, which declares one root cause), `serviceIds` stays `undefined` and
+        // the accepted set is `{serviceId}` — see `acceptedTruthServiceIds`. So this branch cannot move a
+        // published RCAEval cell.
+        const declared = raw.root_cause_services ?? raw.rootCauseServices ?? raw.ground_truth_services;
+        const declaredIds: string[] = Array.isArray(declared)
+          ? declared.filter((id: unknown): id is string => typeof id === 'string' && id !== '')
+          : [];
         return {
-          serviceId: raw.root_cause_service ?? raw.rootCauseService ?? raw.service,
+          serviceId,
+          // Only a MULTI-member set is recorded. A one-member list says nothing `serviceId` does not, and
+          // recording it would put `serviceIds` on directories that never declared a set — which is the
+          // distinction `acceptedTruthServiceIds` uses to keep single-label corpora byte-identical.
+          ...(declaredIds.length > 1 ? { serviceIds: declaredIds } : {}),
           faultType:
             raw.root_cause_metric ??
             raw.rootCauseMetric ??

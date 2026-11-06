@@ -57,13 +57,13 @@ one is stated here rather than left to the reader of the output.
 
   injection `ABNORMAL_START` from `env.json`, in epoch seconds.
 
-  ground    RCABench's ground truth is a SET — for a network fault it is the edge's two
-            endpoints — so `ground_truth.json` records the set, the injection point and
-            the fault, and leaves the scoring policy to the caller. `root_cause_service`
-            is the injection point's SOURCE, which is the entity the fault was applied
-            to; `rcabench_fault` keeps the full fault name, because the case directory
-            name carries a short code (the loader's pack regex admits only `[a-z0-9]+`
-            there, and the results table prints one column per fault).
+  ground    RCABench's ground truth is a SET — for an edge-injected fault it is the edge's two
+            endpoints, and 1,053 of the 1,422 packs declare two — so `ground_truth.json` records
+            the set as `root_cause_services` (the plural of the field the RCAEval loader already
+            reads) and its first member as `root_cause_service`. `rcabench_ground_truth` carries
+            the same list as provenance. `rcabench_fault` keeps the full fault name, because the
+            case directory name carries a short code (the loader's pack regex admits only
+            `[a-z0-9]+` there, and the results table prints one column per fault).
 
 Usage:
   python3 scripts/convert-rcabench-to-rcaeval.py \\
@@ -455,7 +455,15 @@ def main() -> int:
             except json.JSONDecodeError:
                 display = {}
             point = display.get("injection_point") or {}
-            primary = point.get("source_service") or point.get("app_name") or target
+            injected = point.get("source_service") or point.get("app_name") or target
+            # The corpus's own declaration WINS over anything recovered from a name or a config field.
+            # `injection.json.ground_truth.service` is the set the benchmark itself publishes, and the 1,422
+            # packs were checked: its first member equals the injection point's source on 1,421 of them, and
+            # on the one it does not (`ts4-ts-food-service-container-kill-lv5htg`, whose config names
+            # `ts-food-service` while its ground truth is `ts-config-service`) the declaration is the answer
+            # the benchmark will score against. A disagreement between a name and a declaration is settled by
+            # the benchmark, not by the name.
+            primary = services[0] if services else injected
 
             metrics = merge_windows(pack, args.families)
             if not metrics:
@@ -472,6 +480,11 @@ def main() -> int:
                 json.dumps(
                     {
                         "root_cause_service": primary,
+                        # The ACCEPTED SET, under the plural of the field the loader already reads. 1,053 of
+                        # the 1,422 packs declare two elements, because an edge-injected fault is neither
+                        # endpoint alone; a scorer that reads one of them counts the other as a miss, which is
+                        # exactly what happened before this field existed (32.28% -> 42.69%).
+                        "root_cause_services": services,
                         "root_cause_metric": fault_code,
                         "rcabench_fault": fault,
                         "rcabench_ground_truth": services,
