@@ -143,6 +143,24 @@ What is priced so far:
 | --- | --- | --- |
 | metric families `core` → `full` (adds `jvm.gc.*`, `jvm.memory.used`, every pod gauge, plus trace-derived error rate and latency) | paired 158 cases | **30.4% → 37.3% (+6.9 pp)**; `ck` 0/10 → 4/10, `st` 5/15 → 9/15 |
 | scoring rule single-label → declared set | 1 422 cases | **32.28% → 42.69% (+10.4 pp)** |
+| **failed-edge direction term, weight 3, `fleet` bar, `whole-file` latency view** | **paired 1 421 cases** | **42.72% → 45.81% (+44 cases; 59 fixed / 15 broken)** — **a candidate, not a ship** (six families regress) |
+
+### The direction arm, and what its own gate says about the ceiling
+
+The arm is live rather than nominal, and the run's own census says exactly how live: `direction-gate[whole-file]`
+reports the view supplied **4 457 latency rows over 60 cases** (the shipped view supplies zero, which is why a
+weight on that view buys a term that cannot fire), and the failed-edge input is present on **1 195** of the 1 422
+cases (**7 725** failed-call records).
+
+What it buys is concentrated where this corpus is worst — `rrc` **49 → 72 of 231 (+23)**, `rrm` **83 → 95 of 190
+(+12)**, `rrp` +8, `rsa` +7, `ra` +5 — and what it costs is concentrated in the families whose dominant metric is
+not a duration: **`st` 44 → 38 (−6)**, `pa` −3, `co` −2, `ck` −1, `lo` −1, `rq` −1. Six families regress, so the
+standing acceptance rule refuses it: the net is bought with a regression, and this repository does not ship that.
+
+**The gate is the binding constraint, and the census makes it a number**: of the 1 422 cases, the dominant-metric
+gate refuses **1 030 (72.4%)**, the bar refuses another **220**, and **139** are admissible. A term that can act on
+one case in seven cannot close a 47 pp deficit, and the next arm on this axis is therefore not a weight — it is a
+gate observable that does not require the fault's dominant metric to be duration-shaped.
 
 Unpriced: the call-graph contract. The FSE'26 path builds the graph from every observed caller → callee edge; this
 path builds it from a topology document and then **prunes** it (`71 → 55` edges, −23%, on 59 of 60 cases in one

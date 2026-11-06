@@ -63,7 +63,15 @@ import type {
 // The corpus assembly — the augmentation, the two direction-carrying inputs and the span activity — now
 // lives in one owner, because this path and the study's had assembled it differently (this one pruned the
 // graph from traces and the study never did).
-import { assembleRCAEvalCase, formatCorpusLine, type LatencySource } from './rcaeval-corpus.js';
+import type { InjectionAnchorProvenance } from '../../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
+import {
+  assembleRCAEvalCase,
+  formatCorpusLine,
+  formatInjectionAnchors,
+  summarizeInjectionAnchors,
+  type InjectionAnchorCensus,
+  type LatencySource,
+} from './rcaeval-corpus.js';
 // The corpus traversal's ORDER, from its one owner: `readdirSync` order is unspecified, and this runner caps
 // the corpus with `metas.slice(0, maxCases)`, so an unsorted walk made a capped run's population a property of
 // the filesystem. See the module's docblock.
@@ -459,6 +467,15 @@ interface LoadStats {
    * {@link reportLogRoutes} with the owner's own renderer.
    */
   logRoutes: LogRouteCensus;
+  /**
+   * Where each of this group's cases got its injection boundary.
+   *
+   * Beside `latencyRoutes` because the two read one another: that census counts `no anchor`, and this one says
+   * how many of the anchors that are no longer "no anchor" were DERIVED rather than read. Without it, repairing
+   * a boundary would silently convert fourteen unanchored cases into anchored ones and the artifact would report
+   * a corpus that never had the defect.
+   */
+  anchors: InjectionAnchorCensus;
   /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
   logStats: {
     /** Cases carrying at least one log entry. */
@@ -513,6 +530,15 @@ async function loadSingleCase(
    * floor/corpus decision could not be taken on an artifact that could not show its corpus carried anything.
    */
   latencyRoute: LatencyRouteEntry;
+  /**
+   * Where this case's injection boundary came from — read from the corpus, repaired from a decimal slip, derived
+   * from the window's midpoint, or unusable.
+   *
+   * Returned for the same reason `latencyRoute` is: the loader resolves it on every case, and a caller that
+   * dropped it would make a repaired boundary indistinguishable from a declared one in the only artifact that
+   * reports the split.
+   */
+  anchorProvenance: InjectionAnchorProvenance;
 }> {
   const rawCase = loader.loadCase(meta.dirPath);
   const serviceIds = Object.keys(rawCase.metrics);
@@ -564,6 +590,11 @@ async function loadSingleCase(
     edgesAfter: assembled.edgesAfter,
     logRowsRead: assembled.logRowsRead,
     latencyRoute: assembled.latencyRoute,
+    // Carried out of the loader because `anchorPresent` in the latency census can no longer answer the question
+    // it was written for: the loader now REPAIRS an unusable boundary, so a case that used to print "no anchor"
+    // prints a positive anchor that was derived rather than read. A census that folded the two together would
+    // trade one silence for another, so the provenance is reported verbatim.
+    anchorProvenance: rawCase.injectTimeProvenance ?? 'declared',
   };
 }
 
@@ -642,11 +673,22 @@ async function loadCases(
    * system", which is a property of the set. A key nothing looks up would be a second index to keep true.
    */
   const logRouteEntries: LogRouteEntry[] = [];
+  /** The injection-boundary provenance of every assembled case, in load order. */
+  const anchorProvenances: InjectionAnchorProvenance[] = [];
 
   for (const meta of selected) {
     try {
-      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead, latencyRoute } =
-        await loadSingleCase(meta, loader, latencyFrom, semanticConfig, computeTraceActivity);
+      const {
+        benchCase,
+        traceUsed,
+        pruned,
+        edgesBefore,
+        edgesAfter,
+        logRowsRead,
+        latencyRoute,
+        anchorProvenance,
+      } = await loadSingleCase(meta, loader, latencyFrom, semanticConfig, computeTraceActivity);
+      anchorProvenances.push(anchorProvenance);
       // …and it is keyed here, in the same iteration that appends the case to `loaded`, which is what makes the
       // lookup at the loss-census row total: every case in `cases` was pushed after its entry was set.
       latencyRouteByCaseId.set(benchCase.id, latencyRoute);
@@ -769,6 +811,7 @@ async function loadCases(
     latencyRoutes: summarizeLatencyRoutes([...latencyRouteByCaseId.values()]),
     latencyRouteByCaseId,
     logRoutes: summarizeLogRoutes(logRouteEntries),
+    anchors: summarizeInjectionAnchors(anchorProvenances),
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -1073,6 +1116,10 @@ function reportLatencyRoutes(systemName: string, stats: LoadStats, opts: CliOpti
   console.log(
     `  ${directionGateLine(opts.failedEdgeWeight, opts.latencyView, rows, stats.latencyRoutes.cases)}`,
   );
+  // The boundary census, printed EVERY time and beside the channel census it explains: `no anchor` above and
+  // `derived` here are the same population read twice, and a run whose split rests on an inferred boundary has to
+  // say so where the split is reported rather than in a document.
+  console.log(`  ${formatInjectionAnchors(stats.anchors, systemName)}`);
 }
 
 /**

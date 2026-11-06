@@ -26,8 +26,10 @@ import {
   isLogicExceptionMessage,
   isPropagatedExceptionMessage,
   isStackTraceMessage,
+  metricTimeSpan,
   normalizeSpanStatus,
   normalizeTraceStartTime,
+  resolveInjectionAnchor,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -988,19 +990,24 @@ describe('RCAEvalLoader', () => {
 
   describe('toBenchmarkCase', () => {
     it('should convert RCAEvalCase to BenchmarkCase', () => {
+      // The telemetry spans the case's own injection boundary (a 720-second window centred on it), because that
+      // is the shape every case in the corpus has and the loader now checks the two against each other: a
+      // fixture whose points and anchor are three orders of magnitude apart is not a case, it is a typo.
       const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
         metrics: {
           adservice: [
-            { timestamp: 1000, value: 50, metric_name: 'cpu_usage' },
-            { timestamp: 2000, value: 80, metric_name: 'cpu_usage' },
+            { timestamp: 1639999640, value: 50, metric_name: 'cpu_usage' },
+            { timestamp: 1640000360, value: 80, metric_name: 'cpu_usage' },
           ],
-          cartservice: [{ timestamp: 1000, value: 30, metric_name: 'cpu_usage' }],
+          cartservice: [{ timestamp: 1639999640, value: 30, metric_name: 'cpu_usage' }],
         },
         injectTime: 1640000000,
         groundTruth: { root_cause_service: 'adservice', root_cause_metric: 'cpu' },
       });
 
       const rawCase = loader.loadCase(casePath);
+      expect(rawCase.injectTime).toBe(1640000000);
+      expect(rawCase.injectTimeProvenance).toBe('declared');
       const callGraph = {
         nodes: new Map([
           ['adservice', { id: 'adservice', name: 'adservice', namespace: 're1ob', labels: {} }],
@@ -2625,5 +2632,225 @@ describe('normalizeTraceStartTime', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── The injection boundary ────────────────────────────────
+//
+// A census of the 735-case corpus found 16 cases whose `inject_time.txt` cannot be used as written: **14 carry
+// ZERO** (the file is absent or empty) and **one is truncated by two digits** (`re1ob_currencyservice_loss_1`
+// reads `16933142` for the epoch second `1693314200`), and one names a boundary 1 456 seconds AFTER its own
+// telemetry ends. The loader used to accept every one of them, which does not lose a signal — it loses the
+// SPLIT: with an anchor of 0 every observation is post-injection, the pre side is empty, and every channel that
+// needs a baseline (the failed-edge baseline, the latency views' cap sides, the trace-activity rise) reports a
+// starved input as a measured zero.
+//
+// The repair is licensed by the corpus's own invariant, measured rather than assumed: over the **701** cases
+// whose anchor IS readable, the anchor sits at the span's midpoint in 701 of 701, across all five full-window
+// lengths (720 s, 960 s, 1 440 s, 1 800 s and RE1-OnlineBoutique's 4 200 s second mode).
+
+describe('resolveInjectionAnchor', () => {
+  /** A 720-second RE1 window, centred on `anchor`. */
+  function window(anchor: number): { lo: number; hi: number } {
+    return { lo: anchor - 360, hi: anchor + 360 };
+  }
+
+  it("believes a boundary that falls inside the case's own telemetry", () => {
+    const anchor = 1693093761;
+    expect(resolveInjectionAnchor(anchor, window(anchor))).toEqual({
+      seconds: anchor,
+      provenance: 'declared',
+    });
+  });
+
+  it("accepts both span ends, because the window is the corpus's statement of where the anchor may be", () => {
+    expect(resolveInjectionAnchor(100, { lo: 100, hi: 820 })).toEqual({
+      seconds: 100,
+      provenance: 'declared',
+    });
+    expect(resolveInjectionAnchor(820, { lo: 100, hi: 820 })).toEqual({
+      seconds: 820,
+      provenance: 'declared',
+    });
+  });
+
+  it('repairs the two-digit truncation the corpus actually contains', () => {
+    // `re1ob_currencyservice_loss_1`, verbatim.
+    expect(resolveInjectionAnchor(16933142, { lo: 1693313863, hi: 1693314583 })).toEqual({
+      seconds: 1693314200,
+      provenance: 'rescaled',
+    });
+  });
+
+  it('repairs a millisecond boundary written into a seconds field', () => {
+    expect(resolveInjectionAnchor(1693314200000, { lo: 1693313863, hi: 1693314583 })).toEqual({
+      seconds: 1693314200,
+      provenance: 'rescaled',
+    });
+  });
+
+  it('repairs a nanosecond boundary', () => {
+    expect(resolveInjectionAnchor(1693314200000000000, { lo: 1693313863, hi: 1693314583 })).toEqual(
+      { seconds: 1693314200, provenance: 'rescaled' },
+    );
+  });
+
+  it('refuses to choose between two decimal slips that both land inside the span', () => {
+    // Both ×10 and ×100 place the value inside [4e7, 5e8]; picking the first would be a coin toss recorded as a
+    // measurement, so the declared value is left alone and the case is counted as unusable.
+    expect(resolveInjectionAnchor(5e6, { lo: 4e7, hi: 5e8 })).toEqual({
+      seconds: 5e6,
+      provenance: 'unusable',
+    });
+  });
+
+  it('refuses to overrule a boundary that disagrees with its telemetry for a non-decimal reason', () => {
+    // `re1ob_productcatalogservice_cpu_3`: the anchor is 1 456 s after a 62-second window. No decimal slip
+    // explains that, and the midpoint of a truncated window is not the corpus's convention.
+    expect(resolveInjectionAnchor(1685373255, { lo: 1685371737, hi: 1685371799 })).toEqual({
+      seconds: 1685373255,
+      provenance: 'unusable',
+    });
+  });
+
+  it('derives an absent boundary from the midpoint of a full window', () => {
+    expect(resolveInjectionAnchor(0, { lo: 1693093401, hi: 1693094121 })).toEqual({
+      seconds: 1693093761,
+      provenance: 'centred',
+    });
+  });
+
+  it("derives the midpoint of RE3 TrainTicket's 1 800-second window", () => {
+    expect(resolveInjectionAnchor(0, { lo: 1754983000, hi: 1754984800 })).toEqual({
+      seconds: 1754983900,
+      provenance: 'centred',
+    });
+  });
+
+  it("refuses to interpolate across a window that was truncated below the corpus's smallest full window", () => {
+    expect(resolveInjectionAnchor(0, { lo: 1685371737, hi: 1685371799 })).toEqual({
+      seconds: 0,
+      provenance: 'unusable',
+    });
+  });
+
+  it('rounds the derived midpoint to the whole second the corpus writes', () => {
+    expect(resolveInjectionAnchor(0, { lo: 1000, hi: 1729 })).toEqual({
+      seconds: 1365,
+      provenance: 'centred',
+    });
+  });
+
+  it('leaves a declared boundary alone when the case carries no timestamped telemetry', () => {
+    expect(resolveInjectionAnchor(1693093761, undefined)).toEqual({
+      seconds: 1693093761,
+      provenance: 'declared',
+    });
+    expect(resolveInjectionAnchor(0, undefined)).toEqual({ seconds: 0, provenance: 'unusable' });
+  });
+});
+
+describe('metricTimeSpan', () => {
+  it('reads the span from every service, not from the first one', () => {
+    expect(
+      metricTimeSpan({
+        a: [{ timestamp: 100, value: 1, metric_name: 'cpu' }],
+        b: [
+          { timestamp: 50, value: 1, metric_name: 'cpu' },
+          { timestamp: 900, value: 1, metric_name: 'cpu' },
+        ],
+      }),
+    ).toEqual({ lo: 50, hi: 900 });
+  });
+
+  it('ignores non-finite timestamps instead of letting them define the span', () => {
+    expect(
+      metricTimeSpan({
+        a: [
+          { timestamp: Number.NaN, value: 1, metric_name: 'cpu' },
+          { timestamp: 100, value: 1, metric_name: 'cpu' },
+          { timestamp: Number.POSITIVE_INFINITY, value: 1, metric_name: 'cpu' },
+        ],
+      }),
+    ).toEqual({ lo: 100, hi: 100 });
+  });
+
+  it('reports no span for a payload without timestamped points', () => {
+    expect(metricTimeSpan({})).toBeUndefined();
+    expect(metricTimeSpan({ a: [] })).toBeUndefined();
+  });
+});
+
+describe('RCAEvalLoader injection anchor', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  /** A 720-second RE1 window worth of telemetry, one point per minute. */
+  function re1Metrics(
+    start: number,
+  ): Record<string, Array<{ timestamp: number; value: number; metric_name: string }>> {
+    const points: Array<{ timestamp: number; value: number; metric_name: string }> = [];
+    for (let t = start; t <= start + 720; t += 60) {
+      points.push({ timestamp: t, value: 1, metric_name: 'cpu' });
+    }
+    return { adservice: points };
+  }
+
+  it('derives the boundary of a case that carries no inject_time.txt at all', () => {
+    const casePath = createCaseDir(tempDir, 're1ss_carts_cpu_5', {
+      metrics: re1Metrics(1693093401),
+      groundTruth: { root_cause_service: 'adservice' },
+    });
+
+    const rawCase = new RCAEvalLoader().loadCase(casePath);
+
+    expect(rawCase.injectTime).toBe(1693093761);
+    expect(rawCase.injectTimeProvenance).toBe('centred');
+  });
+
+  it('derives the boundary of a case whose inject_time.txt is ZERO', () => {
+    const casePath = createCaseDir(tempDir, 're1ss_carts_delay_3', {
+      metrics: re1Metrics(1693095298),
+      injectTime: 0,
+      groundTruth: { root_cause_service: 'adservice' },
+    });
+
+    const rawCase = new RCAEvalLoader().loadCase(casePath);
+
+    expect(rawCase.injectTimeProvenance).toBe('centred');
+    expect(rawCase.injectTime).toBe(1693095658);
+  });
+
+  it('derives the boundary of a case whose inject_time.txt is not a number', () => {
+    const casePath = createCaseDir(tempDir, 're1tt_ts-auth-service_loss_2', {
+      metrics: re1Metrics(1693228385),
+      groundTruth: { root_cause_service: 'adservice' },
+    });
+    fs.writeFileSync(path.join(casePath, 'inject_time.txt'), 'not-a-timestamp');
+
+    const rawCase = new RCAEvalLoader().loadCase(casePath);
+
+    expect(rawCase.injectTimeProvenance).toBe('centred');
+    expect(rawCase.injectTime).toBe(1693228745);
+  });
+
+  it('leaves a well-formed case byte-identical, which is what keeps the published cells still', () => {
+    const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
+      metrics: re1Metrics(1693093401),
+      injectTime: 1693093761,
+      groundTruth: { root_cause_service: 'adservice' },
+    });
+
+    const rawCase = new RCAEvalLoader().loadCase(casePath);
+
+    expect(rawCase.injectTime).toBe(1693093761);
+    expect(rawCase.injectTimeProvenance).toBe('declared');
   });
 });

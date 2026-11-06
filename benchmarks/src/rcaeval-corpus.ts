@@ -74,6 +74,7 @@ import type { FaultEdgeLatency } from '../../packages/core/src/interfaces/rca-en
 import {
   countDirectionalInputs,
   countTraceActivityByService,
+  type InjectionAnchorProvenance,
   type RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
 import type {
@@ -87,6 +88,65 @@ import { toEngineDirectionalInputs, type LatencyRouteEntry } from './directional
 
 /** Which suite a case belongs to, as the engine's case type names it. */
 export type RCAEvalSuiteName = 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3';
+
+/** Where every case in one population got its injection boundary, reduced to counts. */
+export interface InjectionAnchorCensus {
+  /** The population size. */
+  readonly cases: number;
+  /** Cases whose `inject_time.txt` was read and falls inside the case's own telemetry span. */
+  readonly declared: number;
+  /** Cases whose boundary was repaired from exactly one decimal slip. */
+  readonly rescaled: number;
+  /** Cases that declared nothing, and were given the midpoint of a full corpus window. */
+  readonly centred: number;
+  /** Cases no boundary could be established for: they split at zero, so their pre side is empty. */
+  readonly unusable: number;
+}
+
+/**
+ * Reduce per-case provenances to the counts a report prints.
+ *
+ * @param provenances - One provenance per assembled case.
+ * @returns The counts, with `cases` = the population size.
+ */
+export function summarizeInjectionAnchors(
+  provenances: readonly InjectionAnchorProvenance[],
+): InjectionAnchorCensus {
+  let declared = 0;
+  let rescaled = 0;
+  let centred = 0;
+  let unusable = 0;
+  for (const p of provenances) {
+    if (p === 'declared') declared++;
+    else if (p === 'rescaled') rescaled++;
+    else if (p === 'centred') centred++;
+    else unusable++;
+  }
+  return { cases: provenances.length, declared, rescaled, centred, unusable };
+}
+
+/**
+ * Render the anchor census, with the one number that makes it actionable.
+ *
+ * **Why this line exists.** `latency-routes` already prints `no anchor N`, and that number was written when an
+ * unusable boundary was also a ZERO one — the two were the same fact. They are not any more: the loader now
+ * repairs a boundary the corpus failed to write, so a case that used to count as unanchored counts as anchored
+ * again, and a census that printed only the repaired total would read exactly like a corpus that never had the
+ * defect. The four classes are therefore printed separately, and the DERIVED total is named, because a cell whose
+ * anchor was inferred is a cell whose split rests on an inference — true on 14 of the corpus's 735 cases, and
+ * stated rather than absorbed.
+ *
+ * @param c - The counts.
+ * @param label - The cell or population the counts describe.
+ * @returns One line.
+ */
+export function formatInjectionAnchors(c: InjectionAnchorCensus, label: string): string {
+  const derived = c.rescaled + c.centred;
+  return (
+    `anchor[${label}]: ${c.cases} cases | declared ${c.declared} | derived ${derived} ` +
+    `(rescaled ${c.rescaled}, centred ${c.centred}) | unusable ${c.unusable}`
+  );
+}
 
 /**
  * The shipped augmentation's options, in the one place they are stated.

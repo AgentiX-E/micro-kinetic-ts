@@ -248,6 +248,15 @@ export interface RCAEvalCase {
   >;
   /** Fault injection time as Unix timestamp (seconds). */
   readonly injectTime: number;
+  /**
+   * How that boundary was obtained — declared by the corpus, repaired from a decimal slip, derived from the
+   * span's midpoint, or none of these.
+   *
+   * Carried on the case because it is a property of the INPUT, and because a case whose boundary is `unusable`
+   * splits every channel at zero: its pre side is empty by construction, so what a reader sees downstream is a
+   * starved channel, not a broken anchor. Absent when a loader does not resolve one.
+   */
+  readonly injectTimeProvenance?: 'declared' | 'rescaled' | 'centred' | 'unusable';
   /** Log entries (RE2/RE3 only). */
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
   /**

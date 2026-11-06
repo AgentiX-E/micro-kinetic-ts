@@ -45,6 +45,134 @@ import type {
   RCAEvalSuite,
 } from './types.js';
 
+// ── Injection anchor ──────────────────────────────────────
+
+/**
+ * How a case's injection boundary was obtained.
+ *
+ * The boundary is not a convenience: it is the axis every pre/post split in this repository is taken on — the
+ * failed-edge baseline, the latency views' cap sides, the trace-activity rise, and the engine's own
+ * injection-anchored onset detection. A case whose anchor is ZERO therefore does not lose one signal, it loses
+ * the split itself: every observation falls on the post side, the pre side is empty, and every channel that
+ * needs a baseline reports a starved input as a measured zero. That is why the provenance is a field rather than
+ * a comment.
+ *
+ * - `declared` — `inject_time.txt` parsed and falls inside the case's own telemetry span. Unchanged behaviour.
+ * - `rescaled` — it parsed but fell outside, and exactly ONE decimal slip (a value written in milliseconds, in
+ *   units of 10 ms, or truncated to 10-second resolution) places it inside. Repaired, and labelled, because a
+ *   silent repair would move a cell without saying so.
+ * - `centred` — the corpus declared NOTHING (absent, zero or unparsable) and the span is a full corpus window:
+ *   the anchor is the span's MIDPOINT, which is the corpus's own convention (see the invariant below).
+ * - `unusable` — no boundary can be established without inventing one (no span, or a declared value that
+ *   disagrees with its telemetry by something that is not a decimal slip). The declared value is left exactly as
+ *   it was and the case is COUNTED as unusable rather than silently treated as anchored.
+ */
+export type InjectionAnchorProvenance = 'declared' | 'rescaled' | 'centred' | 'unusable';
+
+/** A case's injection boundary, in Unix seconds, and how it was obtained. */
+export interface InjectionAnchor {
+  /** The boundary the case is split on, in Unix seconds. */
+  readonly seconds: number;
+  /** Where that number came from. */
+  readonly provenance: InjectionAnchorProvenance;
+}
+
+/**
+ * The shortest span this corpus uses for a COMPLETE window, in seconds.
+ *
+ * Measured, not chosen: over the 735-case RCAEval corpus, the full windows are 720 s (RE1 OnlineBoutique and
+ * SockShop), 960 s (RE1 TrainTicket), 1 440 s (RE2 and RE3 OnlineBoutique/SockShop) and 1 800 s (RE3
+ * TrainTicket), and the anchor sits at the window's MIDPOINT in **701 of 701** cases whose `inject_time.txt` is
+ * readable — the offset is exactly half the span in every one of them, with no exception in either of RE1's two
+ * OnlineBoutique window lengths (720 s and 4 200 s). A span below half the smallest full window is therefore not
+ * a full window at all (one case carries a 62 s file), and the midpoint of such a span is not the corpus's
+ * convention — it is an interpolation across a window that was truncated. Those cases are refused instead.
+ */
+export const RCAEVAL_MIN_FULL_WINDOW_SECONDS = 720;
+
+/**
+ * The decimal slips a hand-written or re-exported timestamp actually makes.
+ *
+ * Each is a factor that maps a mis-scaled value back onto Unix seconds: `1e-3` for milliseconds, `1e-6` for
+ * microseconds, `1e-9` for nanoseconds, `1e-1`/`1e-2` for a value saved with one or two digits too many, and the
+ * reciprocals for the opposite error. The list is a MAPPING, not a search: a repair is accepted only when
+ * exactly one of these lands inside the span, so an ambiguous case falls through to the midpoint rule instead of
+ * picking the first that fits.
+ */
+const DECIMAL_SLIPS: readonly number[] = [1e-9, 1e-6, 1e-3, 1e-1, 1e1, 1e2, 1e3, 1e6, 1e9];
+
+/**
+ * Resolve a case's injection boundary against the case's own telemetry.
+ *
+ * @param declaredSeconds - The `inject_time.txt` value in Unix seconds, or 0 when it is absent or unparsable.
+ * @param span - The case's telemetry span in Unix seconds, or undefined when it carries no timestamped point.
+ * @returns The boundary to split on, with the provenance of that choice.
+ */
+export function resolveInjectionAnchor(
+  declaredSeconds: number,
+  span: { readonly lo: number; readonly hi: number } | undefined,
+): InjectionAnchor {
+  if (span === undefined) {
+    // No telemetry to check against, so there is nothing to repair and nothing to derive: a declared value is
+    // believed as-is (the pre-existing behaviour), and a missing one stays missing and is COUNTED as such.
+    return {
+      seconds: declaredSeconds,
+      provenance: declaredSeconds > 0 ? 'declared' : 'unusable',
+    };
+  }
+
+  const { lo, hi } = span;
+  if (declaredSeconds > 0 && declaredSeconds >= lo && declaredSeconds <= hi) {
+    return { seconds: declaredSeconds, provenance: 'declared' };
+  }
+
+  if (declaredSeconds > 0) {
+    const fits = DECIMAL_SLIPS.map((factor) => declaredSeconds * factor).filter(
+      (candidate) => candidate >= lo && candidate <= hi,
+    );
+    if (fits.length === 1) return { seconds: fits[0]!, provenance: 'rescaled' };
+    // A boundary that is declared but disagrees with its own telemetry is a claim about the case, and this
+    // function is not entitled to overrule it by guessing a different one: the report is `unusable`, and the
+    // declared number is left exactly where it was. Only an ABSENT boundary is derived (below).
+    return { seconds: declaredSeconds, provenance: 'unusable' };
+  }
+
+  if (hi - lo >= RCAEVAL_MIN_FULL_WINDOW_SECONDS) {
+    // Rounded to whole seconds: the corpus's anchors are integers, and this path exists to reproduce the value
+    // the corpus would have written, not to add a fractional one.
+    return { seconds: Math.round(lo + (hi - lo) / 2), provenance: 'centred' };
+  }
+
+  return { seconds: declaredSeconds, provenance: 'unusable' };
+}
+
+/**
+ * The telemetry span of a case's metrics, in Unix seconds.
+ *
+ * Read from the metric points rather than from a window declared anywhere, because the window is not declared:
+ * it is the file's own extent, and that extent is what a boundary has to be checked against.
+ *
+ * @param metrics - A case's raw metric payload, keyed by service.
+ * @returns The first and last timestamp, or undefined when no point carries a finite one.
+ */
+export function metricTimeSpan(
+  metrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>,
+): { readonly lo: number; readonly hi: number } | undefined {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+
+  for (const points of Object.values(metrics)) {
+    for (const point of points) {
+      const timestamp = point.timestamp;
+      if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) continue;
+      if (timestamp < lo) lo = timestamp;
+      if (timestamp > hi) hi = timestamp;
+    }
+  }
+
+  return lo <= hi ? { lo, hi } : undefined;
+}
+
 // ── RCAEval Loader ────────────────────────────────────────
 
 /**
@@ -649,8 +777,14 @@ export class RCAEvalLoader {
     const metricsPath = path.join(casePath, 'metrics.json');
     const metrics = this.loadMetricsJson(metricsPath);
 
-    // Load inject time (fall back to 0 if unavailable)
-    const injectTime = this.tryLoadInjectTime(casePath);
+    // Load inject time, resolved against the case's OWN telemetry span. A lenient read alone is not enough: an
+    // absent, truncated or mis-scaled anchor parses cleanly and then silently empties one side of every split,
+    // which reads downstream as a starved channel rather than as a defect (see `resolveInjectionAnchor`).
+    const anchor = resolveInjectionAnchor(
+      this.tryLoadInjectTime(casePath),
+      metricTimeSpan(metrics),
+    );
+    const injectTime = anchor.seconds;
 
     // Load ground truth
     const groundTruth = this.getGroundTruth(casePath, parsed);
@@ -667,6 +801,7 @@ export class RCAEvalLoader {
       instance: parsed.instance,
       metrics,
       injectTime,
+      injectTimeProvenance: anchor.provenance,
       groundTruth,
       logs,
       traces,
@@ -1159,7 +1294,8 @@ interface ParsedDirName {
   instance: number;
 }
 
-interface RCAEvalMetricPoint {
+/** One metric observation, in the shape `metrics.json` stores it. */
+export interface RCAEvalMetricPoint {
   timestamp: number;
   value: number;
   metric_name: string;

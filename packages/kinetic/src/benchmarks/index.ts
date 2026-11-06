@@ -33,6 +33,7 @@ export {
 export type { FSE26MetricSeries, FSE26RawCase } from './loaders/fse26-loader.js';
 export { RCA100Loader } from './loaders/rca100-loader.js';
 export {
+  RCAEVAL_MIN_FULL_WINDOW_SECONDS,
   RCAEvalLoader,
   classifyLogLevel,
   countDirectionalInputs,
@@ -44,8 +45,14 @@ export {
   isLogicExceptionMessage,
   isPropagatedExceptionMessage,
   isStackTraceMessage,
+  metricTimeSpan,
+  resolveInjectionAnchor,
 } from './loaders/rcaeval-loader.js';
-export type { DirectionalInputs } from './loaders/rcaeval-loader.js';
+export type {
+  DirectionalInputs,
+  InjectionAnchor,
+  InjectionAnchorProvenance,
+} from './loaders/rcaeval-loader.js';
 
 export type {
   AIOps2025Case,
