@@ -308,7 +308,22 @@ neighbour may still be the right answer for another neighbour's failures. And `m
 the signal already applies — baseline subtraction, self-edges, endpoints outside the rankable graph, the record
 floor — so a row the engine never counted cannot mute one it did.
 
-Measured offline on the same 221 cases: the rule fires on **8 of the 26 breaks and on none of the 195 fixes**. It is
-not enough to make the arm shippable — 18 breaks and the family regressions they cause remain — and it is the first
-change in this family that removes failures at zero measured cost. It ships off by default, arm-ready, with the
-ledger, the runner flag and the configuration line carrying it.
+Measured on the same 221 cases, in two steps that disagree, and the disagreement is the finding:
+
+- The **offline probe** that motivated the rule compared the two services' failure counts and reported a mutual
+  pair on 8 of the 26 breaks. It was reading its own join of `traces.csv`, and the pair it found was a **path**
+  (the promoted callee reaches the displaced candidate through failing edges), not a pair.
+- The **engine's own directional input** contains **no mutually failing pair between distinct services on any of
+  the 221 cases** — 0 of 221, measured through `countDirectionalInputs`, the function that produces the rows the
+  rule reads. The pairs that look mutual in a raw join are self-edges (`a → a`, a client span inside its own
+  service), which the ledger already drops before the rule.
+
+So the arm is **byte-identical to the credited one on all 1 303 paired cases** (725 correct either way), and the
+rule ships off by default as the correct answer to a question this corpus does not ask. What the probe actually
+measured — a _return path_ rather than a pair — is a different and stronger rule, and it is registered as the next
+iteration's first task rather than smuggled in under this name:
+
+> Refuse an override when the promoted callee can reach the displaced candidate through failing calls. Offline, on
+> the same 221 cases, that reaches **8 of the 26 breaks and none of the 195 fixes**. It is not shipped here because
+> the number comes from the probe's join, not from the engine's, and this section exists because that difference
+> was worth catching once.
