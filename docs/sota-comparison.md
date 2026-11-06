@@ -941,29 +941,36 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 ---
 
-## The RCABench archive read through a SECOND path, and the 21 pp it does not reproduce
+## The RCABench archive read through a SECOND path: 32.28% (459/1422) against this row's 61.10% (869/1422)
 
 The FSE'26 row above (61.10%, 869/1422) is read through the FSE'26 harness. `docs/rcabench-first-reading.md`
 builds a second path to the same archive — the raw Zenodo datapacks (`10.5281/zenodo.17105974`, 13.4 GB,
-≈1,430 packs) converted into the RCAEval case layout and scored by the shipped runner and the shipped loader,
+**1 422 packs**) converted into the RCAEval case layout and scored by the shipped runner and the shipped loader,
 with no second ranking code.
 
-| reading (60-case stride sample, injection source only) |             value |
-| ------------------------------------------------------ | ----------------: |
-| AC@1                                                   | **40.0%** (24/60) |
-| type-averaged AC@1 over 20 fault groups                |             50.1% |
-| telemetry-free frequency prior                         |             18.3% |
-| `--trace-weight 0` control                             |             36.7% |
+| reading (whole archive, injection source only, shipped configuration) |                     value |
+| -------------------------------------------------------------------- | ------------------------: |
+| AC@1                                                                 | **32.28%** (**459/1422**) |
+| Top@5                                                                |         53.30% (758/1422) |
+| cases whose ground truth is not a node of the graph                   |               **0 of 1422** |
+| of the 963 misses, the winner is a caller or callee of the truth       |  **633 (65.7%)**          |
+| paired arm: `--families core` → `--families full` (158 cases)          |     30.4% → **37.3%** (+6.9 pp) |
 
-**The two paths disagree by 21 points, in the direction that flatters us, and that is the finding.** Four
-candidate causes are enumerated in that document (population, ground-truth element, dropped metric families,
-graph) and none is settled; the run that settles them is the full archive through the second path, per case,
-against the FSE'26 dump's own per-case answers. Until then neither number should be quoted on its own.
+**The two paths disagree by 28.8 pp on the SAME 1 422 injections, and that is the finding.** A first draft read
+40.0% on a 60-case stride sample and listed "population" as the first candidate cause; both numbers are now read
+on the whole archive, so **that candidate is dead**. What survives is the loader contract: the FSE'26 loader
+hands the engine `traceEdges` and `failedTraceEdges` (caller → callee, calls, failed calls) and metrics from
+four parquet sources plus trace-derived golden signals, while the RCAEval loader hands it raw spans and one
+metric source. The metric-source half of that difference is **priced at +6.9 pp** by a paired 158-case arm
+(`ck` container-kill 0/10 → 4/10, `st` 5/15 → 9/15, `rq` 2/5 → 4/5); the trace-statistics half is the next arm.
 
-What the reading does establish is narrower: `attr.status_code` is POPULATED here (the RCAEval RE3
-TrainTicket packs carry 189,488 spans with it empty), so `failedEdge` has a subject on this corpus; and the
-four availability families (`container-kill`, `pod-kill`, `pod-failure`, `partition`) read **0 of 7**, which
-is the mechanism of `docs/evidence-starvation-audit.md` reproduced on a second path.
+Until then **neither number should be quoted on its own**, and neither is a leaderboard row: RCABench's published
+frame is a 40/30/30 composite over a set-valued ground truth, not Top@1.
+
+What the reading does establish is narrower and still new: `attr.status_code` is POPULATED here (the RCAEval RE3
+TrainTicket packs carry 189,488 spans with it empty), so `failedEdge` has a subject on this corpus that it never
+had on those; two thirds of the misses name a caller or callee of the source; and `rrc` — 231 cases, the largest
+family in the archive — reads 11.3%, which is the family whose only signature is a failure RATE.
 
 ## 3. Corrected verdict
 
