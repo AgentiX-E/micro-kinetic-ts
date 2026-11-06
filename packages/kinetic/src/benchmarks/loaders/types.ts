@@ -147,6 +147,15 @@ export interface BenchmarkCase {
    */
   readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
   /**
+   * Calls that reached each service at or after the injection — the divisor of the failure RATE.
+   *
+   * `failedTraceEdges` is max-normalised downstream, so it reports the strongest callee at `1.0` on every case
+   * with any failure at all; the gate that asks "is this interface actually failing" needs the traffic beside the
+   * count. Absent means the producer did not count calls, and the evidence bar then refuses rather than assuming
+   * a zero denominator.
+   */
+  readonly failedEdgeCalls?: ReadonlyMap<string, number>;
+  /**
    * Per-edge latency either side of the injection, as the caller measured it.
    *
    * Absent means "not recorded", never "nothing got slower": the reader writes the key

@@ -1515,7 +1515,9 @@ export async function countDirectionalInputs(
   tracesPath: string,
   injectTimeMs: number,
 ): Promise<DirectionalInputs> {
-  if (!fs.existsSync(tracesPath)) return { failedTraceEdges: [], edgeLatency: [] };
+  if (!fs.existsSync(tracesPath)) {
+    return { failedTraceEdges: [], edgeLatency: [], calleeCalls: new Map<string, number>() };
+  }
 
   /** `spanId -> service`, for the whole file: the join is done after the read, not during it. */
   const serviceOfSpan = new Map<string, string>();
@@ -1534,6 +1536,8 @@ export async function countDirectionalInputs(
       readonly sums: { pre: number; nPre: number; post: number; nPost: number };
       failed: number;
       baseline: number;
+      /** Calls this edge carried after the injection — counted for every row, not only the failing ones. */
+      callsPost: number;
     }
   >();
 
@@ -1593,7 +1597,11 @@ export async function countDirectionalInputs(
         sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
         failed: 0,
         baseline: 0,
+        callsPost: 0,
       };
+      // Counted for EVERY spanned call, before any filter on duration or status: the divisor is the traffic the
+      // callee served, and a call that carried no duration and no error is still a call it served.
+      if (!(atMs < injectTimeMs)) entry.callsPost += 1;
       if (normalizeSpanStatus(statusIdx >= 0 ? cell(cells, statusIdx) : undefined) === 'ERROR') {
         if (atMs < injectTimeMs) entry.baseline += 1;
         else entry.failed += 1;
@@ -1627,6 +1635,7 @@ export async function countDirectionalInputs(
       callee: string;
       failed: number;
       baseline: number;
+      callsPost: number;
       sums: { pre: number; nPre: number; post: number; nPost: number };
     }
   >();
@@ -1639,10 +1648,12 @@ export async function countDirectionalInputs(
       callee: entry.callee,
       failed: 0,
       baseline: 0,
+      callsPost: 0,
       sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
     };
     merged.failed += entry.failed;
     merged.baseline += entry.baseline;
+    merged.callsPost += entry.callsPost;
     merged.sums.pre += entry.sums.pre;
     merged.sums.nPre += entry.sums.nPre;
     merged.sums.post += entry.sums.post;
@@ -1672,7 +1683,22 @@ export async function countDirectionalInputs(
           : 0,
   );
 
+  // The divisor, summed per CALLEE across callers: the evidence bar asks what fraction of the traffic an interface
+  // served failed, and one caller's share of that traffic is not the interface. Accumulated over every edge with a
+  // resolvable caller — an edge whose caller is unknown was dropped above, and a count it contributed would be
+  // traffic against a callee that no direction explains.
+  const calleeCalls = new Map<string, number>();
+  for (const edge of byEdge.values()) {
+    // A SELF-CALL is excluded, because the numerator excludes it: `computeFailedEdgeScores` drops `caller ===
+    // callee` ("a self-call carries no direction"), and a denominator that kept them would divide external
+    // failures by internal traffic. The ratio has to be two counts on the SAME population or it is not a rate.
+    if (edge.caller === edge.callee) continue;
+    if (edge.callsPost === 0) continue;
+    calleeCalls.set(edge.callee, (calleeCalls.get(edge.callee) ?? 0) + edge.callsPost);
+  }
+
   return {
+    calleeCalls,
     // The baseline is counted, never dropped: `computeFailedEdgeScores` reads the DIFFERENCE, and an edge
     // that was already failing before the injection is a property of the deployment rather than evidence
     // about the fault — so it must not itself create a row.
@@ -1703,6 +1729,16 @@ export async function countDirectionalInputs(
 export interface DirectionalInputs {
   readonly failedTraceEdges: FaultFailedEdge[];
   readonly edgeLatency: FaultEdgeLatency[];
+  /**
+   * Calls that reached each service at or after the injection — the DIVISOR of the failure rate the failed-edge
+   * evidence bar reads.
+   *
+   * Counted here rather than derived from `failedTraceEdges` because that array carries only edges that failed:
+   * a callee whose traffic is nine hundred healthy calls and ten failures has a 1% failure rate, and a divisor
+   * built from the failing edges alone would report 100%. Entry-point spans (no parent) are not calls and are not
+   * counted — a service is not its own caller.
+   */
+  readonly calleeCalls: Map<string, number>;
 }
 
 /** Read a trimmed cell by index, or undefined when the column is absent. */

@@ -406,7 +406,12 @@ jobs:
                 case "${kv#failededgegate=}" in
                   absolute) RANKING_ARG+=(--failed-edge-gate-mode absolute) ;;
                   fleet) RANKING_ARG+=(--failed-edge-gate-mode fleet) ;;
-                  *) echo "::error::anomaly_knobs: failededgegate takes absolute or fleet, got '${kv#failededgegate=}'"; exit 1 ;;
+                  #   Not a third bar on the same rise: it reads the failed-call channel's own failure fraction
+                  #   and consults neither the dominant metric's name nor any latency, which is what makes it
+                  #   expressible on the five cells whose `edgeLatency` is empty and on the 72.4% of archive cases
+                  #   whose dominant metric is a resource series.
+                  evidence) RANKING_ARG+=(--failed-edge-gate-mode evidence) ;;
+                  *) echo "::error::anomaly_knobs: failededgegate takes absolute, fleet or evidence, got '${kv#failededgegate=}'"; exit 1 ;;
                 esac ;;
               #   The share that mode reads. Read only at `fleet`, and named beside it because a share and the
               #   comparison it is applied to are one configuration. The bound is the unit interval: a share above

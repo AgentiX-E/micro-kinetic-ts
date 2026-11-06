@@ -10,6 +10,8 @@
  * @module types/graph
  */
 
+import type { FailedEdgeEvidence } from '../interfaces/rca-engine.js';
+
 /** Unique identifier for a service node. */
 export type ServiceId = string;
 
@@ -345,6 +347,17 @@ export interface FaultPropagationGraph {
    * failed-edge counts. Feeds the (opt-in, default 0) `failedEdgeWeight`.
    */
   readonly failedEdgeScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * What the failed-call channel itself says about this case — the strongest net failed-call rise, and the
+   * traffic it happened over.
+   *
+   * The map above is max-normalised and therefore saturated at `1.0` on every case with any failure; a gate that
+   * has to ask "is this interface actually failing" cannot read it, and reading it would be the same defect as
+   * gating on a rank-normalised term. This field carries the counts instead, from the same walk.
+   *
+   * Optional: absent when the graph was built elsewhere, and the evidence bar then fails CLOSED.
+   */
+  readonly failedEdgeEvidence?: FailedEdgeEvidence | undefined;
   /**
    * Per-service inbound latency-rise score (0-1) — the largest
    * `postMeanMs / preMeanMs` over the edges `caller → v`, `log1p`-compressed and

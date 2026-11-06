@@ -45,6 +45,7 @@ export function toFaultGraphOptions(
     logs: benchCase.logs,
     traceActivity: benchCase.traceActivity,
     failedTraceEdges: benchCase.failedTraceEdges,
+    failedEdgeCalls: benchCase.failedEdgeCalls,
     edgeLatency: benchCase.edgeLatency,
   };
 }

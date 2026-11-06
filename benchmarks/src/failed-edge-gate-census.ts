@@ -105,6 +105,23 @@ export interface FailedEdgeGateCensus {
   admittedFed: number;
   /** Every measured rank-1 rise, for the quantiles. */
   rises: number[];
+  /**
+   * Cases the EVIDENCE bar had a subject for: a failed-call channel with a counted traffic divisor.
+   *
+   * Read only at `mode: 'evidence'`, where the gate's question is the channel's own failure rate rather than the
+   * rank-1's latency. The two populations are disjoint by construction — one needs `edgeLatencyByCallee`, the other
+   * needs `failedEdgeEvidence`, and the archive has the second on every case that carries a status column while
+   * the golden corpus has neither — so counting them in one field would report a refusal for an absence.
+   */
+  evidenceMeasured: number;
+  /** Of those, cases the evidence bar admitted. */
+  evidenceAdmitted: number;
+  /** Of those, cases it refused. */
+  evidenceRefused: number;
+  /** Every measured failure fraction, for the quantiles. Empty at the two latency modes. */
+  fractions: number[];
+  /** Cases with no counted traffic divisor at `evidence`, so the bar had no fraction to judge. */
+  noEvidence: number;
 }
 
 /**
@@ -137,6 +154,11 @@ export function createFailedEdgeGateCensus(
     termFed: 0,
     admittedFed: 0,
     rises: [],
+    evidenceMeasured: 0,
+    evidenceAdmitted: 0,
+    evidenceRefused: 0,
+    fractions: [],
+    noEvidence: 0,
   };
 }
 
@@ -176,6 +198,31 @@ export function accumulateFailedEdgeGateCensus(
     )
   ) {
     census.acted++;
+  }
+
+  // The EVIDENCE bar's population, taken before the latency population because it needs none of it: at this mode
+  // the gate's subject is the failed-call channel, and a case with no `edgeLatencyByCallee` at all is the normal
+  // state on this corpus rather than a case the census cannot judge.
+  if (census.mode === 'evidence') {
+    const evidence = record.graph.failedEdgeEvidence;
+    if (evidence?.fraction === undefined) {
+      census.noEvidence++;
+      return;
+    }
+    census.evidenceMeasured++;
+    census.fractions.push(evidence.fraction);
+    if (
+      admitsFailedEdgeTerm(undefined, undefined, {
+        mode: 'evidence',
+        share: census.share,
+        evidence,
+      })
+    ) {
+      census.evidenceAdmitted++;
+    } else {
+      census.evidenceRefused++;
+    }
+    return;
   }
 
   const champion = maxInboundRise(record.graph.edgeLatencyByCallee);
@@ -252,9 +299,8 @@ function quantile(sorted: readonly number[], p: number): number {
  * @returns The label, e.g. `absolute@300` or `fleet@0.50`.
  */
 function barLabel(census: FailedEdgeGateCensus): string {
-  return census.mode === 'absolute'
-    ? `absolute@${FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR}`
-    : `fleet@${census.share.toFixed(2)}`;
+  if (census.mode === 'absolute') return `absolute@${FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR}`;
+  return `${census.mode}@${census.share.toFixed(2)}`;
 }
 
 /**
@@ -273,6 +319,7 @@ function barLabel(census: FailedEdgeGateCensus): string {
  */
 export function formatFailedEdgeGateCensusLine(census: FailedEdgeGateCensus): string | undefined {
   if (census.cases === 0) return undefined;
+  if (census.mode === 'evidence') return formatEvidenceLine(census);
   if (census.cases === census.noChampion) {
     return (
       `  [failed-edge-gate] no measurement: ${census.cases} of ${census.cases} cases carried no per-edge ` +
@@ -299,6 +346,33 @@ export function formatFailedEdgeGateCensusLine(census: FailedEdgeGateCensus): st
       ? 'rise none measured'
       : `rise p10/p50/p90/max ${q(0.1)}/${q(0.5)}/${q(0.9)}/${q(1)}`) +
     whatIf
+  );
+}
+
+/**
+ * Render the cell's line at the EVIDENCE bar.
+ *
+ * A separate renderer rather than a column of the other one, because every column there is about the rank-1's
+ * latency — which at this mode is not the gate's subject and, on the archive, is absent on most cases. Printing
+ * `no champion 1 422` beside a bar that admitted a third of them would be the exact defect this module was
+ * written to end. The fraction's distribution IS the measurement here: it is the number the bar is compared
+ * against, so the line reports it in the same place the other mode reports its rises.
+ *
+ * @param census - The cell's totals, at `mode: 'evidence'`.
+ * @returns One line.
+ */
+function formatEvidenceLine(census: FailedEdgeGateCensus): string {
+  const sorted = [...census.fractions].sort((a, b) => a - b);
+  const q = (p: number): string => quantile(sorted, p).toFixed(3);
+  const mismatch = census.evidenceAdmitted - census.acted;
+  return (
+    `  [failed-edge-gate] cases=${census.cases} | no evidence ${census.noEvidence} | ` +
+    `measured ${census.evidenceMeasured} | bar(evidence@${census.share.toFixed(2)}) refused ` +
+    `${census.evidenceRefused} | admissible ${census.evidenceAdmitted} | ` +
+    `acted ${census.acted}${mismatch === 0 ? '' : ` (mismatch ${mismatch})`} | ` +
+    (census.evidenceMeasured === 0
+      ? 'fraction none measured'
+      : `fraction p10/p50/p90/max ${q(0.1)}/${q(0.5)}/${q(0.9)}/${q(1)}`)
   );
 }
 

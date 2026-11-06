@@ -29,6 +29,7 @@
 
 import type {
   CallEdge,
+  FailedEdgeEvidence,
   FaultEdgeLatency,
   FaultFailedEdge,
   FaultLogEntry,
@@ -1461,8 +1462,84 @@ export function computeFailedEdgeScores(
   mode: FailedEdgeMode = DEFAULT_FAILED_EDGE_MODE,
   minRecords = DEFAULT_FAILED_EDGE_MIN_RECORDS,
 ): Map<ServiceId, number> {
+  return computeFailedEdgeLedger(edges, nodeIds, mode, minRecords).scores;
+}
+
+/**
+ * What the failed-call channel itself says about the case, in the units of the channel.
+ *
+ * ## Why this exists, and why it is not a rescaled score
+ *
+ * `computeFailedEdgeScores` normalises every callee against the case's largest, so the top candidate is always
+ * `1.0` — a saturated quantity, and one that CANNOT answer "is anything actually failing here". A case with one
+ * failed call and a case with two thousand both report a maximum of 1.0. The gate that decides whether the
+ * direction term may speak needs exactly the question the scores cannot answer, so it is measured separately:
+ * the raw net rise, and the traffic it happened over.
+ *
+ * ## The two numbers
+ *
+ * - **`topNet`** — the largest net failed-call rise any callee received, after the same filters the scores apply
+ *   (`max(0, failed − baseline)`, both endpoints in the graph, no self-edges, the record floor). A pre-existing
+ *   failure is not evidence about this fault, so the baseline is subtracted rather than reported.
+ * - **`fraction`** — `topNet / topCalls`, where `topCalls` is **every call that reached that callee after the
+ *   injection**, including the ones that succeeded. It is the interface's failure RATE, not the failing edge's:
+ *   a callee that fails on 5 of its 10 calls from one caller and serves 90 healthy calls from another is failing
+ *   at 5%, and reporting 50% there would be a number no operator would recognise.
+ *
+ * `fraction` is `undefined` — never `0` — when the producer counted no calls: a missing divisor is an absent
+ * measurement, and folding it into zero would let "no data" read as "nothing failed", which is the refusal
+ * direction that matters. The same reason `admitsFailedEdgeTerm` refuses an absent rise before comparing it.
+ *
+ * The evidence is computed over the same credited callees as the scores and is INDEPENDENT of `mode`: `sum` and
+ * `mean` are two ways to order the candidates, and the channel's own volume is a property of the data rather than
+ * of the ordering.
+ */
+export type { FailedEdgeEvidence };
+
+/** An evidence report with nothing in it, shared so an empty case allocates nothing. */
+const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
+  topService: undefined,
+  topNet: 0,
+  topCalls: 0,
+  fraction: undefined,
+  netTotal: 0,
+  callees: 0,
+};
+
+/** The scores and the evidence, from one walk — so the map and the report cannot disagree about what counted. */
+export interface FailedEdgeLedger {
+  /** The normalised per-callee scores the term reads; identical to {@link computeFailedEdgeScores}. */
+  readonly scores: Map<ServiceId, number>;
+  /** The channel's own strength, in failed calls and in calls. */
+  readonly evidence: FailedEdgeEvidence;
+}
+
+/**
+ * The failed-edge signal, computed once and reported twice.
+ *
+ * One loop, because two loops would be two definitions of "which edges counted" and this repository has already
+ * paid for that class: the scorer and its census disagreed about `minRecords` for a release. {@link
+ * computeFailedEdgeScores} is now a VIEW of this function rather than a second implementation of it.
+ *
+ * @param edges - Per-edge failed-call counts (undefined -> empty -> neutral).
+ * @param nodeIds - Services present in the call graph; an edge with either endpoint outside it is ignored.
+ * @param mode - `sum` (default, the measured one) or `mean` (fan-in normalised).
+ * @param minRecords - Minimum number of contributing edges a callee needs before it is credited at all.
+ * @param calls - Calls that reached each callee at or after the injection. Absent or `0` leaves the evidence's
+ *   `fraction` undefined and therefore refuses the evidence bar; it never changes the scores.
+ * @returns Both views. An empty channel returns an empty map and an empty report.
+ */
+export function computeFailedEdgeLedger(
+  edges: ReadonlyArray<FaultFailedEdge> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  mode: FailedEdgeMode = DEFAULT_FAILED_EDGE_MODE,
+  minRecords = DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  calls?: ReadonlyMap<ServiceId, number> | undefined,
+): FailedEdgeLedger {
   const scores = new Map<ServiceId, number>();
-  if (!edges || edges.length === 0 || nodeIds.size === 0) return scores;
+  if (!edges || edges.length === 0 || nodeIds.size === 0) {
+    return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
+  }
 
   const net = new Map<ServiceId, number>();
   // Contributing edges per callee: the evidence VOLUME behind a callee's score,
@@ -1501,7 +1578,7 @@ export function computeFailedEdgeScores(
     }
   }
 
-  if (net.size === 0) return scores;
+  if (net.size === 0) return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
 
   const aggregate = new Map<ServiceId, number>();
   let max = 0;
@@ -1530,7 +1607,34 @@ export function computeFailedEdgeScores(
   for (const [callee, value] of aggregate) {
     scores.set(callee, value / max);
   }
-  return scores;
+
+  // The evidence is read from the RAW nets over the callees the scores credited, so it is a statement about the
+  // channel rather than about the aggregation: `mean` reorders candidates, it does not change how many calls
+  // failed. Reading `aggregate` here would make the denominator mode-dependent, which is the one thing a
+  // measurement of the data must not be.
+  let topService: ServiceId | undefined;
+  let topNet = 0;
+  let netTotal = 0;
+  for (const callee of aggregate.keys()) {
+    const value = net.get(callee)!;
+    netTotal += value;
+    if (value > topNet) {
+      topNet = value;
+      topService = callee;
+    }
+  }
+  const topCalls = topService === undefined ? 0 : (calls?.get(topService) ?? 0);
+  return {
+    scores,
+    evidence: {
+      topService,
+      topNet,
+      topCalls,
+      fraction: topCalls > 0 && Number.isFinite(topCalls) ? topNet / topCalls : undefined,
+      netTotal,
+      callees: aggregate.size,
+    },
+  };
 }
 
 /** One callee's inbound latency observation: the largest rise, and how many edges produced it. */

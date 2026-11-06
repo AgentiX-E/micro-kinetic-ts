@@ -389,8 +389,12 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
  *    unrelated predicates.
  */
 describe('the gate bar — absolute versus fleet-relative', () => {
-  it('names exactly two modes, and the shipped one is the absolute bar', () => {
-    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'fleet']);
+  it('names exactly three modes, and the shipped one is the absolute bar', () => {
+    // Three, and the third is not a third BAR on the same quantity: `absolute` and `fleet` are two ways to read
+    // one rise, `evidence` reads a different observable entirely (the failed-call channel's own failure rate).
+    // The vocabulary is closed so a parser, a workflow input and a dispatch cannot disagree about which words are
+    // legal — the reason this list is asserted at all rather than discovered from the type.
+    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'evidence', 'fleet']);
     expect(DEFAULT_FAILED_EDGE_GATE_MODE).toBe('absolute');
     for (const mode of Object.keys(FAILED_EDGE_GATE_MODES)) {
       expect(isFailedEdgeGateMode(mode)).toBe(true);
@@ -496,10 +500,16 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     expect(admittedAt(1)).toBe(1);
   });
 
-  it('keeps the DURATION test in force in both modes, including at share 0', () => {
+  it('keeps the DURATION test in force at both LATENCY bars, including at share 0', () => {
     // The name half closes one residue and the magnitude half another; a share of 0 relaxes the second,
     // never the first. A resource-dominant rank-1 refuses at every share and every rise.
-    for (const mode of Object.keys(FAILED_EDGE_GATE_MODES) as FailedEdgeGateMode[]) {
+    //
+    // The two latency modes only — and the exclusion is the specification rather than a convenience. `evidence`
+    // does not read this observable at all: it asks whether the failed-call channel says the interface is failing,
+    // and a metric NAME cannot answer a question about calls. Listing it here would assert that the mode consults
+    // a quantity it must not, which is the opposite of what it is for (and `failed-edge-evidence.test.ts` asserts
+    // the resource-dominant admission that makes it worth having).
+    for (const mode of ['absolute', 'fleet'] as FailedEdgeGateMode[]) {
       for (const share of [0, 0.5, 1]) {
         expect(admitsFailedEdgeTerm(RESOURCE, 1e6, { mode, share, fleetMax: 8 })).toBe(false);
         expect(admitsFailedEdgeTerm(undefined, 1e6, { mode, share, fleetMax: 8 })).toBe(false);

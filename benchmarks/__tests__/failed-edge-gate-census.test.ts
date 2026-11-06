@@ -41,6 +41,15 @@ interface CaseSpec {
   readonly failedRecords?: number;
   /** Services the term has a positive score for, i.e. the keys of `failedEdgeScores`. */
   readonly termSubjects?: readonly string[];
+  /**
+   * The failed-call channel's own report, for the evidence bar. Absent means the graph carried none — the state
+   * a producer that cannot count calls leaves behind, and a state the bar must refuse rather than read as 0%.
+   */
+  readonly evidence?: {
+    readonly fraction: number | undefined;
+    readonly topNet: number;
+    readonly topCalls: number;
+  };
 }
 
 /**
@@ -112,6 +121,18 @@ function recordOf(spec: CaseSpec): DiagnosedCaseRecord {
       ...(spec.termSubjects === undefined
         ? {}
         : { failedEdgeScores: new Map(spec.termSubjects.map((id) => [id, 2])) }),
+      ...(spec.evidence === undefined
+        ? {}
+        : {
+            failedEdgeEvidence: {
+              topService: ids[1]!,
+              topNet: spec.evidence.topNet,
+              topCalls: spec.evidence.topCalls,
+              fraction: spec.evidence.fraction,
+              netTotal: spec.evidence.topNet,
+              callees: 1,
+            },
+          }),
     },
     ranking,
     callGraph: benchCase.callGraph,
@@ -508,5 +529,97 @@ describe('failed-edge gate census — the input line', () => {
 
   it('says nothing for a cell with no cases, like the gate line', () => {
     expect(formatFailedEdgeInputLine(createFailedEdgeGateCensus('absolute', 0.5))).toBeUndefined();
+  });
+});
+
+describe('failed-edge gate census — the EVIDENCE bar, which is not a latency bar', () => {
+  it('judges a case that carries no latency at all, which is the archive’s normal state', () => {
+    // The two latency modes cannot say anything here: `edgeLatencyByCallee` is absent, so a census written for
+    // them would report "no measurement" over a cell whose gate admitted half of it. The evidence bar's subject is
+    // the failed-call channel, so a record with no rises and no labels is still a record it can judge.
+    const census = createFailedEdgeGateCensus('evidence', 0.1);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({
+        rises: new Map(),
+        labels: new Map(),
+        evidence: { fraction: 0.4, topNet: 8, topCalls: 20 },
+      }),
+    );
+
+    expect(census.noChampion).toBe(0);
+    expect(census.noEvidence).toBe(0);
+    expect(census.evidenceMeasured).toBe(1);
+    expect(census.evidenceAdmitted).toBe(1);
+    expect(formatFailedEdgeGateCensusLine(census)).toContain(
+      'fraction p10/p50/p90/max 0.400/0.400/0.400/0.400',
+    );
+  });
+
+  it('holds the bar at the share the run named, on the fraction and not on the rise', () => {
+    const at = (fraction: number, share: number) => {
+      const census = createFailedEdgeGateCensus('evidence', share);
+      accumulateFailedEdgeGateCensus(
+        census,
+        // A rise far above every latency bar and a RESOURCE label: both are inert here.
+        recordOf({ ...specOf(5000, RESOURCE), evidence: { fraction, topNet: 8, topCalls: 20 } }),
+      );
+      return census;
+    };
+
+    expect(at(0.1, 0.1).evidenceAdmitted).toBe(1);
+    expect(at(0.099, 0.1).evidenceRefused).toBe(1);
+    expect(at(0.5, 0.1).evidenceRefused).toBe(0);
+  });
+
+  it('counts a case with no counted traffic as NO EVIDENCE rather than as a refusal', () => {
+    // `fraction === undefined` is an absent measurement, and the difference matters at the cell level: 1 030
+    // refusals mean the bar judged and declined, while 1 030 absences mean the corpus never produced the divisor.
+    const census = createFailedEdgeGateCensus('evidence', 0.1);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({
+        ...specOf(4, RESOURCE),
+        evidence: { fraction: undefined, topNet: 8, topCalls: 0 },
+      }),
+    );
+    accumulateFailedEdgeGateCensus(census, recordOf(specOf(4, RESOURCE)));
+
+    expect(census.noEvidence).toBe(2);
+    expect(census.evidenceMeasured).toBe(0);
+    expect(formatFailedEdgeGateCensusLine(census)).toContain(
+      'no evidence 2 | measured 0 | bar(evidence@0.10) refused 0 | admissible 0',
+    );
+  });
+
+  it('renders the acted count with the mismatch its own definition implies, and nothing about latency', () => {
+    const census = createFailedEdgeGateCensus('evidence', 0.1);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({
+        ...specOf(4, RESOURCE),
+        paid: [1],
+        evidence: { fraction: 0.25, topNet: 5, topCalls: 20 },
+      }),
+    );
+
+    const line = formatFailedEdgeGateCensusLine(census)!;
+    expect(line).toBe(
+      '  [failed-edge-gate] cases=1 | no evidence 0 | measured 1 | bar(evidence@0.10) refused 0 | ' +
+        'admissible 1 | acted 1 | fraction p10/p50/p90/max 0.250/0.250/0.250/0.250',
+    );
+    // No latency vocabulary on a line whose bar never read latency: `name refused` would name a half this mode
+    // does not consult.
+    expect(line).not.toContain('name refused');
+    expect(line).not.toContain('rise');
+  });
+
+  it('names the mode in the bar label, so an artifact cannot be read as a fleet run', () => {
+    const census = createFailedEdgeGateCensus('evidence', 0.3);
+    accumulateFailedEdgeGateCensus(
+      census,
+      recordOf({ ...specOf(4, RESOURCE), evidence: { fraction: 0.2, topNet: 4, topCalls: 20 } }),
+    );
+    expect(formatFailedEdgeGateCensusLine(census)).toContain('bar(evidence@0.30) refused 1');
   });
 });

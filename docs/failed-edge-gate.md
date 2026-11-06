@@ -7,6 +7,12 @@ answer the question is a dispatch (§7).
 **Instruments:** `[failed-edge-gate]` (this document's census, per cell) beside `direction-gate[<view>]`
 (`latency-routes.md`'s verdict on whether the corpus could supply the term at all).
 
+**The third mode is measured elsewhere:** `--failed-edge-gate-mode evidence` reads neither half of the predicate
+below — it asks the failed-call channel's own failure rate instead — and `failed-edge-evidence-gate.md` is its
+document, its population, and the arms that decide whether it ships. The two documents are deliberately separate:
+this one is the predicate a corpus without call counts must use, and that one is the predicate a corpus with them
+can.
+
 ---
 
 ## 1. The defect, in two counts

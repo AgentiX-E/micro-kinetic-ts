@@ -221,6 +221,11 @@ export type {
   OnsetShape,
   TreePrunerOptions,
 } from './pruning/pruner.js';
+// The evidence report is a property of the CALL CHANNEL rather than of the engine, so its owner is the core
+// interface the channel's counts are declared beside; re-exported here because the gate that reads it lives in
+// this package and a consumer holding a gate should not need a second import path to name its subject.
+export type { FailedEdgeEvidence } from '@agentix-e/micro-kinetic-core';
+export type { FailedEdgeLedger } from './pruning/ranking-signals.js';
 
 export {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
@@ -232,6 +237,7 @@ export {
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
+  computeFailedEdgeLedger,
   computeFailedEdgeScores,
   computeHttpEmitterDominance,
   computeHttpVictimSet,

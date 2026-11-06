@@ -394,7 +394,7 @@ export interface CliOptions {
    */
   failedEdgeWeight: number;
   /**
-   * Which BAR the direction term's rise is read against — `absolute` (shipped) or `fleet`
+   * Which BAR the direction term's rise is read against — `absolute` (shipped), `fleet`, or `evidence`
    * (see `TreePrunerOptions.failedEdgeGateMode`).
    *
    * The absolute bar is 300 and was fitted on FSE'26, where an injection adds hundreds of milliseconds to a
@@ -404,15 +404,21 @@ export interface CliOptions {
    * own champion`, the construction `anomalyBreadthGate` and `dualFamilyGate` already use), so this field is what
    * makes the term EXPRESSIBLE on the half the kill criterion is measured on.
    *
+   * `evidence` is not a third bar on that rise: it reads a different observable — the failed-call channel's own
+   * failure fraction (net failed calls at the strongest failing callee over the calls that reached it) — and
+   * consults neither the dominant metric's name nor any latency. It exists because on this corpus the name half
+   * refuses 1 030 of 1 422 cases (72.4%) before any bar is consulted, so no choice of bar can make the term act
+   * on more than one case in seven.
+   *
    * Named unconditionally on the configuration line: at `absolute` the option is inert, and an omitted-when-
    * default rule would render the fleet arm and the shipped run identically on the artifact whose whole job is to
-   * attribute the difference. Travels in the packed `anomaly_knobs` block as `failededgegate=<absolute|fleet>`
+   * attribute the difference. Travels in the packed `anomaly_knobs` block as `failededgegate=<mode>`
    * because a `workflow_dispatch` accepts at most 25 inputs and this workflow is at that budget.
    */
   failedEdgeGateMode: FailedEdgeGateMode;
   /**
-   * The share of the case's own champion the rank-1 rise must clear, read only at `failedEdgeGateMode: 'fleet'`
-   * (see `TreePrunerOptions.failedEdgeGateShare`).
+   * The share the active bar must clear — of the case's own champion at `fleet`, of the failing interface's calls
+   * at `evidence` (see `TreePrunerOptions.failedEdgeGateShare`).
    *
    * A share rather than a rise, because a rise is only comparable inside the corpus that produced it: at 1 the
    * gate admits only the case's own largest rise, at 0 every measured rise. Travels as

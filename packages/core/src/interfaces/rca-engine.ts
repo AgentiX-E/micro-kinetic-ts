@@ -168,6 +168,32 @@ export interface FaultFailedEdge {
 }
 
 /**
+ * What the failed-call channel itself says about a case, in the channel's own units.
+ *
+ * The scores built from {@link FaultFailedEdge} are max-normalised, so the strongest candidate is always `1.0` and
+ * the map cannot answer "is anything actually failing here" — one failed call and two thousand report the same
+ * maximum. This report carries the two counts that CAN answer it: the largest net rise, and the traffic it
+ * happened over. It is what the failed-edge direction term's evidence bar reads.
+ *
+ * `fraction` is `undefined` — never `0` — when the producer counted no calls, because a missing divisor is an
+ * absent measurement and folding it into zero would let "no data" read as "nothing failed".
+ */
+export interface FailedEdgeEvidence {
+  /** The callee that received the largest net failed-call rise, or `undefined` when nothing rose. */
+  readonly topService: ServiceId | undefined;
+  /** That callee's net rise, in failed calls. */
+  readonly topNet: number;
+  /** Calls that reached that callee at or after the injection, or `0` when the producer counted none. */
+  readonly topCalls: number;
+  /** `topNet / topCalls`, or `undefined` when no call was counted. */
+  readonly fraction: number | undefined;
+  /** Net failed calls summed over every credited callee: the case's evidence VOLUME. */
+  readonly netTotal: number;
+  /** Callees credited, i.e. the support of the scores map built from the same edges. */
+  readonly callees: number;
+}
+
+/**
  * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
  *
  * These carry case-level temporal context that is independent of the call
@@ -209,6 +235,21 @@ export interface BuildFaultGraphOptions {
    * normalisation either.
    */
   readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
+  /**
+   * Calls that reached each service at or after the injection time — the denominator that turns a net failed-call
+   * count into a failure RATE.
+   *
+   * A count, not a rate, because the numerator and the denominator must come from the same window and the same
+   * measurement pass; a caller that shipped a precomputed ratio would be shipping an arithmetic decision about
+   * which window to divide by. It is the inbound-call count (spans with a parent), not the service's own span
+   * volume, so a service that fans out to three dependencies does not divide its own failures by its outbound
+   * traffic.
+   *
+   * Absent means "not counted" — never "no calls". The evidence bar fails closed on it, which is what keeps a
+   * producer that cannot count (the FSE'26 cache records failures only) from admitting a term on a fabricated
+   * 0% failure rate.
+   */
+  readonly failedEdgeCalls?: ReadonlyMap<ServiceId, number> | undefined;
   /**
    * Per-edge span latency before and after the injection, as the CALLER
    * measured it. Drives the latency-rise signal — the continuous counterpart of

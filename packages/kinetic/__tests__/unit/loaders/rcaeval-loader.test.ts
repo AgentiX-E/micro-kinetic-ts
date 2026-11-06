@@ -2854,3 +2854,133 @@ describe('RCAEvalLoader injection anchor', () => {
     expect(rawCase.injectTimeProvenance).toBe('declared');
   });
 });
+
+describe('countDirectionalInputs — the call volume the evidence bar divides by', () => {
+  // The failed-edge scores are max-normalised, so one failed call and two thousand both report `1.0`; the gate
+  // that asks "is this interface actually failing" therefore divides by the traffic the callee served. That
+  // divisor is produced HERE, in the same pass, because the alternative — a second read of a 200 000-row CSV per
+  // case — is the cost this module exists to avoid.
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  const HEADER = 'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration';
+
+  const write = (rows: readonly string[]): string => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(tracesPath, rows.join('\n'));
+    return tracesPath;
+  };
+
+  /** One call: `caller`'s client span (no parent service is needed) and `callee`'s server span. */
+  const call = (
+    caller: string,
+    callee: string,
+    id: string,
+    atMs: number,
+    status = 'OK',
+    ms = 10,
+  ): string[] => [
+    `t1,${id}c,,${caller},${atMs},OK,${ms * 100}`,
+    `t1,${id}s,${id}c,${callee},${atMs},${status},${ms}`,
+  ];
+
+  it('counts the calls that SUCCEEDED, which is what makes the divisor a traffic measure', () => {
+    // Two hundred healthy calls and one failed: the failure RATE is 1/200, and a producer that counted only the
+    // failing calls would report 1/1 and call the interface broken.
+    const rows = [HEADER];
+    for (let i = 0; i < 200; i++) rows.push(...call('svc-a', 'svc-b', `h${i}`, 1100 + i));
+    rows.push(...call('svc-a', 'svc-b', 'f0', 1500, 'Error'));
+
+    return countDirectionalInputs(write(rows), 1000).then(({ calleeCalls }) => {
+      expect(calleeCalls.get('svc-b')).toBe(201);
+      // The caller is counted as a callee only if something called IT: an entry point is not traffic.
+      expect(calleeCalls.has('svc-a')).toBe(false);
+    });
+  });
+
+  it('counts the post-injection window only, on the same boundary as the failure counts', () => {
+    const rows = [
+      HEADER,
+      ...call('svc-a', 'svc-b', 'p1', 100),
+      ...call('svc-a', 'svc-b', 'p2', 999),
+      ...call('svc-a', 'svc-b', 'q1', 1000),
+      ...call('svc-a', 'svc-b', 'q2', 2000),
+      ...call('svc-a', 'svc-b', 'q3', 2001),
+    ];
+    return countDirectionalInputs(write(rows), 1000).then(({ calleeCalls }) => {
+      expect(calleeCalls.get('svc-b')).toBe(3);
+    });
+  });
+
+  it("sums EVERY caller's edges into one callee, because the divisor is the interface's traffic", () => {
+    const rows = [
+      HEADER,
+      ...call('svc-a', 'svc-c', 'a1', 1100),
+      ...call('svc-a', 'svc-c', 'a2', 1200),
+      ...call('svc-b', 'svc-c', 'b1', 1300),
+      ...call('svc-b', 'svc-d', 'b2', 1400),
+    ];
+    return countDirectionalInputs(write(rows), 1000).then(({ calleeCalls }) => {
+      expect([...calleeCalls.entries()].sort()).toEqual([
+        ['svc-c', 3],
+        ['svc-d', 1],
+      ]);
+    });
+  });
+
+  it('does not need a duration column to count a call — a status-only export still has traffic', () => {
+    // The latency half is absent here (`edgeLatency` must be empty), and the call count must NOT be: the two
+    // halves read different columns, and a corpus that dropped durations still reports how many calls it served.
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status',
+        ...call('svc-a', 'svc-b', 'x1', 1100).map((row) => row.split(',').slice(0, 6).join(',')),
+      ].join('\n'),
+    );
+    return countDirectionalInputs(tracesPath, 1000).then(({ calleeCalls, edgeLatency }) => {
+      expect(calleeCalls.get('svc-b')).toBe(1);
+      expect(edgeLatency).toEqual([]);
+    });
+  });
+
+  it('excludes a SELF-CALL, because the numerator it divides excludes it', () => {
+    // `computeFailedEdgeScores` drops `caller === callee` — a self-call carries no direction — so a denominator
+    // that kept them would divide external failures by internal traffic and understate every rate. `edgeLatency`
+    // below still carries the self-edge: that array's consumers filter it themselves, and dropping it here would
+    // hide a real span from them.
+    const rows = [
+      HEADER,
+      // One pre-injection self-call, so the latency array has both sides of the self-edge and can carry it: the
+      // assertion below is that `edgeLatency` KEEPS it while the divisor drops it.
+      ...call('svc-a', 'svc-a', 'self0', 900),
+      ...call('svc-a', 'svc-a', 'self1', 1100),
+      ...call('svc-a', 'svc-a', 'self2', 1200),
+      ...call('svc-b', 'svc-a', 'in1', 1300),
+    ];
+    return countDirectionalInputs(write(rows), 1000).then(({ calleeCalls, edgeLatency }) => {
+      expect(calleeCalls.get('svc-a')).toBe(1);
+      expect(edgeLatency.some((row) => row.caller === row.callee)).toBe(true);
+    });
+  });
+
+  it('is empty when the file is absent, rather than reporting zero traffic for a case that had traces', () => {
+    return countDirectionalInputs(path.join(tempDir, 'absent.csv'), 1000).then(
+      ({ calleeCalls }) => {
+        expect(calleeCalls.size).toBe(0);
+      },
+    );
+  });
+});

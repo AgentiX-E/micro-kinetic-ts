@@ -38,6 +38,7 @@ import {
   invariantRange,
   type BuildFaultGraphOptions,
   type DetectedCycle,
+  type FailedEdgeEvidence,
   type FaultCategory,
   type FaultEdgeLatency,
   type FaultPropagationGraph,
@@ -93,7 +94,7 @@ import {
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
-  computeFailedEdgeScores,
+  computeFailedEdgeLedger,
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
@@ -1506,7 +1507,7 @@ export const FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300;
  * corpus the statistic was measured on. See {@link FailedEdgeGate} and the docblock on
  * `failedEdgeRiseBar` for the two artifacts that make that a measurement rather than an argument.
  */
-export type FailedEdgeGateMode = 'absolute' | 'fleet';
+export type FailedEdgeGateMode = 'absolute' | 'fleet' | 'evidence';
 
 /**
  * The mode vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree
@@ -1515,6 +1516,7 @@ export type FailedEdgeGateMode = 'absolute' | 'fleet';
 export const FAILED_EDGE_GATE_MODES: Readonly<Record<FailedEdgeGateMode, true>> = {
   absolute: true,
   fleet: true,
+  evidence: true,
 };
 
 /** The shipped gate mode: the absolute bar, which is what every published cell ran. */
@@ -1556,6 +1558,13 @@ export interface FailedEdgeGate {
   readonly share: number;
   /** The case's largest measured inbound rise, or absent when none was measured. Read only at `fleet`. */
   readonly fleetMax?: number | undefined;
+  /**
+   * The failed-call channel's own strength. Read only at `evidence`.
+   *
+   * Absent at the two latency modes — the property that makes carrying it on every graph free: the shipped path
+   * computes it (it is a by-product of the walk that builds the scores) and never looks at it.
+   */
+  readonly evidence?: FailedEdgeEvidence | undefined;
 }
 
 /**
@@ -1597,6 +1606,14 @@ export function admitsFailedEdgeTerm(
   latRise: number | undefined,
   gate?: FailedEdgeGate,
 ): boolean {
+  // `evidence` is a different QUESTION, not a different bar: it asks whether the interface is failing rather than
+  // whether its metric is duration-shaped and its latency rose. It therefore reads neither of the two observables
+  // below — which is the whole point, since the name half refuses 1 030 of 1 422 archive cases before any bar is
+  // consulted. The dispatch is here rather than at the call sites so that every caller — the engine, the census,
+  // the arms — asks the same function and cannot implement one mode's rule for another's.
+  if ((gate?.mode ?? DEFAULT_FAILED_EDGE_GATE_MODE) === 'evidence') {
+    return admitsFailedEdgeEvidence(gate?.evidence, gate?.share);
+  }
   if (!namesDurationChannel(dominantMetric)) return false;
   // A missing measurement is REFUSED before the bar is computed, and that ordering is the whole of the
   // rule: folding an absent rise into `0` and then comparing it would admit the case at a share of 0,
@@ -1604,6 +1621,40 @@ export function admitsFailedEdgeTerm(
   // NaN is false, which would reproduce this refusal for a different reason than the one it states.
   if (latRise === undefined || !Number.isFinite(latRise)) return false;
   return latRise >= failedEdgeRiseBar(gate);
+}
+
+/**
+ * The evidence bar: does the failed-call channel itself say this interface is failing?
+ *
+ * `fraction` is the strongest failing callee's net failed calls over the calls that reached it after the
+ * injection — a ratio of two counts on the same edge set, so it carries no corpus's units, no corpus's latency
+ * scale, and no metric NAME. That is what makes it transferable to a corpus whose dominant metrics are
+ * `cpu_usage` and `memory`, where the shipped name half refuses 72.4% of cases before any bar is consulted.
+ *
+ * Two refusals, and both are absences rather than values:
+ *
+ * - **no evidence** — the graph was built without the walk that produces it (a producer that cannot count calls,
+ *   e.g. the FSE'26 cache. It records failures only). `0` would be a measurement of nothing;
+ * - **no fraction** — the callee received no counted calls, so the divisor does not exist. Folding that into zero
+ *   would let the absence of a measurement pass a bar of zero.
+ *
+ * A malformed share is read as `1` (the strictest bar), and a negative one as `0` (any measured failure), the same
+ * clamp `failedEdgeRiseBar` applies for the same reason: a number the arithmetic cannot place must not become the
+ * loosest bar by accident.
+ *
+ * @param evidence - The channel's own report, or `undefined` when the graph carries none.
+ * @param share - The failure fraction the interface must clear.
+ * @returns True only when a measured fraction clears the bar.
+ */
+function admitsFailedEdgeEvidence(
+  evidence: FailedEdgeEvidence | undefined,
+  share: number | undefined,
+): boolean {
+  if (evidence === undefined) return false;
+  const fraction = evidence.fraction;
+  if (fraction === undefined || !Number.isFinite(fraction)) return false;
+  const bar = Number.isFinite(share) ? Math.max(0, share as number) : 1;
+  return fraction >= bar;
 }
 
 /**
@@ -2056,12 +2107,16 @@ export class TreePruner {
     // CALLEE — the service whose interface was failing — which is the inverse
     // of the log signal's credit to the emitter. This is the only signal that
     // carries the DIRECTION of a fault, so it is deliberately not a log mode.
-    const failedEdgeScores = computeFailedEdgeScores(
+    const failedEdgeLedger = computeFailedEdgeLedger(
       options?.failedTraceEdges,
       new Set(callGraph.nodes.keys()),
       this.options.failedEdgeMode,
       this.options.failedEdgeMinRecords,
+      options?.failedEdgeCalls,
     );
+    // The two views of ONE walk: the scores the term reads, and the channel's own volume for the gate that
+    // decides whether the term may speak. Two walks would be two definitions of which edges counted.
+    const failedEdgeScores = failedEdgeLedger.scores;
 
     // The per-edge LATENCY signal: the continuous counterpart of the term above.
     // It credits the callee of an edge whose mean span duration rose, which is
@@ -2133,6 +2188,7 @@ export class TreePruner {
       traceActivityScores,
       prismScores,
       failedEdgeScores,
+      failedEdgeEvidence: failedEdgeLedger.evidence,
       edgeLatencyScores,
       edgeLatencyByCallee,
       poolMetricScores,
@@ -2243,6 +2299,7 @@ export class TreePruner {
       mode: gateMode,
       share: this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_GATE_SHARE,
       fleetMax: gateMode === 'fleet' ? maxInboundRise(graph.edgeLatencyByCallee) : undefined,
+      evidence: gateMode === 'evidence' ? graph.failedEdgeEvidence : undefined,
     };
     if (
       !admitsFailedEdgeTerm(

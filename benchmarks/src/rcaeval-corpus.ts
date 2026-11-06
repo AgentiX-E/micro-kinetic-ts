@@ -473,6 +473,7 @@ export async function assembleRCAEvalCase(
   let benchCase: BenchmarkCase = {
     ...loader.toBenchmarkCase(rawCase, graph, suiteName),
     failedTraceEdges: [],
+    failedEdgeCalls: new Map<string, number>(),
     edgeLatency: [],
   };
 
@@ -496,6 +497,7 @@ export async function assembleRCAEvalCase(
   benchCase = {
     ...benchCase,
     failedTraceEdges: streaming.failedTraceEdges,
+    failedEdgeCalls: streaming.calleeCalls,
     edgeLatency: views[options.latencyFrom],
   };
 
