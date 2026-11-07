@@ -126,6 +126,27 @@ const RETIRED = [
   // The cell that was read as a deficit rather than a lead, both forms.
   '64/90',
   '71.1',
+  // ── Retired by the guard-policy enrolment (`hump`, iteration 240) and by the one unenrolled case `§0p-ii`
+  // found while re-anchoring it. The two are recorded together because a reader cannot tell them apart from the
+  // block — which is the point: the block is a transcript, and both moved inside it.
+  //
+  // The totals, the two cells the enrolment moved, the cell the unenrolled fix moved, and the second
+  // convention's corpus figure.
+  '656/735',
+  '89.25',
+  '247/270',
+  '88/90',
+  '112/125',
+  '86.48',
+  // FSE'26 both forms.
+  '869/1422',
+  '61.10',
+  // And the two readings that identify a cell by their FRACTION rather than by their percentage, because their
+  // percentages are still correct on another cell: `75/90` is RE2:TrainTicket, whose new reading is `76/90`, while
+  // `83.3%` is ALSO RE3:OnlineBoutique (`25/30`), which did not move and which this document prints. A retirement
+  // token has to be the form that is unique to the reading being retired, and for these two that is the fraction.
+  '343/375',
+  '75/90',
 ] as const;
 
 describe('the standing document is anchored to one battery', () => {
@@ -155,7 +176,7 @@ describe('the standing document is anchored to one battery', () => {
     expect(leaderboard, 'the leaderboard quotes the anchored total').toContain(`(${fraction})`);
     // And §1's own table, whose overall row is the one a reader checks against the table above it.
     expect(section('## 1. Our result', '## 2.')).toContain(
-      `**89.25%** (${byKey('TOTAL').correct})`,
+      `**89.66%** (${byKey('TOTAL').correct})`,
     );
   });
 
@@ -190,9 +211,9 @@ describe('the standing document is anchored to one battery', () => {
       section('| population                     | GALA+ AC@1', '> **This table was wrong'),
     ].join('\n');
     // Non-vacuity: five tables, and each one carries at least one of our own readings.
-    expect(current).toContain('656/735');
-    expect(current).toContain('343/375');
-    expect(current).toContain('75/90');
+    expect(current).toContain('659/735');
+    expect(current).toContain('344/375');
+    expect(current).toContain('76/90');
     // The two directions of the same fact. Above: no table prints a retired reading. Below: \u00a70p names every
     // reading it retires, so the list cannot grow past the correction or the correction past the list.
     const correction = section('### 0p. THE ANCHOR', '### 0a.');
@@ -211,16 +232,16 @@ describe('the standing document is anchored to one battery', () => {
     const ranking = section('**Ranking:', 'That last clause');
     expect(ranking).toMatch(/first on RCAEval's 735 among every method with per-case results/i);
     expect(ranking, 'the ranking names the number above us').toMatch(/89/);
-    expect(ranking, 'the ranking names the gap').toMatch(/0\.25/);
+    expect(ranking, 'the ranking names the gap').toMatch(/0\.66/);
     expect(ranking).not.toMatch(/first on RCAEval's 735 overall/i);
   });
 
   it('reports the GALA+ cell as a lead with our own fraction beside it', () => {
     // The specific sentence the correction exists for. Asserted on the FRACTION because `73.3%` and `71.1%` are
-    // numbers this document uses for three different populations; `75/90` is not.
+    // numbers this document uses for three different populations; `76/90` is not.
     const gala = section('### 2b-ii. GALA+', '**What is NOT claimed');
-    expect(gala).toContain('83.3%');
-    expect(gala).toContain('+10.0pp');
+    expect(gala).toContain('84.4%');
+    expect(gala).toContain('+11.1pp');
     expect(gala, 'the retraction of the "exact closure" is stated rather than deleted').toMatch(
       /RETRACTED/,
     );
