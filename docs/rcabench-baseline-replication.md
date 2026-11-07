@@ -198,3 +198,30 @@ a different corpus.
 | our converter | `scripts/fse26_convert.py` (unchanged), 7 of 48 metric names carried |
 | our run | `run-fse26.ts --per-case-out`, 1,422 cases in 8 batches against a 12 GB disk, 0 failures |
 | verdicts | `{datapack, faultType, accepted[], ranked[5]}` per case — the judgement is a post-processing choice |
+
+## 9. Where the field moved while this was being measured — November 2026
+
+A search of the last 30 days (2026-11-07) returns three **live-cluster agentic** evaluations, and none of them
+is comparable to a Top@1 ranking. They are recorded because "the field is complete" is a claim this document
+would otherwise be making silently:
+
+| evaluation | what it grades | published state |
+| --- | --- | --- |
+| **SREGym** (NeurIPS 2026, MIT) | a fleet of AI SRE agents on a **live Kubernetes cluster**: 90 faults, three attempts, diagnosis + fix graded against the *running system* | leaderboard live; top entry 95.2% end-to-end (Radar + Claude Code), #2 72.2% |
+| **Tymfi Labs** (Edition 2) | 100 live-K8s incidents, symptom-only paging, `kubectl` in a sandbox, fix verified on the system, shortcuts auto-fail | best of seven frontier models 79% fixed; DeepSeek V4 Pro 45% |
+| **SWEOps-Bench** (`arXiv:2611.06099`, 2026-11-04) | 55 reproducible incidents from 16 Kubernetes operator projects; agent edits source/config, harness builds and deploys | six agent-model configurations: faulty-state detection 72.7–90.9%, **verified recovery only 14.5–52.7%** |
+
+Three consequences, none of them comfortable:
+
+1. **None of the three measures a ranking.** Their unit is "was the incident resolved", which is a different
+   task from "was the injected service named first". Quoting our Top@1 beside their recovery rate would be the
+   same class error §0 of `sota-comparison.md` already refuses for the 90.0% agentic row.
+2. **They confirm the defect found in §5 from the other side.** Every one of them is built on **resource and
+   platform faults** — crashed kubelets, CoreDNS config, HPA traps, silent data corruption — not on HTTP
+   response-code rewrites. A ranker that cannot see `k8s.container.restarts` is not competitive in the class the
+   field has moved to, whatever its Top@1 on a static corpus.
+3. **They set the next horizon honestly.** `SWEOps-Bench`'s gap (72.7–90.9% detection against 14.5–52.7%
+   recovery) says the field's own bottleneck is no longer localisation. This engine's route therefore has an
+   ordering: make the evidence plane complete (§5), then measure, and only then consider a remediation claim.
+
+None of this changes a number in this document. It changes what "SOTA" has to mean next.
