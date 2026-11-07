@@ -452,17 +452,16 @@ jobs:
                 # dispatch-surface census - "that corpus carries no injection boundary" - and that sentence
                 # was never measured: the loader rebuilds every series' timestamps and forwards the case's
                 # own `injectTimeMs`, which are the statistic's two inputs. Routed here so the claim is
-                # settled by a run; an unknown member exits non-zero like every other name.
+                # settled by a run.
+                #
+                # FORWARDED, not resolved. This branch used to carry its own copy of the vocabulary and the
+                # copy was one member behind the engine's table: the conjunction landed in
+                # `TRANSIENT_GUARD_TESTS` and this half refused it with a list that did not contain it, so the
+                # nine-cell/FSE'26 read the arm owed could not be dispatched. A value the engine does not know
+                # is refused by the CLI, against that table, with that table's own words — one owner, and the
+                # owner is the union.
                 transient_guard_test)
-                  case "$value" in
-                    endpoint|level-window|trimmed-ends|either|evidence-aware|evidence-trimmed)
-                      KNOB_ARGS+=(--transient-guard-test "$value")
-                      ;;
-                    *)
-                      echo "::error::ranking_knobs: transient_guard_test takes endpoint, level-window, trimmed-ends, either, evidence-aware or evidence-trimmed, got '$value'"
-                      exit 1
-                      ;;
-                  esac
+                  KNOB_ARGS+=(--transient-guard-test "$value")
                   ;;
                 *)
                   echo "::error::ranking_knobs: unknown name '$name'"

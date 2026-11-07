@@ -1336,3 +1336,29 @@ the truth quieter?** On `loss` the injected service's own tail latency rises a m
 channel to `transient-return`, so this is not a filtering defect. It is that the injected service's own measurement is
 genuinely weaker than the propagated symptom's, which is a statement about comparability across services and about how
 the formula prices the two magnitude-free signals it already has, not about the ranking formula.
+
+## Iteration 240 — the guard's vocabulary had two owners, and the second one was six words long
+
+This is a closure rather than an axis, and it is recorded here because it is the reason a pre-registered axis
+would have stayed open for a reason that has nothing to do with measurement.
+
+Iteration 239 added the seventh member (`hump`) to `TRANSIENT_GUARD_TESTS` and closed with one sentence of
+pre-registration: read it on the nine golden cells and on FSE'26. The golden half routes the flag as a
+passthrough and reaches the CLI, which validates against the union. `fse26-benchmark.yml`'s `ranking_knobs`
+carried its own copy of the six older members, so `ranking_knobs=transient_guard_test=hump` exited **before the
+engine was built**, with a message that listed the copy. Seven in the table, six in the branch.
+
+The repair is subtraction, not addition: the branch forwards `"$value"` and the terminal check is the CLI's,
+against `Object.keys(TRANSIENT_GUARD_TESTS)` — the same check both parsers already had, and the one
+`fse26-cli.test.ts` already iterates so a new member cannot be unparseable on that half. The golden half's seven
+branch comments also stopped naming members; each said `` `endpoint` … and ships ``, which stopped being true the
+iteration the default moved to `evidence-trimmed`. `benchmarks/__tests__/guard-vocabulary-dispatch.test.ts` reads
+all three files as text and asserts there is **no member literal anywhere in either routing branch, comment block
+included**, that both halves forward rather than resolve, that no other occurrence of the flag pins a literal (the
+seven golden branches are copies, so the seventh would have been invisible to a first-only check), and that both
+CLIs keep the union as their only list.
+
+**Nothing published moves**: the branch is read only when a dispatch names the key, and the default is the
+engine's. What moves is reach — and the register's law about pins reads the same with the sign reversed. A pin
+whose replacement is unreachable is still a pin; **a vocabulary whose seventh word is unreachable is still a
+closed axis**, and it stays closed for a reason that is not the measurement.

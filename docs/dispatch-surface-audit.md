@@ -530,3 +530,70 @@ whole-description substring test is unsound for every string-valued option — i
 pre-98 text by matching a vocabulary entry. **Nineteen declaration sites over twelve knobs** is the count the
 census reports on the pre-98 tree, and it is the number this document could not have supplied from its own
 table, because the table is keyed by the flag and this defect lives in the default.
+
+
+## Finding 9 — a knob's reach is not its VOCABULARY, and one half restated a list the engine owns (iteration 240)
+
+Findings 6 to 8 were about a knob that could not be dispatched, a default with no owner, and a description that
+could not be checked. This one is one level down: the knob was reachable on both halves, and **one half could not
+express one of the values**.
+
+Iteration 239 added a seventh statistic to the guard's vocabulary — `TRANSIENT_GUARD_TESTS` gained `hump` — and
+closed with a pre-registered reading that needs it on **both** halves: *"Read `hump` on the nine golden cells and
+FSE'26 (no new mechanism)"*. It could not be read on the second half. The golden half routes the flag as a
+passthrough —
+
+```sh
+transguard=*) RANKING_ARG+=(--transient-guard-test "${kv#transguard=}") ;;
+```
+
+— while `fse26-benchmark.yml`'s `ranking_knobs` carried its own copy of the vocabulary:
+
+```sh
+transient_guard_test)
+  case "$value" in
+    endpoint|level-window|trimmed-ends|either|evidence-aware|evidence-trimmed)
+      KNOB_ARGS+=(--transient-guard-test "$value") ;;
+    *) echo "::error:: ... takes endpoint, level-window, …, got '$value'"; exit 1 ;;
+  esac ;;
+```
+
+Seven members in the engine, six in the copy. `ranking_knobs=transient_guard_test=hump` therefore failed the step
+with a message that listed the copy, and the failure reads as a wrong argument rather than as a missing member —
+which is the expensive direction: **a dispatch that cannot express an arm reads as a measurement nobody made.**
+
+The copy is also how the two CLIs were already built. `parseFSE26Args` and `parseRCAEvalArgs` both refuse an
+unknown word against `Object.keys(TRANSIENT_GUARD_TESTS)` and print that list, and
+`benchmarks/__tests__/fse26-cli.test.ts` iterates the same table so a new member cannot be unparseable on the FSE'26
+half without a test failing. The engine's own docblock states the rule this workflow broke, one layer up:
+
+> a parser that validates against a hand-written pair of literals, and a test that probes the values it can think
+> of, are two lists that drift.
+
+### What changed
+
+1. **The branch forwards.** `transient_guard_test)` now appends `"$value"` and the terminal check is the CLI's,
+   against the union. One owner, and the owner is the table — so a member added to the engine is dispatchable the
+   day it lands, on both halves, with no workflow edit. The failure mode that the copy was bought for (a run
+   labelled with a value it did not use) is unchanged: the CLI refuses the word and prints the union, and the step
+   exits non-zero before a number is published.
+2. **The seven golden branches stop naming members.** Each comment said `` `endpoint` … and ships ``, which stopped
+   being true the iteration the default moved to `evidence-trimmed`; the prose is what a dispatch author reads, and
+   it was describing a vocabulary the code no longer had. All seven now state the ownership rule instead.
+3. **`benchmarks/__tests__/guard-vocabulary-dispatch.test.ts`** reads all three files as TEXT and asserts: the
+   routing branch of each half contains **no member of the union**, with its leading comment block inside the slice
+   (the prose is where a stale claim lives); both halves forward the dispatched value rather than resolving it; no
+   other occurrence of the flag in either workflow pins a literal — the seven golden branches are copies of one
+   another, so a literal added to the seventh would be invisible to a test that read only the first; and both CLIs
+   validate against `TRANSIENT_GUARD_TESTS`, which is what makes the passthrough safe.
+
+The test failed on the workflow as it stood, on `endpoint`, in the FSE'26 branch — the earliest member, because the
+copy restated them in order.
+
+### What this buys, and what it does not
+
+It does not change a single published number: the branch is only read when a dispatch names the key, and the shipped
+value is the engine's default. What it changes is the reach of a pre-registered arm — and the register's law about
+pins applies with the direction reversed. A pin whose replacement is unreachable is still a pin; **a vocabulary
+whose seventh word is unreachable is still a closed axis**, and it stays closed for a reason that has nothing to do
+with the measurement.
