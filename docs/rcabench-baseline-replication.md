@@ -143,6 +143,30 @@ It stopped being sound the moment the engine was measured on a corpus where 20% 
 **This is the defect the cross-paper comparison was hiding**, and no amount of reading the paper could have
 produced it: it required running an opponent that reads the metrics we throw away.
 
+### 5.1 The evidence is in the parquet — measured, with the crudest rule that could work
+
+The claim above would be an argument if it stopped there. It is a measurement: take the ten gauges the converter
+drops, and rank services by the crudest statistic that could possibly work — the abnormal-window maximum over the
+normal-window maximum, plus a "collapsed to zero" flag for `k8s.container.ready`, which can only fall. No
+thresholds, no graph, no engine, no tuning.
+
+| fault type | cases | crudest rule, top-1 == injected endpoint | this engine |
+| --- | ---: | ---: | ---: |
+| `JVMMemoryStress` | 171 | **85.4%** (146) | 35.7% |
+| `PodFailure` | 24 | **91.7%** (22) | 4.2% |
+| `PodKill` | 10 | **100.0%** (10) | 60.0% |
+| `ContainerKill` | 89 | **0.0%** (0) | 29.2% |
+| **all four** | **294** | **60.5%** (178) | 34.4% |
+
+**Three of the four types are answered at 86.8% by a rule that reads ten columns and compares two maxima**, where
+the engine answers 33.2% — the deficit is not modelling difficulty, it is evidence the case never carried.
+
+`ContainerKill` scores 0%, and that is a fact about the rule rather than about the type: a restart counter is
+monotone, so "abnormal max over normal max" reads ~1.0 for the killed container as readily as for its neighbours,
+and the statistic that separates them is the *increment across the window*, not the level. Recorded because a
+0% in a table of 85–100% is the row a reader will (rightly) trust least, and because it names the second thing
+P0 has to get right: the k8s counters need a differencing rule, not a ratio.
+
 ## 6. What this changes in the record
 
 | claim | before | after |
