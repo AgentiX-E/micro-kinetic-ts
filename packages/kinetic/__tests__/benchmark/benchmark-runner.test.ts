@@ -1297,17 +1297,9 @@ describe('RCA Engine Integration', () => {
         topoScores: new Map(
           [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 1 : 0.5]),
         ),
-        collisionEnergy: new Map(
-          [...callGraph.nodes.keys()].map((id) => [
-            id,
-            {
-              totalEnergy: 0.5,
-              collisionType: 'chain',
-              collisionGain: 0,
-              ratioContrib: id === 'frontend' ? 0 : 0.3,
-            },
-          ]),
-        ),
+        // The collision term's INPUT, sparse: the winner carries no shape, the ground truth does. Only the
+        // entries the guard admitted a hump for exist, which is what makes the map an absence and not a zero.
+        collisionShapes: new Map([['cartservice', 0.3]]),
         detectedCycles: [],
         totalCycleContribution: 0,
         pruneThreshold: 0.001,
@@ -1342,8 +1334,8 @@ describe('RCA Engine Integration', () => {
     expect(diag).toBeDefined();
     expect(diag!.gtLogScore).toBe(0);
     expect(diag!.topLogScore).toBe(1);
-    expect(diag!.gtRatioContrib).toBe(0.3);
-    expect(diag!.topRatioContrib).toBe(0);
+    expect(diag!.gtCollisionShape).toBe(0.3);
+    expect(diag!.topCollisionShape).toBeUndefined();
     expect(diag!.gtTopoSource).toBe(0.5);
     expect(diag!.topTopoSource).toBe(1);
   });
@@ -1936,12 +1928,7 @@ function createScriptedEngine(options: {
         // omits all of them, so the `?.` arms that read them from a graph that
         // actually carries them were permanently untaken.
         logScores: new Map(ids.map((id) => [id, 0.5])),
-        collisionEnergy: new Map(
-          ids.map((id) => [
-            id,
-            { totalEnergy: 1, collisionType: 'elastic', collisionGain: 0.5, ratioContrib: 0.25 },
-          ]),
-        ),
+        collisionShapes: new Map(ids.map((id) => [id, 0.25])),
         topoScores: new Map(ids.map((id) => [id, 0.75])),
         riseScores: new Map(ids.map((id) => [id, 0.5])),
         postInjectOnsetDelays: new Map(ids.map((id) => [id, 120])),
@@ -2133,8 +2120,8 @@ describe('BenchmarkRunner prediction enrichment', () => {
 
     expect(diag.gtLogScore).toBe(0.5);
     expect(diag.topLogScore).toBe(0.5);
-    expect(diag.gtRatioContrib).toBe(0.25);
-    expect(diag.topRatioContrib).toBe(0.25);
+    expect(diag.gtCollisionShape).toBe(0.25);
+    expect(diag.topCollisionShape).toBe(0.25);
     expect(diag.gtTopoSource).toBe(0.75);
     expect(diag.topTopoSource).toBe(0.75);
     expect(diag.gtInjectDelay).toBe(120);

@@ -312,7 +312,13 @@ export interface FaultPropagationGraph {
    * - collisionGain: Boltzmann Q(f,f) value ∈ [0, 1]
    * - ratioContrib: collisionGain / (local + collisionGain) — the fraction of
    *   a node's fault energy inherited from upstream. A source ≈ 0, a fan-in
-   *   symptom → 1. Feeds the (opt-in) collisionWeight ranking signal.
+   *   symptom → 1.
+   *
+   * `ratioContrib` used to feed the (opt-in) `collisionWeight` ranking signal and no longer does: that term is
+   * keyed on {@link collisionShapes}, because on the published populations a propagated rise is what the
+   * topology and direction terms already read (see `docs/transient-guard-evidence.md` §13). The field is still
+   * computed and reported — it is a property of the aggregation, and an entry a reader can check is not the
+   * same thing as an entry the ranking spends.
    *
    * When present, this replaces raw anomalyScores as the primary energy
    * source for root cause ranking.
@@ -408,6 +414,16 @@ export interface FaultPropagationGraph {
    * silent collapse is the symptom). Feeds the (opt-in) riseWeight signal.
    */
   readonly riseScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service collision SHAPE in [0, 1] — the hump predicate (`ramp → hold → return`) read as a MAGNITUDE
+   * rather than as an admission.
+   *
+   * `level × (1 − min(1, trimmed / 0.3))`: 1 for a channel that returns fully to its baseline after a level
+   * shift, 0 at the return threshold the transient guard already uses. Present only for a service whose guard
+   * admitted a hump — a missing entry is an absence, not a measured zero. Feeds the (opt-in) `collisionWeight`
+   * term, which is the Deng-Yu collision source at `t₀` with the shape its magnitude was always missing.
+   */
+  readonly collisionShapes?: ReadonlyMap<ServiceId, number>;
   /**
    * Per-service DB-connection-pool dominance indicator in {0, 1}: 1 when the
    * metric that won the service's anomaly maximum is a `db.client.connections.*`

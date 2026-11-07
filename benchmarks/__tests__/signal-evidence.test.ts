@@ -46,7 +46,7 @@ describe('the shipped dispatch, read for what the failure block can and cannot e
     expect(inertPrintedSignals(shipped())).toEqual([
       'onset',
       'injectDelay',
-      'ratioContrib',
+      'collisionShape',
       'topoSource',
     ]);
     expect(
@@ -73,7 +73,7 @@ describe('the shipped dispatch, read for what the failure block can and cannot e
     // does not move the signal it is printed beside.
     const byName = new Map(printedSignalEvidence(shipped()).map((e) => [e.signal, e.weightName]));
     expect(byName.get('topoSource')).toBe('topoWeight');
-    expect(byName.get('ratioContrib')).toBe('collisionWeight');
+    expect(byName.get('collisionShape')).toBe('collisionWeight');
     expect(byName.get('onset')).toBe('temporalWeight');
     expect(byName.get('injectDelay')).toBe('temporalWeight');
     expect(byName.get('logScore')).toBe('logWeight');
@@ -88,7 +88,7 @@ describe('the notice, and the suffix that survives a reader who skips it', () =>
     expect(notice).toContain('INERT AT THESE WEIGHTS');
     expect(notice).toContain('onset (temporalWeight=0)');
     expect(notice).toContain('injectDelay (temporalWeight=0)');
-    expect(notice).toContain('ratioContrib (collisionWeight=0)');
+    expect(notice).toContain('collisionShape (collisionWeight=0)');
     expect(notice).toContain('topoSource (topoWeight=0)');
     // The weighted ones are absent: the notice is about what the run did not use.
     expect(notice).not.toContain('logScore (');
@@ -98,7 +98,7 @@ describe('the notice, and the suffix that survives a reader who skips it', () =>
     const notice = formatInertSignalsNotice({ ...re3Pinned(), topoWeight: 0.1 });
     expect(notice).toBeDefined();
     expect(notice).not.toContain('topoSource');
-    expect(notice).toContain('ratioContrib');
+    expect(notice).toContain('collisionShape');
   });
 
   it('is undefined when every printed comparison is weighted, rather than an empty header', () => {

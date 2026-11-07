@@ -1871,12 +1871,27 @@ describe('TreePruner', () => {
       expect(graph.collisionEnergy?.get('B')?.ratioContrib).toBeGreaterThan(0);
     });
 
-    it('penalises upstream-explained symptoms to lift the source when enabled', () => {
-      const pruner = new TreePruner({ collisionWeight: 10.0 });
-      const graph = pruner.buildFaultGraph(callGraph, metrics);
-
-      const results = pruner.analyze(graph, 3);
-      expect(results[0]!.serviceId).toBe('A');
+    it('spends nothing on inherited energy, because the term is keyed on the hump SHAPE now', () => {
+      // The term used to be `−collisionWeight × ratioContrib` and this fixture is the case it was built for: `A`
+      // is the source and `B`/`C` inherit its energy. Iteration 242 re-keyed the term (docs/transient-guard-
+      // evidence.md §13), so a weight of TEN buys nothing here — no channel of this case is a hump, and the
+      // ranking is the one the rest of the formula produces.
+      const heavy = new TreePruner({ collisionWeight: 10.0 }).analyze(
+        new TreePruner({ collisionWeight: 10.0 }).buildFaultGraph(callGraph, metrics),
+        3,
+      );
+      const off = new TreePruner({ collisionWeight: 0 }).analyze(
+        new TreePruner({ collisionWeight: 0 }).buildFaultGraph(callGraph, metrics),
+        3,
+      );
+      expect(heavy.map((r) => r.serviceId)).toEqual(off.map((r) => r.serviceId));
+      // …while the aggregation still REPORTS what it always reported: ratioContrib is a property of Q(f,f),
+      // and no longer an entry the ranking spends.
+      const graph = new TreePruner({ collisionWeight: 10.0 }).buildFaultGraph(callGraph, metrics);
+      expect(graph.collisionShapes).toBeDefined();
+      expect(graph.collisionShapes?.size).toBe(0);
+      expect(graph.collisionEnergy?.get('A')?.ratioContrib).toBe(0);
+      expect(graph.collisionEnergy?.get('B')?.ratioContrib).toBeGreaterThan(0);
     });
 
     it('records ratioContrib 0 when collision aggregation is disabled', () => {
@@ -2960,15 +2975,40 @@ describe('the score breakdown — the total IS its terms', () => {
   });
 
   it('names every term, and carries NEGATIVE contributions where the formula subtracts', () => {
-    // The formula subtracts two terms (collision ratio share, pool-metric penalty). A breakdown that reported
-    // magnitudes would sum to something else, so a negative contribution is evidence the sign convention
-    // travelled with the term rather than being re-applied by a reader.
+    // A breakdown that reported magnitudes would sum to something else, so a negative contribution is evidence
+    // the sign convention travelled with the term rather than being re-applied by a reader.
+    //
+    // The example used to be `collision`, whose share of a node's energy was a PENALTY; iteration 242 re-keyed
+    // that term on the hump shape and it now CREDITS, so the convention is asserted on the families that still
+    // subtract: the pool-dominance penalty (here) and PRISM's victim mask. A fixture that kept pointing at
+    // `collision` would have gone on passing for the opposite reason.
     const results = ranked();
     const names = results[0]!.terms!.map((t) => t.name);
     for (const n of names) expect(typeof n).toBe('string');
     expect(new Set(names).size).toBe(names.length);
-    const all = results.flatMap((r) => r.terms!);
-    expect(all.some((t) => t.contribution < 0)).toBe(true);
+    const pruner = new TreePruner({
+      defaultTopK: 2,
+      poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['POOL', 'OTHER'], [['OTHER', 'POOL']]),
+      new Map<string, readonly TimeSeries[]>([
+        [
+          'POOL',
+          [
+            makeTimeSeries('cpu_usage', [1, 1, 1, 1, 2, 2, 2, 2]),
+            makeTimeSeries(`${POOL_METRIC_PREFIX}use_time.max`, [1, 1, 1, 1, 900, 900, 900, 900]),
+          ],
+        ],
+        ['OTHER', [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 4, 4, 4, 4])]],
+      ]),
+    );
+    const pool = pruner
+      .analyze(graph, 2)
+      .find((r) => r.serviceId === 'POOL')!
+      .terms!.find((t) => t.name === 'pool')!;
+    expect(pool.contribution).toBeLessThan(0);
+    expect(pool.contribution).toBeCloseTo(-DEFAULT_POOL_METRIC_PENALTY_WEIGHT * 1, 12);
   });
 
   it('emits the breakdown on EVERY result, not only the winner', () => {
@@ -3927,5 +3967,92 @@ describe('the base term’s weight — the one quantity the formula used to writ
       dualFamilyWeight: 0.25,
     });
     expect(weights.selfAnomalyWeight).toBe(0.75);
+  });
+});
+
+describe('the collision term is keyed on the hump SHAPE rather than on inherited energy', () => {
+  /**
+   * A ramp that HOLDS and RETURNS — 15 samples at the baseline, 10 at the plateau, 5 back at the baseline — and
+   * the permanent shift the guard already kept. The first is the shape a container kill leaves on a resource
+   * channel; the second is not a hump and must measure nothing.
+   */
+  const settled = [
+    ...Array<number>(15).fill(5),
+    ...Array<number>(10).fill(100),
+    ...Array<number>(5).fill(5),
+  ];
+  const permanent = [...Array<number>(15).fill(5), ...Array<number>(15).fill(100)];
+
+  /** Build and rank a two-node fleet (`A` → `B`), with `B` carrying the hump. */
+  const run = (
+    options: Partial<ConstructorParameters<typeof TreePruner>[0]> = {},
+    boundaryObserved = true,
+  ) => {
+    const pruner = new TreePruner({ defaultTopK: 2, ...options });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      makeMetrics({ A: permanent, B: settled }),
+      {
+        injectTimeMs: 15 * 60000,
+        // The side channel decides whether the case's guard reads the CONJUNCTION at all: a case with no logs,
+        // no spans and no per-edge latency resolves to the level test, where no hump is ever admitted.
+        ...(boundaryObserved ? { traceActivity: new Map([['A', { pre: 10, post: 10 }]]) } : {}),
+      },
+    );
+    const results = pruner.analyze(graph, 2);
+    return {
+      graph,
+      results,
+      termOf: (id: string) =>
+        results.find((r) => r.serviceId === id)!.terms!.find((t) => t.name === 'collision')!,
+      scoreOf: (id: string) => results.find((r) => r.serviceId === id)!.finalScore!,
+    };
+  };
+
+  it('pays the knot exactly `weight × shape`, and the shape is the one the graph measured', () => {
+    const arm = run({ collisionWeight: 0.25 });
+    expect(arm.graph.collisionShapes?.get('B')).toBe(1);
+    const term = arm.termOf('B');
+    expect(term.contribution).toBeCloseTo(0.25 * 1, 12);
+    // The term's SOURCE is named on the zero it explains rather than on the contribution it makes: a live term
+    // carries no cause at all (see "carries a cause if and only if the contribution is zero").
+    expect(arm.termOf('A').source).toBe('collisionShapes');
+    // The score delta is the term's own contribution: nothing else in the sum reads the weight, so an arm's
+    // price is the term and cannot be an artefact of a second read.
+    const off = run({ collisionWeight: 0 });
+    expect(arm.scoreOf('B') - off.scoreOf('B')).toBeCloseTo(term.contribution, 12);
+  });
+
+  it('reports the absent shape as an absent ENTRY, not as a measured zero', () => {
+    // `A` shifts permanently: the channel is kept and its shape is 0, which is "no hump", and the map carries no
+    // entries for it. The distinction the cause field exists for — a producer that looked and found nothing
+    // against a producer that never ran — is the same one this term inherits.
+    const arm = run({ collisionWeight: 0.25 });
+    expect(arm.graph.collisionShapes?.has('A')).toBe(false);
+    const term = arm.termOf('A');
+    expect(term.contribution).toBe(0);
+    expect(term.cause).toBe('INPUT_ENTRY_ABSENT');
+  });
+
+  it('measures NOTHING on a case with no observed call boundary, so the term cannot outrun its own admission', () => {
+    // The fence the re-keying is written under: the shape is defined only where the conjunction admitted a
+    // channel, and on the metrics-only side the conjunction never runs. A term that fired there would be a
+    // magnitude attached to a rule the case did not apply.
+    const arm = run({ collisionWeight: 0.25 }, false);
+    // The map EXISTS and holds nothing — the guard ran and admitted no hump — which is the `MAP_EMPTY` tier
+    // rather than the per-candidate absence. The distinction is the one the cause field was introduced for.
+    expect(arm.graph.collisionShapes).toBeDefined();
+    expect(arm.graph.collisionShapes?.size).toBe(0);
+    expect(arm.termOf('B').contribution).toBe(0);
+    expect(arm.termOf('B').cause).toBe('INPUT_MAP_EMPTY');
+  });
+
+  it('is inert at the shipped weight, and says so with the sharpest cause', () => {
+    const shipped = run();
+    for (const { serviceId } of shipped.results) {
+      const term = shipped.termOf(serviceId);
+      expect(term.contribution).toBe(0);
+      expect(term.cause).toBe('WEIGHT_ZERO');
+    }
   });
 });

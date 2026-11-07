@@ -997,9 +997,9 @@ function printFailureDiagnostics(
           `    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'logScore')}`,
         );
       }
-      if (d.gtRatioContrib !== undefined || d.topRatioContrib !== undefined) {
+      if (d.gtCollisionShape !== undefined || d.topCollisionShape !== undefined) {
         console.log(
-          `    ratioContrib GT=${d.gtRatioContrib?.toFixed(3) ?? '-'} top1=${d.topRatioContrib?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'ratioContrib')}`,
+          `    collisionShape GT=${d.gtCollisionShape?.toFixed(3) ?? '-'} top1=${d.topCollisionShape?.toFixed(3) ?? '-'}${formatInertSuffix(inert, 'collisionShape')}`,
         );
       }
       if (d.gtTopoSource !== undefined || d.topTopoSource !== undefined) {

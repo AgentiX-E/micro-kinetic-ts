@@ -39,13 +39,13 @@ import type { CliOptions } from './rcaeval-cli.js';
  * comparison.
  */
 export type PrintedSignal =
-  'onset' | 'injectDelay' | 'ratioContrib' | 'topoSource' | 'logScore' | 'traceActivity';
+  'onset' | 'injectDelay' | 'collisionShape' | 'topoSource' | 'logScore' | 'traceActivity';
 
 /** Every member of {@link PrintedSignal}, in the order the failure block prints them. */
 export const PRINTED_SIGNALS: readonly PrintedSignal[] = [
   'onset',
   'injectDelay',
-  'ratioContrib',
+  'collisionShape',
   'topoSource',
   'logScore',
   'traceActivity',
@@ -105,8 +105,8 @@ const READINGS: readonly {
     weightName: 'temporalWeight',
   },
   {
-    signal: 'ratioContrib',
-    term: 'finalScore(v) −= collisionWeight × ratioContrib(v)',
+    signal: 'collisionShape',
+    term: 'finalScore(v) += collisionWeight × collisionShape(v)',
     weightName: 'collisionWeight',
   },
   {

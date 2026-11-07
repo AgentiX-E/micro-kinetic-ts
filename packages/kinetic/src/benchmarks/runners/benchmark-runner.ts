@@ -196,8 +196,8 @@ export interface FailedCase {
      */
     readonly gtLogScore?: number;
     readonly topLogScore?: number;
-    readonly gtRatioContrib?: number;
-    readonly topRatioContrib?: number;
+    readonly gtCollisionShape?: number;
+    readonly topCollisionShape?: number;
     readonly gtTopoSource?: number;
     readonly topTopoSource?: number;
     /**
@@ -1071,10 +1071,11 @@ export class BenchmarkRunner {
         // (symptom > GT) the source/symptom separation.
         const gtLogScore = faultGraph.logScores?.get(caseTruth);
         const topLogScore = faultGraph.logScores?.get(topAnomaly[0]?.serviceId ?? '');
-        const gtRatioContrib = faultGraph.collisionEnergy?.get(caseTruth)?.ratioContrib;
-        const topRatioContrib = faultGraph.collisionEnergy?.get(
-          topAnomaly[0]?.serviceId ?? '',
-        )?.ratioContrib;
+        // The collision term's INPUT. It used to be `ratioContrib` (the inherited share of Boltzmann energy);
+        // iteration 242 re-keyed the term on the hump shape, so the diagnostic that says whether the term
+        // helps or hurts has to read what the term reads.
+        const gtCollisionShape = faultGraph.collisionShapes?.get(caseTruth);
+        const topCollisionShape = faultGraph.collisionShapes?.get(topAnomaly[0]?.serviceId ?? '');
         const gtTopoSource = faultGraph.topoScores?.get(caseTruth);
         const topTopoSource = faultGraph.topoScores?.get(topAnomaly[0]?.serviceId ?? '');
         // Trace span-activity rise diagnostics: the GT's pre/post span counts
@@ -1209,8 +1210,8 @@ export class BenchmarkRunner {
               topInjectDelay,
               gtLogScore,
               topLogScore,
-              gtRatioContrib,
-              topRatioContrib,
+              gtCollisionShape,
+              topCollisionShape,
               gtTopoSource,
               topTopoSource,
               gtTraceActivity,

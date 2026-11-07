@@ -337,19 +337,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly onsetShape: OnsetShape;
   /**
-   * Weight of the collision-energy signal: penalise a node whose fault energy
-   * is mostly INHERITED from upstream rather than self-generated.
+   * Weight of the collision SOURCE term: credit a node whose own channels carry the shape Deng Yu's picture
+   * gives a source at `t₀` — a level shift that RETURNS over the relaxation time.
    *
-   *   finalScore(v) −= collisionWeight × ratioContrib(v)
+   *   finalScore(v) += collisionWeight × collisionShape(v)
    *
-   * `ratioContrib(v) = collisionGain / (local + collisionGain)` is the
-   * fraction of v's Boltzmann fault energy coming from its parents. A source
-   * generates its own fault (ratioContrib ≈ 0) and is untouched; a fan-in
-   * symptom aggregates upstream faults (ratioContrib → 1) and is penalised.
+   * `collisionShape(v) = max over v's hump channels of level × (1 − min(1, trimmed / 0.3))`, which is the transient
+   * guard's own hump predicate read as a MAGNITUDE instead of an admission: it is 1 for a channel that shifts
+   * and comes back exactly to its baseline (`re3tt_ts-assurance-service_ck_1344`: `cpu` 0.0215 → 2.718 →
+   * 0.025, two-sample statistic 0.000) and 0 at the return threshold the guard already uses.
    *
-   * Default: 0 (opt-in). The direction of the call-graph edges is a known
-   * assumption to validate via ablation — resource faults can propagate
-   * callee → caller, in which case this directed penalty would misfire.
+   * The term used to be `−collisionWeight × ratioContrib(v)` — a penalty on a node whose Boltzmann energy was
+   * mostly INHERITED from upstream. That content was re-keyed in iteration 242 because a propagated RISE is
+   * what the topology and direction terms already read, while the SOURCE's shape had no magnitude anywhere.
+   * `ratioContrib` is still computed and reported by the aggregation; it is no longer spent by the ranking.
+   *
+   * Default: 0 (opt-in). At 0 the term reads nothing at all, so the re-keying moved no published number.
    */
   readonly collisionWeight: number;
   /**
@@ -1971,6 +1974,7 @@ export class TreePruner {
       metricDiagnostics,
       faultHypotheses,
       propagationWeights,
+      collisionShapes,
     } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
@@ -2247,6 +2251,7 @@ export class TreePruner {
       logScores,
       topoScores,
       riseScores,
+      collisionShapes,
       deepestExceptions,
       traceActivityScores,
       prismScores,
@@ -2324,6 +2329,7 @@ export class TreePruner {
       k,
       { ...this.options, failedEdgeWeight: 0 },
       graph.collisionEnergy,
+      graph.collisionShapes,
       graph.logScores,
       graph.topoScores,
       graph.riseScores,
@@ -2387,6 +2393,7 @@ export class TreePruner {
         k,
         this.options,
         graph.collisionEnergy,
+        graph.collisionShapes,
         graph.logScores,
         graph.topoScores,
         graph.riseScores,
@@ -2683,6 +2690,7 @@ function performTreeRCA(
     ServiceId,
     { totalEnergy: number; collisionType: string; collisionGain: number; ratioContrib: number }
   >,
+  collisionShapes?: ReadonlyMap<ServiceId, number>,
   logScores?: ReadonlyMap<ServiceId, number>,
   topoScores?: ReadonlyMap<ServiceId, number>,
   riseScores?: ReadonlyMap<ServiceId, number>,
@@ -2917,8 +2925,10 @@ function performTreeRCA(
   //    a service deviated from its clean pre-injection baseline, the more likely it
   //    is the source. What exactly the onset delays are read as is `onsetShape`'s
   //    (`earliest-only` credits the first mover and nothing else).
-  // 3. A COLLISION-ENERGY prior (`collisionWeight`) — penalise a node whose
-  //    fault energy is mostly INHERITED from upstream (ratioContrib → 1).
+  // 3. A COLLISION-SOURCE prior (`collisionWeight`) — credit a node whose own channels carry the shape a source
+  //    leaves behind: ramp, hold, RETURN, graded as `level × (1 − min(1, trimmed / 0.3))`. The one term here
+  //    read off a SHAPE rather than off a magnitude of deviation, and the only one keyed on the same predicate
+  //    the transient guard admits channels by.
   // 4. A TOPOLOGICAL-source prior (`topoWeight`) — reward a node with no
   //    strongly anomalous upstream parent.
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
@@ -2977,7 +2987,7 @@ function performTreeRCA(
   //   finalScore(v) = log1p(selfAnomaly(v))
   //                 + sourceWeight    × sourceScore(v)
   //                 + temporalWeight  × onsetSlope(v)   // shaped by `onsetShape`
-  //                 − collisionWeight × ratioContrib(v)
+  //                 + collisionWeight × collisionShape(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
   //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
@@ -2988,13 +2998,6 @@ function performTreeRCA(
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
   const weights = toRankingWeights(options);
-  // Extract the ratioContrib of each node's collision result once, so the
-  // comparator does not re-read the (possibly undefined) collision map per
-  // comparison.
-  const ratioContrib = new Map<ServiceId, number>();
-  for (const [id, ce] of collisionEnergy ?? []) {
-    ratioContrib.set(id, ce.ratioContrib);
-  }
   // Gate the collapse half of the rise signal by the log signal: a RISE is
   // always rewarded; a COLLAPSE is penalised only when the service emitted NO
   // logic exception (silent symptom), never when it did (source crash). The gate
@@ -3107,7 +3110,7 @@ function performTreeRCA(
         return set.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
       };
       const onsetEntry = onsetSlopes.get(id);
-      const collisionEntry = ratioContrib.get(id);
+      const collisionEntry = collisionShapes?.get(id);
       const topoEntry = topoScores?.get(id);
       const logEntry = logScores?.get(id);
       const riseEntry = riseScores?.get(id);
@@ -3150,9 +3153,9 @@ function performTreeRCA(
           presence: presenceOf(onsetSlopes, id),
           source: 'onsetSlopes',
         }),
-        buildTerm('collision', -weights.collisionWeight, collisionEntry ?? 0, {
-          presence: presenceOf(collisionEnergy, id),
-          source: 'collisionEnergy',
+        buildTerm('collision', weights.collisionWeight, collisionEntry ?? 0, {
+          presence: presenceOf(collisionShapes, id),
+          source: 'collisionShapes',
         }),
         buildTerm('topo', weights.topoWeight, topoEntry ?? 0, {
           presence: presenceOf(topoScores, id),

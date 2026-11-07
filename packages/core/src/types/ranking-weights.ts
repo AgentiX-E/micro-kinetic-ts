@@ -21,7 +21,7 @@
  *   finalScore(v) = log1p(selfAnomaly(v))
  *                 + sourceWeight    × sourceScore(v)
  *                 + temporalWeight  × 2 × (earliness(v) − 0.5)
- *                 − collisionWeight × ratioContrib(v)
+ *                 + collisionWeight × collisionShape(v)
  *                 + topoWeight      × topoSource(v)
  *                 + logWeight       × logScore(v)
  *                 + riseWeight      × 2 × (riseScore(v) − 0.5)
@@ -62,9 +62,11 @@ export interface RankingWeights {
    */
   readonly temporalWeight: number;
   /**
-   * Collision-energy prior: penalises a node whose fault energy is mostly
-   * INHERITED from upstream (ratioContrib → 1) rather than self-generated.
-   * A source has ratioContrib ≈ 0, a fan-in symptom ≈ 1. Default 0.
+   * Collision-source prior: credits a node whose own channels carry the shape Deng Yu's picture gives a source
+   * at `t₀` — a level shift that RETURNS over the relaxation time, graded as
+   * `level × (1 − min(1, trimmed / 0.3))`. The hump predicate the transient guard admits channels by, read as a
+   * magnitude. It was a penalty on inherited energy (`ratioContrib`) until iteration 242; the aggregation still
+   * reports that number, the ranking no longer spends it. Default 0, at which the term reads nothing.
    */
   readonly collisionWeight: number;
   /**

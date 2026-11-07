@@ -4470,3 +4470,130 @@ describe('the hump conjunction — admit the level reading only where the trimme
     expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('hump');
   });
 });
+
+describe('the collision SHAPE — the hump predicate read as a magnitude', () => {
+  type GraphCfg = Parameters<typeof buildTopologyFaultGraph>[2];
+
+  /** The node's collision shape under one configuration, or `undefined` when the graph measured none. */
+  const shapeOf = (series: Array<[string, number[]]>, cfg: GraphCfg): number | undefined => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([['svc', series.map(([l, v]) => makeTimeSeries(l, v))]]);
+    return buildTopologyFaultGraph(graph, metrics, cfg).collisionShapes.get('svc');
+  };
+  /** The dominant channel's label, so a test can say which channel the score was read off. */
+  const dominantOf = (series: Array<[string, number[]]>, cfg: GraphCfg): string => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([['svc', series.map(([l, v]) => makeTimeSeries(l, v))]]);
+    return buildTopologyFaultGraph(graph, metrics, cfg).dominantMetrics.get('svc')!.label;
+  };
+  /** One channel's outcome under one arm, so a shape can be compared against the admission it grades. */
+  const outcomeOf = (values: number[], cfg: GraphCfg): string => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+    return buildTopologyFaultGraph(graph, metrics, cfg).metricDiagnostics.get('svc')![0]!.outcome;
+  };
+
+  /** Ramp, hold, RETURN: 15 at the baseline, 10 at the plateau, 5 back at the baseline. */
+  const settled = [
+    ...Array<number>(15).fill(5),
+    ...Array<number>(10).fill(100),
+    ...Array<number>(5).fill(5),
+  ];
+  /** The same ramp and hold, returning to 20 rather than to the baseline: a return that is only partial. */
+  const partialReturn = [
+    ...Array<number>(15).fill(5),
+    ...Array<number>(10).fill(100),
+    ...Array<number>(5).fill(20),
+  ];
+  /** A ramp that HOLDS: the permanent shift the guard already kept, and a shape of zero. */
+  const permanent = [...Array<number>(15).fill(5), ...Array<number>(15).fill(100)];
+
+  const observed: GraphCfg = { injectTimeMs: 15000, sideChannelObserved: true };
+
+  it('reads a settled hump as its level, because a full return leaves the return factor at one', () => {
+    // The formula is `level × (1 − min(1, trimmed / threshold))`. On this shape the trimmed reading is exactly
+    // 0 — both end windows sit at the baseline — so the shape IS the level reading's 1.0, which is the value a
+    // `0.10` arm pays for: the term's whole content on a clean kill.
+    expect(shapeOf([['cpu', settled]], observed)).toBe(1);
+  });
+
+  it('grades a partial return by the quantity the admission test thresholds, not by a second constant', () => {
+    // The return is `|5 − 20| / 95 = 3/19` of the range, so the factor is `1 − (3/19) / 0.3` and the shape is
+    // `1 × that`. The point of asserting the arithmetic rather than a rounded number is that the threshold is
+    // the GUARD's: a shape built on a second bar could disagree with the admission about the same channel.
+    const trimmed = 15 / 95;
+    expect(shapeOf([['cpu', partialReturn]], observed)).toBeCloseTo(
+      1 - trimmed / TRANSIENT_RETURN_THRESHOLD,
+      12,
+    );
+    // …and it is still ADMITTED, so the decay is a magnitude and not a second admission rule.
+    expect(outcomeOf(partialReturn, observed)).toBe('kept');
+  });
+
+  it('is absent — not zero — wherever the conjunction does not admit the channel', () => {
+    // The battery the hump arm was judged on, with the admission characterised INDEPENDENTLY of the shape: a
+    // channel is a hump exactly when the trimmed reading drops it and the policy keeps it. The shape has a value
+    // exactly on that set, which is what makes "the two cannot disagree about which channels are humps" a
+    // statement about the code rather than about the docblock.
+    const battery: Array<[string, number[]]> = [
+      ['settled', settled],
+      ['partial-return', partialReturn],
+      ['plateau', [...Array<number>(15).fill(5), ...Array<number>(12).fill(106), 5, 5, 5]],
+      [
+        'two-humps',
+        [
+          ...Array<number>(5).fill(5),
+          ...Array<number>(10).fill(80),
+          ...Array<number>(5).fill(5),
+          ...Array<number>(10).fill(80),
+          ...Array<number>(5).fill(5),
+        ],
+      ],
+      ['permanent', permanent],
+      ['warm-up', [...Array<number>(3).fill(5), ...Array<number>(27).fill(100)]],
+      ['excursion', [1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1]],
+      ['crash', [...Array<number>(15).fill(100), ...Array<number>(15).fill(0.5)]],
+    ];
+    for (const [name, values] of battery) {
+      const trimmedDrops =
+        outcomeOf(values, { ...observed, transientGuardTest: 'trimmed-ends' }) ===
+        'transient-return';
+      const policyKeeps = outcomeOf(values, observed) === 'kept';
+      const shape = shapeOf([['cpu', values]], observed);
+      expect(shape !== undefined, `${name}: is a hump = ${trimmedDrops && policyKeeps}`).toBe(
+        trimmedDrops && policyKeeps,
+      );
+    }
+  });
+
+  it('takes the maximum over the node’s channels rather than the dominant channel’s shape', () => {
+    // The term is a node's collision SOURCE, so it cannot be read off the channel that won the anomaly: the
+    // dominant channel here is the permanent shift (it deviates further), and the hump beside it is what the
+    // shape is measured from. A version that read `dominantMetric` would report nothing on this node.
+    const series: Array<[string, number[]]> = [
+      ['cpu', permanent],
+      ['mem', settled],
+    ];
+    expect(dominantOf(series, observed)).toBe('cpu');
+    expect(shapeOf(series, observed)).toBe(1);
+  });
+
+  it('measures nothing on a case that observed no call boundary, because there the policy is the level test', () => {
+    // `hump` resolves to `level-window` when the case carries no logs, no spans and no per-edge latency, so the
+    // conjunction never runs and there is no admission to grade. A shape that fired here would be a magnitude
+    // attached to a rule the case never applied.
+    expect(shapeOf([['cpu', settled]], { injectTimeMs: 15000, sideChannelObserved: false })).toBe(
+      undefined,
+    );
+    // …and it measures nothing under an arm that does not read the conjunction either.
+    expect(shapeOf([['cpu', settled]], { ...observed, transientGuardTest: 'level-window' })).toBe(
+      undefined,
+    );
+  });
+
+  it('is absent where the boundary cannot be placed, since a hump is a claim about two SIDES', () => {
+    expect(shapeOf([['cpu', settled]], { injectTimeMs: 0, sideChannelObserved: true })).toBe(
+      undefined,
+    );
+  });
+});

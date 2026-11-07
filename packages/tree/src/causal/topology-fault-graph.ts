@@ -1244,6 +1244,14 @@ export interface TopologyFaultGraphResult {
     }
   >;
   /**
+   * Per-service collision SHAPE in [0, 1] — the hump predicate read as a magnitude. SPARSE: a service has an
+   * entry exactly where its own guard admitted a hump channel, so `has` answers "is the source shape measurable
+   * here" and a missing entry is an absence rather than a measured zero.
+   *
+   * Read by the `collisionWeight` ranking term, which ships at 0. See {@link AnomalyFeatures.collisionShape}.
+   */
+  readonly collisionShapes: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service metric competition, one entry per metric the service carries.
    *
    * The anomaly score is a maximum, so it cannot distinguish "the fault
@@ -1421,6 +1429,14 @@ export function buildTopologyFaultGraph(
   const metricDiagnostics = new Map<ServiceId, readonly MetricDiagnostic[]>();
   /** Per-service breadth, applied once the fleet's best is known (see Step 1a). */
   const breadthByService = new Map<ServiceId, number>();
+  /**
+   * Per-service collision SHAPE, SPARSE: an entry exists exactly where the case's guard admitted a hump.
+   *
+   * Sparsity is the semantics, not an optimisation. "This node carries no source shape" and "this node's shape
+   * is 0" are the same number and different facts, and the ranking term reports the absence as an absent ENTRY
+   * rather than as a measured zero — the tier distinction `classifyTermZero` exists for.
+   */
+  const collisionShapes = new Map<ServiceId, number>();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -1436,6 +1452,7 @@ export function buildTopologyFaultGraph(
     dominantMetrics.set(serviceId, result.dominantMetric);
     metricDiagnostics.set(serviceId, result.metricDiagnostics);
     if (result.breadth !== 0) breadthByService.set(serviceId, result.breadth);
+    if (result.collisionShape !== 0) collisionShapes.set(serviceId, result.collisionShape);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
       diagNoMetrics++;
@@ -1636,6 +1653,7 @@ export function buildTopologyFaultGraph(
     postInjectOnsetDelays,
     dominantMetrics,
     metricDiagnostics,
+    collisionShapes,
     propagationWeights,
     pearsonEdgeCount,
     fallbackEdgeCount,
@@ -1874,6 +1892,16 @@ interface AnomalyFeatures {
    * cannot see. `0` when the weight is 0, i.e. the shipped path computes nothing.
    */
   breadth: number;
+  /**
+   * The node's collision SHAPE — the largest `level × (1 − min(1, trimmed / threshold))` over its hump channels,
+   * or `0` when the policy admitted none.
+   *
+   * Read by the (opt-in) `collisionWeight` term, which at weight 0 does not read it at all. It is a magnitude in
+   * the unit the hump admission test thresholds, so a channel can only carry one where the conjunction admitted
+   * it — see `computeAnomalyFeatures` for the two operands and `docs/transient-guard-evidence.md` §13 for the
+   * arms it is judged by.
+   */
+  collisionShape: number;
   onsetIndex: number;
   /**
    * Onset delay in milliseconds after the fault injection time (the first
@@ -1955,6 +1983,7 @@ function computeAnomalyFeatures(
       // A service with no metrics has no channels to have moved; the empty result is an absence, not a
       // breadth of zero over an empty set.
       breadth: 0,
+      collisionShape: 0,
       onsetIndex: Number.MAX_SAFE_INTEGER,
       postInjectOnsetDelay: -1,
       dominantMetric: { label: '', head: [], tail: [], transientSkipped: [] },
@@ -2000,6 +2029,13 @@ function computeAnomalyFeatures(
 
   let bestScore = 0;
   let bestMetricLabel = '';
+  /**
+   * The largest hump SHAPE over the node's channels, or `0` when no channel was admitted as a hump.
+   *
+   * A `max` rather than the dominant channel's shape: the quantity is the node's collision SOURCE, and a source
+   * is a property of the node's evidence — not of which channel happened to win the anomaly maximum.
+   */
+  let bestHumpShape = 0;
   let bestMetricHead: number[] = [];
   let bestMetricTail: number[] = [];
   let bestMetricOnset = Number.MAX_SAFE_INTEGER;
@@ -2159,29 +2195,54 @@ function computeAnomalyFeatures(
     // The trimmed reading's own fallback, named once: two of the branches below read it, and a fallback retyped is
     // a fallback that can drift between the arm that uses it and the arm it is compared against.
     const permanenceTrimmedFallback = permanenceTrimmed ?? permanenceEndpoint;
+    // The conjunction: the level reading is admitted ONLY where the trimmed reading has already called the
+    // channel settled AND the level reading itself finds a shift. Both comparisons use the guard's own bar, so
+    // this is one number and not two, and the arm can only ever ADMIT a channel the trimmed reading dropped —
+    // never remove one it kept.
+    // `permanenceTrimmed !== undefined` is the precondition, not a null check: on a series with no interior
+    // between the two end windows there is no trimmed reading to be settled, and letting the ENDPOINT fallback
+    // play that role would make the arm a superset of `level-window` on every short channel — the arm 238
+    // already measured and refused.
+    //
+    // Named rather than inlined because TWO facts are read off it: the admission (`permanence` below) and the
+    // SHAPE the collision term prices (`humpShape`). A second transcription of these three comparisons is how a
+    // magnitude comes to be attached to a channel the rule never admitted.
+    const humpAdmitted =
+      permanenceTrimmed !== undefined &&
+      permanenceTrimmed < TRANSIENT_RETURN_THRESHOLD &&
+      permanenceLevel !== undefined &&
+      permanenceLevel >= TRANSIENT_RETURN_THRESHOLD;
     const permanence =
       guardTest === 'level-window'
         ? (permanenceLevel ?? permanenceEndpoint)
         : guardTest === 'trimmed-ends'
           ? permanenceTrimmedFallback
           : guardTest === 'hump'
-            ? // The conjunction: the level reading is admitted ONLY where the trimmed reading has already called
-              // the channel settled AND the level reading itself finds a shift. Both comparisons use the guard's
-              // own bar, so this is one number and not two, and the arm can only ever ADMIT a channel the trimmed
-              // reading dropped — never remove one it kept.
-              // `permanenceTrimmed !== undefined` is the precondition, not a null check: on a series with no
-              // interior between the two end windows there is no trimmed reading to be settled, and letting the
-              // ENDPOINT fallback play that role would make the arm a superset of `level-window` on every short
-              // channel — the arm 238 already measured and refused.
-              permanenceTrimmed !== undefined &&
-              permanenceTrimmed < TRANSIENT_RETURN_THRESHOLD &&
-              permanenceLevel !== undefined &&
-              permanenceLevel >= TRANSIENT_RETURN_THRESHOLD
+            ? humpAdmitted
               ? permanenceLevel
               : permanenceTrimmedFallback
             : guardTest === 'either'
               ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
               : permanenceEndpoint;
+    // The hump's SHAPE — the same two operands the admission above was decided on, at the same threshold, read
+    // as a MAGNITUDE rather than as a yes/no:
+    //
+    //   shape = permanenceLevel × (1 − min(1, permanenceTrimmed / TRANSIENT_RETURN_THRESHOLD))
+    //
+    // A fully settled return (`trimmed = 0`) leaves the level intact, and a return that exactly reaches the
+    // guard's bar leaves nothing — so the factor is 1 exactly where a hump is cleanest and 0 exactly where the
+    // admission test would have stopped calling it one. The term is therefore GRADED IN THE QUANTITY THE
+    // ADMISSION THRESHOLDS, which is what keeps the two from disagreeing about which channels are humps: the
+    // shape is non-zero only on the set `humpAdmitted` names.
+    //
+    // It is `0` under every other guard test, because none of them admits a hump: a shape keyed on the trimmed
+    // reading under `level-window` would be evidence the policy had declined to use. See
+    // `docs/transient-guard-evidence.md` §13 for the arm this is enrolled against.
+    const humpShape =
+      guardTest === 'hump' && humpAdmitted
+        ? permanenceLevel * (1 - Math.min(1, permanenceTrimmed / TRANSIENT_RETURN_THRESHOLD))
+        : 0;
+    if (humpShape > bestHumpShape) bestHumpShape = humpShape;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
@@ -2480,6 +2541,7 @@ function computeAnomalyFeatures(
     // weight being 0 keeps the shipped path exact: `score` is `bestScore + 0·breadth`.
     score: bestScore,
     breadth,
+    collisionShape: bestHumpShape,
     onsetIndex: bestMetricOnset,
     postInjectOnsetDelay,
     dominantMetric: {
