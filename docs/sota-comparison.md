@@ -1702,3 +1702,33 @@ This one is uncomfortable in a specific way, and it is the reason it is recorded
 `sota-populations` / `competitor-artefact-availability` fences that §0a is, and neither inventory carries a row
 for it. Extending the grammar to `10.\d{4,}/…` would put six already-cited DOIs into scope at once, which is the
 next iteration's fence work and not a change to make silently here.
+
+## 2026-11-07 (2) — the collision source is refused under both keyings, and the standings do not move
+
+Iteration 242 re-keyed the one Deng-Yu instrument in the formula that was inert — `collisionWeight`, whose content
+was a penalty on inherited energy (`ratioContrib`) — onto the hump SHAPE, and read it at two weights on three
+populations. Pre-registered before the code existed (`PREREGISTRATION_2026-11-07d_collision-shape.md`), refused on
+its own criterion, and recorded in `docs/transient-guard-evidence.md` §14.
+
+**No cell in this document moves.** The control reading on the new commit (`2d1dc02d`, battery `42365685149`) is
+`113/119/112 · 84/89/76 · 25/19/22` = **659/735** and `874/1 422` — identical to the anchor in §0p, which is what a
+weight-0 term must be and is now a measurement rather than a construction.
+
+| arm         | golden (735) | FSE'26 (1 422) | verdict                                                   |
+| ----------- | -----------: | -------------: | --------------------------------------------------------- |
+| control (0) |          659 |            874 | —                                                         |
+| A (0.10)    |          659 |            869 | refused: archive −5, `HTTPRequestDelay` −2, sign negative |
+| B (0.25)    |          656 |            860 | refused: four of five criteria                            |
+
+The refusal is worth more than a null row, for the reason §0j records about `DeCoR`'s reliability weight: **the term
+was refused on a mechanism statement rather than on a magnitude.** The shape was supposed to be the kill's
+signature, and on the archive the kill types are flat to negative — `ContainerKill` 27/27/27 of 89, `PodKill`
+6/5/4 of 10 — while the two types that gain are not kills at all. And the two populations disagree for an
+arithmetic reason rather than a corpus one: a measured shape is ≈0.1, which is **below one rank step on a 10-node
+rank-normalised graph** (0.111, where RCAEval's small cells live) and **above it on a 64-node one** (0.016, where
+TrainTicket and the archive live). One weight cannot span a 7× difference in the unit the ranking works in.
+
+That is the actionable sentence, and it is not enrolled: **a contribution expressed in units of the graph's own
+rank step is a different instrument from a contribution expressed in units of the shape**, and the collision source
+is the term where it would be cheapest to test. The standings above are unaffected by the refusal and unchanged
+since iteration 241.

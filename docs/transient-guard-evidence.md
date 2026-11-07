@@ -714,7 +714,7 @@ enrolment: **`hump` is the shipped value of `transientGuardTest` since iteration
 
 ### 13.1 The dispatch had to be fixed before it could be read
 
-The first debt was *"the nine cells and FSE'26 have not been run under `hump`"*. Running them was impossible on one
+The first debt was _"the nine cells and FSE'26 have not been run under `hump`"_. Running them was impossible on one
 half: `fse26-benchmark.yml`'s `ranking_knobs` carried its own copy of the vocabulary, six members long, so
 `ranking_knobs=transient_guard_test=hump` exited with a message written by the copy. The branch now forwards the
 value and the CLI refuses an unknown word against `TRANSIENT_GUARD_TESTS` — one owner — and
@@ -738,11 +738,11 @@ golden dispatch's RE2 job had uploaded anything. It required all of:
 
 ### 13.3 The three readings
 
-| population | `evidence-trimmed` | `hump` | movement |
-| --- | ---: | ---: | --- |
-| RCAEval, nine cells, 735 cases | 657 = 89.39 % | **659 = 89.66 %** | **+2** (2 fixes / 0 breaks) |
-| FSE'26, 1 422 cases, `Top@1` | 869 = 61.1 % | **874 = 61.5 %** | **+5**, five types up, one down by 1 |
-| RCABench TT archive, 1 303 paired cases | 750 = 57.56 % | **759 = 58.25 %** | **+9** (12 fixes / 3 breaks) |
+| population                              | `evidence-trimmed` |            `hump` | movement                             |
+| --------------------------------------- | -----------------: | ----------------: | ------------------------------------ |
+| RCAEval, nine cells, 735 cases          |      657 = 89.39 % | **659 = 89.66 %** | **+2** (2 fixes / 0 breaks)          |
+| FSE'26, 1 422 cases, `Top@1`            |       869 = 61.1 % |  **874 = 61.5 %** | **+5**, five types up, one down by 1 |
+| RCABench TT archive, 1 303 paired cases |      750 = 57.56 % | **759 = 58.25 %** | **+9** (12 fixes / 3 breaks)         |
 
 Per cell (`42340115598` against `42340026217`, both at `0976a143`, one input differing):
 
@@ -790,14 +790,14 @@ Three things make this a transfer rather than a coincidence, and each is checkab
 
 Six answers changed on the golden half and **one of them is a regression**:
 
-| case | cell | before | after | |
-| --- | --- | --- | --- | --- |
-| `re2ss_payment_loss_1` | RE2:SockShop | `carts` (wrong) | `payment` | **fix** |
-| `re2tt_ts-travel-service_disk_2` | RE2:TrainTicket | `ts-admin-travel-service` (wrong) | `ts-travel-service` | **fix** |
-| `re3ss_orders_f3_2` | RE3:SockShop | `orders-db` (wrong) | `orders` | **fix** |
-| `re3ss_orders_f3_3` | RE3:SockShop | `orders` | `orders-db` | **break** |
-| `re3ob_currencyservice_f1_2` | RE3:OnlineBoutique | `frontend` (wrong) | `paymentservice` | wrong → wrong |
-| `re3ss_orders_f4_2` | RE3:SockShop | `orders-db` (wrong) | `carts-db` | wrong → wrong |
+| case                             | cell               | before                            | after               |               |
+| -------------------------------- | ------------------ | --------------------------------- | ------------------- | ------------- |
+| `re2ss_payment_loss_1`           | RE2:SockShop       | `carts` (wrong)                   | `payment`           | **fix**       |
+| `re2tt_ts-travel-service_disk_2` | RE2:TrainTicket    | `ts-admin-travel-service` (wrong) | `ts-travel-service` | **fix**       |
+| `re3ss_orders_f3_2`              | RE3:SockShop       | `orders-db` (wrong)               | `orders`            | **fix**       |
+| `re3ss_orders_f3_3`              | RE3:SockShop       | `orders`                          | `orders-db`         | **break**     |
+| `re3ob_currencyservice_f1_2`     | RE3:OnlineBoutique | `frontend` (wrong)                | `paymentservice`    | wrong → wrong |
+| `re3ss_orders_f4_2`              | RE3:SockShop       | `orders-db` (wrong)               | `carts-db`          | wrong → wrong |
 
 The one break is paid for inside its own cell and its own fault type: `orders_f3_2` and `orders_f3_3` are an `f3`
 pair that swapped, `RE3:SockShop` reads 19/30 on both arms, and the cell's answer set moved by two. On the archive
@@ -825,3 +825,109 @@ at all. It landed and reads **659/735**, per case identical to the arm run on al
 3. **The bar is uncalibrated**: `TRANSIENT_RETURN_THRESHOLD = 0.3` is a fraction of each channel's range applied to
    every channel of every service. §12's conjunction now reads it twice per channel, which makes a calibrated
    version of it worth more than it was.
+
+## 14. The collision SOURCE, keyed on the shape — two arms, and neither passes
+
+§13.6's first owed item was that `collisionWeight` is still 0 and that this section's own reading is the argument for
+keying it on the hump SHAPE rather than on a propagated rise. Iteration 242 built that keying, pre-registered three
+arms before any code existed, and read them. **Both arms are refused**, and the numbers below are the refusal.
+
+### 14.1 The instrument, and the one property it was built to have
+
+Per channel `v` the guard already computes two operands, and the shape is those two, at the guard's own bar:
+
+```text
+collisionShape(v) = permanenceLevel(v) × (1 − min(1, permanenceTrimmed(v) / TRANSIENT_RETURN_THRESHOLD))
+```
+
+so it is `permanenceLevel` for a channel that returns exactly to its baseline and `0` at the return threshold — i.e.
+**graded in the quantity the `hump` admission thresholds**. The conjunction is named once in the builder
+(`humpAdmitted`) and read twice, so the shape cannot be attached to a channel the admission refused. The term is
+`finalScore(v) += collisionWeight × max_v collisionShape(v)`, sparse (an entry exists only where a hump was
+admitted), and its sign follows its content: inherited energy was a penalty, a source's shape is a credit.
+
+At the shipped weight of 0 the term reads nothing, so the re-keying moved **no published number** — and that was
+measured rather than argued: the push-triggered battery on the commit itself (`2d1dc02d`) reads **659/735**, with
+`113/119/112 · 84/89/76 · 25/19/22` per cell, cell-for-cell identical to `42343505202` at `bd17912c`.
+
+### 14.2 The three readings
+
+Golden half — nine cells, 735 cases, `benchmark-rcaeval.yml`:
+
+| arm     | `collisionWeight` | RE1 OB/SS/TT    | RE2 OB/SS/TT     | RE3 OB/SS/TT |   total |
+| ------- | ----------------: | --------------- | ---------------- | ------------ | ------: |
+| control |                 0 | 113 / 119 / 112 | 84 / 89 / 76     | 25 / 19 / 22 | **659** |
+| A       |              0.10 | 113 / 119 / 112 | 84 / 89 / 76     | 25 / 19 / 22 | **659** |
+| B       |              0.25 | 113 / 119 / 112 | 84 / 89 / **73** | 25 / 19 / 22 | **656** |
+
+Archive — FSE'26, 1 422 cases, `fse26-benchmark.yml`:
+
+| arm     | `collisionWeight` | `Top@1` |   cases |   Δ |
+| ------- | ----------------: | ------: | ------: | --: |
+| control |                 0 |  61.5 % | **874** |   — |
+| A       |              0.10 |  61.1 % | **869** |  −5 |
+| B       |              0.25 |  60.5 % | **860** | −14 |
+
+Arm A moves **nothing at all** on the golden half and loses 5 cases on the archive; arm B loses 3 golden cases (all
+on `RE2:TrainTicket`) and 14 on the archive. The criterion required `≥ 659`, no golden cell down by more than one,
+`≥ 874` with no type down by more than one, `≥ 759` on the RCABench TT archive, and a positive sign on all three
+populations. **A fails on the archive total, on `HTTPRequestDelay` (−2), and on the sign; B fails on four of the
+five.** Criterion 4 (the RCABench TT archive, `≥ 759` of 1 303) was **not read**, because the verdict is already
+decided by criteria 1–3 on two other populations and the archive is a third corpus; it is recorded here as unread
+rather than as passed. Under §13.2's own rule the term is recorded as measured and refused, and the shape evidence
+stays where it was: an admission rule with no magnitude.
+
+### 14.3 The per-fault-type table, which is the part that argues against the mechanism
+
+The pre-registration asked for this table _because_ the claim is about kills. It is the cleanest falsification in
+this document:
+
+| fault type                      | control | A (0.10) | B (0.25) |
+| ------------------------------- | ------: | -------: | -------: |
+| `ContainerKill` (89)            |      27 |       27 |       27 |
+| `PodKill` (10)                  |       6 |        5 |        4 |
+| `PodFailure` (24)               |       1 |        1 |        1 |
+| `JVMMemoryStress` (171)         |      61 |       61 |       56 |
+| `HTTPResponseReplaceCode` (231) |     162 |      161 |      159 |
+| `NetworkPartition` (97)         |      64 |       63 |       61 |
+| `HTTPRequestDelay` (88)         |      57 |       55 |       57 |
+| `JVMException` (43)             |      30 |       31 |       31 |
+| `HTTPResponseDelay` (89)        |      56 |       57 |       57 |
+
+The three fault types the shape was supposed to be about (`ContainerKill`, `PodKill`, `PodFailure`) are **flat to
+negative**: the type that motivated `hump` in §12 moves by zero on both arms, and `PodKill` — ten cases, the
+cleanest kill in the corpus — _loses_ one and two. The two types that gain are `JVMException` and
+`HTTPResponseDelay`, which are not kills at all. A gain that does not concentrate on the mechanism is evidence
+against the mechanism, which is what §13.2 said this table was for.
+
+### 14.4 Why: the term is below the resolution of one population and above the noise of the other
+
+The two readings are not in tension; they are the same arithmetic on two graph sizes.
+
+On RCAEval's small graphs the score is **rank-normalised**: at 10 nodes one rank step is `1/9 = 0.111`, at 15 nodes
+`1/14 = 0.071`. The measured shape on real cases is around **0.10**, not 1.0 — the printed diagnostic on
+`re3ob_currencyservice_f1_3` reads `collisionShape GT=- top1=0.097` — because `permanenceLevel` is a median shift
+divided by a RANGE, and a corpus channel's range is dominated by its excursion. So the term contributes at most
+`0.25 × 0.10 = 0.025` on arm B, which is **under one rank step on a 10-node graph**: it cannot reorder anything, and
+the golden half shows exactly that. On TrainTicket (63–69 nodes) one rank step is `1/64 = 0.016`, so the same
+0.025 is worth a rank and a half — and there the term starts spending, which is where B's `RE2:TrainTicket`
+`76 → 73` comes from, and where the archive's 1 422 large-graph cases pay 5 and 14.
+
+**The instrument's problem is therefore SCALE, not SHAPE.** `weight × shape` with `shape ≈ 0.1` cannot be expressed
+at one weight across graph sizes whose rank steps differ by 7×, which is the same population-dependence the guard
+axis itself showed in §13 — and the honest next lever is a contribution normalised by the graph's own rank step
+(or a per-case scale), not another weight. That arm is not enrolled and this document does not claim it works.
+
+### 14.5 What is now owed, in order
+
+1. **The precision is not measured**: §13.2 asked for `fixes / (fixes + breaks)`, and the two arm runs carry no
+   per-case dump, so the number does not exist. It is owed on the first re-arm — `--diagnose` over 1 422 cases at
+   two weights — and it is named here rather than estimated from per-type deltas, which cannot see a swap.
+2. **The scale question in §14.4** is the one actionable finding: a contribution in units of the graph's rank step
+   is a different instrument from a contribution in units of the shape, and the two populations differ by 7× in
+   that unit. Not enrolled.
+3. **`TRANSIENT_RETURN_THRESHOLD = 0.3`'s calibration debt is unchanged** (§13.6 item 3), and §14.4 sharpens it: the
+   shape is now read twice per channel against a bar with no calibration argument.
+4. **The `ratioContrib` reading stays closed** (`docs/closed-axes-register.md`): it was falsified by sign reversal,
+   and this iteration falsified its replacement by magnitude. The collision term has now been measured under both
+   keyings and neither carries anything on these three populations.

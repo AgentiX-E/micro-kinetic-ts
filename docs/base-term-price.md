@@ -17,7 +17,8 @@ The ranking is a sum of terms:
 finalScore(v) = selfAnomalyWeight × log1p(anomaly(v))          ← the model's own quantity
               + sourceWeight  × sourceLikelihood(v)             ← priors over it
               + temporalWeight × onsetEarliness(v)
-              − collisionWeight × collisionEnergy(v)
+              + collisionWeight × collisionShape(v)          ← re-keyed in iteration 242; see §13.6 of
+                                                               `transient-guard-evidence.md`
               + topoWeight × topologicalSource(v)
               + logWeight × logScore(v)
               + riseWeight × gatedRise(v)
@@ -245,18 +246,18 @@ in units of the fleet's widest one.
 
 That arm is now run. One input (`no_rank_normalization`), one commit, 735 cases, everything else shipped:
 
-| cell               | rank (shipped) | minmax |  Δ |
-| ------------------ | -------------: | -----: | -: |
-| RE1 OnlineBoutique |            107 |    107 |  0 |
-| RE1 SockShop       |            116 |    116 |  0 |
-| RE1 TrainTicket    |            104 |    103 | −1 |
-| RE2 OnlineBoutique |             80 |     80 |  0 |
-| RE2 SockShop       |             85 |     85 |  0 |
-| RE2 TrainTicket    |             75 |     71 | −4 |
-| RE3 OnlineBoutique |             25 |     25 |  0 |
-| RE3 SockShop       |             18 |     18 |  0 |
-| RE3 TrainTicket    |             21 |     15 | −6 |
-| **735**            |        **631** |**620** | **−11** |
+| cell               | rank (shipped) |  minmax |       Δ |
+| ------------------ | -------------: | ------: | ------: |
+| RE1 OnlineBoutique |            107 |     107 |       0 |
+| RE1 SockShop       |            116 |     116 |       0 |
+| RE1 TrainTicket    |            104 |     103 |      −1 |
+| RE2 OnlineBoutique |             80 |      80 |       0 |
+| RE2 SockShop       |             85 |      85 |       0 |
+| RE2 TrainTicket    |             75 |      71 |      −4 |
+| RE3 OnlineBoutique |             25 |      25 |       0 |
+| RE3 SockShop       |             18 |      18 |       0 |
+| RE3 TrainTicket    |             21 |      15 |      −6 |
+| **735**            |        **631** | **620** | **−11** |
 
 Two things this measures, and the second is the general one.
 
