@@ -900,6 +900,12 @@ cleanest kill in the corpus — _loses_ one and two. The two types that gain are
 `HTTPResponseDelay`, which are not kills at all. A gain that does not concentrate on the mechanism is evidence
 against the mechanism, which is what §13.2 said this table was for.
 
+**The `collisionSignal` arm, re-read.** §13.2 required this because its recorded `−0.0111` mean `Top@1` was
+measured with the _rise-based_ content. On the new content at weight 0.3 the arm reads **Δ+0.0 % on RE1**
+(`ablation-re1`, battery `42365780940`) — the same inertness the two golden arms show — so the recorded −0.0111
+belongs to `ratioContrib` and no number in this section reproduces it. That is the outcome the pre-registration
+called "the interesting one": the shape reuses the signal's channel and does not reproduce its result.
+
 ### 14.4 Why: the term is below the resolution of one population and above the noise of the other
 
 The two readings are not in tension; they are the same arithmetic on two graph sizes.
