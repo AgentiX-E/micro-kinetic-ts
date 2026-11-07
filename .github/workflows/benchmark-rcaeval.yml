@@ -2528,6 +2528,29 @@ jobs:
           echo "=== Ablation RE3 ===" >> artifacts/ablation-results.txt
           cat artifacts/ablation-re3-results/ablation-re3-results.txt 2>/dev/null >> artifacts/ablation-results.txt || echo "(not available)" >> artifacts/ablation-results.txt
 
+      #   The nine published cells are held to a COMMITTED baseline, because every other fence in this
+      #   repository compares the document against itself. `docs/sota-comparison.md`'s block was one case low on
+      #   RE1:OnlineBoutique for four days: one engine commit fixed `re1ob_currencyservice_loss_1` and no
+      #   assertion could see it, since the configuration line is byte-identical before and after a fix and the
+      #   four table assertions are all statements about the document. This step is the comparison the document
+      #   cannot make. A movement fails the job; a movement that is INTENDED is updated in
+      #   `benchmarks/baselines/rcaeval-nine-cells.json` in the same commit that declares it.
+      #
+      #   An ARM is skipped rather than failed: the tool reads the run's own `signals:` line, digests it, and
+      #   compares only when that digest is the baseline's — a dispatch exists to move cells, and a gate that
+      #   fails every experiment is a gate that gets deleted.
+      - name: Compare the nine cells to the committed baseline
+        if: ${{ needs.rcaeval-re1.result == 'success' && needs.rcaeval-re2.result == 'success' && needs.rcaeval-re3.result == 'success' }}
+        run: |
+          npx --yes tsx@4 benchmarks/src/cell-baseline.ts \
+            --baseline benchmarks/baselines/rcaeval-nine-cells.json \
+            --results artifacts/rcaeval-re1-results/rcaeval-re1-results.txt \
+            --results artifacts/rcaeval-re2-results/rcaeval-re2-results.txt \
+            --results artifacts/rcaeval-re3-results/rcaeval-re3-results.txt \
+            --census artifacts/rcaeval-re1-results/rcaeval-loss-census-re1.jsonl \
+            --census artifacts/rcaeval-re2-results/rcaeval-loss-census-re2.jsonl \
+            --census artifacts/rcaeval-re3-results/rcaeval-loss-census-re3.jsonl
+
       - name: Generate HTML dashboard
         run: |
           python3 -c "

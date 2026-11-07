@@ -195,6 +195,13 @@ export default defineConfig({
         // label, and a label is only worth what its coverage is: every branch here decides whether a printed
         // number arrives with the weight that reads it.
         'src/signal-evidence.ts',
+        // Added with the module: the gate that holds the nine published cells to a committed baseline. It is the
+        // only fence in this repository that compares a READING against a run rather than the document against
+        // itself — `docs/sota-comparison.md`'s block was one case low for four days because nothing did — so its
+        // own branches are the fence: an empty baseline, an arm that must be skipped, a census that is not one,
+        // and the one verdict that matters. 98.66% here, and the two uncovered lines are the `process.exit` of
+        // the entry-point guard, which is the same pair every CLI in this package leaves to the workflow.
+        'src/cell-baseline.ts',
         // Added with the module: the corpus traversal and the ORDER it returns, which is a property of the
         // CORPUS and must not be a property of the filesystem. Two runners' `discoverAllCases` used to return
         // `readdirSync` order while every sibling canonicalised — and the two that did not are the ones whose

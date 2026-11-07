@@ -231,11 +231,31 @@ from. Any change to a shipped default now turns the anchor **red before a number
 the class iteration 240 exercised (a default moved and fourteen tables were one enrolment behind).
 
 It does **not** fence the class this correction belongs to: a case-level FIX at a fixed configuration. The
-configuration line is byte-identical before and after, so the digest is blind to it by construction. The gate that
-would catch it is a **committed per-cell baseline compared against each push battery** — an expectation file plus one
-workflow step, and the run that would trip it is exactly the run that produces the census — and it is named here as
-the next iteration's first task rather than pretended to be done. Until it exists, the rule for a reader is the one
-this section is: **the block is a transcript, and a transcript has a date because it cannot have a proof.**
+configuration line is byte-identical before and after, so the digest is blind to it by construction.
+
+**That class is now fenced by a fourth thing, and it is the one that began this section.** `benchmarks/baselines/
+rcaeval-nine-cells.json` is a committed reading of the nine cells with the battery, the revision and the
+configuration digest it was taken at; `benchmarks/src/cell-baseline.ts` counts each cell from the run's own
+per-case census and compares; and `benchmark-rcaeval.yml`'s dashboard job runs it after the three suites, **failing
+the job on any cell that moved**. An ARM is skipped rather than failed — the tool digests the run's own `signals:`
+line and compares only when that is the baseline's, because a dispatch exists to move cells and a gate that fails
+every experiment gets deleted.
+
+The mechanism is the whole point: **a movement is either announced or red**. Fixing `re1ob_currencyservice_loss_1`
+today would fail the job with
+
+```text
+  RE1:OnlineBoutique     112 -> 113  (+1)
+  total 656 -> 657 (moved)
+```
+
+and the repair is to update the baseline in the same commit that says why — which is exactly what this section did
+not have. The claim is checkable rather than architectural: run the tool against battery `42337030488`'s artifacts
+with a baseline reconstructed to the block as it stood, and it exits **1** with that one line; run it against the
+current battery and it exits **0** with `total 659 -> 659 (unchanged)`.
+
+Until this iteration the rule for a reader was that **the block is a transcript, and a transcript has a date because
+it cannot have a proof.** It is a comparison now, and it is a comparison on every push.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
