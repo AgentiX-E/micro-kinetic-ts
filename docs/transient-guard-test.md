@@ -1,6 +1,6 @@
 # The transient guard's question — the estimator was never where the defect lived
 
-**Status:** the mechanism is IMPLEMENTED with six members and ships at `evidence-trimmed`, the POLICY
+**Status:** the mechanism is IMPLEMENTED with seven members and ships at `evidence-trimmed`, the POLICY
 `sideChannelObserved ? 'trimmed-ends' : 'level-window'` — the first shipped value on this axis that is not a single
 statistic, because the same statistic wins and loses on cells of ONE corpus (`docs/transient-guard-evidence.md`
 §10.3). Measured on all nine cells, one variable (`7c9c5dc8` against its own push battery): `level-window`
@@ -12,6 +12,14 @@ member, reads the loader's four arrays instead of `edgeLatency` alone and measur
 `trimmed-ends` is a strict refinement of the shipped statistic (+3 local, +9 FSE'26, no cell down) and the
 composition of the two is the shipped policy: **656/735 = 89.25 %** against 641, and **61.1 %** on FSE'26 against
 60.5 %, each reproduced by two independent dispatches (`docs/sota-comparison.md` §0p carries the fifteen counts).
+
+The seventh, `hump`, is the CONJUNCTION the RCABench archive licensed and then refused: it keeps this policy's side
+resolution and admits the level reading for a channel only where `trimmed-ends` has already called it settled. It is
+worth **+9 cases with 3 breaks** on the 1 303 paired archive cases (759 = 58.25 % against the incumbent's 750) and
+moves 31 cases rather than the level test's 222 — the precise half of an instrument whose other half is a coin flip.
+It ships OFF because the bar written for it in `docs/level-blind-census.md` §6.4 named two families and it meets
+neither, and because the nine cells and FSE'26 have not been run under it. `docs/transient-guard-evidence.md` §12
+carries the arm, the refusal, and the arithmetic that shows the bar was computed from the recall half.
 
 **Owner of:** `transientGuardTest` (`packages/tree/src/causal/topology-fault-graph.ts`),
 `--transient-guard-test`, `anomaly_knobs=transguard=<member>`.
@@ -42,10 +50,10 @@ the QUESTION rather than the estimate of the same two endpoints.
 
 ## 2. The two statistics
 
-| value                | statistic                                                         | what it reads               |
-| -------------------- | ----------------------------------------------------------------- | --------------------------- |
-| `endpoint` (shipped) | `\|values[0] − values[n−1]\| / range`                             | two samples                 |
-| `level-window`       | `\|median(post) − median(pre)\| / range`, split at `injectTimeMs` | every sample, by side       |
+| value                | statistic                                                         | what it reads                |
+| -------------------- | ----------------------------------------------------------------- | ---------------------------- |
+| `endpoint` (shipped) | `\|values[0] − values[n−1]\| / range`                             | two samples                  |
+| `level-window`       | `\|median(post) − median(pre)\| / range`, split at `injectTimeMs` | every sample, by side        |
 | `either`             | `max` of the two verdicts above                                   | whichever reading finds more |
 
 `level-window` asks the guard's question — _did this channel settle at a new level_ — of the two sides of the
@@ -77,14 +85,14 @@ Both runs carry `--diagnose-dump`, so the sixteen cases that moved can be read o
 kept by the level test.**
 
 | case                     | truth's decisive channel, `endpoint` → `level-window` | what the guard did                                                                                                            |
-| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `adservice_delay_3`      | `mem 0.01` → **`latency-90 1.70`**                 | the documented case: an intermittent 106 ms plateau over 361 of 721 samples, discarded because the last sample is an off-beat |
-| `adservice_delay_4`      | `cpu 0.15` → **`latency-90 1.70`**                 | same, plateau to the end                                                                                                      |
-| `cartservice_loss_4`     | `cpu 0.13` → **`latency-90 1.17`**                 | same                                                                                                                          |
-| `adservice_loss_4`       | **no decisive channel at all** → `latency-90 0.04` | the truth had been erased from the evidence entirely                                                                          |
-| `checkoutservice_loss_1` | `cpu 1.00` → `latency-50 0.29`                     | `latency-90` restored; the case is won on a different channel                                                                 |
-| `adservice_loss_2`       | `latency-50 0.05` → `latency-90 0.03`              | channel set re-cut                                                                                                            |
-| `currencyservice_cpu_1`  | `latency 1.40` → `cpu 1.07`                        | channel set re-cut                                                                                                            |
+| ------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `adservice_delay_3`      | `mem 0.01` → **`latency-90 1.70`**                    | the documented case: an intermittent 106 ms plateau over 361 of 721 samples, discarded because the last sample is an off-beat |
+| `adservice_delay_4`      | `cpu 0.15` → **`latency-90 1.70`**                    | same, plateau to the end                                                                                                      |
+| `cartservice_loss_4`     | `cpu 0.13` → **`latency-90 1.17`**                    | same                                                                                                                          |
+| `adservice_loss_4`       | **no decisive channel at all** → `latency-90 0.04`    | the truth had been erased from the evidence entirely                                                                          |
+| `checkoutservice_loss_1` | `cpu 1.00` → `latency-50 0.29`                        | `latency-90` restored; the case is won on a different channel                                                                 |
+| `adservice_loss_2`       | `latency-50 0.05` → `latency-90 0.03`                 | channel set re-cut                                                                                                            |
+| `currencyservice_cpu_1`  | `latency 1.40` → `cpu 1.07`                           | channel set re-cut                                                                                                            |
 
 **Both losses are the same action read the other way**: `checkoutservice_loss_3` and `currencyservice_loss_5`
 are cases the endpoint statistic KEEPS and the level test drops, because the truth's pre- and post-medians
@@ -112,14 +120,14 @@ likes the arm and the cell that refuses it sit on the same side of that line.
 case by case rather than argued. `re3ss_carts_f1_2` is the witness for the losing side, and it is the mirror
 image of `re1ob_adservice_delay_3`:
 
-| | `re1ob_adservice_delay_3` (RE1, gained) | `re3ss_carts_f1_2` (RE3, lost) |
-| --- | --- | --- |
-| the truth's channel | `latency-90`, 5 ms → 106 ms | `cpu`, 4 → 30 |
-| shape after injection | **plateau to the end of the window**, 361 of 721 samples | **bounded burst**, ~150 of 721 samples, returns to baseline |
-| median(pre) → median(post) | moves with the plateau | 3.60 → 4.29, i.e. **0.02 of the range** |
-| `\|values[0] − values[n−1]\|` | 0 — the last sample is an off-beat | **25.8 → 5.6**, i.e. 0.69 of the range |
-| what the shipped statistic did | dropped it (wrong) | kept it — on a **warm-up spike at index 0**, not on the injection |
-| what the level test did | kept it (right) | dropped it (right by its own contract) |
+|                                | `re1ob_adservice_delay_3` (RE1, gained)                  | `re3ss_carts_f1_2` (RE3, lost)                                    |
+| ------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| the truth's channel            | `latency-90`, 5 ms → 106 ms                              | `cpu`, 4 → 30                                                     |
+| shape after injection          | **plateau to the end of the window**, 361 of 721 samples | **bounded burst**, ~150 of 721 samples, returns to baseline       |
+| median(pre) → median(post)     | moves with the plateau                                   | 3.60 → 4.29, i.e. **0.02 of the range**                           |
+| `\|values[0] − values[n−1]\|`  | 0 — the last sample is an off-beat                       | **25.8 → 5.6**, i.e. 0.69 of the range                            |
+| what the shipped statistic did | dropped it (wrong)                                       | kept it — on a **warm-up spike at index 0**, not on the injection |
+| what the level test did        | kept it (right)                                          | dropped it (right by its own contract)                            |
 
 So the nine RE3 cases are not evidence that the level test is a worse reading of the same quantity. They are
 nine cases whose shipped-mode win is carried by a channel the guard's own contract does not consider evidence:
@@ -137,18 +145,18 @@ arm falls — only for the reason a noisier channel set re-orders a case.
 **The nine cells, one variable, everything else shipped** — three arms, run on the same revision (`7c9c5dc8`)
 against its own push battery, whole cells rather than samples:
 
-| cell | `endpoint` (shipped) | `either` | Δ cases | `level-window` | Δ cases |
-| --- | --- | --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 85.6 % | 88.0 % | **+3** | **89.6 %** | **+5** |
-| `RE1:SockShop` | 93.6 % | 94.4 % | **+1** | 95.2 % | +2 |
-| `RE1:TrainTicket` | 84.8 % | 84.0 % | **−1** | 89.6 % | +6 |
-| `RE2:OnlineBoutique` | 92.2 % | 93.3 % | **+1** | 92.2 % | 0 |
-| `RE2:SockShop` | 97.8 % | 98.9 % | **+1** | 94.4 % | −3 |
-| `RE2:TrainTicket` | 83.3 % | 84.4 % | **+1** | 86.7 % | +3 |
-| `RE3:OnlineBoutique` | 88.9 % | 88.9 % | 0 | 62.2 % | −8 |
-| `RE3:SockShop` | 63.6 % | 63.6 % | 0 | 42.5 % | −7 |
-| `RE3:TrainTicket` | 74.5 % | 74.5 % | 0 | 51.1 % | −7 |
-| **net** | | | **+6** | | **−9** |
+| cell                 | `endpoint` (shipped) | `either` | Δ cases | `level-window` | Δ cases |
+| -------------------- | -------------------- | -------- | ------- | -------------- | ------- |
+| `RE1:OnlineBoutique` | 85.6 %               | 88.0 %   | **+3**  | **89.6 %**     | **+5**  |
+| `RE1:SockShop`       | 93.6 %               | 94.4 %   | **+1**  | 95.2 %         | +2      |
+| `RE1:TrainTicket`    | 84.8 %               | 84.0 %   | **−1**  | 89.6 %         | +6      |
+| `RE2:OnlineBoutique` | 92.2 %               | 93.3 %   | **+1**  | 92.2 %         | 0       |
+| `RE2:SockShop`       | 97.8 %               | 98.9 %   | **+1**  | 94.4 %         | −3      |
+| `RE2:TrainTicket`    | 83.3 %               | 84.4 %   | **+1**  | 86.7 %         | +3      |
+| `RE3:OnlineBoutique` | 88.9 %               | 88.9 %   | 0       | 62.2 %         | −8      |
+| `RE3:SockShop`       | 63.6 %               | 63.6 %   | 0       | 42.5 %         | −7      |
+| `RE3:TrainTicket`    | 74.5 %               | 74.5 %   | 0       | 51.1 %         | −7      |
+| **net**              |                      |          | **+6**  |                | **−9**  |
 
 `level-window` is refused on this table and the refusal is not close: **+13 cases on the six RE1/RE2 cells and
 −22 on the three RE3 cells.** The split is not by suite but by the SHAPE of the injected signature (§5), and it
@@ -187,6 +195,7 @@ shape of the injected signature, which is a property of the corpus's fault and n
 only window onto a call boundary is a LOG FILE — `RE2:SockShop` (90/90 cases, 134 903 ERROR/FATAL entries) and
 `RE3:SockShop` (30/30, 43 102) — where the arm loses 3 and 7 cases. `evidence-aware`, the fourth member, is that
 rule with the corrected word: **+13 / −0** across all nine cells, `641/735` -> `654/735`.
+
 ## 7. Limits
 
 - **Two cells, one corpus.** The measurement covers the two cells this host can rank. `RE1:SockShop`,

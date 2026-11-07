@@ -175,3 +175,34 @@ axis it should key on is the SHAPE of the transient:
 
 That is a statistic, not a switch: it needs both readings of the same channel, so it is an engine change rather
 than an arm, and it is the first thing the next iteration owes.
+
+---
+
+## 7. The pre-registration of §6.4 was run, and it fails on the two conditions that named families
+
+The arm exists (`TransientGuardTest` member `hump`), it was run as the only variable on the same 1 303 paired cases,
+and the reading is **759 = 58.25 %** — +9 over the incumbent with 12 fixes and 3 breaks. `docs/transient-guard-evidence.md`
+§12 carries the arm, the full family table and the acceptance:
+
+| condition from §6.4 |   bar |               measured | verdict   |
+| ------------------- | ----: | ---------------------: | --------- |
+| `ck` correct        |  ≥ 18 |                     15 | **fails** |
+| `st` correct        |  ≥ 35 |                     33 | **fails** |
+| `rrm` correct       | ≥ 115 |                    116 | met       |
+| every other family  |  ≥ −1 | −1 worst (`ex`, `dly`) | met       |
+| total               | > 750 |                    759 | met       |
+
+The two failures are informative in a way the two passes are not, and the arithmetic is in §12.4: of the `ck` arm's
+`+8`, the hump admission accounts for **5** and the level reading's _drops_ — channels `trimmed-ends` kept and the
+level test removed — account for the other 3; on `st` it is 4 and 2. The bar in §6.4 was computed from an arm whose
+gain had two mechanisms in it while the arm §6.4 specified has one. That is a defect of the pre-registration and not
+of the mechanism, and it is recorded as such rather than repaired by moving the bar.
+
+Two things this section adds to the census, both measured:
+
+- **The hump is not the blind population.** The conjunction recovers **7 of the 61** level-blind cases and
+  `level-window` recovers 9. The remaining 45 of this arm's 544 misses are still detector-blind by the same
+  measurement, so the shape this arm names is a part of the population and not its definition.
+- **The blind population is a DETECTOR question that keeps its own count.** The arm's own loss census now prints it
+  (`detector-blind misses`), which is what §5 owes: on the incumbent the number is 61 of 553 and no field of the
+  engine's output could have produced it, because it is a statement about `metrics.json` rather than about a score.

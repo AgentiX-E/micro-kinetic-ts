@@ -4,18 +4,18 @@
 (dispatch `41263011254`, one variable, whole cells, both arms on the anchored protocol), and it is the first arm
 on this axis with **no cell down**:
 
-| cell                   | `endpoint` (shipped) | `evidence-aware` |         Δ |
-| ---------------------- | -------------------: | ---------------: | --------: |
-| `RE1:OnlineBoutique`   |     85.6 % (107/125) | 89.6 % (112/125) |   **+5** |
-| `RE1:SockShop`         |     93.6 % (117/125) | 95.2 % (119/125) |   **+2** |
-| `RE1:TrainTicket`      |     84.8 % (106/125) | 89.6 % (112/125) |   **+6** |
-| `RE2:OnlineBoutique`   |      92.2 % (83/90)  |     92.2 % (83/90) |     **0** |
-| `RE2:SockShop`         |      97.8 % (88/90)  |     97.8 % (88/90) |     **0** |
-| `RE2:TrainTicket`      |      83.3 % (75/90)  |     83.3 % (75/90) |     **0** |
-| `RE3:OnlineBoutique`   |     88.9 %           |           88.9 % |     **0** |
-| `RE3:SockShop`         |     63.6 %           |           63.6 % |     **0** |
-| `RE3:TrainTicket`      |     74.5 %           |           74.5 % |     **0** |
-| **total**              | **87.21 % (641/735)** | **88.98 % (654/735)** | **+13** |
+| cell                 |  `endpoint` (shipped) |      `evidence-aware` |       Δ |
+| -------------------- | --------------------: | --------------------: | ------: |
+| `RE1:OnlineBoutique` |      85.6 % (107/125) |      89.6 % (112/125) |  **+5** |
+| `RE1:SockShop`       |      93.6 % (117/125) |      95.2 % (119/125) |  **+2** |
+| `RE1:TrainTicket`    |      84.8 % (106/125) |      89.6 % (112/125) |  **+6** |
+| `RE2:OnlineBoutique` |        92.2 % (83/90) |        92.2 % (83/90) |   **0** |
+| `RE2:SockShop`       |        97.8 % (88/90) |        97.8 % (88/90) |   **0** |
+| `RE2:TrainTicket`    |        83.3 % (75/90) |        83.3 % (75/90) |   **0** |
+| `RE3:OnlineBoutique` |                88.9 % |                88.9 % |   **0** |
+| `RE3:SockShop`       |                63.6 % |                63.6 % |   **0** |
+| `RE3:TrainTicket`    |                74.5 % |                74.5 % |   **0** |
+| **total**            | **87.21 % (641/735)** | **88.98 % (654/735)** | **+13** |
 
 **This is the first arm on this axis that costs nothing anywhere.** The global `level-window` arm bought 13 cases
 and paid 22 (`docs/transient-guard-test.md` §6); the pre-registered conditional arm would have bought 13 and paid
@@ -57,10 +57,10 @@ the absence of the mechanism.
 
 That mis-classification is worth exactly the difference between the falsified arm and this one:
 
-| cell | direction evidence as `edgeLatency` alone | as the loader's four arrays | what the falsified rule did | what `evidence-aware` does |
-| --- | --- | --- | --- | --- |
-| `RE2:SockShop` | none (0 rows) | **logs 90/90, 134 903 entries** | `level-window` → **−3 cases** | `endpoint` → 0 |
-| `RE3:SockShop` | none (0 rows) | **logs 30/30, 43 102 entries** | `level-window` → **−7 cases** | `endpoint` → 0 |
+| cell           | direction evidence as `edgeLatency` alone | as the loader's four arrays     | what the falsified rule did   | what `evidence-aware` does |
+| -------------- | ----------------------------------------- | ------------------------------- | ----------------------------- | -------------------------- |
+| `RE2:SockShop` | none (0 rows)                             | **logs 90/90, 134 903 entries** | `level-window` → **−3 cases** | `endpoint` → 0             |
+| `RE3:SockShop` | none (0 rows)                             | **logs 30/30, 43 102 entries**  | `level-window` → **−7 cases** | `endpoint` → 0             |
 
 Ten cases, on the two cells whose only window onto a call boundary is a log file.
 
@@ -69,23 +69,23 @@ Ten cases, on the two cells whose only window onto a call boundary is a log file
 Every figure below is printed by the runner on the cell it belongs to (`failed edges in`, `[trace]`, `[log]`,
 `latency-routes`, `log-routes`), not inferred from the suite's name:
 
-| cell | failed edges | traces | logs | per-edge latency | observed a boundary? |
-| --- | --- | --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 0/125 | **0/125** | **0/125** | 0 rows | **no** |
-| `RE1:SockShop` | 0/120 | **0/120** | **0/120** | 0 rows | **no** |
-| `RE1:TrainTicket` | 0/123 | **0/123** | **0/123** | 0 rows | **no** |
-| `RE2:OnlineBoutique` | 0/87 | 86/87 | 83/87 | rows present | yes |
-| `RE2:SockShop` | 0/90 | **0/90** | 90/90 | 0 rows | yes — logs only |
-| `RE2:TrainTicket` | — | — | — | — | (not completed) |
-| `RE3:OnlineBoutique` | 14/28 | 26/28 | 28/28 | rows present | yes |
-| `RE3:SockShop` | 0/30 | **0/30** | 30/30 | 0 rows | yes — logs only |
-| `RE3:TrainTicket` | 0/30 | 30/30 | 30/30 | rows present | yes |
+| cell                 | failed edges | traces    | logs      | per-edge latency | observed a boundary? |
+| -------------------- | ------------ | --------- | --------- | ---------------- | -------------------- |
+| `RE1:OnlineBoutique` | 0/125        | **0/125** | **0/125** | 0 rows           | **no**               |
+| `RE1:SockShop`       | 0/120        | **0/120** | **0/120** | 0 rows           | **no**               |
+| `RE1:TrainTicket`    | 0/123        | **0/123** | **0/123** | 0 rows           | **no**               |
+| `RE2:OnlineBoutique` | 0/87         | 86/87     | 83/87     | rows present     | yes                  |
+| `RE2:SockShop`       | 0/90         | **0/90**  | 90/90     | 0 rows           | yes — logs only      |
+| `RE2:TrainTicket`    | —            | —         | —         | —                | (not completed)      |
+| `RE3:OnlineBoutique` | 14/28        | 26/28     | 28/28     | rows present     | yes                  |
+| `RE3:SockShop`       | 0/30         | **0/30**  | 30/30     | 0 rows           | yes — logs only      |
+| `RE3:TrainTicket`    | 0/30         | 30/30     | 30/30     | rows present     | yes                  |
 
 The three rows with `no` are the whole of RE1, and they are not a coincidence of corpus generation: RCAEval
 RE1 ships `metrics.json` only — one file per case, no `logs.csv`, no `traces.csv`. On those cells every channel
 in the graph is a service's own reading, so a caller's latency rise and its callee's are the same kind of
 number, and the guard's undocumented second job — damping the magnitude advantage of a propagated symptom over
-its source — is the *only* mechanism separating them.
+its source — is the _only_ mechanism separating them.
 
 ## 3. The rule
 
@@ -154,12 +154,12 @@ Both arms of the local 723-case run carry `--diagnose-dump`, so the cases that m
 population excludes, which are wins in both arms). The numbers below are that run's; the dispatch reproduces the
 same **+13 net** on the full 735-case corpus, where `RE1:SockShop` is 125 cases rather than 120:
 
-| cell | gains | losses | net | CI Δ cases |
-| --- | --- | --- | --- | --- |
-| `RE1:OnlineBoutique` | 7 | 2 | **+5** | **+5** |
-| `RE1:SockShop` | 2 | 0 | **+2** | **+2** |
-| `RE1:TrainTicket` | 6 | 1 | **+5** | **+6** |
-| `RE2:OnlineBoutique`, `RE2:SockShop`, `RE2:TrainTicket`, `RE3:OnlineBoutique`, `RE3:SockShop`, `RE3:TrainTicket` | 0 | 0 | **0** | **0** |
+| cell                                                                                                             | gains | losses | net    | CI Δ cases |
+| ---------------------------------------------------------------------------------------------------------------- | ----- | ------ | ------ | ---------- |
+| `RE1:OnlineBoutique`                                                                                             | 7     | 2      | **+5** | **+5**     |
+| `RE1:SockShop`                                                                                                   | 2     | 0      | **+2** | **+2**     |
+| `RE1:TrainTicket`                                                                                                | 6     | 1      | **+5** | **+6**     |
+| `RE2:OnlineBoutique`, `RE2:SockShop`, `RE2:TrainTicket`, `RE3:OnlineBoutique`, `RE3:SockShop`, `RE3:TrainTicket` | 0     | 0      | **0**  | **0**      |
 
 Every gain is the event `docs/transient-guard-test.md` §4 already names: **the truth's own latency channel was
 dropped by the endpoint statistic and is kept by the level test** — `re1ob_adservice_delay_3` (an intermittent
@@ -186,8 +186,13 @@ The only place the value was read compared `c.system` against the three canonica
 filter:
 
 ```ts
-if (opts.system !== 'all' && c.system !== 'OnlineBoutique' && c.system !== 'SockShop' &&
-    c.system !== 'TrainTicket') continue;   // false for every case a corpus contains
+if (
+  opts.system !== 'all' &&
+  c.system !== 'OnlineBoutique' &&
+  c.system !== 'SockShop' &&
+  c.system !== 'TrainTicket'
+)
+  continue; // false for every case a corpus contains
 ```
 
 so `--system xyz` also ranked all nine cells, and the banner named the filter the run had been asked for rather
@@ -266,8 +271,8 @@ So the arm is **+13 cases and no debt**, not SOTA. `docs/sota-comparison.md` §0
 > this test splits on, so the fallback would be the shipped statistic on every case and a `ranking_knobs` row
 > would advertise a state it could never enter.
 
-and the golden half's own flag table repeated it from the other side — *"the guard consumes the injection
-boundary this half's cases carry and FSE'26's do not, so the knob has no meaningful FSE'26 state to expose"*.
+and the golden half's own flag table repeated it from the other side — _"the guard consumes the injection
+boundary this half's cases carry and FSE'26's do not, so the knob has no meaningful FSE'26 state to expose"_.
 **Neither sentence cites a measurement, and both are about a corpus fact that costs one grep to check.** The
 loader rebuilds every series' timestamps from the bridge's compact `{start, step, values}` form
 (`expandMetricTimestamps`) and forwards the case's own `raw.injectTimeMs` — the two inputs `levelPermanence`
@@ -313,11 +318,11 @@ numbers and no percentage.
 
 Three full FSE'26 dispatches on `f92e88f`, one variable, 1422 cases each:
 
-| arm | `Top@1` | `Top@3` | `Top@5` | Δ Top@1 |
-| --- | ---: | ---: | ---: | ---: |
-| `endpoint` (shipped) | 60.5 % (860/1422) | 79.0 % | 82.2 % | — |
-| `evidence-aware` | 60.5 % (860/1422) | 79.0 % | 82.2 % | **0** |
-| `level-window` | **63.1 % (897/1422)** | **80.8 %** | **85.0 %** | **+37 cases** |
+| arm                  |               `Top@1` |    `Top@3` |    `Top@5` |       Δ Top@1 |
+| -------------------- | --------------------: | ---------: | ---------: | ------------: |
+| `endpoint` (shipped) |     60.5 % (860/1422) |     79.0 % |     82.2 % |             — |
+| `evidence-aware`     |     60.5 % (860/1422) |     79.0 % |     82.2 % |         **0** |
+| `level-window`       | **63.1 % (897/1422)** | **80.8 %** | **85.0 %** | **+37 cases** |
 
 and the census line every one of them printed:
 
@@ -327,28 +332,28 @@ and the census line every one of them printed:
 
 **Two claims die here and one is born.**
 
-*The census row was false.* Every FSE'26 case places an injection boundary — `placeable=1422/1422`, not the
+_The census row was false._ Every FSE'26 case places an injection boundary — `placeable=1422/1422`, not the
 "no injection boundary in the units this test splits on" that `dispatch-surface-census.test.ts` had carried
 since the axis existed. The row has been corrected, and the correction is the cheap half of this finding:
 the sentence was checkable with one grep for two iterations.
 
-*`evidence-aware` is a no-op on FSE'26, as designed and as measured.* It resolves to `endpoint` there (the
+_`evidence-aware` is a no-op on FSE'26, as designed and as measured._ It resolves to `endpoint` there (the
 corpus observes a call boundary on 1222 of 1422 cases through failed edges alone, and the rest through logs),
 so it reproduces 60.5 % exactly — which is the zero-debt property the arm was built for, now demonstrated on
 the half that had never been read rather than asserted from the half that had.
 
-*And the level test is worth **+37 cases** there.* Not inert, not a no-op: FSE'26's `Top@1` goes **60.5 % →
+_And the level test is worth **+37 cases** there._ Not inert, not a no-op: FSE'26's `Top@1` goes **60.5 % →
 63.1 %**, `Top@3` 79.0 → 80.8, `Top@5` 82.2 → 85.0, with **one regressed fault type out of 26** — `DNSRandom`,
 1/1 → 0/1, a single case in a single-case type. Every other type is up or flat:
 
-| type | Δ | type | Δ | type | Δ |
-| --- | ---: | --- | ---: | --- | ---: |
-| `JVMMemoryStress` | **+7** | `HTTPResponseReplaceCode` | +4 | `NetworkPartition` | +3 |
-| `ContainerKill` | **+7** | `HTTPRequestReplaceMethod` | +5 | `HTTPResponseDelay` | +3 |
-| `HTTPResponseReplaceBody` | +2 | `HTTPRequestDelay` | +1 | `HTTPResponseAbort` | +1 |
-| `HTTPRequestReplacePath` | +1 | `PodFailure` | +1 | `PodKill` | +1 |
-| `NetworkDelay` | +1 | `TimeSkew` | +1 | `DNSRandom` | **−1** |
-| 10 types | 0 | | | | |
+| type                      |      Δ | type                       |   Δ | type                |      Δ |
+| ------------------------- | -----: | -------------------------- | --: | ------------------- | -----: |
+| `JVMMemoryStress`         | **+7** | `HTTPResponseReplaceCode`  |  +4 | `NetworkPartition`  |     +3 |
+| `ContainerKill`           | **+7** | `HTTPRequestReplaceMethod` |  +5 | `HTTPResponseDelay` |     +3 |
+| `HTTPResponseReplaceBody` |     +2 | `HTTPRequestDelay`         |  +1 | `HTTPResponseAbort` |     +1 |
+| `HTTPRequestReplacePath`  |     +1 | `PodFailure`               |  +1 | `PodKill`           |     +1 |
+| `NetworkDelay`            |     +1 | `TimeSkew`                 |  +1 | `DNSRandom`         | **−1** |
+| 10 types                  |      0 |                            |     |                     |        |
 
 **So `sideChannelObserved` is not the separator it was believed to be.** It partitions RCAEval correctly —
 the three RE1 cells (0 side channels) gain 13 and the six cells that observe a boundary stay byte-identical —
@@ -360,11 +365,11 @@ That is now the blocking question, and it is a measurement rather than an argume
 that separates FSE'26's 37 gains from RCAEval's RE3 losses (7, 8 and 7 cases on the three cells). Until it
 exists, three arms are on the table and none of them is shippable:
 
-| arm | golden nine cells | FSE'26 | verdict |
-| --- | --- | --- | --- |
-| `endpoint` (shipped) | 641/735 = 87.21 % | 60.5 % | the incumbent |
-| `evidence-aware` | **654/735 = 88.98 %** (+13) | 60.5 % (0) | +13 and no debt, **and it leaves 37 on the table** |
-| `level-window` | 619/735 (−22) | **63.1 %** (+37) | rejected on the golden half, and the best FSE'26 number ever measured here |
+| arm                  | golden nine cells           | FSE'26           | verdict                                                                    |
+| -------------------- | --------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| `endpoint` (shipped) | 641/735 = 87.21 %           | 60.5 %           | the incumbent                                                              |
+| `evidence-aware`     | **654/735 = 88.98 %** (+13) | 60.5 % (0)       | +13 and no debt, **and it leaves 37 on the table**                         |
+| `level-window`       | 619/735 (−22)               | **63.1 %** (+37) | rejected on the golden half, and the best FSE'26 number ever measured here |
 
 Until the predicate is found, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.
 
@@ -375,12 +380,12 @@ Until the predicate is found, `DEFAULT_TRANSIENT_GUARD_TEST` stays `endpoint`.
 §9.3 ends on a predicate that would separate FSE'26's 37 gains from RCAEval's losses. The search for it started
 from the ONE property the two corpora's flip censuses share and that the four existing arms cannot express:
 
-| arm | what decides a channel | what it costs on the corpus that disagrees |
-| --- | --- | --- |
-| `endpoint` | `values[0]` and `values[n−1]` — **two samples out of 721** | drops `re1ob_adservice_delay_3` (a 361-of-721 plateau whose last sample returns) |
-| `level-window` | the medians of the two sides of the boundary | fixes that, and also drops a channel the corpus was WON on, because the sides' medians coincide while the ends do not |
-| `either` | the larger of the two | keeps everything both keep, including a warm-up spike at index 0 |
-| `evidence-aware` | which of the two to ask, chosen from what the case observed | correct on RCAEval, **exactly wrong on FSE'26** |
+| arm              | what decides a channel                                      | what it costs on the corpus that disagrees                                                                            |
+| ---------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`       | `values[0]` and `values[n−1]` — **two samples out of 721**  | drops `re1ob_adservice_delay_3` (a 361-of-721 plateau whose last sample returns)                                      |
+| `level-window`   | the medians of the two sides of the boundary                | fixes that, and also drops a channel the corpus was WON on, because the sides' medians coincide while the ends do not |
+| `either`         | the larger of the two                                       | keeps everything both keep, including a warm-up spike at index 0                                                      |
+| `evidence-aware` | which of the two to ask, chosen from what the case observed | correct on RCAEval, **exactly wrong on FSE'26**                                                                       |
 
 Every one of those failures is a failure of the ESTIMATE at one END, not of the question: the shipped statistic
 lets a single draw decide whether a channel "returned", and both of its documented failure shapes — the plateau
@@ -396,8 +401,8 @@ within its own three-sample window.
 Three design decisions, each with the number that fixes it:
 
 1. **Three samples, not a proportion.** `injectionSplitIndex` already refuses a side with fewer than three
-   samples for the reason this file gives twice: *a median of two is an average, and an average is what the
-   two-sample statistic already is*. At three the estimate tolerates exactly one off-beat in three — the
+   samples for the reason this file gives twice: _a median of two is an average, and an average is what the
+   two-sample statistic already is_. At three the estimate tolerates exactly one off-beat in three — the
    artifact class above — and no more.
 2. **Fixed, not windowed.** The arm that replaced the two ends with the means of the first and last TENTH was
    measured and reverted (15 gained, 17 lost): a 72-sample window reaches the interior and restores the CALLER's
@@ -413,29 +418,29 @@ Three design decisions, each with the number that fixes it:
 Local 723-case view (the five cases this checkout lacks are in the dispatch's 735), `--diagnose-dump` on both
 arms, the same commit and the same configuration:
 
-| cell | `endpoint` (shipped) | `trimmed-ends` | Δ cases |
-| --- | ---: | ---: | ---: |
-| `RE1:OnlineBoutique` | 85.6 % (107/125) | **86.4 %** (108/125) | **+1** |
-| `RE1:SockShop` | 93.3 % (112/120) | 93.3 % (112/120) | 0 |
-| `RE1:TrainTicket` | 85.0 % (105/123) | 85.0 % (105/123) | 0 |
-| `RE2:OnlineBoutique` | 92.0 % (80/87) | **93.1 %** (81/87) | **+1** |
-| `RE2:SockShop` | 97.8 % (88/90) | 97.8 % (88/90) | 0 |
-| `RE3:OnlineBoutique` | 87.5 % (23/28) | 87.5 % (23/28) | 0 |
-| `RE3:SockShop` | 63.6 % (18/30) | **66.1 %** (19/30) | **+1** |
-| `RE3:TrainTicket` | 30.6 % (9/30) | 30.6 % (9/30) | 0 |
-| **total** | **641 hits** | **644 hits** | **+3** |
+| cell                 | `endpoint` (shipped) |       `trimmed-ends` | Δ cases |
+| -------------------- | -------------------: | -------------------: | ------: |
+| `RE1:OnlineBoutique` |     85.6 % (107/125) | **86.4 %** (108/125) |  **+1** |
+| `RE1:SockShop`       |     93.3 % (112/120) |     93.3 % (112/120) |       0 |
+| `RE1:TrainTicket`    |     85.0 % (105/123) |     85.0 % (105/123) |       0 |
+| `RE2:OnlineBoutique` |       92.0 % (80/87) |   **93.1 %** (81/87) |  **+1** |
+| `RE2:SockShop`       |       97.8 % (88/90) |       97.8 % (88/90) |       0 |
+| `RE3:OnlineBoutique` |       87.5 % (23/28) |       87.5 % (23/28) |       0 |
+| `RE3:SockShop`       |       63.6 % (18/30) |   **66.1 %** (19/30) |  **+1** |
+| `RE3:TrainTicket`    |        30.6 % (9/30) |        30.6 % (9/30) |       0 |
+| **total**            |         **641 hits** |         **644 hits** |  **+3** |
 
 **No cell down, and the three RE3 cells do not move for the reason §5 gives** — the warm-up that carries them is
 still the first sample's neighbours rather than the first sample, so the verdict is the same. The four gains and
 two losses are named:
 
-| case | what moved |
-| --- | --- |
-| `re1ob_adservice_delay_4` | rank 3 → 1 — the plateau §4 names, whose last sample returns |
-| `re1ob_adservice_loss_2` | rank 2 → 1 — same shape, different channel |
-| `re2ob_currencyservice_loss_3` | 999 → 1 — the truth had been erased from the evidence entirely |
-| `re3ss_carts_f3_4` | rank 2 → 1 |
-| `re1ob_adservice_loss_3` | 1 → 2 — the one loss, the same artifact read the other way |
+| case                                   | what moved                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `re1ob_adservice_delay_4`              | rank 3 → 1 — the plateau §4 names, whose last sample returns           |
+| `re1ob_adservice_loss_2`               | rank 2 → 1 — same shape, different channel                             |
+| `re2ob_currencyservice_loss_3`         | 999 → 1 — the truth had been erased from the evidence entirely         |
+| `re3ss_carts_f3_4`                     | rank 2 → 1                                                             |
+| `re1ob_adservice_loss_3`               | 1 → 2 — the one loss, the same artifact read the other way             |
 | `re3tt_ts-auth-service_f1_1` / `_f1_4` | 48 → 1 and 1 → 48 — the cell's quiet-truth inversion, unchanged in net |
 
 ### 10.2 What this arm is and is not
@@ -443,7 +448,7 @@ two losses are named:
 It is **not** a better arm than `evidence-aware` on the golden half: +3 against +13, and the two are not
 additive because they act on disjoint cells (`evidence-aware` only leaves `endpoint` where a side channel was
 observed, which is exactly the six cells `trimmed-ends` barely moves). It is also **not** a predicate — it does
-not decide *which* statistic to ask; it removes the variance from the one the corpus already ships.
+not decide _which_ statistic to ask; it removes the variance from the one the corpus already ships.
 
 That is why its question is not the golden half at all. §9.3's 37 cases are FSE'26's, and the class it names is
 `endpoint`'s single-draw failure — the exact class this arm is built for. The pre-registered prediction, stated
@@ -466,11 +471,11 @@ guardTest = sideChannelObserved ? 'trimmed-ends' : 'level-window'      // eviden
 
 and it is measured rather than presumed. Local 633-classifiable-case view, one commit, whole cells, dumps on:
 
-| arm | hits | AC@1 |
-| --- | ---: | ---: |
-| `endpoint` (shipped) | 542 | 85.62 % |
-| `evidence-aware` | 554 | 87.52 % |
-| `trimmed-ends` | 545 | 86.10 % |
+| arm                    |    hits |        AC@1 |
+| ---------------------- | ------: | ----------: |
+| `endpoint` (shipped)   |     542 |     85.62 % |
+| `evidence-aware`       |     554 |     87.52 % |
+| `trimmed-ends`         |     545 |     86.10 % |
 | **`evidence-trimmed`** | **556** | **87.84 %** |
 
 **The composite is the sum of the two arms' disjoint gains and nothing else** — 542 + 13 + ... = 556 is the
@@ -479,25 +484,25 @@ as arithmetic rather than as a hope.
 
 On the 735-case corpus (`anomaly_knobs=transguard=evidence-trimmed`, run `41853861726` on `50d314e`):
 
-| cell | shipped | `evidence-trimmed` | Δ |
-| --- | ---: | ---: | ---: |
-| `RE1:OnlineBoutique` | 85.6 % | **89.6 %** | **+5** |
-| `RE1:SockShop` | 93.6 % | **95.2 %** | **+2** |
-| `RE1:TrainTicket` | 84.8 % | **89.6 %** | **+6** |
-| `RE2:OnlineBoutique` | 92.2 % | **93.3 %** | **+1** |
-| `RE2:SockShop` | 97.8 % | 97.8 % | 0 |
-| `RE2:TrainTicket` | 83.3 % | 83.3 % | 0 |
-| `RE3:OnlineBoutique` | 88.9 % | 88.9 % | 0 |
-| `RE3:SockShop` | 63.6 % | **66.1 %** | **+1** |
-| `RE3:TrainTicket` | 74.5 % | 74.5 % | 0 |
-| **total** | **641/735 = 87.21 %** | **656/735 = 89.25 %** | **+15** |
+| cell                 |               shipped |    `evidence-trimmed` |       Δ |
+| -------------------- | --------------------: | --------------------: | ------: |
+| `RE1:OnlineBoutique` |                85.6 % |            **89.6 %** |  **+5** |
+| `RE1:SockShop`       |                93.6 % |            **95.2 %** |  **+2** |
+| `RE1:TrainTicket`    |                84.8 % |            **89.6 %** |  **+6** |
+| `RE2:OnlineBoutique` |                92.2 % |            **93.3 %** |  **+1** |
+| `RE2:SockShop`       |                97.8 % |                97.8 % |       0 |
+| `RE2:TrainTicket`    |                83.3 % |                83.3 % |       0 |
+| `RE3:OnlineBoutique` |                88.9 % |                88.9 % |       0 |
+| `RE3:SockShop`       |                63.6 % |            **66.1 %** |  **+1** |
+| `RE3:TrainTicket`    |                74.5 % |                74.5 % |       0 |
+| **total**            | **641/735 = 87.21 %** | **656/735 = 89.25 %** | **+15** |
 
 and on FSE'26 (`ranking_knobs=transient_guard_test=evidence-trimmed`, run `41853854321` on `50d314e`):
 
-| arm | `Top@1` | `Top@3` | `Top@5` |
-| --- | ---: | ---: | ---: |
-| `endpoint` (shipped) | 60.5 % (860/1422) | 79.0 % | 82.2 % |
-| `trimmed-ends` | **61.1 % (869/1422)** | 79.3 % | 83.3 % |
+| arm                    |               `Top@1` |    `Top@3` |    `Top@5` |
+| ---------------------- | --------------------: | ---------: | ---------: |
+| `endpoint` (shipped)   |     60.5 % (860/1422) |     79.0 % |     82.2 % |
+| `trimmed-ends`         | **61.1 % (869/1422)** |     79.3 % |     83.3 % |
 | **`evidence-trimmed`** | **61.1 % (869/1422)** | **79.3 %** | **83.3 %** |
 
 The two arms reading the SAME FSE'26 number is the consistency check, not a disappointment: every case on that
@@ -516,15 +521,15 @@ the pre-registration this paragraph carried, discharged with the numbers it name
 ## 11. `either` is refuted on both halves, and the reason is the shape of the statistic rather than its tuning
 
 `either` is the member a reader expects to be safe: per channel it takes `max(endpoint, level)`, so it keeps every
-channel either statistic keeps. The union looks like it cannot lose, and it does not lose *channels* — it loses
+channel either statistic keeps. The union looks like it cannot lose, and it does not lose _channels_ — it loses
 cases, on both halves, for exactly the reason the union looks safe.
 
-| arm | FSE'26 `Top@1` | local nine-cell hits (633) |
-| --- | ---: | ---: |
-| `endpoint` | 60.5 % (860/1422) | 542 = 85.62 % |
-| `either` | **60.6 %** | 547 = 86.41 % |
-| `trimmed-ends` | 61.1 % (869/1422) | 545 = 86.10 % |
-| `evidence-trimmed` (shipped) | **61.1 %** (869/1422) | **556 = 87.84 %** |
+| arm                          |        FSE'26 `Top@1` | local nine-cell hits (633) |
+| ---------------------------- | --------------------: | -------------------------: |
+| `endpoint`                   |     60.5 % (860/1422) |              542 = 85.62 % |
+| `either`                     |            **60.6 %** |              547 = 86.41 % |
+| `trimmed-ends`               |     61.1 % (869/1422) |              545 = 86.10 % |
+| `evidence-trimmed` (shipped) | **61.1 %** (869/1422) |          **556 = 87.84 %** |
 
 On FSE'26 the union buys **one case out of thirty-seven**: the level test alone is worth +37 and the union is worth
 +1, so admitting the channels `endpoint` keeps but the level test drops gives back 36 of them. That is the whole
@@ -540,8 +545,8 @@ who outranks whom, and three cases where `endpoint` was right were re-ranked by 
 Two things follow, and the second is the general rule this axis has now paid for twice:
 
 1. **`max` of two statistics is a UNION-INTERSECTION move, and it is not free.** The multiple-testing literature
-   prices exactly this: an intersection-union test needs no multiplicity adjustment *because every hypothesis must
-   reject*, while a union-intersection (max-t) test pays for its extra power in size. Here the "size" is measured in
+   prices exactly this: an intersection-union test needs no multiplicity adjustment _because every hypothesis must
+   reject_, while a union-intersection (max-t) test pays for its extra power in size. Here the "size" is measured in
    candidates admitted, and it is paid in cases on the half where the narrower statistic was right.
 2. **The statistic that wins is a property of the CASE, so the composition has to read the case.** That is what
    `evidence-trimmed` does and what `either` cannot: `either` averages the two verdicts' admission sets per channel,
@@ -552,13 +557,152 @@ Two things follow, and the second is the general rule this axis has now paid for
 `DEFAULT_TRANSIENT_GUARD_TEST` is `'evidence-trimmed'` from `1c18c76`'s successor onward. The two dispatches were
 independent and neither re-used the other's artifact:
 
-| corpus | run | reading |
-| --- | --- | --- |
-| golden half, 735 cases | `41853861726` (16:15) | 656/735 = 89.25 %, per cell `112/119/112 · 84/88/75 · 25/19/22` |
+| corpus                 | run                   | reading                                                           |
+| ---------------------- | --------------------- | ----------------------------------------------------------------- |
+| golden half, 735 cases | `41853861726` (16:15) | 656/735 = 89.25 %, per cell `112/119/112 · 84/88/75 · 25/19/22`   |
 | golden half, 735 cases | `41865456632` (16:57) | **identical to the case, all fifteen counts and all four totals** |
-| FSE'26, 1422 cases | `41853854321` | 61.1 % (869/1422), `Top@3` 79.3 %, `Top@5` 83.3 % |
+| FSE'26, 1422 cases     | `41853854321`         | 61.1 % (869/1422), `Top@3` 79.3 %, `Top@5` 83.3 %                 |
 
 `docs/sota-comparison.md` §0p carries the fifteen counts, the retired set and the reason the retired numbers were
 right for the configuration that produced them. The **`either` reading is the pre-registered refusal**: it was
 measured before the flip so that the flip could be stated as the best of four measured arms rather than as the
 first one that worked.
+
+## 12. The conjunction — the hump is real, and it is the PRECISION half of the level test
+
+`docs/level-blind-census.md` §6.4 pre-registered one sentence before any arm of it existed: _admit `level-window` for a
+channel only when `trimmed-ends` reads it as settled AND `level-window` reads it as moved_, accepted only if it keeps
+`ck` +8 and `st` +6 while returning `rrm` to 115 or better and losing no other family by more than one case. The arm
+is now measured, and it is **refused on two of its five conditions**. This section records the arm, the refusal, and
+the one thing the refusal taught: the bar itself was computed from the wrong half of the population.
+
+### 12.1 The arm, and why it can only ever ADMIT a channel
+
+`hump` is the seventh member of `TRANSIENT_GUARD_TESTS` and it keeps the shipped policy's side resolution — a case
+that observed no call boundary is still read by the level test — and on the observed side replaces
+
+```
+permanence = trimmed
+```
+
+with
+
+```
+permanence = (trimmed < 0.3 && level >= 0.3) ? level : trimmed
+```
+
+Both comparisons read `TRANSIENT_RETURN_THRESHOLD`, the guard's own bar, which is now a named export for exactly this
+reason: a conjunction of two comparisons against two different bars is a two-parameter fit wearing the word
+"conjunction". Two structural properties follow and both are asserted in tests rather than argued:
+
+- **Monotone.** `permanence` is never lowered, so the arm can only admit a channel `trimmed-ends` dropped. Every case
+  it loses is a case where an admitted channel changed the _ranking_ — never a case where a channel vanished.
+- **The union, stated as the union.** The guard's only use of `permanence` is `permanence < 0.3`, so decision-wise
+  the conjunction is `max(trimmed, level)` per channel. That is one operand away from `either` (`max(endpoint, level)`,
+  §11), which is why the arm was pre-registered with a bar rather than a hope.
+
+The population it targets is the shape a container kill leaves on a resource channel: a ramp that holds and returns.
+`re3tt_ts-assurance-service_ck_1344` is the canonical case — `cpu` 0.0215 → 2.718 → 0.025, both end windows at the
+baseline, shipped statistic 0.000, level reading 0.558.
+
+### 12.2 The reading
+
+Same 1 303 paired RCABench cases as §10–§11 and as the failed-edge register:
+
+| arm                             | correct |       share | vs control | vs its predecessor |
+| ------------------------------- | ------: | ----------: | ---------: | -----------------: |
+| control (no direction term)     |     556 |     42.67 % |          — |                  — |
+| `evidence @ 0.10`               |     725 |     55.64 % |       +169 |                  — |
+| `+ return-path` (incumbent)     |     750 |     57.56 % |       +194 |                  — |
+| `+ return-path`, `level-window` |     757 |     58.10 % |       +201 |       +7 (30 / 23) |
+| `+ return-path`, **`hump`**     | **759** | **58.25 %** |   **+203** |    **+9 (12 / 3)** |
+
+| family                                                      | cases | incumbent | `level-window` |  `hump` | Δ vs incumbent |
+| ----------------------------------------------------------- | ----: | --------: | -------------: | ------: | -------------: |
+| `rrc`                                                       |   212 |       126 |            126 |     126 |              0 |
+| `rrm`                                                       |   174 |       115 |            113 | **116** |         **+1** |
+| `st`                                                        |   158 |        29 |             35 |  **33** |         **+4** |
+| `pa`                                                        |    89 |        70 |             70 |      71 |             +1 |
+| `ck`                                                        |    83 |        10 |             18 |  **15** |         **+5** |
+| `rq`                                                        |    82 |        48 |             47 |      48 |              0 |
+| `rd`                                                        |    79 |        45 |             45 |      45 |              0 |
+| `ra`                                                        |    56 |        38 |             37 |      38 |              0 |
+| `rrb`                                                       |    47 |        46 |             46 |      46 |              0 |
+| `lo`                                                        |    44 |        35 |             35 |      35 |              0 |
+| `co`                                                        |    42 |        36 |             35 |      36 |              0 |
+| `ex`                                                        |    40 |        35 |             34 |      34 |             −1 |
+| `bw`                                                        |    39 |        28 |             28 |      28 |              0 |
+| `rsa`                                                       |    39 |        26 |             27 |      26 |              0 |
+| `rrp`                                                       |    37 |        27 |             27 |      27 |              0 |
+| `pf`                                                        |    21 |         2 |              1 |       2 |              0 |
+| `dly`                                                       |    19 |        17 |             17 |      16 |             −1 |
+| seven families ≤ 17 cases (`rt` `pk` `l` `rpb` `t` `m` `d`) |    42 |        17 |             17 |      17 |              0 |
+
+### 12.3 The acceptance, and it fails on two of five
+
+| condition          |   bar |                  measured | verdict   |
+| ------------------ | ----: | ------------------------: | --------- |
+| `ck` correct       |  ≥ 18 |                    **15** | **fails** |
+| `st` correct       |  ≥ 35 |                    **33** | **fails** |
+| `rrm` correct      | ≥ 115 |                   **116** | met       |
+| every other family |  ≥ −1 | worst is −1 (`ex`, `dly`) | met       |
+| total              | > 750 |                   **759** | met       |
+
+Refused, and the shipped default stays `evidence-trimmed`. Nothing about the refusal is a judgement call: the bar was
+written down in `docs/level-blind-census.md` §6.4 before the arm ran, and the two misses are the two conditions that
+named families.
+
+### 12.4 The refusal's content: the bar was computed from the RECALL half
+
+The two arms differ by one thing, and the difference is measurable rather than conceptual. `level-window` changes the
+answer on **222** of the 1 303 cases and is right on 32 of them (14.4 %); `hump` changes **31** and is right on 13
+(41.9 %). Measured as precision over the cases an arm _moves_ — fixes over fixes-plus-breaks — that is **56.6 %**
+against **80.0 %**.
+
+So the conjunction is the precise half of the level reading, and the recall half is the rest of it:
+
+| population                           | `level-window` |                                                          `hump` |
+| ------------------------------------ | -------------: | --------------------------------------------------------------: |
+| cases whose answer moved             |            222 |                                                              31 |
+| … right                              |             32 |                                                              13 |
+| fixes the conjunction does NOT make  |              — | 20 (`ck` 4, `st` 4, `rd` 4, `rq` 2, `rsa` 2, and eight singles) |
+| breaks the conjunction does NOT make |              — |                   20 (`rrm` 4, `rd` 3, `rq` 3, and ten singles) |
+
+The two lists are the same size, which is the whole reading: **the level reading's remaining work is a coin flip in both
+directions, and the conjunction keeps only the direction that is not.** The 20 fixes it forgoes are spread thin
+(`ck` 4, `st` 4, `rd` 4, and six families of one or two); the 20 breaks it avoids are concentrated in the largest family
+(`rrm` 4 of 174 cases) and in `rd`, `rq` — which is why `rrm` comes back to 116 and why the total still rises by 9.
+
+The `ck`/`st` bars in the pre-registration came from the `level-window` arm's per-family deltas (`ck` 10 → 18,
+`st` 29 → 35) without asking which mechanism produced them. They are produced by two mechanisms: the hump admission
+this section measures, and the level reading's _drops_ on channels `trimmed-ends` kept. On the counts:
+
+| family | incumbent | hump admission alone | + the drop direction |
+| ------ | --------: | -------------------: | -------------------: |
+| `ck`   |        10 |               **15** |                   18 |
+| `st`   |        29 |               **33** |                   35 |
+
+So the hump accounts for 5 of the 8 `ck` cases and 4 of the 6 `st` cases, and the rest — 3 and 2 — belong to a
+direction this arm deliberately does not have. A bar of "≥ 18" set from a total that includes both mechanisms is not a
+bar this arm can meet, and the honest record is that §6.4's bar was mis-specified rather than that the mechanism
+failed. The mechanism did what it said: 5 of the 8 and 4 of the 6, at a precision of 80 % on the cases it touches.
+
+### 12.5 What is settled, and what is now owed
+
+Settled:
+
+- The hump is a real class on this corpus, it is the shape a kill leaves, and the shipped statistic is blind to it by
+  construction (both end windows sit at the baseline). `level-window` sees it, and the conjunction admits it without
+  the level reading's drops.
+- On the 61 level-blind cases of `docs/level-blind-census.md` §5, the conjunction recovers **7** and `level-window`
+  recovers **9** — i.e. the hump is not the whole blind population either. 45 of this arm's 544 misses are still
+  detector-blind by the same measurement, so the population is larger than the shape this arm names.
+- The arm is worth 9 cases and costs 3, and it moves 2.4 % of the corpus rather than the level test's 17 %.
+
+Owed, and stated here so it cannot be chosen later:
+
+1. **The nine cells and FSE'26 have not been run under `hump`.** No default moves on this reading. The archive says the
+   arm is worth +9 with 3 breaks; the two corpora this axis is judged on are unmeasured, and the arm is a POLICY word
+   so it must be measured on both halves before a flip — that is the lesson of §10.3 and it has not expired.
+2. The 38 still-blind cases need a census of their own: the hump shape explains 7, and the remainder are dropped by
+   something other than this guard or score low after admission. That census is the next instrument, not the next arm.
