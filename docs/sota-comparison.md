@@ -617,6 +617,38 @@ unchanged; no cell moved; and the two corrections above are corrections of THIS 
 than of the record they cite — §0a entry 4 and entry 3 both already carried the facts, which is the point of
 recording it here.
 
+### 0j. The 2026-11-07 survey — one reference ON our family with a metric we do not print, and one at another granularity
+
+Two arrivals, and neither is a row in §0 for a different reason.
+
+**`DeCoR` / `RICE-CM`** (Springer, _Journal of Cloud Computing_, `10.1186/s13677-026-01009-x`) ranks services by
+**reverse PageRank on a supra-adjacency** built from contemporaneous and lagged evidence, with a
+**confidence-weighted** coupling between same-metric replicas — the reliability of an estimated edge decides how much
+information may cross it. Evaluated on a **300-case subset** of three RCAEval datasets it calls SS1, SS2 and OB, it
+reports **Avg@5 = 0.6000 / 0.7040 / 0.4864**, highest among its comparators on all three, beating `RUN` on OB by
+0.0288 at ≈1/33 of its runtime.
+
+It is not a §0 row for two reasons, and both are checkable in the abstract. Its population is a **subset** the paper
+selects and does not enumerate against our three systems' case ids, so no per-cell comparison exists. And its metric
+is defined in its own abbreviation list as **`Avg@5` = average accuracy over the first five cutoffs** — the mean of
+`AC@1..AC@5`, which is not the quantity this document's `Avg@5` column carries (that one is the per-fault-type mean
+the runners print). **The instrument is missing rather than the comparison**: `truthRank` is on every census record,
+so `AC@k = P(rank ≤ k)` and the mean over `k = 1..5` are computable from artifacts this repository already stores,
+and printing that column is a debt this entry names rather than a number it invents.
+
+**`TA-RCD`** (`arXiv:2509.05511`, v2 2026-10-09) improves **metric-level** `AC@5` by 18% and `Avg@5` by 19% over its
+strongest baseline on RCAEval. Metric-level is a different population from service-level: the truth is a
+`(service, metric)` pair rather than a service, so the candidate set is larger and the two figures are not
+comparable. It is recorded here for the one thing that transfers — its **topology-guided metric SELECTION**, which
+is the same question `docs/channel-selection.md` asks from the other end (which channels may be evidence at all).
+
+**What is borrowable from both, stated as a hypothesis rather than as a plan.** `RICE-CM`'s coupling weight is a
+_reliability_ on an estimated relation, and this repository's relation terms are admitted by a **gate** whose share
+is a constant (`topoDiscountGate`, `anomalyBreadthGate = 0.8`, `dualFamilyGate = 0.25`). A per-edge reliability is
+the calibrated version of that constant, and `TRANSIENT_RETURN_THRESHOLD`'s own debt in
+`docs/transient-guard-evidence.md` §13.6 is the same shape: a fixed fraction standing where a measured one belongs.
+That is the next axis this survey supports, and it is not enrolled.
+
 ### 0f. Two 2026 references ON our benchmark family that the 2026-10-12 second survey added
 
 Both were checked against §0a before being recorded here, and **neither appears anywhere in either repository** —
