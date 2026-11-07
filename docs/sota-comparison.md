@@ -1732,3 +1732,47 @@ That is the actionable sentence, and it is not enrolled: **a contribution expres
 rank step is a different instrument from a contribution expressed in units of the shape**, and the collision source
 is the term where it would be cheapest to test. The standings above are unaffected by the refusal and unchanged
 since iteration 241.
+
+## 0q. "Why not copy the SOTA?" — an audited answer, one competitor at a time
+
+The obvious move on seeing a 90.0 % row is to take that implementation apart and reproduce it. This section is
+the result of checking whether that move is available, and the answer is that **the row is not the artefact**. It
+was checked on 2026-11-07 against each competitor's own repository and full text.
+
+| competitor | headline | artefact state (verified) | usable on our 735? |
+| --- | --- | --- | --- |
+| `Sonnet · ThinkDepth.ai`, RCABench **90.0 %** | `arXiv:2608.21310` | ThinkDepth.ai **is** open source (`thinkdepthai/Deep_Research`, MIT, 190 ★, 24 commits) — but it is a **web-research writer**: `OPENAI_API_KEY` + `TAVILY_API_KEY`, no telemetry tool. The paper says "ThinkDepth.ai **adapted to** AIOps 2025"; **the adapter is unpublished** | **No** — different label space (service-to-code hierarchical, re-annotated propagation graph), 500-case sample with no published case IDs, paid backbone at `$0.01–$4.64`/case |
+| `RCLAgent V2`, RCAEval **56.67 %** | `arXiv:2605.14866` | **fully open** (`LLM4AIOps/RCLAgent-V2`): any OpenAI-compatible endpoint, `sample_data` self-check, and the paper evaluates on **RCAEval** | **Yes** — and we lead it **+36.6 pp** on RE2-OnlineBoutique (93.3 % vs 56.67 %) |
+| `OpenRCA`, RCABench **46.6 %** | ICLR'25, `microsoft/OpenRCA` | fully open (MIT) | No — OpenRCA's own corpus, 80 GB telemetry, no RCAEval |
+
+Three conclusions, and only the third is comfortable:
+
+1. **Copying the 90.0 % is four independent impossibilities, not one.** The adapter is unpublished; the backbone
+   is paid; the label space is not ours; the sample's case IDs are unpublished. A partial reimplementation would
+   produce a number that is not the number in that table, and publishing it beside theirs would be a comparison
+   of two different things — which is the defect this document's §2d already records for the archive's second
+   reading path.
+2. **The competitor that IS copyable is the one we already beat.** RCLAgent is the only agentic system that is
+   both open and evaluated on RCAEval, and it is 36.6 pp behind on the cell where both have numbers. The
+   reproduction that would be worth doing is therefore a **confirmation of a lead**, not a route to one — and it
+   still has not been run on our harness, which is a real gap and is named as one.
+3. **What is worth taking from the 90.0 % is its ablation, not its architecture.** `DiagGuard`'s `+4.5` (grounding)
+   `+4.1` (verification) `+9.0` (stack) are the paper's own mechanism, and mechanisms can be expressed against any
+   evidence-consuming process. Iteration 243 did exactly that: the three failure families became three
+   deterministic predicates over this engine's record (`docs/evidence-audit.md`).
+
+**And that transplantation produced the most useful negative result in this document.** Two of the three
+predicates failed their pre-registered criterion — `omitted` because it restates the topology discount, and
+`misinterpreted` because it is **structurally unreachable**: the term it was anchored on, `rise`, ships at weight
+0. Checking why turned up the fact that matters:
+
+> **every term that expresses a direction ships switched off** — `rise` 0, `topo` 0, `collision` 0, `prism` 0.
+
+The engine measures evidence direction and then multiplies it by zero. DiagGuard's middle family has no object
+here not because this engine never misreads but because **it never reads direction at all**. That reframes §2c's
+"18–29 pp of retrievable evidence": part of it may not be about querying MORE, but about using the direction of
+what a single deterministic pass already retrieves for free.
+
+The one predicate that survived is narrow and sharp: six cases in 633 where the **truth** was measured and then
+removed from the candidate set by `topoDiscount`, and **all six were answered wrong** — an identity rather than
+a correlation, since on a single-label corpus `AC@1` is `top-1 == truth`.
