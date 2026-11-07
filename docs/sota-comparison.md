@@ -1745,6 +1745,8 @@ was checked on 2026-11-07 against each competitor's own repository and full text
 | `RCLAgent V2`, RCAEval **56.67 %** | `arXiv:2605.14866` | **fully open** (`LLM4AIOps/RCLAgent-V2`): any OpenAI-compatible endpoint, `sample_data` self-check, and the paper evaluates on **RCAEval** | **Yes** — and we lead it **+36.6 pp** on RE2-OnlineBoutique (93.3 % vs 56.67 %) |
 | `OpenRCA`, RCABench **46.6 %** | ICLR'25, `microsoft/OpenRCA` | fully open (MIT) | No — OpenRCA's own corpus, 80 GB telemetry, no RCAEval |
 
+| `OperationsPAI/rca-algo-contrib` — the RCABench **field itself** | `arXiv:2510.04711` | **fully open**: the authors' harness (`rcabench-platform` 0.4.46 on PyPI), their data (Zenodo, 1,422 cases) and **their own containerised re-implementations** — twelve `LGU-SE-Internal` repositories, **eleven resolve**, eleven unlicensed (run and quote, never vendor) | **Yes — and it has been run.** `baro` on all 1,422: **41.21%** set-valued, **29.68%** endpoint-only; ours **62.17% / 48.03%**. Paired, **+20.96 pp**, McNemar `p = 4.8e-29`. §0r |
+
 Three conclusions, and only the third is comfortable:
 
 1. **Copying the 90.0 % is four independent impossibilities, not one.** The adapter is unpublished; the backbone
@@ -1776,3 +1778,34 @@ what a single deterministic pass already retrieves for free.
 The one predicate that survived is narrow and sharp: six cases in 633 where the **truth** was measured and then
 removed from the candidate set by `topoDiscount`, and **all six were answered wrong** — an identity rather than
 a correlation, since on a single-label corpus `AC@1` is `top-1 == truth`.
+
+## 0r. The first RCABench head-to-head — and the converter defect it exposed
+
+§0q ends with "the competitor that IS copyable is the one we already beat", which was true of the **agentic**
+field and false of the benchmark itself. RCABench's authors released their harness, their data and **their own
+implementation of every baseline**, so the field is re-runnable in a way the RCAEval field is not. One baseline
+has now been run on all 1,422 cases against this engine, paired case by case.
+
+| all 1,422 cases | this engine | `baro` | margin | McNemar |
+| --- | ---: | ---: | ---: | --- |
+| set-valued (`top-1 ∈ ground_truth.service`) | **884 = 62.17%** | 586 = 41.21% | **+20.96 pp** | p = 4.8e-29 |
+| endpoint-only (`top-1 == injection_point`) | **683 = 48.03%** | 422 = 29.68% | **+18.35 pp** | p = 2.1e-30 |
+
+The standing row above measures against the paper's `avg 21 / best 37`; this measures against a run. **The
+margin is +20.96 pp, not +24.5 pp**, and it is paired rather than two proportions — 512 cases resolved only by
+this engine, 214 only by `baro`.
+
+**And the run found where we lose.** `baro` is far ahead on four fault types — `JVMMemoryStress` 93.6% vs 35.7%
+(171 cases), `ContainerKill` 86.5% vs 29.2% (89), `PodFailure` 66.7% vs 4.2% (24), `PodKill` 90.0% vs 60.0% (10)
+— **174 cases to 6, net −168 = −11.8 pp of the corpus.** The mechanism is one line of our own converter: it
+carries **7 of the 48 metric names** a resource case holds, and drops `k8s.container.restarts`,
+`k8s.pod.phase`, `k8s.pod.memory.usage` and the `jvm.*` family — the direct evidence for exactly those four
+types. `baro` reads the parquet whole.
+
+So on those types it is not two rankers over one signal set; it is a ranker with the evidence against a ranker
+without it. The converter's drop was argued and sound for the seven families the engine then had. It stopped
+being sound the moment the corpus turned out to be 20% resource faults. **This is the defect a cross-paper
+comparison could not have found**: it required running an opponent that reads what we throw away.
+
+Everything measured, with per-type tables, costs and provenance, is in
+`docs/rcabench-baseline-replication.md`.

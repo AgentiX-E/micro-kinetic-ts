@@ -119,6 +119,11 @@ export default defineConfig({
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',
+        // Added with the module: the per-case verdict writer is what makes a published average re-scorable
+        // under a judgement chosen AFTER the run. Its whole value is that a line loses nothing — the accepted
+        // SET, the ranking ORDER, and the truncation depth — because a judgement computed from a lossy line is
+        // a judgement about a different corpus. Every branch is measured rather than trusted.
+        'src/fse26-per-case.ts',
         'src/fse26-formulation.ts',
         'src/fse26-composition.ts',
         'src/fse26-engine-agreement.ts',

@@ -154,6 +154,11 @@ export const NON_ENGINE_OPTION_KEYS = [
   'dataDir',
   'maxCases',
   'output',
+  // A writer, not a knob: it records what the engine answered, and the engine never reads it back. It is
+  // classified here rather than in the reported-config exclusion alone because this list is what the
+  // completeness test above checks — an option that reaches neither the engine nor this list is the silent
+  // drop the test exists to catch.
+  'perCaseOut',
   'diagnose',
   'diagnoseLimit',
   'diagnoseDecimals',

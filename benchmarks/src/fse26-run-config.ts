@@ -48,6 +48,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'dataDir',
   'maxCases',
   'output',
+  'perCaseOut',
   'diagnose',
   'diagnoseLimit',
   'diagnoseDecimals',

@@ -35,7 +35,7 @@
  */
 
 import { readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
 
@@ -58,6 +58,11 @@ import {
   type BoundaryObservation,
 } from './fse26-boundary-census.js';
 import { parseFSE26Args } from './fse26-cli.js';
+import {
+  PER_CASE_RANK_LIMIT,
+  writePerCaseVerdicts,
+  type PerCaseVerdict,
+} from './fse26-per-case.js';
 import {
   buildFSE26Report,
   formatFailedEdgeCoverageLine,
@@ -178,6 +183,9 @@ async function main(): Promise<void> {
 
   // ── Per-case accumulation (small; the loaded cases are released per case) ──
   const predictionsPerCase: string[][] = [];
+  // The same answers, beside the labels, for a judgement that is chosen AFTER the run: an average over the
+  // corpus cannot be re-scored, and RCABench's ground truth is a set (both endpoints of an edge-shaped fault).
+  const verdicts: PerCaseVerdict[] = [];
   const acceptedPerCase: string[][] = [];
   const faultTypeOfCase: string[] = [];
   // One compact projection per case for the failed-edge coverage counter: the
@@ -279,6 +287,12 @@ async function main(): Promise<void> {
     }
 
     predictionsPerCase.push(ranking.map((r) => r.serviceId));
+    verdicts.push({
+      datapack: basename(dir),
+      faultType,
+      accepted,
+      ranked: ranking.slice(0, PER_CASE_RANK_LIMIT).map((r) => r.serviceId),
+    });
     acceptedPerCase.push(accepted);
     faultTypeOfCase.push(faultType);
 
@@ -348,6 +362,10 @@ async function main(): Promise<void> {
     });
     writeFileSync(opts.output, JSON.stringify(report, null, 2));
     console.log(`\nResults written to ${opts.output}`);
+  }
+  if (opts.perCaseOut !== '') {
+    const written = writePerCaseVerdicts(opts.perCaseOut, verdicts);
+    console.log(`  Per-case verdicts: ${written} rows -> ${opts.perCaseOut}`);
   }
 }
 

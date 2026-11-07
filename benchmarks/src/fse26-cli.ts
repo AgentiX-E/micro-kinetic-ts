@@ -171,6 +171,15 @@ export interface Fse26CliOptions {
   readonly anomalyNormalizeNodeThreshold: number;
   /** Emit a JSON result document to this path (empty = none). */
   readonly output: string;
+  /**
+   * Emit one JSON line per case (datapack, fault type, accepted set, top-5 ranking) to this path, or nothing.
+   *
+   * The result document carries AVERAGES, and an average cannot be re-scored. RCABench's ground truth is a
+   * set for edge-shaped faults, so `top-1` is a different question depending on whether the injected endpoint
+   * alone must be named; without a per-case record the judgement can only be changed by a second run over the
+   * whole corpus. This option is what makes the judgement a post-processing decision instead.
+   */
+  readonly perCaseOut: string;
   /** Fault types to dump a per-service signal diagnostic for (empty = none). */
   readonly diagnose: readonly string[];
   /** Max diagnostic dumps per matching fault type (0 = unlimited). */
@@ -584,6 +593,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     rankNormalization: DEFAULT_RANK_NORMALIZATION,
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     output: '',
+    perCaseOut: '',
     diagnose: [] as string[],
     diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
@@ -659,6 +669,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
         ANOMALY_NORMALIZE_NODE_THRESHOLD,
       );
     } else if (arg === '--output' && hasValue(argv, i + 1)) opts.output = argv[++i]!;
+    else if (arg === '--per-case-out' && hasValue(argv, i + 1)) opts.perCaseOut = argv[++i]!;
     else if (arg === '--diagnose' && hasValue(argv, i + 1)) opts.diagnose = csv(argv[++i]!);
     else if (arg === '--diagnose-limit' && hasValue(argv, i + 1))
       opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;

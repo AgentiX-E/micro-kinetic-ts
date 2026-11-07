@@ -213,6 +213,9 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
   diagnoseDump: 'writes the diagnostic dump; an output path',
   diagnoseDecimals: 'sets the dump render precision; a property of the ARTIFACT',
   lossCensus: 'writes the per-case loss census; an output path',
+  perCaseOut:
+    'writes one verdict line per case (datapack, label set, top-5) for a judgement chosen after the run; an ' +
+    'output path, and the engine never reads it back — the ranking it exports is the one `top1` already counts',
   dropMetrics: 'load-time ablation of the INPUT, applied before the engine runs',
   latencyView:
     'selects which view of `edgeLatency` the CORPUS carries; a property of the INPUT rather than a term ' +
@@ -1091,6 +1094,11 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
 const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
   '--routing-probe':
     'writes a routing-feasibility probe; an output path the workflow does not read back',
+  '--per-case-out':
+    'writes one verdict line per case so a published average can be re-scored under a judgement chosen after ' +
+    "the run; an output path the workflow does not read back, and the FSE'26 dispatch needs no second file " +
+    'because the ranking it exports is the one the run already counted. It exists for a COMPARISON run, which ' +
+    'is executed on the corpus directly rather than through the dispatch',
   '--system':
     'narrows one suite to a single microservice system; the workflow dispatches whole suites',
   '--max-cases':
