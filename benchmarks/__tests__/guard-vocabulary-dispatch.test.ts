@@ -53,7 +53,11 @@ function guardBranch(source: string, key: string): string {
   });
   if (at < 0) throw new Error(`${key} is not routed by this workflow`);
   let first = at;
-  while (first > 0 && lines[first - 1].trimStart().startsWith('#')) first -= 1;
+  while (first > 0) {
+    const above = lines[first - 1] ?? '';
+    if (!above.trimStart().startsWith('#')) break;
+    first -= 1;
+  }
   const last = lines.findIndex((line, index) => index >= at && line.trimEnd().endsWith(';;'));
   if (last < 0) throw new Error(`${key}'s branch has no terminator`);
   return lines.slice(first, last + 1).join('\n');
