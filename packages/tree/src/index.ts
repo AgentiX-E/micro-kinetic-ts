@@ -229,6 +229,7 @@ export type {
   FailedEdgeCredit,
   FailedEdgeLedger,
   FailedEdgeMutualRule,
+  FailedEdgeOverrideRule,
 } from './pruning/ranking-signals.js';
 
 export {
@@ -236,10 +237,12 @@ export {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
+  FAILED_EDGE_OVERRIDE_RULES,
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   computeDeepestExceptions,
@@ -260,6 +263,7 @@ export {
   gatedRiseContribution,
   isFailedEdgeCredit,
   isFailedEdgeMutualRule,
+  isFailedEdgeOverrideRule,
   isLogSignalMode,
   // Level 1 of the log gate, exported because the census that attributes an EMPTY log tier has to read the same
   // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of

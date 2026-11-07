@@ -91,6 +91,7 @@ import type {
   FailedEdgeCredit,
   FailedEdgeMode,
   FailedEdgeMutualRule,
+  FailedEdgeOverrideRule,
   LogSignalMode,
 } from './ranking-signals.js';
 import {
@@ -98,6 +99,7 @@ import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
@@ -119,12 +121,16 @@ import {
 export {
   DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
+  FAILED_EDGE_OVERRIDE_RULES,
   isFailedEdgeCredit,
   isFailedEdgeMutualRule,
+  isFailedEdgeOverrideRule,
   type FailedEdgeCredit,
   type FailedEdgeMutualRule,
+  type FailedEdgeOverrideRule,
 } from './ranking-signals.js';
 
 /**
@@ -746,6 +752,16 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * them is traffic.
    */
   readonly failedEdgeMutualRule?: FailedEdgeMutualRule;
+  /**
+   * Whether a charge may override the ranking when the same channel also charges a service the charged callee has
+   * its own net rise against — see {@link FailedEdgeOverrideRule}.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_OVERRIDE_RULE} (`override`), which is the behaviour every published cell
+   * was measured with, so the field is inert until a run names it. `return-path` removes such a callee's charge
+   * before normalisation: the channel would otherwise name the end of a failing path that accumulated more
+   * traffic, which is a statement about the graph rather than about the fault.
+   */
+  readonly failedEdgeOverrideRule?: FailedEdgeOverrideRule;
   /**
    * Weight of the per-edge inbound latency rise.
    *
@@ -1829,6 +1845,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
   failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
   failedEdgeMutualRule: DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  failedEdgeOverrideRule: DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -2158,6 +2175,7 @@ export class TreePruner {
       options?.failedEdgeCalls,
       this.options.failedEdgeCredit ?? DEFAULT_FAILED_EDGE_CREDIT,
       this.options.failedEdgeMutualRule ?? DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+      this.options.failedEdgeOverrideRule ?? DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
     );
     // The two views of ONE walk: the scores the term reads, and the channel's own volume for the gate that
     // decides whether the term may speak. Two walks would be two definitions of which edges counted.

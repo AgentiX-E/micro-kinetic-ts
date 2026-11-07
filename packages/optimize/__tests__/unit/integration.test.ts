@@ -241,6 +241,9 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // a pair exist, not how large one of them is, so a search has nothing to interpolate between `credit` and
       // `drop`.
       'failedEdgeMutualRule',
+      // Iteration 237: the OVERRIDE rule. Held for the mutual rule's reason — it removes a candidate rather than
+      // resizing one, so there is nothing for the search to interpolate between `override` and `return-path`.
+      'failedEdgeOverrideRule',
       'failedEdgeWeight',
       'latMinRise',
       'latWeight',

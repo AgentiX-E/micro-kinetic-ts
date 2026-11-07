@@ -35,6 +35,7 @@ import type {
   FailedEdgeCredit,
   FailedEdgeGateMode,
   FailedEdgeMutualRule,
+  FailedEdgeOverrideRule,
   LogSignalMode,
   OnsetShape,
   PoolAdmission,
@@ -108,6 +109,8 @@ export interface RCAEvalSignalOptions {
   readonly failedEdgeCredit: FailedEdgeCredit;
   /** What a mutually failing pair contributes — see `TreePrunerOptions.failedEdgeMutualRule`. */
   readonly failedEdgeMutualRule: FailedEdgeMutualRule;
+  /** Whether a charge may override when its own evidence is contradicted — see `TreePrunerOptions.failedEdgeOverrideRule`. */
+  readonly failedEdgeOverrideRule: FailedEdgeOverrideRule;
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
@@ -257,6 +260,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       failedEdgeGateShare: opts.failedEdgeGateShare,
       failedEdgeCredit: opts.failedEdgeCredit,
       failedEdgeMutualRule: opts.failedEdgeMutualRule,
+      failedEdgeOverrideRule: opts.failedEdgeOverrideRule,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
@@ -337,6 +341,9 @@ export function formatSignalLine(opts: CliOptions): string {
     // The MUTUAL-PAIR rule, unconditional for the credit's reason: it ships at `credit`, where it is inert, and a
     // line that printed only non-defaults would render the drop arm and the shipped run identically.
     `failedEdgeMutualRule=${opts.failedEdgeMutualRule} ` +
+    // The OVERRIDE rule, unconditional for the same reason: it ships at `override`, where it is inert, and a line
+    // that printed only non-defaults would render the return-path arm and the shipped run identically.
+    `failedEdgeOverrideRule=${opts.failedEdgeOverrideRule} ` +
     `collapseDiscount=${opts.collapseDiscount} metricRiseCeiling=${opts.metricRiseCeiling} ` +
     `dropDeviationMode=${opts.dropDeviationMode} baselineAnchor=${opts.baselineAnchor} ` +
     `traceWeight=${opts.traceWeight} ` +

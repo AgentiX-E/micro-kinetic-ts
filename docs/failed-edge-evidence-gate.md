@@ -327,3 +327,156 @@ iteration's first task rather than smuggled in under this name:
 > the same 221 cases, that reaches **8 of the 26 breaks and none of the 195 fixes**. It is not shipped here because
 > the number comes from the probe's join, not from the engine's, and this section exists because that difference
 > was worth catching once.
+
+## 12. The return path: the rule that survives the engine's own join
+
+§11 registered this before it was built, with its acceptance condition stated in advance: refuse an override when
+the promoted callee can reach the displaced candidate through failing calls; refused unless it removes at least
+four of the remaining eighteen breaks with at least 190 of the 195 fixes kept.
+
+The registration also carried the reason §11 could not just ship it: the "8 of 26" it quoted came from a probe
+that built its OWN join of `traces.csv`, and §11 had already caught that probe measuring a path rather than a
+pair. So this iteration asked the question twice, in the two forms that matter.
+
+### 12.1 Two readings of one rule, and why the engine can only use the second
+
+| reading  | question it asks                                                                                       | measurable offline                                         | measurable in the engine                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| targeted | can the promoted callee reach **the displaced candidate**?                                             | yes, because the counterfactual champion is known per case | **no** — the ledger cannot see what the ranking would have said without it |
+| engine   | does the promoted callee have a net failed-call edge into **another callee the channel also charges**? | yes                                                        | yes                                                                        |
+
+The second is strictly stronger on this corpus: 12 of the 26 breaks rather than 8, and still none of the 195
+fixes. It is also the only one the engine can act on, which decides the question — a rule the ledger cannot
+evaluate is a rule that can only be applied outside it, and this repository does not ship ranking logic in a
+runner.
+
+### 12.2 The measurement, through `countDirectionalInputs`
+
+Population: the 221 cases the `ev10` arm moves (195 fixed, 26 broken) on the 1 303-case paired RE3:TrainTicket
+sweep. Input: `countDirectionalInputs(traces.csv, injectTimeMs)` — the function that produces the rows the ledger
+reads, not a second join.
+
+| population | cases with a net rise into another charged callee | of 195 / 26 |
+| ---------- | ------------------------------------------------: | ----------: |
+| fixes      |                                             **0** |    0 of 195 |
+| breaks     |                                            **12** |    12 of 26 |
+
+The pre-registered acceptance condition (≥ 4 of the remaining 18 breaks, ≥ 190 of 195 fixes) is met by a factor of
+three on the first count and with nothing lost on the second, so the rule was built and armed.
+
+### 12.3 The arm read 846, and the difference from the projection was a defect
+
+The projection above assumed a refused override returns to the control ranking, which is exact per case but
+describes only ONE way the rule can act. The arm came back at **846 of 1 303 (64.93 %)** against the projected 737:
+
+| arm                                  |           correct | vs control |
+| ------------------------------------ | ----------------: | ---------: |
+| shipped (`absolute` bar, term inert) |     556 (42.67 %) |          — |
+| `evidence @ 0.10`                    |     725 (55.64 %) |       +169 |
+| `evidence @ 0.10` + `return-path`    | **846 (64.93 %)** |   **+290** |
+
+`+121` over the evidence arm, ten times the projection — and 9 cases broken. Both facts have one cause, and it is
+not the rule's statistics:
+
+| how the arm differs from `ev10`                               |                       cases | the term's `failedEdge` contribution |
+| ------------------------------------------------------------- | --------------------------: | ------------------------------------ |
+| the gate had REFUSED the term, and admitted it under the rule | **105 recovered, 9 broken** | 0 → 3 000                            |
+| the gate admitted the term in both arms                       |      23 recovered, 0 broken | unchanged                            |
+| the gate admitted it before and refuses it under the rule     |                 2 recovered | 3 000 → 0                            |
+
+**The rule was moving the gate.** `evidence.fraction` is `topNet / topCalls` over the credited callees, so removing
+a large charge raises the share of the survivors — and on 105 cases that lifted the fraction over the 0.10 bar on
+a case the channel had correctly refused. 105 of those flips happened to be right and 9 happened to be wrong, and
+both are luck: the rule was answering a question it was never asked.
+
+This is a defect class worth naming, because nothing in the rule's own tests could see it: the rule is about
+**which credited service may override the ranking**, the gate is about **whether this case's failed calls are
+enough to speak at all**, and the second answer cannot depend on the first. The 9 breaks say so directly — six of
+them name `ts-basic-service`, the loudest SURVIVOR of the removal, on cases where the control ranking had already
+been correct.
+
+### 12.4 The fix: the gate reads a snapshot taken before the rule
+
+`gateNet` and the credited set are now snapshotted **after the mutual-pair rule and before the override rule**, and
+the evidence report is read from that snapshot. The split is the two rules' semantics, not an implementation
+convenience:
+
+- the **mutual-pair** rule denies that the evidence exists (both ends of the pair are not evidence), so it may
+  change the gate;
+- the **override** rule denies one service the right to override, which is a statement about a speaker and not
+  about the case, so it may not.
+
+| arm                                     |           correct | vs control | breaks vs `ev10` | recovers vs `ev10` |
+| --------------------------------------- | ----------------: | ---------: | ---------------: | -----------------: |
+| `evidence @ 0.10`                       |     725 (55.64 %) |       +169 |                — |                  — |
+| `return-path`, gate fed by the rule     |     846 (64.93 %) |       +290 |            **9** |                130 |
+| `return-path`, gate fed by the snapshot | **750 (57.56 %)** |   **+194** |            **0** |             **25** |
+
+The published claim is the last row. `+25` is the rule's real contribution, and it is the first change in this
+family that adds cases with **no case lost and no family made worse than the arm's own table**.
+
+### 12.5 Why zero of 195 is not luck
+
+The rule fires on a shape, not on a statistic: a credited callee that has its own net rise against **another
+credited callee**. For it to fire on a fix, the term's winning candidate would have to be the middle of a failing
+chain — a service charged by something upstream and charging something downstream, both credited. The term does not
+win those cases, and the reason is the one §10.2 measured from the other side: the source carries the smaller,
+earlier anomaly and the victim the larger. The population the rule removes and the population the term gets right
+are disjoint by construction rather than by threshold.
+
+The corrected arm is the evidence: **0 breaks, 25 recovers**, and the 25 are the cases where removing a middle link
+let the end of the chain win.
+
+### 12.6 Order, and what the ordering protects
+
+Three rules now touch the same ledger, and their order is asserted rather than incidental:
+
+1. **baseline subtraction, self-edges, out-of-graph endpoints** — the filters that decide which rows are evidence;
+2. **the mutual-pair rule** (off by default) — removes both charges of a pair that fails both ways, and MAY change
+   the gate, because it denies the evidence exists;
+3. **the override rule** (off by default) — removes the charge of a credited callee contradicted by another
+   credited callee and rescales the survivors, and may NOT change the gate, because it is about a speaker.
+
+The override test is taken against a **snapshot** of the credited set, so it does not depend on the order the
+services happen to be visited in. It reads the same `counted` rows the scores are built from, which makes both of
+these true by construction: a row the engine never counted cannot contradict, and a callee below the record floor —
+not a credit the term could spend — can neither contradict nor be contradicted.
+
+### 12.7 The external statement this agrees with
+
+An observability vendor's 2026 engineering note states the convention this rule encodes, from the operations side
+rather than the measurement side: _"A depends on B. For an alarm on A, root-cause candidates follow OUTGOING
+edges"_ — and, in the same note, _"an observed call is not necessarily a dependency"_, because a service may call
+something and ignore the response. Both halves are the claim the ledger now makes: a failed call points DOWNSTREAM,
+so the candidate is the callee, and a service that is itself calling something that failed is a candidate only if
+nothing further down is also charged.
+
+The same cycle's `TopoEvo` (topology-constrained multi-agent hypothesis–evidence–test) attacks the identical
+problem — separating the initial anomaly from the cascade-amplified downstream symptoms — with role agents and
+tests. That is a different instrument for the same distinction, and it is the one a single-pass ranker cannot
+afford: the measurement above says the distinction is worth 25 cases here, and it is available from the call graph
+alone.
+
+### 12.8 What is left, counted
+
+After the rule, **14 breaks remain**, and the ledger says exactly what they are:
+
+| property                                                        |        count | meaning                                                                   |
+| --------------------------------------------------------------- | -----------: | ------------------------------------------------------------------------- |
+| the displaced candidate carries **no** charge                   | **14 of 14** | the anomaly champion the term overrode was invisible to the error channel |
+| the truth carries no charge                                     | **13 of 14** | the channel has no row about the actual source either                     |
+| the truth carries a charge but the promoted callee carries more |      1 of 14 | the only remaining case the channel can see                               |
+
+So the 26 breaks decompose cleanly for the first time: **12 the return path removes, 14 the channel cannot see at
+all.** Those 14 are `st` ×8, `rrc` ×2, `ck` ×2, `rrm` ×1, `pf` ×1, and they are also the entire remaining family
+regression (`st` −10, `ck` −2, `pf` −1 — the same three the evidence arm has, because the corrected rule changes
+nothing on cases whose gate refuses the term).
+
+Nothing inside the error channel can separate them, and the measurement says why: the promoted service is the
+truth's **caller** in most of them (`seat → order`, `inside-payment → payment`, `basic → station`, `route-plan →
+travel2`, `consign → consign-price`), so the term names the upstream end of a call that failed while the downstream
+end answered normally — which is what a saturation fault looks like when only the client side times out.
+
+That is a statement about the MODALITY rather than the statistic, and it is where the next iteration has to work:
+the error channel cannot see a service that keeps answering, and the latency channel — already in the ledger as
+`edgeLatency` — is the one that records the call the client waited too long for.

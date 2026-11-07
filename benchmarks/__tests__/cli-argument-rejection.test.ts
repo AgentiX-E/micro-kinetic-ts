@@ -57,6 +57,7 @@ import {
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_MUTUAL_RULES,
+  FAILED_EDGE_OVERRIDE_RULES,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   POOL_ADMISSIONS,
@@ -448,6 +449,10 @@ describe('every option the golden runner forwards can be set from the command li
       // already holds `credit`, so only `drop` can move it, and a set that probed only the shipped member would
       // pass over a flag that never reaches the ledger.
       ...FAILED_EDGE_MUTUAL_RULES,
+      // Iteration 237: the OVERRIDE rule. Same shape again — the field holds `override`, so only `return-path`
+      // can move it — and the same reason for probing the union: a set with only the shipped member would pass
+      // over a flag that never reaches the ledger.
+      ...FAILED_EDGE_OVERRIDE_RULES,
       // Iteration 213: the deduction's PRECEDENCE, the eighth word-vocabulary and the first that is a relation
       // between two nodes rather than a property of one. Probed from the union for the reason every other entry
       // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.

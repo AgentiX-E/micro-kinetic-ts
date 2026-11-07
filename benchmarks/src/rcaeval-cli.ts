@@ -59,6 +59,7 @@ import {
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -80,11 +81,13 @@ import {
   isFailedEdgeCredit,
   isFailedEdgeGateMode,
   isFailedEdgeMutualRule,
+  isFailedEdgeOverrideRule,
   isOnsetShape,
   type DualFamilyGateMode,
   type FailedEdgeCredit,
   type FailedEdgeGateMode,
   type FailedEdgeMutualRule,
+  type FailedEdgeOverrideRule,
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
@@ -457,6 +460,18 @@ export interface CliOptions {
    */
   failedEdgeMutualRule: FailedEdgeMutualRule;
   /**
+   * Whether a charge may override the ranking when the same channel also charges a service the charged callee has
+   * its own net rise against — `override` (shipped) or `return-path` (see
+   * `TreePrunerOptions.failedEdgeOverrideRule`).
+   *
+   * The term does not vote, it overrides: the winner is `1.0` by construction, so its contribution is the term's
+   * full weight. `return-path` removes the charge of a credited callee that has its own net rise against another
+   * credited callee, before normalisation, so the survivors are rescaled and the term names the next candidate.
+   * Always printed, like the credit and the mutual rule, because a default-valued field that is omitted from the
+   * line makes two different arms produce byte-identical artifacts.
+   */
+  failedEdgeOverrideRule: FailedEdgeOverrideRule;
+  /**
    * Strength of the DB-connection-pool dominance penalty (see
    * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
    *
@@ -801,6 +816,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
     failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
     failedEdgeMutualRule: DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+    failedEdgeOverrideRule: DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
@@ -964,6 +980,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.failedEdgeMutualRule = isFailedEdgeMutualRule(mutual)
         ? mutual
         : DEFAULT_FAILED_EDGE_MUTUAL_RULE;
+    } else if (args[i] === '--failed-edge-override-rule' && hasValue(args, i + 1)) {
+      // The same guard, one rule further: an unusable value falls back to the SHIPPED rule rather than to a
+      // half-applied one.
+      const override = args[++i]!;
+      opts.failedEdgeOverrideRule = isFailedEdgeOverrideRule(override)
+        ? override
+        : DEFAULT_FAILED_EDGE_OVERRIDE_RULE;
     } else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
       // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
       // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.

@@ -1551,6 +1551,44 @@ export function isFailedEdgeMutualRule(value: unknown): value is FailedEdgeMutua
   );
 }
 
+/**
+ * Whether the direction term may OVERRIDE the ranking with a charge that its own evidence also contradicts.
+ *
+ * The term is not a vote. Its score is `aggregate / max(aggregate)`, so the winner is `1.0` by construction and
+ * the term's contribution is its whole weight — 3.000 against a median `selfAnomalyLog1p` of 0.617 on the RE3
+ * archive. Iterations 234–236 measured five ways of weakening that proportionally (a lower bar, a lower weight, a
+ * rate-scaled credit, an anomaly conjunction, edge structure) and every one of them cost more fixes than it saved.
+ *
+ * What the cases the gate BREAKS have in common is narrower: the promoted service has a net failed-call edge INTO
+ * another service the channel also charges. So the channel states both "this one is the source" and "that one is
+ * the source" along one call boundary, and the end with more accumulated failures wins — a statement about traffic
+ * rather than about the fault.
+ *
+ * `override` is the shipped behaviour: a charge overrides whatever the anomaly ranking said, unconditionally.
+ * `return-path` removes the charge of any credited callee that has its own net rise against another credited
+ * callee, before normalisation, so the survivors are rescaled and the term speaks about the next candidate.
+ *
+ * Measured on the 221 cases the evidence arm moves, through the engine's own `countDirectionalInputs` join: the
+ * rule fires on 12 of the 26 breaks and on none of the 195 fixes. See `docs/failed-edge-evidence-gate.md` §12.
+ */
+export type FailedEdgeOverrideRule = 'override' | 'return-path';
+
+/** The override vocabulary, in the order the documentation presents it. */
+export const FAILED_EDGE_OVERRIDE_RULES: readonly FailedEdgeOverrideRule[] = [
+  'override',
+  'return-path',
+];
+
+/** The shipped rule. `return-path` is arm-ready and off, so no published cell can move by omission. */
+export const DEFAULT_FAILED_EDGE_OVERRIDE_RULE: FailedEdgeOverrideRule = 'override';
+
+/** Whether an untrusted value names an override rule. Total, for parsers and for callers holding `string`. */
+export function isFailedEdgeOverrideRule(value: unknown): value is FailedEdgeOverrideRule {
+  return (
+    typeof value === 'string' && (FAILED_EDGE_OVERRIDE_RULES as readonly string[]).includes(value)
+  );
+}
+
 /** An evidence report with nothing in it, shared so an empty case allocates nothing. */
 const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
   topService: undefined,
@@ -1591,6 +1629,10 @@ export interface FailedEdgeLedger {
  * @param mutualRule - What a pair of services that fail each other's calls contributes: `credit` (the shipped
  *   behaviour, both ends charged) or `drop` (neither end charged, and the survivors rescaled). See
  *   {@link FailedEdgeMutualRule}.
+ * @param overrideRule - Whether a charge may override the ranking when the same channel also charges a service the
+ *   charged callee has its own net rise against: `override` (the shipped behaviour, unconditional) or
+ *   `return-path` (that callee loses its charge and the survivors are rescaled). See
+ *   {@link FailedEdgeOverrideRule}.
  * @returns Both views. An empty channel returns an empty map and an empty report.
  */
 export function computeFailedEdgeLedger(
@@ -1601,6 +1643,7 @@ export function computeFailedEdgeLedger(
   calls?: ReadonlyMap<ServiceId, number> | undefined,
   credit: FailedEdgeCredit = DEFAULT_FAILED_EDGE_CREDIT,
   mutualRule: FailedEdgeMutualRule = DEFAULT_FAILED_EDGE_MUTUAL_RULE,
+  overrideRule: FailedEdgeOverrideRule = DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
 ): FailedEdgeLedger {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) {
@@ -1675,6 +1718,50 @@ export function computeFailedEdgeLedger(
 
   if (net.size === 0) return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
 
+  // ── The override rule: does the channel's own evidence contradict the service it is about to name? ─────────
+  //
+  // A credited callee that has its own net rise against ANOTHER credited callee is not a source the channel can
+  // point at: the same rows say "this one" and "that one", one call boundary apart. Removing it before
+  // normalisation is what lets the term name the next candidate instead of falling silent, and it is why this is a
+  // rule rather than a gate.
+  //
+  // The test is taken against a SNAPSHOT of the credited set, so it is order-independent: a rule that re-tested
+  // against its own removals would depend on the order the services happened to be visited in, which is a property
+  // of a Map's insertion sequence rather than of the evidence.
+  // The channel as the GATE reads it, snapshotted before the override rule and kept separately from the net the
+  // scores are built from. The two rules answer different questions: the gate asks whether this case's failed
+  // calls are enough to speak at all, and the override rule asks which of the services that DID speak may
+  // override. Removing a large charge raises the share of the survivors, so letting the rule feed the gate turns
+  // silence into speech — measured on the RE3 arm: 105 cases where the term had been refused started speaking,
+  // and 9 of them displaced a correct answer. The snapshot is taken AFTER the mutual-pair rule, because that
+  // rule denies the evidence exists rather than denying one service the right to override.
+  const gateNet = overrideRule === 'return-path' ? new Map(net) : net;
+  let gateCallees: readonly ServiceId[] | undefined;
+
+  if (overrideRule === 'return-path') {
+    const credited = new Set<ServiceId>();
+    for (const [callee, value] of net) {
+      // A callee below the record floor is not a credit the term could spend, so it cannot be the thing that
+      // removes one — and it cannot be the thing that is removed either.
+      if (records.get(callee)! < minRecords) continue;
+      if (value > 0) credited.add(callee);
+    }
+    gateCallees = [...credited];
+    const contradicted = new Set<ServiceId>();
+    for (const row of counted) {
+      // `counted` already excludes self-edges and out-of-graph endpoints, and a row whose RISE the baseline
+      // removes never entered it — so the rule reads exactly the rows the scores are built from.
+      if (!credited.has(row.caller) || !credited.has(row.callee)) continue;
+      contradicted.add(row.caller);
+    }
+    for (const callee of contradicted) {
+      net.delete(callee);
+      records.delete(callee);
+      callers.delete(callee);
+    }
+    if (net.size === 0) return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
+  }
+
   const aggregate = new Map<ServiceId, number>();
   let max = 0;
   // Iterate the caller sets rather than the sums: a callee is in `net` exactly
@@ -1723,8 +1810,11 @@ export function computeFailedEdgeLedger(
   let topService: ServiceId | undefined;
   let topNet = 0;
   let netTotal = 0;
-  for (const callee of aggregate.keys()) {
-    const value = net.get(callee)!;
+  // The callees the gate scored: the credited set the override rule saw, or — when it ran — the scores' own keys,
+  // which are the same set by construction (both answer `records >= minRecords`).
+  const callees = gateCallees ?? [...aggregate.keys()];
+  for (const callee of callees) {
+    const value = gateNet.get(callee)!;
     netTotal += value;
     if (value > topNet) {
       topNet = value;
@@ -1740,7 +1830,7 @@ export function computeFailedEdgeLedger(
       topCalls,
       fraction: topCalls > 0 && Number.isFinite(topCalls) ? topNet / topCalls : undefined,
       netTotal,
-      callees: aggregate.size,
+      callees: callees.length,
     },
   };
 }

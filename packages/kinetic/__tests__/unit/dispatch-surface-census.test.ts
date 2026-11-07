@@ -469,6 +469,15 @@ const KNOBS: Readonly<
     fse26: null,
     rcaeval: null,
   },
+  failedEdgeOverrideRule: {
+    // The OVERRIDE rule of the direction channel, appended in iteration 237 beside the mutual-pair rule. Accepted
+    // by the runner and named unconditionally on every artifact, but the packed `anomaly_knobs` block is at its
+    // input budget, so no dispatch can state it yet — `rcaeval`-null for the same reason the two above are.
+    flag: '--failed-edge-override-rule',
+    owner: 'failed-edge-evidence-gate.md',
+    fse26: null,
+    rcaeval: null,
+  },
   failedEdgeGateMode: {
     // The weight's OTHER axis, and the one that decided whether the term could act on the golden half at all:
     // `absolute` is the 300 fitted on FSE'26's injection strength, `fleet` a share of each case's own champion.
@@ -1025,6 +1034,9 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // different rules rather than two spellings of one, on this list only because the direction term's packed block
   // has no spare input. It travels as `failedEdgeMutualRule=<value>`, so a run that sets it is attributable.
   '--failed-edge-mutual-rule',
+  // Iteration 237: the override rule, for the same reason one step further down the same axis. It travels as
+  // `failedEdgeOverrideRule=<value>`, so a run that sets it is attributable even though no dispatch can.
+  '--failed-edge-override-rule',
   // The POSITIVE pole. The axis itself IS dispatchable — through `no_rank_normalization`, the negated switch —
   // and exposing only that pole is what the FSE'26 parser does too, so one value means one thing in both
   // workflows. This member therefore records a flag the runner accepts and the workflow cannot spell, not an

@@ -499,7 +499,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         // it ships at `constant`, where it is inert, so a line that omitted defaults would render the
         // proportional arm and the shipped run byte-identically.
         'failedEdgeWeight=3 failedEdgeGateMode=absolute failedEdgeGateShare=0.5 ' +
-        'failedEdgeCredit=constant failedEdgeMutualRule=credit ' +
+        'failedEdgeCredit=constant failedEdgeMutualRule=credit failedEdgeOverrideRule=override ' +
         'collapseDiscount=0 metricRiseCeiling=0 dropDeviationMode=bounded ' +
         'baselineAnchor=whole-file ' +
         'traceWeight=1 traceSkipsLeader=false prismWeight=0 prismPooling=additive ' +
