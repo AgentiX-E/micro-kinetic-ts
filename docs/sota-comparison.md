@@ -640,7 +640,8 @@ and printing that column is a debt this entry names rather than a number it inve
 strongest baseline on RCAEval. Metric-level is a different population from service-level: the truth is a
 `(service, metric)` pair rather than a service, so the candidate set is larger and the two figures are not
 comparable. It is recorded here for the one thing that transfers — its **topology-guided metric SELECTION**, which
-is the same question `docs/channel-selection.md` asks from the other end (which channels may be evidence at all).
+is the same question `docs/transient-guard-test.md` asks from the other end — **whether a channel is evidence at
+all**, which is the guard's own question and the one whose answer moved three populations in iteration 240.
 
 **What is borrowable from both, stated as a hypothesis rather than as a plan.** `RICE-CM`'s coupling weight is a
 _reliability_ on an estimated relation, and this repository's relation terms are admitted by a **gate** whose share
