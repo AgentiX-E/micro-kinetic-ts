@@ -28,6 +28,7 @@ import {
   isTransientGuardTest,
   rankNormalizeScores,
   TRANSIENT_GUARD_TESTS,
+  TRANSIENT_RETURN_THRESHOLD,
 } from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
@@ -3927,6 +3928,7 @@ describe('the transient guard vocabulary — one owner, checked against its unio
       'endpoint',
       'evidence-aware',
       'evidence-trimmed',
+      'hump',
       'level-window',
       'trimmed-ends',
     ]);
@@ -4210,5 +4212,236 @@ describe('the level test’s precondition has one owner', () => {
     expect(
       injectionSplitIndex([AT - 9000, AT - 5000, AT - 4000, AT - 3000, AT, AT + 1000], 6, AT),
     ).toBeUndefined();
+  });
+});
+
+describe('the hump conjunction — admit the level reading only where the trimmed reading is settled', () => {
+  type GuardCfg = Parameters<typeof buildTopologyFaultGraph>[2];
+
+  /** The diagnostic row per channel for one series under one arm. */
+  const outcomes = (values: number[], cfg: GuardCfg): Array<[string, string]> => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]);
+    return buildTopologyFaultGraph(graph, metrics, cfg)
+      .metricDiagnostics.get('svc')!
+      .map((d) => [d.label, d.outcome]);
+  };
+
+  /**
+   * A RAMP that HOLDS and RETURNS — the shape a container kill takes on a resource channel: 15 samples at the
+   * baseline, 10 at the plateau (the majority of the post half), 5 back at the baseline. Both END windows sit at
+   * the baseline, so the trimmed statistic reads the channel as settled; the post half's median sits at the
+   * plateau, so the level reading sees the shift. `re3tt_ts-assurance-service_ck_1344` is this shape on a real
+   * corpus: `cpu` 0.0215 → 2.718 → 0.025, engine score 0.000.
+   */
+  const hump = [
+    ...Array<number>(15).fill(5),
+    ...Array<number>(10).fill(100),
+    ...Array<number>(5).fill(5),
+  ];
+
+  it('keeps the hump on the side the shipped policy would drop it from — the one thing the arm exists to do', () => {
+    // The arm is a POLICY, so the comparison is against the shipped policy rather than against a statistic. On
+    // the OBSERVED side the shipped policy reads this channel with `trimmed-ends`, which sees two end windows at
+    // the baseline and a plateau in between — a return — and drops it. That is the population: a case that
+    // observed a call boundary, whose truth is a kill, whose channel is a hump.
+    expect(outcomes(hump, { injectTimeMs: 15000 })).toEqual([['cpu', 'transient-return']]);
+    expect(
+      outcomes(hump, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'trimmed-ends',
+        sideChannelObserved: true,
+      }),
+    ).toEqual([['cpu', 'transient-return']]);
+    // The arm keeps it, on the level reading's testimony, and only because the trimmed reading is settled.
+    expect(
+      outcomes(hump, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'hump',
+        sideChannelObserved: true,
+      }),
+    ).toEqual([['cpu', 'kept']]);
+    // On the metrics-only side the shipped policy already reads the level, so the arm changes nothing there —
+    // asserted here and in full one test below.
+    expect(
+      outcomes(hump, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'hump',
+        sideChannelObserved: false,
+      }),
+    ).toEqual([['cpu', 'kept']]);
+  });
+
+  it('drops an excursion both readings call settled, so it cannot be a blanket "keep everything"', () => {
+    // The RE3 OnlineBoutique regression the guard's non-zero-baseline rule exists for: a burst that returns to
+    // a non-zero baseline. Neither reading finds a level shift, so the conjunction has nothing to admit — on
+    // either side of the policy, which is what keeps the arm from being a global "keep".
+    const excursion = [1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    for (const sideChannelObserved of [true, false]) {
+      expect(
+        outcomes(excursion, {
+          injectTimeMs: 10000,
+          transientGuardTest: 'hump',
+          sideChannelObserved,
+        }),
+      ).toEqual([['cpu', 'transient-return']]);
+    }
+    expect(
+      outcomes(excursion, { injectTimeMs: 10000, transientGuardTest: 'level-window' }),
+    ).toEqual([['cpu', 'transient-return']]);
+  });
+
+  it('never drops a channel the trimmed reading admits, even where the level reading disagrees', () => {
+    // A warm-up: the first three samples sit at the baseline and the rest of the series has settled at a new
+    // level, so the level reading (medians of the two halves) says the channel never moved while the trimmed
+    // reading sees the head-to-tail shift it is. Monotonicity is the arm's pre-registered property — it can only
+    // ADMIT a channel, never remove one — and it is what makes every case the arm loses a RANKING effect rather
+    // than a vanished channel, the distinction the 238 arm could not draw.
+    const warmUp = [...Array<number>(3).fill(5), ...Array<number>(27).fill(100)];
+    expect(
+      outcomes(warmUp, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'trimmed-ends',
+        sideChannelObserved: true,
+      }),
+    ).toEqual([['cpu', 'kept']]);
+    expect(outcomes(warmUp, { injectTimeMs: 15000, transientGuardTest: 'level-window' })).toEqual([
+      ['cpu', 'transient-return'],
+    ]);
+    expect(
+      outcomes(warmUp, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'hump',
+        sideChannelObserved: true,
+      }),
+    ).toEqual([['cpu', 'kept']]);
+  });
+
+  it('admits exactly the union of the two readings, channel by channel', () => {
+    // The honest description of the arm, asserted rather than narrated: the guard's only use of `permanence` is
+    // `permanence < threshold`, so "trimmed is settled and level has moved" is, over the SET of admitted channels,
+    // the union of the two readings' admissions. Stating it as a union is what lets the arm be judged against
+    // `either` — the union of `endpoint` and `level`, which failed on both halves for admitting what the level
+    // test was right to drop — as one operand apart rather than as a new idea.
+    const battery: Array<[string, number[]]> = [
+      ['hump', hump],
+      ['warm-up', [...Array<number>(3).fill(5), ...Array<number>(27).fill(100)]],
+      ['excursion', [1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1]],
+      ['plateau', [...Array<number>(15).fill(5), ...Array<number>(12).fill(106), 5, 5, 5]],
+      // A perfectly flat channel is not in the battery on purpose: it is dropped as `sub-epsilon-deviation`
+      // before the guard is consulted, so it would assert nothing about the conjunction.
+      ['crash', [...Array<number>(15).fill(100), ...Array<number>(15).fill(0.5)]],
+      [
+        'two-humps',
+        [
+          ...Array<number>(5).fill(5),
+          ...Array<number>(10).fill(80),
+          ...Array<number>(5).fill(5),
+          ...Array<number>(10).fill(80),
+          ...Array<number>(5).fill(5),
+        ],
+      ],
+    ];
+    for (const [name, values] of battery) {
+      const trimmed = outcomes(values, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'trimmed-ends',
+        sideChannelObserved: true,
+      })[0]![1];
+      const level = outcomes(values, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'level-window',
+      })[0]![1];
+      const humped = outcomes(values, {
+        injectTimeMs: 15000,
+        transientGuardTest: 'hump',
+        sideChannelObserved: true,
+      })[0]![1];
+      // The label travels in the assertion message so a failure names the shape rather than the index.
+      expect(humped, `${name}: trimmed=${trimmed} level=${level}`).toBe(
+        trimmed === 'kept' || level === 'kept' ? 'kept' : 'transient-return',
+      );
+    }
+  });
+
+  it('leaves the metrics-only side entirely alone, because there the level reading is already the policy', () => {
+    // `evidence-trimmed` resolves a case with no logs and no spans to the level test, and the arm keeps that
+    // resolution: the conjunction is a remediation ON the trimmed side, not a third statistic on both. If this
+    // test ever needs a different fixture, the arm has started moving the side it was supposed not to touch —
+    // which is how the 238 arm lost `rrm` 115 → 113.
+    const battery: number[][] = [
+      hump,
+      [...Array<number>(3).fill(5), ...Array<number>(27).fill(100)],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    for (const values of battery) {
+      const arm = buildTopologyFaultGraph(
+        makeCallGraph(['svc'], []),
+        makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]),
+        { injectTimeMs: 15000, transientGuardTest: 'hump', sideChannelObserved: false },
+      ).metricDiagnostics.get('svc')!;
+      const level = buildTopologyFaultGraph(
+        makeCallGraph(['svc'], []),
+        makeMetrics([['svc', [makeTimeSeries('cpu', values)]]]),
+        { injectTimeMs: 15000, transientGuardTest: 'level-window' },
+      ).metricDiagnostics.get('svc')!;
+      // Scores included: an unchanged DECISION has to mean an unchanged channel, or the arm is a rescaling.
+      expect(arm).toEqual(level);
+    }
+  });
+
+  it('falls back to the shipped statistic where trimmed-ends refuses to be computed', () => {
+    // Six samples is two end windows and no interior, so `trimmedEndPermanence` returns `undefined` and the
+    // caller keeps the shipped statistic. The arm must inherit that refusal rather than quietly substituting the
+    // level reading — otherwise "the conjunction" is a superset of `level-window` on every short channel, which is
+    // the arm 238 already measured and refused.
+    expect(
+      outcomes([5, 5, 5, 100, 100, 5], {
+        injectTimeMs: 3000,
+        transientGuardTest: 'hump',
+        sideChannelObserved: true,
+      }),
+    ).toEqual([['cpu', 'transient-return']]);
+    // The control: the level reading alone WOULD have admitted it, which is why the fallback has to be asserted.
+    expect(
+      outcomes([5, 5, 5, 100, 100, 5], { injectTimeMs: 3000, transientGuardTest: 'level-window' }),
+    ).toEqual([['cpu', 'kept']]);
+  });
+
+  it('falls back to the trimmed reading where the boundary cannot be placed', () => {
+    // `injectTimeMs: 0` means unknown and `injectionSplitIndex` refuses it, so there are no two sides to compare
+    // and the arm has one reading rather than two. A hump with no boundary stays dropped, as it was before the
+    // arm existed.
+    expect(outcomes(hump, { injectTimeMs: 0, transientGuardTest: 'hump' })).toEqual([
+      ['cpu', 'transient-return'],
+    ]);
+  });
+
+  it('reads both comparisons against the guard’s own bar rather than a second number', () => {
+    // A conjunction of two comparisons against DIFFERENT bars is a two-parameter fit wearing the word
+    // "conjunction", so the bar is the guard's and is exported once. These two channels straddle it on the same
+    // shape: the level reading lands at 0.72 and 0.68 of the range, and only the second is admitted.
+    const straddle = (plateau: number): number[] => [
+      ...Array<number>(15).fill(1000),
+      0,
+      ...Array<number>(11).fill(plateau),
+      ...Array<number>(3).fill(1000),
+    ];
+    // 0.72 is BELOW the bar's complement: |1000 − 720| / 1000 = 0.28 → settled → the arm does not fire.
+    expect(outcomes(straddle(720), { injectTimeMs: 15000, transientGuardTest: 'hump' })).toEqual([
+      ['cpu', 'transient-return'],
+    ]);
+    // |1000 − 680| / 1000 = 0.32 → moved, with the trimmed reading still settled → the arm fires.
+    expect(outcomes(straddle(680), { injectTimeMs: 15000, transientGuardTest: 'hump' })).toEqual([
+      ['cpu', 'kept'],
+    ]);
+    // …and the constant those two numbers are compared against is the guard's, not a literal of the arm's own.
+    expect(TRANSIENT_RETURN_THRESHOLD).toBe(0.3);
+  });
+
+  it('is a policy word, registered and refused by name, and it is not the shipped value', () => {
+    expect(isTransientGuardTest('hump')).toBe(true);
+    expect(isTransientGuardTest('humps')).toBe(false);
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
   });
 });

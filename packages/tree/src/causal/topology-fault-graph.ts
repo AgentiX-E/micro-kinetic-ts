@@ -574,7 +574,13 @@ export const DEFAULT_RANK_NORMALIZATION = true;
 export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 
 export type TransientGuardTest =
-  'endpoint' | 'level-window' | 'trimmed-ends' | 'either' | 'evidence-aware' | 'evidence-trimmed';
+  | 'endpoint'
+  | 'level-window'
+  | 'trimmed-ends'
+  | 'either'
+  | 'evidence-aware'
+  | 'evidence-trimmed'
+  | 'hump';
 
 /**
  * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'evidence-trimmed'`, the policy
@@ -610,7 +616,19 @@ export type TransientGuardTest =
  * against this value's 61.1 % and 547/633 locally against 556, because admitting every channel either statistic
  * keeps also admits the channels the level test was right to drop. That is the reading
  * `docs/transient-guard-evidence.md` §11 records as the arm that fails on both halves for the reason it looked
- * like the safe union.
+ * like the safe union. *
+ * `'hump'` is the CONJUNCTION measured on the RCABench TrainTicket archive and refused
+ * (`docs/transient-guard-evidence.md` §12): it keeps THIS policy's resolution — the level test where the case
+ * observed no call boundary — and on the observed side admits the level reading for a channel *only* where the
+ * trimmed reading has already called it settled. The shape it names is a ramp that holds and returns, which is
+ * what a container kill looks like on a resource channel: `re3tt_ts-assurance-service_ck_1344` runs `cpu`
+ * 0.0215 → 2.718 → 0.025, both end windows sit at the baseline, and the shipped statistic scores it 0.000.
+ *
+ * Because the guard's only use of `permanence` is a comparison against {@link TRANSIENT_RETURN_THRESHOLD}, the
+ * conjunction is decision-identical to `max(trimmed-ends, level-window)` per channel — it is the UNION of the two
+ * readings' admissions, one operand away from the `'either'` above. That is why it is recorded as a measurement
+ * of the same failure rather than as a third instrument, and why an arm of it is not a licence to widen what the
+ * guard admits anywhere the two readings agree.
  */
 export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'evidence-trimmed';
 
@@ -629,6 +647,7 @@ export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> =
   either: true,
   'evidence-aware': true,
   'evidence-trimmed': true,
+  hump: true,
 };
 
 /**
@@ -649,6 +668,18 @@ export const TRANSIENT_GUARD_TESTS: Readonly<Record<TransientGuardTest, true>> =
  * of a propagated symptom — is untouched by this arm.
  */
 export const END_WINDOW_SAMPLES = 3;
+
+/**
+ * The bar {@link TransientGuardTest}'s verdicts are compared against, in units of a channel's own range.
+ *
+ * A channel whose measured permanence falls below this is a RETURN — it went somewhere and came back — and the
+ * guard drops it; at or above it the channel is a SHIFT and is kept. The number has been `0.3` since the guard
+ * existed ("the metric must return to within 30 % of its spike height from where it started"), and it is exported
+ * for one reason: an arm that composes two of the statistics must compare both against the SAME bar, and a
+ * conjunction of two comparisons against different bars is a two-parameter fit wearing the word "conjunction".
+ * `'hump'` is that arm, and its docblock states the composition.
+ */
+export const TRANSIENT_RETURN_THRESHOLD = 0.3;
 
 /**
  * Whether the case carried an observation ACROSS services — a log line or a span — as opposed to metrics alone.
@@ -1947,7 +1978,13 @@ function computeAnomalyFeatures(
         ? cfg.sideChannelObserved
           ? 'trimmed-ends'
           : 'level-window'
-        : cfg.transientGuardTest;
+        : // `hump` is the same policy with the observed side read by the CONJUNCTION of the two statistics: where
+          // the case observed no boundary the level test is already the policy and nothing changes, and where it
+          // did, a channel the trimmed reading calls settled is re-read by the level test. Resolving the side here
+          // rather than inside the loop is the reason the arm cannot disagree with itself between channels.
+          cfg.transientGuardTest === 'hump' && !cfg.sideChannelObserved
+          ? 'level-window'
+          : cfg.transientGuardTest;
 
   let bestScore = 0;
   let bestMetricLabel = '';
@@ -2107,14 +2144,32 @@ function computeAnomalyFeatures(
     const permanenceTrimmed = rangeIsMeasurable
       ? trimmedEndPermanence(ts.values, range)
       : undefined;
+    // The trimmed reading's own fallback, named once: two of the branches below read it, and a fallback retyped is
+    // a fallback that can drift between the arm that uses it and the arm it is compared against.
+    const permanenceTrimmedFallback = permanenceTrimmed ?? permanenceEndpoint;
     const permanence =
       guardTest === 'level-window'
         ? (permanenceLevel ?? permanenceEndpoint)
         : guardTest === 'trimmed-ends'
-          ? (permanenceTrimmed ?? permanenceEndpoint)
-          : guardTest === 'either'
-            ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
-            : permanenceEndpoint;
+          ? permanenceTrimmedFallback
+          : guardTest === 'hump'
+            ? // The conjunction: the level reading is admitted ONLY where the trimmed reading has already called
+              // the channel settled AND the level reading itself finds a shift. Both comparisons use the guard's
+              // own bar, so this is one number and not two, and the arm can only ever ADMIT a channel the trimmed
+              // reading dropped — never remove one it kept.
+              // `permanenceTrimmed !== undefined` is the precondition, not a null check: on a series with no
+              // interior between the two end windows there is no trimmed reading to be settled, and letting the
+              // ENDPOINT fallback play that role would make the arm a superset of `level-window` on every short
+              // channel — the arm 238 already measured and refused.
+              permanenceTrimmed !== undefined &&
+              permanenceTrimmed < TRANSIENT_RETURN_THRESHOLD &&
+              permanenceLevel !== undefined &&
+              permanenceLevel >= TRANSIENT_RETURN_THRESHOLD
+              ? permanenceLevel
+              : permanenceTrimmedFallback
+            : guardTest === 'either'
+              ? Math.max(permanenceEndpoint, permanenceLevel ?? Number.NEGATIVE_INFINITY)
+              : permanenceEndpoint;
     // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
     // transient excursion. A duty-cycled metric that was IDLE before the fault
     // and only became active during it — its relative rise over the near-zero
@@ -2122,7 +2177,7 @@ function computeAnomalyFeatures(
     // NON-zero-tail requirement keeps the zero→burst→zero EVENT fault (#199).
     const idleStartTransient =
       cfg.suppressIdleTransients && headLevel <= max * 0.001 && tailLevel > max * 0.001;
-    if ((nonZeroBaseline || idleStartTransient) && permanence < 0.3) {
+    if ((nonZeroBaseline || idleStartTransient) && permanence < TRANSIENT_RETURN_THRESHOLD) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
