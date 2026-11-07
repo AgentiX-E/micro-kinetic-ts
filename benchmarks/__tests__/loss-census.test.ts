@@ -4,25 +4,32 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+
 import { deriveAnchorCensus } from '../src/anchor-census.js';
 import type { LatencyRouteEntry } from '../src/directional-evidence.js';
 import {
   cellConventions,
   classifyDeepEvidence,
+  classifyDetectorBlindness,
   classifyLoss,
   compareTermZeroRows,
+  countDetectorBlindness,
+  DEFAULT_DETECTOR_BLIND_SCORE,
+  DEFAULT_LEVEL_MIN_SAMPLES,
   DEFAULT_SHALLOW_DEPTH,
   dominantLostTerm,
   formatLossReport,
   formatRankingLadder,
   formatTermZeroes,
   LADDER_SCORE_DECIMALS,
-  type LossRecord,
-  type RankedService,
-  type ScoreTerm,
+  measureTruthLevelRise,
   splitCell,
   summarizeLoss,
   summarizeTermZeroes,
+  type LossRecord,
+  type RankedService,
+  type ScoreTerm,
   type TermZeroRow,
   type TruthEvidence,
 } from '../src/loss-census.js';
@@ -952,5 +959,141 @@ describe('the zero table over the census — a masked decline is its own row', (
     printed.add('INPUT_MAP_ABSENT');
     printed.add('VALUE_ZERO');
     expect(printed.size).toBe(6);
+  });
+});
+
+/** One metric series, sampled every second from t=0 — the shape `measureTruthLevelRise` reads. */
+const series = (label: string, values: readonly number[]): TimeSeries => ({
+  label,
+  timestamps: values.map((_, i) => i * 1000),
+  values: Float64Array.from(values),
+  unit: 'x',
+});
+
+describe('measureTruthLevelRise — the INPUT, not the engine’s opinion of it', () => {
+  it('takes the LARGEST ratio over the truth’s metrics, because a fault shows in one channel', () => {
+    // `truthAnomalyBefore` asks whether the origin moved and answers with the engine's aggregate. The input has
+    // to be read the same way the engine reads it — the strongest channel, not the average of seven — or a
+    // service whose cpu went up tenfold and whose `mem` did not move would be reported as barely moved.
+    const rise = measureTruthLevelRise(
+      [series('cpu', [1, 1, 1, 1, 1, 1, 1, 1]), series('mem', [1, 1, 1, 1, 10, 10, 10, 10])],
+      4000,
+    );
+    expect(rise).toBe(10);
+  });
+
+  it('reads MEDIANS on both sides, so a hump that RETURNS to baseline is still a rise', () => {
+    // The case the statistic exists for: a container kill ramps, holds, and is erased by the restart. Both ENDS
+    // of the post window are baseline, so an endpoint statistic reports nothing — which is exactly what the
+    // shipped guard did to `re3tt_ts-assurance-service_ck_1344` (cpu 0.0215 → 2.718, engine score 0.000).
+    const pre = Array<number>(20).fill(0.02);
+    const post = [...Array<number>(10).fill(3), ...Array<number>(10).fill(0.02)];
+    const rise = measureTruthLevelRise([series('cpu', [...pre, ...post])], 20 * 1000);
+    // median(post) = (3 + 0.02) / 2 = 1.51; 1.51 / 0.02 = 75.5
+    expect(rise).toBeCloseTo(75.5, 6);
+    // And the endpoint reading of the same series is 1.0 — the number the guard reported.
+    expect(post[post.length - 1]! / pre[0]!).toBe(1);
+  });
+
+  it('skips a metric with too few samples on either side rather than reading a median of two', () => {
+    expect(DEFAULT_LEVEL_MIN_SAMPLES).toBe(3);
+    // Four samples total, split 2/2 by the anchor: neither side is a median.
+    expect(measureTruthLevelRise([series('cpu', [1, 1, 9, 9])], 2000)).toBeUndefined();
+    // One more sample on the pre side makes the post side two — still refused.
+    expect(measureTruthLevelRise([series('cpu', [1, 1, 1, 9, 9])], 3000)).toBeUndefined();
+    // Three and three is the smallest population this statistic will read.
+    expect(measureTruthLevelRise([series('cpu', [1, 1, 1, 9, 9, 9])], 3000)).toBe(9);
+  });
+
+  it('refuses a non-positive baseline rather than reporting an infinite rise', () => {
+    // A zero baseline divides to Infinity, and an Infinity is a bar no class can be compared against — the same
+    // refusal `computeEdgeLatencyByCallee` makes of a zero pre-window, for the same reason.
+    expect(measureTruthLevelRise([series('queue-size', [0, 0, 0, 4, 4, 4])], 3000)).toBeUndefined();
+  });
+
+  it('ignores a non-finite sample instead of letting it poison the median', () => {
+    const rise = measureTruthLevelRise(
+      [series('cpu', [1, Number.NaN, 1, 1, 1, 4, 4, 4])],
+      4 * 1000,
+    );
+    expect(rise).toBe(4);
+  });
+
+  it('refuses a ratio that OVERFLOWS, which a tiny baseline and a huge post side can do', () => {
+    // Reachable with ordinary finite inputs: 1e300 / 1e-300 is not representable. The guard is not decoration —
+    // an Infinity here would be a rise every bar passes, so the class would report the case as seen.
+    expect(
+      measureTruthLevelRise([series('cpu', [1e-300, 1e-300, 1e-300, 1e300, 1e300, 1e300])], 3000),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for absent and for empty series — an absence, never a measured zero', () => {
+    expect(measureTruthLevelRise(undefined, 0)).toBeUndefined();
+    expect(measureTruthLevelRise([], 0)).toBeUndefined();
+    expect(measureTruthLevelRise([series('cpu', [1, 2, 3])], Number.NaN)).toBeUndefined();
+  });
+});
+
+describe('classifyDetectorBlindness — five classes, and the last is not a default', () => {
+  const at = (over: Partial<Parameters<typeof classifyDetectorBlindness>[0]> = {}) =>
+    classifyDetectorBlindness({
+      correct: false,
+      truthLevelRise: 10,
+      truthAnomalyBefore: 0.02,
+      ...over,
+    });
+
+  it('names a correct case first, whatever the two measurements say', () => {
+    expect(at({ correct: true })).toBe('correct');
+  });
+
+  it('splits a miss by whether the level moved at all', () => {
+    expect(at({ truthLevelRise: 2.99 })).toBe('unmoved');
+    expect(at({ truthLevelRise: 3 })).toBe('blind');
+  });
+
+  it('splits a case whose level DID move by whether the engine reported it', () => {
+    expect(at({ truthAnomalyBefore: 0.099 })).toBe('blind');
+    expect(at({ truthAnomalyBefore: DEFAULT_DETECTOR_BLIND_SCORE })).toBe('scored');
+    expect(at({ truthAnomalyBefore: 0.9 })).toBe('scored');
+  });
+
+  it('reports a missing measurement as unmeasured, not as a level that stood still', () => {
+    expect(at({ truthLevelRise: undefined })).toBe('unmeasured');
+    expect(at({ truthAnomalyBefore: undefined })).toBe('unmeasured');
+  });
+});
+
+describe('countDetectorBlindness — the reader for the column', () => {
+  it('returns every class, so an absent count cannot be read as a zero', () => {
+    expect(countDetectorBlindness([])).toEqual({
+      correct: 0,
+      blind: 0,
+      scored: 0,
+      unmoved: 0,
+      unmeasured: 0,
+    });
+  });
+
+  it('counts each class once, with the correct ones kept out of the miss classes', () => {
+    const counts = countDetectorBlindness([
+      { correct: true, truthLevelRise: 10, truthAnomalyBefore: 0 },
+      { correct: false, truthLevelRise: 10, truthAnomalyBefore: 0 },
+      { correct: false, truthLevelRise: 10, truthAnomalyBefore: 0.5 },
+      { correct: false, truthLevelRise: 1, truthAnomalyBefore: 0 },
+      { correct: false, truthLevelRise: undefined, truthAnomalyBefore: 0 },
+    ]);
+    expect(counts).toEqual({ correct: 1, blind: 1, scored: 1, unmoved: 1, unmeasured: 1 });
+  });
+
+  it('travels on the summary row, counted in the same pass as the classes', () => {
+    const [row] = summarizeLoss([
+      record({ truthLevelRise: 10, truthAnomalyBefore: 0 }),
+      record({ caseId: 'd', truthLevelRise: 10, truthAnomalyBefore: 0.5 }),
+      record({ caseId: 'e', truthLevelRise: 1, truthAnomalyBefore: 0 }),
+      record({ caseId: 'f', correct: true, truthLevelRise: 10, truthAnomalyBefore: 0 }),
+    ]);
+    expect(row!.detectorBlind).toBe(1);
+    expect(row!.cases).toBe(4);
   });
 });

@@ -28,7 +28,7 @@
  * @module benchmarks/loss-census
  */
 
-import type { ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import type { ServiceCallGraph, TimeSeries } from '@agentix-e/micro-kinetic-core';
 
 import { rollupSuiteAccuracy } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
 
@@ -131,6 +131,19 @@ export interface LossRecord {
    * matters here is `0`, which the value states itself.
    */
   readonly truthAnomalyBefore?: number | undefined;
+  /**
+   * The truth's own LEVEL rise, measured on the series the engine was given — `max` over its metrics of the
+   * post-injection median over the pre-injection median.
+   *
+   * {@link truthAnomalyBefore} is the engine's opinion about whether the origin moved; this is the input. The two
+   * are not redundant: on the RCABench TrainTicket archive, 182 of 553 misses carry a level rise of at least
+   * threefold, and **61 of those were scored below `0.1`** — a population no reading of the score alone can
+   * separate from the cases where the origin genuinely stood still. `classifyDetectorBlindness` is the reader.
+   *
+   * Absent rather than `0` when no metric had enough samples on both sides of the anchor: a `0` would read as a
+   * level that fell to nothing, which is a measurement this statistic did not take.
+   */
+  readonly truthLevelRise?: number | undefined;
   /**
    * Whether the engine threw before producing a ranking.
    *
@@ -426,6 +439,143 @@ export function classifyTruthAbsence(record: {
   return record.truthAnomalyBefore > 0 ? 'explained' : 'silent';
 }
 
+/** The fewest samples a side of the injection boundary needs before its median is a median. */
+export const DEFAULT_LEVEL_MIN_SAMPLES = 3;
+
+/** How far the truth's own level must rise before the movement is a movement this census will name. */
+export const DEFAULT_DETECTOR_BLIND_RISE = 3;
+
+/**
+ * The score below which the engine is said to have reported nothing about a channel that moved.
+ *
+ * A bar, and the sensitivity of the count to it is recorded rather than assumed: on the 1 303 paired RCABench
+ * cases the flagged population is 13 at 0.02, 38 at 0.05, **61 at 0.10**, 62 at 0.20 and 65 at 0.50, against
+ * 0, 1, **1**, 2 and 15 on the 750 cases the same arm gets right. The separation is flat between 0.05 and 0.20
+ * and the hits stay at or near zero across it, which is what makes the bar a reading rather than a fit.
+ */
+export const DEFAULT_DETECTOR_BLIND_SCORE = 0.1;
+
+/**
+ * The truth's own LEVEL rise, measured on the series the engine was given — the largest ratio of a post-injection
+ * median to the same metric's pre-injection median.
+ *
+ * ## Why this exists next to `truthAnomalyBefore`, which measures the same question
+ *
+ * It does not. `truthAnomalyBefore` is the engine's OPINION about whether the origin moved, and a detector can be
+ * blind to a shape: `re3tt_ts-assurance-service_ck_1344` carries a `cpu` level that goes `0.0215 → 2.718` and the
+ * engine reports `0.000`. A census that reads only the score cannot tell "nothing moved at the origin" from
+ * "something moved and the detector did not see it", and those two have different owners — the corpus and the
+ * estimator respectively.
+ *
+ * So the level is read from the INPUT: each metric's pre-injection median against its post-injection median, split
+ * at the case's own anchor. The statistic is a median on both sides rather than a mean or an endpoint because a
+ * kill-and-restart is a HUMP: it ramps, holds and returns, so an endpoint reading of either end sees baseline and
+ * a mean is diluted by whichever side the restart happens on. The maximum over the truth's metrics is taken
+ * because a fault shows in one channel, not in all of them, and requiring more than one would make the census a
+ * statement about the fault's breadth rather than about the engine's blindness.
+ *
+ * @param series - The truth's metrics, as the engine received them (already reshaped by the loader).
+ * @param injectTimeMs - The case's injection anchor, in the series' own units.
+ * @param minSamples - The fewest samples either side needs; a median of two is an average.
+ * @returns The largest ratio, or `undefined` when no metric had enough samples on both sides — an absence, never
+ *   a `0`, because a `0` would read as "the level fell to nothing".
+ */
+export function measureTruthLevelRise(
+  series: readonly TimeSeries[] | undefined,
+  injectTimeMs: number,
+  minSamples: number = DEFAULT_LEVEL_MIN_SAMPLES,
+): number | undefined {
+  if (series === undefined || series.length === 0) return undefined;
+  if (!Number.isFinite(injectTimeMs)) return undefined;
+  let best: number | undefined;
+  for (const ts of series) {
+    const pre: number[] = [];
+    const post: number[] = [];
+    const n = Math.min(ts.timestamps.length, ts.values.length);
+    for (let i = 0; i < n; i++) {
+      const value = ts.values[i]!;
+      if (!Number.isFinite(value)) continue;
+      (ts.timestamps[i]! < injectTimeMs ? pre : post).push(value);
+    }
+    if (pre.length < minSamples || post.length < minSamples) continue;
+    const before = median(pre);
+    const after = median(post);
+    // A non-positive baseline cannot be divided into a ratio: the rise would be `Infinity` and the census would
+    // name a movement no bar could ever be compared against — the same refusal `computeEdgeLatencyByCallee`
+    // makes of a zero pre-window, and for the same reason.
+    if (!(before > 0)) continue;
+    const rise = after / before;
+    if (!Number.isFinite(rise)) continue;
+    if (best === undefined || rise > best) best = rise;
+  }
+  return best;
+}
+
+/** What the pair of measurements says about one miss: see {@link classifyDetectorBlindness}. */
+export type DetectorBlindness = 'blind' | 'scored' | 'unmoved' | 'unmeasured' | 'correct';
+
+/**
+ * Did the truth move, and did the engine report it?
+ *
+ * Four answers, and the fourth is the one this class exists to keep out of the others:
+ *
+ * - `correct` — nothing to explain;
+ * - `unmoved` — the truth's own level did not rise by {@link DEFAULT_DETECTOR_BLIND_RISE}; the fault is not in
+ *   this channel and no estimator change would find it there;
+ * - `scored` — the truth moved AND the engine gave it at least {@link DEFAULT_DETECTOR_BLIND_SCORE}; the case was
+ *   lost on ORDERING, which is the population `docs/loss-decomposition.md` §5 already owns;
+ * - `blind` — the truth moved and the engine gave it less than that. **This is the class no other instrument can
+ *   name**, and it is the one a new estimator statistic can act on;
+ * - `unmeasured` — either measurement is missing. Reported rather than folded into `unmoved`: a record from an
+ *   artifact written before the column existed is not a record of a level that did not move.
+ *
+ * @param record - The case's census row, or the subset of it a caller has in hand.
+ * @returns Which of the five holds.
+ */
+export function classifyDetectorBlindness(record: {
+  readonly correct: boolean;
+  readonly truthLevelRise?: number | undefined;
+  readonly truthAnomalyBefore?: number | undefined;
+}): DetectorBlindness {
+  if (record.correct) return 'correct';
+  const rise = record.truthLevelRise;
+  const score = record.truthAnomalyBefore;
+  if (rise === undefined || score === undefined) return 'unmeasured';
+  if (!(rise >= DEFAULT_DETECTOR_BLIND_RISE)) return 'unmoved';
+  return score < DEFAULT_DETECTOR_BLIND_SCORE ? 'blind' : 'scored';
+}
+
+/** How many misses fall in each {@link DetectorBlindness} class. */
+export type DetectorBlindnessCounts = Readonly<Record<DetectorBlindness, number>>;
+
+/**
+ * Count the five classes over a set of records.
+ *
+ * The reader for {@link LossRecord.truthLevelRise}: a column nothing reads is a column that drifts, and this
+ * repository has paid for that class before (`root_cause_services` was written to disk with no reader).
+ *
+ * @param records - Every case's census row.
+ * @returns The counts, with every class present — a class whose count is absent and one whose count is zero are
+ *   different facts about an artifact, and `0` states the second.
+ */
+export function countDetectorBlindness(
+  records: readonly {
+    readonly correct: boolean;
+    readonly truthLevelRise?: number | undefined;
+    readonly truthAnomalyBefore?: number | undefined;
+  }[],
+): DetectorBlindnessCounts {
+  const counts: Record<DetectorBlindness, number> = {
+    correct: 0,
+    blind: 0,
+    scored: 0,
+    unmoved: 0,
+    unmeasured: 0,
+  };
+  for (const record of records) counts[classifyDetectorBlindness(record)]++;
+  return counts;
+}
+
 /** The counts for one (suite, system) group. */
 export interface LossRow {
   /** Suite name, as the case id declared it. */
@@ -470,6 +620,16 @@ export interface LossRow {
    * reported rather than folded into either answer for the reason {@link DeepEvidenceClass} gives.
    */
   readonly deepEvidenceUnstated: number;
+  /**
+   * Misses whose truth MOVED and whose score says the engine did not see it — {@link DetectorBlindness}'s
+   * `blind` class, counted in the same pass as everything else.
+   *
+   * Reported beside `deepNoLocalEvidence` because the two are read as if they were one: "no local evidence" is
+   * the engine's opinion, and this is the input. A cell whose `deepNoLocalEvidence` is large and whose
+   * `detectorBlind` is zero is a cell whose origin genuinely stood still; a cell where the two agree is a cell
+   * whose estimator is dropping what the corpus supplied.
+   */
+  readonly detectorBlind: number;
   /**
    * Of the deep half, which TERM the winner won on, by count.
    *
@@ -556,6 +716,8 @@ export function summarizeLoss(
       NO_LOCAL_EVIDENCE: 0,
       UNSTATED: 0,
     };
+    // The detector-blindness count, accumulated in the same pass for the same reason.
+    let detectorBlind = 0;
     // The attribution, accumulated in the same pass for the same reason.
     const lostOn = new Map<string, number>();
     let deepUnattributed = 0;
@@ -574,6 +736,7 @@ export function summarizeLoss(
       if (cls === 'CORRECT') tally.correct++;
       byType.set(m.faultType, tally);
       if (cls === 'RETRIEVAL' && !m.truthInGraph) notInGraph++;
+      if (classifyDetectorBlindness(m) === 'blind') detectorBlind++;
       if (cls === 'RERANK_DEEP') {
         deepEvidence[classifyDeepEvidence(m.truthEvidence)]++;
         const term = dominantLostTerm(m.truthEvidence?.terms, m.top1Terms);
@@ -595,6 +758,7 @@ export function summarizeLoss(
       deepNoLocalEvidence: deepEvidence.NO_LOCAL_EVIDENCE,
       deepLocalEvidencePresent: deepEvidence.LOCAL_EVIDENCE_PRESENT,
       deepEvidenceUnstated: deepEvidence.UNSTATED,
+      detectorBlind,
       deepLostOn: [...lostOn.entries()]
         .map(([term, count]) => ({ term, count }))
         .sort((a, b) => b.count - a.count || (a.term < b.term ? -1 : 1)),
@@ -700,6 +864,7 @@ export function formatLossReport(
   let deepNo = 0;
   let deepHas = 0;
   let deepUnstated = 0;
+  let detectorBlind = 0;
   const lostOnTotal = new Map<string, number>();
   let deepUnattributedTotal = 0;
   for (const r of rows) {
@@ -713,6 +878,7 @@ export function formatLossReport(
     deepNo += r.deepNoLocalEvidence;
     deepHas += r.deepLocalEvidencePresent;
     deepUnstated += r.deepEvidenceUnstated;
+    detectorBlind += r.detectorBlind;
     deepUnattributedTotal += r.deepAttributionUnavailable;
     for (const e of r.deepLostOn) lostOnTotal.set(e.term, (lostOnTotal.get(e.term) ?? 0) + e.count);
     lines.push(
@@ -756,6 +922,11 @@ export function formatLossReport(
     // ACCURACIES (`docs/accuracy-aggregation.md`), so the two separate wherever a cell's fault types carry
     // unequal case counts. Two conventions under one noun is the shape an instrument must not contribute to,
     // so the reading states which one it is — and prints the other from ITS OWN rows.
+    // The one number no other line of this report carries: the misses whose truth MOVED and whose score says
+    // the engine saw nothing. `noGain` above is the engine's opinion of the origin; this is the input, measured
+    // as the ratio of the truth's own two medians, and the two disagree exactly where an estimator is blind.
+    `  detector-blind misses (truth's own level rose >= ${DEFAULT_DETECTOR_BLIND_RISE}x, engine scored it below ` +
+      `${DEFAULT_DETECTOR_BLIND_SCORE}): ${detectorBlind} of ${misses}`,
     '  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the',
     '  fault-type accuracies; the pair this run produces, cell by cell, where the two differ:',
     // The pair itself, or the fact that there is no pair to print. A run on RE1 alone reads the same figure

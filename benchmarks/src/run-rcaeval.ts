@@ -174,6 +174,7 @@ import {
   formatRankingLadder,
   formatTermZeroes,
   formatWinnerDirection,
+  measureTruthLevelRise,
   summarizeLoss,
   summarizeTermZeroes,
   summarizeWinnerDirection,
@@ -1779,6 +1780,14 @@ async function main(): Promise<void> {
           // away. An older artifact carries neither, and `classifyTruthAbsence` reports that as `unmeasured`
           // rather than as either answer.
           truthAnomalyBefore: ep?.truthAnomalyBefore,
+          // …and whether the origin's own LEVEL moved, read from the series the engine was given rather than
+          // from the score it produced. The score is an opinion about this question; on the RCABench archive
+          // 61 misses carry a level rise of at least threefold and a score below 0.1, and no reading of the
+          // score alone can tell those from a truth that genuinely stood still.
+          truthLevelRise: measureTruthLevelRise(
+            c.metrics.get(c.groundTruth.serviceId),
+            c.injectTime,
+          ),
           errored: ep?.errored,
           // The truth's own evidence, carried so a DEEP miss can be split by whether anything moved at the
           // origin. Read from the runner's record of the truth's own `RootCauseResult` rather than recomputed
