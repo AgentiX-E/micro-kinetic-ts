@@ -2988,10 +2988,17 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     ]);
   });
 
-  it('drops an intermittent plateau under the shipped endpoint statistic, whatever its off-beats are', () => {
+  it('drops an intermittent plateau under the trimmed statistic, whatever its off-beats are', () => {
     // `re1ob_adservice_delay_3` in miniature: a channel that alternates between its baseline and a plateau over
     // most of the post window. `permanence` is `|values[0] − values[n−1]| / range`, so an off-beat at the last
     // index is enough to make a permanent-level shift look like an excursion that returned.
+    //
+    // It reads the statistic BY NAME rather than through the default, because the default is no longer this
+    // statistic: iteration 240 enrolled `'hump'`, whose whole content is that this plateau is ADMITTED on the
+    // level reading's testimony when the trimmed reading calls its ends settled. The shape is a hump — ramp,
+    // hold, return — and a container kill is exactly what produces one. What survives of the old rule is the
+    // claim about the STATISTIC, which is what this test is about; the claim about the shipped POLICY moved to
+    // the next one.
     const graph = makeCallGraph(['svc'], []);
     const values = [
       ...Array.from({ length: 15 }, () => 5),
@@ -3002,10 +3009,19 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     ];
     const metrics = makeMetrics([['svc', [makeTimeSeries('latency-50', values)]]]);
 
-    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      injectTimeMs: 15000,
+      transientGuardTest: 'evidence-trimmed',
+    });
 
     expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
       ['latency-50', 'transient-return'],
+    ]);
+
+    // …and the SHIPPED policy keeps it, which is the enrolment: same inputs, no statistic named.
+    const shipped = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 15000 });
+    expect(shipped.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['latency-50', 'kept'],
     ]);
   });
 
@@ -3945,13 +3961,13 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     // The fourth is not a statistic at all: it SELECTS between the first two from what the case observed, so a
     // reader who counts members is counting three questions and one policy rather than four estimators.
     expect(isTransientGuardTest('evidence-aware')).toBe(true);
-    // The sixth is the same POLICY with the trimmed statistic on the observed side, and it is the SHIPPED value
-    // for the one reason that survives both corpora: the two arms' gains are disjoint, so the composition holds
-    // the 13 cases the observed-side `endpoint` cannot reach and the 3 the level test gives back, on cells of
-    // the same corpus. A single statistic is a statement about a population, and this axis was closed twice on
-    // the assumption that one of them is the right one for one (`docs/transient-guard-evidence.md` §10.3).
+    // The sixth is the same POLICY with the trimmed statistic on the observed side. It held the default for
+    // one iteration on the one reason that survives both corpora — the two arms' gains are disjoint, so the
+    // composition holds the 13 cases the observed-side `endpoint` cannot reach and the 3 the level test gives
+    // back, on cells of the same corpus — and it is now the value the seventh member was measured AGAINST. A
+    // single statistic is a statement about a population, and this axis was closed twice on the assumption that
+    // one of them is the right one for one (`docs/transient-guard-evidence.md` §10.3).
     expect(isTransientGuardTest('evidence-trimmed')).toBe(true);
-    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
     expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.transientGuardTest).toBe(
       DEFAULT_TRANSIENT_GUARD_TEST,
     );
@@ -3964,9 +3980,14 @@ describe('the transient guard vocabulary — one owner, checked against its unio
     expect(isTransientGuardTest('toString')).toBe(false);
     // And the shipped member is the one the published nine cells were measured on, stated here so an
     // accidental flip of the default is red rather than a silent re-publication of every cell. The reading it
-    // moves is named in the constant's own docblock (656/735 against 641, 61.1 % against 60.5 % on FSE'26);
-    // what this line holds is that the two declarations of the default cannot drift apart.
-    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
+    // moves is named in the constant's own docblock (659/735 against 657, 61.5 % against 61.1 % on FSE'26,
+    // 759 against 750 on the TT archive); what this line holds is that the two declarations of the default
+    // cannot drift apart.
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('hump');
+    // The seventh is the CONJUNCTION and it is the shipped value since iteration 240: on the observed side it
+    // admits the level reading only where the trimmed reading has already called the channel settled, which is
+    // the ramp-hold-return shape a container kill leaves on a resource channel.
+    expect(isTransientGuardTest('hump')).toBe(true);
     expect(DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG.transientGuardTest).toBe(
       DEFAULT_TRANSIENT_GUARD_TEST,
     );
@@ -4240,12 +4261,11 @@ describe('the hump conjunction — admit the level reading only where the trimme
     ...Array<number>(5).fill(5),
   ];
 
-  it('keeps the hump on the side the shipped policy would drop it from — the one thing the arm exists to do', () => {
-    // The arm is a POLICY, so the comparison is against the shipped policy rather than against a statistic. On
-    // the OBSERVED side the shipped policy reads this channel with `trimmed-ends`, which sees two end windows at
-    // the baseline and a plateau in between — a return — and drops it. That is the population: a case that
-    // observed a call boundary, whose truth is a kill, whose channel is a hump.
-    expect(outcomes(hump, { injectTimeMs: 15000 })).toEqual([['cpu', 'transient-return']]);
+  it('keeps the hump on the side the trimmed reading would drop it from — the one thing the arm exists to do', () => {
+    // The arm is a POLICY, so the comparison is against a STATISTIC rather than against the default, which is
+    // this policy since iteration 240. On the OBSERVED side `trimmed-ends` sees two end windows at the baseline
+    // and a plateau in between — a return — and drops it. That is the population: a case that observed a call
+    // boundary, whose truth is a kill, whose channel is a hump.
     expect(
       outcomes(hump, {
         injectTimeMs: 15000,
@@ -4253,7 +4273,8 @@ describe('the hump conjunction — admit the level reading only where the trimme
         sideChannelObserved: true,
       }),
     ).toEqual([['cpu', 'transient-return']]);
-    // The arm keeps it, on the level reading's testimony, and only because the trimmed reading is settled.
+    // The policy keeps it, on the level reading's testimony, and only because the trimmed reading is settled —
+    // asserted twice: once by name, and once through the DEFAULT, which is what a run with no knob gets.
     expect(
       outcomes(hump, {
         injectTimeMs: 15000,
@@ -4261,6 +4282,7 @@ describe('the hump conjunction — admit the level reading only where the trimme
         sideChannelObserved: true,
       }),
     ).toEqual([['cpu', 'kept']]);
+    expect(outcomes(hump, { injectTimeMs: 15000 })).toEqual([['cpu', 'kept']]);
     // On the metrics-only side the shipped policy already reads the level, so the arm changes nothing there —
     // asserted here and in full one test below.
     expect(
@@ -4439,9 +4461,12 @@ describe('the hump conjunction — admit the level reading only where the trimme
     expect(TRANSIENT_RETURN_THRESHOLD).toBe(0.3);
   });
 
-  it('is a policy word, registered and refused by name, and it is not the shipped value', () => {
+  it('is a policy word, registered and refused by name, and it IS the shipped value', () => {
     expect(isTransientGuardTest('hump')).toBe(true);
     expect(isTransientGuardTest('humps')).toBe(false);
-    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('evidence-trimmed');
+    // Enrolled in iteration 240. The assertion is here rather than left implicit because the constant's whole
+    // job is to be the one place a corpus-independent default is stated, and a test that read the engine's
+    // behaviour without it would pass on either value.
+    expect(DEFAULT_TRANSIENT_GUARD_TEST).toBe('hump');
   });
 });

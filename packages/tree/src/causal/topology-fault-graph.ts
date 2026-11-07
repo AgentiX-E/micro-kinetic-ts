@@ -583,10 +583,25 @@ export type TransientGuardTest =
   | 'hump';
 
 /**
- * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'evidence-trimmed'`, the policy
- * `sideChannelObserved ? 'trimmed-ends' : 'level-window'`.
+ * The shipped value of {@link TopologyFaultGraphConfig.transientGuardTest} — `'hump'`, the policy
+ * `sideChannelObserved ? (trimmed settled && level moved ? level : trimmed) : 'level-window'`.
  *
- * The three statistics this union holds answer the guard's question three ways, and the axis was closed twice on
+ * `'hump'` was ENROLLED in iteration 240, on three populations measured under one revision and a criterion
+ * written before the last of them was read (`docs/transient-guard-evidence.md` §13):
+ *
+ * | population | `'evidence-trimmed'` | this value | movement |
+ * | --- | ---: | ---: | --- |
+ * | RCAEval, nine cells, 735 cases | 657 = 89.39 % | **659 = 89.66 %** | **+2**, no cell down |
+ * | FSE'26, 1 422 cases, `Top@1` | 869 = 61.1 % | **874 = 61.5 %** | **+5**, five types up, one down by 1 |
+ * | RCABench TT archive, 1 303 paired cases | 750 = 57.56 % | **759 = 58.25 %** | **+9** (12 fixes / 3 breaks) |
+ *
+ * The shape it names is a ramp that holds and returns, which is what a container kill looks like on a resource
+ * channel: `re3tt_ts-assurance-service_ck_1344` runs `cpu` 0.0215 → 2.718 → 0.025, both end windows sit at the
+ * baseline, and the statistic this value replaces scored it 0.000. The transfer is on the named fault type —
+ * FSE'26's `ContainerKill` is the largest single move in the arm (+2 of 89) — and the one regressed type loses a
+ * single case.
+ *
+ * The three statistics below answer the guard's question three ways, and the axis was closed twice on
  * the assumption that one of them is the right one for a corpus. It is not: **the same statistic wins and loses on
  * cells of ONE corpus**, which is the reading that retired the question rather than the arms
  * (`docs/transient-guard-evidence.md` §10.3):
@@ -602,35 +617,32 @@ export type TransientGuardTest =
  *   resolves to the observed side on 1422 of 1422 cases. So the policy that reads the case's own observation and
  *   asks the matching instrument is the composition, not a third guess.
  *
- * Measured, one commit, whole cells, both halves, both runs reproduced independently:
+ * Measured one commit at a time, whole cells, with each arm's control on the same tree:
  *
- * | corpus | `'endpoint'` | this value | Δ |
+ * | corpus | `'endpoint'` | `'evidence-trimmed'` | Δ |
  * | --- | ---: | ---: | ---: |
- * | RCAEval, nine cells, 735 cases | 641 = 87.21 % | **656 = 89.25 %** | **+15, no cell down** |
+ * | RCAEval, nine cells, 735 cases | 641 = 87.21 % | **657 = 89.39 %** | **+16, no cell down** |
  * | FSE'26, 1422 cases, `Top@1` | 60.5 % (860) | **61.1 % (869)** | **+9** |
  *
  * Both readings are reused dispatches of ONE revision (`docs/sota-comparison.md` §0p carries the battery and the
- * fifteen per-cell counts), and the second run of the golden half reproduced every cell to the case.
+ * fifteen per-cell counts), and the second run of the golden half reproduced every cell to the case. The
+ * `'evidence-trimmed'` column is the value this constant held until iteration 240 and is what the enrolled arm
+ * above was measured against.
  *
  * `'either'` — the max of the two statistics per channel — is measured and NOT shipped: it reads 60.6 % on FSE'26
- * against this value's 61.1 % and 547/633 locally against 556, because admitting every channel either statistic
- * keeps also admits the channels the level test was right to drop. That is the reading
+ * against `'evidence-trimmed'`'s 61.1 % and 547/633 locally against 556, because admitting every channel either
+ * statistic keeps also admits the channels the level test was right to drop. That is the reading
  * `docs/transient-guard-evidence.md` §11 records as the arm that fails on both halves for the reason it looked
- * like the safe union. *
- * `'hump'` is the CONJUNCTION measured on the RCABench TrainTicket archive and refused
- * (`docs/transient-guard-evidence.md` §12): it keeps THIS policy's resolution — the level test where the case
- * observed no call boundary — and on the observed side admits the level reading for a channel *only* where the
- * trimmed reading has already called it settled. The shape it names is a ramp that holds and returns, which is
- * what a container kill looks like on a resource channel: `re3tt_ts-assurance-service_ck_1344` runs `cpu`
- * 0.0215 → 2.718 → 0.025, both end windows sit at the baseline, and the shipped statistic scores it 0.000.
+ * like the safe union.
  *
  * Because the guard's only use of `permanence` is a comparison against {@link TRANSIENT_RETURN_THRESHOLD}, the
  * conjunction is decision-identical to `max(trimmed-ends, level-window)` per channel — it is the UNION of the two
- * readings' admissions, one operand away from the `'either'` above. That is why it is recorded as a measurement
- * of the same failure rather than as a third instrument, and why an arm of it is not a licence to widen what the
- * guard admits anywhere the two readings agree.
+ * readings' admissions, one operand away from the `'either'` above. What separates the two empirically is WHICH
+ * channels the level test DROPS: `'either'` admits the union of two admissions, `'hump'` admits one and keeps the
+ * other's drops, and on the three populations above that difference is the whole of the arm's advantage — the
+ * refused sibling moved 222 cases on the TT archive at 14.4 % precision, this one moves 31 at 41.9 %.
  */
-export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'evidence-trimmed';
+export const DEFAULT_TRANSIENT_GUARD_TEST: TransientGuardTest = 'hump';
 
 /**
  * Every word {@link TopologyFaultGraphConfig.transientGuardTest} accepts.
