@@ -206,3 +206,67 @@ Two things this section adds to the census, both measured:
 - **The blind population is a DETECTOR question that keeps its own count.** The arm's own loss census now prints it
   (`detector-blind misses`), which is what §5 owes: on the incumbent the number is 61 of 553 and no field of the
   engine's output could have produced it, because it is a statement about `metrics.json` rather than about a score.
+
+---
+
+## 8. The same measurement on the nine published cells: the blind population is 2 of 735, and the archive is where it lives
+
+The census above is a statement about the 1 303-case RCABench archive. The published benchmark is a different
+population — 735 cases over nine cells — and the archives' artifacts carry the two columns the detector-blind
+predicate needs (`truthLevelRise`, `truthEvidence.rcaScore`), so the same count can be taken on it for free.
+
+Run `42340026217` at `0976a143`, its own `rcaeval-loss-census-re{1,2,3}.jsonl` read as one population:
+
+| | cases |
+| --- | ---: |
+| published | **735** |
+| correct at Top@1 | **657 (89.39 %)** |
+| misses | **78** |
+| **detector-blind misses** (truth level rose ≥ 3×, engine scored it below 0.1) | **2** |
+
+The two are `RE2:TrainTicket`, one `loss` and one `socket`. **Two of 735 against 61 of 553 on the archive**, which is
+the finding: the blind population is a property of the ARCHIVE's fault types and run shapes, not of the published
+benchmark. The guard axis was pursued for four iterations on a population that the number this repository publishes
+does not contain.
+
+### 8.1 The 78 misses, split by the bucket that names an owner
+
+```text
+RERANK                 68    the truth was scored and ranked below something else
+  truth at rank 2      26
+  rank 3               12
+  rank 4                8
+  rank 5                5
+  rank 6..66           17
+RETRIEVAL              10    the truth was never ranked
+  explained  (truth deviated, before > 0)    6
+  silent     (truth never deviated)          4
+```
+
+The six `explained` cases are the sharpest thing in this census, because four of them are not near-misses:
+
+| case | truth's own level rose | truth's pre-ranking anomaly | predicted |
+| --- | ---: | ---: | --- |
+| `re1ss_orders_loss_4` | **56.2×** | 1.144 | `payment` |
+| `re1ss_orders_loss_5` | **92.6×** | 1.640 | `shipping` |
+| `re2ob_checkoutservice_delay_1/2/3` | 21.0 / 22.5 / 23.0× | 1.85 each | `email`, `shipping`, `email` |
+| `re2ss_orders_delay_1` | 4.6× | 0.735 | `shipping` |
+
+A truth whose own channel rose 56× and 92× was **removed from the ranking after deviating**, which on this engine is
+the topological deduction doing what `gate = 1` says it may do: a node is charged only where its callees account for
+its anomaly, and where they do, its own reading is deducted. Whether that is correct on these six is a question the
+artifact cannot answer, because the census records the absence and not the mechanism — `truthEvidence` is absent for
+all ten unranked cases, so the record says "the truth is not in the ranking" and cannot say which removal did it: the
+breadth gate, the deduction, or a zero after the deduction. Three mechanisms, one column, and the column is empty.
+
+That is the next instrument's job, and it is a smaller one than it sounds: the deduction's own share is already
+computed per node (`topoShare`, `topoGate` appear on every SCORED truth), so the missing field is the one that would
+survive the deduction rather than the one that feeds it.
+
+### 8.2 What this does to the axes
+
+- **The guard axis closes on the published half.** Two cases is not a population an estimator arm can be measured on.
+- **The `explained` bucket is 6 of 78 and carries the two largest level rises in the whole census.** It is the only
+  bucket where the truth was loud and the engine deleted it, and it is the one the deduction owns.
+- **`silent` is 4 of 78**: `re3ob`'s two `f1` cases and `cartservice_f1_3` never deviated at all, and
+  `re2ss_payment_loss_1` was fixed by the enrolled guard (`docs/transient-guard-evidence.md` §13.4), leaving three.

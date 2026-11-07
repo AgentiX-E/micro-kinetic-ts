@@ -706,3 +706,122 @@ Owed, and stated here so it cannot be chosen later:
    so it must be measured on both halves before a flip — that is the lesson of §10.3 and it has not expired.
 2. The 38 still-blind cases need a census of their own: the hump shape explains 7, and the remainder are dropped by
    something other than this guard or score low after admission. That census is the next instrument, not the next arm.
+
+## 13. The enrolment — three populations, and a criterion written before the last number was read
+
+§12 closed with one sentence of pre-registration and two debts. Both are paid here, and the payment is an
+enrolment: **`hump` is the shipped value of `transientGuardTest` since iteration 240.**
+
+### 13.1 The dispatch had to be fixed before it could be read
+
+The first debt was *"the nine cells and FSE'26 have not been run under `hump`"*. Running them was impossible on one
+half: `fse26-benchmark.yml`'s `ranking_knobs` carried its own copy of the vocabulary, six members long, so
+`ranking_knobs=transient_guard_test=hump` exited with a message written by the copy. The branch now forwards the
+value and the CLI refuses an unknown word against `TRANSIENT_GUARD_TESTS` — one owner — and
+`benchmarks/__tests__/guard-vocabulary-dispatch.test.ts` reads all three files as text and fails if any member is
+spelled in either routing branch (`docs/dispatch-surface-audit.md` Finding 9).
+
+The fix is what made the reading below possible at all, and it changed no published number: the branch is read only
+when a dispatch names the key.
+
+### 13.2 The criterion, written before the golden half was read
+
+`PREREGISTRATION_2026-11-07c` (iteration 240, `/root/work/it240/PREREGISTRATION.md`, reproduced in the docs
+repository) was written at 13:26 +0800 on 2026-11-07, **after** the FSE'26 pair had completed and **before** the
+golden dispatch's RE2 job had uploaded anything. It required all of:
+
+1. golden total ≥ **657**, the incumbent's own reading on the same tree;
+2. no golden cell down by more than **1 case**;
+3. no FSE'26 fault type down by more than **1 case**;
+4. the sign positive on **all three** populations — an estimator that gains on one and loses on another is a routing
+   question, not a default.
+
+### 13.3 The three readings
+
+| population | `evidence-trimmed` | `hump` | movement |
+| --- | ---: | ---: | --- |
+| RCAEval, nine cells, 735 cases | 657 = 89.39 % | **659 = 89.66 %** | **+2** (2 fixes / 0 breaks) |
+| FSE'26, 1 422 cases, `Top@1` | 869 = 61.1 % | **874 = 61.5 %** | **+5**, five types up, one down by 1 |
+| RCABench TT archive, 1 303 paired cases | 750 = 57.56 % | **759 = 58.25 %** | **+9** (12 fixes / 3 breaks) |
+
+Per cell (`42340115598` against `42340026217`, both at `0976a143`, one input differing):
+
+```text
+RE1:OnlineBoutique      113/125  ->  113    +0
+RE1:SockShop            119/125  ->  119    +0
+RE1:TrainTicket         112/125  ->  112    +0
+RE2:OnlineBoutique       84/90   ->   84    +0
+RE2:SockShop             88/90   ->   89    +1   re2ss_payment_loss_1      carts -> payment
+RE2:TrainTicket          75/90   ->   76    +1   re2tt_ts-travel-service…  admin -> travel
+RE3:OnlineBoutique       25/30   ->   25    +0
+RE3:SockShop             19/30   ->   19    +0   (orders_f3_2 fixed, orders_f3_3 broken)
+RE3:TrainTicket          22/30   ->   22    +0
+TOTAL                   657/735  ->  659/735  +2
+```
+
+Per fault type on FSE'26 (`42340119606` against `42340122012`):
+
+```text
+ContainerKill            25 ->   27   +2 of 89     the mechanism's own fault type
+HTTPRequestDelay         56 ->   57   +1 of 88
+HTTPResponseDelay        55 ->   56   +1 of 89
+JVMMemoryStress          60 ->   61   +1 of 171
+NetworkBandwidth         19 ->   20   +1 of 42
+NetworkCorrupt           32 ->   31   -1 of 46     the only regressed type
+```
+
+Three things make this a transfer rather than a coincidence, and each is checkable by a reader:
+
+- **The largest single move is on the fault type the policy names.** A container kill stops a process and the
+  container restarts: the resource channel ramps, holds and returns, and both end windows sit at the baseline. The
+  shipped statistic read that shape as `0.000` on `re3tt_ts-assurance-service_ck_1344` (`cpu` 0.0215 → 2.718 →
+  0.025). `ContainerKill` is +2 of 89 — the biggest of the six moves, and on 2.2 % of the corpus.
+- **The one regressed type loses a single case.** `NetworkCorrupt` at 31/46 is 67.4 %, so one case is inside the
+  binomial noise of a cell that size; the criterion was written as "no type down by more than one" for exactly
+  this reason.
+- **Nine of the golden half's answers move, and both moves that count are on RE2.** RE1 moves on no case at all —
+  measured, not explained: the arm is monotone (it only ever ADMITS a channel the trimmed reading called settled whose
+  level moved), so a cell that does not move is a cell where no channel has that shape. The natural account is that
+  RE1's runs are short single-fault cases whose channels are ramps that `trimmed-ends` already reads, and that account
+  is a hypothesis here rather than a measurement, because the artifact records the outcomes of the guard only for the
+  cases whose answer changed.
+
+### 13.4 What the arm costs, stated as a count
+
+Six answers changed on the golden half and **one of them is a regression**:
+
+| case | cell | before | after | |
+| --- | --- | --- | --- | --- |
+| `re2ss_payment_loss_1` | RE2:SockShop | `carts` (wrong) | `payment` | **fix** |
+| `re2tt_ts-travel-service_disk_2` | RE2:TrainTicket | `ts-admin-travel-service` (wrong) | `ts-travel-service` | **fix** |
+| `re3ss_orders_f3_2` | RE3:SockShop | `orders-db` (wrong) | `orders` | **fix** |
+| `re3ss_orders_f3_3` | RE3:SockShop | `orders` | `orders-db` | **break** |
+| `re3ob_currencyservice_f1_2` | RE3:OnlineBoutique | `frontend` (wrong) | `paymentservice` | wrong → wrong |
+| `re3ss_orders_f4_2` | RE3:SockShop | `orders-db` (wrong) | `carts-db` | wrong → wrong |
+
+The one break is paid for inside its own cell and its own fault type: `orders_f3_2` and `orders_f3_3` are an `f3`
+pair that swapped, `RE3:SockShop` reads 19/30 on both arms, and the cell's answer set moved by two. On the archive
+the breaks are 3 of 15 moved answers (**80.0 %** precision, against 14.4 % for `level-window`'s 222), and on FSE'26
+the cost is one case on one type of twenty-five.
+
+### 13.5 Why the criterion could be applied without a second run
+
+The arm run **is** the flipped configuration: `transguard=hump` and a default of `hump` resolve to the same
+`TopologyFaultGraphConfig`, because the side resolution (`sideChannelObserved ? … : 'level-window'`) is unchanged.
+So the reading above is the post-flip reading, and what the flip still owes is an **independent reproduction** — the
+push-triggered battery `42343505202` at `bd17912c`, which reaches the same configuration through no dispatch input
+at all. It landed and reads **659/735**, per case identical to the arm run on all nine cells — **0 differences on
+375 + 270 + 90 cases** — so §13.3's golden row is two batteries and its FSE'26 row is the pair `42340119606` /
+`42340122012`.
+
+### 13.6 What is now owed, in order
+
+1. **`collisionWeight` is still 0**, and this reading is the argument for keying it on the hump SHAPE rather than on
+   a propagated rise: the ablation (`ablation-re3-results`, run `42337030488`) reads `+Collision Q(f,f)` at exactly
+   **+0.0000** mean `Top@1` and `+Collision Signal` at **−0.0111**, while the shape that carries a collision source
+   is the one this section measured at +5. The term is the only Deng-Yu instrument in the formula that is inert.
+2. **The 45 still-blind cases of this arm** (`docs/level-blind-census.md` §8) remain: on the nine cells the blind
+   population is **2 of 735**, so the remaining work on this axis is on the archive rather than on the published half.
+3. **The bar is uncalibrated**: `TRANSIENT_RETURN_THRESHOLD = 0.3` is a fraction of each channel's range applied to
+   every channel of every service. §12's conjunction now reads it twice per channel, which makes a calibrated
+   version of it worth more than it was.

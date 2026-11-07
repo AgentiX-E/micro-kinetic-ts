@@ -1362,3 +1362,25 @@ CLIs keep the union as their only list.
 engine's. What moves is reach — and the register's law about pins reads the same with the sign reversed. A pin
 whose replacement is unreachable is still a pin; **a vocabulary whose seventh word is unreachable is still a
 closed axis**, and it stays closed for a reason that is not the measurement.
+
+### …and the axis it had kept closed is now ENROLLED, on three populations
+
+The dispatch repair was the precondition, not the result. With the seventh word reachable on both halves, the arm 239
+refused was measured on the two corpora this register judges with, under a criterion written before the last of the
+three numbers was read (`docs/transient-guard-evidence.md` §13):
+
+| population | `evidence-trimmed` | `hump` | movement |
+| --- | ---: | ---: | --- |
+| RCAEval, nine cells, 735 | 657 = 89.39 % | **659 = 89.66 %** | **+2**, no cell down |
+| FSE'26, 1 422, `Top@1` | 869 = 61.1 % | **874 = 61.5 %** | **+5**, one type down by 1 |
+| RCABench TT archive, 1 303 paired | 750 = 57.56 % | **759 = 58.25 %** | **+9** (12 / 3) |
+
+**The guard row above is therefore closed a fourth and last time, and this time by enrolment rather than by refusal:**
+`DEFAULT_TRANSIENT_GUARD_TEST = 'hump'`. Three populations, one sign, one regressed case on the golden half (paid for
+inside its own cell and fault type) and one regressed type on FSE'26 (one case of 46). The transfer names itself:
+`ContainerKill` is the largest single move in the arm (+2 of 89), which is the fault type the shape describes.
+
+What the axis cost to close, in iterations: five arms measured (`level-window`, `either`, `evidence-aware`,
+`trimmed-ends`, `hump`), two refusals of the last one, one mis-specified bar corrected rather than moved, and one
+dispatch surface repaired so that the fourth reading could exist at all. **What it was never short of was numbers; it
+was short of a place to put the seventh one.**

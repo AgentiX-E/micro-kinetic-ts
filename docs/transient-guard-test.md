@@ -1,25 +1,25 @@
 # The transient guard's question — the estimator was never where the defect lived
 
-**Status:** the mechanism is IMPLEMENTED with seven members and ships at `evidence-trimmed`, the POLICY
-`sideChannelObserved ? 'trimmed-ends' : 'level-window'` — the first shipped value on this axis that is not a single
-statistic, because the same statistic wins and loses on cells of ONE corpus (`docs/transient-guard-evidence.md`
-§10.3). Measured on all nine cells, one variable (`7c9c5dc8` against its own push battery): `level-window`
-**+13 / −22** (REFUSED, §6), `either` **+6 / −1** with five cells up and one down by a single case (REFUSED as a
-shipment, and refuted on FSE'26 as well — `60.6 %` against the level test's `63.1 %`, §11 of the evidence
-document). A conditional arm conditioned on direction evidence was pre-registered here and is **falsified by the
-corpus's own partition** (§5), not deferred — and the falsification was in the WORD: `evidence-aware`, the fourth
-member, reads the loader's four arrays instead of `edgeLatency` alone and measures **+13 / −0** on all nine cells.
-`trimmed-ends` is a strict refinement of the shipped statistic (+3 local, +9 FSE'26, no cell down) and the
-composition of the two is the shipped policy: **656/735 = 89.25 %** against 641, and **61.1 %** on FSE'26 against
-60.5 %, each reproduced by two independent dispatches (`docs/sota-comparison.md` §0p carries the fifteen counts).
+**Status:** the mechanism is IMPLEMENTED with seven members and ships at **`hump`** since iteration 240 — the
+CONJUNCTION, `sideChannelObserved ? (trimmed settled && level moved ? level : trimmed) : 'level-window'`. It was
+enrolled on three populations under a criterion written before the last of them was read
+(`docs/transient-guard-evidence.md` §13):
 
-The seventh, `hump`, is the CONJUNCTION the RCABench archive licensed and then refused: it keeps this policy's side
-resolution and admits the level reading for a channel only where `trimmed-ends` has already called it settled. It is
-worth **+9 cases with 3 breaks** on the 1 303 paired archive cases (759 = 58.25 % against the incumbent's 750) and
-moves 31 cases rather than the level test's 222 — the precise half of an instrument whose other half is a coin flip.
-It ships OFF because the bar written for it in `docs/level-blind-census.md` §6.4 named two families and it meets
-neither, and because the nine cells and FSE'26 have not been run under it. `docs/transient-guard-evidence.md` §12
-carries the arm, the refusal, and the arithmetic that shows the bar was computed from the recall half.
+| population | `evidence-trimmed` | `hump` | movement |
+| --- | ---: | ---: | --- |
+| RCAEval, nine cells, 735 cases | 657 = 89.39 % | **659 = 89.66 %** | **+2**, no cell down |
+| FSE'26, 1 422 cases, `Top@1` | 869 = 61.1 % | **874 = 61.5 %** | **+5**, one type down by 1 |
+| RCABench TT archive, 1 303 paired cases | 750 = 57.56 % | **759 = 58.25 %** | **+9** (12 fixes / 3 breaks) |
+
+The shape it names is a ramp that holds and returns — a container kill on a resource channel — and FSE'26's
+`ContainerKill` is the largest single move in the arm (+2 of 89). The one regressed answer on the golden half is paid
+for inside its own cell and fault type, and the cell reads 19/30 on both arms.
+
+The arms it replaced, each measured on all nine cells as one variable and each REFUSED with its number: `endpoint`
+(641 = 87.21 %), `level-window` **+13 / −22** (§6), `either` **+6 / −1** and refuted on FSE'26 with `60.6 %` against
+the level test's `63.1 %` (§11 of the evidence document), `evidence-aware` **+13 / −0** (§5, falsified in the WORD
+rather than deferred), `trimmed-ends` a strict refinement (+3 local, +9 FSE'26, no cell down) whose composition with
+the level test was **`evidence-trimmed`**, the value this one was measured against.
 
 **Owner of:** `transientGuardTest` (`packages/tree/src/causal/topology-fault-graph.ts`),
 `--transient-guard-test`, `anomaly_knobs=transguard=<member>`.

@@ -125,6 +125,17 @@ so the list and the correction cannot drift apart. **An explanatory column is no
 says "`71.1` before iteration 129" is a table printing 71.1, and a reader skimming the row sees the number without the
 clause — which is how the defect survived. History belongs in this paragraph, not in a table.
 
+> **STALE BY ONE ENROLMENT, AND NAMED RATHER THAN SILENT (iteration 240).** The block below is the battery this
+> document is anchored to and every table under it reads that battery — which is what the anchor is FOR. The
+> configuration has since moved: `transientGuardTest` is now `hump` (`docs/transient-guard-evidence.md` §13), and the
+> same nine cells read **659/735 = 89.66 %** on battery `42340115598` — `RE1 113 / 119 / 112`, `RE2 84 / 89 / 76`,
+> `RE3 25 / 19 / 22`, i.e. `344/375 · 249/270 · 66/90` — and reproduced per case by `42343505202` at `bd17912c`, the
+> push-triggered battery that reaches the same configuration with **no dispatch input at all**: 0 differences on all
+> 735 cases. **The re-anchor is the next iteration's first task**, because it is a change to fourteen tables, four
+> percentages and the `RETIRED` list of `standing-anchor.test.ts`, and a sweep that size belongs to a revision of its
+> own rather than to the one that shipped the flip. Until then this document's headline is one enrolment behind and
+> says so here, in the place a reader arrives.
+
 <!-- standing-anchor: battery 41865456632 on 1c18c76, read 2026-11-05 -->
 
 ```text
