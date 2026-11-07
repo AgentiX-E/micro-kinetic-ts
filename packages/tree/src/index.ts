@@ -319,3 +319,15 @@ export {
   createUbiqueLinearAlgebra,
   registerTreeModule,
 } from './di/factories.js';
+
+// Evidence audit
+// The three failure families of arXiv:2608.21310 as deterministic predicates over this engine's own record.
+// Exported because the instrument is only worth building if the benchmark can quote its rates.
+export { auditEvidence } from './audit/evidence-audit.js';
+export type {
+  AuditCandidate,
+  EvidenceAudit,
+  EvidenceAuditFinding,
+  EvidenceAuditInput,
+  EvidenceFailureFamily,
+} from './audit/evidence-audit.js';

@@ -66,6 +66,11 @@ export default defineConfig({
         // non-member, a `WEIGHT_ZERO` case and a retrieval failure are four different findings that render as
         // the same absence — so every branch of it is measured here rather than trusted.
         'src/dual-family-census.ts',
+        // Added with the module: the three evidence-handling families of arXiv:2608.21310 as deterministic
+        // predicates. Every branch is measured because the instrument's whole claim is that a family it cannot
+        // reach is a defect in the PREDICATE and not a clean bill — so the branch that produces a finding, the
+        // branch that withholds one, and the branch that reports an unauditable case are all asserted by name.
+        'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
         // through into an empty map — plus the engine's own `acted` read against the predicate it was predicted

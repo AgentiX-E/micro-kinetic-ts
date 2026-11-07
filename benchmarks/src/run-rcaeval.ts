@@ -103,6 +103,11 @@ import {
   createDualFamilyCensus,
   formatDualFamilyCensusLine,
 } from './dual-family-census.js';
+import {
+  accumulateEvidenceAuditCensus,
+  createEvidenceAuditCensus,
+  formatEvidenceAuditCensusLine,
+} from './evidence-audit-census.js';
 // The direction term's gate, as DECISIONS rather than as capability. The `direction-gate[...]` verdict above
 // reads the corpus (how many latency rows a view supplied); this reads the predicate's own verdicts, which is
 // the reading that says the term fired once in 735 cases while the corpus line said it COULD fire on four cells.
@@ -1512,6 +1517,10 @@ async function main(): Promise<void> {
     // POPULATION has to be printed at all (a constant membership only re-orders a cell whose family is a
     // strict subset, and no artifact said how large the family was where the cells did not move).
     const dualFamily = createDualFamilyCensus();
+    // The three evidence-handling families of arXiv:2608.21310, counted per cell. Always on, on the dual-family
+    // census's rule: an instrument that only ran under a flag would be absent from exactly the acceptance runs
+    // that have to explain a movement.
+    const evidenceAudit = createEvidenceAuditCensus();
     // The direction term's gate, counted as DECISIONS. Two numbers and not one, because the run's own bar and a
     // hypothetical fleet bar are different questions and the artifact has to answer both: on the shipped absolute
     // bar the cell reports the defect (refusals), and `fleet@<share>` states what an arm at that share would have
@@ -1536,6 +1545,7 @@ async function main(): Promise<void> {
           // that only ran under a flag would be absent from exactly the acceptance runs that must explain a
           // movement.
           accumulateDualFamilyCensus(dualFamily, record);
+          accumulateEvidenceAuditCensus(evidenceAudit, record);
           accumulateFailedEdgeGateCensus(failedEdgeGate, record);
           if (diagnoseDump !== undefined) {
             diagnoseDump.record(
@@ -1553,6 +1563,8 @@ async function main(): Promise<void> {
     }
     const dualFamilyLine = formatDualFamilyCensusLine(dualFamily);
     if (dualFamilyLine !== undefined) console.log(dualFamilyLine);
+    const evidenceAuditLine = formatEvidenceAuditCensusLine(evidenceAudit);
+    if (evidenceAuditLine !== undefined) console.log(evidenceAuditLine);
 
     // The gate's own decisions, beside the verdict that says the corpus COULD supply it. The two lines are one
     // sentence and were printed as two paragraphs: `direction-gate` answers "did this view carry latency rows",
