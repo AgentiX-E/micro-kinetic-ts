@@ -480,3 +480,88 @@ end answered normally — which is what a saturation fault looks like when only 
 That is a statement about the MODALITY rather than the statistic, and it is where the next iteration has to work:
 the error channel cannot see a service that keeps answering, and the latency channel — already in the ledger as
 `edgeLatency` — is the one that records the call the client waited too long for.
+
+---
+
+## 13. The latency channel, read on those fourteen — and the axis this closes
+
+§12.8 ended with a prediction: the fourteen breaks it could not explain are cases where the promoted service is
+the truth's **caller**, so the latency channel — which records the call the client waited too long for — is the
+one that should separate them. This section measures that prediction and refuses it.
+
+Two corrections to §12.8 have to be made first, because the numbers below are read against the ARM and §12.8's
+table was read against a PROJECTION:
+
+| quantity                                    | §12.8 (projected) | measured on the arm |
+| ------------------------------------------- | ----------------: | ------------------: |
+| breaks remaining after the rule             |                14 |              **16** |
+| of those, the displaced candidate uncharged |          14 of 14 |            16 of 16 |
+| of those, the truth uncharged               |          13 of 14 |        **13 of 16** |
+
+The projection assumed the rule can only REFUSE an override, so it could not see the 15 cases where removing a
+middle link let a different credited callee win. The decomposition's shape survives — the channel is blind to
+both ends — but the population is 16, not 14, and this section is measured on the 16.
+
+### 13.1 The population, and the effect model that makes an offline reading exact
+
+Population: the 1 303 paired cases of the `return-path` arm (750 correct, 210 fixed over control, 16 broken over
+control). Input: `countDirectionalInputs(traces.csv, injectTimeMs)` — the same join the ledger reads.
+
+The offline reading of a **gate** is exact rather than approximate, and the reason is structural: a refused gate
+returns the baseline ranking (`if (!admitsFailedEdgeTerm(...)) return baseline`), so `new prediction = control
+prediction`, case for case. Nothing else in the pipeline reads the term when it is refused. That is not true of a
+RULE, which is why §12.2's projection was off by 13 cases.
+
+### 13.2 Four parameter-free predicates, measured
+
+Each is a statement about the **baseline rank-1** — the gate's only legitimate subject — and none carries a
+fitted constant:
+
+| predicate                                                           | fires | fixes | breaks | net |
+| ------------------------------------------------------------------- | ----: | ----: | -----: | --: |
+| some outbound edge of it rose more than its own inbound rise        |   285 |     0 |     38 | −38 |
+| some CALLEE of it carries a larger inbound rise than it does        |   393 | **1** |     42 | −41 |
+| the same, at twice the level                                        |   177 |     0 |     30 | −30 |
+| some callee of it is slower AND itself carries a failed-call charge |    60 |     0 |     22 | −22 |
+
+**Every one of them fires on at most one of the 16 breaks**, and each costs between 22 and 42 cases the term was
+carrying. The reason is not a threshold: the baseline rank-1 in these 16 IS the truth, and the truth is the deepest
+service in its chain — a predicate of the form "something downstream of it is slower" is false of a source by
+construction. The channel cannot contradict a correct answer.
+
+### 13.3 The structural reading, which nearly works and does not
+
+The one predicate that reaches the population is about the relation between the gate's subject and the ledger's:
+
+> refuse when the service the failed calls are charged to **calls** the baseline rank-1.
+
+That is the symptom-amplification shape stated directly — the middle of the chain is charged, the end of the chain
+is the current answer — and it is not circular: both quantities are already computed, and the rank-1 comes from the
+baseline ranking rather than from the term.
+
+| form of the predicate                                    | fires | fixes | breaks | net |
+| -------------------------------------------------------- | ----: | ----: | -----: | --: |
+| top charge calls the baseline rank-1                     |   339 |    13 |     19 |  −6 |
+| … and that edge's rise clears 1                          |   178 |    11 |      9 |  +2 |
+| … and the rank-1's own inbound rise exceeds the charge's |   257 |     6 |     14 |  −8 |
+
+It finds **13 of the 16** and loses **19** cases where the term was right _because the caller is the source_ — a
+fault in `t` makes `t`'s callers fail, `t` is charged, and `t` happens to call the baseline's answer. The two
+populations overlap in the feature and separate in nothing else that was tried: the charge magnitude, the failure
+rate, the two rises, and the rank-1's own self-anomaly were each measured, and each is bimodal with the wrong
+sign or no sign (§5's `fraction` already gates the whole population at 0.10 and both halves clear it).
+
+### 13.4 What this closes, and what it hands on
+
+The two-regime reading is refused: **the latency channel does not separate the 16.** It is not a matter of the
+statistic — no bar, share or shape over `edgeLatency` was left untried that is defined on this population — but of
+the MODALITY: the cases are ones where the control was right, and a channel can only help by contradicting an
+answer; a correct answer is not contradicted by its own chain.
+
+The 16 breaks are 1.2 % of the arm's 553 remaining misses, and the census in `docs/level-blind-census.md` says the
+other 98.8 % is where the work is: **182 misses where the truth's own level rose at least threefold**, of which
+**61 were scored below 0.1 by the engine's own anomaly** — a detector question, measured on the input rather than
+on the engine's opinion of it, and one that no amount of work inside the failed-edge ledger could reach.
+
+So this register's failed-edge family ends here: the term is measured at +194 over control with 0 cases lost
+against its own predecessor arm, the remaining breaks are structural, and the next lever is the guard.
