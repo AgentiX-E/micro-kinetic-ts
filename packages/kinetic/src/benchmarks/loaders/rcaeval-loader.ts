@@ -23,6 +23,7 @@ import { createInterface } from 'node:readline';
 // The order convention, from its one owner in this package: `loadSuite` sorts a suite's case directories, and
 // that order decides which cases a capped run ranks.
 import { compareCasePaths } from '../case-order.js';
+import { readCsvRecords } from './csv-records.js';
 
 import type {
   CallEdge,
@@ -286,26 +287,45 @@ const SERVICE_COLUMN_ALIASES = new Set([
 ]);
 
 /**
- * Normalise a trace span's raw start-time cells to Unix milliseconds.
+ * Header aliases for the LOG timestamp column.
  *
- * Jaeger traces.csv carries BOTH `startTimeMillis` (milliseconds, ~1.7e12) and
- * `startTime` (microseconds, ~1.7e15). Prefer `startTimeMillis` (already ms);
- * otherwise `startTime`/`start_time` are microseconds and must be divided by
- * 1000. A bare timestamp column — {@link BARE_TIMESTAMP_HEADERS} — is
- * magnitude-inferred, because it is the column a corpus that is NOT Jaeger
- * exports lands in.
- *
- * The column values are read from the candidate columns as pre-trimmed
- * strings (or undefined when a column is absent), so the streaming counter
- * can reuse the exact same normalisation without materialising a row object.
+ * Separate from {@link BARE_TIMESTAMP_HEADERS} only in also accepting the
+ * single-letter `t`, which a Parquet-derived log export may carry — a logs.csv
+ * whose clock column is not found silently stamps every entry `0`, which reads
+ * downstream as "all logs are pre-injection".
  */
-function normalizeTraceStartTimeMs(row: Record<string, string>): number {
-  return normalizeTraceStartTime(
-    row.startTimeMillis,
-    row.startTime,
-    row.start_time,
-    bareTimestampCell(row),
-  );
+const LOG_TIMESTAMP_COLUMNS = new Set(['timestamp', 'time', 'ts', 't']);
+
+/** Header aliases for the log MESSAGE column. */
+const LOG_MESSAGE_COLUMNS = new Set(['message', 'msg', 'content', 'log', 'text', 'line']);
+
+/** Header aliases for an explicit log LEVEL column, when a corpus ships one. */
+const LOG_LEVEL_COLUMNS = new Set(['level', 'severity', 'log_level', 'loglevel']);
+
+/** Header aliases for the trace ID column (Jaeger `traceID`, snake_case `trace_id`). */
+const TRACE_ID_COLUMNS = new Set(['trace_id', 'traceid']);
+
+/** Header aliases for the span's OPERATION column (Jaeger `operationName`). */
+const OPERATION_COLUMNS = new Set(['operation', 'operationname', 'operation_name']);
+
+/**
+ * The index of the first header cell that names one of `aliases`, or -1.
+ *
+ * The match is on the LOWERCASED header, and the winner is the column that comes
+ * FIRST IN THE FILE — not the first alias in the set. That is the rule the
+ * streaming readers already apply (`header.findIndex`), and the two paths have
+ * to agree: they read the same file, and a disagreement would mean a span is
+ * attributed to a service in one place and to `unknown` in the other.
+ *
+ * @param header - The parsed header cells.
+ * @param aliases - Accepted names, lowercased.
+ * @returns The column index, or -1 when the file carries none of them.
+ */
+function columnIndex(header: readonly string[], aliases: ReadonlySet<string>): number {
+  for (let i = 0; i < header.length; i++) {
+    if (aliases.has(header[i]!.toLowerCase())) return i;
+  }
+  return -1;
 }
 
 /**
@@ -321,28 +341,13 @@ function normalizeTraceStartTimeMs(row: Record<string, string>): number {
 const BARE_TIMESTAMP_HEADERS = ['timestamp', 'ts', 'time'] as const;
 
 /**
- * The first bare-timestamp cell present in a row, in {@link BARE_TIMESTAMP_HEADERS}
- * order, or undefined when the row carries none of them.
- *
- * @param row - One parsed CSV row.
- * @returns The raw cell, or undefined.
- */
-function bareTimestampCell(row: Record<string, string>): string | undefined {
-  for (const name of BARE_TIMESTAMP_HEADERS) {
-    const value = row[name];
-    if (value !== undefined && value !== '') return value;
-  }
-  return undefined;
-}
-
-/**
  * The index of the first bare-timestamp column present in a header, in
  * {@link BARE_TIMESTAMP_HEADERS} order, or -1.
  *
- * The streaming readers index cells by position rather than materialising rows, and
- * they have to agree with {@link bareTimestampCell} or the two paths disagree about
- * what a span's start time is — the same disagreement this file already records once
- * for the log clock.
+ * Every reader of traces.csv indexes cells by position, so this index (and the
+ * header list above) is the ONE place a span's clock column is decided — unlike
+ * the alias sets, which resolve to the first MATCHING COLUMN in the file because
+ * they name alternatives for a column the corpus does spell.
  *
  * @param header - The parsed header names.
  * @returns The column index, or -1.
@@ -356,7 +361,8 @@ function bareTimestampIndex(header: readonly string[]): number {
 }
 
 /**
- * Shared start-time normalisation core (see {@link normalizeTraceStartTimeMs}).
+ * Shared start-time normalisation core — the single place a span's clock columns
+ * are interpreted (see the readers in `tryLoadTraces` and `countTraceActivityByService`).
  *
  * @param startTimeMillis - `startTimeMillis` cell (already milliseconds).
  * @param startTime - `startTime` cell (microseconds).
@@ -470,6 +476,115 @@ export function isStackTraceMessage(message: string): boolean {
 }
 
 /**
+ * A log line's exception names, as THROWN exceptions rather than serialized values.
+ *
+ * ## The distinction this exists for
+ *
+ * SockShop's `front-end` logs the response body it received from `orders`:
+ *
+ * ```
+ * Order response: {"statusCode":500,"body":{"exception":"java.lang.IllegalStateException",
+ *                                         "message":"Unable to create order ..."}}
+ * ```
+ *
+ * The class name in that line is `orders`'s, quoted as a FIELD of a JSON document. It is a relayed
+ * payload, not a frame of front-end's own stack — and `front-end` logs one of these PER FAILED CALL,
+ * 290 to 746 of them in a single case. Counting them attributed an upstream's exception to the service
+ * that merely printed it: measured on RE3:SockShop, `front-end` collected 290 self-caused logic
+ * exceptions in `carts_f1_3` and took the log score of the whole cell, and the cell fell 11.1 points
+ * once the messages stopped being truncated at their first comma (see
+ * `docs/rcaeval-log-fidelity.md`).
+ *
+ * ## The discriminator
+ *
+ * The character AFTER the class name. A serializer must put a quote there (`"IllegalStateException"`,
+ * `'ValueError'`); a `toString()` cannot — it writes `IllegalStateException: boom`, a stack frame writes
+ * `Class.method(`, and prose writes a space. So a match immediately followed by a quote is a value in a
+ * document, and every other match is an occurrence in the text.
+ *
+ * Narrow on purpose: it says nothing about WHICH exceptions a service may be blamed for — that is
+ * `LOGIC_EXCEPTION_PATTERN`'s question and `PROPAGATED_EXCEPTION_PATTERN`'s counter-question. This rule
+ * only refuses to read a document's field as the emitter's own stack.
+ *
+ * @param text - The log message.
+ * @param pattern - The classifier to run. The `g` flag is added if absent; the caller's regex is not mutated.
+ * @returns True when at least one match is NOT a serialized value.
+ */
+export function hasThrownExceptionMatch(text: string, pattern: RegExp): boolean {
+  return thrownMatches(text, pattern).next().done === false;
+}
+
+/**
+ * Every match of `pattern` in `text` that is an OCCURRENCE rather than a serialized value.
+ *
+ * Shared by {@link hasThrownExceptionMatch} and the extractors so one rule decides for all of them:
+ * a predicate that skipped quoted occurrences while {@link extractExceptionNames} counted them would make
+ * the run's own census disagree with the score it explains.
+ *
+ * @param text - The log message.
+ * @param pattern - The classifier to run.
+ * @yields Each accepted match, in order.
+ */
+function* thrownMatches(
+  text: string,
+  pattern: RegExp,
+): Generator<RegExpExecArray, void, undefined> {
+  const global = globalCopyOf(pattern);
+  global.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = global.exec(text)) !== null) {
+    if (match[0].length === 0) {
+      global.lastIndex += 1;
+      continue;
+    }
+    // The classifiers match a FRAGMENT of a class name (`IllegalState` for
+    // `IllegalStateException`), so the quote that decides the question sits after the END OF THE TOKEN, not
+    // after the match. Walk the rest of the token before asking.
+    let end = match.index + match[0].length;
+    while (end < text.length && isClassNameChar(text[end]!)) end += 1;
+    const next = text[end];
+    if (next !== '"' && next !== "'") yield match;
+  }
+}
+
+/**
+ * True for the characters a class-name token may continue with.
+ *
+ * @param char - One character of the message.
+ * @returns True for a word character or the package separator.
+ */
+function isClassNameChar(char: string): boolean {
+  return /[\w.]/.test(char);
+}
+
+/**
+ * One compiled global regex per (source, flags), so the per-message predicates do not recompile.
+ *
+ * Keyed by the pattern's own text: the classifiers are module constants, so the cache converges on a
+ * handful of entries and never grows with the corpus.
+ */
+const GLOBAL_PATTERNS = new Map<string, RegExp>();
+
+/**
+ * A `g`-flagged copy of `pattern`, cached.
+ *
+ * @param pattern - The pattern to copy.
+ * @returns A global regex whose `lastIndex` the caller owns.
+ */
+function globalCopyOf(pattern: RegExp): RegExp {
+  const key = `${pattern.flags.includes('g') ? '' : 'g'}${pattern.flags}/${pattern.source}`;
+  let global = GLOBAL_PATTERNS.get(key);
+  if (global === undefined) {
+    global = new RegExp(
+      pattern.source,
+      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+    );
+    GLOBAL_PATTERNS.set(key, global);
+  }
+  return global;
+}
+
+/**
  * Extract the distinct exception/error TYPE names from a log message, in order
  * of first appearance. This is a DIAGNOSTIC hook for the log-signal gate: it
  * surfaces which exception classes actually appear in each system's error logs,
@@ -483,15 +598,18 @@ export function isStackTraceMessage(message: string): boolean {
  * `NullPointerException` / `QueryTimeoutException` (the token ending in
  * `Exception` / `Error` / `Timeout` / `Failure`).
  *
+ * Serialized values are skipped (see {@link hasThrownExceptionMatch}): a class
+ * name that a service only PRINTED, as a field of a response body it relayed,
+ * is not a name this service raised, and a census that counted it would report
+ * a symptom as an emitter.
+ *
  * @param message - The raw log message text.
  * @returns Distinct exception/error type names in order of first appearance.
  */
 export function extractExceptionNames(message: string): string[] {
   const names: string[] = [];
   const seen = new Set<string>();
-  const pattern = /\b[A-Za-z][\w]*(?:Exception|Error|Timeout|Failure)\b/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(message)) !== null) {
+  for (const match of thrownMatches(message, EXCEPTION_NAME_RE)) {
     const name = match[0];
     if (!seen.has(name)) {
       seen.add(name);
@@ -500,6 +618,9 @@ export function extractExceptionNames(message: string): string[] {
   }
   return names;
 }
+
+/** Every `\w+Exception`-shaped token — the name sampler's classifier. */
+const EXCEPTION_NAME_RE = /\b[A-Za-z][\w]*(?:Exception|Error|Timeout|Failure)\b/;
 
 /**
  * Matches a (possibly fully-qualified) Java/Python exception class name such as
@@ -540,8 +661,8 @@ function simpleClassName(qualified: string): string {
 export function extractDeepestExceptionClass(message: string): string | undefined {
   const causedByIdx = message.lastIndexOf('Caused by:');
   const source = causedByIdx >= 0 ? message.slice(causedByIdx + 'Caused by:'.length) : message;
-  const match = EXCEPTION_CLASS_RE.exec(source);
-  return match ? simpleClassName(match[0]) : undefined;
+  const match = thrownMatches(source, EXCEPTION_CLASS_RE).next();
+  return match.done === false ? simpleClassName(match.value[0]) : undefined;
 }
 
 /**
@@ -605,15 +726,52 @@ const PROPAGATED_EXCEPTION_PATTERN =
   /(?:Invalid UUID string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|For input string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|Cannot parse\s+empty|ERR_INVALID_ARG_TYPE[^\n]*Received\s+(?:undefined|null)\b)/i;
 
 /**
- * Determine whether a log message is a PROPAGATED parse failure — a wrapper
- * failing to parse an EMPTY value produced by a silent upstream source.
+ * An exception whose OWN message blames an I/O or connectivity cause.
+ *
+ * The second shape of propagation, and the one that decides the SockShop cells. `orders` answers every
+ * failed call to `user` / `payment` with the framework's dispatcher wrapper:
+ *
+ * ```
+ * Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception
+ *   [Request processing failed; nested exception is java.lang.IllegalStateException:
+ *    Unable to create order due to unspecified IO error.] with root cause
+ * ```
+ *
+ * `IllegalStateException` is on the logic whitelist, so this counted as a SELF-CAUSED programming error
+ * — 5 times in `user_loss_1`, 373 in `payment_loss_1`, 145 in `carts_f1_3` — and `orders`, a victim,
+ * took the log score of the cell while the truth emitted no exception at all. The message says what it
+ * is: the service failed to reach something. An exception that names an I/O cause is an environmental
+ * condition by its own account, which is the category `LOGIC_EXCEPTION_PATTERN`'s docblock already
+ * excludes — this is the clause that recognises it by cause rather than by class.
+ *
+ * Narrow deliberately: the CAUSE must be stated as the cause (`due to`, `because of`, `caused by`) and must
+ * name an ENVIRONMENTAL condition. `IllegalStateException: null` stays self-caused,
+ * `IllegalArgumentException: Invalid UUID string: ` stays propagated by the empty-payload clause above, and
+ * `NullPointerException: null` inside the same dispatcher wrapper stays self-caused — the wrapper is not
+ * the discriminator, and a clause that matched `nested exception is` would suppress every genuine RE3
+ * source exception, all of which arrive through that same wrapper.
+ *
+ * The condition list is the corpus's own vocabulary, counted rather than guessed: `due to unspecified IO
+ * error` (373 rows in `payment_loss_1`) and `due to timeout from one of the services` (the 4 rows in
+ * `user_loss_2` and the ONE row that decided `payment_loss_1`). `timeout` is in the list WITHOUT a
+ * trailing `error`/`failure` noun because that is how the file phrases it — and because a single missed
+ * row is not a rounding error under `logNormalisation=max`: one logic entry where every other service has
+ * none takes the whole log score.
+ */
+const ENVIRONMENTAL_CAUSE_PATTERN =
+  /(?:due to|because of|caused by)[^.]{0,40}\b(?:I\/O|IO|input\/output|network|socket|connection|connect|timeout|timed out|unreachable|unavailable|refused|reset)\b/i;
+
+/**
+ * Determine whether a log message is a PROPAGATED failure — a wrapper failing
+ * to parse an EMPTY value produced by a silent upstream source, OR an exception
+ * that names an I/O/connectivity cause.
  *
  * @param message - The raw log message text.
- * @returns True when the message carries an empty-payload parse-failure
- *   signature (a wrong-value symptom, not a self-caused programming error).
+ * @returns True when the message carries a wrong-value symptom signature or an
+ *   environmental cause (neither is a self-caused programming error).
  */
 export function isPropagatedExceptionMessage(message: string): boolean {
-  return PROPAGATED_EXCEPTION_PATTERN.test(message);
+  return PROPAGATED_EXCEPTION_PATTERN.test(message) || ENVIRONMENTAL_CAUSE_PATTERN.test(message);
 }
 
 /**
@@ -648,7 +806,10 @@ export function isPropagatedExceptionMessage(message: string): boolean {
  * @returns True when the message names a self-caused logic exception.
  */
 export function isLogicExceptionMessage(message: string): boolean {
-  return !isPropagatedExceptionMessage(message) && LOGIC_EXCEPTION_PATTERN.test(message);
+  return (
+    !isPropagatedExceptionMessage(message) &&
+    hasThrownExceptionMatch(message, LOGIC_EXCEPTION_PATTERN)
+  );
 }
 
 /**
@@ -691,7 +852,7 @@ const HTTP_EXCEPTION_PATTERN =
  * @returns True when the message names a framework HTTP exception.
  */
 export function isHttpExceptionMessage(message: string): boolean {
-  return HTTP_EXCEPTION_PATTERN.test(message);
+  return hasThrownExceptionMatch(message, HTTP_EXCEPTION_PATTERN);
 }
 
 /**
@@ -735,7 +896,7 @@ export type ExceptionKind = 'logic' | 'propagated' | 'unclassified' | 'none';
  */
 export function classifyExceptionKind(message: string): ExceptionKind {
   if (isPropagatedExceptionMessage(message)) return 'propagated';
-  if (LOGIC_EXCEPTION_PATTERN.test(message)) return 'logic';
+  if (hasThrownExceptionMatch(message, LOGIC_EXCEPTION_PATTERN)) return 'logic';
   if (EXCEPTION_CLASS_RE.test(message)) return 'unclassified';
   return 'none';
 }
@@ -1056,28 +1217,32 @@ export class RCAEvalLoader {
     if (!fs.existsSync(logsPath)) return undefined;
 
     try {
-      const content = fs.readFileSync(logsPath, 'utf-8');
-      const rows = this.parseCSV(content);
-      if (rows.length === 0) return undefined;
+      // BYTES, not a decoded document. `csv-records.ts` owns the reasoning: a
+      // whole-file decode makes every cell a slice of one string the size of the
+      // file, so the dozen exception names the run keeps per case would pin the
+      // entire logs.csv (up to 181 MB) for the rest of the process — measured at
+      // 1395 MB retained across one 90-case cell after the cases were dropped.
+      // It is also the reader that keeps quoted commas and newlines in cells:
+      // RCAEval's SockShop/OnlineBoutique messages are JSON documents.
+      const records = readCsvRecords(fs.readFileSync(logsPath));
+      const headerRecord = records.next();
+      if (headerRecord.done) return undefined;
 
       // RCAEval's logs.csv carries `timestamp, service, message` (paper §3.4)
       // with NO level/severity column — severity must be derived from the log
       // MESSAGE text (stack traces / error keywords). Detect columns flexibly
       // so both the original CSV layout and any Parquet-derived variant work.
-      const header = Object.keys(rows[0]!);
+      const header = headerRecord.value;
       this.lastLogHeader = header.join(',');
-      const tsCol = header.find((h) => ['timestamp', 'time', 'ts', 't'].includes(h.toLowerCase()));
-      const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
-      const msgCol = header.find((h) =>
-        ['message', 'msg', 'content', 'log', 'text', 'line'].includes(h.toLowerCase()),
-      );
-      const lvlCol = header.find((h) =>
-        ['level', 'severity', 'log_level', 'loglevel'].includes(h.toLowerCase()),
-      );
+      const tsIdx = columnIndex(header, LOG_TIMESTAMP_COLUMNS);
+      const svcIdx = columnIndex(header, SERVICE_COLUMN_ALIASES);
+      const msgIdx = columnIndex(header, LOG_MESSAGE_COLUMNS);
+      const lvlIdx = columnIndex(header, LOG_LEVEL_COLUMNS);
 
-      return rows.map((row) => {
-        const message = msgCol ? (row[msgCol] ?? '') : '';
-        const explicitLevel = lvlCol ? (row[lvlCol] ?? '').toUpperCase() : '';
+      const entries: BenchmarkLogEntry[] = [];
+      for (const cells of records) {
+        const message = cell(cells, msgIdx) ?? '';
+        const explicitLevel = (cell(cells, lvlIdx) ?? '').toUpperCase();
         const level = classifyLogLevel(explicitLevel, message);
         // RCAEval logs.csv timestamps are Unix SECONDS (same domain as
         // inject_time) but some cases carry NANOSECONDS (~1.7e18). The unified
@@ -1085,11 +1250,11 @@ export class RCAEvalLoader {
         // |ts| > 1e15 is nanoseconds → divide by 1e6 (ns→ms); otherwise treat
         // as seconds → multiply by 1000. This keeps the post-injection filter
         // (`timestamp >= injectTimeMs`) comparing like-for-like.
-        const rawTs = tsCol ? parseInt(row[tsCol] ?? '0', 10) : 0;
+        const rawTs = parseInt(cell(cells, tsIdx) ?? '0', 10);
         const timestampMs = Math.abs(rawTs) > 1e15 ? Math.floor(rawTs / 1e6) : rawTs * 1000;
-        return {
+        entries.push({
           timestamp: timestampMs,
-          service: svcCol ? (row[svcCol] ?? 'unknown') : 'unknown',
+          service: cell(cells, svcIdx) ?? 'unknown',
           message,
           level,
           isStackTrace: isStackTraceMessage(message),
@@ -1103,8 +1268,10 @@ export class RCAEvalLoader {
               : undefined,
           isHttpException:
             (level === 'ERROR' || level === 'FATAL') && isHttpExceptionMessage(message),
-        };
-      });
+        });
+      }
+
+      return entries.length === 0 ? undefined : entries;
     } catch {
       return undefined;
     }
@@ -1121,10 +1288,14 @@ export class RCAEvalLoader {
       // Read only the prefix needed for `maxSpans` data rows (plus the
       // header). Each CSV line is ~150–200 bytes; capping the read keeps a
       // multi-megabyte traces.csv from ever being fully loaded into memory.
+      // The cells are then decoded one by one by `readCsvRecords`, so a span
+      // field kept alive after the case is dropped cannot pin the prefix.
       const maxBytes = (maxSpans + 1) * 256;
-      const content = readFilePrefix(tracesPath, maxBytes);
-      const rows = this.parseCSV(content, maxSpans);
-      if (rows.length === 0) return undefined;
+      const records = readCsvRecords(readFilePrefix(tracesPath, maxBytes), {
+        maxRecords: maxSpans,
+      });
+      const headerRecord = records.next();
+      if (headerRecord.done) return undefined;
 
       // RCAEval traces.csv uses Jaeger CAMELCASE columns (traceId, spanId,
       // parentSpanId, serviceName, operationName, startTime, duration) — NOT
@@ -1132,35 +1303,41 @@ export class RCAEvalLoader {
       // assumed. Detect the service and status columns by header alias (as
       // tryLoadLogs does), so spans are attributed to the right service and
       // the error response code is actually read.
-      const header = Object.keys(rows[0]!);
+      const header = headerRecord.value;
       this.lastTraceHeader = header.join(',');
-      const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
-      const statusCol = header.find((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
+      const svcIdx = columnIndex(header, SERVICE_COLUMN_ALIASES);
+      const statusIdx = columnIndex(header, STATUS_COLUMN_ALIASES);
+      const traceIdIdx = columnIndex(header, TRACE_ID_COLUMNS);
+      const spanIdIdx = columnIndex(header, SPAN_ID_COLUMNS);
+      const parentIdx = columnIndex(header, PARENT_SPAN_ID_COLUMNS);
+      const opIdx = columnIndex(header, OPERATION_COLUMNS);
+      const durationIdx = columnIndex(header, DURATION_COLUMNS);
+      const startMillisIdx = header.indexOf('startTimeMillis');
+      const startIdx = header.indexOf('startTime');
+      const startSnakeIdx = header.indexOf('start_time');
+      const timestampIdx = bareTimestampIndex(header);
 
-      return rows.map((row) => {
-        const service = svcCol ? (row[svcCol] ?? 'unknown') : 'unknown';
-        return {
-          traceId: row.trace_id ?? row.traceId ?? row.traceID ?? row.traceid ?? 'unknown',
-          spanId:
-            row.span_id ??
-            row.spanId ??
-            row.spanID ??
-            row.spanid ??
-            `${row.trace_id ?? 'unknown'}_${service}`,
-          parentSpanId:
-            row.parent_span ??
-            row.parentSpanId ??
-            row.parentSpanID ??
-            row.parent_span_id ??
-            row.parentSpan ??
-            undefined,
+      const spans: BenchmarkTraceSpan[] = [];
+      for (const cells of records) {
+        const service = cell(cells, svcIdx) ?? 'unknown';
+        spans.push({
+          traceId: cell(cells, traceIdIdx) ?? 'unknown',
+          spanId: cell(cells, spanIdIdx) ?? `${cell(cells, traceIdIdx) ?? 'unknown'}_${service}`,
+          parentSpanId: cell(cells, parentIdx),
           service,
-          operationName: row.operation ?? row.operationName ?? 'unknown',
-          startTime: normalizeTraceStartTimeMs(row),
-          duration: parseInt(row.duration ?? '0', 10),
-          status: normalizeSpanStatus(statusCol ? row[statusCol] : undefined),
-        };
-      });
+          operationName: cell(cells, opIdx) ?? 'unknown',
+          startTime: normalizeTraceStartTime(
+            cell(cells, startMillisIdx),
+            cell(cells, startIdx),
+            cell(cells, startSnakeIdx),
+            cell(cells, timestampIdx),
+          ),
+          duration: parseInt(cell(cells, durationIdx) ?? '0', 10),
+          status: normalizeSpanStatus(cell(cells, statusIdx)),
+        });
+      }
+
+      return spans.length === 0 ? undefined : spans;
     } catch {
       return undefined;
     }
@@ -1182,26 +1359,6 @@ export class RCAEvalLoader {
    */
   loadTraces(casePath: string, maxSpans = 10_000): ReadonlyArray<BenchmarkTraceSpan> | undefined {
     return this.tryLoadTraces(casePath, maxSpans);
-  }
-
-  private parseCSV(content: string, maxRows?: number): Record<string, string>[] {
-    const lines = content.trim().split('\n');
-    if (lines.length < 2) return [];
-
-    const headers = lines[0]!.split(',').map((h) => h.trim());
-    const rows: Record<string, string>[] = [];
-    const limit = maxRows !== undefined ? Math.min(maxRows, lines.length - 1) : lines.length - 1;
-
-    for (let i = 1; i <= limit; i++) {
-      const values = lines[i]!.split(',').map((v) => v.trim());
-      const row: Record<string, string> = {};
-      for (let j = 0; j < headers.length; j++) {
-        row[headers[j]!] = values[j] ?? '';
-      }
-      rows.push(row);
-    }
-
-    return rows;
   }
 
   private buildMetricMap(rawMetrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>): MetricMap {
@@ -1747,18 +1904,22 @@ function cell(cells: readonly string[], idx: number): string | undefined {
 }
 
 /**
- * Read the first `maxBytes` bytes of a file as UTF-8.
+ * Read the first `maxBytes` bytes of a file, as bytes.
  *
  * Used to load a bounded prefix of traces.csv so a multi-megabyte file is
  * never fully read into memory — the caller only needs enough rows for
  * topology validation, not the entire trace history.
+ *
+ * Returns a `Buffer` rather than a decoded string so `readCsvRecords` can decode
+ * each CELL on its own: a single decoded prefix would make every span field a
+ * slice of it, and one retained field would then hold the whole prefix.
  */
-function readFilePrefix(filePath: string, maxBytes: number): string {
+function readFilePrefix(filePath: string, maxBytes: number): Buffer {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(maxBytes);
     const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
-    return buffer.toString('utf-8', 0, bytesRead);
+    return buffer.subarray(0, bytesRead);
   } finally {
     fs.closeSync(fd);
   }

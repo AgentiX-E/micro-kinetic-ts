@@ -26,7 +26,7 @@
  * @module benchmarks/run-rcaeval
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,6 +47,7 @@ import {
   computeFusionCeilingByCell,
   computePrismRanking,
   extractExceptionNames,
+  mergeRunResults,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
@@ -69,7 +70,6 @@ import {
   formatCorpusLine,
   formatInjectionAnchors,
   summarizeInjectionAnchors,
-  type InjectionAnchorCensus,
   type LatencySource,
 } from './rcaeval-corpus.js';
 // The corpus traversal's ORDER, from its one owner: `readdirSync` order is unspecified, and this runner caps
@@ -95,7 +95,6 @@ import {
   directionGateLine,
   formatLatencyRoutes,
   summarizeLatencyRoutes,
-  type LatencyRouteCensus,
   type LatencyRouteEntry,
 } from './directional-evidence.js';
 import {
@@ -166,11 +165,18 @@ import {
 // The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
 // cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
 // empty map differ in everything a fix would depend on.
+// The cell's statistics and the fold that makes a memory slice exact. Imported rather than declared here because
+// this module calls `main()` at import time, so nothing defined in it is reachable from a test.
+import { sliceForMemory } from './case-slicing.js';
+import { collectGarbage } from './collect-garbage.js';
+// The heap-snapshot writer, imported lazily where it is used: a diagnostic that costs 300 MB of disk must not be
+// reachable by merely importing this module.
+import { writeHeapSnapshot } from 'node:v8';
+import { mergeLoadStats, type LoadStats } from './load-stats.js';
 import {
   deriveLogRoute,
   formatLogRoutes,
   summarizeLogRoutes,
-  type LogRouteCensus,
   type LogRouteEntry,
 } from './log-route.js';
 import {
@@ -421,89 +427,6 @@ function discoverAllDirectoriesWithMetrics(dataDir: string): {
 
 // ── Loader (with comprehensive error reporting) ───────────
 
-interface LoadStats {
-  cases: BenchmarkCase[];
-  errors: string[];
-  errorSamples: Map<string, number>; // error message → count
-  /** Number of cases that got per-service trace-activity counts computed. */
-  traceActivityCases: number;
-  traceStats: {
-    total: number;
-    pruned: number;
-    avgEdgesBefore: number;
-    avgEdgesAfter: number;
-    /** Raw traces.csv header (comma-joined column names). */
-    header: string;
-  };
-  /** Semantic enhancement statistics (only when enhancer is configured). */
-  semanticStats: {
-    totalServices: number;
-    semanticallyResolved: number;
-    embeddingResolved: number;
-    llmResolved: number;
-    exactMatched: number;
-  };
-  /**
-   * The latency-route census over this group's cases, from the owner's own summariser.
-   *
-   * Reported by {@link reportLatencyRoutes} with the owner's own renderer. It exists because the corpus is an
-   * AXIS of this runner since iteration 89: a run can rank on the `shipped`, `capped` or `whole-file` view, and
-   * an artifact that named the choice without counting what the chosen view HELD could not distinguish a corpus
-   * that supplied rows from one that supplied none — the two are the same nine cells and different causes.
-   */
-  latencyRoutes: LatencyRouteCensus;
-  /**
-   * The SAME population, addressable by the case it describes.
-   *
-   * The census above is the population reduced to counts, and a sum cannot name its own rows: a reader of the
-   * artifact can see that RE3 TrainTicket supplied 2006 rows and cannot ask which of its thirty cases carried
-   * them. The channel's remaining question is a ROUTING one — whether a case wants the whole-file view or the
-   * published composition — and its unit is the case, so the supply is kept beside the summary rather than
-   * discarded one line after it is computed. The two cannot disagree about which cases exist: the summary is
-   * derived FROM this map, and this map is the only collection that holds the entries.
-   */
-  latencyRouteByCaseId: ReadonlyMap<string, LatencyRouteEntry>;
-  /**
-   * The log channel's four levels over this group's cases, from this module's own summariser.
-   *
-   * `logWeight` is 1.0 and its input was an empty map on 719 of the run's 735 cases, while the same artifact
-   * reports that the corpus supplied logs on all 270 RE2 and all 90 RE3 cases. `INPUT_MAP_EMPTY` cannot say which
-   * of four mechanisms produced that, and this is the line that can: how many rows were read, how many the owner
-   * retained, how many the MODE's gate admits, and how many of those name a graph node. Reported by
-   * {@link reportLogRoutes} with the owner's own renderer.
-   */
-  logRoutes: LogRouteCensus;
-  /**
-   * Where each of this group's cases got its injection boundary.
-   *
-   * Beside `latencyRoutes` because the two read one another: that census counts `no anchor`, and this one says
-   * how many of the anchors that are no longer "no anchor" were DERIVED rather than read. Without it, repairing
-   * a boundary would silently convert fourteen unanchored cases into anchored ones and the artifact would report
-   * a corpus that never had the defect.
-   */
-  anchors: InjectionAnchorCensus;
-  /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
-  logStats: {
-    /** Cases carrying at least one log entry. */
-    total: number;
-    /** Total ERROR/FATAL entries (after severity derivation). */
-    errorEntries: number;
-    /** Raw logs.csv header (comma-joined column names). */
-    header: string;
-    /** First log entry's timestamp (ms), level, service, and message sample. */
-    sampleTs: number;
-    sampleLevel: string;
-    sampleService: string;
-    sampleMsg: string;
-    /** ERROR/FATAL entries flagged as stack traces (code-level evidence). */
-    stackTraceEntries: number;
-    /** First stack-trace entry's message prefix (eyeball the gate's target). */
-    sampleStackTraceMsg: string;
-    /** Distinct exception/error type names sampled from ERROR/FATAL messages. */
-    exceptionNamesSample: string;
-  };
-}
-
 /**
  * Load a single case and build its call graph.
  *
@@ -615,7 +538,7 @@ async function loadSingleCase(
  * 270+ cases × 1000s of spans this cuts peak memory by ~40 %.
  */
 async function loadCases(
-  metas: CaseMeta[],
+  metas: readonly CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
   latencyFrom: LatencySource,
@@ -758,11 +681,13 @@ async function loadCases(
             // Sample the distinct exception/error TYPE names so the benchmark
             // can discriminate logic exceptions (code-level fault) from
             // connectivity exceptions (resource cascade) — the next gate's axis.
-            for (const name of extractExceptionNames(l.message)) {
-              if (exceptionNamesSeen.size < 12 && !exceptionNamesSeen.has(name)) {
-                exceptionNamesSeen.add(name);
-              }
-            }
+            //
+            // Collected WITHOUT a cap, and capped when it is RENDERED. The cap used to be here, and a cap during
+            // collection is a cap on a population that is no longer one population: since iteration 250 the loader
+            // runs once per memory slice, so twelve names per slice is up to seventy-two per cell — a diagnostic
+            // that silently grew with the chunking. The rendered line keeps its twelve, and now it is the FIRST
+            // twelve of the cell's names in corpus order, which is what it claimed to be all along.
+            for (const name of extractExceptionNames(l.message)) exceptionNamesSeen.add(name);
           }
         }
         if (!logSampleCaptured) {
@@ -800,24 +725,18 @@ async function loadCases(
     }
   }
 
-  // Printed UNCONDITIONALLY, like the FSE'26 run's own line and for the same reason: a run
-  // whose direction signal received nothing must be indistinguishable from one that
-  // received everything only in the NUMBERS, never in the log. Until this line existed the
-  // golden half had no way to say that the channel it was reporting as 0.000 had never
-  // been fed at all.
-  if (failedEdgeCases.length > 0) {
-    console.log(`  ${formatFailedEdgeCoverageLine(summariseFailedEdgeCoverage(failedEdgeCases))}`);
-  }
-
   return {
     cases: loaded,
+    failedEdgeCases,
     errors,
     errorSamples,
     traceActivityCases,
     latencyRoutes: summarizeLatencyRoutes([...latencyRouteByCaseId.values()]),
     latencyRouteByCaseId,
     logRoutes: summarizeLogRoutes(logRouteEntries),
+    logRouteEntries,
     anchors: summarizeInjectionAnchors(anchorProvenances),
+    anchorProvenances,
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -825,6 +744,7 @@ async function loadCases(
       avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length),
       header: loader.lastTraceHeader,
     },
+    considered: selected.length,
     semanticStats: {
       totalServices: semTotalServices,
       semanticallyResolved: semResolved,
@@ -842,8 +762,8 @@ async function loadCases(
       sampleMsg: logSampleMsg,
       stackTraceEntries: logStackTraceEntries,
       sampleStackTraceMsg: logSampleStackTraceMsg,
-      exceptionNamesSample: [...exceptionNamesSeen].join(', '),
     },
+    exceptionNames: [...exceptionNamesSeen],
   };
 }
 
@@ -1083,13 +1003,13 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
         ? (((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) * 100).toFixed(0)
         : '0';
     console.log(
-      `  [trace] ${total}/${stats.cases.length} cases with traces, ` +
+      `  [trace] ${total}/${stats.considered} cases with traces, ` +
         `${pruned} pruned, avg edges: ${avgEdgesBefore.toFixed(0)} → ${avgEdgesAfter.toFixed(0)} ` +
         `(${reduction}% reduction)`,
     );
     if (header) console.log(`  [trace] header: ${header}`);
-  } else if (stats.cases.length > 0) {
-    console.log(`  [trace] No trace data available for ${stats.cases.length} cases`);
+  } else if (stats.considered > 0) {
+    console.log(`  [trace] No trace data available for ${stats.considered} cases`);
   }
 }
 
@@ -1146,6 +1066,24 @@ function reportLogRoutes(systemName: string, stats: LoadStats): void {
  * ERROR/FATAL entries the severity derivation produced, and a sample of the
  * first log line (timestamp/level/service/message) to eyeball the raw format.
  */
+/**
+ * How many cases the `[log-diag]` per-case exception dump shows in one CELL.
+ *
+ * A cell-level budget rather than a per-slice one: the dump is a sample of the corpus, so the number of cases it
+ * shows must not depend on how many memory slices the cell was processed in.
+ */
+const MAX_LOG_DIAG_CASES = 6;
+
+/**
+ * How many distinct exception names the `[log] exception types` line shows.
+ *
+ * A cap on the RENDERING, not on the collection. The census keeps every name it saw, and the line shows the first
+ * twelve in corpus order. Twelve is how many the line showed when the cap sat during COLLECTION — which capped the
+ * population rather than the line, and since iteration 250 that population is one memory slice: twelve per slice is
+ * up to seventy-two per cell, so the diagnostic silently grew with the chunking.
+ */
+const MAX_EXCEPTION_NAMES_SHOWN = 12;
+
 function reportLogDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
   const {
     total,
@@ -1157,11 +1095,10 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
     sampleMsg,
     stackTraceEntries,
     sampleStackTraceMsg,
-    exceptionNamesSample,
   } = stats.logStats;
   if (total > 0) {
     console.log(
-      `  [log] ${total}/${stats.cases.length} cases with logs, ${errorEntries} ERROR/FATAL entries, ${stackTraceEntries} stack-trace entries`,
+      `  [log] ${total}/${stats.considered} cases with logs, ${errorEntries} ERROR/FATAL entries, ${stackTraceEntries} stack-trace entries`,
     );
     console.log(`  [log] header: ${header}`);
     console.log(
@@ -1170,11 +1107,14 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
     if (sampleStackTraceMsg) {
       console.log(`  [log] stacktrace sample: "${sampleStackTraceMsg}"`);
     }
-    if (exceptionNamesSample) {
-      console.log(`  [log] exception types: ${exceptionNamesSample}`);
+    // Twelve, which is how many the line showed before it was a cell rather than a slice: the cap is a property
+    // of the RENDERING, so it is applied here and nowhere else.
+    const exceptionNames = stats.exceptionNames.slice(0, MAX_EXCEPTION_NAMES_SHOWN).join(', ');
+    if (exceptionNames !== '') {
+      console.log(`  [log] exception types: ${exceptionNames}`);
     }
-  } else if (stats.cases.length > 0) {
-    console.log(`  [log] No log data available for ${stats.cases.length} cases`);
+  } else if (stats.considered > 0) {
+    console.log(`  [log] No log data available for ${stats.considered} cases`);
   }
 }
 
@@ -1189,19 +1129,21 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
  * wrapper (e.g. Spring's `HttpServerErrorException`, df=N). If that split does
  * NOT hold for TrainTicket RE3, the novelty signal cannot help that cell.
  *
- * Enabled by `BENCHMARK_LOG_DIAG=1`; silent otherwise (it is verbose).
+ * Enabled by `BENCHMARK_LOG_DIAG=1`; silent otherwise (it is verbose). It takes a BUDGET rather than a constant
+ * because the cases it shows belong to a CELL that is loaded in memory slices, and a per-slice constant would show
+ * six cases per slice — a diagnostic that grew with the chunking.
  */
 function reportDeepestExceptionDiagnostics(
   systemName: string,
   suiteName: string,
   stats: LoadStats,
-): void {
-  if (process.env['BENCHMARK_LOG_DIAG'] !== '1') return;
-  const MAX_CASES = 6;
+  budget: number,
+): number {
+  if (process.env['BENCHMARK_LOG_DIAG'] !== '1') return 0;
 
   let shown = 0;
   for (const c of stats.cases) {
-    if (shown >= MAX_CASES) break;
+    if (shown >= budget) break;
     const logs = c.logs;
     if (!logs || logs.length === 0) continue;
 
@@ -1261,6 +1203,10 @@ function reportDeepestExceptionDiagnostics(
 
     shown++;
   }
+
+  // The number this slice spent, so the caller can carry the budget across slices: the diagnostic shows the FIRST
+  // few log-bearing cases of a cell, and the cell now runs in slices.
+  return shown;
 }
 
 /**
@@ -1360,16 +1306,6 @@ async function main(): Promise<void> {
   // carries, so neither the two objects nor the line can disagree: a hand-written literal here would
   // be a second owner of the option list, and the field that is present in one and missing from the
   // other is exactly how the golden half came to omit three of its load-bearing weights.
-  const container = createContainer(buildRCAEvalEngineOptions(opts));
-  const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
-  const runner = new BenchmarkRunner(
-    container,
-    classifier,
-    undefined,
-    undefined,
-    !opts.noInjectTime,
-  );
-  const loader = new RCAEvalLoader();
 
   // ── Init YAML-driven topology registry ──────────────────
   // Load all three system topology configs once before benchmarking.
@@ -1420,25 +1356,377 @@ async function main(): Promise<void> {
   // cell's rate above what the corpus gives away", and only the pool answers it for the headline.
   const priorFloorCells: PriorFloorCensus[] = [];
 
+  /**
+   * The bytes a case's own corpus files occupy.
+   *
+   * Measured rather than assumed, and `0` on any filesystem error: a case whose size cannot be read is then sized as
+   * if it were free, which puts it in the current slice — the failure a reader would notice (a larger slice) rather
+   * than the one they would not (a case silently dropped from the corpus).
+   *
+   * The three files are named rather than listed. A `readdirSync` + per-entry `stat` here would be the sixteenth
+   * corpus traversal in this repository and the only one with no canonical order to give: summing sizes is
+   * order-free, but `case-traversal-census.test.ts` has no exception list by design, because that list is where the
+   * class survived the last time. Naming the files also measures what actually reaches the heap — the loaders read
+   * exactly these three, and `inject_time.txt` is four bytes of them.
+   */
+  function corpusBytes(dirPath: string): number {
+    let total = 0;
+    for (const name of ['logs.csv', 'traces.csv', 'metrics.json'] as const) {
+      try {
+        total += statSync(join(dirPath, name)).size;
+      } catch {
+        // Absent for this case (RE1 ships no logs or traces): contributes nothing.
+      }
+    }
+    return total;
+  }
+
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
+    // Built per CELL, and this is a memory decision rather than a semantic one: these three objects are the only
+    // long-lived ones in the run, and a cell's cases are reachable from them after the cell's own scope has ended.
+    // Measured with them hoisted, the heap at each cell's end ran 73 MB, 106 MB, 176 MB, 634 MB, 2339 MB — a climb
+    // that tracks the CELL INDEX rather than the cell's size, which is what a retained case looks like. Rebuilding
+    // them makes a cell's last record unreachable at the same moment its cases are.
+    const container = createContainer(buildRCAEvalEngineOptions(opts));
+    const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
+    const runner = new BenchmarkRunner(
+      container,
+      classifier,
+      undefined,
+      undefined,
+      !opts.noInjectTime,
+    );
+    const loader = new RCAEvalLoader();
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const stats = await loadCases(
-      metas,
-      loader,
-      caseLimit,
-      opts.latencyView,
-      // The mode the run RAN under, read from the parsed options at the one site that hands the loader its
-      // configuration, so the census cannot count a different gate than the scorer applied.
-      opts.logSignalMode,
-      semanticConfig,
-      opts.traceWeight > 0,
+
+    // ── Memory slicing ────────────────────────────────────
+    // One case of this corpus is 47-86 MB once parsed (17 000 log rows, 10 000 spans, 100 000 metric points) and
+    // a cell is up to 125 cases, so holding a cell resident is 3-10 GB — more than this runner's container
+    // ceiling. The grouping a cell needs is STATISTICAL (its rate is over its cases), not simultaneous (no case's
+    // verdict reads another's), so a cell is processed in slices and only the AGGREGATES cross the boundary.
+    //
+    // What this buys is not a smaller peak by a constant: it is a peak that no longer grows with the corpus. The
+    // slice size is a knob (`--case-chunk`) because a machine with a 64 GB ceiling and a machine with an 8 GB one
+    // should be able to say which they are, but it is not a RANKING input — the fold in `mergeRunResults` and
+    // `mergeLoadStats` is exact, so every slice size produces the same numbers.
+    const selectedMetas = caseLimit > 0 ? metas.slice(0, caseLimit) : metas;
+    // The cases are sized on DISK, because that is measurable before parsing and because parsed residency tracks it
+    // closely on this corpus (a 85 MB case measures 75 MB of heap once assembled). A cell is heterogeneous by an
+    // order of magnitude — RE2's per-case bytes average 23 MB on SockShop and 245 MB on TrainTicket — so a slice
+    // bounded by a count alone bounds nothing on the large system.
+    const slices = sliceForMemory(selectedMetas, opts.caseChunk, (meta) =>
+      corpusBytes(meta.dirPath),
     );
 
+    // The cell's accumulators, declared ONCE outside the slice loop: a cell's statistics are the FOLD of its
+    // slices, and these censuses accumulate across cases rather than within one.
+    const sliceStats: LoadStats[] = [];
+    const resultsByFaultType = new Map<string, RunResult[]>();
+    /**
+     * The topology labels of the cell's FIRST case, kept because the line they build is a sample of the corpus.
+     *
+     * Typed as the renderer's own parameter rather than as a hand-written record: the sample is only useful if the
+     * renderer accepts it, and a second spelling of its shape here is how the two would drift apart.
+     */
+    let diagLabelsOfFirstCase: Parameters<typeof formatTopologyDiagnostic>[0];
+    /** How many cases the per-case exception dump may still show in this cell. */
+    let logDiagBudget = MAX_LOG_DIAG_CASES;
+    // The dual-family census for this cell. Accumulated from the ranking the correctness checks count from, so
+    // it cannot disagree with the score about who was paid — see `dual-family-census.ts` for why the term's
+    // POPULATION has to be printed at all (a constant membership only re-orders a cell whose family is a
+    // strict subset, and no artifact said how large the family was where the cells did not move).
+    const dualFamily = createDualFamilyCensus();
+    // The three evidence-handling families of arXiv:2608.21310, counted per cell. Always on, on the dual-family
+    // census's rule: an instrument that only ran under a flag would be absent from exactly the acceptance runs
+    // that have to explain a movement.
+    const evidenceAudit = createEvidenceAuditCensus();
+    // The direction term's gate, counted as DECISIONS. Two numbers and not one, because the run's own bar and a
+    // hypothetical fleet bar are different questions and the artifact has to answer both: on the shipped absolute
+    // bar the cell reports the defect (refusals), and `fleet@<share>` states what an arm at that share would have
+    // admitted, which is the number a dispatch is decided on and which no dispatch has yet produced. The what-if
+    // is suppressed when the run's own bar IS a fleet bar — it would then restate the bar.
+    const failedEdgeGate = createFailedEdgeGateCensus(
+      opts.failedEdgeGateMode,
+      opts.failedEdgeGateShare,
+      opts.failedEdgeGateMode === 'absolute' ? DEFAULT_FAILED_EDGE_GATE_SHARE : undefined,
+    );
+
+    for (const [sliceIndex, sliceMetas] of slices.entries()) {
+      const stats = await loadCases(
+        sliceMetas,
+        loader,
+        0,
+        opts.latencyView,
+        // The mode the run RAN under, read from the parsed options at the one site that hands the loader its
+        // configuration, so the census cannot count a different gate than the scorer applied.
+        opts.logSignalMode,
+        semanticConfig,
+        opts.traceWeight > 0,
+      );
+
+      sliceStats.push(stats);
+      diagLabelsOfFirstCase ??= stats.cases[0]?.callGraph.nodes.values().next().value?.labels;
+      // The per-case exception dump is the one diagnostic that reads a case BODY rather than an aggregate, so it
+      // runs here, where the bodies still exist. The budget is a cell-level constant minus what the earlier slices
+      // spent, which is what keeps "the first six" a statement about the cell.
+      if (logDiagBudget > 0) {
+        logDiagBudget -= reportDeepestExceptionDiagnostics(
+          systemName,
+          suiteName,
+          stats,
+          logDiagBudget,
+        );
+      }
+      // The SAME per-case maps the group-level path built, scoped to this slice: a case belongs to exactly one
+      // slice, so a slice-local join is the group-level join restricted to that slice's rows.
+      const sliceResults = new Map<string, RunResult>();
+      // ── PRISM graph-free baseline (for the fusion ceiling + routing probe) ──
+      // PRISM runs on the SAME loaded BenchmarkCase metrics (timestamps in ms,
+      // injectTime in ms), so no extra loading pass is needed. This is the
+      // graph-free internal/external asymmetry scorer from arXiv:2601.21359. The
+      // full ranking (not just top-1) is kept so the routing probe can record
+      // PRISM's top-2 M-score margin.
+      const prismRankingByCaseId = new Map<string, ReturnType<typeof computePrismRanking>>();
+      if (opts.fusionCeiling || opts.routingProbe) {
+        for (const c of stats.cases) {
+          prismRankingByCaseId.set(
+            c.id,
+            computePrismRanking(c.metrics, c.injectTime, { pooling: 'additive' }),
+          );
+        }
+      }
+      const prismTop1ByCaseId = new Map<string, string | undefined>();
+      for (const [id, ranking] of prismRankingByCaseId) {
+        prismTop1ByCaseId.set(id, ranking[0]?.serviceId);
+      }
+      // Split by fault type (matching paper's Table 6 format)
+      const byFaultType = new Map<string, BenchmarkCase[]>();
+      for (const c of stats.cases) {
+        const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+        if (!byFaultType.has(ft)) byFaultType.set(ft, []);
+        byFaultType.get(ft)!.push(c);
+      }
+
+      for (const [ft, ftCases] of byFaultType) {
+        if (ftCases.length === 0) continue;
+        const suite: BenchmarkSuite = {
+          name: `${systemName}-${suiteName}-${ft}`,
+          cases: ftCases,
+          totalCases: ftCases.length,
+        };
+        const one = await runner.runSuite(suite, (record) => {
+          // Always on: the census costs one pass over an array the runner already built, and an instrument
+          // that only ran under a flag would be absent from exactly the acceptance runs that must explain a
+          // movement.
+          accumulateDualFamilyCensus(dualFamily, record);
+          accumulateEvidenceAuditCensus(evidenceAudit, record);
+          accumulateFailedEdgeGateCensus(failedEdgeGate, record);
+          if (diagnoseDump !== undefined) {
+            diagnoseDump.record(
+              groupKey,
+              record.case.id,
+              renderDiagnosedCase(record, {
+                logSignalMode: opts.logSignalMode,
+                useInjectTime: !opts.noInjectTime,
+                fieldDecimals: opts.diagnoseDecimals,
+              }),
+            );
+          }
+        });
+        sliceResults.set(ft, one);
+        const bucket = resultsByFaultType.get(ft);
+        if (bucket === undefined) resultsByFaultType.set(ft, [one]);
+        else bucket.push(one);
+      }
+      // ── Fusion-ceiling records for this group ──
+      // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed
+      // by the shared case id, and record one entry per case.
+      if (opts.fusionCeiling) {
+        const engineTop1ByCaseId = new Map<string, string | undefined>();
+        for (const r of sliceResults.values()) {
+          for (const p of r.casePredictions) {
+            engineTop1ByCaseId.set(p.caseId, p.top1);
+          }
+        }
+        const cell = `${suiteName}:${systemName}`;
+        for (const c of stats.cases) {
+          fusionRecords.push({
+            caseId: c.id,
+            cell,
+            truth: c.groundTruth.serviceId,
+            engineTop1: engineTop1ByCaseId.get(c.id),
+            prismTop1: prismTop1ByCaseId.get(c.id),
+          });
+        }
+      }
+
+      // ── Routing-probe records for this group ──
+      // Join the engine's per-case top-2 ranking scores (now carried by the
+      // runner's case predictions) with PRISM's top-2 M-scores, so the offline
+      // frontier analysis can test engine-margin / prism-margin routers.
+      if (opts.routingProbe) {
+        const engineByCaseId = new Map<string, CasePrediction>();
+        for (const r of sliceResults.values()) {
+          for (const p of r.casePredictions) {
+            engineByCaseId.set(p.caseId, p);
+          }
+        }
+        const cell = `${suiteName}:${systemName}`;
+        for (const c of stats.cases) {
+          const ep = engineByCaseId.get(c.id);
+          const ranking = prismRankingByCaseId.get(c.id) ?? [];
+          routingRecords.push({
+            caseId: c.id,
+            cell,
+            faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
+            truth: c.groundTruth.serviceId,
+            engineTop1: ep?.top1,
+            engineTop1Score: ep?.top1Score,
+            engineTop2: ep?.top2,
+            engineTop2Score: ep?.top2Score,
+            prismTop1: ranking[0]?.serviceId,
+            prismTop1Score: ranking[0]?.score,
+            prismTop2: ranking[1]?.serviceId,
+            prismTop2Score: ranking[1]?.score,
+          });
+        }
+      }
+
+      // ── Loss-census rows for this group ──
+      // The same join the fusion and routing blocks above perform, asking a different question of it: not
+      // "who was right" but "was the truth reachable at all, and if so how deep".
+      if (opts.lossCensus !== '') {
+        const engineByCaseId = new Map<string, CasePrediction>();
+        for (const r of sliceResults.values()) {
+          for (const p of r.casePredictions) engineByCaseId.set(p.caseId, p);
+        }
+        const cell = `${suiteName}:${systemName}`;
+        for (const c of stats.cases) {
+          const ep = engineByCaseId.get(c.id);
+          // The direction of this case's answer, when there is an answer to direct: a correct case has no loss,
+          // and a case that produced no prediction has nothing to place. Computed here because THIS is where the
+          // graph is, and stored because the census is read after the run.
+          const direction =
+            ep?.top1 === undefined || ep.top1 === c.groundTruth.serviceId
+              ? undefined
+              : classifyWinnerRelation(c.callGraph, c.groundTruth.serviceId, ep.top1);
+          lossRecords.push({
+            caseId: c.id,
+            cell,
+            faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
+            truth: c.groundTruth.serviceId,
+            predicted: ep?.top1,
+            correct: ep?.correct ?? false,
+            // The pool is NOT the graph's node set, and it said so here until iteration 166. It is the set of
+            // nodes with a POSITIVE post-deduction anomaly (`performTreeRCA` admits only `selfScore > 0`), which
+            // on a 14-node graph reads 8 or 9 — so a silent node, and a node the topological deduction has fully
+            // explained, are both absent rather than ranked low. The distinction matters because `pool` is read
+            // against `truthRank`: an absent truth and a twenty-sixth-placed truth are different failures, and
+            // `docs/topo-discount-scope.md` §7.4 is the reading that depends on telling them apart.
+            pool: ep?.pool ?? 0,
+            truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
+            truthRank: ep?.truthRank,
+            // …and what the truth's anomaly was BEFORE the deduction, which is the only number that tells the two
+            // absences apart: zero is a silent origin, positive-and-unranked is a node the operator explained
+            // away. An older artifact carries neither, and `classifyTruthAbsence` reports that as `unmeasured`
+            // rather than as either answer.
+            truthAnomalyBefore: ep?.truthAnomalyBefore,
+            // …and whether the origin's own LEVEL moved, read from the series the engine was given rather than
+            // from the score it produced. The score is an opinion about this question; on the RCABench archive
+            // 61 misses carry a level rise of at least threefold and a score below 0.1, and no reading of the
+            // score alone can tell those from a truth that genuinely stood still.
+            truthLevelRise: measureTruthLevelRise(
+              c.metrics.get(c.groundTruth.serviceId),
+              c.injectTime,
+            ),
+            errored: ep?.errored,
+            // The truth's own evidence, carried so a DEEP miss can be split by whether anything moved at the
+            // origin. Read from the runner's record of the truth's own `RootCauseResult` rather than recomputed
+            // here: the threshold that decides the split is the engine's, and a second copy of it in this file
+            // would be a boundary that moves without this line moving.
+            truthEvidence: ep?.truthEvidence,
+            // And the winner's breakdown, so the census can name the term the case was lost to. Both sides are
+            // recorded rather than the difference, because a difference cannot be re-derived into its parts and
+            // the parts can always be differenced.
+            top1Terms: ep?.top1Terms,
+            // …and what the latency CHANNEL's corpus supplied for THIS case, taken from the census's own map rather
+            // than re-spelled here. The lookup is total: `cases` is `loaded`, and every element of it was pushed
+            // after the line that set its entry, so there is no arm to write for an absent supply — and an absent
+            // supply would mean the corpus owner never ran, which its own type cannot express.
+            latencySupply: stats.latencyRouteByCaseId.get(c.id)!,
+            // …and what the WINDOW did to the same case, taken on the series the engine received rather than on
+            // the corpus rows: the loader reshapes a series before the engine sees it, so a census over
+            // `metrics.json` measures a different object and cannot stand in for this one.
+            anchorCensus: deriveAnchorCensus(
+              { metrics: c.metrics, injectTime: c.injectTime, truth: c.groundTruth.serviceId },
+              opts.baselineAnchor,
+            ),
+            // …and WHICH WAY the answer pointed, read off this case's own graph rather than off the service ids.
+            ...(direction === undefined
+              ? {}
+              : { winnerRelation: direction.relation, winnerHops: direction.hops }),
+          });
+        }
+      }
+
+      // Released at the slice boundary, which is what makes the peak independent of the cell's size. `cases` is the
+      // only field holding a parsed case; the statistics above already have what they need from it.
+      stats.cases.length = 0;
+      for (const cases of byFaultType.values()) cases.length = 0;
+      byFaultType.clear();
+      // Collect NOW rather than when the engine next feels pressure. The releases above drop references; without a
+      // collection the heap keeps the pages until V8 decides otherwise, which on this corpus meant the resident set
+      // climbed from 73 MB at the first cell's end to 2.3 GB at the fifth's while every case had already been
+      // dropped. See `collect-garbage.ts` for why the collector has to be obtained rather than found.
+      collectGarbage();
+
+      // `BENCHMARK_MEM_TRACE=1` prints what one slice cost and what the process holds afterwards. It exists
+      // because a residency bound is a CLAIM, and a claim about memory that nothing measures is the kind of claim
+      // this repository has already had to retract once: the loop above used to say "GC every 10 cases" while
+      // `globalThis.gc` is undefined without `--expose-gc`, so it collected nothing and said nothing.
+      if (process.env['BENCHMARK_HEAP_SNAPSHOT'] === '1') {
+        // Written AFTER the release and the collection, so what it holds is what is still REACHABLE once the cell has
+        // been let go: that is the only question a snapshot at this point can answer.
+        console.error(
+          `  [heap] snapshot ${writeHeapSnapshot(`/tmp/heap-${groupKey.replace(':', '-')}.heapsnapshot`)}`,
+        );
+      }
+      if (process.env['BENCHMARK_MEM_TRACE'] === '1') {
+        const mem = process.memoryUsage();
+        console.error(
+          `  [mem] ${systemName}/${suiteName} slice ${sliceIndex + 1}/${slices.length}` +
+            ` (${sliceMetas.length} cases) heapUsed=${(mem.heapUsed / 1048576).toFixed(0)}MB` +
+            ` rss=${(mem.rss / 1048576).toFixed(0)}MB external=${(mem.external / 1048576).toFixed(0)}MB`,
+        );
+      }
+    }
+
+    // The cell's statistics and results, folded from its slices. Both folds are exact — see `mergeLoadStats` and
+    // `mergeRunResults` — so this is the object a single pass over the cell would have produced.
+    const stats = mergeLoadStats(sliceStats);
+    const results = new Map<string, RunResult>();
+    for (const [ft, parts] of resultsByFaultType) {
+      results.set(ft, parts.length === 1 ? parts[0]! : mergeRunResults(parts));
+    }
+
     // ── Report load errors with comprehensive diagnostics ──
+    // The failed-edge coverage line, printed UNCONDITIONALLY like the FSE'26 run's own and for the same reason: a
+    // run whose direction signal received nothing must be indistinguishable from one that received everything in
+    // the NUMBERS, never in the log. Until this line existed the golden half had no way to say that the channel it
+    // reported as 0.000 had never been fed at all.
+    //
+    // Cell-level rather than slice-level since iteration 250: it was printed inside `loadCases`, which now runs
+    // once per memory slice, so it appeared six times for a cell that loads in six slices.
+    const failedEdgeCoverage = summariseFailedEdgeCoverage(stats.failedEdgeCases);
+    console.log(`  ${formatFailedEdgeCoverageLine(failedEdgeCoverage)}`);
+
     reportLoadErrors(systemName, suiteName, stats);
 
-    if (stats.cases.length === 0) {
+    // `considered` rather than `cases.length`: a merged cell has released its cases, which is what the slicing is
+    // for, and a guard on the array would skip every cell that was sliced — reporting "no cases loaded" for a run
+    // that loaded all of them.
+    if (stats.considered === 0) {
       console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
       continue;
     }
@@ -1466,7 +1754,6 @@ async function main(): Promise<void> {
 
     // ── Log-loading diagnostics ───────────────────────────
     reportLogDiagnostics(systemName, suiteName, stats);
-    reportDeepestExceptionDiagnostics(systemName, suiteName, stats);
 
     // ── The log channel's own census, beside its diagnostics ──
     // The diagnostics above count what the LOADER produced; this counts what the MODE admits and what the GRAPH
@@ -1474,93 +1761,11 @@ async function main(): Promise<void> {
     // which of the four mechanisms emptied its map, so a run that prints the first without the second reports a
     // zero it cannot attribute.
     reportLogRoutes(systemName, stats);
-
-    // ── PRISM graph-free baseline (for the fusion ceiling + routing probe) ──
-    // PRISM runs on the SAME loaded BenchmarkCase metrics (timestamps in ms,
-    // injectTime in ms), so no extra loading pass is needed. This is the
-    // graph-free internal/external asymmetry scorer from arXiv:2601.21359. The
-    // full ranking (not just top-1) is kept so the routing probe can record
-    // PRISM's top-2 M-score margin.
-    const prismRankingByCaseId = new Map<string, ReturnType<typeof computePrismRanking>>();
-    if (opts.fusionCeiling || opts.routingProbe) {
-      for (const c of stats.cases) {
-        prismRankingByCaseId.set(
-          c.id,
-          computePrismRanking(c.metrics, c.injectTime, { pooling: 'additive' }),
-        );
-      }
-    }
-    const prismTop1ByCaseId = new Map<string, string | undefined>();
-    for (const [id, ranking] of prismRankingByCaseId) {
-      prismTop1ByCaseId.set(id, ranking[0]?.serviceId);
-    }
-
-    // Split by fault type (matching paper's Table 6 format)
-    const byFaultType = new Map<string, BenchmarkCase[]>();
-    for (const c of stats.cases) {
-      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
-      if (!byFaultType.has(ft)) byFaultType.set(ft, []);
-      byFaultType.get(ft)!.push(c);
-    }
-
     // Print topology diagnostics. The line is built by the topology module's ONE renderer, so a field this
     // file names and that module never writes is a compile-time impossibility rather than an `undefined` on
     // every run.
-    const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
-    const diagLine = formatTopologyDiagnostic(diagNode?.labels);
+    const diagLine = formatTopologyDiagnostic(diagLabelsOfFirstCase);
     if (diagLine !== undefined) console.log(diagLine);
-
-    // Run each fault type separately
-    const results = new Map<string, RunResult>();
-    // The dual-family census for this cell. Accumulated from the ranking the correctness checks count from, so
-    // it cannot disagree with the score about who was paid — see `dual-family-census.ts` for why the term's
-    // POPULATION has to be printed at all (a constant membership only re-orders a cell whose family is a
-    // strict subset, and no artifact said how large the family was where the cells did not move).
-    const dualFamily = createDualFamilyCensus();
-    // The three evidence-handling families of arXiv:2608.21310, counted per cell. Always on, on the dual-family
-    // census's rule: an instrument that only ran under a flag would be absent from exactly the acceptance runs
-    // that have to explain a movement.
-    const evidenceAudit = createEvidenceAuditCensus();
-    // The direction term's gate, counted as DECISIONS. Two numbers and not one, because the run's own bar and a
-    // hypothetical fleet bar are different questions and the artifact has to answer both: on the shipped absolute
-    // bar the cell reports the defect (refusals), and `fleet@<share>` states what an arm at that share would have
-    // admitted, which is the number a dispatch is decided on and which no dispatch has yet produced. The what-if
-    // is suppressed when the run's own bar IS a fleet bar — it would then restate the bar.
-    const failedEdgeGate = createFailedEdgeGateCensus(
-      opts.failedEdgeGateMode,
-      opts.failedEdgeGateShare,
-      opts.failedEdgeGateMode === 'absolute' ? DEFAULT_FAILED_EDGE_GATE_SHARE : undefined,
-    );
-    for (const [ft, ftCases] of byFaultType) {
-      if (ftCases.length === 0) continue;
-      const suite: BenchmarkSuite = {
-        name: `${systemName}-${suiteName}-${ft}`,
-        cases: ftCases,
-        totalCases: ftCases.length,
-      };
-      results.set(
-        ft,
-        await runner.runSuite(suite, (record) => {
-          // Always on: the census costs one pass over an array the runner already built, and an instrument
-          // that only ran under a flag would be absent from exactly the acceptance runs that must explain a
-          // movement.
-          accumulateDualFamilyCensus(dualFamily, record);
-          accumulateEvidenceAuditCensus(evidenceAudit, record);
-          accumulateFailedEdgeGateCensus(failedEdgeGate, record);
-          if (diagnoseDump !== undefined) {
-            diagnoseDump.record(
-              groupKey,
-              record.case.id,
-              renderDiagnosedCase(record, {
-                logSignalMode: opts.logSignalMode,
-                useInjectTime: !opts.noInjectTime,
-                fieldDecimals: opts.diagnoseDecimals,
-              }),
-            );
-          }
-        }),
-      );
-    }
     const dualFamilyLine = formatDualFamilyCensusLine(dualFamily);
     if (dualFamilyLine !== undefined) console.log(dualFamilyLine);
     const evidenceAuditLine = formatEvidenceAuditCensusLine(evidenceAudit);
@@ -1699,149 +1904,32 @@ async function main(): Promise<void> {
     const traceZLine = formatTraceZCensusLine(traceZ);
     if (traceZLine !== undefined) console.log(traceZLine);
 
-    // ── Fusion-ceiling records for this group ──
-    // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed
-    // by the shared case id, and record one entry per case.
-    if (opts.fusionCeiling) {
-      const engineTop1ByCaseId = new Map<string, string | undefined>();
-      for (const r of results.values()) {
-        for (const p of r.casePredictions) {
-          engineTop1ByCaseId.set(p.caseId, p.top1);
-        }
-      }
-      const cell = `${suiteName}:${systemName}`;
-      for (const c of stats.cases) {
-        fusionRecords.push({
-          caseId: c.id,
-          cell,
-          truth: c.groundTruth.serviceId,
-          engineTop1: engineTop1ByCaseId.get(c.id),
-          prismTop1: prismTop1ByCaseId.get(c.id),
-        });
-      }
-    }
-
-    // ── Routing-probe records for this group ──
-    // Join the engine's per-case top-2 ranking scores (now carried by the
-    // runner's case predictions) with PRISM's top-2 M-scores, so the offline
-    // frontier analysis can test engine-margin / prism-margin routers.
-    if (opts.routingProbe) {
-      const engineByCaseId = new Map<string, CasePrediction>();
-      for (const r of results.values()) {
-        for (const p of r.casePredictions) {
-          engineByCaseId.set(p.caseId, p);
-        }
-      }
-      const cell = `${suiteName}:${systemName}`;
-      for (const c of stats.cases) {
-        const ep = engineByCaseId.get(c.id);
-        const ranking = prismRankingByCaseId.get(c.id) ?? [];
-        routingRecords.push({
-          caseId: c.id,
-          cell,
-          faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
-          truth: c.groundTruth.serviceId,
-          engineTop1: ep?.top1,
-          engineTop1Score: ep?.top1Score,
-          engineTop2: ep?.top2,
-          engineTop2Score: ep?.top2Score,
-          prismTop1: ranking[0]?.serviceId,
-          prismTop1Score: ranking[0]?.score,
-          prismTop2: ranking[1]?.serviceId,
-          prismTop2Score: ranking[1]?.score,
-        });
-      }
-    }
-
-    // ── Loss-census rows for this group ──
-    // The same join the fusion and routing blocks above perform, asking a different question of it: not
-    // "who was right" but "was the truth reachable at all, and if so how deep".
-    if (opts.lossCensus !== '') {
-      const engineByCaseId = new Map<string, CasePrediction>();
-      for (const r of results.values()) {
-        for (const p of r.casePredictions) engineByCaseId.set(p.caseId, p);
-      }
-      const cell = `${suiteName}:${systemName}`;
-      for (const c of stats.cases) {
-        const ep = engineByCaseId.get(c.id);
-        // The direction of this case's answer, when there is an answer to direct: a correct case has no loss,
-        // and a case that produced no prediction has nothing to place. Computed here because THIS is where the
-        // graph is, and stored because the census is read after the run.
-        const direction =
-          ep?.top1 === undefined || ep.top1 === c.groundTruth.serviceId
-            ? undefined
-            : classifyWinnerRelation(c.callGraph, c.groundTruth.serviceId, ep.top1);
-        lossRecords.push({
-          caseId: c.id,
-          cell,
-          faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
-          truth: c.groundTruth.serviceId,
-          predicted: ep?.top1,
-          correct: ep?.correct ?? false,
-          // The pool is NOT the graph's node set, and it said so here until iteration 166. It is the set of
-          // nodes with a POSITIVE post-deduction anomaly (`performTreeRCA` admits only `selfScore > 0`), which
-          // on a 14-node graph reads 8 or 9 — so a silent node, and a node the topological deduction has fully
-          // explained, are both absent rather than ranked low. The distinction matters because `pool` is read
-          // against `truthRank`: an absent truth and a twenty-sixth-placed truth are different failures, and
-          // `docs/topo-discount-scope.md` §7.4 is the reading that depends on telling them apart.
-          pool: ep?.pool ?? 0,
-          truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
-          truthRank: ep?.truthRank,
-          // …and what the truth's anomaly was BEFORE the deduction, which is the only number that tells the two
-          // absences apart: zero is a silent origin, positive-and-unranked is a node the operator explained
-          // away. An older artifact carries neither, and `classifyTruthAbsence` reports that as `unmeasured`
-          // rather than as either answer.
-          truthAnomalyBefore: ep?.truthAnomalyBefore,
-          // …and whether the origin's own LEVEL moved, read from the series the engine was given rather than
-          // from the score it produced. The score is an opinion about this question; on the RCABench archive
-          // 61 misses carry a level rise of at least threefold and a score below 0.1, and no reading of the
-          // score alone can tell those from a truth that genuinely stood still.
-          truthLevelRise: measureTruthLevelRise(
-            c.metrics.get(c.groundTruth.serviceId),
-            c.injectTime,
-          ),
-          errored: ep?.errored,
-          // The truth's own evidence, carried so a DEEP miss can be split by whether anything moved at the
-          // origin. Read from the runner's record of the truth's own `RootCauseResult` rather than recomputed
-          // here: the threshold that decides the split is the engine's, and a second copy of it in this file
-          // would be a boundary that moves without this line moving.
-          truthEvidence: ep?.truthEvidence,
-          // And the winner's breakdown, so the census can name the term the case was lost to. Both sides are
-          // recorded rather than the difference, because a difference cannot be re-derived into its parts and
-          // the parts can always be differenced.
-          top1Terms: ep?.top1Terms,
-          // …and what the latency CHANNEL's corpus supplied for THIS case, taken from the census's own map rather
-          // than re-spelled here. The lookup is total: `cases` is `loaded`, and every element of it was pushed
-          // after the line that set its entry, so there is no arm to write for an absent supply — and an absent
-          // supply would mean the corpus owner never ran, which its own type cannot express.
-          latencySupply: stats.latencyRouteByCaseId.get(c.id)!,
-          // …and what the WINDOW did to the same case, taken on the series the engine received rather than on
-          // the corpus rows: the loader reshapes a series before the engine sees it, so a census over
-          // `metrics.json` measures a different object and cannot stand in for this one.
-          anchorCensus: deriveAnchorCensus(
-            { metrics: c.metrics, injectTime: c.injectTime, truth: c.groundTruth.serviceId },
-            opts.baselineAnchor,
-          ),
-          // …and WHICH WAY the answer pointed, read off this case's own graph rather than off the service ids.
-          ...(direction === undefined
-            ? {}
-            : { winnerRelation: direction.relation, winnerHops: direction.hops }),
-        });
-      }
-    }
-
-    printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
+    printResultsTable(systemName, suiteName, results, Array.from(results.keys()));
     printFailureDiagnostics(systemName, suiteName, results, opts);
 
-    // Release loaded cases between system groups to prevent OOM.
-    // Each system's 245 cases with trace spans + call graphs + embeddings
-    // consumes 3-5 GB; releasing between groups keeps peak under limit.
-    stats.cases.length = 0;
-    for (const cases of byFaultType.values()) cases.length = 0;
-    byFaultType.clear();
+    // Release the cell before the next one. The CASES are already gone — they are released at each slice boundary,
+    // which is where the resident set is bounded — so what is left here is the per-case records the results carry
+    // and the folded statistics, and this drops the last reference to both.
+    //
+    // `gc()` is only defined under `--expose-gc`, so on a plain dispatch this line does nothing and the release
+    // relies on the collector's own schedule. That is why the resident set is bounded by SLICES rather than by this
+    // call: a release that only works when a flag is passed is not a bound.
     results.clear();
-    if (typeof globalThis.gc === 'function') globalThis.gc();
+    sliceStats.length = 0;
+    resultsByFaultType.clear();
+    collectGarbage();
     await new Promise((resolve) => setTimeout(resolve, 10));
+
+    if (process.env['BENCHMARK_MEM_TRACE'] === '1') {
+      const mem = process.memoryUsage();
+      console.error(
+        `  [mem] cell end ${groupKey} heapUsed=${(mem.heapUsed / 1048576).toFixed(0)}MB` +
+          ` rss=${(mem.rss / 1048576).toFixed(0)}MB` +
+          ` | before-release: slices=${sliceStats.length} results=${results.size}` +
+          ` entries=${resultsByFaultType.size} priorFloorCells=${priorFloorCells.length}` +
+          ` allCases=${allCases.length}`,
+      );
+    }
   }
 
   // The pooled floor, after the last cell and before any optional artifact: the headline this run publishes is a

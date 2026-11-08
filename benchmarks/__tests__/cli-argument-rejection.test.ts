@@ -69,7 +69,7 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import { parseFSE26Args } from '../src/fse26-cli.js';
-import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
+import { DEFAULT_CASE_CHUNK, parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from '../src/rcaeval-engine-options.js';
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
@@ -297,6 +297,15 @@ describe('an unrecognised argument fails loudly', () => {
     // A count that is not a number falls back to "no cap", not to a truncated one.
     expect(parseRCAEvalArgs(['--max-cases', 'abc']).maxCases).toBe(0);
     expect(parseRCAEvalArgs(['--max-cases', '50']).maxCases).toBe(50);
+    // A count that sizes a MEMORY BUDGET falls the other way, and the difference is the whole reason the two are
+    // separate rules. An unusable `--max-cases` reproducing "no cap" reproduces a population, which is a published
+    // thing; an unusable `--case-chunk` reproducing "no slicing" would rebuild the peak the option exists to bound,
+    // and would do it under a typo — on the one machine least able to afford it. So it lands on the shipped slice.
+    expect(parseRCAEvalArgs(['--case-chunk', 'abc']).caseChunk).toBe(DEFAULT_CASE_CHUNK);
+    expect(parseRCAEvalArgs(['--case-chunk', '0']).caseChunk).toBe(DEFAULT_CASE_CHUNK);
+    expect(parseRCAEvalArgs(['--case-chunk', '-4']).caseChunk).toBe(DEFAULT_CASE_CHUNK);
+    expect(parseRCAEvalArgs(['--case-chunk', '32']).caseChunk).toBe(32);
+    expect(parseRCAEvalArgs([]).caseChunk).toBe(DEFAULT_CASE_CHUNK);
     expect(parseRCAEvalArgs(['--temporal-weight', 'nonsense']).temporalWeight).toBe(0);
     // The switches, whose absence of a value is the point.
     expect(parseRCAEvalArgs(['--no-inject-time']).noInjectTime).toBe(true);

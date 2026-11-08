@@ -234,6 +234,16 @@ export function systemMatches(filter: SystemFilter, system: string): boolean {
 }
 
 /**
+ * How many cases of one cell the runner holds in memory at once, by default.
+ *
+ * Chosen against a MEASURED residency of 75–85 MB per parsed case (see `--case-chunk`), so sixteen of them are
+ * 1.2–1.4 GB — a quarter of the 8 GiB container this runs in, which leaves room for the engine's own graph and
+ * embedding state. The number is a machine's answer rather than the corpus's, which is why it is a knob rather
+ * than a constant a caller cannot reach.
+ */
+export const DEFAULT_CASE_CHUNK = 16;
+
+/**
  * Every option the RCAEval runner reads off its command line.
  *
  * Exported with the parser that produces it, so a test can drive the parser directly: the runner
@@ -242,6 +252,19 @@ export function systemMatches(filter: SystemFilter, system: string): boolean {
 export interface CliOptions {
   dataDir: string;
   maxCases: number;
+  /**
+   * How many cases of one cell are held in memory at once, or `0` to hold the whole cell.
+   *
+   * A MEMORY knob, not a ranking input: a case of this corpus is 47–86 MB once parsed (17 000 log rows, 10 000
+   * spans, 100 000 metric points) and a cell is up to 125 of them, so holding a cell resident is 3–10 GB — more
+   * than the container this runs in. The runner folds each slice's statistics and results back into the cell's
+   * (`mergeLoadStats`, `mergeRunResults`), and both folds are exact, so this value moves the peak and nothing else.
+   *
+   * It is dispatchable rather than fixed because the right number is a property of the MACHINE, not of the corpus:
+   * a runner with 64 GB should be allowed to say so, and a runner with 8 GB must be able to say that too. The
+   * default is the smaller machine's answer.
+   */
+  caseChunk: number;
   /**
    * Filter to one system, or `all`.
    *
@@ -793,6 +816,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
   const opts: CliOptions = {
     dataDir: join(homedir(), 'RCAEval-json'),
     maxCases: 0,
+    caseChunk: DEFAULT_CASE_CHUNK,
     system: 'all',
     suite: 'all',
     // From the corpus owner, so this runner cannot describe a corpus the assembler does not have: the three
@@ -908,7 +932,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     if (args[i] === '--data-dir' && hasValue(args, i + 1)) opts.dataDir = args[++i]!;
     else if (args[i] === '--max-cases' && hasValue(args, i + 1))
       opts.maxCases = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--system' && hasValue(args, i + 1))
+    else if (args[i] === '--case-chunk' && hasValue(args, i + 1)) {
+      // A NEGATIVE or unparseable value falls back to the shipped slice rather than to "the whole cell", because
+      // those two failures have opposite consequences: the shipped slice is safe on every machine, whereas a
+      // silent `0` would reintroduce the peak this option exists to bound and would do it only under a typo.
+      const parsed = parseInt(args[++i]!, 10);
+      opts.caseChunk = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CASE_CHUNK;
+    } else if (args[i] === '--system' && hasValue(args, i + 1))
       // Through the vocabulary, which is also the refusal: the raw token reached the run for as long as
       // this line stored it, and the comparison that consumed it could not match anything.
       opts.system = parseSystemFilter(args[++i]!);

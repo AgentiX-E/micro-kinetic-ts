@@ -676,6 +676,81 @@ export interface RunResult {
   readonly duration: number;
 }
 
+/**
+ * Fold several results of the SAME suite into one.
+ *
+ * The runner answers one `RunResult` per `runSuite` call, and the RCAEval path calls it once per MEMORY SLICE of
+ * a cell rather than once per cell: a case there is 47–86 MB of parsed telemetry (17 000 log rows, 10 000 spans,
+ * 100 000 metric points) and the container's ceiling is 8 GiB, so a 90-case group cannot be resident at once. A
+ * noisier budget would have made this function unnecessary; the budget is real, so slicing a cell has to be a
+ * rewrite of the ORDER a cell is processed in and of nothing else.
+ *
+ * That is exactly what this function is for, and why every field is reconstructible rather than approximable:
+ *
+ * - `totalCases`, `duration` and each `perFaultType` count are COUNTS — added.
+ * - `avgTop1`, `avgTop3`, `avgTop5`, `locationAccuracy`, `typeAccuracy`, `acc5` and `typeAccuracy` are ratios
+ *   over those counts — recomputed from the sums, never averaged. An unweighted mean of two slices' rates is a
+ *   different number whenever the slices have different sizes, which is the whole population being sliced into
+ *   uneven remainders.
+ * - `avg5` (RCAEval's `Avg@5`) is the one field with no count beside it, so its SUM is recovered as
+ *   `avg5 × cases` before being divided by the total. The recovery is exact up to floating point because the
+ *   per-slice value was produced by exactly that division.
+ * - `failures` and `casePredictions` are per-case RECORDS — concatenated in slice order, which is the case
+ *   order, so the merged list is the list a single call would have produced.
+ *
+ * @param results - Slice results of one suite, in slice order. Must be non-empty.
+ * @returns The result a single `runSuite` over the whole suite would have produced.
+ */
+export function mergeRunResults(results: readonly RunResult[]): RunResult {
+  const first = results[0];
+  if (first === undefined) throw new Error('mergeRunResults needs at least one slice');
+
+  const totalCases = results.reduce((sum, r) => sum + r.totalCases, 0);
+  const weighted = (pick: (r: RunResult) => number): number =>
+    caseWeightedMean(results.map((r) => ({ accuracy: pick(r), cases: r.totalCases })));
+
+  const perFaultType = new Map<string, FaultTypeMetric>();
+  for (const r of results) {
+    for (const [faultType, m] of r.perFaultType) {
+      const seen = perFaultType.get(faultType);
+      if (seen === undefined) {
+        perFaultType.set(faultType, m);
+        continue;
+      }
+      const cases = seen.cases + m.cases;
+      const correct = seen.correct + m.correct;
+      const top5Correct = seen.top5Correct + m.top5Correct;
+      const typeCorrect = seen.typeCorrect + m.typeCorrect;
+      perFaultType.set(faultType, {
+        cases,
+        correct,
+        accuracy: correct / cases,
+        top5Correct,
+        acc5: top5Correct / cases,
+        // `avg5` is a MEAN with no count of its own beside it, so the sum is recovered before the fold. See
+        // the docblock: the per-slice mean was produced by dividing that same sum by that same `cases`.
+        avg5: (seen.avg5 * seen.cases + m.avg5 * m.cases) / cases,
+        typeCorrect,
+        typeAccuracy: typeCorrect / cases,
+      });
+    }
+  }
+
+  return {
+    suiteName: first.suiteName,
+    totalCases,
+    avgTop1: weighted((r) => r.avgTop1),
+    avgTop3: weighted((r) => r.avgTop3),
+    avgTop5: weighted((r) => r.avgTop5),
+    locationAccuracy: weighted((r) => r.locationAccuracy),
+    typeAccuracy: weighted((r) => r.typeAccuracy),
+    perFaultType,
+    failures: results.flatMap((r) => r.failures),
+    casePredictions: results.flatMap((r) => r.casePredictions),
+    duration: results.reduce((sum, r) => sum + r.duration, 0),
+  };
+}
+
 /** Complete benchmark report across all suites. */
 export interface CompleteBenchmarkReport {
   /** Individual suite results. */

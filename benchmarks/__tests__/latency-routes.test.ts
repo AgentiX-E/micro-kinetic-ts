@@ -516,11 +516,16 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     // anything. A diagnostic must be a function of what the producer wrote, and the producer wrote the rows.
     const golden = read('src/run-rcaeval.ts');
     const battery = read('src/run-ablation.ts');
+    // The census field's DECLARATION is asserted in `load-stats.ts`, not in the runner, since iteration 250 moved
+    // `LoadStats` out of `run-rcaeval.ts` so the folds it defines could be tested without importing a script that
+    // runs `main()` on import. The assertion follows the owner: a field named in a runner's own object literal
+    // would be a second declaration of the same census.
+    const statsOwner = read('src/load-stats.ts');
     // The threading, in the order it travels: the assembler's own field, read at the call site, carried by both
     // functions that handle a case, and aggregated by the owner's summariser.
     expect(golden).toMatch(/const \{[^}]*\blatencyRoute\b[^}]*\}/);
     expect(golden).toMatch(/latencyRoute: assembled\.latencyRoute/);
-    expect(golden).toMatch(/latencyRoutes: LatencyRouteCensus/);
+    expect(statsOwner).toMatch(/latencyRoutes: LatencyRouteCensus/);
     expect(golden).toMatch(
       /latencyRoutes: summarizeLatencyRoutes\(\[\.\.\.latencyRouteByCaseId\.values\(\)\]\)/,
     );

@@ -219,11 +219,15 @@ export interface RCAEvalEngineOptions {
 }
 
 /**
- * Every parsed option that must NOT reach the engine, with the reason it is not a ranking term.
+ * Every parsed option that must NOT reach the engine.
  *
- * A `Record` rather than a list so each exemption carries its reason: "not a ranking knob" and "a
- * ranking knob that was silently dropped" are the same shape in a set, and telling those two apart
- * is the whole point of the partition the test asserts.
+ * A list of keys here, and a `Record` of reasons in the census
+ * (`OPERATIONAL_OPTIONS` in `packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts`), because
+ * the two owners answer different questions: this file asserts the PARTITION the builder applies (an
+ * option is forwarded or it is not), and the census records WHY each exemption is not a ranking term.
+ * "Not a ranking knob" and "a knob that was silently dropped" are the same shape in a set, so an
+ * exemption with no stated reason is the failure mode that partition exists to prevent — and the census
+ * test asserts the two lists name the same members, in both directions.
  */
 export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   'dataDir',
@@ -237,6 +241,10 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   'diagnoseDump',
   'diagnoseDecimals',
   'lossCensus',
+  // How many cases the loader holds at once. A property of the walk, not of the engine: the cell is folded from
+  // the slices exactly as it would be folded from one pass (`mergeLoadStats`/`mergeRunResults`), so the published
+  // numbers must be identical at any chunk size — `docs/rcaeval-memory-bound.md` measures that invariance.
+  'caseChunk',
 ];
 
 /**

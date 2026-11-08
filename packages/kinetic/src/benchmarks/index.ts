@@ -42,6 +42,7 @@ export {
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,
+  hasThrownExceptionMatch,
   isLogicExceptionMessage,
   isPropagatedExceptionMessage,
   isStackTraceMessage,
@@ -187,7 +188,7 @@ export {
 
 // ── Benchmark Runner ──────────────────────────────────────
 
-export { BenchmarkRunner } from './runners/benchmark-runner.js';
+export { BenchmarkRunner, mergeRunResults } from './runners/benchmark-runner.js';
 
 // The single owner of the case -> engine-options mapping. Exported so the
 // FSE'26 runner (which builds its fault graph inline) cannot drift from

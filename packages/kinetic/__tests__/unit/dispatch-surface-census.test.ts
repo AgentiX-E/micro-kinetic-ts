@@ -217,6 +217,10 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'writes one verdict line per case (datapack, label set, top-5) for a judgement chosen after the run; an ' +
     'output path, and the engine never reads it back — the ranking it exports is the one `top1` already counts',
   dropMetrics: 'load-time ablation of the INPUT, applied before the engine runs',
+  caseChunk:
+    'bounds how many cases one memory slice holds; a property of the LOADER, not of the ranking — two chunk ' +
+    'sizes are two ways of walking the same corpus, and `docs/rcaeval-memory-bound.md` pins the invariance ' +
+    'by comparing the two outputs line by line',
   latencyView:
     'selects which view of `edgeLatency` the CORPUS carries; a property of the INPUT rather than a term ' +
     'in the ranking — the knob it feeds is `latWeight`, which has a row of its own. It is the axis of the ' +
@@ -1096,6 +1100,10 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
   // state the negated input does not, exactly as `--rank-normalization` does three lines up.
   '--suppress-demand-metrics',
+  // `--case-chunk` is NOT here: this list is for RANKING knobs a dispatch cannot reach, and the chunk size is
+  // not a axis of the ranking at all — it is how many cases the loader holds at once. Its row lives in
+  // `OPERATIONAL_FLAGS_UNREACHABLE`, where the reason a workflow must not ask for it is stated. Filing it here
+  // would have passed the exact-set assertion and stated something false: that the cell depends on the chunk.
   // `--topo-discount` USED TO BE HERE and is not any more: it was retired to the 25-input budget after being
   // refused at two weights in the ratio form, and the successor measure — a deduction of the response
   // channels a callee can actually explain — is dispatchable on both halves as `topodiscount`/`topo_scope`.
@@ -1141,6 +1149,13 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     '`docs/benchmark-corpus-completeness.md`). The option stays accepted by the parser and reachable from ' +
     "the FSE'26 dispatch, which caps a DIFFERENT benchmark whose sampling decision is its own — so this is " +
     'a directed decision, not an unwired knob',
+  '--case-chunk':
+    'bounds how many cases one memory slice holds. The workflow does not pass it, and must not: the default IS ' +
+    'the bound the corpus needs (sixty-four 8-GiB-safe slices for the whole 723-case grid), so a dispatch that ' +
+    'could lower it would only buy wall-clock with nothing to show for it, and a dispatch that could raise it ' +
+    'could OOM the job. The published cell is independent of the value — ' +
+    '`docs/rcaeval-memory-bound.md` runs one cell at two chunk sizes and diffs the outputs line by line — ' +
+    'which is exactly why it belongs on this list rather than as a workflow input',
 };
 
 /**

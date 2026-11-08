@@ -231,6 +231,17 @@ export default defineConfig({
         // against a champion, a concentration that must not absorb the silent cases), so every branch is measured
         // rather than trusted.
         'src/log-flood-census.ts',
+        // Added with the module: the two folds that make memory slicing a rewrite of the ORDER a cell is processed
+        // in rather than a change to what it reports. Measured rather than trusted for the reason the folds exist:
+        // a count that is not added, a mean that is averaged instead of re-derived, or a summary folded as a summary
+        // each produces a plausible number that no single pass would have produced — and the artifact cannot tell
+        // the difference from the outside.
+        'src/case-slicing.ts',
+        'src/load-stats.ts',
+        // Added with the module: obtaining a collector a plain dispatch does not expose. Its whole value is the
+        // difference between a release and a reclamation — the runner drops 3 GB of cases per cell and, without a
+        // collection, keeps every page until V8 next feels pressure.
+        'src/collect-garbage.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
