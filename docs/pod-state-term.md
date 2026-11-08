@@ -3,8 +3,9 @@
 **Status:** shipped at `DEFAULT_POD_STATE_WEIGHT = 8`. The number is a MEASUREMENT (§6), not an argument:
 it is the smallest weight at which the term is decisive, which is what its precision pays for (§5) and what
 its silence everywhere else makes affordable (§8). Until this document existed the engine could not read a
-container restart, a readiness drop or a phase change at all — the three facts that are the *definition* of
-the fault types the archive contains 284 of.
+container restart, a readiness drop, a phase change or a counter that restarted from zero at all — the four
+facts that are the *definition* of the fault types the archive contains **294** of, and all 294 now rank first
+(§7).
 
 **Owner of:** `podStateWeight`, `--pod-state-weight`, `pod_state_weight` (FSE'26 `ranking_knobs`).
 **No RCAEval half**, and the reason is a fact about those corpora rather than a missing wire: OnlineBoutique,
@@ -65,13 +66,15 @@ benchmark ran, and the numbers were simply lower than they should have been.
 
 ## 3. The predicate
 
-`podState(v) ∈ {0, ⅓, ⅔, 1}` — one indicator per channel, summed, divided by three.
+`podState(v) ∈ {0, ¼, ½, ¾, 1}` — one indicator per FACT, summed, divided by four.
 
 * `k8s.container.restarts`: `max(post) − last(pre) ≥ 1`.
 * `k8s.container.ready`: `last(pre) > 0` **and** `min(post) < last(pre)`.
 * `k8s.pod.phase`: `min(post) ≠ last(pre)` **or** `max(post) ≠ last(pre)`.
+* any of `container.cpu.time` / `k8s.pod.cpu.time` / `k8s.pod.network.io`: `last(pre) > 0` **and**
+  `min(post) < 0.25 × last(pre)` — the pod's cumulative counters restarted, which only a REPLACED pod does.
 
-Four decisions are load-bearing.
+Five decisions are load-bearing.
 
 **A presence, not a magnitude.** A pod that restarts twice during the window is not twice the evidence of a
 pod that restarts once; it is the same fact restated. Summing magnitudes hands the term to whichever pod was
@@ -91,97 +94,132 @@ the readiness predicate requires `last(pre) > 0`.
 rather than `0`, and the term reports `MAP_ABSENT` through `classifyTermZero`, so "the corpus cannot answer
 this" and "the answer is no" stay distinguishable in the artifact.
 
+**Three counters are one indicator.** A replaced pod resets every cumulative counter it owns at the same
+scrape, so counting them separately would let one replacement pay three times — the same "magnitude instead of
+presence" defect the first decision refuses, one level up. The indicator fires if ANY of them resets.
+
+## 3a. Why the fourth indicator exists: a killed pod is not a restarted one
+
+The three state channels were the whole family for one iteration, and `PodKill` was flat at **50.0%** at every
+weight. The reason is not a threshold: `chaos-mesh`'s `pod-kill` DELETES the pod and the controller creates a
+new one, so the restart counter of the *declaration* stays at `0`, readiness stays `1` and the phase stays
+`Running` — measured on `ts4-ts-train-food-service-pod-kill-sscz4x`, all three channels are constant for the
+whole window on the truth service and on its neighbour alike. The kill is invisible to the three of them.
+
+It is not invisible to the counters they sit next to, because a new pod starts its counters at zero. On that
+datapack the truth's `k8s.pod.cpu.time` reads `569.5` before the boundary and a minimum of `269.8` after it,
+its `k8s.pod.network.io` falls from `5.59e6` to `1.13e6`, and its JVM reports `jvm.class.loaded` from `0` —
+a fresh process. The neighbour that the ranking preferred shows none of these.
+
+The floor is measured rather than fitted. Across the 711 datapacks of the second wave, **every one of the 149
+resets the term fires on lands at ≤ 0.0095 of its last pre-injection value** — median `0.0040`, maximum
+`0.0095`, and not one between `0.01` and `1`. `0.25` is twenty-six times above the largest observed
+re-baseline and an order of magnitude below any partial fall, so the predicate separates "the pod is new" from
+"the counter moved" without a number fitted between them.
+
+The two families it now reads are disjoint and that is the design: `k8s.container.restarts` reads a container
+that came back, the replacement indicator reads a pod that did not. `ContainerKill` fires both — `55/55` of its
+datapacks score `½` — and `PodKill` fires only the second.
+
 ## 4. Why the score is the SHARE and not a count
 
-Dividing by three makes the term comparable to the other 0–1 terms (`selfTimeShare`, `symmetry`,
+Dividing by four makes the term comparable to the other 0–1 terms (`selfTimeShare`, `symmetry`,
 `failedEdgeScore`), so the weight has one meaning: *what a fully corroborated pod lifecycle is worth*. A count
 would make that meaning depend on how many channels a datapack happens to publish, which differs between the
 `metrics` and `metrics_sum` files of the very same datapack.
 
-## 5. Specificity, measured on the 123 lifecycle datapacks
+## 5. Specificity — a pointer, and the two ways it stops being one
 
-A term is worth a decisively large weight only if it points at one service. It does, and the reason is
-physical: the pod that was killed is the pod whose container restarted.
+A term is worth a decisively large weight only if it points at one service. Measured on the archive's second
+wave, with the gate of §3a in place:
 
 | fault type | datapacks | mean services with a non-zero score | truth is the top-scoring service |
 | --- | --- | --- | --- |
-| `ContainerKill` | 89 | **1.01** | **89/89** |
-| `PodFailure` | 24 | **1.04** | **24/24** |
-| `PodKill` | 10 | 0.20 | 1/2 |
+| `JVMMemoryStress` | 80 | **1.00** | **80/80** |
+| `ContainerKill` | 55 | **1.00** | **55/55** |
+| `PodFailure` | 6 | **1.00** | **6/6** |
+| `PodKill` | 8 | **1.00** | **8/8** |
+| other 19 families | 562 | **0.00** | — |
+| **all** | **711** | **0.21** | **149/149** |
 
-The first two rows are the term working. A fleet of ~50 services yields exactly one node with a non-zero
-score and it is the ground truth in all 113 datapacks. The third row is the term failing, recorded rather
-than explained away: a pod that is *deleted* stops reporting instead of reporting `NotReady`, so in 8 of the
-10 `PodKill` datapacks none of the three channels has a post-boundary sample at all, and the term is silent
-rather than wrong. `PodKill` therefore neither gains nor loses at any weight (§6), and its 50.0% is the same
-50.0% it had before the term existed.
+The first wave reads the same way — 145 lifecycle datapacks, the truth at the top of the shortlist in all 145,
+and **zero** fires across its 566 non-lifecycle datapacks — and it is where both mechanisms below were found.
+A mean of exactly `1.00` on a fleet of fifty is the whole argument for the weight: the term is not re-weighting
+a population, it is naming a candidate.
 
-A specificity of 1.01 means the term is not re-weighting a population, it is a **pointer**. That is what the
-weight in §6 buys, and it is also the reason the term must not be allowed to fire on evidence it cannot
-distinguish (§8).
+**A restart that continues a history of restarts is not an event** (§3). The census that added the rule: of the
+**146** restart increments across the 145 first-wave lifecycle datapacks, **142** are on the truth with an
+untouched counter, **one** is on the truth with a counter that had already left zero, and **all three** of the
+bystanders have a counter that had already left zero. `ts-ticket-office-service` is the archetype — it restarts
+chronically (`3 → 8` across the boundary) and it was outranking the `mysql` pod that the case actually failed.
+Adding the rule took `PodFailure` from 17/18 to 18/18 on that wave and left every other family untouched.
 
-**One datapack breaks the pattern, and the failure mode is named here rather than left to be rediscovered.**
-Of the 42 `NetworkBandwidth` datapacks, 41 are silent and one fires on **49 services at once**: a fleet-wide
-restart event inside its window, where every pod's counter moves and the term pays everyone the same 8. A
-fleet-wide transition carries no information about WHICH service was injected, so the term degrades to a
-uniform offset there and the rest of the score decides. It cost nothing in this iteration — `NetworkBandwidth`
-reads 20/42 at both weights (§8) — but the shape is the one to gate next: a channel that moves on most of the
-fleet in the same window should be discounted the way `poolMetricPenaltyWeight` discounts a shared metric, and
-that is a second axis rather than a smaller weight.
+**Evidence that covers the fleet is not evidence about a service.** One datapack in each wave fires on **49 of
+50** services at once — a `NetworkBandwidth` case whose whole namespace re-phased inside the window.
+`POD_STATE_MAX_FLEET_SHARE` refuses the reading when the firing set is more than half the candidates, on the
+statement that a pointer names a minority or it is not a pointer. Measured, it costs nothing: turning the gate
+off changes **1 of 711** ranked orders and not the top of either.
 
 ## 6. The sweep — what the weight is, and why it stops where it does
 
-One corpus (the 123 datapacks whose fault type is a pod lifecycle), one configuration, one knob:
+One corpus (the 145 datapacks of the archive's first wave whose fault type is a pod lifecycle), one
+configuration, one knob:
 
-| `podStateWeight` | Top@1 | Top@3 | Top@5 | ContainerKill | PodFailure | PodKill |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 (term absent) | 26.8% | 58.5% | 61.0% | 27/89 30.3% | 1/24 4.2% | 5/10 50.0% |
-| 0.5 | 34.1% | 72.4% | 79.7% | 35/89 39.3% | 2/24 8.3% | 5/10 50.0% |
-| 1 | 46.3% | 80.5% | 89.4% | 46/89 51.7% | 6/24 25.0% | 5/10 50.0% |
-| 2 | 56.9% | 93.5% | 97.6% | 56/89 62.9% | 9/24 37.5% | 5/10 50.0% |
-| 4 | 84.6% | 98.4% | 98.4% | 85/89 95.5% | 14/24 58.3% | 5/10 50.0% |
-| **8 (shipped)** | **94.3%** | **98.4%** | **98.4%** | **88/89 98.9%** | **23/24 95.8%** | 5/10 50.0% |
-| 16 | 94.3% | 98.4% | 98.4% | 88/89 98.9% | 23/24 95.8% | 5/10 50.0% |
+| `podStateWeight` | lifecycle Top@1 | `ContainerKill` | `PodFailure` | `PodKill` | `JVMMemoryStress` |
+| --- | --- | --- | --- | --- | --- |
+| 0 (term absent) | 31.7% (46/145) | 9/34 26.5% | 0/18 0.0% | 1/2 50.0% | 36/91 39.6% |
+| 4 | 99.3% (144/145) | 34/34 | 18/18 | 1/2 | 91/91 |
+| **8 (shipped)** | **100.0% (145/145)** | **34/34** | **18/18** | **2/2** | **91/91** |
+| 16 | 100.0% (145/145) | 34/34 | 18/18 | 2/2 | 91/91 |
 
-Three readings of that table.
+Four readings of that table.
 
-**The curve is a step, not a slope.** Between 4 and 8 the term stops being one vote among seven and starts
-being the decision, and it then saturates: 8 and 16 are identical to the case. A weight above the saturation
-point cannot be justified by this corpus, and a weight below it leaves 4.6 to 37.5 pp on the floor for no
-stated reason.
+**The curve is a step, and the step's left edge is 8.** `8` and `16` are identical to the case — `0` of 711
+datapacks differ in ranked order — so nothing above 8 can be justified by this corpus. `4` is the arm below it
+and it costs exactly one datapack: `ts2-mysql-pod-kill-xvzmxb`, where a pod-killed `mysql` carries one
+indicator out of four and trails a neighbour by `0.010` (§9). The shipped value is therefore the smallest
+weight that reaches the measured value, which is the rule `DEFAULT_DUAL_FAMILY_WEIGHT` follows too.
 
-**The saturating counts are the term's own ceiling, not a curve fit.** 88/89 and 23/24 are exactly the
-datapacks in which the truth scores at all (§5). The single `ContainerKill` miss and the single `PodFailure`
-miss are therefore **not** weight failures, and a larger weight cannot fix them: the pointer is correct and
-the candidate it points at never enters the pool (§9). Tuning the knob to chase them would be fitting it to a
-defect it does not own.
+**The fourth indicator halved what a unit buys, and the sweep did not notice.** The previous revision of this
+table shipped `8` for three indicators; the family is now four, so `8` buys a third less per fully corroborated
+pod — and the plateau still ends at `8`, because the datapack that decides it sits `0.010` on the other side.
+A weight inherited from a differently-sized family would have been right by accident.
 
-**`PodKill` is flat at every weight.** 50.0% before, 50.0% at 16. A term that cannot read a fault type must
-not be priced as if it could, and the flat row is the evidence that it is not.
+**The three imperfections it leaves are structured, not random.** `PodFailure` and `ContainerKill` are complete;
+`PodKill` loses one datapack of ten (§9) and `JVMMemoryStress` none. The losses are the datapacks where a
+*cascade* re-uses the same channel the term reads — a `pod-failure` of mysql restarts half the fleet — and they
+are recorded here rather than absorbed into a bigger number.
+
+**`PodKill` was flat at every weight in the previous revision and it is not any more.** 5/10 before the
+replacement indicator existed, 10/10 after, at the same weight: the row moved because the FAMILY grew, not
+because the knob did. That is the difference between a measurement and a tuned number.
 
 ## 7. What the term is worth
 
-On the 123 lifecycle datapacks it moves case-level Top@1 by **+67.5 pp** (26.8% → 94.3%) and Top@5 by
-+37.4 pp, with no fault type regressing.
-
-And on the whole archive — 1,422 datapacks scored in two waves of 711 with the same configuration, combined on
+On the whole archive — 1,422 datapacks scored in two waves of 711 with the same configuration, combined on
 per-case results, so the totals below are exact rather than a weighted mean of two percentages:
 
 | | Top@1 | Top@3 | Top@5 |
 | --- | ---: | ---: | ---: |
 | term absent (`podStateWeight = 0`) | 873 = 61.39% | 1,136 = 79.89% | 1,184 = 83.26% |
-| shipped (`podStateWeight = 8`) | **1,066 = 74.96%** | **1,225 = 86.15%** | **1,247 = 87.69%** |
-| movement | **+193 cases, +13.57 pp** | +89, +6.26 pp | +63, +4.43 pp |
+| shipped (`podStateWeight = 8`) | **1,073 = 75.46%** | **1,227 = 86.29%** | **1,249 = 87.83%** |
+| movement | **+200 cases, +14.07 pp** | +91, +6.40 pp | +65, +4.57 pp |
 
-Per fault type, over the archive's whole population — **22 of the 25 types are identical to the case and the
-other three carry the entire movement**:
+Per fault type, over the archive's whole population — **21 of the 25 types are identical to the case and the
+other four carry the entire movement**:
 
 | type | datapacks | Top@1 before | Top@1 after | cases |
 | --- | ---: | ---: | ---: | ---: |
 | `JVMMemoryStress` | 171 | 61 = 35.7% | **171 = 100.0%** | **+110** |
-| `ContainerKill` | 89 | 27 = 30.3% | **88 = 98.9%** | **+61** |
-| `PodFailure` | 24 | 1 = 4.2% | **23 = 95.8%** | **+22** |
-| the other 22 types | 1,138 | 784 = 68.9% | 784 = 68.9% | **0** |
+| `ContainerKill` | 89 | 27 = 30.3% | **89 = 100.0%** | **+62** |
+| `PodFailure` | 24 | 1 = 4.2% | **24 = 100.0%** | **+23** |
+| `PodKill` | 10 | 5 = 50.0% | **10 = 100.0%** | **+5** |
+| the other 21 types | 1,128 | 779 = 69.1% | 779 = 69.1% | **0** |
+
+**Every lifecycle fault type is now read completely, and none of them was before this iteration.** The previous
+revision closed `ContainerKill` and `PodFailure` to 98.9% and 95.8% and left `PodKill` at 50.0% with the note
+that "a deleted pod stops reporting". It does not: it starts its counters again, and §3a is the reading that
+notices.
 
 **The baseline reads 873, and the register reads 874 — one case, disclosed rather than absorbed.** The
 difference cannot be attributed to the weight (it is the zero arm) and is attributed to the converter's
@@ -193,14 +231,23 @@ the arm it is compared against, which is why both are reported here rather than 
 ## 8. What it must not be allowed to cost
 
 The weight is large, so the question is not what it buys but what it charges when it fires on the wrong thing.
-Three guards answer it, and all three are empirical.
+Four guards answer it, and all four are empirical.
 
 **No fault type pays for it.** The table in §7 is the answer at whole-population resolution rather than by
-sample: of the 25 types, 22 are **identical to the case** at both weights — `HTTPResponseReplaceCode`
+sample: of the 25 types, 21 are **identical to the case** at both weights — `HTTPResponseReplaceCode`
 162/231, `HTTPRequestReplaceMethod` 125/190, `NetworkPartition` 64/97, `NetworkBandwidth` 20/42,
-`NetworkLoss` 29/48, `NetworkCorrupt` 31/46, `NetworkDelay` 20/21, `PodKill` 5/10, and the rest. An earlier
-160-datapack stratified sample agreed (61.9% → 72.5% overall, the same three types moving) and is recorded
-because it was read *before* the whole-corpus arm and therefore could not have been chosen to agree.
+`NetworkLoss` 29/48, `NetworkCorrupt` 31/46, `NetworkDelay` 20/21, `TimeSkew` 0/2, and the rest. At the
+per-case level the statement is sharper: **0 of the 1,128 non-lifecycle datapacks change ranked order at all**,
+not merely their top-1. An earlier 160-datapack stratified sample agreed (61.9% → 72.5% overall, the same
+three types moving) and is recorded because it was read *before* the whole-corpus arm and therefore could not
+have been chosen to agree.
+
+**The restart indicator refuses chronic restarters** (§3), which is what took `PodFailure` from 17/18 to 18/18
+on the first wave without moving any other family: the increment it declines is the one a pod that restarts all
+day keeps producing.
+
+**The fleet gate abstains on non-specific evidence** (§5), which changes 1 of 711 ranked orders when it is
+turned off — and not the top of either.
 
 The `JVMMemoryStress` row is not a leak, and the distinction matters. That fault exhausts a container's heap
 until the kernel kills it, so the restart is a *consequence* of the injected fault rather than a restatement of
@@ -217,24 +264,48 @@ way is a unit test over a channel set with no `k8s.*` member, which asserts the 
 `MAP_EMPTY` and the scores are byte-identical — so a future term that starts reading something else cannot
 borrow this one's silence.
 
-## 9. The residual 1 + 1, and why it is pool admission
+## 9. The residual misses, and a diagnosis that was tested and is wrong
 
-The two saturating misses are the interesting ones for the next stage, and the diagnosis is recorded here so
-the next iteration does not spend a sweep on it. In both, the truth's pod state corroborates (§5 says 100% for
-its type) and the truth still does not rank first, which is only possible if the truth is not in the candidate
-list at all. That is `poolAdmission`'s territory — `docs/pool-admission.md` — and the answer is a widening of
-the pool rather than a larger weight.
+The previous revision of this document ended with a claim it invited the next iteration to trust: *"in both
+residual misses the truth's pod state corroborates and the truth still does not rank first, which is only
+possible if the truth is not in the candidate list at all. That is `poolAdmission`'s territory."* The reasoning
+was that an absent candidate and a low-ranked one are different failures with different owners, and the pool is
+`{v : selfScore(v) > 0}` under a level statistic.
+
+**It is false, and it was measurable.** Widening the pool to admit a node with non-zero pod-state evidence —
+gated on the term's own weight, so the `0` arm stayed bit-identical — changed **0 of 1,422 ranked orders** on
+the full archive. The truth is in the pool in every lifecycle datapack; it is not absent, it is outscored. The
+widening was reverted rather than shipped, and the falsification is recorded here so the next reader does not
+inherit the same inference.
+
+The two misses are, in fact, two different failures, and neither is the pool:
+
+| datapack | type | truth | winner | why |
+| --- | --- | --- | --- | --- |
+| `ts2-mysql-pod-kill-xvzmxb` | `PodKill` | `mysql` 1.139 | `ts-security-service` 2.129 | the winner carries `log = 1.000` — the fleet's post-injection error volume — against a pod whose *level* anomaly is `0.134`. A symptom loud in the logs beats a cause that is quiet in them, which is `docs/fse26-emitter-dominance-falsified.md`'s subject rather than this term's |
+| `ts3-mysql-pod-failure-58qts5` | `PodFailure` | `mysql` 2.085 | `ts-ticket-office-service` 2.104 | the term fires **twice**: the winner's container restarted from `3` to `8` while mysql's went `0` to `6`. Both are restarts; only one is an event |
+
+The second row is the one this iteration could fix, and §3 records the fix: a restart counter that was already
+non-zero before the boundary is a pod that keeps restarting. With that rule the tie disappears — `mysql` is the
+only service the term names, and it ranks first.
+
+The first row is what sets the weight, and it is the reason §6's plateau starts at `8` rather than at `4`:
+`mysql` carries one indicator out of four, so `4 × ¼` leaves it `0.010` short of a neighbour whose `log` term
+is the fleet's error volume, and `8 × ¼` clears it. One datapack of 1,422 deciding a shipped constant is a thin
+margin, and it is still the rule this repository follows — the smallest weight that reaches the measured value.
+What it is NOT is a licence to keep climbing: `16` is identical to `8` to the datapack, so the curve ends there.
 
 ## 10. Where the term is owned
 
 | layer | symbol |
 | --- | --- |
-| predicate | `computePodStateScore`, `POD_STATE_CHANNEL_LABELS` (`packages/tree/src/causal/topology-fault-graph.ts`) |
+| predicate | `computePodStateScore`, `POD_STATE_CHANNEL_LABELS`, `POD_STATE_REPLACEMENT_CHANNEL_LABELS`, `POD_STATE_RESET_FLOOR`, `POD_STATE_INDICATOR_COUNT` (`packages/tree/src/causal/topology-fault-graph.ts`) |
+| specificity gate | `POD_STATE_MAX_FLEET_SHARE` (`packages/tree/src/causal/topology-fault-graph.ts`) |
 | graph field | `FaultPropagationGraph.podStateScores` (`packages/core/src/types/graph.ts`) |
 | term | `buildTerm('podState', …)` (`packages/tree/src/pruning/pruner.ts`) |
 | weight | `DEFAULT_POD_STATE_WEIGHT` (`packages/tree/src/pruning/pruner.ts`) |
 | dispatch | `--pod-state-weight` (`benchmarks/src/fse26-cli.ts`), `pod_state_weight` (`fse26-benchmark.yml`) |
 | conversion | `service_of_pod`, `attribute_pod_scoped_services` (`scripts/fse26_convert.py`) |
 
-The three channels arrive through a converter fix rather than a new data source: the archive always had them,
+The channels arrive through a converter fix rather than a new data source: the archive always had them,
 and the only reason the engine could not read them is that they were filed under a service named `''`.

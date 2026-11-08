@@ -1431,3 +1431,33 @@ Two readings that are easy to get wrong and are recorded so they are not:
 residual misses at saturation are pool admission, not weight — the pointer is right and its candidate never enters
 the pool. Tuning this knob to chase them would be the "flippable vs would-be-hurt" mistake the top of this
 register exists to prevent.
+
+## Iteration 247 — the fault type the register's own row said the term could not read
+
+The row above ends with a sentence that this iteration falsified: *"`PodKill` is flat at 50.0% at every weight
+because a deleted pod stops reporting."* A deleted pod does not stop reporting — a **new** one starts. What
+stops is the *declaration's* counters, and the three state channels read the declaration. The pod object's own
+cumulative counters (`container.cpu.time`, `k8s.pod.cpu.time`, `k8s.pod.network.io`) restart at zero when the
+object is replaced, which is a fourth kind of fact and now a fourth indicator:
+
+| population | before | after |
+| --- | ---: | ---: |
+| `PodKill`, 10 datapacks | 5 = 50.0% | **10 = 100.0%** |
+| `PodFailure`, 24 | 23 = 95.8% | **24 = 100.0%** |
+| `ContainerKill`, 89 | 88 = 98.9% | **89 = 100.0%** |
+| FSE'26, 1,422, `Top@1` | 1,066 = 74.96% | **1,073 = 75.46%** |
+
+Two more mechanisms came out of the same pass, and one candidate mechanism was **measured and refused**:
+
+* **A restart counter that was already non-zero is not an event.** Of the 146 restart increments across the
+  archive's 145 first-wave lifecycle datapacks, 142 are on the truth starting from an untouched counter, one is
+  on the truth starting from a non-zero one, and **all three** bystanders start from a non-zero one. Requiring
+  `lastPre = 0` removed every bystander, cost one truth, and took `PodFailure` from 17/18 to 18/18.
+* **Evidence covering the fleet is not about a service.** One datapack per wave fires on 49 of 50 services at
+  once; `POD_STATE_MAX_FLEET_SHARE` refuses the reading when the firing set is more than half the candidates.
+  Turning the gate off changes 1 of 711 ranked orders and not the top of either.
+* **Pool admission was refused, on measurement.** The previous row predicted the two residual misses were a
+  candidate that "never enters the pool". Widening the pool to admit non-zero pod-state evidence changed
+  **0 of 1,422** ranked orders. It was reverted rather than shipped; the misses are a `log`-dominance loss
+  (`ts2-mysql-pod-kill-xvzmxb`) and a chronic-restarter tie (`ts3-mysql-pod-failure-58qts5`), and the second
+  one is now closed by the rule above.

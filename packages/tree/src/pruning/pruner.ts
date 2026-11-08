@@ -946,15 +946,18 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *
    *   finalScore(v) += podStateWeight × podState(v)
    *
-   * `podState` is the share of {@link POD_STATE_CHANNEL_LABELS} that changed across the boundary (see
+   * `podState` is the share of the pod-state family that changed across the boundary (see
    * `computePodStateScore`): a restart counter that incremented, a container that went not-ready, a phase that
-   * left Running. It is the direct evidence for a kill-class fault, and it is the one reading the level guards
-   * cannot take — a counter that sits at zero until the kill is refused as duty-cycled, and a channel whose two
-   * ends agree is refused as transient.
+   * left Running, or a cumulative counter that restarted from zero because the pod object itself was replaced.
+   * It is the direct evidence for a kill-class fault, and it is the one reading the level guards cannot take —
+   * a counter that sits at zero until the kill is refused as duty-cycled, and a channel whose two ends agree is
+   * refused as transient.
+   *
+   * At 0 the map is not read at all and the ranking is bit-identical to the engine that had no such term, which
+   * is what makes the ablation exact.
    *
    * Ships at {@link DEFAULT_POD_STATE_WEIGHT} = 8, the smallest weight at which the term decides rather than
-   * votes; `docs/pod-state-term.md` owns the sweep. At 0 the map is not read at all and the ranking is
-   * bit-identical to the engine that had no such term, which is what makes the ablation exact.
+   * votes; `docs/pod-state-term.md` owns the sweep.
    */
   readonly podStateWeight: number;
 }
@@ -1199,26 +1202,33 @@ export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
 /**
  * The shipped value of {@link TreePrunerOptions.podStateWeight}.
  *
- * `8` is the SMALLEST weight at which the term is decisive, and that is the only stable description of it: the
- * sweep in `docs/pod-state-term.md` reads Top@1 26.8 / 34.1 / 46.3 / 56.9 / 84.6 / **94.3** / 94.3 at
- * 0 / 0.5 / 1 / 2 / 4 / **8** / 16 on the archive's 123 pod-lifecycle datapacks, so the curve is a step
- * that SATURATES at 8 and the two arms above it are identical to the case.
+ * `8` is the SMALLEST weight at which the term is decisive, and that is the only stable description of it. The
+ * sweep in `docs/pod-state-term.md` §6 reads lifecycle `Top@1` **31.7 / 99.3 / 100.0 / 100.0** at
+ * **0 / 4 / 8 / 16** on the archive's 145 first-wave lifecycle datapacks, and the two arms above 8 are
+ * identical to the case: **0** of 711 datapacks differ in ranked order between 8 and 16.
+ *
+ * The number is 8 rather than 4 because ONE datapack lives between them — `ts2-mysql-pod-kill-xvzmxb`, where a
+ * pod-killed `mysql` carries one indicator (`¼`) and loses by `0.010` to a neighbour whose `log` term is the
+ * fleet's post-injection error volume. That is a thin margin and it is still a margin: the smallest weight that
+ * reaches the measured value is the one that leaves the most room before the next mechanism matters.
  *
  * Three facts justify a weight this large, and the third is why it is not larger.
  *
- * * **The term is a pointer, not a vote.** On those 123 datapacks a fleet of ~50 services yields 1.01 nodes
- *   with a non-zero score (`ContainerKill`) and 1.04 (`PodFailure`), and the truth is at the top of that
- *   shortlist in 113 of the 113 cases its own channels corroborate. A weight spread across many candidates
- *   would be a coefficient; here it is a decision.
- * * **The saturating counts are the term's own ceiling, not a curve fit.** 88/89 and 23/24 are exactly the
- *   datapacks in which the truth corroborates, so the residual miss is pool admission rather than weight —
- *   raising the number chases a defect this knob does not own.
- * * **It costs nothing anywhere it does not fire.** On the whole archive — 1,422 datapacks, both arms measured
- *   in one session — `Top@1` moves 873 = 61.39% to 1,066 = 74.96%, and **22 of the 25 fault types are identical
- *   to the case**. The three that move are the three whose evidence it reads: `JVMMemoryStress` 61 -> 171 (the
- *   container is OOM-killed and restarted), `ContainerKill` 27 -> 88, `PodFailure` 1 -> 23. `PodKill` is flat at
- *   50.0% at every weight because a deleted pod stops reporting instead of reporting `NotReady`: the term cannot
- *   read that fault type, and §5 of the document records it rather than hiding it behind a tuned number.
+ * * **The term is a pointer, not a vote.** Across the archive's 1,422 datapacks the term fires on ~1.02 services
+ *   per lifecycle datapack, and the single datapack that fires on 49 of 50 is refused by
+ *   {@link POD_STATE_MAX_FLEET_SHARE} because that is evidence about the case rather than about a service. A
+ *   weight spread across many candidates would be a coefficient; here it is a decision.
+ * * **It is worth nothing where it does not fire, and that is measured on both sides.** The four families it
+ *   reads end at 171/171, 89/89, 24/24 and 10/10 at this weight while the other twenty-one fault types are
+ *   identical to the case — **0 of the 1,128 datapacks outside the four families change ranked order at all**,
+ *   779 of them right before and after.
+ *
+ *   On the whole archive — 1,422 datapacks, measured in two waves of 711 — `Top@1` moves from **873 = 61.39%**
+ *   to **1,073 = 75.46%**, and the movement is exactly those four families: 61 -> 171, 27 -> 89, 1 -> 24 and
+ *   5 -> 10.
+ * * **`0` is bit-identical to the shipped ranking.** The term is the ABSENT map at 0 rather than a zero-weighted
+ *   one, so the ablation arm is inert by construction: all 711 first-wave datapacks rank identically at 0 under
+ *   the previous and the current scheme.
  */
 export const DEFAULT_POD_STATE_WEIGHT = 8;
 

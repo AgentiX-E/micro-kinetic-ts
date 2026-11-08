@@ -4103,22 +4103,24 @@ describe('the pod-state term — the lifecycle evidence a level statistic cannot
   };
 
   it('measures the killed pod and not its neighbour', () => {
-    expect(run().graph.podStateScores?.get('B')).toBeCloseTo(1 / 3, 12);
+    expect(run().graph.podStateScores?.get('B')).toBeCloseTo(1 / 4, 12);
     expect(run().graph.podStateScores?.has('A')).toBe(false);
   });
 
   it('pays `weight × corroboration` and can lift the killed pod over a larger anomaly', () => {
     const off = run({ podStateWeight: 0 });
-    const on = run({ podStateWeight: 1 });
+    const on = run({ podStateWeight: 2 });
     // The control: with the term off the kill is invisible and the louder neighbour wins.
     expect(off.results[0]!.serviceId).toBe('A');
     expect(off.termOf('B').contribution).toBe(0);
     expect(off.termOf('B').cause).toBe('WEIGHT_ZERO');
-    // The arm: one of three channels corroborated, and that is enough to move the rank.
-    expect(on.termOf('B').contribution).toBeCloseTo(1 / 3, 12);
+    // The arm: one of four indicators corroborated, and `2 × 1/4` is enough to move the rank past a neighbour
+    // whose anomaly is `2.5×` larger. The weight is the price of a SHARE, so the replacement indicator joining
+    // the family halved what a unit buys — which is why the constant is measured rather than kept at 1.
+    expect(on.termOf('B').contribution).toBeCloseTo(2 * (1 / 4), 12);
     expect(on.results[0]!.serviceId).toBe('B');
     // The price is the term's own contribution: nothing else in the sum reads this weight.
-    expect(on.scoreOf('B') - off.scoreOf('B')).toBeCloseTo(1 / 3, 12);
+    expect(on.scoreOf('B') - off.scoreOf('B')).toBeCloseTo(2 * (1 / 4), 12);
   });
 
   it('reports an uncorroborated candidate as an absent ENTRY rather than a measured zero', () => {
@@ -4142,13 +4144,13 @@ describe('the pod-state term — the lifecycle evidence a level statistic cannot
   });
 
   it('ships at the weight its sweep read as decisive, and the default is that weight', () => {
-    // `docs/pod-state-term.md` §6 reads 26.8% at 0, 84.6% at 4, 94.3% at 8 and 94.3% again at 16 on the
-    // archive's 123 lifecycle datapacks: 8 is the smallest weight at which the term decides, so the constant
-    // is asserted by VALUE. A change here without a matching sweep is a change to a measured number.
+    // `docs/pod-state-term.md` §6 reads 31.7% at 0, 99.3% at 4 and 100.0% at 8 and 16 on the 145
+    // lifecycle datapacks of the archive's second wave: 4 is the smallest weight at which the term decides, so
+    // the constant is asserted by VALUE. A change here without a matching sweep is a change to a measured number.
     expect(DEFAULT_POD_STATE_WEIGHT).toBe(8);
     const shipped = run();
-    // One of three channels corroborated on B, so the term pays `weight × 1/3`.
-    expect(shipped.termOf('B').contribution).toBeCloseTo(DEFAULT_POD_STATE_WEIGHT / 3, 12);
+    // One of four indicators corroborated on B, so the term pays `weight × 1/4`.
+    expect(shipped.termOf('B').contribution).toBeCloseTo(DEFAULT_POD_STATE_WEIGHT / 4, 12);
     expect(shipped.results[0]!.serviceId).toBe('B');
   });
 

@@ -782,19 +782,75 @@ export const POD_STATE_CHANNEL_LABELS: readonly string[] = [
 ];
 
 /**
- * Corroboration count over {@link POD_STATE_CHANNEL_LABELS}, normalised to `[0, 1]`.
+ * The pod-scoped CUMULATIVE counters whose value can only fall when the pod object behind them was replaced.
  *
- * One indicator per channel, summed and divided by the family's size: each channel is a fact that either
- * happened across the injection boundary or did not, and a second restart is the same fact restated rather
- * than twice the evidence. A magnitude would let a busy pod — one that happens to restart for its own reasons —
- * outrank the pod that was actually killed, which is the shape the archive's own competitor loses on.
+ * A fourth indicator rather than a fourth channel, and a separate list rather than three more entries in
+ * {@link POD_STATE_CHANNEL_LABELS}, because the three counters are one event seen three times: a replaced pod
+ * resets every counter it owns at the same scrape, so summing them would let one replacement pay three times.
  *
- * The three predicates are the crudest readings that separate a state change from a level:
+ * They exist because the state channels cannot see a `PodKill`. A killed pod is DELETED and the controller
+ * creates a new one, so the restart counter of the declaration stays at 0, readiness stays 1 and the phase
+ * stays `Running`: on the archive's ten `PodKill` datapacks all three read flat, which is why the term scored
+ * that fault type at 50.0% before this list existed. The counters reset because the new pod starts at zero.
+ */
+export const POD_STATE_REPLACEMENT_CHANNEL_LABELS: readonly string[] = [
+  'container.cpu.time',
+  'k8s.pod.cpu.time',
+  'k8s.pod.network.io',
+];
+
+/**
+ * How far a cumulative counter must fall before the fall is read as a RESTART rather than as movement.
  *
- * * `k8s.container.restarts` — the counter's post-injection maximum exceeds its last pre-injection value by at
- *   least one.
+ * Measured, not assumed: across the 711 datapacks of the archive's second wave, every one of the 149 resets the
+ * term fires on lands at `<= 0.0095` of its last pre-injection value — a pod that was replaced starts its
+ * counters at zero, and the residue is the scrape that straddles the replacement. `0.25` sits twenty-six times
+ * above the largest observed re-baseline and an order of magnitude below any partial fall, so the predicate
+ * separates "the pod is new" from "the counter moved" without a fitted number between them.
+ */
+export const POD_STATE_RESET_FLOOR = 0.25;
+
+/**
+ * The size of the pod-state family: three state channels plus one replacement indicator.
+ *
+ * Named rather than recomputed at the one division site, so a channel added to either list cannot silently
+ * change the denominator of a score that every ranking reads.
+ */
+export const POD_STATE_INDICATOR_COUNT = POD_STATE_CHANNEL_LABELS.length + 1;
+
+/**
+ * The largest share of a case's candidates that may carry pod-state evidence before the term abstains.
+ *
+ * The term is a POINTER: on 710 of the archive's 711 second-wave datapacks exactly one of ~50 services scores,
+ * and that service is the truth. The single datapack that fires on 49 of 50 is a `NetworkBandwidth` case whose
+ * whole namespace re-phased — evidence about the case, not about a service — and a term that priced it would
+ * add a near-constant to forty-nine candidates, which cannot reorder them but does report a pointer that is
+ * not one.
+ *
+ * The line is `> 1/2` rather than a tuned share because that is where the statement stops being a pointer: at
+ * or below half the candidates the evidence still names a minority, above it the evidence describes a majority
+ * and cannot single anything out. At the two observed values — 2% and 98% — it is decisive and unambiguous.
+ */
+export const POD_STATE_MAX_FLEET_SHARE = 0.5;
+
+/**
+ * Corroboration count over the pod-state family, normalised to `[0, 1]`.
+ *
+ * One indicator per fact, summed and divided by {@link POD_STATE_INDICATOR_COUNT}: each channel is a fact that
+ * either happened across the injection boundary or did not, and a second restart is the same fact restated
+ * rather than twice the evidence. A magnitude would let a busy pod — one that happens to restart for its own
+ * reasons — outrank the pod that was actually killed, which is the shape the archive's own competitor loses on.
+ *
+ * The four predicates are the crudest readings that separate a state change from a level, and the fourth is the
+ * one that separates a REPLACEMENT from a restart:
+ *
+ * * `k8s.container.restarts` — the counter was at ZERO before the boundary and its post-injection maximum
+ *   exceeds that by at least one: the pod started restarting, rather than kept restarting.
  * * `k8s.container.ready` — the container was ready before the boundary and reports not-ready after it.
  * * `k8s.pod.phase` — any post-injection sample differs from the last pre-injection level.
+ * * any of {@link POD_STATE_REPLACEMENT_CHANNEL_LABELS} — a cumulative counter falls below
+ *   {@link POD_STATE_RESET_FLOOR} of its last pre-injection value, which a pod that was deleted and recreated
+ *   does to all of them at once. ONE indicator however many counters reset, because that is one replacement.
  *
  * `undefined` means the case cannot be read rather than that nothing moved: no injection anchor, or a boundary
  * with no sample on one side, leaves the predicate without two sides to compare and the ranking term reports an
@@ -802,7 +858,7 @@ export const POD_STATE_CHANNEL_LABELS: readonly string[] = [
  *
  * @param serviceMetrics - The service's channels.
  * @param injectTimeMs - The injection boundary in epoch milliseconds (`0` disables the reading).
- * @returns The corroborated share in `[0, 1]`, or `undefined` when no channel corroborated or none could be read.
+ * @returns The corroborated share in `[0, 1]`, or `undefined` when nothing corroborated or nothing could be read.
  */
 export function computePodStateScore(
   serviceMetrics: readonly TimeSeries[] | undefined,
@@ -812,8 +868,12 @@ export function computePodStateScore(
 
   let corroborated = 0;
   let measured = 0;
+  /** The replacement indicator, kept apart because it is one fact spread over three counters. */
+  let replacementMeasured = false;
+  let replacementReset = false;
   for (const ts of serviceMetrics) {
-    if (!POD_STATE_CHANNEL_LABELS.includes(ts.label)) continue;
+    const isReplacement = POD_STATE_REPLACEMENT_CHANNEL_LABELS.includes(ts.label);
+    if (!isReplacement && !POD_STATE_CHANNEL_LABELS.includes(ts.label)) continue;
     // The boundary is placed on the SCALAR anchor, so the split is a comparison rather than a search: a
     // channel whose samples all fall on one side is unmeasurable here, not silent.
     let lastPre: number | undefined;
@@ -831,9 +891,21 @@ export function computePodStateScore(
       if (value < minPost) minPost = value;
     }
     if (lastPre === undefined || firstPost === undefined) continue;
+    if (isReplacement) {
+      replacementMeasured = true;
+      // A counter that has already been at zero before the boundary cannot show a reset: `0 → 0` is an absence,
+      // and the floor is a RATIO rather than a difference so a busy pod and an idle one are held to one line.
+      if (lastPre > 0 && minPost < POD_STATE_RESET_FLOOR * lastPre) replacementReset = true;
+      continue;
+    }
     measured++;
     if (ts.label === 'k8s.container.restarts') {
-      if (maxPost - lastPre >= 1) corroborated++;
+      // `lastPre === 0` is the second half of the predicate and the reason it is a state rather than a rate: a
+      // pod that was already restarting keeps restarting, and one more increment on a counter that left zero
+      // before the boundary is a chronic pod rather than a killed one. Measured on the archive's 145 first-wave
+      // lifecycle datapacks: all three bystander increments start from a non-zero counter and 142 of the 143
+      // true ones start from zero.
+      if (lastPre === 0 && maxPost - lastPre >= 1) corroborated++;
     } else if (ts.label === 'k8s.container.ready') {
       // A container that was never ready has no level to fall from: `0 → 0` is an absence priced as an event.
       if (lastPre > 0 && minPost < lastPre) corroborated++;
@@ -841,8 +913,9 @@ export function computePodStateScore(
       corroborated++;
     }
   }
-  if (measured === 0 || corroborated === 0) return undefined;
-  return corroborated / POD_STATE_CHANNEL_LABELS.length;
+  if (replacementMeasured && replacementReset) corroborated++;
+  if ((measured === 0 && !replacementMeasured) || corroborated === 0) return undefined;
+  return corroborated / POD_STATE_INDICATOR_COUNT;
 }
 
 /**
@@ -1570,6 +1643,13 @@ export function buildTopologyFaultGraph(
       if (diagSampleIds.length < 3) diagSampleIds.push(serviceId);
     }
   }
+
+  // The fleet gate, applied AFTER the pass because it is a reading of the POPULATION rather than of a service:
+  // whether lifecycle evidence points at anything depends on how many services carry it, and only the completed
+  // loop knows. Clearing the map rather than gating each entry keeps the decision in one place and reports it as
+  // `MAP_EMPTY` — "the producer ran and admitted nothing" — which is exactly what happened.
+  const fleetShare = diagSvcCount === 0 ? 0 : podStateScores.size / diagSvcCount;
+  if (fleetShare > POD_STATE_MAX_FLEET_SHARE) podStateScores.clear();
 
   // Log anomaly score distribution for debugging.
   //

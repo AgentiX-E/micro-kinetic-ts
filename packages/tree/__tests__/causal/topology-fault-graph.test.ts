@@ -27,6 +27,9 @@ import {
   isLatencyMetric,
   isTransientGuardTest,
   POD_STATE_CHANNEL_LABELS,
+  POD_STATE_INDICATOR_COUNT,
+  POD_STATE_REPLACEMENT_CHANNEL_LABELS,
+  POD_STATE_RESET_FLOOR,
   rankNormalizeScores,
   TRANSIENT_GUARD_TESTS,
   TRANSIENT_RETURN_THRESHOLD,
@@ -4602,13 +4605,19 @@ describe('the collision SHAPE — the hump predicate read as a magnitude', () =>
 describe('pod-state corroboration — a STATE predicate, not a level one', () => {
   type GraphCfg = Parameters<typeof buildTopologyFaultGraph>[2];
 
-  /** The service's pod-state score under one configuration, or `undefined` when nothing corroborated. */
+  /**
+   * The service's pod-state score under one configuration, or `undefined` when nothing corroborated.
+   *
+   * The graph holds three services and only `id` carries the series: the term is published only while its
+   * evidence names fewer than half the candidates (see "abstains when the evidence covers most of the
+   * fleet"), so a one-node graph would read every positive number as a fleet-wide event.
+   */
   const podStateOf = (
     series: Array<[string, number[]]>,
     cfg: GraphCfg,
     id: ServiceId = 'svc',
   ): number | undefined => {
-    const graph = makeCallGraph([id], []);
+    const graph = makeCallGraph([id, 'peer-a', 'peer-b'], []);
     const metrics = makeMetrics([[id, series.map(([l, v]) => makeTimeSeries(l, v))]]);
     return buildTopologyFaultGraph(graph, metrics, cfg).podStateScores.get(id);
   };
@@ -4631,16 +4640,16 @@ describe('pod-state corroboration — a STATE predicate, not a level one', () =>
   it('scores a restart counter that incremented across the boundary', () => {
     // A counter is 0 for the whole pre-window and 1 afterwards: the level guards drop this series (it is
     // idle for half its history, and its pre-injection baseline is zero), so the STATE predicate is the
-    // only reading that can see it. One of three channels corroborates.
-    expect(podStateOf([['k8s.container.restarts', step(0, 1)]], anchored)).toBeCloseTo(1 / 3, 10);
+    // only reading that can see it. One of four indicators corroborates.
+    expect(podStateOf([['k8s.container.restarts', step(0, 1)]], anchored)).toBeCloseTo(1 / 4, 10);
   });
 
   it('scores a readiness dip below its pre-injection level', () => {
-    expect(podStateOf([['k8s.container.ready', step(1, 0)]], anchored)).toBeCloseTo(1 / 3, 10);
+    expect(podStateOf([['k8s.container.ready', step(1, 0)]], anchored)).toBeCloseTo(1 / 4, 10);
   });
 
   it('scores a phase that left its pre-injection level', () => {
-    expect(podStateOf([['k8s.pod.phase', step(2, 0)]], anchored)).toBeCloseTo(1 / 3, 10);
+    expect(podStateOf([['k8s.pod.phase', step(2, 0)]], anchored)).toBeCloseTo(1 / 4, 10);
   });
 
   it('adds the channels up, because corroboration is the evidence', () => {
@@ -4654,16 +4663,26 @@ describe('pod-state corroboration — a STATE predicate, not a level one', () =>
       ],
       anchored,
     );
-    expect(both).toBeCloseTo(2 / 3, 10);
+    expect(both).toBeCloseTo(2 / 4, 10);
     // A restart counter alone separates this shape from a pod whose neighbour restarted for its own reasons.
     const counterOnly = podStateOf([['k8s.container.restarts', step(0, 2)]], anchored);
-    expect(counterOnly).toBeCloseTo(1 / 3, 10);
+    expect(counterOnly).toBeCloseTo(1 / 4, 10);
+  });
+
+  it('refuses a restart that continues a history of restarts', () => {
+    // A pod that was already at 3 before the boundary and at 8 after it restarted again — but the increment is
+    // the continuation of a chronic pattern rather than an event the injection caused. Measured over the 145
+    // lifecycle datapacks of the archive's first wave: of the 146 restart increments, 142 of the 143 on the
+    // truth start from an untouched counter and ALL THREE of the bystanders start from a non-zero one.
+    expect(podStateOf([['k8s.container.restarts', step(3, 8)]], anchored)).toBeUndefined();
+    // The same increment from zero is the event itself.
+    expect(podStateOf([['k8s.container.restarts', step(0, 5)]], anchored)).toBeCloseTo(1 / 4, 10);
   });
 
   it('is an indicator per channel, not a magnitude', () => {
     // Two restarts are not twice the evidence that this pod is the injected one: the second restart is the
     // same fact restated. A magnitude would let a busy pod outrank the injected one.
-    expect(podStateOf([['k8s.container.restarts', step(0, 9)]], anchored)).toBeCloseTo(1 / 3, 10);
+    expect(podStateOf([['k8s.container.restarts', step(0, 9)]], anchored)).toBeCloseTo(1 / 4, 10);
   });
 
   it('measures nothing for a channel that never moved', () => {
@@ -4703,5 +4722,88 @@ describe('pod-state corroboration — a STATE predicate, not a level one', () =>
         anchored,
       ),
     ).toBeUndefined();
+  });
+
+  it('names the replacement channels once, and they are the pod-scoped cumulative counters', () => {
+    expect(POD_STATE_REPLACEMENT_CHANNEL_LABELS).toEqual([
+      'container.cpu.time',
+      'k8s.pod.cpu.time',
+      'k8s.pod.network.io',
+    ]);
+    // The four indicators are the four the kubelet reports about pod IDENTITY: three states plus the counter
+    // that can only fall when the pod object itself was replaced.
+    expect(POD_STATE_INDICATOR_COUNT).toBe(4);
+  });
+
+  it('scores a pod whose cumulative counter restarted from zero', () => {
+    // `PodKill`: the pod object is deleted and the controller creates a new one, so the restart counter of the
+    // DECLARATION stays at 0 and the phase stays Running — the only trace is a counter that went back to zero.
+    expect(podStateOf([['container.cpu.time', step(569, 1.2)]], anchored)).toBeCloseTo(1 / 4, 10);
+  });
+
+  it('refuses a counter that merely fell, because a partial loss is not a restart', () => {
+    // `RESET_FLOOR` is the line between "the pod was replaced" and "the counter moved": the archive's 149
+    // measured resets all land at <= 0.0095 of the last pre-injection value, so a counter that keeps a quarter
+    // of its value is a different event and the term must not price it as a replacement.
+    expect(podStateOf([['container.cpu.time', step(569, 300)]], anchored)).toBeUndefined();
+    expect(POD_STATE_RESET_FLOOR).toBe(0.25);
+  });
+
+  it('counts two counters restarting once, because they are the same fact restated', () => {
+    // A replaced pod resets every cumulative counter it owns at the same scrape. Summing them would let one
+    // event pay three times, which is the "magnitude instead of indicator" defect the family already refuses.
+    const two = podStateOf(
+      [
+        ['container.cpu.time', step(569, 1)],
+        ['k8s.pod.cpu.time', step(569, 1)],
+      ],
+      anchored,
+    );
+    expect(two).toBeCloseTo(1 / 4, 10);
+    // The third counter is the one that reads a replaced pod whose container never restarted: `PodKill` on a
+    // deployment the kubelet reports only through the pod object.
+    expect(podStateOf([['k8s.pod.network.io', step(5.6e6, 0)]], anchored)).toBeCloseTo(1 / 4, 10);
+  });
+
+  it('adds the replacement indicator to a restart, because they are different readings', () => {
+    // `ContainerKill`: the container is killed in place, so the restart counter increments AND the container
+    // counter restarts from zero. Two indicators, not one restated.
+    const both = podStateOf(
+      [
+        ['k8s.container.restarts', step(0, 1)],
+        ['container.cpu.time', step(569, 2)],
+      ],
+      anchored,
+    );
+    expect(both).toBeCloseTo(2 / 4, 10);
+  });
+
+  it('measures nothing for a replacement channel with no pre-injection sample', () => {
+    // A counter created after the boundary is the REPLACEMENT, not the evidence of a replacement: its first
+    // value is the bottom of a reset that happened before the observation began.
+    const allPost: number[] = Array<number>(30).fill(1);
+    expect(podStateOf([['container.cpu.time', allPost]], anchored)).toBeUndefined();
+  });
+
+  it('abstains when the evidence covers most of the fleet', () => {
+    /** `n` services, of which the first `k` carry an incrementing restart counter. */
+    const fleet = (n: number, k: number) => {
+      const ids = Array.from({ length: n }, (_, i) => `svc-${i}`);
+      const entries: Array<[ServiceId, TimeSeries[]]> = ids.map((id, i) => [
+        id,
+        i < k ? [makeTimeSeries('k8s.container.restarts', step(0, 1))] : [],
+      ]);
+      return buildTopologyFaultGraph(makeCallGraph(ids, []), makeMetrics(entries), anchored);
+    };
+    // One of three is a pointer, and the term acts on it.
+    expect(fleet(3, 1).podStateScores.size).toBe(1);
+    // Two of three is not: a restart that touched most of the fleet describes the case rather than a service,
+    // and a term that priced it would add a near-constant to the ranking.
+    expect(fleet(3, 2).podStateScores.size).toBe(0);
+    expect(fleet(3, 3).podStateScores.size).toBe(0);
+    // Exactly half is the last admissible reading: the evidence still names a minority-or-equal set, and the
+    // boundary is "fewer than half" rather than a tuned share.
+    expect(fleet(2, 1).podStateScores.size).toBe(1);
+    expect(fleet(50, 49).podStateScores.size).toBe(0);
   });
 });
