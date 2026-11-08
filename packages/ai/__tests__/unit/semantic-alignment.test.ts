@@ -219,6 +219,25 @@ describe('SemanticAlignmentProvider', () => {
         expect(result.matches.size).toBe(0);
       }
     });
+
+    it('should record no match when every similarity is NaN', async () => {
+      // A provider that emits NaN coordinates — a corrupted normalization upstream — makes every
+      // cosine similarity NaN. None of them can beat the -1 starting best, so the span is left
+      // unresolved instead of being assigned to an arbitrary candidate.
+      const corrupted: IEmbeddingProvider = {
+        modelId: 'corrupted-embedding',
+        dimension: DIM,
+        embed: vi.fn(async (texts: readonly string[]) => ({
+          vectors: texts.map(() => new Float32Array([NaN, NaN, NaN, NaN])),
+        })),
+      };
+      const provider = new SemanticAlignmentProvider(corrupted);
+
+      const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+
+      expect(result.matches.size).toBe(0);
+      expect(result.lowConfidence).toHaveLength(0);
+    });
   });
 
   // ── LLM fallback ───────────────────────────────────────
@@ -398,6 +417,28 @@ describe('SemanticAlignmentProvider', () => {
 
       // alignEntity called twice (cache cleared between)
       expect(llm.alignEntity).toHaveBeenCalledTimes(2);
+    });
+
+    it('should not resolve a span from a cache entry below the LLM threshold', async () => {
+      const config: SemanticAlignmentConfig = {
+        ...DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
+        embeddingThreshold: 0.99,
+        llmThreshold: 0.95,
+      };
+      const llm = makeMockLLM({
+        mappings: { 'pos-service': 'paymentservice' },
+        confidences: { 'pos-service': 0.4 }, // cached, but far below llmThreshold
+      });
+      const provider = new SemanticAlignmentProvider(embeddingProvider, llm, config);
+
+      // The first call caches the entry whether or not it clears the threshold.
+      const first = await provider.align(['pos-service'], TOPOLOGY_SERVICES);
+      const second = await provider.align(['pos-service'], TOPOLOGY_SERVICES);
+
+      expect(first.matches.get('pos-service')).toBe('paymentservice');
+      expect(vi.mocked(llm.alignEntity)).toHaveBeenCalledTimes(1);
+      // On the cache hit the low confidence is rejected again rather than replayed as a match.
+      expect(second.matches.has('pos-service')).toBe(false);
     });
   });
 

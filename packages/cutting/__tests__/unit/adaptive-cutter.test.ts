@@ -47,7 +47,7 @@ vi.mock('numpy-ts', () => {
   return { array, polyfit, NDArray, default: { array, polyfit, NDArray } };
 });
 
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type { CuttingWindow, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import { AdaptiveWindowCutter, computeKineticEnergyBound } from '@agentix-e/micro-kinetic-cutting';
 
 function makeTimeSeries(
@@ -265,6 +265,60 @@ describe('AdaptiveWindowCutter', () => {
       });
       expect(windows.length).toBeGreaterThan(0);
     });
+
+    it('uses the default options when none are supplied', () => {
+      const ts = linearDegradation(120);
+      const windows = cutter.segment(ts);
+      expect(windows.length).toBe(100);
+      for (const w of windows) {
+        expect(w.slice.values.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('falls back to the nearest sample when a window contains no data', () => {
+      // Two dense clusters separated by a long idle gap: the middle windows
+      // cover no sample at all, so each one borrows its closest sample.
+      const timestamps: number[] = [];
+      const values: number[] = [];
+      for (let i = 0; i < 8; i++) {
+        timestamps.push(i * 60000);
+        values.push(1000 + i);
+      }
+      for (let i = 0; i < 8; i++) {
+        timestamps.push((993 + i) * 60000);
+        values.push(2000 + i);
+      }
+      const ts = makeTimeSeries('sparse_metric', timestamps, values);
+
+      const windows = cutter.segment(ts, {
+        maxWindows: 8,
+        minWindowDurationMs: 10000,
+        adaptive: false,
+      });
+
+      expect(windows.length).toBe(8);
+      expect(windows[3]!.slice.values.length).toBe(1);
+      expect(windows[3]!.degradationRate).toBe(0);
+      for (const w of windows) {
+        expect(w.slice.values.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('rejects a series whose first timestamp slot is missing', () => {
+      // A hole at index 0 is what `noUncheckedIndexedAccess` calls `undefined`, and the reason the
+      // cutter refuses a series rather than silently treating the hole as time zero.
+      const timestamps = Array.from<number>({ length: 2 });
+      timestamps[1] = 1000;
+      const ts: TimeSeries = {
+        label: 'broken',
+        timestamps,
+        values: new Float64Array([1, 2]),
+        unit: 'count',
+      };
+      expect(() =>
+        cutter.segment(ts, { maxWindows: 1, minWindowDurationMs: 10000, adaptive: false }),
+      ).toThrow(/no valid timestamps/);
+    });
   });
 
   describe('estimateLocalBounds', () => {
@@ -285,6 +339,68 @@ describe('AdaptiveWindowCutter', () => {
 
     it('throws on empty windows', () => {
       expect(() => cutter.estimateLocalBounds([], 'metric')).toThrow();
+    });
+
+    it('returns no indicators for flat windows', () => {
+      const ts = stableData(50);
+      const windows = cutter.segment(ts, {
+        maxWindows: 5,
+        minWindowDurationMs: 10000,
+        adaptive: false,
+      });
+      const bounds = cutter.estimateLocalBounds(windows, 'cpu_usage');
+      for (const bound of bounds) {
+        expect(bound.degradationRate).toBe(0);
+        expect(bound.indicators).toEqual([]);
+      }
+    });
+
+    it('flags a rising but wobbly window as non-monotonic', () => {
+      const ts = makeTimeSeries(
+        'mem_rss',
+        [0, 60000, 120000, 180000, 240000],
+        [100, 130, 120, 170, 160],
+      );
+      const windows = cutter.segment(ts, {
+        maxWindows: 1,
+        minWindowDurationMs: 10000,
+        adaptive: false,
+      });
+      const bounds = cutter.estimateLocalBounds(windows, 'mem_rss');
+      expect(bounds.length).toBe(1);
+      expect(bounds[0]!.degradationRate).toBeGreaterThan(0);
+      expect(bounds[0]!.indicators[0]!.isMonotonic).toBe(false);
+      expect(bounds[0]!.indicators[0]!.temporalCorrelation).toBeGreaterThan(0);
+    });
+
+    it('reports zero correlation for a caller-supplied single-sample window', () => {
+      const win: CuttingWindow = {
+        index: 0,
+        startTime: 0,
+        endTime: 60000,
+        duration: 60000,
+        slice: makeTimeSeries('metric', [0], [5]),
+        degradationRate: 1.5,
+        localErrorBound: 0.1,
+      };
+      const bounds = cutter.estimateLocalBounds([win], 'metric');
+      expect(bounds[0]!.indicators[0]!.temporalCorrelation).toBe(0);
+      expect(bounds[0]!.indicators[0]!.isMonotonic).toBe(false);
+    });
+
+    it('reports zero correlation for a caller-supplied constant window', () => {
+      const win: CuttingWindow = {
+        index: 0,
+        startTime: 0,
+        endTime: 120000,
+        duration: 120000,
+        slice: makeTimeSeries('metric', [0, 60000, 120000], [7, 7, 7]),
+        degradationRate: 1.5,
+        localErrorBound: 0.1,
+      };
+      const bounds = cutter.estimateLocalBounds([win], 'metric');
+      expect(bounds[0]!.indicators[0]!.temporalCorrelation).toBe(0);
+      expect(bounds[0]!.indicators[0]!.isMonotonic).toBe(true);
     });
   });
 

@@ -213,6 +213,17 @@ describe('PatternClassifier', () => {
       expect(typeof result.faultCategory).toBe('string');
     });
 
+    it('reports the predicted exhaustion time for pool depletion', () => {
+      const ts = makeTS(
+        'pool.available',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000],
+        [100, 90, 81, 72.9, 65.6, 59.0, 53.1],
+      );
+      const result = classifier.classify(ts);
+      expect(result.pattern).toBe(ChronicPattern.CONNECTION_POOL_EXHAUSTION);
+      expect(result.reason).toContain('exhaustion in');
+    });
+
     it('classifies strongly monotonic decreasing data (connection pool pattern)', () => {
       const ts = makeTS(
         'pool.available',

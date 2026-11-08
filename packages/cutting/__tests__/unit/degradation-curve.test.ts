@@ -189,6 +189,19 @@ describe('DegradationCurveAnalyzer', () => {
       } as any;
       expect(analyzer.selectBestModel(fits, 0.7)).toBe(CurveModel.LINEAR);
     });
+
+    it('keeps the best-scoring model when no linear fit is available', () => {
+      // The linear fit is absent (fitLinear returns null for series shorter
+      // than two points), so there is nothing to fall back to: the best
+      // scoring model is returned even though it misses the quality bar.
+      const fits: Record<CurveModel, any> = {
+        [CurveModel.LINEAR]: null,
+        [CurveModel.EXPONENTIAL]: { adjustedRSquared: 0.4 },
+        [CurveModel.LOGARITHMIC]: null,
+        [CurveModel.POWER_LAW]: null,
+      } as any;
+      expect(analyzer.selectBestModel(fits, 0.7)).toBe(CurveModel.EXPONENTIAL);
+    });
   });
 
   describe('computeEndpointRate', () => {

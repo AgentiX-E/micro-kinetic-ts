@@ -21,8 +21,7 @@
     "@agentix-e/micro-kinetic-wave": "workspace:^",
     "benny": "^3.7.0",
     "numpy-ts": "^1.4.0",
-    "ubique": "^1.0.2",
-    "mathjs": "^13.0.0"
+    "ubique": "^1.0.2"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

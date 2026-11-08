@@ -166,6 +166,13 @@ describe('LocalErrorEstimator', () => {
       expect(result.degradationRate).toBeGreaterThanOrEqual(0);
     });
 
+    it('marks a rising but wobbly slice as non-monotonic', () => {
+      const ts = makeTS('wobble', [0, 60000, 120000, 180000, 240000], [100, 130, 120, 170, 160]);
+      const result = estimator.estimateWindow(makeWindow(0, 0, 240000, ts));
+      expect(result.indicators[0]!.degradationRate).toBeGreaterThan(0);
+      expect(result.indicators[0]!.isMonotonic).toBe(false);
+    });
+
     it('estimates window with exponential-like data', () => {
       const ts = makeTS(
         'exp',
@@ -258,6 +265,13 @@ describe('LocalErrorEstimator', () => {
       const ts = makeTS('pow', [0, 1000, 2000, 3000, 4000, 5000, 6000], [1, 4, 9, 16, 25, 36, 49]);
       const type = estimator.detectDegradationType(ts);
       expect(type).toBe(DegradationType.POWER_LAW);
+    });
+
+    it('returns LINEAR when fewer than three values are positive', () => {
+      // Both the log-linear and log-log fits need at least three positive
+      // samples to be identifiable, so they are skipped entirely.
+      const ts = makeTS('sparse', [0, 1000, 2000, 3000, 4000], [0, 0, 0, 10, 20]);
+      expect(estimator.detectDegradationType(ts)).toBe(DegradationType.LINEAR);
     });
 
     it('estimates window with exponential type data', () => {

@@ -20,7 +20,6 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts', 'src/**/index.ts'],
-      all: true,
       thresholds: {
         statements: 95,
         branches: 95,

@@ -87,6 +87,22 @@ describe('ConnectionPoolDetector', () => {
       }
     });
 
+    it('leaves exhaustion time undefined when the threshold is unreachable', () => {
+      // A zero exhaustion threshold asks "when does the pool hit zero?".
+      // The ratio initialAvailable / threshold is infinite, so no finite
+      // exhaustion time can be predicted even though depletion is detected.
+      const ts = makeTS('pool', [0, 3600000, 7200000, 10800000, 14400000], [100, 85, 70, 55, 40]);
+      const result = detector.detect(ts, {
+        poolCapacity: 100,
+        exhaustionThreshold: 0,
+        minGrowthRate: 0.001,
+        minFitQuality: 0.5,
+      });
+      expect(result.detected).toBe(true);
+      expect(result.hoursToExhaustion).toBeUndefined();
+      expect(result.exhaustionTimestamp).toBeUndefined();
+    });
+
     it('stable connections not detected', () => {
       const ts = makeTS(
         'pool',

@@ -570,5 +570,61 @@ describe('HierarchyBuilder', () => {
       // svc_b not in states → its f1 value is 0
       expect(result.systemSize).toBe(2);
     });
+
+    // ── Out-of-order state samples ──────────────────────
+    it('should keep the newest state when a later sample carries an older timestamp', () => {
+      const builder = new HierarchyBuilder();
+      const graph = makeServiceGraph(['svc_a']);
+      // Samples arrive out of order: the 2000 sample precedes the 1000 sample.
+      const states: MicroserviceState[] = [
+        makeState('svc_a', 0.9, 0.5, 2000),
+        makeState('svc_a', 0.2, 0.2, 1000),
+      ];
+
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
+
+      // f1 = 0.9 × 0.5 = 0.45, so E1 = 0.2025. The stale sample must not replace it.
+      expect(result.states[0]!.correlationEnergy).toBeCloseTo(0.2025, 10);
+    });
+
+    // ── Graph edges that do not join two known services ─
+    it('should ignore edges whose endpoints are not in the graph', () => {
+      const builder = new HierarchyBuilder();
+      const graph = makeServiceGraph(
+        ['svc_a'],
+        [makeEdge('ghost', 'svc_a', 0, 0, 0), makeEdge('svc_a', 'ghost', 0, 0, 0)],
+      );
+      const states: MicroserviceState[] = [makeState('svc_a', 1, 1)];
+
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.001,
+      });
+
+      // Only the diagonal self-coupling (1.0) may be applied; the dangling edges contribute nothing.
+      expect(result.states[1]!.tensor[0]).toBeCloseTo(1, 10);
+    });
+
+    // ── Latency severity saturation ─────────────────────
+    it('should saturate latency severity for a p99 above 500ms', () => {
+      const builder = new HierarchyBuilder();
+      const graph = makeServiceGraph(
+        ['svc_a', 'svc_b'],
+        // p99 = 4000ms: the raw ratio 2.0 must be clamped to a severity of 1.
+        [makeEdge('svc_a', 'svc_b', 0, 4000, 0)],
+      );
+      const states: MicroserviceState[] = [makeState('svc_a', 1, 1), makeState('svc_b', 1, 1)];
+
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.001,
+      });
+
+      // coupling = 0.4·tanh(0) + 0.3·1 + 0.3·(1-0) = 0.6
+      expect(result.states[1]!.tensor[1]).toBeCloseTo(0.6, 10);
+    });
   });
 });

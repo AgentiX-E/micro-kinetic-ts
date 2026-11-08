@@ -351,8 +351,9 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
     const vArr = np.array([...slice.values]);
 
     const coeffs = np.polyfit(tArr, vArr, 1);
-    // coeffs[0] is the slope (linear coefficient)
-    const slope = (coeffs.tolist() as number[])[0] ?? 0;
+    // coeffs[0] is the slope (linear coefficient); a degree-1 fit always
+    // returns two coefficients, so index 0 is always present.
+    const slope = (coeffs.tolist() as number[])[0]!;
 
     return Math.abs(slope);
   }

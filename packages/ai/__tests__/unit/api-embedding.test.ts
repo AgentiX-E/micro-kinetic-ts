@@ -42,6 +42,21 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * A response whose body stream fails, as happens when the connection drops between the headers
+ * and the payload. `text()` rejects rather than resolving.
+ */
+function unreadableResponse(status: number): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new Error('body stream closed'));
+      },
+    }),
+    { status },
+  );
+}
+
 const DIM_4_CONFIG: ApiEmbeddingConfigInput = {
   endpoint: 'https://api.example.com/v1/embeddings',
   model: 'test-model',
@@ -234,6 +249,22 @@ describe('ApiEmbeddingProvider', () => {
 
       await expect(p.embed(['service-a'])).rejects.toThrow('Embedding dimension mismatch');
     });
+
+    it('should report an unreadable error body as unknown', async () => {
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        retry: {
+          maxAttempts: 1,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(vi.fn().mockResolvedValue(unreadableResponse(401)));
+
+      // The status is still reported even though the body cannot be read.
+      await expect(p.embed(['service-a'])).rejects.toThrow('Embedding API error 401: (unknown)');
+    });
   });
 
   describe('custom format', () => {
@@ -322,6 +353,53 @@ describe('ApiEmbeddingProvider', () => {
 
       // Last retry attempt with retryable status → throws with "(retries exhausted)"
       await expect(p.embed(['service-a'])).rejects.toThrow(/Embedding API error 502/);
+    });
+
+    it('should report an unreadable body when retries are exhausted', async () => {
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        retry: {
+          maxAttempts: 1,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [502],
+        },
+      });
+      p._setFetch(vi.fn().mockResolvedValue(unreadableResponse(502)));
+
+      await expect(p.embed(['service-a'])).rejects.toThrow(
+        'Embedding API error 502 (retries exhausted): (unknown)',
+      );
+    });
+
+    it('should abort the request when it exceeds the configured timeout', async () => {
+      // A fetch that honours the abort signal and otherwise never settles, like a server that
+      // accepts the connection and then stops responding.
+      const hangingFetch = vi.fn(
+        (_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init!.signal!.addEventListener('abort', () => {
+              reject(
+                Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }),
+              );
+            });
+          }),
+      );
+
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        timeoutMs: 10,
+        retry: {
+          maxAttempts: 3,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(hangingFetch);
+
+      await expect(p.embed(['service-a'])).rejects.toThrow('Embedding API timeout after 10ms');
+      expect(hangingFetch).toHaveBeenCalledTimes(1);
     });
 
     it('should retry on transient network errors before succeeding', async () => {

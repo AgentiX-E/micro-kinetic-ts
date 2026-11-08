@@ -47,7 +47,7 @@ vi.mock('numpy-ts', () => {
   return { array, polyfit, NDArray, default: { array, polyfit, NDArray } };
 });
 
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type { CuttingWindow, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import { FixedWindowCutter } from '@agentix-e/micro-kinetic-cutting';
 
 function makeTS(label: string, n: number): TimeSeries {
@@ -292,6 +292,43 @@ describe('FixedWindowCutter', () => {
       const bounds = cutter.estimateLocalBounds(windows, 'stable_metric');
       expect(bounds.length).toBe(1);
       expect(bounds[0]!.indicators).toEqual([]);
+    });
+
+    it('reports zero correlation for a caller-supplied single-sample window', () => {
+      const win: CuttingWindow = {
+        index: 0,
+        startTime: 0,
+        endTime: 60000,
+        duration: 60000,
+        slice: { label: 'metric', timestamps: [0], values: new Float64Array([5]), unit: 'count' },
+        degradationRate: 1.5,
+        localErrorBound: 0.1,
+      };
+      const bounds = cutter.estimateLocalBounds([win], 'metric');
+      expect(bounds.length).toBe(1);
+      expect(bounds[0]!.indicators[0]!.temporalCorrelation).toBe(0);
+      expect(bounds[0]!.indicators[0]!.isMonotonic).toBe(true);
+    });
+
+    it('reports zero correlation for a caller-supplied constant window', () => {
+      const win: CuttingWindow = {
+        index: 0,
+        startTime: 0,
+        endTime: 120000,
+        duration: 120000,
+        slice: {
+          label: 'metric',
+          timestamps: [0, 60000, 120000],
+          values: new Float64Array([7, 7, 7]),
+          unit: 'count',
+        },
+        degradationRate: 1.5,
+        localErrorBound: 0.1,
+      };
+      const bounds = cutter.estimateLocalBounds([win], 'metric');
+      expect(bounds.length).toBe(1);
+      expect(bounds[0]!.indicators[0]!.temporalCorrelation).toBe(0);
+      expect(bounds[0]!.indicators[0]!.isMonotonic).toBe(true);
     });
   });
 

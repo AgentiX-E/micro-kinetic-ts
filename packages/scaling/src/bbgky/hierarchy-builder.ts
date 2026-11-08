@@ -346,8 +346,6 @@ export class HierarchyBuilder {
    * @returns Average coupling strength
    */
   private averagePairwiseCoupling(coupling: Float64Array, N: number, indices: number[]): number {
-    if (indices.length <= 1) return 1.0;
-
     let sum = 0;
     let count = 0;
 
@@ -360,7 +358,8 @@ export class HierarchyBuilder {
       }
     }
 
-    return count > 0 ? sum / count : 0;
+    // Both call sites pass k ≥ 3 indices, so at least one pair is always visited.
+    return sum / count;
   }
 
   /**
@@ -421,8 +420,9 @@ export class HierarchyBuilder {
 
     // Use geometric series sum: E_total ≈ E_k* + E_k* × r + E_k* × r² + ...
     //                                = E_k* / (1 - r)
+    // `findTruncationOrder` only stops below η ≤ 1, so the dropped ratio here is
+    // always < 1 and the series converges.
     const firstDroppedRatio = energyRatios[lastIncludedOrder]!;
-    if (firstDroppedRatio >= 1) return firstDroppedRatio;
 
     return firstDroppedRatio / (1 - firstDroppedRatio + 1e-10);
   }

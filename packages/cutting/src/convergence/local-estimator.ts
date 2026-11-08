@@ -240,13 +240,14 @@ export class LocalErrorEstimator {
     switch (type) {
       case DegradationType.EXPONENTIAL: {
         const logValues = values.filter((v) => v > 0).map(Math.log);
-        if (logValues.length < 2) return 0;
+        // EXPONENTIAL is only selected when this same filter yielded at least
+        // three positive values, so logValues cannot be too short here.
         const logArr = np.array(logValues);
         const tLogArr = np.array(tRel.slice(0, logValues.length));
         const coeffs = np.polyfit(tLogArr, logArr, 1);
-        const slopePart = (coeffs.tolist() as number[])[0] ?? 0;
+        const slopePart = (coeffs.tolist() as number[])[0]!;
         // Convert log-slope to effective rate at window midpoint
-        const lastVal = values[values.length - 1] ?? 1;
+        const lastVal = values[values.length - 1]!;
         slope = Math.abs(slopePart * lastVal);
         break;
       }
@@ -254,13 +255,14 @@ export class LocalErrorEstimator {
         const posIndices = values
           .map((v, i) => (v > 0 && tRel[i]! > 0 ? i : -1))
           .filter((i) => i >= 0);
-        if (posIndices.length < 2) return 0;
+        // POWER_LAW is only selected when this same projection yielded at
+        // least three indices, so there are always at least two here.
         const logT = posIndices.map((i) => Math.log(tRel[i]!));
         const logV = posIndices.map((i) => Math.log(values[i]!));
         const logTArr = np.array(logT);
         const logVArr = np.array(logV);
         const coeffs = np.polyfit(logTArr, logVArr, 1);
-        const exponent = (coeffs.tolist() as number[])[0] ?? 0;
+        const exponent = (coeffs.tolist() as number[])[0]!;
         slope = Math.abs(exponent);
         break;
       }

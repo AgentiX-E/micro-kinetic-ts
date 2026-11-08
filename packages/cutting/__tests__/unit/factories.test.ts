@@ -96,6 +96,17 @@ describe('registerCuttingFactories', () => {
     expect((container.resolve(DI_TOKENS.CUTTING_ENGINE) as any).__custom).toBe(true);
   });
 
+  it('does not overwrite an existing convergence prover', () => {
+    const container = new Container();
+    const existingProver = new InductionProver();
+    container.register(DI_TOKENS.CONVERGENCE_PROVER, () => existingProver);
+
+    registerCuttingFactories(container);
+
+    expect(container.resolve(DI_TOKENS.CONVERGENCE_PROVER)).toBe(existingProver);
+    expect(container.resolve(DI_TOKENS.CUTTING_ENGINE)).toBeInstanceOf(AdaptiveWindowCutter);
+  });
+
   it('custom factory context', () => {
     const container = new Container();
     const customEngine = new AdaptiveWindowCutter();

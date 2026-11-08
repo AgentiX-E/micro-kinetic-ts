@@ -261,3 +261,54 @@ describe('RemoteStore failure handling', () => {
     await store.close();
   });
 });
+
+// ── Timeouts ──
+
+/**
+ * A server that accepts a request and never answers it, which is what a stalled backend looks like
+ * from the client. The store must give up on its own abort timer rather than waiting forever.
+ */
+function startSilentServer(): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve) => {
+    const server = createServer(() => {
+      // Hold the socket open without writing a response.
+    });
+
+    server.listen(0, () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' ? addr!.port : 0;
+      resolve({ server, port });
+    });
+  });
+}
+
+describe('RemoteStore request timeout', () => {
+  let server: Server;
+  let port: number;
+
+  beforeAll(async () => {
+    const r = await startSilentServer();
+    server = r.server;
+    port = r.port;
+  });
+
+  afterAll(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+
+  it('should abort a request that outlives the configured timeout', async () => {
+    // Two attempts of 50ms each; without the abort timer this would never settle.
+    const store = new RemoteStore({ baseUrl: `http://localhost:${port}`, timeout: 50, retries: 1 });
+    const startedAt = Date.now();
+
+    const error = await store.get('slow').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StoreConnectionError);
+    expect((error as Error).message).toMatch(/Request failed after 2 attempts/);
+    // The waits are the proof that the timer fired rather than the request failing instantly.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(90);
+
+    await store.close();
+  });
+});
