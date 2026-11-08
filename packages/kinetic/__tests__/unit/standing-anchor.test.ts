@@ -147,6 +147,13 @@ const RETIRED = [
   // token has to be the form that is unique to the reading being retired, and for these two that is the fraction.
   '343/375',
   '75/90',
+  // ── Retired by iteration 250's log-fidelity repair, which is §0p-iii. The cell moved UP and the baseline gate
+  // refused the silence: `RE3:OnlineBoutique 25 -> 26` and `TOTAL 659 -> 660`, at an UNCHANGED configuration digest
+  // (`486ad3e0486b`), so the movement is an input repair rather than an arm. The percentages are not retired as
+  // tokens: `83.3%` is `25/30` on this cell and `75/90` on another, and the fraction is the form that is unique to
+  // the reading being retired.
+  '659/735',
+  '25/30',
 ] as const;
 
 describe('the standing document is anchored to one battery', () => {
@@ -174,9 +181,13 @@ describe('the standing document is anchored to one battery', () => {
     const leaderboard = section('### 2a. Full-benchmark', '### 2b.');
     expect(standing, 'the standing table quotes the anchored total').toContain(`(${fraction})`);
     expect(leaderboard, 'the leaderboard quotes the anchored total').toContain(`(${fraction})`);
-    // And §1's own table, whose overall row is the one a reader checks against the table above it.
+    // And §1's own table, whose overall row is the one a reader checks against the table above it. The percentage is
+    // COMPUTED from the anchor instead of being repeated here: a literal is a second copy of the same fact, and the
+    // movement that produced §0p-iii had to edit this line, which is the definition of a fence that goes stale with
+    // the thing it fences.
+    const totalPercent = ((byKey('TOTAL').correct / byKey('TOTAL').total) * 100).toFixed(2);
     expect(section('## 1. Our result', '## 2.')).toContain(
-      `**89.66%** (${byKey('TOTAL').correct})`,
+      `**${totalPercent}%** (${byKey('TOTAL').correct})`,
     );
   });
 
@@ -211,7 +222,8 @@ describe('the standing document is anchored to one battery', () => {
       section('| population                     | GALA+ AC@1', '> **This table was wrong'),
     ].join('\n');
     // Non-vacuity: five tables, and each one carries at least one of our own readings.
-    expect(current).toContain('659/735');
+    const totalFraction = `${byKey('TOTAL').correct}/${byKey('TOTAL').total}`;
+    expect(current).toContain(totalFraction);
     expect(current).toContain('344/375');
     expect(current).toContain('76/90');
     // The two directions of the same fact. Above: no table prints a retired reading. Below: \u00a70p names every
@@ -232,7 +244,11 @@ describe('the standing document is anchored to one battery', () => {
     const ranking = section('**Ranking:', 'That last clause');
     expect(ranking).toMatch(/first on RCAEval's 735 among every method with per-case results/i);
     expect(ranking, 'the ranking names the number above us').toMatch(/89/);
-    expect(ranking, 'the ranking names the gap').toMatch(/0\.66/);
+    // The gap is derived from the anchor and the vendor figure the sentence names, for the same reason the §1
+    // percentage is: a hard-coded margin is a second copy of a number the anchor already decides.
+    const vendor = 89;
+    const gap = ((byKey('TOTAL').correct / byKey('TOTAL').total) * 100 - vendor).toFixed(2);
+    expect(ranking, 'the ranking names the gap').toContain(`${gap} pp ABOVE`);
     expect(ranking).not.toMatch(/first on RCAEval's 735 overall/i);
   });
 

@@ -73,8 +73,8 @@ absolute score can be read against the floor a random ranker would reach on the 
 
 | evaluation                              | metric        | ours                  | best published competitor                                                                       | margin                                                                                                                                                                                                                                                                                                          | basis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | --------------------------------------- | ------------- | --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **RCAEval, all 735 cases**              | service Top-1 | **89.66%** (659/735)  | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method)                            | **+21.66 pp, ≈1.32×**                                                                                                                                                                                                                                                                                           | cross-paper (§2a). Re-anchored 2026-10-31 on battery `41188083576` at `25b4279b`: the row carried the pre-enrolment reading for a day after the boundary-gate enrolment that this document itself records at §2026-10-30 (4) had already moved it, and §0p is the correction that names both numbers                                                                                                                                                                                                    |
-| **RCAEval, all 735 cases**              | service Top-1 | **89.66%**            | PRISM **78.91%** — _our own reimplementation, identical harness_                                | **+10.75 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by several defaults**; a re-run is owed (§3)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **RCAEval, all 735 cases**              | service Top-1 | **89.80%** (660/735)  | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method)                            | **+21.80 pp, ≈1.32×**                                                                                                                                                                                                                                                                                           | cross-paper (§2a). Re-anchored 2026-10-31 on battery `41188083576` at `25b4279b`: the row carried the pre-enrolment reading for a day after the boundary-gate enrolment that this document itself records at §2026-10-30 (4) had already moved it, and §0p is the correction that names both numbers                                                                                                                                                                                                    |
+| **RCAEval, all 735 cases**              | service Top-1 | **89.80%**            | PRISM **78.91%** — _our own reimplementation, identical harness_                                | **+10.89 pp** — **and this is NOT a head-to-head any more**: the PRISM figure was measured at the pre-iteration-127 configuration and has not been re-run under the demand guard, which the reimplementation would inherit. The last true head-to-head is §3's `78.75 against 78.91` (−0.16 pp = 1 case of 735) | controlled, but **stale by several defaults**; a re-run is owed (§3)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **RCAEval RE2-OB (90 cases)**           | AC@1          | **93.3%** (84/90)     | RCLAgent **56.67%** (arXiv:2605.14866)                                                          | **+36.6 pp**                                                                                                                                                                                                                                                                                                    | cross-paper (§2b), re-anchored 2026-10-31 on battery `41188083576`: the boundary-gate enrolment took this cell up by three cases, and every table in this document now prints the post-gate reading — §2b's own row included                                                                                                                                                                                                                                                                            |
 | **RCAEval RE2-TT (90 cases)**           | AC@1          | **84.4%** (76/90)     | GALA+ **73.3%**                                                                                 | **+11.1 pp**                                                                                                                                                                                                                                                                                                    | cross-paper, **the same 90-case TrainTicket population** — and the **first time this cell has been ahead**: the pre-129 reading was an RE3 SUITE average rather than a cell, moved by the corpus view (`40128592846`). §2b-ii's prose, which read this cell as a −2.2 pp DEFICIT, is the second correction of §0p                                                                                                                                                                                       |
 | **FSE'26 RCABench**                     | Top@1         | **61.46%** (874/1422) | field avg **21%**, best **37%** (arXiv:2510.04711)                                              | **+24.5 pp over the best**                                                                                                                                                                                                                                                                                      | cross-paper, and the benchmark is a _different_ fault set — see the caveat below. Re-anchored on `41034020065`; the row carried a pre-gate reading, and the gate moved this population not at all (25 of 25 fault types identical), so this is a re-anchor rather than a gain                                                                                                                                                                                                                           |
@@ -83,13 +83,13 @@ absolute score can be read against the floor a random ranker would reach on the 
 | **RCAEval RE1 (375 cases)**             | service Top-1 | **91.7%** (344/375)   | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)**                                              | **+6.33 / +8.93 pp**                                                                                                                                                                                                                                                                                            | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5). Re-anchored 2026-10-31 on battery `41188083576`: the cell has been **330** since the boundary-gate enrolment, and the row's `327` was that enrolment behind — the same defect, one line down. **The OVERALL figure still hides a per-system deficit** — the same paper's Table 5 reports `AC@1` per system and we are BEHIND on OnlineBoutique; the row beneath this one is that cell             |
 | **RCAEval RE1-OB (125 cases)**          | service Top-1 | **90.4%** (113/125)   | `arXiv:2610.05009` **88.0%** (`L2+L3` / `L1+L2+L3`) and **86.4%** (`L0`)                        | **+2.4 / +4.0 pp — the cell that WAS the one place a published reference stood above us**                                                                                                                                                                                                                       | cross-paper, the same 125 cases; read 2026-10-29 from that paper's per-system Table 5 (§0a entry 5). THE SIGN OF THIS ROW CHANGED with the transient-guard policy (§0p): the cell was `85.6% (107/125)` and `−2.4 / −0.8 pp` behind on the shipped `endpoint` statistic, and the five cases the guard was dropping were a plateau whose last sample returns. `90.4` against that paper's best `88.0` is three cases of 125 (`113` against `110`), and against its `L0` it is five (`113` against `108`) |
 
-**Ranking: FIRST ON RCAEval's 735 AMONG EVERY METHOD WITH PER-CASE RESULTS — `659/735 = 89.66%`, which is
-`0.66 pp ABOVE` the only figure above it (a vendor's self-reported `89%`, §0a entry 1) while that figure ships no
+**Ranking: FIRST ON RCAEval's 735 AMONG EVERY METHOD WITH PER-CASE RESULTS — `660/735 = 89.80%`, which is
+`0.80 pp ABOVE` the only figure above it (a vendor's self-reported `89%`, §0a entry 1) while that figure ships no
 per-case results, no harness and no seed — first on FSE'26, first on RE2-OnlineBoutique, first on RE2-TrainTicket,
 first on RE1 overall, first on all three RE1 cells including OnlineBoutique (`arXiv:2610.05009`'s per-system Table 5
 reads 88.0 there against our 90.4, two cases of 125).**
 
-> **What `89.66%` is, and what the number beside it is (correction, iteration 227).** `659/735` weights every case
+> **What `89.80%` is, and what the number beside it is (correction, iteration 227).** `660/735` weights every case
 > equally over a corpus in which **RE1 is 51% of the cases (375 of 735)** and RE3 is 12% (90) — so it is closest to
 > the _easiest_ suite's rate and furthest from the published table's convention, which is the unweighted mean of
 > the per-cell `AVERAGE` columns. Both of this project's own instruments print the case-weighted figure
@@ -97,12 +97,12 @@ reads 88.0 there against our 90.4, two cases of 125).**
 >
 > | reading                                                 |  RE1 |  RE2 |      RE3 |    corpus |
 > | ------------------------------------------------------- | ---: | ---: | -------: | --------: |
-> | case-weighted (`659/735`, the one this document quotes) | 91.7 | 92.2 |     73.3 | **89.66** |
-> | mean of the nine published cells (RCAEval's convention) | 91.7 | 92.2 | **76.5** | **86.82** |
+> | case-weighted (`660/735`, the one this document quotes) | 91.7 | 92.2 |     74.4 | **89.80** |
+> | mean of the nine published cells (RCAEval's convention) | 91.7 | 92.2 | **77.2** | **87.06** |
 >
 > The ranking claim above survives under the second reading — no competitor reports a per-cell-mean corpus figure
 > that this project has been able to find, and the per-suite comparisons in the rows above are cell-for-cell and
-> unaffected — but a reader who recomputes from our artifacts will get **86.8**, not 89.66, and the difference is
+> unaffected — but a reader who recomputes from our artifacts will get **87.1**, not 89.80, and the difference is
 > this document's choice of fold, not the engine's accuracy. Quote the row you mean; both are printed by the run.
 
 That last clause is the correction of 2026-10-29 and it is worth stating how it was missed. Every previous reading of
@@ -126,7 +126,7 @@ The project leads the pre-LLM causal cohort by a wide margin on RCAEval overall 
 0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by 20–40 pp. **On our
 own harness the last true head-to-head remains `78.75 against 78.91` — one case behind PRISM's additive pooling —
 and it is now STALE**: the demand guard of iteration 127 changed our engine and would have changed the
-reimplementation too, so the current 89.66 is not a re-measurement of that pair and no margin is claimed from it.
+reimplementation too, so the current 89.80 is not a re-measurement of that pair and no margin is claimed from it.
 A re-run of §3 is the only thing that can restore the sentence, and it is owed.
 
 **What this ranking is NOT.** Every `68%` figure above is **cross-paper**: its dataset, its harness, its case
@@ -170,7 +170,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42343505202 on bd17912c, read 2026-11-08, config 486ad3e0486b -->
+<!-- standing-anchor: battery 42505425507 on 6412d69a, read 2026-11-09, config 486ad3e0486b -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -179,13 +179,13 @@ RE1:TrainTicket   112 125
 RE2:OnlineBoutique 84 90
 RE2:SockShop       89 90
 RE2:TrainTicket    76 90
-RE3:OnlineBoutique 25 30
+RE3:OnlineBoutique 26 30
 RE3:SockShop       19 30
 RE3:TrainTicket    22 30
 RE1 344 375
 RE2 249 270
-RE3  66  90
-TOTAL 659 735
+RE3  67  90
+TOTAL 660 735
 ```
 
 **Reproduced, because a standing figure has to be one a stranger can obtain rather than one this document remembers.** The readings above were taken TWICE, on one revision and one configuration, from two independent dispatches of the golden half — `41853861726` (16:15) and `41865456632` (16:57) — and **every one of the fifteen per-cell counts and all four totals is identical between them**, read off each run's own `rcaeval-re{1,2,3}-results.txt` and never off a suite line. The anchor names the second because it is the one whose artifact is complete; the first is the same number and is what the pre-registration of this flip was written against.
@@ -201,7 +201,7 @@ instrument, so every cell on both benchmarks is a different measurement from `1c
 | #   | as printed, on `1c18c76` and every revision before it                                                                                                                                    | what it read once that enrolment landed                                                                                                                                                 | why it moved                                                                                                                                                                                                                                                                                                                         |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 5   | overall `87.21% (641/735)`, RE1 `88.00% (330/375)`, RE2-OB `92.2% (83/90)`, RE2 suite `246/270`, RE1-SS `93.6%`, RE3-SS `60.0%` (`18/30`), RE3 suite `65/90`, RE1-OB `85.6%` (`107/125`) | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-OB `93.3% (84/90)`, RE2 suite `247/270`, RE1-SS `95.2%`, RE3-SS `63.3%` (`19/30`), RE3 suite `66/90`, RE1-OB `89.6%` (`112/125`) | one POLICY replaced one statistic (`docs/transient-guard-evidence.md` §10–§11), and it is the first change on this axis to move **both** halves in the same direction: `+15` cases on the nine cells with **no cell down**, `+9` on FSE'26 (`60.50%` / `860/1422` → `61.10%` / `869/1422`)                                           |
-| 6   | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-SS `97.8% (88/90)`, RE2 suite `247/270`, RE2-TT `83.3% (75/90)`, RE1-OB `89.6% (112/125)`, FSE'26 `61.10% (869/1422)`             | overall `89.66% (659/735)`, RE1 `91.7% (344/375)`, RE2-SS `98.9% (89/90)`, RE2 suite `249/270`, RE2-TT `84.4% (76/90)`, RE1-OB `90.4% (113/125)`, FSE'26 `61.46% (874/1422)`            | two sources, and only the second is the enrolment: `re1ob_currencyservice_loss_1` was already fixed at `0ffc38f0` and the anchor had never absorbed it (§0p-ii), while the guard policy `hump` moved `re2ss_payment_loss_1`, `re2tt_ts-travel-service_disk_2` and five FSE'26 fault types (`docs/transient-guard-evidence.md` §13.3) |
+| 6   | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-SS `97.8% (88/90)`, RE2 suite `247/270`, RE2-TT `83.3% (75/90)`, RE1-OB `89.6% (112/125)`, FSE'26 `61.10% (869/1422)`             | overall `89.66% (659/735)`, RE1 `91.7% (344/375)`, RE2-SS `98.9% (89/90)`, RE2 suite `249/270`, RE2-TT `84.4% (76/90)`, RE1-OB `90.4% (113/125)`, FSE'26 `61.46% (874/1422)`            | two sources, and only the second is the enrolment: `re1ob_currencyservice_loss_1` was already fixed at `0ffc38f0` and the anchor had never absorbed it (§0p-ii), while the guard policy `hump` moved `re2ss_payment_loss_1`, `re2tt_ts-travel-service_disk_2` and five FSE'26 fault types (`docs/transient-guard-evidence.md` §13.3)  — and this endpoint is itself superseded by §0p-iii |
 
 **Why a policy rather than a better statistic, stated in one sentence and defended in the evidence document.** The
 same statistic wins and loses on cells of ONE corpus: `level-window` is `+37` on FSE'26 and `−22` on the golden half,
@@ -246,7 +246,7 @@ block was right for the configuration that produced it, and then one engine fix 
 positioned to notice.
 
 **What the enrolment did to the second convention, stated because it is retired and not merely restated.** The
-§0 blockquote prints two readings of the same run: `89.66%` case-weighted and **`86.82%`** as the unweighted mean of
+§0 blockquote prints two readings of the same run: `89.80%` case-weighted and **`87.06%`** as the unweighted mean of
 the nine cells — RCAEval's own convention, in which a CELL is the unweighted mean of its fault types rather than
 cases over cases (`88.9` per type against `83.3` per case on RE3:OnlineBoutique; the other six cells have uniform
 type sizes and coincide). The previous pair was `89.25` and **`86.48`**, and both are retired: the corpus figure moves
@@ -284,6 +284,53 @@ current battery and it exits **0** with `total 659 -> 659 (unchanged)`.
 
 Until this iteration the rule for a reader was that **the block is a transcript, and a transcript has a date because
 it cannot have a proof.** It is a comparison now, and it is a comparison on every push.
+
+### 0p-iii. The fourth correction — the cell moved UP, and the gate that refuses silence said so first
+
+**What happened, and who noticed.** The log reader was repaired in iteration 250: `logs.csv` had been split on every
+comma rather than on the ones outside quotes, so 11–32% of every message in every sampled case was missing its tail,
+and the classifier was reading the surviving prefix. With faithful messages the cells moved **down**, because the
+truncation had been *masking* a second defect, and two counted clauses — a serialized exception is not a thrown one,
+and an exception that blames an I/O cause is not self-caused — put them back (`docs/rcaeval-log-fidelity.md` §3, §4).
+The net reads `RE3:OnlineBoutique 25 → 26 (+1)` and `TOTAL 659 → 660`, and **nothing else moved**: across all nine
+cells the only movement is that one, which is what a clause that changes one case is supposed to look like.
+
+**The gate found it before a human did.** `benchmarks/src/cell-baseline.ts` compared the run's per-case census against
+`benchmarks/baselines/rcaeval-nine-cells.json`, found `RE3:OnlineBoutique 25 -> 26 (+1)` and `total 659 -> 660`, and
+**failed the dashboard job** on the battery that carried the repair. That is the mechanism working as designed — *a
+movement is not automatically a defect, it is a claim nobody has made yet* — and this subsection is the claim, made in
+the same commit that updates the baseline file.
+
+**Why it is a repair and not an arm.** The run's own `signals:` line digests to `486ad3e0486b`, byte-identical to the
+anchor it replaces, so the movement cannot be a configuration change: a changed default would have skipped the
+comparison rather than tripping it. The three evidence lines that carry the claim are:
+
+| what was measured | reading |
+| --- | --- |
+| four-state ablation on `ss:2` and `ss:3` (old reader / faithful, no clause / +3a / +3a+3b) | `RE2:SockShop 98.9 → 94.4 → 94.4 → 98.9`, `RE3:SockShop 63.3 → 50.0 → 56.7 → 63.3` — the clauses recover **exactly** what faithfulness cost, and no more |
+| per-case census, shipped reader against the truncating one, all 120 SockShop RE cases | **zero flips** — the recovery is identity, not proximity |
+| `RE3:OnlineBoutique` | `82.1 → 85.7` case-level (`25/30 → 26/30` published), the one case faithfulness itself won and the clauses do not touch |
+
+**Two readings this subsection retires, and why only two.** The fractions `659/735` and `25/30` are retired in
+`standing-anchor.test.ts`'s `RETIRED`; the percentages that went with them are **not** retired as tokens, because
+`89.66` is a number this document also prints as the endpoint of the correction §0p recorded (now marked superseded
+above), and `83.3%` is `25/30` on one cell and `75/90` on another — the fraction is the form that is unique to the
+reading being retired, which is the rule §0p already states.
+
+**And one repair was BUILT, measured against this anchor, and refused.** The corpus reports `error` as a count and
+`workload` as its denominator, and on `RE3:SockShop` the truth and a victim differ by 0.6% in error count while
+differing by 11.6× in traffic — a reading that separates them 11.7× (per-request rate) wins 26 of those 30 cases
+against 18 for the count. Dividing the channel by its own traffic at the corpus boundary left **733 of 735** answers
+identical, moved the cell by **zero**, and traded one case for one; the four-state guard sweep refuses the statistic
+too (`trimmed-ends` 0, `endpoint` −1, `level-window` **−9**). The cell does not move, so the anchor does not move, and
+both refusals are recorded with their numbers in `docs/rcaeval-error-scale.md`.
+
+**And the corpus behind the reading is now the whole corpus.** The same iteration found why local readings had been
+taken on 723 cases while the battery reports 735: `/root/RCAEval-all` was short **seven case directories** and carried
+**five empty ones**, so the twelve cases the published denominator owns were absent from every local measurement. They
+are restored from the dataset the battery itself converts, and `docs/benchmark-corpus-completeness.md` §12 is the
+procedure — with the converter parity that licenses it (a re-converted control case is byte-identical on all four
+artifacts, `metrics.json` and a 70 MB `traces.csv` included).
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
@@ -907,7 +954,7 @@ read against a ceiling of **100%**, because a constant top-5 holding a cell's tr
 is why this repository's headline metric is Top-1 and why an `Avg@5` figure in a comparison row is annotated
 rather than ranked.
 
-This does not lower our published 89.66% and does not raise a competitor's: it states the floor each number was
+This does not lower our published 89.80% and does not raise a competitor's: it states the floor each number was
 measured above. The two RE3 cells with the largest headline gap to the leaders (SockShop, TrainTicket) are exactly
 the two whose floors are highest, and that coincidence is the reason this section exists.
 
@@ -937,12 +984,12 @@ and `0` points.
 | ----------------------------- | -------------- | --------------- | ----------- | ------------------- |
 | RE1 (metric, 125/system)      | 90.4% (113)    | **95.2%** (119) | 89.6% (112) | **91.7%** (344/375) |
 | RE2 (multi-source, 90/system) | 93.3% (84)     | **98.9%** (89)  | 84.4% (76)  | **92.2%** (249/270) |
-| RE3 (code-level, 30/system)   | **83.3%** (25) | 63.3% (19)      | 73.3% (22)  | **73.3%** (66/90)   |
-| **overall (735 cases)**       |                |                 |             | **89.66%** (659)    |
+| RE3 (code-level, 30/system)   | **86.7%** (26) | 63.3% (19)      | 73.3% (22)  | **74.4%** (67/90)   |
+| **overall (735 cases)**       |                |                 |             | **89.80%** (660)    |
 
 **Every number above is read from the artifact of one battery, not from the previous version of this table.**
 `rcaeval-loss-census-{re1,re2,re3}.jsonl` carry one record per case with a `correct` flag, and the nine cells are
-their sums: `113 + 119 + 112 = 344`, `84 + 89 + 76 = 249`, `25 + 19 + 22 = 66`, and `659` of `735`.
+their sums: `113 + 119 + 112 = 344`, `84 + 89 + 76 = 249`, `26 + 19 + 22 = 67`, and `660` of `735`.
 
 **What this section was, and why it is worth recording.** It carried `85.85% (631/735)` with RE1 at
 `85.6 / 92.8 / 83.2` and RE2 at `88.9 / 94.4 / 83.3` — the reading of the run BEFORE the boundary gate was
@@ -983,14 +1030,14 @@ Two cohorts must be reported separately, because they are measured on different 
 
 | method                     | Top-1                                                                | paradigm                                                        | source                                                                                        |
 | -------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Micro-Kinetic (ours)**   | **89.66%** (659/735)                                                 | deterministic causal fusion (graph + rank-normalized log/trace) | this repo                                                                                     |
+| **Micro-Kinetic (ours)**   | **89.80%** (660/735)                                                 | deterministic causal fusion (graph + rank-normalized log/trace) | this repo                                                                                     |
 | PRISM                      | 68% (Top-3 91%, Avg@5 87%); **78.91% reimplemented on this harness** | graph-free, internal/external property decomposition            | arXiv:2601.21359 (Luan Pham, RCAEval author); our reimplementation in `prism-head-to-head.md` |
 | BARO (best pre-LLM causal) | 19% (Top-3 74%, Avg@5 63%)                                           | non-parametric causal discovery                                 | arXiv:2601.21359 / 2412.17015                                                                 |
 
 > Two traps avoided here: (i) BARO's often-quoted **0.69** is its _Train-Ticket RE2 Avg@5_, **not** its overall
 > Top-1 (which is 19%); (ii) PRISM is the benchmark author's own graph-free method — it is the correct "academic
 > SOTA" anchor, **not** the nofire.ai "GALA 42%" figure. A third trap is now visible: PRISM's `68%` and our
-> `89.66%` are **not** the comparison to optimise against, because our own reimplementation of PRISM reaches
+> `89.80%` are **not** the comparison to optimise against, because our own reimplementation of PRISM reaches
 > **78.91%** on the same harness. The published numbers describe two different measurements; the reimplementation
 > describes one.
 
@@ -1095,7 +1142,7 @@ Its **graph-guided investigation** — parallel investigators bounded to predece
 `θ = 0.6` confidence gate and `O(kΔ)` worst-case work — is the part that is genuinely different in kind, and it
 is the same territory as our Phase III agentic work rather than a term to add.
 
-### 2c. Single-system / other slices (not directly comparable to 89.66%)
+### 2c. Single-system / other slices (not directly comparable to 89.80%)
 
 | method     | result        | slice                                                                                                                                                               | source              |
 | ---------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
@@ -1190,7 +1237,7 @@ rather than earning where it acts.
 
 ## 3. Corrected verdict
 
-**Headline (defensible):** On RCAEval overall Top-1, Micro-Kinetic (**89.66%**) leads the published field — ahead of
+**Headline (defensible):** On RCAEval overall Top-1, Micro-Kinetic (**89.80%**) leads the published field — ahead of
 the benchmark author's own PRISM (**68%**) by ~21.7 pp (**~1.32×**), and ahead of every LLM agent by 20–40 pp
 (RCLAgent 56.67% RE2-OB, GALA 42% — and `mABC`'s `40%`, which is **another group's re-measurement on AIOPS-2022 rather than that paper's own figure**, since its metric is RA/PA with a four-root-cause cap; see §2b and `docs/sota-populations.md`). It is also **orders of magnitude cheaper and faster** than the LLM
 cohort (deterministic, sub-second, zero API cost vs LLM agents at seconds-to-hours). Against the **same harness**,
@@ -1219,7 +1266,7 @@ become one case:**
 
 1. **The head-to-head was run, it read a tie, and the pair is now STALE ON ONE SIDE.** `docs/prism-head-to-head.md`
    measured PRISM's additive pooling at **78.91%** against ours at **78.75%** on the identical 735 cases — one case
-   of 735. Both sides were at that configuration's corpus; ours has since moved to **89.66%** through six
+   of 735. Both sides were at that configuration's corpus; ours has since moved to **89.80%** through seven
    enrolments (the demand guard, the boundary gate, the trace floor, the transient-guard policy and their dependants), and the
    reimplementation would inherit at least the corpus half of that movement if it were re-run. So the tie is no
    longer a measurement of the current engine, and **neither direction can be claimed from it**: claiming a lead
@@ -1585,11 +1632,11 @@ unweighted mean of the cell's fault types, and the `cases` column is the same ru
 | RE2:OnlineBoutique                                | 93.3%           | 94.9%            | 84/90                           |
 | RE2:SockShop                                      | 98.9%           | 98.9%            | 89/90                           |
 | RE2:TrainTicket                                   | 84.4%           | 88.0%            | 76/90                           |
-| RE3:OnlineBoutique                                | 88.9%           | 90.7%            | 25/30                           |
+| RE3:OnlineBoutique                                | 91.1%           | 91.1%            | 26/30                           |
 | RE3:SockShop                                      | 66.1%           | 84.6%            | 19/30                           |
 | RE3:TrainTicket                                   | 74.5%           | 81.2%            | 22/30                           |
 | **RE1 (three systems, unweighted mean)**          | 91.7%           | **96.4%**        | 344/375                         |
-| **nine cells (unweighted mean of the nine rows)** | **86.8%**       | **91.9%**        | **659/735 = 89.66% case-level** |
+| **nine cells (unweighted mean of the nine rows)** | **87.1%**       | **92.0%**        | **660/735 = 89.80% case-level** |
 
 ### 31.2 The comparator, and the one property that matters more than its headline
 
@@ -1739,8 +1786,10 @@ populations. Pre-registered before the code existed (`PREREGISTRATION_2026-11-07
 its own criterion, and recorded in `docs/transient-guard-evidence.md` §14.
 
 **No cell in this document moves.** The control reading on the new commit (`2d1dc02d`, battery `42365685149`) is
-`113/119/112 · 84/89/76 · 25/19/22` = **659/735** and `874/1 422` — identical to the anchor in §0p, which is what a
-weight-0 term must be and is now a measurement rather than a construction.
+`113/119/112 · 84/89/76 · 25/19/22` = **659/735** and `874/1 422` — identical to the anchor as it stood at
+`bd17912c`, which is what a weight-0 term must be and is now a measurement rather than a construction. §0p-iii is
+why the anchor now reads one case higher than this control: the +1 arrived after `bd17912c`, so the control is
+exactly one case behind it and **still a control** — it is quoted at the revision it was taken at.
 
 | arm         | golden (735) | FSE'26 (1 422) | verdict                                                   |
 | ----------- | -----------: | -------------: | --------------------------------------------------------- |

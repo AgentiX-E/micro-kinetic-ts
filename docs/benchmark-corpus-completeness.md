@@ -938,3 +938,49 @@ outranks the truth, three where `front-end` does, and twenty-two where the truth
 direction error in two of the three groups (docs/topo-share.md §11). Every artifact in `docs/` reports the
 truth's rank; none reports **how often the winner is downstream of the truth**. That is a column the census
 could carry from data it already has, and it is the first thing the next axis should be measured with.
+
+## 12. The twelve cases a local corpus was missing, and how they were found
+
+**The observation.** The battery reports `Cases discovered: 735` on every cell, and the standing anchor's denominators
+are `125 / 90 / 30`. A development corpus assembled by hand reported **723**: `125 / 120 / 123` for RE1, `87 / 90 / 90`
+for RE2 and `28 / 30 / 30` for RE3. Twelve cases — and no run in this record had ever compared the two numbers,
+because the local corpus and the battery's corpus are different objects and nothing joined them.
+
+**The forensics, from the battery's own per-case census.** `rcaeval-loss-census-{re1,re2,re3}.jsonl` carries one
+record per case, so the case-ID sets can be differenced against a directory listing. Two distinct defects came out of
+that diff, and they are worth separating because they fail differently:
+
+| defect                         | count | what it looked like                                                                                                                              | why it is silent                                                                                                       |
+| ------------------------------ | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| directories absent from the copy | **7** | five RE1:SockShop cases and two RE1:TrainTicket cases were simply not there                                                                      | discovery walks what exists; a missing case is not an error                                                             |
+| directories present but EMPTY    | **5** | `re2ob_currencyservice_delay_3`, `re2ob_productcatalogservice_mem_2`, `re2ob_recommendationservice_disk_3`, `re3ob_emailservice_f1_3`, `re3ob_emailservice_f5_3` — `os.listdir` returns `[]` | a directory with no `metrics.json` is filtered by the same rule that filters a directory that is not a case at all |
+
+**Why it mattered enough to fix before measuring again.** A twelve-case difference is larger than most arms in this
+record: the log-fidelity repair that added `RE3:OnlineBoutique 25 → 26` is **one** case, and the four-state ablation
+that justified it is quoted in case-level percentages whose denominator is 30. A cell read as `26/28` and a cell read
+as `26/30` are not the same number wearing different denominators — they are two different measurements, and the
+local one was taken on a corpus the published anchor does not describe.
+
+**The repair, and the parity check that licenses it.** The twelve cases are restored from the dataset the battery
+itself converts (`phamquiluan/RCAEval`), through the repository's own bridge, so the JSON/CSV the engine reads is
+produced by the same code path as the battery's:
+
+1. list each case directory from the dataset's tree endpoint and fetch its files into a staging tree, one directory
+   per case;
+2. convert with the repository's own bridge, pointed at the staging tree
+   (`scripts/convert-parquet-to-json.py --data-dir <staging> --out-dir <converted>`);
+3. install into the corpus and confirm the count the runner prints.
+
+**The parity check is the part that makes this a repair rather than a guess.** A control case the corpus already
+carried was re-downloaded and re-converted, and all four of its artifacts came out **byte-identical** to the copies in
+place: `metrics.json` (7,734,988 bytes), `logs.csv` (10,955,610), `traces.csv` (70,884,983) and `inject_time.txt`. A
+reader version that wrote different CSV would have produced a corpus of two vintages stitched together, and the stitch
+would have been invisible in every number.
+
+**What a fence for this would have to be, and why there is not one here yet.** The honest fence is not "735 cases
+exist" — that is a property of a dataset this repository does not own, and hard-coding it in the runner would fail on
+the day the benchmark adds a case. It is a comparison of the run's own `Cases discovered:` line against the
+denominators of the standing anchor, printed as a one-line verdict at the start of every run and refused only under an
+explicit flag. Until that exists, the reading rule is the one this section states: **a local number is comparable to
+the standing anchor only when its own `Cases discovered:` line carries the anchor's denominators — and every run
+prints that line.**

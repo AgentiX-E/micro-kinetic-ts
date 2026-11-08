@@ -1,17 +1,17 @@
 {
-  "battery": "42343505202",
-  "revision": "bd17912c",
-  "configuration": "486ad3e0486b",
-  "cells": {
-    "RE1:OnlineBoutique": 113,
-    "RE1:SockShop": 119,
-    "RE1:TrainTicket": 112,
-    "RE2:OnlineBoutique": 84,
-    "RE2:SockShop": 89,
-    "RE2:TrainTicket": 76,
-    "RE3:OnlineBoutique": 25,
-    "RE3:SockShop": 19,
-    "RE3:TrainTicket": 22
-  },
-  "total": 659
+ "battery": "42505425507",
+ "revision": "6412d69a",
+ "configuration": "486ad3e0486b",
+ "cells": {
+  "RE1:OnlineBoutique": 113,
+  "RE1:SockShop": 119,
+  "RE1:TrainTicket": 112,
+  "RE2:OnlineBoutique": 84,
+  "RE2:SockShop": 89,
+  "RE2:TrainTicket": 76,
+  "RE3:OnlineBoutique": 26,
+  "RE3:SockShop": 19,
+  "RE3:TrainTicket": 22
+ },
+ "total": 660
 }
