@@ -117,9 +117,21 @@ resets the term fires on lands at ≤ 0.0095 of its last pre-injection value** �
 re-baseline and an order of magnitude below any partial fall, so the predicate separates "the pod is new" from
 "the counter moved" without a number fitted between them.
 
-The two families it now reads are disjoint and that is the design: `k8s.container.restarts` reads a container
-that came back, the replacement indicator reads a pod that did not. `ContainerKill` fires both — `55/55` of its
-datapacks score `½` — and `PodKill` fires only the second.
+The two readings are disjoint and that is the design: `k8s.container.restarts` reads a container that came
+back, the replacement indicator reads a pod that did not. The measured spread of the truth's score, on the
+second wave's 149 lifecycle datapacks, is what that looks like:
+
+| fault type | `¼` | `½` | `¾` |
+| --- | ---: | ---: | ---: |
+| `PodKill`, 8 | **7** | 1 | 0 |
+| `PodFailure`, 6 | 0 | **6** | 0 |
+| `ContainerKill`, 55 | 0 | **51** | 4 |
+| `JVMMemoryStress`, 80 | 0 | **70** | 10 |
+
+`PodKill` is the row the indicator exists for: seven of its eight datapacks have no state channel moving at all
+and are read by the replacement indicator alone. `ContainerKill` and `JVMMemoryStress` mostly fire both — the
+container is killed and comes back, so the counter increments *and* restarts from zero — and the minority at
+`¾` are the datapacks where a readiness dip adds a third indicator.
 
 ## 4. Why the score is the SHARE and not a count
 
