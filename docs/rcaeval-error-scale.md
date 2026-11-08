@@ -8,25 +8,33 @@ repair is in the wrong place, and this document is the measurement that says so.
 
 ## 1. The near-tie, in the corpus's own numbers
 
-Nine of `RE3:SockShop`'s eleven misses have truth `orders` and winner `front-end`. Two of the eleven, measured on the
+The cell's eleven misses are **7 truth `carts` and 4 truth `orders`**; the winner is `front-end` in 5 of them,
+`rabbitmq-exporter` in 2, `orders-db` in 2, and `carts-db` / `user` in one each. Every winner is a service that shares
+traffic with the truth, and on the cases where the COUNT reading picks a victim the corpus says why — measured on the
 window the engine uses (pre-injection against post-injection):
 
 | case          | service              | `error` count rise | `error / workload` rise | relative count rise | `workload` (req/s) |
 | ------------- | -------------------- | -----------------: | ----------------------: | ------------------: | -----------------: |
 | `orders_f1_1` | **`orders`** (truth) |              1.775 |              **0.8427** |                9.00 |               2.12 |
-| `orders_f1_1` | `front-end` (winner) |          **1.786** |                  0.0722 |                9.06 |              24.55 |
+| `orders_f1_1` | `front-end` (victim) |          **1.786** |                  0.0722 |                9.06 |              24.55 |
 | `orders_f3_1` | **`orders`** (truth) |              1.649 |              **0.7945** |                5.60 |               2.12 |
-| `orders_f3_1` | `front-end` (winner) |          **1.683** |                  0.0683 |                5.70 |              24.55 |
+| `orders_f3_1` | `front-end` (victim) |          **1.683** |                  0.0683 |                5.70 |              24.55 |
 
-Three readings follow from that table, and only the third survives contact with the engine:
+Three readings follow from that table, and the engine only partly survives them:
 
-1. **The count comparison is a coin-flip decided by traffic.** `1.786` against `1.775` is six parts in a thousand.
-2. **The per-request rate separates them by an order of magnitude** (`0.843` against `0.072`), and ranking the 30
-   cases by it alone reaches **26/30** against **18/30** for the count. The same substitution is identity on
-   `RE1:SockShop` (44/122 either way), `RE3:OnlineBoutique` (6/24) and `RE3:TrainTicket` (0/30), and worth one case on
-   `RE1:TrainTicket` (6 against 5). The pick is not degenerate: over the 30 cases it names `carts` 10, `orders` 12,
-   `front-end` 7, `shipping` 1 against a truth distribution of 12 / 9 / 9.
-3. **The engine does not read that quantity, and this is the measurement that says so.**
+1. **The count comparison is a coin-flip decided by traffic.** `1.786` against `1.775` is six parts in a thousand,
+   while the two services differ by **11.6×** in requests served (`24.55` against `2.12` req/s).
+2. **The per-request rate separates them by an order of magnitude** (`0.843` against `0.072`), and ranking all 30
+   cases by it alone reaches **26/30**, against **18/30** for the count — and against the **19/30** the engine reads.
+   The same substitution is identity on `RE1:SockShop` (44/122 either way), `RE3:OnlineBoutique` (6/24) and
+   `RE3:TrainTicket` (0/30), and worth one case on `RE1:TrainTicket` (6 against 5). The pick is not degenerate: over
+   the 30 cases it names `carts` 10, `orders` 12, `front-end` 7, `shipping` 1 against a truth distribution of
+   12 / 9 / 9, and its confusion is `orders` 9/9, `carts` 10/12, `front-end` 7/9.
+3. **The engine is better than the count and worse than the rate.** It answers `orders_f1_1` and `orders_f3_1`
+   correctly where the count reading picks `front-end` — its log and trace evidence carries those — and it still
+   reads 19/30, because the `carts` half is where it loses: it takes **5 of the 12** `carts` cases where the rate
+   ranking takes **10**. So the question is not whether the engine can separate a source from a victim; it is what
+   quantity it compares when it does.
 
 ## 2. The repair that was built, measured, and refused
 
