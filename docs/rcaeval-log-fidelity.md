@@ -181,22 +181,55 @@ Three facts, and they say where the next iteration goes:
   its error count is larger than the source's by construction.
 - **The remaining misses are magnitude questions.** Truth anomaly 0.48–1.28 against a winner at 0.57–2.05.
 
-So the candidate axes are the ones that separate a source from a victim that repeats it, and all three already
-exist as knobs — which makes the next step a measurement rather than a build:
+So the candidate axes are the ones that separate a source from a victim that repeats it, and every one of them
+already exists as a knob — which makes the next step a measurement rather than a build:
 
-1. `logSignalMode` (`count` → `ratio`): a service's errors against its own request volume is exactly the
-   difference between `front-end` (many calls, a few failures) and a source (few calls, all failing).
-2. `logNormalisation` (`max` → `saturating` / `share`): under `max`, one row in one service takes the whole log
-   score where every other service has none — the mechanism that made a single `due to timeout` row decide a
-   case.
-3. `dualFamilyWeight` / `dualFamilyGate` (0.25 / 0.25, `channel`): the existing term for "two independent
-   channels agree", which is the one shape a victim-driven error spike does not have.
+1. `topoPrecedence` (`off` → `onset`; ships `off`): an operator that reads the onset order and prefers the
+   candidate that rose **first**. The diagnostics above say these are order failures — the truth is lit on the
+   error channel in 5 of 10 and simply outvoted on magnitude — and this is the one existing term that reads order
+   instead of size.
+2. `victimWeight` (ships at `0`; at zero the symmetry map is not even built): PRISM's axiom as a bounded
+   **discount** on a candidate's own evidence, `finalScore(v) −= victimWeight × (1 − symmetry(v)) ×
+   log1p(selfAnomaly(v))`. Exactly the shape `front-end` needs, and it ships disabled for a measured reason:
+   `prismWeight`'s six-arm sweep saw the additive form trade `RE3:TrainTicket` +9 against `RE1` −37. Any arm here
+   is a two-cell measurement or it is not one.
+3. `temporalWeight` (ships at `0`) with `onsetShape=earliness`: the same order information as (1), as an addend
+   rather than as a precedence rule.
+4. `dualFamily{Weight,Gate}` (0.25 / 0.25, `channel`): "two independent channels agree", which is the one shape a
+   victim-driven error spike does not have.
+
+Two axes are **not** on this list, and the reason is a measurement rather than a preference.
+`logNormalisation` is a closed family: five arms were swept and every departure from `max` loses
+(`docs/log-volume-scale.md`). And there is no `ratio` member of `LOG_SIGNAL_MODES` to switch to — its six members
+(`count`, `novelty`, `logicHttp`, `logicHttpJoint`, `logicHttpDominant`, `all`) name **which** signals are
+admitted, not how a count becomes a score. A clause that proposed either would be proposing a knob that does not
+exist.
 
 Rejected for now: a victim-shaped clause for `Request processing failed` **without** an environmental cause — it
 would also suppress genuine RE3 sources, which arrive through the same wrapper.
 
 The target is precise: 11 cases, one cell, three existing knobs, and an ablation that has to hold the other 8
 cells flat.
+
+### 5a. The first three arms, measured, and all three negative
+
+Probed before writing the plan rather than after, on `ss:3` alone (30 cases), shipped defaults otherwise:
+
+| arm | case-level AC@1 | published | Δ cases | what it says |
+| --- | ---: | ---: | ---: | --- |
+| shipped | 63.3% (19/30) | 66.1% | — | the residual as published |
+| `--topo-precedence onset` | 63.3% | 66.1% | **0** | **inert at `topoWeight=0`**: the operator acts inside the topological deduction, and with the term switched off there is no vector for it to act through |
+| `--topo-weight 0.2` | 60.0% (18/30) | 63.6% | **−1** | switching the term on at a fifth of a weight already costs a case |
+| `--topo-weight 0.2 --topo-precedence onset` | 60.0% | 63.6% | −1 (vs shipped) / **0** (vs the weight alone) | the precedence operator changes **nothing** even with a live term — it is not the missing mechanism at this weight |
+| `--victim-weight 0.1` | 60.0% | 63.6% | **−1** | the symmetry discount also costs a case at its first probe |
+
+So the two order-shaped axes are not the answer at these magnitudes, and one of them is not the answer at all:
+`topoPrecedence` is inert while `topoWeight` is 0, which is a property of where the operator lives rather than of
+this corpus. What survives as a candidate is (a) a **magnitude sweep** of `victimWeight` under a two-cell guard —
+the six-arm `prismWeight` sweep is the precedent for that shape of search — and (b) a mechanism that does not exist
+yet: the error channel normalised by the service's own request volume, which is a new term rather than a knob.
+
+Recorded here because a probe is a measurement, and the next iteration must not pay for it twice.
 
 ## 6. Reproduce
 
