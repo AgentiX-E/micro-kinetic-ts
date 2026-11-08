@@ -7065,8 +7065,16 @@ export function tallyDeltas(
  * inputs regardless of how the caller wrote the pattern.
  */
 function familyMatcher(family: MetricFamily): (label: string) => boolean {
-  const pattern = new RegExp(family.pattern.source, family.pattern.flags.replace(/[gy]/g, ''));
-  return (label) => pattern.test(label);
+  const { pattern } = family;
+  // `lastIndex` is cleared IN PLACE rather than rebuilt away. Rebuilding from `.source` was the older
+  // shape of this function and it is the construction `js/regex-injection` reports — a pattern assembled
+  // from a string, in a module whose whole input is a dump. Writing the one field that makes a global
+  // pattern stateful is the smaller and more honest operation: it makes the matcher pure without
+  // constructing anything, and it leaves the caller's pattern with the flags it asked for.
+  return (label) => {
+    pattern.lastIndex = 0;
+    return pattern.test(label);
+  };
 }
 
 /**
@@ -7932,11 +7940,19 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     // loaded cases can still tell that a comparison was asked for.
     extraDumps,
     // An invalid pattern is a loud failure, never a report whose family silently
-    // matches nothing.
+    // matches nothing. The pattern IS the parameter — `--family` takes a regular expression because the
+    // question the screen asks is "what happened to this family", and no other spelling of a family
+    // expresses `db\..*` — so this is the one construction in the module that is a sink by design. It
+    // reads a command line on the analyst's own machine, and the invalid-pattern path above is what
+    // keeps a malformed one from becoming a family that matches nothing.
     family:
       family === undefined
         ? undefined
-        : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
+        : {
+            label: values.get('family-label') ?? family,
+            // codeql[js/regex-injection]
+            pattern: new RegExp(family),
+          },
     sections: ANALYZE_SECTION_ORDER.filter((kind) => requested.has(kind)).map((kind) => ({
       kind,
       logWeight,

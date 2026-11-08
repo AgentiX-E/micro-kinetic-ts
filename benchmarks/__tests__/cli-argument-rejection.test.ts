@@ -221,16 +221,20 @@ describe('an unrecognised argument fails loudly', () => {
     // to fall back FROM: the requested configuration is unknowable, so defaulting silently means the
     // artifact answers a question the dispatcher did not ask — which is what happened when
     // `--log-weight --log-mode` consumed the next flag as its value.
+    // A flag spelled as a LITERAL pattern, so `--collapse-discount`'s hyphens and any other metacharacter
+    // are matched as themselves. Escaping only `-` — which is what this did — leaves a `.` or a `$` in a
+    // flag name matching something else, which is what `js/incomplete-sanitization` reports; escaping the
+    // whole metacharacter set is the same idea applied to the set that actually exists.
+    const asPattern = (literal: string): RegExp =>
+      new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const valueFlags = (accepted: readonly AcceptedFlag[], run: (argv: string[]) => unknown) => {
       const taking = accepted.filter((one) => one.takesValue);
       expect(taking.length).toBeGreaterThan(10);
       for (const one of taking) {
-        expect(() => run([one.flag]), `${one.flag} with no value`).toThrow(
-          new RegExp(one.flag.replace(/-/g, '\\-')),
-        );
+        expect(() => run([one.flag]), `${one.flag} with no value`).toThrow(asPattern(one.flag));
         // And a following FLAG is not a value either, so the flag that lost its value is named.
         expect(() => run([one.flag, '--max-cases', '1']), `${one.flag} before a flag`).toThrow(
-          new RegExp(one.flag.replace(/-/g, '\\-')),
+          asPattern(one.flag),
         );
       }
     };

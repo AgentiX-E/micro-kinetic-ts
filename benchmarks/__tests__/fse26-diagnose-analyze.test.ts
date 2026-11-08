@@ -1917,11 +1917,7 @@ describe('the attribution vocabulary is a census, not a sample', () => {
     // tally silently drops — and nothing would fail, which is the whole risk.
     const subsets: string[] = [];
     for (let mask = 1; mask < 1 << TERMS.length; mask++) {
-      subsets.push(
-        TERMS.filter((_, index) => (mask & (1 << index)) !== 0)
-          .join('+')
-          .replace(/^/, ''),
-      );
+      subsets.push(TERMS.filter((_, index) => (mask & (1 << index)) !== 0).join('+'));
     }
 
     expect([...MISS_DECIDED_BY].sort()).toEqual([...subsets].sort());

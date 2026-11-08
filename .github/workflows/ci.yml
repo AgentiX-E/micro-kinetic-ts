@@ -16,6 +16,12 @@ on:
   # webhook at all.
   workflow_dispatch:
 
+# Least privilege, stated once: every job in this workflow reads the repository and nothing here writes
+# to it. Without this block CodeQL's `actions/missing-workflow-permissions` reports each job separately —
+# seven open alerts, all with the same cause and the same fix.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -116,6 +122,12 @@ jobs:
 
   benchmark-diff:
     if: github.event_name == 'pull_request'
+    # The diff is COMMENTED on the pull request, which is the one write in this workflow and the reason
+    # the block above is a floor rather than the whole policy.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     needs: integration
     runs-on: ubuntu-latest
     steps:
