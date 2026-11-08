@@ -251,6 +251,11 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'maxCycles',
       'maxPropagationDepth',
       'onsetShape',
+      // Iteration 246: the pod-state corroboration term. Held at the engine default for the reason every
+      // dispatch axis here is held — the term reads a 0/1 STATE transition and pays the share of channels that
+      // crossed the boundary, so what its weight buys is one number per arm (`docs/pod-state-term.md` owns the
+      // sweep) and not a coefficient a continuous search can interpolate.
+      'podStateWeight',
       // Iteration 167: the SET the ranking covers. Held for the reason every axis here is held — a search
       // interpolates over coefficients, and this field picks a POPULATION, so its two values have different
       // denominators and nothing to interpolate between them.

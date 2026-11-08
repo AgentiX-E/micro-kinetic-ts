@@ -760,6 +760,92 @@ export function isDemandMetric(label: string): boolean {
 }
 
 /**
+ * The three channels that report a POD's lifecycle state rather than its level.
+ *
+ * They are the direct evidence for the archive's `ContainerKill`, `PodFailure` and `PodKill` faults, and they
+ * share a shape no level statistic can price: `k8s.container.restarts` is a monotone counter that sits at zero
+ * until the kill, `k8s.container.ready` is 1 until the container goes not-ready and 1 again after it returns,
+ * and `k8s.pod.phase` is a Categorical (2 = Running) rather than a magnitude.
+ *
+ * Every one of them is therefore dropped by the level guards on a genuine kill, and correctly so — the idle
+ * guard refuses a series that is ~0 for most of its history, the zero-baseline guard refuses a relative rise
+ * divided by nothing, and the transient guard refuses a channel whose two ends agree. What those guards cannot
+ * see is the STATE TRANSITION across the injection boundary, which is the reading this family needs.
+ *
+ * An exact list, on the same rule as {@link DEMAND_METRIC_LABELS}: a channel is not in the family until
+ * somebody says it is.
+ */
+export const POD_STATE_CHANNEL_LABELS: readonly string[] = [
+  'k8s.container.restarts',
+  'k8s.container.ready',
+  'k8s.pod.phase',
+];
+
+/**
+ * Corroboration count over {@link POD_STATE_CHANNEL_LABELS}, normalised to `[0, 1]`.
+ *
+ * One indicator per channel, summed and divided by the family's size: each channel is a fact that either
+ * happened across the injection boundary or did not, and a second restart is the same fact restated rather
+ * than twice the evidence. A magnitude would let a busy pod — one that happens to restart for its own reasons —
+ * outrank the pod that was actually killed, which is the shape the archive's own competitor loses on.
+ *
+ * The three predicates are the crudest readings that separate a state change from a level:
+ *
+ * * `k8s.container.restarts` — the counter's post-injection maximum exceeds its last pre-injection value by at
+ *   least one.
+ * * `k8s.container.ready` — the container was ready before the boundary and reports not-ready after it.
+ * * `k8s.pod.phase` — any post-injection sample differs from the last pre-injection level.
+ *
+ * `undefined` means the case cannot be read rather than that nothing moved: no injection anchor, or a boundary
+ * with no sample on one side, leaves the predicate without two sides to compare and the ranking term reports an
+ * ABSENT entry (see `classifyTermZero`) instead of a measured zero.
+ *
+ * @param serviceMetrics - The service's channels.
+ * @param injectTimeMs - The injection boundary in epoch milliseconds (`0` disables the reading).
+ * @returns The corroborated share in `[0, 1]`, or `undefined` when no channel corroborated or none could be read.
+ */
+export function computePodStateScore(
+  serviceMetrics: readonly TimeSeries[] | undefined,
+  injectTimeMs: number,
+): number | undefined {
+  if (!serviceMetrics || injectTimeMs <= 0) return undefined;
+
+  let corroborated = 0;
+  let measured = 0;
+  for (const ts of serviceMetrics) {
+    if (!POD_STATE_CHANNEL_LABELS.includes(ts.label)) continue;
+    // The boundary is placed on the SCALAR anchor, so the split is a comparison rather than a search: a
+    // channel whose samples all fall on one side is unmeasurable here, not silent.
+    let lastPre: number | undefined;
+    let maxPost = -Infinity;
+    let minPost = Infinity;
+    let firstPost: number | undefined;
+    for (let i = 0; i < ts.values.length; i++) {
+      const value = ts.values[i]!;
+      if (ts.timestamps[i]! < injectTimeMs) {
+        lastPre = value;
+        continue;
+      }
+      firstPost ??= value;
+      if (value > maxPost) maxPost = value;
+      if (value < minPost) minPost = value;
+    }
+    if (lastPre === undefined || firstPost === undefined) continue;
+    measured++;
+    if (ts.label === 'k8s.container.restarts') {
+      if (maxPost - lastPre >= 1) corroborated++;
+    } else if (ts.label === 'k8s.container.ready') {
+      // A container that was never ready has no level to fall from: `0 → 0` is an absence priced as an event.
+      if (lastPre > 0 && minPost < lastPre) corroborated++;
+    } else if (minPost !== lastPre || maxPost !== lastPre) {
+      corroborated++;
+    }
+  }
+  if (measured === 0 || corroborated === 0) return undefined;
+  return corroborated / POD_STATE_CHANNEL_LABELS.length;
+}
+
+/**
  * The shipped value of {@link TopologyFaultGraphConfig.suppressDemandMetrics}, which is `true`.
  *
  * An ENROLMENT rather than an opt-in, and the docblock on the config field carries the two measurements
@@ -1252,6 +1338,15 @@ export interface TopologyFaultGraphResult {
    */
   readonly collisionShapes: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service POD-STATE corroboration in `(0, 1]` — the share of {@link POD_STATE_CHANNEL_LABELS} that
+   * changed across the injection boundary. SPARSE: a missing entry means no pod-state channel corroborated, or
+   * that the case cannot place the boundary, and the two are the same absence to the ranking term.
+   *
+   * Read by the `podState` ranking term. See {@link computePodStateScore} for the three predicates and why the
+   * level guards cannot see any of them.
+   */
+  readonly podStateScores: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service metric competition, one entry per metric the service carries.
    *
    * The anomaly score is a maximum, so it cannot distinguish "the fault
@@ -1437,6 +1532,14 @@ export function buildTopologyFaultGraph(
    * rather than as a measured zero — the tier distinction `classifyTermZero` exists for.
    */
   const collisionShapes = new Map<ServiceId, number>();
+  /**
+   * Per-service pod-state corroboration in `(0, 1]`, SPARSE: an entry exists exactly where at least one
+   * pod-state channel moved across the injection boundary.
+   *
+   * Sparse for the reason `collisionShapes` is: "this node's pod never restarted" and "this case cannot place
+   * the boundary" are the same number and different facts, and the ranking term distinguishes them.
+   */
+  const podStateScores = new Map<ServiceId, number>();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -1453,6 +1556,10 @@ export function buildTopologyFaultGraph(
     metricDiagnostics.set(serviceId, result.metricDiagnostics);
     if (result.breadth !== 0) breadthByService.set(serviceId, result.breadth);
     if (result.collisionShape !== 0) collisionShapes.set(serviceId, result.collisionShape);
+    // Read off the SAME series the anomaly features read, from the same case, so a node cannot carry a
+    // pod-state entry the case's metric inventory does not contain.
+    const podState = computePodStateScore(serviceMetrics, cfg.injectTimeMs ?? 0);
+    if (podState !== undefined) podStateScores.set(serviceId, podState);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
       diagNoMetrics++;
@@ -1654,6 +1761,7 @@ export function buildTopologyFaultGraph(
     dominantMetrics,
     metricDiagnostics,
     collisionShapes,
+    podStateScores,
     propagationWeights,
     pearsonEdgeCount,
     fallbackEdgeCount,

@@ -325,6 +325,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // see the `transientGuardTest` row's comment. Its `fse26` column read `null` on the strength of a
     // corpus fact that had never been measured, so this entry is not a new knob but a corrected reach.
     '--transient-guard-test',
+    // Iteration 246: the pod's LIFECYCLE. FSE'26-only, and packed for the reason every post-ceiling knob is —
+    // this workflow is at its input budget. It is the first term whose evidence exists on one corpus only: the
+    // RCAEval populations carry no pod-lifecycle channel, which is why this flag is absent from the RCAEval
+    // half's block rather than merely unreached there.
+    '--pod-state-weight',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -606,6 +611,16 @@ const KNOBS: Readonly<
     owner: 'dual-family-gate.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
+  },
+  podStateWeight: {
+    // The pod's LIFECYCLE, which is the one evidence class the level guards cannot read: a counter that is
+    // zero until the kill, a readiness flag that returns to 1, a categorical phase. FSE'26-only, and
+    // `rcaeval: null` says why — the RCAEval corpora carry no pod-lifecycle channel, so a row claiming that
+    // half would describe a knob the golden runner has nothing to pass it to.
+    flag: '--pod-state-weight',
+    owner: 'pod-state-term.md',
+    fse26: 'ranking_knobs',
+    rcaeval: null,
   },
   victimWeight: {
     flag: '--victim-weight',

@@ -1386,3 +1386,48 @@ What the axis cost to close, in iterations: five arms measured (`level-window`, 
 `trimmed-ends`, `hump`), two refusals of the last one, one mis-specified bar corrected rather than moved, and one
 dispatch surface repaired so that the fourth reading could exist at all. **What it was never short of was numbers; it
 was short of a place to put the seventh one.**
+
+## Iteration 246 — an axis this register could not have listed, because the column was filed under a blank name
+
+Every row above is an axis that was **measured and refused**. This one is the other kind, and it is recorded
+because the register's whole purpose is to stop a re-derivation, and a re-derivation needs a place to start
+from. The pod lifecycle — a container restart, a readiness drop, a phase change — was not closed. It was not
+open. It was **invisible**, and the reason was a converter predicate: `service_name IS NOT NULL` was the rule
+that dropped an unowned metric row, and the pod-scoped k8s channels put the **empty string** in that column.
+Every datapack therefore carried one node named `''` holding forty-eight pod- and container-scoped gauges, and
+no service's channel list contained any of them. `docs/pod-state-term.md` §2 records the repair.
+
+The measurement that enrols it, on the whole archive — 1,422 datapacks scored in two waves of 711 with the
+same configuration, combined on per-case results:
+
+| population | term absent | `podStateWeight = 8` | movement |
+| --- | ---: | ---: | --- |
+| **FSE'26, 1,422, `Top@1`** | **873 = 61.39%** | **1,066 = 74.96%** | **+193 cases, +13.57 pp** |
+| FSE'26, 1,422, `Top@3` | 1,136 = 79.89% | 1,225 = 86.15% | +89, +6.26 pp |
+| FSE'26, 1,422, `Top@5` | 1,184 = 83.26% | 1,247 = 87.69% | +63, +4.43 pp |
+| `JVMMemoryStress`, 171 | 61 = 35.7% | **171 = 100.0%** | +110 |
+| `ContainerKill`, 89 | 27 = 30.3% | **88 = 98.9%** | +61 |
+| `PodFailure`, 24 | 1 = 4.2% | **23 = 95.8%** | +22 |
+| `PodKill`, 10 | 5 = 50.0% | 5 = 50.0% | **0** — the channels cannot read a deleted pod |
+| the other 21 types, 1,128 | 779 = 69.1% | 779 = 69.1% | **0** |
+
+**Twenty-two of the twenty-five fault types are identical to the case.** That is the cost side, and it is
+measured on the whole population rather than on a sample: a term with a specificity of 1.01 non-zero services
+per datapack (§5 of its document) is a pointer rather than a coefficient, which is why the weight is 8 rather
+than 1 and why the curve saturates there instead of climbing.
+
+Two readings that are easy to get wrong and are recorded so they are not:
+
+* **The baseline reads 873 against the register's 874.** The arm is at weight ZERO, so the one case cannot be
+  the term; it is attributed to the converter's attribution change, which gives every service the pod-scoped
+  channels it was silently missing and therefore moves the anomaly scores underneath. Both arms were measured
+  in the same session, which is what makes the pair comparable.
+* **`NetworkBandwidth` contains one fleet-wide restart event** — one of its 42 datapacks fires the term on 49
+  services at once. It cost nothing (20/42 at both weights, because a uniform offset cannot re-order), but it
+  names the next axis: a channel that moves across the fleet in one window should be discounted the way a
+  shared metric is, and that is a gate rather than a smaller weight.
+
+**What this row does NOT claim:** that a bigger weight is better. 8 and 16 are identical to the case, and the two
+residual misses at saturation are pool admission, not weight — the pointer is right and its candidate never enters
+the pool. Tuning this knob to chase them would be the "flippable vs would-be-hurt" mistake the top of this
+register exists to prevent.

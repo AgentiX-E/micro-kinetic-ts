@@ -408,6 +408,7 @@ describe('the RCAEval configuration line carries the configuration that produced
       'failedEdgeMinRecords',
       'failedEdgeMode',
       'metricFleetBaseline',
+      'podStateWeight',
     ]);
   });
 

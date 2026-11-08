@@ -146,6 +146,8 @@ export interface FSE26RunConfig {
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus; `0` = the shipped configuration. */
   readonly dualFamilyWeight: number;
+  /** Weight on the pod-state term; `0` = the shipped configuration. */
+  readonly podStateWeight: number;
   /**
    * Weight on the BASE term — the candidate's own anomaly. `1` is the shipped configuration and is the value
    * the formula carried as a literal before it was named; printed unconditionally so that an arm which
@@ -394,6 +396,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'selfTimeWeight',
   'victimWeight',
   'dualFamilyWeight',
+  'podStateWeight',
   'selfAnomalyWeight',
   'dualFamilyGate',
   'dualFamilyGateMode',
@@ -517,6 +520,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // measured arm from the shipped run on the artifact.
   line += ` victimWeight=${config.victimWeight}`;
   line += ` dualFamilyWeight=${config.dualFamilyWeight}`;
+  // Unconditional on the same rule: the term ships OFF, so this field is the only thing that can tell a
+  // measured arm from the shipped run on the artifact.
+  line += ` podStateWeight=${config.podStateWeight}`;
   // Unconditional: it ships at 0, and 0 is the identity of the membership above — so this field is the only
   // thing that can distinguish a gated arm from the shipped run.
   line += ` dualFamilyGate=${config.dualFamilyGate}`;

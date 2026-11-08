@@ -252,6 +252,102 @@ def compute_inject_time_ms(env: dict[str, Any]) -> int:
     return inject_seconds * 1000
 
 
+def service_of_pod(pod_name: str | None, known_services: list[str] | tuple[str, ...]) -> str | None:
+    """
+    Resolve a Kubernetes pod name to the service that owns it.
+
+    Three of the archive's pod-state channels — ``k8s.container.restarts``,
+    ``k8s.container.ready`` and ``k8s.pod.phase`` — carry an EMPTY
+    ``service_name`` and their identity in ``attr.k8s.pod.name``. The pod-state
+    channels are the DIRECT evidence for the archive's ``ContainerKill`` /
+    ``PodFailure`` / ``PodKill`` faults, so an unresolved pod name is not a
+    cosmetic loss: it is the difference between a case whose decisive channel
+    exists and one whose decisive channel is filed under ``''``.
+
+    The rule is the longest known service name that prefixes the pod on a DASH
+    boundary, which covers both naming schemes the cluster uses:
+
+    * Deployment pods: ``<service>-<replicaset-hash>-<suffix>``
+      (``ts-admin-order-service-8578fdc446-ctqwl``).
+    * StatefulSet pods: ``<service>-<ordinal>`` (``mysql-0``).
+
+    The longest match rather than the first is load-bearing: a shorter service
+    name can prefix a longer one's pods, and the boundary test alone would let
+    it claim them.
+
+    Args:
+        pod_name: The ``attr.k8s.pod.name`` value, possibly null or empty.
+        known_services: The case's non-empty ``service_name`` values.
+
+    Returns:
+        The owning service, or ``None`` when no known service prefixes the pod
+        (a cluster-scoped pod such as ``kube-proxy``) — the caller drops those
+        rows, because a metric with no service attribution cannot inform
+        service-level RCA.
+    """
+    if not pod_name:
+        return None
+    best: str | None = None
+    for service in known_services:
+        if not service:
+            continue
+        if pod_name == service or pod_name.startswith(service + "-"):
+            if best is None or len(service) > len(best):
+                best = service
+    return best
+
+
+def attribute_pod_scoped_services(frame: pl.DataFrame) -> pl.DataFrame:
+    """
+    Attribute pod-scoped rows to their service, and drop rows that cannot be.
+
+    The gauge and sum Parquet readers state one rule — "infra-level metrics lack
+    a service attribution and cannot inform service-level RCA, so they are
+    dropped" — and implemented it as ``service_name IS NOT NULL``. Pod-scoped
+    channels satisfy that test with the EMPTY STRING, so they survived as a
+    service named ``''``: a phantom node in every case, and a pod-state channel
+    no service could ever read. This function is that rule, corrected:
+
+    1. a row that already names its service keeps it (the platform's label is
+       authoritative and may disagree with the pod);
+    2. a row with an empty or null service takes :func:`service_of_pod`'s
+       answer for its pod;
+    3. a row still unattributed is dropped.
+
+    Args:
+        frame: A frame with a ``service`` column and, optionally,
+            ``attr.k8s.pod.name``.
+
+    Returns:
+        The frame with every remaining row attributed to a non-empty service.
+    """
+    attributed = frame.filter(pl.col("service").is_not_null() & (pl.col("service") != ""))
+    if "attr.k8s.pod.name" not in frame.columns:
+        return attributed
+
+    known = sorted({str(s) for s in attributed["service"].unique().to_list() if s})
+    pods = sorted({str(p) for p in frame["attr.k8s.pod.name"].unique().to_list() if p})
+    mapping = {}
+    for pod in pods:
+        owner = service_of_pod(pod, known)
+        if owner is not None:
+            mapping[pod] = owner
+    if not mapping:
+        return attributed
+
+    recovered = (
+        frame.filter(pl.col("service").is_null() | (pl.col("service") == ""))
+        .with_columns(
+            pl.col("attr.k8s.pod.name")
+            .cast(pl.String)
+            .replace_strict(mapping, default=None, return_dtype=pl.String)
+            .alias("service")
+        )
+        .filter(pl.col("service").is_not_null())
+    )
+    return pl.concat([attributed, recovered])
+
+
 def compact_metric_series(timestamps: list[int], values: list[float]) -> dict[str, Any]:
     """
     Compact a metric series to ``{start, step, values}`` when uniformly sampled.
@@ -463,9 +559,17 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
             # Infra-level metrics (node/hubble) lack a service attribution and
             # cannot inform service-level RCA, so they are dropped.
             continue
-        frame = pl.read_parquet(
-            path, columns=["time", "metric", "value", "service_name"]
-        ).with_columns(pl.lit(source_index, dtype=pl.Int8).alias("__source"))
+        # The pod column is what lets a pod-scoped channel find its service; it
+        # is absent from some writers, so it is padded rather than required, and
+        # the two windows must carry it or `pl.concat` refuses the pair.
+        columns = ["time", "metric", "value", "service_name"]
+        if "attr.k8s.pod.name" in schema:
+            columns.append("attr.k8s.pod.name")
+        frame = pl.read_parquet(path, columns=columns).with_columns(
+            pl.lit(source_index, dtype=pl.Int8).alias("__source")
+        )
+        if "attr.k8s.pod.name" not in frame.columns:
+            frame = frame.with_columns(pl.lit(None, dtype=pl.String).alias("attr.k8s.pod.name"))
         frames.append(frame)
     if not frames:
         return {}
@@ -479,10 +583,10 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     df = df.filter(
         pl.col("time").is_not_null()
         & pl.col("metric").is_not_null()
-        & pl.col("service").is_not_null()
         & pl.col("value").is_not_null()
         & pl.col("value").is_finite()
     )
+    df = attribute_pod_scoped_services(df)
     # Roll up the label fan-out into one sample per (service, metric, time).
     # `__source` stays in the group key (windows never merge) and in the sort
     # (deterministic order for coinciding timestamps), but drops out here.

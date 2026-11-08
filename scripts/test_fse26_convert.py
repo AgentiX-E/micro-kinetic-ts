@@ -2113,5 +2113,172 @@ class TestReadEdgeLatency(unittest.TestCase):
         self.assertEqual([(r[0], r[1]) for r in rows], [("ts-a", "ts-z"), ("ts-z", "ts-a")])
 
 
+# ── Pod-scoped metric attribution ────────────────────────────────────────
+
+
+class TestServiceOfPod(unittest.TestCase):
+    """Resolve a pod name to the service that owns it.
+
+    Three of the archive's pod-state channels — `k8s.container.restarts`,
+    `k8s.container.ready` and `k8s.pod.phase` — arrive with an EMPTY
+    `service_name` and their identity in `attr.k8s.pod.name`. Without this
+    resolution they are filed under the empty service key, where no service can
+    ever read them, and every case acquires a phantom node.
+    """
+
+    KNOWN = ["mysql", "rabbitmq", "ts-admin-order-service", "ts-travel-plan-service"]
+
+    def test_statefulset_pod_is_its_ordinal_free_name(self) -> None:
+        self.assertEqual(conv.service_of_pod("mysql-0", self.KNOWN), "mysql")
+
+    def test_deployment_pod_drops_hash_and_suffix(self) -> None:
+        self.assertEqual(
+            conv.service_of_pod("ts-admin-order-service-8578fdc446-ctqwl", self.KNOWN),
+            "ts-admin-order-service",
+        )
+
+    def test_longest_known_prefix_wins(self) -> None:
+        # `ts-travel-plan-service` extends a shorter candidate name, and the
+        # boundary test alone would let the shorter one claim the pod.
+        self.assertEqual(
+            conv.service_of_pod("ts-travel-plan-service-6b7fbfc649-dwndq", self.KNOWN),
+            "ts-travel-plan-service",
+        )
+        self.assertEqual(conv.service_of_pod("svc-a-123-abc", ["svc", "svc-a"]), "svc-a")
+
+    def test_prefix_must_end_on_a_dash_boundary(self) -> None:
+        # `ts-travel` is not a service named `ts-travel-plan-service`'s prefix
+        # once the dash is required, so a name that merely starts the string
+        # cannot claim the pod.
+        self.assertIsNone(conv.service_of_pod("ts-travel2-service-abc-def", ["ts-travel"]))
+
+    def test_unattributable_pod_is_none(self) -> None:
+        self.assertIsNone(conv.service_of_pod("kube-proxy-xk2lp", self.KNOWN))
+        self.assertIsNone(conv.service_of_pod("", self.KNOWN))
+        self.assertIsNone(conv.service_of_pod(None, self.KNOWN))
+
+    def test_an_empty_known_name_is_skipped_rather_than_matching_everything(self) -> None:
+        # The empty string is a prefix of every pod at no boundary, so a caller
+        # that passes the archive's phantom `''` key must not have it claim the
+        # fleet. Reachable through this function's own signature; `read_metrics`
+        # filters the key before calling, which is a caller's guarantee, not this
+        # function's.
+        self.assertEqual(conv.service_of_pod("mysql-0", ["", "mysql"]), "mysql")
+
+    def test_a_later_shorter_match_does_not_replace_a_longer_one(self) -> None:
+        # Order-independence: `svc` also prefixes `svc-a-123-abc`, and the
+        # comparison must be on LENGTH rather than on which match arrived last.
+        self.assertEqual(conv.service_of_pod("svc-a-123-abc", ["svc-a", "svc"]), "svc-a")
+        self.assertEqual(conv.service_of_pod("svc-a-123-abc", ["svc", "svc-a"]), "svc-a")
+
+
+class TestPodScopedAttribution(unittest.TestCase):
+    """`read_metrics` must attribute pod-scoped rows instead of filing them under ''."""
+
+    def _write(self, root: Path, rows: list[tuple[int, str, float, str, str | None]], name: str) -> None:
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + r[0]) for r in rows],
+                "metric": [r[1] for r in rows],
+                "value": [r[2] for r in rows],
+                "service_name": [r[3] for r in rows],
+                "attr.k8s.pod.name": [r[4] for r in rows],
+            },
+            schema_overrides={"attr.k8s.pod.name": pl.String},
+        ).write_parquet(root / name)
+
+    def test_empty_service_rows_take_the_pod_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                [
+                    (0, "k8s.pod.cpu.usage", 0.5, "mysql", "mysql-0"),
+                    (0, "k8s.container.restarts", 0.0, "", "mysql-0"),
+                    (1, "k8s.container.restarts", 1.0, "", "mysql-0"),
+                ],
+                "normal_metrics.parquet",
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(sorted(result), ["mysql"])
+        self.assertEqual(
+            sorted(s["metric"] for s in result["mysql"]),
+            ["k8s.container.restarts", "k8s.pod.cpu.usage"],
+        )
+        restarts = next(s for s in result["mysql"] if s["metric"] == "k8s.container.restarts")
+        self.assertEqual(restarts["values"], [0.0, 1.0])
+
+    def test_unattributable_rows_are_dropped(self) -> None:
+        # A cluster-scoped channel (`k8s.replicaset.available` carries no pod at
+        # all) cannot inform service-level RCA: it must vanish, not become a
+        # service named ''.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                [
+                    (0, "k8s.pod.cpu.usage", 0.5, "mysql", "mysql-0"),
+                    (0, "k8s.replicaset.available", 1.0, "", None),
+                    (0, "k8s.pod.phase", 2.0, "", "kube-proxy-xk2lp"),
+                ],
+                "normal_metrics.parquet",
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(sorted(result), ["mysql"])
+
+    def test_rows_with_a_service_are_untouched(self) -> None:
+        # A row that already names its service keeps it even when the pod name
+        # resolves to a DIFFERENT service (the platform's label can disagree with
+        # the pod, and the explicit label wins).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                [(0, "k8s.pod.cpu.usage", 0.5, "mysql", "rabbitmq-0")],
+                "normal_metrics.parquet",
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(sorted(result), ["mysql"])
+
+    def test_file_without_the_pod_column_still_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START)],
+                    "metric": ["m"],
+                    "value": [1.0],
+                    "service_name": ["svc"],
+                }
+            ).write_parquet(root / "normal_metrics.parquet")
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(sorted(result), ["svc"])
+
+    def test_attribution_itself_tolerates_a_frame_without_the_pod_column(self) -> None:
+        # `read_metrics` backfills the column with nulls before calling, so this
+        # guard is unreachable THROUGH it — which is a caller's guarantee and not
+        # this function's contract. Exercised directly, because a function whose
+        # only test path is the one its caller happens to take is a function with
+        # an unmeasured branch.
+        frame = pl.DataFrame(
+            {
+                "service": ["mysql", "", None],
+                "metric": ["a", "b", "c"],
+            }
+        )
+
+        result = conv.attribute_pod_scoped_services(frame)
+
+        self.assertEqual(result["service"].to_list(), ["mysql"])
+
+
 if __name__ == "__main__":
     unittest.main()

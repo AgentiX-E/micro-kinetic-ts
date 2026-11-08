@@ -67,6 +67,7 @@ import {
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POD_STATE_WEIGHT,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
@@ -312,6 +313,14 @@ export interface Fse26CliOptions {
    * one half only has an undecidable other half. The shipped value is the engine's 0.
    */
   readonly dualFamilyWeight: number;
+  /**
+   * Weight on the POD-STATE term — a pod's lifecycle transition across the injection boundary.
+   *
+   * Exposed here for the reason every term is: the coefficient is measurable only against a population that
+   * carries the channels, and this one is silent on every corpus that does not. The shipped value is the
+   * engine's {@link DEFAULT_POD_STATE_WEIGHT}.
+   */
+  readonly podStateWeight: number;
   /**
    * The share of the fleet's strongest dual signal a component must reach to be a family member — see
    * `TreePrunerOptions.dualFamilyGate`.
@@ -611,6 +620,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+    podStateWeight: DEFAULT_POD_STATE_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
     dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
@@ -744,6 +754,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
     } else if (arg === '--dual-family-weight' && hasValue(argv, i + 1)) {
       opts.dualFamilyWeight = parseWeight(argv[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
+    } else if (arg === '--pod-state-weight' && hasValue(argv, i + 1)) {
+      opts.podStateWeight = parseWeight(argv[++i]!, DEFAULT_POD_STATE_WEIGHT);
     } else if (arg === '--dual-family-gate' && hasValue(argv, i + 1)) {
       opts.dualFamilyGate = parseUnitInterval(argv[++i]!, DEFAULT_DUAL_FAMILY_GATE);
     } else if (arg === '--dual-family-gate-mode' && hasValue(argv, i + 1)) {

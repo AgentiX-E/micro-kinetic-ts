@@ -26,6 +26,7 @@ import {
   isDropDeviationMode,
   isLatencyMetric,
   isTransientGuardTest,
+  POD_STATE_CHANNEL_LABELS,
   rankNormalizeScores,
   TRANSIENT_GUARD_TESTS,
   TRANSIENT_RETURN_THRESHOLD,
@@ -4595,5 +4596,112 @@ describe('the collision SHAPE — the hump predicate read as a magnitude', () =>
     expect(shapeOf([['cpu', settled]], { injectTimeMs: 0, sideChannelObserved: true })).toBe(
       undefined,
     );
+  });
+});
+
+describe('pod-state corroboration — a STATE predicate, not a level one', () => {
+  type GraphCfg = Parameters<typeof buildTopologyFaultGraph>[2];
+
+  /** The service's pod-state score under one configuration, or `undefined` when nothing corroborated. */
+  const podStateOf = (
+    series: Array<[string, number[]]>,
+    cfg: GraphCfg,
+    id: ServiceId = 'svc',
+  ): number | undefined => {
+    const graph = makeCallGraph([id], []);
+    const metrics = makeMetrics([[id, series.map(([l, v]) => makeTimeSeries(l, v))]]);
+    return buildTopologyFaultGraph(graph, metrics, cfg).podStateScores.get(id);
+  };
+
+  /** Fifteen samples at the baseline, fifteen at the moved value: the boundary is at index 15. */
+  const step = (before: number, after: number): number[] => [
+    ...Array<number>(15).fill(before),
+    ...Array<number>(15).fill(after),
+  ];
+  const anchored: GraphCfg = { injectTimeMs: 15000 };
+
+  it('names the three pod-state channels once', () => {
+    expect(POD_STATE_CHANNEL_LABELS).toEqual([
+      'k8s.container.restarts',
+      'k8s.container.ready',
+      'k8s.pod.phase',
+    ]);
+  });
+
+  it('scores a restart counter that incremented across the boundary', () => {
+    // A counter is 0 for the whole pre-window and 1 afterwards: the level guards drop this series (it is
+    // idle for half its history, and its pre-injection baseline is zero), so the STATE predicate is the
+    // only reading that can see it. One of three channels corroborates.
+    expect(podStateOf([['k8s.container.restarts', step(0, 1)]], anchored)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('scores a readiness dip below its pre-injection level', () => {
+    expect(podStateOf([['k8s.container.ready', step(1, 0)]], anchored)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('scores a phase that left its pre-injection level', () => {
+    expect(podStateOf([['k8s.pod.phase', step(2, 0)]], anchored)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('adds the channels up, because corroboration is the evidence', () => {
+    // The archive's `ContainerKill` shape: the counter increments AND the container goes not-ready, while
+    // the phase stays Running. Two of three.
+    const both = podStateOf(
+      [
+        ['k8s.container.restarts', step(0, 1)],
+        ['k8s.container.ready', step(1, 0)],
+        ['k8s.pod.phase', step(2, 2)],
+      ],
+      anchored,
+    );
+    expect(both).toBeCloseTo(2 / 3, 10);
+    // A restart counter alone separates this shape from a pod whose neighbour restarted for its own reasons.
+    const counterOnly = podStateOf([['k8s.container.restarts', step(0, 2)]], anchored);
+    expect(counterOnly).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('is an indicator per channel, not a magnitude', () => {
+    // Two restarts are not twice the evidence that this pod is the injected one: the second restart is the
+    // same fact restated. A magnitude would let a busy pod outrank the injected one.
+    expect(podStateOf([['k8s.container.restarts', step(0, 9)]], anchored)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('measures nothing for a channel that never moved', () => {
+    expect(podStateOf([['k8s.container.restarts', step(0, 0)]], anchored)).toBeUndefined();
+    expect(podStateOf([['k8s.container.ready', step(1, 1)]], anchored)).toBeUndefined();
+    expect(podStateOf([['k8s.pod.phase', step(2, 2)]], anchored)).toBeUndefined();
+  });
+
+  it('measures nothing for a channel that was never ready, because a dip needs a level to fall from', () => {
+    // A container that reports 0 throughout has not gone not-ready; the reading would be an absence priced
+    // as an event.
+    expect(podStateOf([['k8s.container.ready', step(0, 0)]], anchored)).toBeUndefined();
+  });
+
+  it('measures nothing without an injection boundary', () => {
+    // Without the anchor there is no before and after, so the predicate has no sides to compare: the score
+    // is absent rather than zero, and a term that read it would price an absence.
+    expect(
+      podStateOf([['k8s.container.restarts', step(0, 1)]], { injectTimeMs: 0 }),
+    ).toBeUndefined();
+  });
+
+  it('measures nothing when either side of the boundary is empty', () => {
+    const allPost: number[] = Array<number>(30).fill(1);
+    expect(podStateOf([['k8s.container.restarts', allPost]], { injectTimeMs: 0 })).toBeUndefined();
+    // A boundary at index 0 leaves no pre-injection sample: the baseline is not "zero", it is unobserved.
+    expect(podStateOf([['k8s.container.restarts', allPost]], anchored)).toBeUndefined();
+  });
+
+  it('ignores every channel that is not a pod-state channel', () => {
+    expect(
+      podStateOf(
+        [
+          ['container.cpu.usage', step(0.1, 9)],
+          ['k8s.pod.memory.usage', step(1, 100)],
+        ],
+        anchored,
+      ),
+    ).toBeUndefined();
   });
 });

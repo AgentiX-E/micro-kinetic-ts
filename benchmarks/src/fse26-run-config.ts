@@ -88,6 +88,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     selfTimeWeight: opts.selfTimeWeight,
     victimWeight: opts.victimWeight,
     dualFamilyWeight: opts.dualFamilyWeight,
+    podStateWeight: opts.podStateWeight,
     dualFamilyGate: opts.dualFamilyGate,
     dualFamilyGateMode: opts.dualFamilyGateMode,
     temporalWeight: opts.temporalWeight,

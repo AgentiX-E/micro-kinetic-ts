@@ -81,6 +81,8 @@ export interface Fse26SignalOptions {
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus. Required for the same reason as the pool penalty. */
   readonly dualFamilyWeight: number;
+  /** Weight on the pod-state term. Required for the same reason as the pool penalty. */
+  readonly podStateWeight: number;
   /** The BASE term's coefficient — see `FSE26CliOptions.selfAnomalyWeight`. */
   readonly selfAnomalyWeight: number;
   /**
@@ -187,6 +189,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       victimWeight: opts.victimWeight,
       selfAnomalyWeight: opts.selfAnomalyWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
+      podStateWeight: opts.podStateWeight,
       dualFamilyGate: opts.dualFamilyGate,
       dualFamilyGateMode: opts.dualFamilyGateMode,
       temporalWeight: opts.temporalWeight,

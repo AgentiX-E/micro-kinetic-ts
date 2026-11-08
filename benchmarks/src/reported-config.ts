@@ -28,6 +28,10 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
   metricFleetBaseline: 'a topology-config option; neither construction site passes it',
   failedEdgeMode: 'meaningless without a weight to aggregate; ships at `sum`, never forwarded',
   failedEdgeMinRecords: 'meaningless without a weight to threshold; ships at 1, never forwarded',
+  podStateWeight:
+    'an FSE-26-only ranking weight: the RCAEval corpora carry no pod-lifecycle channel, so the ' +
+    'golden runner has nothing to pass it to and a line that printed it would name a knob this half ' +
+    'cannot turn',
 };
 
 /**

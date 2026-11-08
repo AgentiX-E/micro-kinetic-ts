@@ -243,4 +243,15 @@ export interface RankingWeights {
    * OPTIONAL: absent means 0 (disabled).
    */
   readonly selfTimeWeight?: number;
+  /**
+   * Weight on the POD-STATE term: the share of a pod's lifecycle channels that changed across the injection
+   * boundary (restart counter incremented, container went not-ready, phase left Running).
+   *
+   * The direct evidence for a kill-class fault, and the one evidence class the level guards cannot read: a
+   * counter that is zero until the kill is refused as duty-cycled, a readiness flag that returns to 1 is
+   * refused as transient, and a phase is categorical rather than a magnitude.
+   *
+   * OPTIONAL: absent means 0 (disabled).
+   */
+  readonly podStateWeight?: number;
 }

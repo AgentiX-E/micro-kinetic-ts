@@ -425,6 +425,16 @@ export interface FaultPropagationGraph {
    */
   readonly collisionShapes?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service POD-STATE corroboration in `(0, 1]` — the share of the pod's lifecycle channels that changed
+   * across the injection boundary (restart counter incremented, container went not-ready, phase left Running).
+   *
+   * Present only for a service whose own pod-state evidence corroborated, so a missing entry is an absence
+   * rather than a measured zero — the same rule `collisionShapes` follows. Feeds the `podStateWeight` term,
+   * which is the one reading a level statistic cannot take: those channels are a counter that is zero until
+   * the kill, a readiness flag that returns to 1, and a categorical phase.
+   */
+  readonly podStateScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service DB-connection-pool dominance indicator in {0, 1}: 1 when the
    * metric that won the service's anomaly maximum is a `db.client.connections.*`
    * series, 0 otherwise (and 0 — never 1 — when no dominance was measured).

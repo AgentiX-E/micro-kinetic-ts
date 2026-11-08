@@ -21,6 +21,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POD_STATE_WEIGHT,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
@@ -65,6 +66,9 @@ describe('buildFse26EngineOptions', () => {
       // constant, and it must land in `signals` because that is the object the pruner reads it from.
       selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
       dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+      // Same rule as its neighbours: the constant, not a literal, and it must land in `signals` because that is
+      // the object the pruner reads it from.
+      podStateWeight: DEFAULT_POD_STATE_WEIGHT,
       // Same rule as the weight above: read from the engine's own constant, and it must land in `signals`
       // because that is the object the pruner reads it from.
       dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,

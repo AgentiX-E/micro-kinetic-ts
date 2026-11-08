@@ -72,6 +72,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     selfTimeWeight: 0,
     victimWeight: 0,
     dualFamilyWeight: 0,
+    // The pod-state term, at its shipped 0: this fixture stays the published configuration. Present so
+    // `missingReportedConfigFields` answers about the line rather than about the fixture.
+    podStateWeight: 0,
     // The base term's coefficient, at the shipped 1: this fixture stays the published configuration, and the
     // field is present so `missingReportedConfigFields` is answering about the line rather than about the fixture.
     selfAnomalyWeight: 1,
@@ -185,6 +188,7 @@ describe('FSE26 report — attribution', () => {
       'selfTimeWeight',
       'victimWeight',
       'dualFamilyWeight',
+      'podStateWeight',
       'selfAnomalyWeight',
       'dualFamilyGate',
       'dualFamilyGateMode',
@@ -260,7 +264,8 @@ describe('FSE26 report — the two renderings agree', () => {
         'baselineAnchor=whole-file ' +
         'transientGuardTest=hump ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
-        `dualFamilyWeight=0 dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
+        'dualFamilyWeight=0 podStateWeight=0 ' +
+        `dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
         // The pool, printed OUTSIDE the deduction block because the filter applies at every weight: at
         // `topoDiscount = 0` this config still names the set its ranking covered, which is the whole point of

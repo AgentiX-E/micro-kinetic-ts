@@ -941,6 +941,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Ships at {@link DEFAULT_DUAL_FAMILY_GATE_MODE} = `channel`, the enrolment of iteration 146.
    */
   readonly dualFamilyGateMode: DualFamilyGateMode;
+  /**
+   * Weight on the POD-STATE term — a pod's lifecycle transition across the injection boundary.
+   *
+   *   finalScore(v) += podStateWeight × podState(v)
+   *
+   * `podState` is the share of {@link POD_STATE_CHANNEL_LABELS} that changed across the boundary (see
+   * `computePodStateScore`): a restart counter that incremented, a container that went not-ready, a phase that
+   * left Running. It is the direct evidence for a kill-class fault, and it is the one reading the level guards
+   * cannot take — a counter that sits at zero until the kill is refused as duty-cycled, and a channel whose two
+   * ends agree is refused as transient.
+   *
+   * Ships at {@link DEFAULT_POD_STATE_WEIGHT} = 8, the smallest weight at which the term decides rather than
+   * votes; `docs/pod-state-term.md` owns the sweep. At 0 the map is not read at all and the ranking is
+   * bit-identical to the engine that had no such term, which is what makes the ablation exact.
+   */
+  readonly podStateWeight: number;
 }
 
 /**
@@ -968,6 +984,7 @@ export function toRankingWeights(
     | 'selfTimeWeight'
     | 'victimWeight'
     | 'dualFamilyWeight'
+    | 'podStateWeight'
   >,
 ): RankingWeights {
   return {
@@ -987,6 +1004,7 @@ export function toRankingWeights(
     selfTimeWeight: options.selfTimeWeight,
     victimWeight: options.victimWeight,
     dualFamilyWeight: options.dualFamilyWeight,
+    podStateWeight: options.podStateWeight,
   };
 }
 
@@ -1177,6 +1195,32 @@ export const DEFAULT_VICTIM_WEIGHT = 0;
  * the next mechanism starts to matter.
  */
 export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
+
+/**
+ * The shipped value of {@link TreePrunerOptions.podStateWeight}.
+ *
+ * `8` is the SMALLEST weight at which the term is decisive, and that is the only stable description of it: the
+ * sweep in `docs/pod-state-term.md` reads Top@1 26.8 / 34.1 / 46.3 / 56.9 / 84.6 / **94.3** / 94.3 at
+ * 0 / 0.5 / 1 / 2 / 4 / **8** / 16 on the archive's 123 pod-lifecycle datapacks, so the curve is a step
+ * that SATURATES at 8 and the two arms above it are identical to the case.
+ *
+ * Three facts justify a weight this large, and the third is why it is not larger.
+ *
+ * * **The term is a pointer, not a vote.** On those 123 datapacks a fleet of ~50 services yields 1.01 nodes
+ *   with a non-zero score (`ContainerKill`) and 1.04 (`PodFailure`), and the truth is at the top of that
+ *   shortlist in 113 of the 113 cases its own channels corroborate. A weight spread across many candidates
+ *   would be a coefficient; here it is a decision.
+ * * **The saturating counts are the term's own ceiling, not a curve fit.** 88/89 and 23/24 are exactly the
+ *   datapacks in which the truth corroborates, so the residual miss is pool admission rather than weight —
+ *   raising the number chases a defect this knob does not own.
+ * * **It costs nothing anywhere it does not fire.** On the whole archive — 1,422 datapacks, both arms measured
+ *   in one session — `Top@1` moves 873 = 61.39% to 1,066 = 74.96%, and **22 of the 25 fault types are identical
+ *   to the case**. The three that move are the three whose evidence it reads: `JVMMemoryStress` 61 -> 171 (the
+ *   container is OOM-killed and restarted), `ContainerKill` 27 -> 88, `PodFailure` 1 -> 23. `PodKill` is flat at
+ *   50.0% at every weight because a deleted pod stops reporting instead of reporting `NotReady`: the term cannot
+ *   read that fault type, and §5 of the document records it rather than hiding it behind a tuned number.
+ */
+export const DEFAULT_POD_STATE_WEIGHT = 8;
 
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
@@ -1858,6 +1902,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
   dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
   dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+  podStateWeight: DEFAULT_POD_STATE_WEIGHT,
 };
 
 /**
@@ -1975,6 +2020,7 @@ export class TreePruner {
       faultHypotheses,
       propagationWeights,
       collisionShapes,
+      podStateScores,
     } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
@@ -2252,6 +2298,7 @@ export class TreePruner {
       topoScores,
       riseScores,
       collisionShapes,
+      podStateScores,
       deepestExceptions,
       traceActivityScores,
       prismScores,
@@ -2342,6 +2389,7 @@ export class TreePruner {
       graph.selfTimeScores,
       graph.channelSymmetry,
       graph.dualFamilyServices,
+      graph.podStateScores,
       deduction.audit,
     );
 
@@ -2406,6 +2454,7 @@ export class TreePruner {
         graph.selfTimeScores,
         graph.channelSymmetry,
         graph.dualFamilyServices,
+        graph.podStateScores,
         deduction.audit,
       ),
     );
@@ -2703,6 +2752,7 @@ function performTreeRCA(
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
   dualFamilyServices?: ReadonlySet<ServiceId>,
+  podStateScores?: ReadonlyMap<ServiceId, number>,
   topoAudit?: TopoDeductionAudit,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
@@ -3049,6 +3099,11 @@ function performTreeRCA(
   // The dual-family bonus. A membership test rather than a value: the term is the weight or nothing, which is
   // what keeps an imported SHAPE from becoming an imported SCALE.
   const dualFamilyWeight = options.dualFamilyWeight;
+  // The pod-state term. Its map is SPARSE: a missing entry is a node whose pod-state channels did not move
+  // across the injection boundary, or a case that cannot place the boundary. Both are an absence rather than a
+  // measured zero, so the lookup keeps the neutral 0 and the term can only ever reward a node the case's own
+  // lifecycle evidence corroborates.
+  const podStateWeight = options.podStateWeight;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -3110,6 +3165,7 @@ function performTreeRCA(
         return set.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
       };
       const onsetEntry = onsetSlopes.get(id);
+      const podStateEntry = podStateScores?.get(id);
       const collisionEntry = collisionShapes?.get(id);
       const topoEntry = topoScores?.get(id);
       const logEntry = logScores?.get(id);
@@ -3236,6 +3292,14 @@ function performTreeRCA(
         buildTerm('dualFamily', dualFamilyWeight, dualFamilyServices?.has(id) ? 1 : 0, {
           presence: presenceInSet(dualFamilyServices, id),
           source: 'dualFamilyServices',
+        }),
+        // The pod's own LIFECYCLE, which no level statistic can read: a restart counter that incremented, a
+        // container that went not-ready, a phase that left Running. A GRADED value rather than an indicator,
+        // because the map is already the corroboration share — the number of independent channels that moved,
+        // over the family's size — so the weight multiplies a quantity that says how much the case agrees.
+        buildTerm('podState', podStateWeight, podStateEntry ?? 0, {
+          presence: presenceOf(podStateScores, id),
+          source: 'podStateScores',
         }),
       ];
       termCache.set(id, t);

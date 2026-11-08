@@ -14,6 +14,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POD_STATE_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
@@ -1099,6 +1100,7 @@ describe('TreePruner', () => {
         selfTimeWeight: 0.9,
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
+        podStateWeight: 0.6,
       });
 
       expect(weights).toEqual({
@@ -1118,6 +1120,7 @@ describe('TreePruner', () => {
         selfTimeWeight: 0.9,
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
+        podStateWeight: 0.6,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -2262,6 +2265,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
+      podStateWeight: 0.6,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -2529,6 +2533,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
+      podStateWeight: 0.6,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -2561,6 +2566,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       selfTimeWeight: 0.9,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
+      podStateWeight: 0.6,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -3042,6 +3048,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'selfTime',
       'victim',
       'dualFamily',
+      'podState',
     ]);
   });
 });
@@ -3965,6 +3972,7 @@ describe('the base term’s weight — the one quantity the formula used to writ
       selfTimeWeight: 0,
       victimWeight: 0,
       dualFamilyWeight: 0.25,
+      podStateWeight: 0.5,
     });
     expect(weights.selfAnomalyWeight).toBe(0.75);
   });
@@ -4053,6 +4061,148 @@ describe('the collision term is keyed on the hump SHAPE rather than on inherited
       const term = shipped.termOf(serviceId);
       expect(term.contribution).toBe(0);
       expect(term.cause).toBe('WEIGHT_ZERO');
+    }
+  });
+});
+
+describe('the pod-state term — the lifecycle evidence a level statistic cannot read', () => {
+  /**
+   * `A` → `B`, where `A` carries the larger anomaly on an ordinary resource channel and `B` is the pod that was
+   * actually killed: its restart counter is 0 for the whole pre-injection window and 1 afterwards, which every
+   * level guard refuses (idle for half its history, zero baseline, two agreeing ends).
+   */
+  const run = (options: Partial<ConstructorParameters<typeof TreePruner>[0]> = {}) => {
+    const pruner = new TreePruner({ defaultTopK: 2, ...options });
+    const metrics: Map<string, readonly TimeSeries[]> = new Map([
+      [
+        'A',
+        [makeTimeSeries('cpu_usage', [...Array<number>(15).fill(1), ...Array<number>(15).fill(5)])],
+      ],
+      [
+        'B',
+        [
+          makeTimeSeries('cpu_usage', [...Array<number>(15).fill(1), ...Array<number>(15).fill(2)]),
+          makeTimeSeries('k8s.container.restarts', [
+            ...Array<number>(15).fill(0),
+            ...Array<number>(15).fill(1),
+          ]),
+        ],
+      ],
+    ]);
+    const graph = pruner.buildFaultGraph(makeCallGraph(['A', 'B'], [['A', 'B']]), metrics, {
+      injectTimeMs: 15000,
+    });
+    const results = pruner.analyze(graph, 2);
+    return {
+      graph,
+      results,
+      termOf: (id: string) =>
+        results.find((r) => r.serviceId === id)!.terms!.find((t) => t.name === 'podState')!,
+      scoreOf: (id: string) => results.find((r) => r.serviceId === id)!.finalScore!,
+    };
+  };
+
+  it('measures the killed pod and not its neighbour', () => {
+    expect(run().graph.podStateScores?.get('B')).toBeCloseTo(1 / 3, 12);
+    expect(run().graph.podStateScores?.has('A')).toBe(false);
+  });
+
+  it('pays `weight × corroboration` and can lift the killed pod over a larger anomaly', () => {
+    const off = run({ podStateWeight: 0 });
+    const on = run({ podStateWeight: 1 });
+    // The control: with the term off the kill is invisible and the louder neighbour wins.
+    expect(off.results[0]!.serviceId).toBe('A');
+    expect(off.termOf('B').contribution).toBe(0);
+    expect(off.termOf('B').cause).toBe('WEIGHT_ZERO');
+    // The arm: one of three channels corroborated, and that is enough to move the rank.
+    expect(on.termOf('B').contribution).toBeCloseTo(1 / 3, 12);
+    expect(on.results[0]!.serviceId).toBe('B');
+    // The price is the term's own contribution: nothing else in the sum reads this weight.
+    expect(on.scoreOf('B') - off.scoreOf('B')).toBeCloseTo(1 / 3, 12);
+  });
+
+  it('reports an uncorroborated candidate as an absent ENTRY rather than a measured zero', () => {
+    const on = run({ podStateWeight: 1 });
+    const term = on.termOf('A');
+    expect(term.contribution).toBe(0);
+    expect(term.cause).toBe('INPUT_ENTRY_ABSENT');
+    expect(term.source).toBe('podStateScores');
+  });
+
+  it('is inert at 0 — the ablation arm the sweep starts from — and says so with the sharpest cause', () => {
+    // The term ships ON, so the inert arm is an EXPLICIT zero rather than the default, and the default itself
+    // is asserted separately below so the two cannot drift apart in silence.
+    const off = run({ podStateWeight: 0 });
+    for (const { serviceId } of off.results) {
+      const term = off.termOf(serviceId);
+      expect(term.contribution).toBe(0);
+      expect(term.cause).toBe('WEIGHT_ZERO');
+      expect(term.source).toBeUndefined();
+    }
+  });
+
+  it('ships at the weight its sweep read as decisive, and the default is that weight', () => {
+    // `docs/pod-state-term.md` §6 reads 26.8% at 0, 84.6% at 4, 94.3% at 8 and 94.3% again at 16 on the
+    // archive's 123 lifecycle datapacks: 8 is the smallest weight at which the term decides, so the constant
+    // is asserted by VALUE. A change here without a matching sweep is a change to a measured number.
+    expect(DEFAULT_POD_STATE_WEIGHT).toBe(8);
+    const shipped = run();
+    // One of three channels corroborated on B, so the term pays `weight × 1/3`.
+    expect(shipped.termOf('B').contribution).toBeCloseTo(DEFAULT_POD_STATE_WEIGHT / 3, 12);
+    expect(shipped.results[0]!.serviceId).toBe('B');
+  });
+
+  it('carries a cause if and only if its contribution is zero, like every other term', () => {
+    const on = run({ podStateWeight: 1 });
+    const b = on.termOf('B');
+    expect(b.contribution).not.toBe(0);
+    // A LIVE term carries neither field: both exist to explain a zero, and reporting either beside a
+    // contribution would invite a reader to treat a term that decided something as one that did not.
+    expect(b.cause).toBeUndefined();
+    expect(b.source).toBeUndefined();
+  });
+
+  it('cannot re-order a corpus that publishes no pod-lifecycle channel — the golden half, as a fence', () => {
+    // The RCAEval corpora carry CPU, memory, delay and error series and no k8s lifecycle channel at all, so the
+    // map is EMPTY there and the term contributes nothing to anyone. Asserted as a fence rather than assumed
+    // because a weight large enough to decide one benchmark and able to re-order ANOTHER is the shape of defect
+    // this campaign keeps finding — and 8 is not a small weight.
+    const metrics: Map<string, readonly TimeSeries[]> = new Map([
+      [
+        'A',
+        [makeTimeSeries('cpu_usage', [...Array<number>(15).fill(1), ...Array<number>(15).fill(5)])],
+      ],
+      [
+        'B',
+        [makeTimeSeries('cpu_usage', [...Array<number>(15).fill(1), ...Array<number>(15).fill(2)])],
+      ],
+    ]);
+    const arm = (podStateWeight: number) => {
+      const pruner = new TreePruner({ defaultTopK: 2, podStateWeight });
+      const graph = pruner.buildFaultGraph(makeCallGraph(['A', 'B'], [['A', 'B']]), metrics, {
+        injectTimeMs: 15000,
+      });
+      return { graph, results: pruner.analyze(graph, 2) };
+    };
+    const off = arm(0);
+    const on = arm(DEFAULT_POD_STATE_WEIGHT);
+    // The map EXISTS and holds nothing: the reading ran and no channel corroborated, which is `MAP_EMPTY` rather
+    // than the per-candidate absence — the same distinction the collision term's own test makes.
+    expect(on.graph.podStateScores?.size).toBe(0);
+    for (const result of on.results) {
+      const term = result.terms!.find((t) => t.name === 'podState')!;
+      expect(term.contribution).toBe(0);
+      expect(term.cause).toBe('INPUT_MAP_EMPTY');
+    }
+    expect(on.results.map((r) => r.serviceId)).toEqual(off.results.map((r) => r.serviceId));
+    expect(on.results.map((r) => r.finalScore)).toEqual(off.results.map((r) => r.finalScore));
+  });
+
+  it('adds up: the breakdown still sums to `finalScore` with the term in the sum', () => {
+    const on = run({ podStateWeight: 1 });
+    for (const result of on.results) {
+      const sum = result.terms!.reduce((acc, t) => acc + t.contribution, 0);
+      expect(sum).toBeCloseTo(result.finalScore!, 10);
     }
   });
 });
