@@ -107,3 +107,20 @@ statement about what information is available**, and any future statistic can be
 engine at all. It is also the cheapest known upper bound on this cell: `26/30 = 86.7%` is reachable from metrics
 alone, with no logs, no traces and no topology — which means the remaining eleven misses are not an information
 problem.
+
+## 6. What this implies for the collision-source instrument, stated as a proposal and not as a result
+
+No Deng-Yu term was touched this iteration, and the run's own census is the reason a "no movement" reading from them
+would be worthless: `collision`, `prism`, `rise`, `source`, `selfTime`, `temporal`, `topo` and `victim` are all
+`WEIGHT_ZERO 100%` in the shipped configuration. A zero measured with the switch off is an artefact of the switch, and
+this document does not claim one.
+
+What the null in §2 _does_ say, though, is where a collision-source term would have to act, and it is a different
+place from where the term currently sits. The engine's per-channel statistic is a **relative** rise; the discriminator
+in §1 is an **absolute emission intensity** — errors per request at the candidate, before anything propagates. That is
+the quantity the collision-source framing is actually about: a source is a node whose own emission rate changed at
+`t₀`, and the propagation `τ` is what makes every other node's level rise afterwards without their emission having
+changed at all. A term that estimates `λ₀(v)` (the node's own emission intensity in the window, per request, from its
+own channels) and compares it across nodes is therefore a collision-source term rather than a new knob, and it is the
+next axis this document proposes — pre-registered with the guard this record already uses: `RE3:SockShop` up,
+`RE2:SockShop` and all three RE1 cells flat, and a hard upper bound of **26/30** measured before the code exists.
