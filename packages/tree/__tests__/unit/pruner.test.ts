@@ -24,6 +24,7 @@ import {
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   isPrismPooling,
+  LOG_SATURATION_COUNT,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
   PRISM_POOLINGS,
@@ -1185,6 +1186,47 @@ describe('TreePruner', () => {
 
       const results = pruner.analyze(graph, 3);
       expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('stores the SCALE the option names, and `max` is untouched by it', () => {
+      // The option reaches the term: the same three-line flood lands at `1` under the shipped scale and at
+      // `1 − e^(−3/25)` under the absolute one. Read off the GRAPH rather than off the ranking, because the
+      // ranking is what the measurement decides and this is only the wiring.
+      const maxed = new TreePruner().buildFaultGraph(callGraph, metrics, { logs });
+      const saturated = new TreePruner({ logNormalisation: 'saturating' }).buildFaultGraph(
+        callGraph,
+        metrics,
+        { logs },
+      );
+
+      expect(maxed.logScores?.get('A')).toBe(1);
+      expect(saturated.logScores?.get('A')).toBeCloseTo(1 - Math.exp(-3 / LOG_SATURATION_COUNT), 12);
+      // …and the silent peers are zero on both, so the arm cannot invent evidence.
+      for (const id of ['B', 'C']) {
+        expect(maxed.logScores?.get(id), id).toBe(0);
+        expect(saturated.logScores?.get(id), id).toBe(0);
+      }
+    });
+
+    it('prices a one-line flood at a full weight under `max` and at a fraction under `saturating`', () => {
+      // The behaviour the arm exists for, read off the score BREAKDOWN rather than off a rank, because the
+      // rank also depends on how far apart this fixture's anomalies happen to sit. A's entire log evidence is
+      // ONE line: `max` divides by that line, so the term contributes its whole weight; `saturating` pays
+      // `0.039 × 3`. The difference between the two contributions is the mechanism, and nothing else in the
+      // score moves between the arms.
+      const oneLine = [logs[0]!];
+      const logTerm = (options: ConstructorParameters<typeof TreePruner>[0]): number => {
+        const pruner = new TreePruner({ ...options, logWeight: 3 });
+        const result = pruner.analyze(pruner.buildFaultGraph(callGraph, metrics, { logs: oneLine }), 3);
+        const row = result.find((r) => r.serviceId === 'A')!;
+        return row.terms!.find((t) => t.name === 'log')!.contribution;
+      };
+
+      expect(logTerm({})).toBeCloseTo(3, 10);
+      expect(logTerm({ logNormalisation: 'saturating' })).toBeCloseTo(
+        3 * (1 - Math.exp(-1 / LOG_SATURATION_COUNT)),
+        10,
+      );
     });
 
     it('is enabled by default (logWeight 1.0 lifts the erroring source)', () => {

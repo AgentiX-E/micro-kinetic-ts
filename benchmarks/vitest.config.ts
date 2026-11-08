@@ -224,6 +224,13 @@ export default defineConfig({
         // this list whose whole subject is a REFUSAL — so its uncovered branches would be the refusals nobody
         // exercised, which is precisely the state the module exists to make impossible.
         'src/anchor-census.ts',
+        // Added with the module: the log flood census, which is what turned "the log term always claims a full
+        // weight" from an observation about the code into a measurement of the corpus — the median case admits
+        // eight lines, a third admit one or none, and in 16.9% the truth emits NOTHING while a neighbour floods.
+        // Its whole value is the distinctions it refuses to collapse (a silent case against a quiet one, a tie
+        // against a champion, a concentration that must not absorb the silent cases), so every branch is measured
+        // rather than trusted.
+        'src/log-flood-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

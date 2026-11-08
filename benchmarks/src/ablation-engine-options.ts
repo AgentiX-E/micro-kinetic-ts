@@ -39,6 +39,7 @@ import type {
   BaselineAnchor,
   DualFamilyGateMode,
   FailedEdgeGateMode,
+  LogNormalisation,
   LogSignalMode,
   OnsetShape,
   PrismPooling,
@@ -55,6 +56,7 @@ import {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_NORMALISATION,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_ONSET_SHAPE,
@@ -141,6 +143,8 @@ export interface AblationSignalOptions {
   readonly traceSkipsLeader: boolean;
   readonly prismWeight: number;
   readonly logSignalMode: LogSignalMode;
+  /** The scale the log signal's counts are measured on — see `LogNormalisation` in `packages/tree`. */
+  readonly logNormalisation: LogNormalisation;
   readonly latWeight: number;
   readonly latMinRise: number;
   /**
@@ -502,6 +506,7 @@ export function buildAblationEngineOptions(
       // point: an inherited option is a configuration the artifact used to be unable to describe. Every
       // overridable one reads its override through `??`, so an explicit `0` is honoured.
       logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
+      logNormalisation: DEFAULT_LOG_NORMALISATION,
       latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
       failedEdgeWeight: overrides.failedEdgeWeight ?? DEFAULT_FAILED_EDGE_WEIGHT,
       failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
@@ -556,6 +561,7 @@ export function formatAblationConfigLine(
     `signals: enableCollisionAggregation=${signals.enableCollisionAggregation} ` +
     `collisionWeight=${signals.collisionWeight} topoWeight=${signals.topoWeight} ` +
     `logWeight=${signals.logWeight} logSignalMode=${signals.logSignalMode} ` +
+    `logNormalisation=${signals.logNormalisation} ` +
     `riseWeight=${signals.riseWeight} traceWeight=${signals.traceWeight} ` +
     `traceSkipsLeader=${signals.traceSkipsLeader} ` +
     `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +

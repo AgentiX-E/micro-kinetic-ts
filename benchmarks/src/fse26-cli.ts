@@ -37,6 +37,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   FailedEdgeMode,
+  LogNormalisation,
   LogSignalMode,
   PoolAdmission,
   TopoClosure,
@@ -63,6 +64,7 @@ import {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_NORMALISATION,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
@@ -93,6 +95,7 @@ import {
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
+  isLogNormalisation,
   isLogSignalMode,
   isOnsetShape,
   isPoolAdmission,
@@ -159,6 +162,14 @@ export interface Fse26CliOptions {
   /** Strength of the log signal (self-caused logic-exception volume). */
   readonly logWeight: number;
   readonly logMode: LogSignalMode;
+  /**
+   * How the log signal's counts become a score: `max` (shipped) divides by the case's largest admitted
+   * count, `saturating` divides by a fixed volume instead.
+   *
+   * Read `LogNormalisation` in `packages/tree` for why the shipped rule cannot express "this flood is
+   * small", and `docs/log-volume-scale.md` for the measurement this flag exists to take.
+   */
+  readonly logNormalisation: LogNormalisation;
   /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
   readonly rankNormalization: boolean;
   /**
@@ -599,6 +610,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     maxCases: 0,
     logWeight: DEFAULT_LOG_WEIGHT,
     logMode: DEFAULT_FSE26_LOG_MODE as LogSignalMode,
+    logNormalisation: DEFAULT_LOG_NORMALISATION,
     rankNormalization: DEFAULT_RANK_NORMALIZATION,
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     output: '',
@@ -670,6 +682,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     } else if (arg === '--log-mode' && hasValue(argv, i + 1)) {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
+    } else if (arg === '--log-normalisation' && hasValue(argv, i + 1)) {
+      // Same rule as `--log-mode`: a RECOGNISED value takes effect and an unrecognised one falls back to the
+      // SHIPPED scale, so a typo reports the configuration every published cell was measured under rather than
+      // inventing a third one.
+      const scale = argv[++i]!;
+      opts.logNormalisation = isLogNormalisation(scale) ? scale : DEFAULT_LOG_NORMALISATION;
     } else if (arg === '--no-rank-normalization') opts.rankNormalization = false;
     else if (arg === '--anomaly-normalize-threshold' && hasValue(argv, i + 1)) {
       // The same parser and the same fallback as the golden CLI: two runners parsing one flag with two rules

@@ -178,6 +178,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
     signals: {
       logWeight: opts.logWeight,
       logSignalMode: opts.logMode,
+      logNormalisation: opts.logNormalisation,
       failedEdgeWeight: opts.failedEdgeWeight,
       failedEdgeMode: opts.failedEdgeMode,
       failedEdgeMinRecords: opts.failedEdgeMinRecords,

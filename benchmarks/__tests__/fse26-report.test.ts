@@ -46,6 +46,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
   return {
     logWeight: 1,
     logSignalMode: 'logicHttp',
+    logNormalisation: 'max',
     rankNormalization: true,
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     // Shipped composition. The four are REQUIRED fields rather than optional ones so that a test fixture
@@ -170,6 +171,7 @@ describe('FSE26 report — attribution', () => {
     const published = { logWeight: 1, rankNormalization: true };
     expect(missingReportedConfigFields(published)).toEqual([
       'logSignalMode',
+      'logNormalisation',
       'dropMetrics',
       'metricRiseCeiling',
       'dropDeviationMode',
@@ -250,7 +252,7 @@ describe('FSE26 report — the two renderings agree', () => {
     // could not be consulted" is exactly what the two fields together say, and an omitted one would leave the
     // line unable to distinguish the two populations.
     expect(shipped).toBe(
-      'Config: logWeight=1 logMode=logicHttp rankNormalization=true ' +
+      'Config: logWeight=1 logMode=logicHttp logNormalisation=max rankNormalization=true ' +
         `anomalyNormalizeNodeThreshold=${ANOMALY_NORMALIZE_NODE_THRESHOLD} ` +
         // The anomaly composition, unconditional for the threshold's reason: three of the four are non-zero,
         // so an omission rule would render the shipped run and an ablation identically — and the fourth is

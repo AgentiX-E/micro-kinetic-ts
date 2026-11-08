@@ -272,6 +272,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 138: a GUARD rather than a weight, and it travels in the packed block for the same reason —
     // the golden half has no input of its own to spend (25/25 used).
     '--suppress-zero-baseline-latency',
+    // Iteration 249: the log signal's SCALE, packed here for the ceiling's reason above — the golden half has no
+    // input left to spend, and a scale measurable on one half only has an undecidable other half.
+    '--log-normalisation',
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
@@ -409,6 +412,17 @@ const KNOBS: Readonly<
     owner: 'fse26-result-attribution.md',
     fse26: null,
     rcaeval: 'log_signal_mode',
+  },
+  logNormalisation: {
+    // The SCALE the log signal is measured on, one axis out from which lines it admits (`logSignalMode`) and
+    // how much weight they carry (`logWeight`). FSE'26-only on the dispatch surface: the golden workflow is at
+    // GitHub's 25-input ceiling, so a scale enumerated after it has no input of its own there — `rcaeval: null`
+    // is a statement about the surface, not about the field, which the golden CLI accepts all the same.
+    // `docs/log-volume-scale.md` owns the measurement.
+    flag: '--log-normalisation',
+    owner: 'log-volume-scale.md',
+    fse26: 'ranking_knobs',
+    rcaeval: null,
   },
   rankNormalization: {
     flag: '--no-rank-normalization',
@@ -1055,6 +1069,11 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // Iteration 237: the override rule, for the same reason one step further down the same axis. It travels as
   // `failedEdgeOverrideRule=<value>`, so a run that sets it is attributable even though no dispatch can.
   '--failed-edge-override-rule',
+  // Iteration 249: the log signal's scale, on this list for the credit's reason — `max`, `saturating` and `share`
+  // are three different rules for turning a count into a score, and the golden workflow is at GitHub's 25-input
+  // ceiling, so the packed block has no spare input. It travels as `logNormalisation=<value>` on the configuration
+  // line, so a run that sets it is attributable even though no dispatch can ask for it.
+  '--log-normalisation',
   // The POSITIVE pole. The axis itself IS dispatchable — through `no_rank_normalization`, the negated switch —
   // and exposing only that pole is what the FSE'26 parser does too, so one value means one thing in both
   // workflows. This member therefore records a flag the runner accepts and the workflow cannot spell, not an

@@ -69,6 +69,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     selfAnomalyWeight: opts.selfAnomalyWeight,
     logWeight: opts.logWeight,
     logSignalMode: opts.logMode,
+    logNormalisation: opts.logNormalisation,
     rankNormalization: opts.rankNormalization,
     anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
     dropMetrics: opts.dropMetrics,

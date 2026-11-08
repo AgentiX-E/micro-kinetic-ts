@@ -51,6 +51,7 @@ describe('buildFse26EngineOptions', () => {
     expect(engine.signals).toEqual({
       logWeight: 0.5,
       logSignalMode: 'count',
+      logNormalisation: 'max',
       // Read from BASE, which is `parseFSE26Args([])` — so this is the SHIPPED default and not a literal a
       // future flip would have to remember to edit twice.
       failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,

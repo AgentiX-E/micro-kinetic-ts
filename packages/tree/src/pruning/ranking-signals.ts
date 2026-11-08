@@ -144,6 +144,73 @@ export function isLogSignalMode(value: string): value is LogSignalMode {
 }
 
 /**
+ * How a mode's admitted counts become a score in `[0, 1]`.
+ *
+ * - `max` (shipped) — divide by the case's largest admitted count. The top emitter is `1.0` BY CONSTRUCTION,
+ *   whatever its volume was: one line and three thousand lines are the same vote. That is a statement about the
+ *   ORDER of the candidates and nothing about the case, which is why the term is worth a full weight on a
+ *   corpus where a third of the datapacks admit at most one line fleet-wide.
+ * - `saturating` — divide by a FIXED scale instead: `1 − exp(−count / LOG_SATURATION_COUNT)`. The score is
+ *   still strictly increasing in the count, so no case's log ORDER changes; what changes is the magnitude the
+ *   term may claim, and a one-line emitter can no longer outvote a weighted pod-state or latency reading.
+ * - `share` — divide by the case's TOTAL admitted count: `count / Σcount`. The flood is read as a distribution
+ *   over services, so the top emitter's score IS the case's emitter CONCENTRATION. Algebraically this is
+ *   `max`-normalisation multiplied by `max / Σcount` — a UNIFORM per-case scale, so no case's log order or
+ *   internal ratio changes either; the term merely claims `concentration` of its weight.
+ *
+ * The three members are not three knobs, they are the three places a per-case scale can come from, and that is
+ * why the axis closes as a FAMILY rather than a point. `max` gives every case a scale of one. `saturating`
+ * scales by the champion's own volume, so LOUD cases keep their full weight and quiet ones surrender it.
+ * `share` scales by concentration, so QUIET cases keep theirs and diffuse ones surrender it. Every remaining
+ * member of the family is a weight schedule in disguise, and the log weight was swept: see
+ * `docs/log-volume-scale.md` for the five measured arms and the reason every departure from `max` loses.
+ *
+ * The distinction matters because the score is one ADDEND in `finalScore(v)` beside terms whose magnitudes are
+ * not normalised to the case (`selfAnomaly`'s `log1p`, `podStateWeight × podState`). A case-relative `1.0`
+ * beside those is a term that always claims a full weight and never says how strong its evidence was.
+ */
+export type LogNormalisation = 'max' | 'saturating' | 'share';
+
+/** Every normalisation, as a `Record` over the union: a new member is a compile error until it is named. */
+export const LOG_NORMALISATIONS: Readonly<Record<LogNormalisation, true>> = {
+  max: true,
+  saturating: true,
+  share: true,
+};
+
+/** Whether a raw argument names a log normalisation. */
+export function isLogNormalisation(value: string): value is LogNormalisation {
+  return Object.prototype.hasOwnProperty.call(LOG_NORMALISATIONS, value);
+}
+
+/**
+ * The shipped {@link LogNormalisation}: `max`, because it is the rule every published cell was measured under.
+ *
+ * `saturating` is an arm that must name itself on the artifact, on the rule every coefficient here follows.
+ */
+export const DEFAULT_LOG_NORMALISATION: LogNormalisation = 'max';
+
+/**
+ * The half-saturation count of the `saturating` normalisation: the admitted volume that earns `1 − 1/e ≈ 0.632`.
+ *
+ * `25` is chosen from the corpus's own volume distribution rather than from taste. Measured with the engine's
+ * level-1 admission rule over FSE'26's second wave (711 datapacks, `--log-mode logicHttp`):
+ *
+ * | quantile | admitted top count |
+ * | --- | ---: |
+ * | p25 | 0 |
+ * | **p50** | **8** |
+ * | p75 | 74 |
+ * | p90 | 216 |
+ *
+ * So the corpus's MEDIAN case admits eight lines in total, and 34% admit at most one. A scale of 25 puts that
+ * median at `0.274` of the weight and the HTTP-replace families (median 54–171 lines) at `0.88–1.00`, which is
+ * the separation the term was meant to draw: the families whose SOURCE floods keep their vote, the ones whose
+ * loudest service emitted a handful of lines do not.
+ */
+export const LOG_SATURATION_COUNT = 25;
+
+/**
  * The call-graph context the `logicHttpJoint` mode needs to disambiguate a
  * framework HTTP exception's DIRECTION: whether the emitter is the source
  * (its own downstream calls failed) or a victim (its callee is the broken
@@ -387,6 +454,8 @@ export function computeLogScores(
   mode: LogSignalMode = 'count',
   joint?: HttpSourceJointContext,
   httpDominanceThreshold: number = DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  normalisation: LogNormalisation = DEFAULT_LOG_NORMALISATION,
+  saturationCount: number = LOG_SATURATION_COUNT,
 ): Map<ServiceId, number> {
   if (mode === 'novelty') return computeLogNoveltyScores(logs, nodeIds, injectTimeMs);
 
@@ -467,6 +536,35 @@ export function computeLogScores(
   // `count` mode; the suppressing modes reach this when they withdraw every
   // framework-HTTP line, which must stay neutral rather than promote a survivor).
   if (counts.size === 0) return scores;
+
+  // `saturating` reads the ABSOLUTE volume, so it needs no denominator at all and is deliberately
+  // computed before the max is taken: the whole point of the arm is that the case's own champion
+  // does not set its scale. Strictly increasing in the count, so the ORDER this function implies is
+  // identical to `max`'s on every case — only the magnitude beside the other addends differs.
+  if (normalisation === 'saturating') {
+    for (const nodeId of nodeIds) {
+      const count = counts.get(nodeId) ?? 0;
+      scores.set(nodeId, count === 0 ? 0 : 1 - Math.exp(-count / saturationCount));
+    }
+    return scores;
+  }
+
+  // `share` reads the flood as a distribution over services, so its denominator is the case's TOTAL admitted
+  // count. The total is taken over `admitted` — the level-1 flood — for the same reason `max` is: a direction
+  // gate must only ever withdraw, and a denominator that shrank with the gate would promote a survivor. Every
+  // score is `max`-normalised times `max / total`, i.e. the whole term scaled by the case's concentration.
+  if (normalisation === 'share') {
+    let total = 0;
+    for (const count of admitted.values()) total += count;
+    // Unreachable while `counts` is non-empty (`counts ⊆ admitted`, guarded above), and stated anyway so the
+    // division cannot become an `Infinity` if that guard is ever weakened.
+    if (total === 0) return scores;
+    for (const nodeId of nodeIds) {
+      const count = counts.get(nodeId) ?? 0;
+      scores.set(nodeId, count === 0 ? 0 : count / total);
+    }
+    return scores;
+  }
 
   // The denominator is the level-1 max, so it is independent of the mode's
   // direction gate. `max >= 1` is guaranteed here: `counts` is non-empty and

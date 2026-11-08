@@ -92,6 +92,7 @@ import type {
   FailedEdgeMode,
   FailedEdgeMutualRule,
   FailedEdgeOverrideRule,
+  LogNormalisation,
   LogSignalMode,
 } from './ranking-signals.js';
 import {
@@ -100,6 +101,7 @@ import {
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
+  DEFAULT_LOG_NORMALISATION,
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
@@ -122,6 +124,7 @@ export {
   DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
+  DEFAULT_LOG_NORMALISATION,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
@@ -558,6 +561,24 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: LogSignalMode;
+  /**
+   * How the log signal's admitted counts become a score in `[0, 1]`.
+   *
+   *   finalScore(v) += logWeight × logScore(v)
+   *
+   * - `max` (shipped): divide by the case's largest admitted count, so the top emitter is `1.0` by
+   *   construction whatever its volume was.
+   * - `saturating`: `1 − exp(−count / LOG_SATURATION_COUNT)` — an ABSOLUTE scale, so the term can say how
+   *   strong its evidence is instead of only who was loudest.
+   * - `share`: `count / Σcount` — the flood read as a distribution over services, so the top emitter claims the
+   *   case's CONCENTRATION of the weight. Algebraically `max` times `max / Σcount`, a uniform per-case scale.
+   *
+   * The arm exists because the shipped rule is a statement about the ORDER of the candidates and not about the
+   * case: on FSE'26's second wave the median datapack admits EIGHT lines in total and 34% admit at most one, yet
+   * each of those cases hands the term a full weight. Read `LogNormalisation` for the census and the theory, and
+   * `docs/log-volume-scale.md` for the measurement.
+   */
+  readonly logNormalisation: LogNormalisation;
   /**
    * Weight of the metric-direction (RISE) signal: reward a node whose DOMINANT
    * metric rises post-injection; penalise a COLLAPSE only when the node
@@ -1890,6 +1911,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   poolAdmission: DEFAULT_POOL_ADMISSION,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
+  logNormalisation: DEFAULT_LOG_NORMALISATION,
   riseWeight: DEFAULT_RISE_WEIGHT,
   traceWeight: DEFAULT_TRACE_WEIGHT,
   traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
@@ -2147,6 +2169,8 @@ export class TreePruner {
       injectTimeMs,
       this.options.logSignalMode,
       { edges: topologyGraph.edges, anomalyScores },
+      undefined,
+      this.options.logNormalisation,
     );
     const topoScores = computeTopoSourceScores(
       topologyGraph.edges,

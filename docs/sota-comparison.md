@@ -142,7 +142,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42343505202 on bd17912c, read 2026-11-07, config 74cb161840a2 -->
+<!-- standing-anchor: battery 42343505202 on bd17912c, read 2026-11-08, config 486ad3e0486b -->
 
 ```text
 RE1:OnlineBoutique 113 125

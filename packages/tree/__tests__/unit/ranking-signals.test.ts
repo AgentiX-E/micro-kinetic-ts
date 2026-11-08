@@ -23,7 +23,10 @@ import {
   computeTraceActivityScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   gatedRiseContribution,
+  isLogNormalisation,
   isLogSignalMode,
+  LOG_NORMALISATIONS,
+  LOG_SATURATION_COUNT,
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   rankNormalizeScores,
@@ -2348,5 +2351,183 @@ describe('the log-signal vocabulary has one owner, and it is the union', () => {
     expect(isLogSignalMode('toString')).toBe(false);
     expect(isLogSignalMode('constructor')).toBe(false);
     expect(isLogSignalMode('__proto__')).toBe(false);
+  });
+});
+
+describe('the log signal’s SCALE — `max`, `saturating` and `share`', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+  const flood = (service: string, count: number): FaultLogEntry[] =>
+    Array.from({ length: count }, () => makeLog(service, 'ERROR'));
+
+  it('gives the same one-line flood a full vote under `max` and a fraction under `saturating`', () => {
+    // The defect, stated as an arithmetic fact rather than an adjective. A case where the loudest service
+    // emitted ONE line is a case whose log evidence is a single observation — and `max` divides by that same
+    // one line, so it pays the term's entire weight for it. `saturating` reads the volume on an absolute
+    // scale instead: one line is `1 − e^(−1/25)` of the weight, which is under four percent.
+    const logs = flood('a', 1);
+    const maxed = computeLogScores(logs, nodes, 0);
+    const saturated = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, 'saturating');
+
+    expect(maxed.get('a')).toBe(1);
+    expect(saturated.get('a')).toBeCloseTo(1 - Math.exp(-1 / LOG_SATURATION_COUNT), 12);
+    expect(saturated.get('a')!).toBeLessThan(0.05);
+  });
+
+  it('keeps the ORDER the two arms imply, on a case with a real flood', () => {
+    // The arm is a SCALE and not a second statistic: it may not reorder the candidates, because a change that
+    // reordered them would be a different term wearing the scale's name.
+    const logs = [...flood('a', 400), ...flood('b', 30), ...flood('c', 3)];
+    const maxed = computeLogScores(logs, nodes, 0);
+    const saturated = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, 'saturating');
+
+    expect(maxed.get('a')).toBe(1);
+    expect(maxed.get('b')).toBeCloseTo(30 / 400, 12);
+    expect(saturated.get('a')!).toBeGreaterThan(saturated.get('b')!);
+    expect(saturated.get('b')!).toBeGreaterThan(saturated.get('c')!);
+    // …and the large flood still keeps almost all of the weight: 400 lines is `1 − e^(−16) ≈ 1`.
+    expect(saturated.get('a')!).toBeGreaterThan(0.999999);
+  });
+
+  it('is independent of the case’s champion, which is the whole difference', () => {
+    // The same service, the same evidence, two cases: one where nobody else floods, one where a neighbour
+    // floods ten times as much. `max` pays it differently in the two — the scale is the CASE's — while
+    // `saturating` pays it identically, because the scale is the volume's.
+    const quiet = flood('a', 6);
+    const loud = [...flood('a', 6), ...flood('b', 600)];
+    const quietMax = computeLogScores(quiet, nodes, 0);
+    const loudMax = computeLogScores(loud, nodes, 0);
+    const quietSat = computeLogScores(quiet, nodes, 0, 'count', undefined, undefined, 'saturating');
+    const loudSat = computeLogScores(loud, nodes, 0, 'count', undefined, undefined, 'saturating');
+
+    expect(quietMax.get('a')).toBe(1);
+    expect(loudMax.get('a')).toBeCloseTo(6 / 600, 12);
+    expect(quietSat.get('a')).toBeCloseTo(loudSat.get('a')!, 12);
+  });
+
+  it('reads the half-saturation count as half the weight, by construction', () => {
+    const saturated = computeLogScores(
+      flood('a', LOG_SATURATION_COUNT),
+      nodes,
+      0,
+      'count',
+      undefined,
+      undefined,
+      'saturating',
+    );
+    expect(saturated.get('a')).toBeCloseTo(1 - Math.exp(-1), 12);
+  });
+
+  it('scores a silent service zero on both arms, and never a negative', () => {
+    const logs = flood('a', 2);
+    for (const scale of ['max', 'saturating', 'share'] as const) {
+      const scores = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, scale);
+      expect(scores.get('b'), scale).toBe(0);
+      expect(scores.get('c'), scale).toBe(0);
+    }
+  });
+
+  it('makes `share` exactly `max` times the case’s concentration, which is why it is an arm and not a term', () => {
+    // The identity the third member is defined by, asserted rather than asserted-about: dividing by the
+    // case TOTAL instead of the case MAX is a UNIFORM scale, so it cannot reorder the candidates and it cannot
+    // change any ratio between them. Every score is the `max` score times `topCount / totalCount`.
+    const logs = [...flood('a', 10), ...flood('b', 6), ...flood('c', 4)];
+    const maxed = computeLogScores(logs, nodes, 0);
+    const shared = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, 'share');
+
+    const concentration = 10 / 20;
+    for (const node of ['a', 'b', 'c'] as const) {
+      expect(shared.get(node)).toBeCloseTo((maxed.get(node) ?? 0) * concentration, 12);
+    }
+    // …which also means the top emitter no longer claims a full weight on a diffuse flood: it claims the
+    // share it owns. 10 of 20 lines is half the flood, so it pays half the term's weight.
+    expect(shared.get('a')).toBeCloseTo(0.5, 12);
+  });
+
+  it('pays a one-line flood in full under `share`, the exact complement of `saturating`', () => {
+    // The two departures from `max` are not two guesses at one number: they disagree about WHICH cases may
+    // keep the term's full weight. `saturating` keeps it for the loud and withdraws it from the quiet;
+    // `share` keeps it for the pinpoint and withdraws it from the diffuse. A case whose whole fleet-wide
+    // evidence is one line emitted by one service is a perfect distribution, so `share` pays it `1.0`.
+    const logs = flood('a', 1);
+    const shared = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, 'share');
+    const saturated = computeLogScores(logs, nodes, 0, 'count', undefined, undefined, 'saturating');
+
+    expect(shared.get('a')).toBe(1);
+    expect(saturated.get('a')!).toBeLessThan(0.05);
+  });
+
+  it('scales a diffuse flood down without inverting it, and its denominator ignores the direction gate', () => {
+    // Two properties, both load-bearing. First, `share` is strictly increasing in the count, so it is a scale
+    // and cannot reorder. Second, its denominator is the LEVEL-1 flood, not the post-gate counts: withdrawing
+    // the top emitter's lines must lower its score and leave every survivor's denominator untouched, so a
+    // suppressing mode can only ever subtract. A denominator that shrank with the gate would hand the case's
+    // remaining weight to whoever the gate did not touch.
+    const logs = [
+      ...flood('a', 30),
+      ...flood('b', 9),
+      ...flood('c', 1),
+      ...Array.from({ length: 30 }, () => makeLog('a', 'ERROR', 0, false, undefined, true)),
+    ];
+    const shared = computeLogScores(logs, nodes, 0, 'logicHttp', undefined, undefined, 'share');
+    expect(shared.get('a')!).toBeGreaterThan(shared.get('b')!);
+    expect(shared.get('b')!).toBeGreaterThan(shared.get('c')!);
+    // 70 lines admitted, 30 of them a's self-caused ones and 30 more its framework-HTTP half.
+    expect(shared.get('a')).toBeCloseTo(60 / 70, 12);
+
+    const suppressed = computeLogScores(
+      logs,
+      nodes,
+      0,
+      'logicHttpJoint',
+      { edges: [makeEdge('a', 'b')], anomalyScores: new Map([['b', 5]]) },
+      undefined,
+      'share',
+    );
+    // a's framework-HTTP half is withdrawn, so its numerator falls — and the denominator stays 70.
+    expect(suppressed.get('a')).toBeCloseTo(30 / 70, 12);
+    expect(suppressed.get('b')).toBeCloseTo(9 / 70, 12);
+  });
+
+  it('lets a suppressing mode only LOWER a saturated score', () => {
+    // `logicHttpJoint` withdraws the framework-HTTP half for an emitter whose callee is MORE anomalous. The
+    // withdrawal is subtractive, so under either scale it may only remove weight — the property that stopped a
+    // gate from manufacturing signal is a property of the gate, not of the normalisation.
+    const logs = [
+      ...flood('a', 20),
+      ...Array.from({ length: 20 }, () => makeLog('a', 'ERROR', 0, false, undefined, true)),
+    ];
+    // `logicHttp` admits both halves — 40 lines — and pays them without any direction gate.
+    const admitted = computeLogScores(
+      logs,
+      nodes,
+      0,
+      'logicHttp',
+      undefined,
+      undefined,
+      'saturating',
+    );
+    const suppressed = computeLogScores(
+      logs,
+      nodes,
+      0,
+      'logicHttpJoint',
+      { edges: [makeEdge('a', 'b')], anomalyScores: new Map([['b', 5]]) },
+      undefined,
+      'saturating',
+    );
+
+    expect(suppressed.get('a')!).toBeLessThan(admitted.get('a')!);
+    // The withdrawal is exactly the framework-HTTP half: what survives is the 20 self-caused lines.
+    expect(suppressed.get('a')).toBeCloseTo(1 - Math.exp(-20 / LOG_SATURATION_COUNT), 12);
+  });
+
+  it('names all three members and refuses everything else', () => {
+    expect(Object.keys(LOG_NORMALISATIONS).sort()).toEqual(['max', 'saturating', 'share']);
+    expect(isLogNormalisation('max')).toBe(true);
+    expect(isLogNormalisation('saturating')).toBe(true);
+    expect(isLogNormalisation('share')).toBe(true);
+    for (const value of ['', 'MAX', 'saturate', 'linear', 'Share', 'toString', '__proto__']) {
+      expect(isLogNormalisation(value), JSON.stringify(value)).toBe(false);
+    }
   });
 });

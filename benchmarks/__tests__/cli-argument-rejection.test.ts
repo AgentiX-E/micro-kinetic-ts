@@ -58,6 +58,7 @@ import {
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
+  LOG_NORMALISATIONS,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
   POOL_ADMISSIONS,
@@ -276,6 +277,19 @@ describe('an unrecognised argument fails loudly', () => {
     expect(parseRCAEvalArgs(['--prism-pooling', 'additive']).prismPooling).toBe('additive');
     expect(parseRCAEvalArgs(['--prism-pooling', 'Additive']).prismPooling).toBe('additive');
     expect(parseRCAEvalArgs(['--prism-pooling', 'nope']).prismPooling).toBe('additive');
+    // The log SCALE is a two-member vocabulary on this chain too, and it is asserted in the same
+    // three directions: each member is taken, a token that is not a member falls back to the
+    // SHIPPED scale, and a miscased member is not a member. The scale is parsed here even though
+    // this chain does not dispatch it — `dispatch-surface-census.test.ts` registers that gap and
+    // the reason, and a parser that cannot express the scale would make the gap unevaluable
+    // rather than merely undispatched.
+    expect(parseRCAEvalArgs(['--log-normalisation', 'max']).logNormalisation).toBe('max');
+    expect(parseRCAEvalArgs(['--log-normalisation', 'saturating']).logNormalisation).toBe(
+      'saturating',
+    );
+    expect(parseRCAEvalArgs(['--log-normalisation', 'share']).logNormalisation).toBe('share');
+    expect(parseRCAEvalArgs(['--log-normalisation', 'Saturating']).logNormalisation).toBe('max');
+    expect(parseRCAEvalArgs(['--log-normalisation', 'nope']).logNormalisation).toBe('max');
     // A count that is not a number falls back to "no cap", not to a truncated one.
     expect(parseRCAEvalArgs(['--max-cases', 'abc']).maxCases).toBe(0);
     expect(parseRCAEvalArgs(['--max-cases', '50']).maxCases).toBe(50);
@@ -457,6 +471,11 @@ describe('every option the golden runner forwards can be set from the command li
       // between two nodes rather than a property of one. Probed from the union for the reason every other entry
       // is, and it needs both members: `off` is what the field already holds, so only `onset` can move it.
       ...Object.keys(TOPO_PRECEDENCES),
+      // Iteration 249: the SCALE the log signal is measured on — the eleventh word-vocabulary and the first
+      // whose two members do not change which service the term prefers, only how much the preference is worth.
+      // Probed from the union for the reason every other entry is, and it needs `saturating`: the field already
+      // holds `max`, so a set with only the shipped member would pass over a flag that never reaches scorer.
+      ...Object.keys(LOG_NORMALISATIONS),
       // Iteration 214: the transient guard's QUESTION, the ninth word-vocabulary and the only one whose members
       // are the same guard asking about the same series — the difference is which samples it reads, not whether
       // it runs. Probed from the union for the reason every other entry is, and it needs `level-window`: the

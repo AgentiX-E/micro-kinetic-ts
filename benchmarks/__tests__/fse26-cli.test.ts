@@ -25,6 +25,7 @@ import {
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   DEFAULT_TRANSIENT_GUARD_TEST,
+  LOG_NORMALISATIONS,
   ONSET_SHAPES,
   TRANSIENT_GUARD_TESTS,
 } from '../../packages/tree/src/index.js';
@@ -68,6 +69,24 @@ describe('parseFSE26Args — log mode', () => {
     // A typo must not select a *different* configuration silently; it selects the
     // one that is documented as the default.
     expect(parseFSE26Args(['--log-mode', 'logicHtttp']).logMode).toBe(DEFAULT_FSE26_LOG_MODE);
+  });
+
+  it('honours every log SCALE, and falls back to the shipped one for anything else', () => {
+    // The scale is a separate axis from the mode and from the weight: `max` divides by the case's largest
+    // admitted count, `saturating` by a fixed volume, `share` by the case's total. A typo must land on the
+    // SHIPPED scale for the reason every other mode flag here does — a run that silently measured the shipped
+    // rule while claiming an arm would publish the shipped number as the arm's reading.
+    for (const scale of Object.keys(LOG_NORMALISATIONS)) {
+      expect(parseFSE26Args(['--log-normalisation', scale]).logNormalisation, scale).toBe(scale);
+    }
+    expect(parseFSE26Args([]).logNormalisation).toBe('max');
+    for (const typo of ['saturate', 'MAX', 'linear', 'Share', '']) {
+      expect(parseFSE26Args(['--log-normalisation', typo]).logNormalisation, typo).toBe('max');
+    }
+    // The two axes are independent: naming one may not move the other.
+    const both = parseFSE26Args(['--log-mode', 'count', '--log-normalisation', 'saturating']);
+    expect(both.logMode).toBe('count');
+    expect(both.logNormalisation).toBe('saturating');
   });
 
   it('falls back for a mode name that is not a mode at all', () => {

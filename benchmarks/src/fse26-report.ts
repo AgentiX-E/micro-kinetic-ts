@@ -54,6 +54,8 @@ export interface FSE26RunConfig {
   readonly logWeight: number;
   /** Log-signal scoring mode (`count` | `logicHttp` | `all` | ...). */
   readonly logSignalMode: string;
+  /** How the log signal's counts become a score — see `LogNormalisation` in `packages/tree`. */
+  readonly logNormalisation: string;
   /** Whether ranking scores are rank-normalised before fusion. */
   readonly rankNormalization: boolean;
   /**
@@ -380,6 +382,7 @@ export interface FSE26ReportInput {
 export const REPORTED_CONFIG_FIELDS = [
   'logWeight',
   'logSignalMode',
+  'logNormalisation',
   'rankNormalization',
   'dropMetrics',
   'metricRiseCeiling',
@@ -444,7 +447,7 @@ export function missingReportedConfigFields(config: unknown): string[] {
  */
 export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   let line =
-    `Config: logWeight=${config.logWeight} logMode=${config.logSignalMode} ` +
+    `Config: logWeight=${config.logWeight} logMode=${config.logSignalMode} logNormalisation=${config.logNormalisation} ` +
     `rankNormalization=${config.rankNormalization}`;
   // Unconditional, on the latency weight's rule: this default is NON-zero (20), so an
   // omitted-when-default field would render a byte-identical line for the shipped run and for a run that

@@ -183,6 +183,7 @@ export {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_NORMALISATION,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -244,6 +245,8 @@ export {
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
+  LOG_NORMALISATIONS,
+  LOG_SATURATION_COUNT,
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   computeDeepestExceptions,
@@ -265,6 +268,7 @@ export {
   isFailedEdgeCredit,
   isFailedEdgeMutualRule,
   isFailedEdgeOverrideRule,
+  isLogNormalisation,
   isLogSignalMode,
   // Level 1 of the log gate, exported because the census that attributes an EMPTY log tier has to read the same
   // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of
@@ -281,6 +285,7 @@ export type {
   HttpEmitterDominance,
   HttpSourceJointContext,
   InboundLatency,
+  LogNormalisation,
   LogSignalMode,
   TraceActivityOptions,
 } from './pruning/ranking-signals.js';

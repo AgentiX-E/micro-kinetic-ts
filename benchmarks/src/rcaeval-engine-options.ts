@@ -272,6 +272,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       poolAdmission: opts.poolAdmission,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
+      logNormalisation: opts.logNormalisation,
       traceWeight: opts.traceWeight,
       traceSkipsLeader: opts.traceSkipsLeader,
       prismWeight: opts.prismWeight,
@@ -322,7 +323,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
 export function formatSignalLine(opts: CliOptions): string {
   return (
     `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} ` +
-    `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} topoDiscountScope=${opts.topoDiscountScope} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} ` +
+    `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} topoDiscountScope=${opts.topoDiscountScope} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} logNormalisation=${opts.logNormalisation} ` +
     // The three the golden half inherited in silence until this line named them.
     `latWeight=${opts.latWeight} latMinRise=${opts.latMinRise} ` +
     `poolMetricPenaltyWeight=${opts.poolMetricPenaltyWeight} ` +

@@ -247,6 +247,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'failedEdgeWeight',
       'latMinRise',
       'latWeight',
+      // Iteration 249: the SCALE the log signal is measured on. Held for the mutual rule's reason, one step
+      // further out — it does not resize a term either, it decides how strong the evidence a weight multiplies
+      // is, so tuning the two together would report a coefficient against a moving unit.
+      'logNormalisation',
       'logSignalMode',
       'maxCycles',
       'maxPropagationDepth',

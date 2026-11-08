@@ -63,6 +63,7 @@ import {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_NORMALISATION,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -94,6 +95,7 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fs
 import type {
   BaselineAnchor,
   DropDeviationMode,
+  LogNormalisation,
   LogSignalMode,
   PoolAdmission,
   PrismPooling,
@@ -126,6 +128,7 @@ import {
   TRANSIENT_GUARD_TESTS,
   isBaselineAnchor,
   isDropDeviationMode,
+  isLogNormalisation,
   isLogSignalMode,
   isPoolAdmission,
   isPrismPooling,
@@ -543,6 +546,11 @@ export interface CliOptions {
    */
   logSignalMode: LogSignalMode;
   /**
+   * How the log signal's counts become a score — `max` (shipped) divides by the case's largest admitted
+   * count, `saturating` by a fixed volume. See `LogNormalisation` in `packages/tree`.
+   */
+  logNormalisation: LogNormalisation;
+  /**
    * Strength of the trace span-activity rise signal in the ranking. Default 0
    * (disabled). When > 0, the loader computes per-service pre/post span counts
    * from traces.csv — SCOPED to the RE3 suite only, because the "more spans ⇒
@@ -833,6 +841,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // and a second NAME for one value. The census reads a name by resolving it, so an alias is not an owner;
     // the alias is gone and both sites read this one.
     logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
+    logNormalisation: DEFAULT_LOG_NORMALISATION,
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
     dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
@@ -1075,6 +1084,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       }
       statedLogSignalMode = { raw, mode };
       opts.logSignalMode = mode;
+    } else if (args[i] === '--log-normalisation' && hasValue(args, i + 1)) {
+      // The scale the log signal is measured on. An unusable VALUE falls back to the SHIPPED scale by the same
+      // rule `--log-signal-mode` above applies — a typo must reproduce a published configuration rather than
+      // invent one — and a second statement is not refused here because the two scales do not contradict each
+      // other the way two modes do: the last one wins, which is the ordinary rule for a valued flag.
+      const scale = args[++i]!;
+      opts.logNormalisation = isLogNormalisation(scale) ? scale : DEFAULT_LOG_NORMALISATION;
     } else if (args[i] === '--collapse-discount' && hasValue(args, i + 1)) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;

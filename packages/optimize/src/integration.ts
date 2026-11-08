@@ -46,6 +46,10 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   maxCycles: 'a cycle-solver bound, not a ranking decision',
   onsetShape: 'the temporal shape; the search tunes temporalWeight, not its shape',
   logSignalMode: 'which log lines count; the search tunes the log WEIGHT only',
+  logNormalisation:
+    'the SCALE the log signal is measured on, which is a different question from how much weight it carries: ' +
+    'the search tunes the weight, and a scale that decides how strong the evidence is cannot be a coefficient ' +
+    'the search moves at the same time',
   edgeLatency: 'whether the latency term reads per-edge durations at all',
   selfAnomalyWeight:
     "the BASE term's coefficient, held at the engine's 1: it is the UNIT the other weights are expressed " +
