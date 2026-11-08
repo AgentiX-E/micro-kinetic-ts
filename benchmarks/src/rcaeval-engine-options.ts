@@ -36,6 +36,7 @@ import type {
   FailedEdgeGateMode,
   FailedEdgeMutualRule,
   FailedEdgeOverrideRule,
+  LogNormalisation,
   LogSignalMode,
   OnsetShape,
   PoolAdmission,
@@ -128,6 +129,14 @@ export interface RCAEvalSignalOptions {
   readonly poolAdmission: PoolAdmission;
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
+  /**
+   * The log term's SCALE — see `LogNormalisation`.
+   *
+   * Parsed and reported on this chain even though this chain does not dispatch it: the gap is registered in
+   * `dispatch-surface-census.test.ts` with its reason, and a field that cannot be stated would make the gap
+   * unevaluable rather than merely undispatched.
+   */
+  readonly logNormalisation: LogNormalisation;
   readonly traceWeight: number;
   /** Whether the trace vote is withheld from the anomaly leader — see `CliOptions.traceSkipsLeader`. */
   readonly traceSkipsLeader: boolean;

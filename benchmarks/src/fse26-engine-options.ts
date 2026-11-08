@@ -22,6 +22,7 @@
 import type {
   DualFamilyGateMode,
   FailedEdgeMode,
+  LogNormalisation,
   LogSignalMode,
   OnsetShape,
   PoolAdmission,
@@ -37,6 +38,15 @@ import type { Fse26CliOptions } from './fse26-cli.js';
 export interface Fse26SignalOptions {
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
+  /**
+   * The log term's SCALE — how an admitted count becomes a score.
+   *
+   * Required for the reason every field here is, and the reason is sharper for this one: `max` and
+   * `saturating` and `share` produce the same ORDER within a case and different magnitudes, so a runner that
+   * inherited the engine's default by omission would report the shipped number as an arm's reading — the arm
+   * and the control would be the same run. See `docs/log-volume-scale.md`.
+   */
+  readonly logNormalisation: LogNormalisation;
   /**
    * Failed-edge-direction weight. Carried as a required field with an explicit
    * default (0 = shipped/off) rather than an optional one: the engine's option
