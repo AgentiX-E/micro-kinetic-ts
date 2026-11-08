@@ -1200,7 +1200,10 @@ describe('TreePruner', () => {
       );
 
       expect(maxed.logScores?.get('A')).toBe(1);
-      expect(saturated.logScores?.get('A')).toBeCloseTo(1 - Math.exp(-3 / LOG_SATURATION_COUNT), 12);
+      expect(saturated.logScores?.get('A')).toBeCloseTo(
+        1 - Math.exp(-3 / LOG_SATURATION_COUNT),
+        12,
+      );
       // …and the silent peers are zero on both, so the arm cannot invent evidence.
       for (const id of ['B', 'C']) {
         expect(maxed.logScores?.get(id), id).toBe(0);
@@ -1217,7 +1220,10 @@ describe('TreePruner', () => {
       const oneLine = [logs[0]!];
       const logTerm = (options: ConstructorParameters<typeof TreePruner>[0]): number => {
         const pruner = new TreePruner({ ...options, logWeight: 3 });
-        const result = pruner.analyze(pruner.buildFaultGraph(callGraph, metrics, { logs: oneLine }), 3);
+        const result = pruner.analyze(
+          pruner.buildFaultGraph(callGraph, metrics, { logs: oneLine }),
+          3,
+        );
         const row = result.find((r) => r.serviceId === 'A')!;
         return row.terms!.find((t) => t.name === 'log')!.contribution;
       };
