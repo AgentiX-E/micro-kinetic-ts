@@ -25,6 +25,34 @@
 
 > - **v3.3 (2026-10-29)** re-anchors §1 and §2a on run `40792623427` at `ea47db5`, whose nine cells are byte-identical to `3d054ad`: RE1 **85.6 / 92.8 / 83.2**, RE2 **88.9 / 94.4 / 83.3**, RE3 **80.0 / 60.0 / 63.3**, overall **85.44%**. The `78.75%` this document carried was the `80709c2`-era fold and had survived two enrolments; the correction is not cosmetic, because it also **reveals a cell we are behind on**: `arXiv:2610.05009` publishes per-system `AC@1` and its OnlineBoutique is **88.0** against our **85.6** (§0, §0a entry 5).
 
+> - **v3.4 (2026-11-08, iteration 250)** records a re-read that is **not** a re-anchor, and says so before it prints a
+>   number. The RCAEval path now runs the whole grid in one process (`docs/rcaeval-memory-bound.md`), and that run
+>   discovers **723** case directories with a `metrics.json`, not 735: RE1 125/120/123, RE2 87/90/90, RE3 28/30/30.
+>   Its nine cells are RE1 **90.4 / 95.0 / 90.0** · RE2 **93.1 / 98.9 / 84.4** · RE3 **90.0 / 66.1 / 74.5**, pooled
+>   case-level **89.8%** against a telemetry-free frequency prior of 23.4%. Those cells are **not** comparable to the
+>   `85.44%` headline above, which is the 735-case population; the 12-case difference is a corpus-enrolment question and
+>   reconciling it is the open P1, not a defect this document may average away. Two of the cells move for a reason that
+>   *is* a defect repair rather than a population change, and both are documented: `RE3:OnlineBoutique` 87.5 → 90.0
+>   because `split(',')` had been truncating every quoted log message, and the two SockShop RE cells are back to their
+>   pre-repair readings with **zero per-case flips** across all 120 cases (`docs/rcaeval-log-fidelity.md` §4).
+>
+>   **Competitor verification, 2026-11-08.** `RCA-DCM` (§0b, arXiv:2609.36771) remains the only like-for-like published
+>   number and remains **below** this engine on the same 125-case populations (0.89 / 0.78 against 95.0 / 90.4 here).
+>   New since the 2026-10-31 sweep, and each in a class this table does not score: `edgedelta/root-cause-bench`
+>   (**commit-level** RCA with decoy deploys and abstention traps — a different task and a different ground truth),
+>   `OpenStack-RCA-Bench` (ASE'26, 64 IaaS incidents, 145,133 log lines; its own LLM zero-shot top-1 is **10–16%**,
+>   which is a useful floor for the claim that logs alone under-determine this task), and six open-source AI-SRE
+>   **agents** (`HolmesGPT`, `K8sGPT`, `Aurora`, `OpenSRE`, `AURA`, `kagent`) whose published evaluation is either
+>   vendor-authored on its own injected faults (`Aurora`: 19 scenarios) or absent. None publishes a service-level
+>   top-1 on Online Boutique / Sock Shop / TrainTicket, so none is admitted to §0b.
+>
+>   **Evaluation-set verification, same date.** `RCAtlas-Core` (PKU + BUPT, arXiv 2026-10-27) is now read from the
+>   primary source rather than a summary: **90 core cases** selected from 2,359 candidates by eight exclusion rules
+>   (542 screened, 348 valid, 90 sampled on five diversity axes), **8 data sources / 10 suites / 23 fault scenarios**,
+>   per-case telemetry 37k–5.6M rows, and root levels **service 59 / Pod 20 / node 11**, with injection-tool traces
+>   removed in preprocessing. Those level counts are what the previously second-hand Pod/Node note carried, so the set is now
+>   a concrete target for that work rather than a summary of a summary.
+
 **Metric.** All figures are service-level **AC@1 / Recall@1 / Top-1** (top-1 localization of the root-cause
 _service/component_), the RCAEval protocol. Where a method reports a _different_ metric or subset, that is stated
 explicitly — cross-metric comparison is the single largest source of false "SOTA" claims in this field.
