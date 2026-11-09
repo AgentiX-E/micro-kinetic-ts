@@ -7945,13 +7945,19 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     // expresses `db\..*` — so this is the one construction in the module that is a sink by design. It
     // reads a command line on the analyst's own machine, and the invalid-pattern path above is what
     // keeps a malformed one from becoming a family that matches nothing.
+    //
+    // Both suppression spellings are present on purpose, and the duplication is measured: the
+    // `codeql[...]` form on the line BEFORE the sink was in place for a fortnight while alert
+    // `#13` stayed open across four default-setup scans, so the query is not reading it here. The
+    // `lgtm[...]` form on the sink's own line is the spelling `AlertSuppression.ql` documents for
+    // the same line; carrying both costs one comment and covers whichever form this query reads.
     family:
       family === undefined
         ? undefined
         : {
             label: values.get('family-label') ?? family,
             // codeql[js/regex-injection]
-            pattern: new RegExp(family),
+            pattern: new RegExp(family), // lgtm[js/regex-injection]
           },
     sections: ANALYZE_SECTION_ORDER.filter((kind) => requested.has(kind)).map((kind) => ({
       kind,
