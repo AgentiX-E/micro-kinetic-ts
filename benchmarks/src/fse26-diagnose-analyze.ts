@@ -7946,11 +7946,15 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     // reads a command line on the analyst's own machine, and the invalid-pattern path above is what
     // keeps a malformed one from becoming a family that matches nothing.
     //
-    // Both suppression spellings are present on purpose, and the duplication is measured: the
-    // `codeql[...]` form on the line BEFORE the sink was in place for a fortnight while alert
-    // `#13` stayed open across four default-setup scans, so the query is not reading it here. The
-    // `lgtm[...]` form on the sink's own line is the spelling `AlertSuppression.ql` documents for
-    // the same line; carrying both costs one comment and covers whichever form this query reads.
+    // BOTH suppression spellings are carried, and the measurement behind that is the reason they are
+    // still here: `AlertSuppression.ql` documents `codeql[rule-id]` on the line BEFORE the sink and
+    // `lgtm[rule-id]` on the sink's own line, and NEITHER closes this result — the `codeql` form was
+    // in place for a fortnight across four default-setup scans (alert `#13` stayed open), and adding
+    // the `lgtm` form closed `#13` as fixed and opened `#14` on the same line, which is the hash
+    // churn the two forms are documented to trade. The alert is therefore a by-design false positive
+    // that needs a MANUAL dismissal: the REST call needs `security_events: write`, which the token
+    // this repository pushes with does not carry (`403`). Nothing here is untrusted input — it is an
+    // analyst's own command line — so the comment is the record, not the fix.
     family:
       family === undefined
         ? undefined
