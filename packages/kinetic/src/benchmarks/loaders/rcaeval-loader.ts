@@ -1476,11 +1476,15 @@ export interface RCAEvalMetricPoint {
  *
  * @param tracesPath - Absolute path to traces.csv.
  * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @param resolve - Optional reconciliation of a span's service name to the case's own id; a name it refuses
+ *   is dropped rather than counted under the raw name, because a service the case has no metrics for cannot
+ *   be ranked and its raw spelling is a key no consumer can join on.
  * @returns A map from service id to {pre, post} span counts (empty on error).
  */
 export async function countTraceActivityByService(
   tracesPath: string,
   injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
 ): Promise<ReadonlyMap<string, TraceActivityCounts>> {
   const counts = new Map<string, { pre: number; post: number }>();
 
@@ -1519,7 +1523,9 @@ export async function countTraceActivityByService(
 
       if (rawLine.trim() === '') continue;
       const cells = rawLine.split(',');
-      const service = svcIdx >= 0 ? (cells[svcIdx] ?? '').trim() || 'unknown' : 'unknown';
+      const raw = svcIdx >= 0 ? (cells[svcIdx] ?? '').trim() || 'unknown' : 'unknown';
+      const service = resolve === undefined ? raw : resolve(raw);
+      if (service === undefined) continue;
       const startTimeMs = normalizeTraceStartTime(
         cell(cells, startMillisIdx),
         cell(cells, startIdx),
@@ -1613,8 +1619,9 @@ const PARENT_SPAN_ID_COLUMNS = new Set([
 export async function countFailedTraceEdges(
   tracesPath: string,
   injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
 ): Promise<FaultFailedEdge[]> {
-  return (await countDirectionalInputs(tracesPath, injectTimeMs)).failedTraceEdges;
+  return (await countDirectionalInputs(tracesPath, injectTimeMs, resolve)).failedTraceEdges;
 }
 
 /**
@@ -1671,6 +1678,7 @@ export async function countFailedTraceEdges(
 export async function countDirectionalInputs(
   tracesPath: string,
   injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
 ): Promise<DirectionalInputs> {
   if (!fs.existsSync(tracesPath)) {
     return { failedTraceEdges: [], edgeLatency: [], calleeCalls: new Map<string, number>() };
@@ -1733,7 +1741,13 @@ export async function countDirectionalInputs(
 
       if (rawLine.trim() === '') continue;
       const cells = rawLine.split(',');
-      const service = svcIdx >= 0 ? (cell(cells, svcIdx) ?? '').trim() || 'unknown' : 'unknown';
+      const raw = svcIdx >= 0 ? (cell(cells, svcIdx) ?? '').trim() || 'unknown' : 'unknown';
+      const service = resolve === undefined ? raw : resolve(raw);
+      // A span whose service is not one of the case's own is dropped ENTIRELY — its own row and its
+      // parent's edge. Keeping it would key an edge on a name no consumer can join, and the join below
+      // would then drop the edge anyway; dropping it here also keeps it out of `calleeCalls`, whose
+      // divisor is traffic an interface served and not traffic a phantom carried.
+      if (service === undefined) continue;
       const spanId = (cell(cells, spanIdx) ?? '').trim();
       const parent = (cell(cells, parentIdx) ?? '').trim();
       if (spanId !== '') serviceOfSpan.set(spanId, service);

@@ -342,6 +342,14 @@ export interface AssembledRCAEvalCase {
   readonly latencyViews: LatencyViews;
   /** This case's contribution to the latency-route census: one row-count per view, plus the cap's sides. */
   readonly latencyRoute: LatencyRouteEntry;
+  /**
+   * What the span-name join did: spans read, spans bound to an id, spans dropped.
+   *
+   * Reported because the alternative is the silence this join was written for: a case whose spans use
+   * another vocabulary assembles a graph with a phantom callee, and every edge-walking term then reports
+   * "no evidence" — a number a reader cannot distinguish from a quiet corpus.
+   */
+  readonly spanServices: SpanServiceCensus;
 }
 
 /**
@@ -420,6 +428,75 @@ export function deriveLatencyViews(
 }
 
 /**
+ * Bind a trace's service name to the case's own service id, or refuse to.
+ *
+ * ## The defect this exists for
+ *
+ * A trace file and a `metrics.json` are two artefacts of the same deployment, and they do not always spell a
+ * service the same way. `RE2:OnlineBoutique` is the measured case: its spans name the front end
+ * `frontendservice` while its metrics name it `frontend`. Nothing joined the two spellings, so
+ * `augmentTopologyWithTraces` — which keeps only the edges a span confirms — dropped all seven YAML edges
+ * that start at `frontend` and installed four edges from `frontendservice`, a node with no metrics at all.
+ * On that cell the graph the engine ranked on was a phantom callee and an isolated front end, and every
+ * edge-walking term read the absence as "no evidence" rather than as a naming problem. The streaming passes
+ * key their rows on the same raw names, so the direction channel inherited the same defect.
+ *
+ * The join lives HERE rather than in the loader because it is a join: the loader reads one artefact, and this
+ * module is the single owner of what is applied when several are combined. Keeping it there would also have
+ * rewritten a loader contract its own suite pins — a `traces.csv` with no service column is attributed to
+ * `unknown`, and that is a statement about the FILE, not about this case's ranking.
+ *
+ * ## The three rules, in order, and why only three
+ *
+ * 1. **Identity.** A name that is already an id is that id, and nothing reshapes it.
+ * 2. **Spelling.** Lower-case and drop everything that is not alphanumeric, so `front-end`, `front_end` and
+ *    `FrontEnd` are one key. This is the actual difference between the two artefacts, and it is mechanical.
+ * 3. **The `service` token.** Re-try (2) after removing a trailing `service`/`services`, because the two
+ *    vocabularies disagree by exactly that suffix (`frontend` / `frontendservice`).
+ *
+ * Anything else stays unresolved, and a NORMALISED key two ids both claim is refused rather than decided by
+ * order: attributing one node's spans to another is the one error this join cannot repair downstream.
+ *
+ * @param serviceIds - The case's own service ids, which are the ids the ranking can express.
+ * @returns A resolver: id for a resolvable name, `undefined` for a name that belongs to nothing measured.
+ */
+export function traceServiceResolver(
+  serviceIds: readonly string[],
+): (name: string) => string | undefined {
+  const exact = new Set(serviceIds);
+  const normalise = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const bySpelling = new Map<string, string | undefined>();
+  for (const id of serviceIds) {
+    const key = normalise(id);
+    // Two ids sharing a spelling make that spelling undecidable, and `undefined` carries that fact.
+    bySpelling.set(key, bySpelling.has(key) ? undefined : id);
+  }
+
+  return (name: string): string | undefined => {
+    if (exact.has(name)) return name;
+    const key = normalise(name);
+    // `has` before `get`: a key that is present but maps to `undefined` is the ambiguous spelling, and
+    // `get` alone cannot tell that apart from an absent key.
+    if (bySpelling.has(key)) return bySpelling.get(key);
+    const stripped = key.replace(/services?$/, '');
+    return stripped === '' ? undefined : bySpelling.get(stripped);
+  };
+}
+
+/**
+ * What the reconciliation above did to one case's spans.
+ *
+ * `renamed` counts spans bound to an id, `dropped` those naming nothing the case measures — reported
+ * separately because "the spans were in another vocabulary" and "the spans named unknown services" are two
+ * different facts about a corpus, and folding them into one number would hide the first behind the second.
+ */
+export interface SpanServiceCensus {
+  readonly total: number;
+  readonly renamed: number;
+  readonly dropped: number;
+}
+
+/**
  * Assemble one case's benchmark inputs, the way the published RCAEval cells are assembled.
  *
  * @param loader - The loader, for the traces file and the span-cap rule.
@@ -446,11 +523,34 @@ export async function assembleRCAEvalCase(
   let traceUsed = false;
   let pruned = false;
 
-  if (rawCase.traces && rawCase.traces.length > 0) {
+  // ONE reconciliation, before anything reads a span: the augmenter, the latency views and the two
+  // streaming passes must describe one service space, and the file's spelling is not it whenever the two
+  // artefacts disagree (see `traceServiceResolver`).
+  const resolveSpanService = traceServiceResolver(Object.keys(rawCase.metrics));
+  const spansByCase: BenchmarkTraceSpan[] = [];
+  let renamedSpans = 0;
+  let droppedSpans = 0;
+  for (const span of rawCase.traces ?? []) {
+    const id = resolveSpanService(span.service);
+    if (id === undefined) {
+      droppedSpans += 1;
+      continue;
+    }
+    if (id !== span.service) renamedSpans += 1;
+    spansByCase.push(id === span.service ? span : { ...span, service: id });
+  }
+  const spanServices: SpanServiceCensus = {
+    total: rawCase.traces?.length ?? 0,
+    renamed: renamedSpans,
+    dropped: droppedSpans,
+  };
+  const traces = spansByCase;
+
+  if (traces.length > 0) {
     traceUsed = true;
 
     if (options.augmentFromTraces) {
-      const spans: TraceSpan[] = rawCase.traces.map((t) => ({
+      const spans: TraceSpan[] = traces.map((t) => ({
         traceId: t.traceId,
         spanId: t.spanId,
         parentSpanId: t.parentSpanId ?? '',
@@ -486,13 +586,19 @@ export async function assembleRCAEvalCase(
   // repairs, because the shipped failed-edge weight is 0 and the artifact would go on reporting a starved
   // channel as a measured zero. It costs one streaming pass over a file the case already owns — and it is the
   // ONLY route that sees the post-injection window, so its two outputs are the ones the census reads.
-  const streaming = await countDirectionalInputs(join(meta.dirPath, 'traces.csv'), injectTimeMs);
-
-  const { views, capSides } = deriveLatencyViews(
-    rawCase.traces ?? [],
+  //
+  // The resolver is the SAME one `loadCase` applied to the in-memory spans, and passing it here is not
+  // symmetry for its own sake: the two paths key their rows on the file's raw service names, so a name that
+  // resolves for the topology must resolve for the direction channel too, or the two halves of one case
+  // describe two different service spaces. On `RE2:OnlineBoutique` the spans say `frontendservice` and every
+  // edge it appears in was keyed on a service no ranking can express.
+  const streaming = await countDirectionalInputs(
+    join(meta.dirPath, 'traces.csv'),
     injectTimeMs,
-    streaming.edgeLatency,
+    resolveSpanService,
   );
+
+  const { views, capSides } = deriveLatencyViews(traces, injectTimeMs, streaming.edgeLatency);
 
   benchCase = {
     ...benchCase,
@@ -507,6 +613,7 @@ export async function assembleRCAEvalCase(
       traceActivity: await countTraceActivityByService(
         join(meta.dirPath, 'traces.csv'),
         injectTimeMs,
+        resolveSpanService,
       ),
     };
   }
@@ -544,6 +651,7 @@ export async function assembleRCAEvalCase(
     edgesBefore,
     edgesAfter,
     logRowsRead,
+    spanServices,
     latencyViews: views,
     latencyRoute: {
       anchorPresent: injectTimeMs > 0,
