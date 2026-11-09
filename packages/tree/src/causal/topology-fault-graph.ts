@@ -760,6 +760,33 @@ export function isDemandMetric(label: string): boolean {
 }
 
 /**
+ * The channels whose zero is a MEASURED zero rather than an idle instrument.
+ *
+ * An `error` series counts failures per sample; a sample that reads zero says the service answered — it is a
+ * reading, not an absence. Every other channel this engine reads is a LEVEL, and a level of zero is the
+ * instrument reporting that it had nothing to measure (no traffic in that interval) or that the component was
+ * not running.
+ *
+ * The distinction is load-bearing for exactly one guard, and it was found the hard way: the idle guard's
+ * denominator is the whole recording, and the whole recording's first half is the PRE-INJECTION period — a
+ * period in which a fault's error channel is quiet BY CONSTRUCTION. So the guard's 40% threshold sits below the
+ * structural floor of any channel a fault moves, and on RE3:SockShop it refused the TRUTH's own `error` channel
+ * on 18 of 30 cases while never refusing the winner's (`docs/duty-cycle-window.md` §1). The family is named
+ * here, on the same rule as {@link DEMAND_METRIC_LABELS}: a channel is not in it until somebody says it is.
+ */
+export const EVENT_METRIC_LABELS: readonly string[] = ['error'];
+
+/**
+ * Whether a label names an EVENT channel — a count of things that happened, whose zero is a measurement.
+ *
+ * @param label - The metric label as the converter wrote it.
+ * @returns Whether it belongs to the event family.
+ */
+export function isEventMetric(label: string): boolean {
+  return EVENT_METRIC_LABELS.includes(label.toLowerCase());
+}
+
+/**
  * The three channels that report a POD's lifecycle state rather than its level.
  *
  * They are the direct evidence for the archive's `ContainerKill`, `PodFailure` and `PodKill` faults, and they
@@ -2291,11 +2318,35 @@ function computeAnomalyFeatures(
     // its history is a duty-cycled event metric. The raw-sample check must
     // precede the baseline computation below, whose `<= 0 → mean` reset would
     // otherwise mask the idle signature.
-    let nearZeroCount = 0;
-    for (let i = 0; i < n; i++) {
-      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
+    // The WINDOW the duty cycle is measured over, and the reason it is a separate decision from the
+    // threshold: for an EVENT channel the whole-recording denominator cannot fall below the length of the
+    // pre-injection half, because that half is quiet by construction — so on the corpus the guard refused the
+    // truth's own error channel on 18 of the 30 RE3:SockShop cases and never the winner's, which is a
+    // confound rather than a reading. An event channel is therefore measured where its evidence is claimed,
+    // and a LEVEL channel keeps the whole-recording rule it was written for (a latency percentile that is 0
+    // whenever there is no traffic is idle over its whole history, not over one half of it).
+    let window = { from: 0, to: n, peak: max };
+    if (isEventMetric(ts.label) && cfg.injectTimeMs !== undefined && cfg.injectTimeMs > 0) {
+      let from = -1;
+      for (let i = 0; i < n; i++) {
+        if (ts.timestamps[i]! >= cfg.injectTimeMs) {
+          from = i;
+          break;
+        }
+      }
+      // A boundary that leaves fewer than two samples on the claimed side is not a window: fall back to the
+      // whole recording rather than measure a duty cycle over one sample.
+      if (from >= 0 && n - from >= 2) {
+        let postMax = -Infinity;
+        for (let i = from; i < n; i++) if (ts.values[i]! > postMax) postMax = ts.values[i]!;
+        window = { from, to: n, peak: postMax };
+      }
     }
-    if (nearZeroCount > n * 0.4) {
+    let nearZeroCount = 0;
+    for (let i = window.from; i < window.to; i++) {
+      if (ts.values[i]! <= window.peak * 0.001) nearZeroCount++;
+    }
+    if (nearZeroCount > (window.to - window.from) * 0.4) {
       drop(ts.label, 'duty-cycled-idle');
       continue;
     }
