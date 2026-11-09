@@ -52,6 +52,8 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import {
+  PRODUCTION_JOINT_ARMS,
+  PRODUCTION_JOINT_ROWS,
   PRODUCTION_ROWS,
   PRODUCTION_UNPRICED_WEIGHTS,
   PRODUCTION_WEIGHT_CONFIGS,
@@ -196,14 +198,18 @@ describe('the selection the runner takes, and the control row it must begin with
     expect(first.label).toBe(PRODUCTION_ROWS[0]!.label);
   });
 
-  it('is the control plus one row per priced field, and nothing else', () => {
-    expect(PRODUCTION_WEIGHT_CONFIGS).toHaveLength(PRODUCTION_WEIGHT_FIELDS.length + 1);
-    const arms = PRODUCTION_WEIGHT_CONFIGS.slice(1);
-    for (const [index, arm] of arms.entries()) {
+  it('is the control plus one row per priced field, then the pre-registered joint arms, and nothing else', () => {
+    expect(PRODUCTION_WEIGHT_CONFIGS).toHaveLength(
+      PRODUCTION_WEIGHT_FIELDS.length + PRODUCTION_JOINT_ROWS.length + 1,
+    );
+    const singles = PRODUCTION_WEIGHT_CONFIGS.slice(1, PRODUCTION_WEIGHT_FIELDS.length + 1);
+    for (const [index, arm] of singles.entries()) {
       expect(configDiff(SHIPPED_LINE, formatAblationConfigLine(arm.flags, arm.overrides))).toEqual([
         PRODUCTION_WEIGHT_FIELDS[index]!.field,
       ]);
     }
+    const joints = PRODUCTION_WEIGHT_CONFIGS.slice(PRODUCTION_WEIGHT_FIELDS.length + 1);
+    expect(joints.map((row) => row.label)).toEqual(PRODUCTION_JOINT_ROWS.map((row) => row.label));
   });
 
   it('is what the runner filters to, and the full battery still carries the arms', () => {
@@ -213,6 +219,63 @@ describe('the selection the runner takes, and the control row it must begin with
     expect(RUNNER).toContain('onlyProductionWeights ? PRODUCTION_WEIGHT_CONFIGS : CONFIGS');
     expect(RUNNER).toContain('...PRODUCTION_WEIGHT_CONFIGS.slice(1)');
     expect(RUNNER).toContain("'--only'");
+  });
+});
+
+describe('a joint arm removes TWO numbers, and says which two', () => {
+  it('combines exactly two distinct members, each of which has a single arm', () => {
+    const singles = new Map(PRODUCTION_WEIGHT_FIELDS.map((entry) => [entry.name, entry.field]));
+    expect(PRODUCTION_JOINT_ARMS.length, 'the pre-registered pair is registered').toBeGreaterThan(
+      0,
+    );
+    for (const arm of PRODUCTION_JOINT_ARMS) {
+      const [left, right] = arm.members;
+      expect(left, `${left} + ${right} names one member twice`).not.toBe(right);
+      for (const member of arm.members) {
+        expect(
+          singles.has(member),
+          `${member} has no single arm, so the pair cannot be read against its parents`,
+        ).toBe(true);
+      }
+      expect(arm.why.length, `${left} + ${right} states the question it answers`).toBeGreaterThan(
+        80,
+      );
+    }
+  });
+
+  it('moves exactly those two fields of the rendered line, and states both zeros', () => {
+    const singles = new Map(PRODUCTION_WEIGHT_FIELDS.map((entry) => [entry.name, entry.field]));
+    for (const [index, row] of PRODUCTION_JOINT_ROWS.entries()) {
+      const arm = PRODUCTION_JOINT_ARMS[index]!;
+      const expected = [singles.get(arm.members[0]), singles.get(arm.members[1])];
+      const line = formatAblationConfigLine(row.flags, row.overrides);
+      expect(configDiff(SHIPPED_LINE, line), `${row.label} moves its own two fields`).toEqual(
+        expected,
+      );
+      for (const field of expected) {
+        expect(stated(line, field!), `${row.label} states ${field}=0`).toBe('0');
+        expect(row.label, `${row.label} names ${field}`).toContain(field!);
+      }
+    }
+  });
+
+  it('threads BOTH removals into the engine, not only into the line', () => {
+    for (const row of PRODUCTION_JOINT_ROWS) {
+      const { signals, topology } = buildAblationEngineOptions(row.flags, row.overrides);
+      const merged: Record<string, unknown> = { ...signals, ...topology };
+      const zeroed = Object.keys(row.overrides ?? {});
+      expect(zeroed).toHaveLength(2);
+      for (const field of zeroed) {
+        expect(merged[field], `${row.label} forwarded ${field}`).toBe(0);
+      }
+    }
+  });
+
+  it('rides the production flags and claims no suite, like the singles', () => {
+    for (const row of PRODUCTION_JOINT_ROWS) {
+      expect(row.flags).toEqual(productionFlags('re3'));
+      expect(row.suites, `${row.label} is not a published configuration`).toEqual([]);
+    }
   });
 });
 

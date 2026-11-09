@@ -647,6 +647,93 @@ export const PRODUCTION_WEIGHT_ROWS: readonly AblationProductionRow[] =
   }));
 
 /**
+ * One member of {@link PRODUCTION_WEIGHT_FIELDS}, looked up by the word its arm's label uses.
+ *
+ * A name rather than a field key, because the joint arms below are declared in the table's own vocabulary: a
+ * pair is "the TREND arm and the CV arm together", and writing `anomalyTrendWeight` there instead would let the
+ * pair outlive a rename of the word the artifact prints.
+ *
+ * @param name - The `name` of a member of {@link PRODUCTION_WEIGHT_FIELDS}.
+ * @returns That member.
+ * @throws Error if no member carries the name. This runs at module load, which is the point: a joint arm that
+ * named a member with no single arm is a row whose two removals cannot be read against anything, and the
+ * failure belongs at import rather than in an artifact nobody re-reads.
+ */
+function weightFieldOf(name: string): ProductionWeightField {
+  const entry = PRODUCTION_WEIGHT_FIELDS.find((candidate) => candidate.name === name);
+  if (!entry) {
+    throw new Error(
+      `PRODUCTION_JOINT_ARMS names '${name}', which is not a member of PRODUCTION_WEIGHT_FIELDS — a joint arm ` +
+        'must be the two single arms it combines, not a third configuration',
+    );
+  }
+  return entry;
+}
+
+/**
+ * A pre-registered pair of members, removed together.
+ *
+ * ## Why a joint arm is not a second sweep
+ *
+ * Leave-one-out is a FIRST-ORDER marginal: it prices one member with the rest of the vector held at the shipped
+ * value, and it says nothing about what two removals do together. Most pairs do not need to be asked — their
+ * single arms move different cases, so the pair is the sum. The arms below are the ones where the single arms
+ * landed on the SAME CASE with OPPOSITE SIGNS, which is exactly the situation in which the sum and the joint
+ * reading can disagree:
+ *
+ * - if the case is one case and the two shares cancel, the pair is worth `0` and the two single arms have each
+ *   been reporting the same case twice;
+ * - if they are two independent cases, the pair is worth both and the two shares are additive.
+ *
+ * `docs/production-weight-leave-one-out.md` records `TREND` at `−1` (`RE1` and `RE2` down one) and `CV` at `+2`
+ * (`RE2` and `RE3` up one), with both arms landing on `RE3:TrainTicket`. The pair therefore separates the two
+ * readings: `667` means the `RE2` gain and the `RE2` loss are the same case, `668` means they are not.
+ *
+ * ## Why exactly this pair, and nothing else
+ *
+ * It was named in the register BEFORE the arms were run, in the document that reports the single arms. The rule
+ * the register has held three times is that a pair chosen after seeing which pairs would help is a search
+ * dressed as an ablation, and the reason this pair is admissible is that it was chosen for a MECHANISM question
+ * (are these two shares one case?) rather than for a score.
+ */
+export interface ProductionJointArm {
+  /** The `name`s of the two members, in the order the label prints them. */
+  readonly members: readonly [string, string];
+  /** What the pair separates, in the register's words — the question the row exists to answer. */
+  readonly why: string;
+}
+
+/** The pre-registered joint arms. See {@link ProductionJointArm} for the admission rule. */
+export const PRODUCTION_JOINT_ARMS: readonly ProductionJointArm[] = [
+  {
+    members: ['TREND', 'CV'],
+    why:
+      'both single arms land on RE3:TrainTicket with opposite signs, so the pair decides whether the RE2 gain ' +
+      'and the RE2 loss are one case (667) or two (668)',
+  },
+];
+
+/**
+ * The joint arms as rows, built from {@link PRODUCTION_JOINT_ARMS} the way the singles are built from their table.
+ *
+ * The label carries BOTH field tokens, so a reader of the artifact can check the row without the source: the
+ * defect this avoids is a row labelled `LESS TREND + CV` whose overrides carry one of them.
+ */
+export const PRODUCTION_JOINT_ROWS: readonly AblationProductionRow[] = PRODUCTION_JOINT_ARMS.map(
+  (arm) => {
+    const left = weightFieldOf(arm.members[0]);
+    const right = weightFieldOf(arm.members[1]);
+    return {
+      label: `PRODUCTION LESS ${left.name} + ${right.name} (${left.field}=0,${right.field}=0)`,
+      // Same rule as the singles: no suite is published with a member removed, let alone two.
+      suites: [],
+      flags: productionFlags('re3'),
+      overrides: { [left.field]: 0, [right.field]: 0 } as AblationEngineOverrides,
+    };
+  },
+);
+
+/**
  * One row of the battery, as the runner consumes it: flags, an optional weight override, and a label.
  *
  * The runner's own array carries a `latencyView` as well; this shape is the subset the weight study uses, so a
@@ -678,6 +765,13 @@ export const PRODUCTION_WEIGHT_CONFIGS: readonly AblationRowConfig[] = [
     overrides: PRODUCTION_ROWS[0]!.overrides,
   },
   ...PRODUCTION_WEIGHT_ROWS.map((row) => ({
+    flags: row.flags,
+    label: row.label,
+    overrides: row.overrides,
+  })),
+  // Last, and after every single arm, because a joint arm is read AGAINST its two parents: the runner prints the
+  // table in this order, so the pair appears beneath the two rows whose cases it is comparing.
+  ...PRODUCTION_JOINT_ROWS.map((row) => ({
     flags: row.flags,
     label: row.label,
     overrides: row.overrides,
