@@ -79,6 +79,7 @@ import {
 } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
+import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
 import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -904,7 +905,12 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * and it is ABSENT — not zero — on a case whose best `Δλ` is below {@link EMISSION_MIN_RISE}, which is what
    * keeps a population with no emission evidence silent rather than maximally noisy.
    *
-   * Ships at {@link DEFAULT_EMISSION_WEIGHT}, whose docblock is where the nine-cell measurement is recorded.
+   * Ships at {@link DEFAULT_EMISSION_WEIGHT} = **0.5**, and the term's reach is bounded by a JURISDICTION rather
+   * than by the weight: `computeEmissionScores` is sparse, so an entry is an ABSENCE when the case cannot answer
+   * for that node at all, and an additive term that reads a miss as `0` would rank an unmeasurable node below
+   * every node it could measure. `orderWithEmissionJurisdiction` restricts the term to permuting the nodes it
+   * MEASURED. The nine cells, the seven cases the ungated arm lost, and the reason each of them lost are
+   * `docs/emission-jurisdiction.md`; the constant's own docblock carries the table.
    */
   readonly emissionWeight: number;
   /**
@@ -1189,9 +1195,22 @@ export const DEFAULT_SELF_TIME_WEIGHT = 0;
 /**
  * The shipped weight of the emission term — see {@link TreePrunerOptions.emissionWeight}.
  *
- * PLACEHOLDER: the measurement is being taken now.
+ * **`0.5`, ENROLLED, and the value was pre-registered before the term existed** (`docs/rcaeval-error-scale.md`
+ * §6). What changed is not the weight but what the weight is allowed to do: the term now runs under a
+ * JURISDICTION (`docs/emission-jurisdiction.md`), so a node the emission map cannot measure is not treated as a
+ * measured zero. Re-measured on the nine cells against the same tree with the jurisdiction in place:
+ *
+ * | arm | RE1:OB | RE1:SS | RE1:TT | RE2:OB | RE2:SS | RE2:TT | RE3:OB | RE3:SS | RE3:TT | total |
+ * | --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+ * | `w = 0` (shipped before this) | 113 | 119 | 112 | 84 | 89 | 76 | 26 | 19 | 22 | **660** |
+ * | `w = 0.5`, no jurisdiction | 113 | 119 | 113 | 83 | 88 | 76 | 24 | 28 | 19 | 663 (four cells down) |
+ * | `w = 0.5`, jurisdiction | 113 | 119 | **113** | 84 | 89 | 76 | 26 | **24** | 22 | **666** |
+ *
+ * `+6` with **no cell down**, which is the only law this register has ever applied to a weight: six cases gained
+ * (`RE1:TT` one, `RE3:SS` five), none lost, and the paired sign test is `6–0` (`p = 0.016` one-sided). The
+ * `w = 0` arm is unchanged to the case because a weight of zero never builds the map at all.
  */
-export const DEFAULT_EMISSION_WEIGHT = 0;
+export const DEFAULT_EMISSION_WEIGHT = 0.5;
 
 /**
  * The shipped weight of the internal/external symmetry mask — `0`, and **REFUSED at the first weight it was
@@ -3409,16 +3428,42 @@ function performTreeRCA(
     return s;
   };
 
-  scoredNodes.sort((a, b) => {
+  const byFinalScore = (a: { serviceId: ServiceId }, b: { serviceId: ServiceId }): number => {
     const d = finalScoreOf(b.serviceId) - finalScoreOf(a.serviceId);
     if (d !== 0) return d;
     return a.serviceId < b.serviceId ? -1 : 1;
-  });
+  };
+
+  // The emission term's JURISDICTION. `emissionScores` is a SPARSE map — a node is in it only when the case can
+  // answer for that node at all (both channels, aligned samples, a non-zero denominator, a rise) — so a missing
+  // entry is an ABSENCE and never a measured zero. An additive term cannot tell the two apart: a lookup that
+  // misses yields the neutral 0, and a share of 0 loses to every node the term could measure. The corpus says
+  // what that costs (`docs/emission-jurisdiction.md`): in all seven cases the arm moved the wrong way, the node
+  // it overturned carried NO emission reading. So the term reorders the stratum it MEASURED and leaves every
+  // other position where the base ranking put it. With `emissionScores` undefined — the shipped configuration —
+  // this is the plain score sort, unchanged to the last comparison.
+  const rankedNodes =
+    emissionScores === undefined
+      ? [...scoredNodes].sort(byFinalScore)
+      : orderWithEmissionJurisdiction(
+          scoredNodes.map((node) => {
+            const score = finalScoreOf(node.serviceId);
+            const contribution =
+              termsOf(node.serviceId).find((term) => term.name === 'emission')?.contribution ?? 0;
+            return {
+              node,
+              serviceId: node.serviceId,
+              score,
+              baseScore: score - contribution,
+              measured: emissionScores.has(node.serviceId),
+            };
+          }),
+        ).map((row) => row.node);
 
   // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];
-  for (let i = 0; i < Math.min(topK, scoredNodes.length); i++) {
-    const node = scoredNodes[i]!;
+  for (let i = 0; i < Math.min(topK, rankedNodes.length); i++) {
+    const node = rankedNodes[i]!;
     const errorBound = estimatePropagationError(node.depth, options.decayAlpha);
     const cResult = collisionEnergy?.get(node.serviceId);
     const collisionType = cResult?.collisionType ?? 'chain';

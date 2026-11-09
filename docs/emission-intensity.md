@@ -1,4 +1,4 @@
-# The emission term: an absolute per-request rate, measured on all nine cells, and refused
+# The emission term: an absolute per-request rate, refused at its weight — and enrolled once its jurisdiction was fixed
 
 **The finding, in one sentence.** Ranking candidates by the ABSOLUTE change in their own per-request error rate —
 Deng Yu's collision source stated as a number rather than as a ratio — takes `RE3:SockShop` from **19/30 to 28/30**,
@@ -200,3 +200,21 @@ answering, which is a statement about DIRECTION, and §6.1 measures that this co
 are recorded here so nobody prices them again, and the prerequisite is named: a direction channel with
 coverage. On the FSE'26 half, `edgeRecords` is the one signal the separator census reports as holding
 (AUC 0.908, 60–2, stable in all five folds) — which is where this term would have to be measured, not here.
+
+## 7. Superseded in part: the defect was an absence read as a zero
+
+§6.3's conclusion — that the term cannot ship because a source and a caller emitting on its behalf are
+indistinguishable from the emission side — is TRUE about the emission side and was the wrong reason to refuse
+the weight. The seven cases the arm lost have one property that §6.3's table already prints without naming: in
+every one of them the node the arm overturned carries **no emission entry at all** (two are silent, five have no
+`error` channel). The term read that absence as a measured zero, and a zero share loses to everything.
+
+`docs/emission-jurisdiction.md` states the repair as an ORDER — the term permutes the candidates it measured and
+may not move one across a candidate it could not measure — and measures it on the same nine cells, from the same
+tree, three arms: `660` (shipped), `663` (the weight alone, four cells down), **`666`** (the weight under the
+jurisdiction, no cell down). The weight is the one pre-registered here, `0.5`, and §4's sweep is unchanged: what
+moved is not the number but what the number is allowed to touch.
+
+§6.1 and §6.3 stay in force as measurements: this corpus carries 26 direction records in 23,105 node-reads, so a
+conjunction with the failed-call ledger still admits nothing, and the four gains the jurisdiction forfeits are
+exactly the cases that channel would have recovered.

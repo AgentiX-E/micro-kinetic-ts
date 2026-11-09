@@ -1564,3 +1564,43 @@ prerequisite is named: `edgeRecords`, which is the one signal the FSE'26 separat
 
 `docs/span-name-join.md` holds the join's two-artefact table, the before/after graph, the nine cells and the
 neutrality argument.
+
+## Iteration 254 — the weight that could not ship, and the one inference that was doing the damage
+
+The emission axis was closed twice: at its weight in iteration 252 (`+3` net, four cells down) and at its
+admission in 253 (`+6` net, three cells down; the direction channel it asked for does not exist on this
+corpus — 26 records in 23,105 node-reads). Both closures were arithmetically right and both were diagnosing the
+wrong organ. The seven cases the arm lost share one property that neither record named: **the node the arm
+overturned carries no emission entry at all** — two are silent (`0 / 13,217` and `0 / 710` post-window
+requests), five have no `error` channel. `computeEmissionScores` is sparse by design and its absence means "this
+case cannot answer for this node"; the additive term read that absence as a measured ZERO, and a zero share
+loses to every node the term could measure.
+
+The repair is an order rather than a coefficient: the term permutes the candidates it MEASURED and may not move
+one across a candidate it could not measure (`orderWithEmissionJurisdiction`). Measured on the nine cells, three
+arms from one tree:
+
+| arm | RE1:OB | RE1:SS | RE1:TT | RE2:OB | RE2:SS | RE2:TT | RE3:OB | RE3:SS | RE3:TT | total |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| `w = 0` | 113 | 119 | 112 | 84 | 89 | 76 | 26 | 19 | 22 | **660** |
+| `w = 0.5`, ungated | 113 | 119 | 113 | 83 | 88 | 76 | 24 | **28** | 19 | 663 |
+| `w = 0.5`, jurisdiction (SHIPPED) | 113 | 119 | **113** | 84 | 89 | 76 | 26 | **24** | 22 | **666** |
+
+`+6` with **no cell down** — `RE1:TrainTicket +1`, `RE3:SockShop +5`, and all five cells the ungated arm moved
+the wrong way return to their shipped values. Paired sign test `6–0`, `p = 0.0156`. The case-level replay of the
+same rule (which prices exactly, because it only switches the term on or off) predicted `666` with the same two
+cells moving before any engine ran. Sensitivity at `0.35 / 0.50 / 0.65`: `RE3:SS 22 / 24 / 24`, `RE1:TT 113 /
+113 / 113` — monotone, flat above the pre-registered value, and no grid was searched.
+
+Two things this closes rather than defers. **The intake hypothesis is refuted**: the first candidate for the
+missing direction channel was the corpus's `workload`, on the kinetic reading that a source loses its intake
+while a caller keeps its own — and on `RE3:SockShop` the winning source's intake ratio is `1.010`, `1.001`,
+`0.977`, i.e. unchanged, because the source is the service nearest a dead dependency and it keeps answering
+while failing. **And the four gains the rule forfeits are named rather than lost**: on `re3ss_carts_f4_2`,
+`orders_f3_3`, `orders_f4_2`, `orders_f4_3` the shipped leader also carries no entry and the truth IS the
+largest emitter — a direction gate would have taken them, and this corpus does not carry one.
+
+`docs/emission-jurisdiction.md` holds the rule, the seven cases with their readings, the three arms, the
+sensitivity table and the refutation; `docs/emission-intensity.md` §7 records that its own §6 refused the term
+for the right observation and the wrong reason.
+

@@ -535,9 +535,11 @@ describe('the RCAEval configuration line carries the configuration that produced
         // rule `topoClosure` follows one field above: the arm this exists to make distinguishable is `onset`,
         // and a field omitted at its default would render that arm and the shipped run byte-identically — on the
         // artifact whose entire job is to attribute the difference between them.
-        // Iteration 252 appended the emission term, on the same rule: it ships at 0, so an omitted-when-default
-        // field would render the measured arm of `docs/emission-intensity.md` and the shipped run identically.
-        'topoPrecedence=off emissionWeight=0',
+        // Iteration 252 appended the emission term on the same rule, and iteration 254 changed only its VALUE:
+        // the term ships at `0.5` under a jurisdiction, so the field still has to be printed — an omitted-when-
+        // default field would render the `w = 0` control arm of `docs/emission-jurisdiction.md` and the shipped
+        // run byte-identically, which is the one comparison that table exists to make.
+        'topoPrecedence=off emissionWeight=0.5',
     );
   });
 

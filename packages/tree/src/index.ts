@@ -174,6 +174,9 @@ export {
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
+export { orderWithEmissionJurisdiction } from './pruning/emission-jurisdiction.js';
+export type { EmissionJurisdictionRow } from './pruning/emission-jurisdiction.js';
+
 export {
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_DUAL_FAMILY_GATE,

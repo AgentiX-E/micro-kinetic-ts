@@ -154,6 +154,15 @@ const RETIRED = [
   // the reading being retired.
   '659/735',
   '25/30',
+  // ── Retired by iteration 254's ENROLMENT of the emission term under its jurisdiction (§0p-iv). The
+  // configuration digest moved with it (`1a67d9681c45` → `a0ed4a8a906e`), so this is the first retirement in the
+  // list that is an arm rather than a repair: every reading below was correct for the configuration that
+  // produced it, and what moved is what ships.
+  '660/735',
+  '89.80',
+  '344/375',
+  '67/90',
+  '19/30',
 ] as const;
 
 describe('the standing document is anchored to one battery', () => {
@@ -224,7 +233,7 @@ describe('the standing document is anchored to one battery', () => {
     // Non-vacuity: five tables, and each one carries at least one of our own readings.
     const totalFraction = `${byKey('TOTAL').correct}/${byKey('TOTAL').total}`;
     expect(current).toContain(totalFraction);
-    expect(current).toContain('344/375');
+    expect(current).toContain('345/375');
     expect(current).toContain('76/90');
     // The two directions of the same fact. Above: no table prints a retired reading. Below: \u00a70p names every
     // reading it retires, so the list cannot grow past the correction or the correction past the list.
