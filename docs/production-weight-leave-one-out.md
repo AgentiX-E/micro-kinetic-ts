@@ -171,6 +171,24 @@ A reader who expects the kinematic layer to be where the accuracy comes from wil
 honest statement is the one the arms support: **the model's contribution is the anomaly it defines and the
 orderings it declares admissible, not a weighted sum of its named instruments.**
 
+## Two 2026 references that read the same way
+
+Neither paper is about this repository, and neither is a benchmark we lead on — they are recorded because they
+report the same phenomenon from the other side, which is what makes this table more than bookkeeping.
+
+- **`arXiv:2611.02416`** (November 2026, SLM-based diagnosis with historical-frequency profiling) reports that
+  *"final decisions often favor large anomaly scores despite the model's own propagation analysis suggesting
+  otherwise"*, and builds its remedy around how often a signal is flagged during the fault-free period. That is
+  this table's `−133` in another vocabulary: the term that decides a case is the candidate's own anomaly
+  magnitude, and every propagation-derived term in the vector is worth `6` cases or fewer.
+- **`arXiv:2610.35767`** (RCAtlas) strips the agent scaffolding off and finds that the *simple* harnesses reach
+  `PR@1` of 65–77% while published staged agents land at 16–53% and statistical/causal methods at 6–39%. The
+  reading is the same shape: the accuracy lives in what is measured per component, not in the choreography
+  around it — which is the claim this repository has been making with a different instrument.
+
+Neither comparison may be read as a gap. Different populations, different metrics, different tasks; what
+transfers is the direction of the evidence, and it points the same way this iteration's arm table does.
+
 ## Reproduction
 
 ```
