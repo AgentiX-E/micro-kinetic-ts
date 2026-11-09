@@ -69,6 +69,7 @@ import {
   formatAblationConfigLine,
   isProductionFlags,
   PRODUCTION_ROWS,
+  PRODUCTION_WEIGHT_CONFIGS,
   productionFlags,
   type AblationEngineOverrides,
   type AblationFeatureFlags,
@@ -595,6 +596,12 @@ const CONFIGS: Array<{
   // a flag list can only be read by someone who already knows the pin, so the rows are now named for the claim
   // they carry and their flags come from `productionFlags` rather than from a second hand-written copy.
   ...PRODUCTION_ROWS.map((row) => ({ flags: row.flags, label: row.label })),
+  // ── The shipped vector's NUMBERS, one removed at a time ──
+  // The rows above price the four flags. The numbers the same configuration spends are not flags, and until
+  // these rows existed no ablation could remove one: `RE1`'s score lives entirely in them, so the artifact could
+  // describe `92.0` and not decompose it. Spread from the module that also states the shipped table, so a label
+  // cannot outlive the constant it names.
+  ...PRODUCTION_WEIGHT_CONFIGS.slice(1),
   {
     // The row the old `FULL STACK (all ON)` was believed to be. Every one of the twelve flags on, which is a
     // configuration nobody ships and no record has ever measured: the old row turned on the THREE legacy flags
@@ -1051,6 +1058,16 @@ async function main(): Promise<void> {
   let suiteFilter = 'all';
   let maxCases = 0;
   let prismSweep = false;
+  /**
+   * Whether the dispatch asked for the shipped vector's NUMBERS only.
+   *
+   * The battery's answer takes two hours because it prices thirty-nine configurations on 735 cases; a dispatch
+   * that asks one question should not pay for the other thirty-eight. `production-weights` is the one group that
+   * earns a selector of its own, because it is the group whose rows were the MISSING half of the accounting
+   * (`docs/production-leave-one-out.md`) and because its ten rows are the only ones read against the published
+   * cells rather than against the stripped baseline.
+   */
+  let onlyProductionWeights = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) dataDir = args[++i]!;
@@ -1059,6 +1076,15 @@ async function main(): Promise<void> {
     else if (args[i] === '--max-cases' && i + 1 < args.length)
       maxCases = parseInt(args[++i]!, 10) || 0;
     else if (args[i] === '--prism-sweep') prismSweep = true;
+    else if (args[i] === '--only' && i + 1 < args.length) {
+      const group = args[++i]!;
+      if (group !== 'production-weights') {
+        // A selector that fell back to "everything" on a typo would publish the whole battery under a step whose
+        // name promised ten rows, and the artifact would not say so.
+        throw new Error(`--only: unknown group '${group}' (the groups are: production-weights)`);
+      }
+      onlyProductionWeights = true;
+    }
   }
 
   console.log('═'.repeat(80));
@@ -1066,7 +1092,18 @@ async function main(): Promise<void> {
   console.log('═'.repeat(80));
   console.log(`Data:       ${dataDir}`);
   console.log(`Filter:     system=${systemFilter}, suite=${suiteFilter}`);
-  console.log(`Configs:    ${CONFIGS.length}`);
+  // Typed as the runner's own row shape rather than inferred from the union: the weight rows carry no
+  // `latencyView` (they vary a coefficient, not a corpus), and a union type would have made the corpus axis
+  // unreadable at every site that resolves it — which is how the first draft of this selection failed to compile.
+  const activeConfigs: ReadonlyArray<{
+    flags: FeatureFlags;
+    label: string;
+    overrides?: AblationEngineOverrides;
+    latencyView?: LatencySource;
+  }> = onlyProductionWeights ? PRODUCTION_WEIGHT_CONFIGS : CONFIGS;
+  console.log(
+    `Configs:    ${activeConfigs.length}${onlyProductionWeights ? ' (the shipped vector, one member removed)' : ''}`,
+  );
   console.log(`Repetitions: ${REPETITIONS}`);
   console.log('═'.repeat(80));
 
@@ -1215,7 +1252,7 @@ async function main(): Promise<void> {
     // trace signal; the counts are config-independent (anchored to injectTime),
     // so the +Trace Activity slice reuses them across its repetitions.
     const needsTraceActivity =
-      CONFIGS.some((c) => c.flags.traceSignal) || PRISM_SWEEP_FLAGS.traceSignal;
+      activeConfigs.some((c) => c.flags.traceSignal) || PRISM_SWEEP_FLAGS.traceSignal;
     for (const meta of selected) {
       try {
         const rawCase = loader.loadCase(meta.dirPath);
@@ -1492,7 +1529,7 @@ async function main(): Promise<void> {
   // release, then next system.  Pre-building all systems at once holds
   // 150+ RE2 cases (call graphs + trace spans + Zhipu embeddings) in memory
   // → OOM on public runners (TrainTicket has 68-69 services/case).
-  const allRuns: AblationRun[] = CONFIGS.map((c) => ({
+  const allRuns: AblationRun[] = activeConfigs.map((c) => ({
     flags: c.flags,
     overrides: c.overrides ?? {},
     latencyView: c.latencyView ?? DEFAULT_LATENCY_SOURCE,
@@ -1544,8 +1581,8 @@ async function main(): Promise<void> {
     // from that config's own cases rather than shared, so a row cannot rank on a corpus its label does not name.
     let byFT = new Map<string, BenchmarkCase[]>();
 
-    for (let ci = 0; ci < CONFIGS.length; ci++) {
-      const config = CONFIGS[ci]!;
+    for (let ci = 0; ci < activeConfigs.length; ci++) {
+      const config = activeConfigs[ci]!;
       console.log(`\n${'─'.repeat(60)}`);
       console.log(`Running: ${config.label}`);
       console.log(`Flags: ${JSON.stringify(config.flags)}`);

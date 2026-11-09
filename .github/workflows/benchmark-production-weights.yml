@@ -1,0 +1,132 @@
+name: Benchmark — Production Weights (leave-one-out on the shipped vector)
+
+# Readback workflow for the accounting `docs/production-leave-one-out.md` left open.
+#
+# That document prices three members of the configuration that produced `666/735` — `traceWeight`, `logWeight`
+# and `rankNormalization` — and reports the reason it can price no more: the ablation battery's production rows
+# were four FLAGS, while `RE1`'s `92.0` is made of NUMBERS that no flag reaches. The ten rows this workflow runs
+# are that second column: the shipped configuration with exactly one coefficient set to zero, one row each.
+#
+# Every job runs `--only production-weights`, which selects eleven rows — the ten arms AND the shipped
+# configuration they are measured from. The control row is first because `run-ablation.ts` measures every Δ from
+# `allRuns[0]`: a selection that began at an arm would have reported ten numbers against another arm, and the
+# verdict block that prints each row's varied terms is what caught it.
+#
+# One job per suite, because the suites are the population the published cells are reported on and the arms move
+# different ones: `RE1` carries no spans and no logs (so the composition is all it has), `RE3` carries both, and
+# `RE2` carries the resource faults.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  weights-re1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: ./.github/actions/rcaeval-json
+        with:
+          mode: consume
+      - name: Run the shipped vector, one member removed — RE1
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re1 --only production-weights 2>&1 | tee production-weights-re1.txt
+      - name: Upload RE1 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-weights-re1
+          path: |
+            production-weights-re1.txt
+            ablation-results.json
+
+  weights-re2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: ./.github/actions/rcaeval-json
+        with:
+          mode: consume
+      - name: Run the shipped vector, one member removed — RE2
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 --only production-weights 2>&1 | tee production-weights-re2.txt
+      - name: Upload RE2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-weights-re2
+          path: |
+            production-weights-re2.txt
+            ablation-results.json
+
+  weights-re3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: ./.github/actions/rcaeval-json
+        with:
+          mode: consume
+      - name: Run the shipped vector, one member removed — RE3
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re3 --only production-weights 2>&1 | tee production-weights-re3.txt
+      - name: Upload RE3 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-weights-re3
+          path: |
+            production-weights-re3.txt
+            ablation-results.json
