@@ -26,7 +26,7 @@ import {
 const BASELINE_TEXT = JSON.stringify({
   battery: '42343505202',
   revision: 'bd17912c',
-  configuration: '486ad3e0486b',
+  configuration: '1a67d9681c45',
   cells: { 'RE1:SockShop': 119, 'RE3:TrainTicket': 22 },
   total: 141,
 });
@@ -79,7 +79,7 @@ describe('a baseline that cannot be compared against is refused', () => {
         JSON.stringify({
           battery: '1',
           revision: 'x',
-          configuration: '486ad3e0486b',
+          configuration: '1a67d9681c45',
           cells: { a: 1 },
           total: '1',
         }),
@@ -93,7 +93,7 @@ describe('a baseline that cannot be compared against is refused', () => {
         JSON.stringify({
           battery: '1',
           revision: 'x',
-          configuration: '486ad3e0486b',
+          configuration: '1a67d9681c45',
           cells: {},
           total: 0,
         }),
@@ -107,7 +107,7 @@ describe('a baseline that cannot be compared against is refused', () => {
         JSON.stringify({
           battery: '1',
           revision: 'x',
-          configuration: '486ad3e0486b',
+          configuration: '1a67d9681c45',
           cells: { a: -1 },
           total: -1,
         }),
@@ -118,7 +118,7 @@ describe('a baseline that cannot be compared against is refused', () => {
         JSON.stringify({
           battery: '1',
           revision: 'x',
-          configuration: '486ad3e0486b',
+          configuration: '1a67d9681c45',
           cells: { a: 1 },
           total: 2,
         }),
@@ -230,7 +230,7 @@ describe('the job answers with a code rather than with an opinion', () => {
   it('fails when a cell moved, and prints the block the reader has to re-read', () => {
     const shipped = {
       ...files,
-      'baseline.json': BASELINE_TEXT.replace(/486ad3e0486b/, configDigest('signals: shipped')),
+      'baseline.json': BASELINE_TEXT.replace(/1a67d9681c45/, configDigest('signals: shipped')),
     };
     // The fixture baseline now names the shipped configuration, which is the only way this file's own digest can
     // reach the comparison. Its cells still do not match the census below, so the verdict must be a failure.

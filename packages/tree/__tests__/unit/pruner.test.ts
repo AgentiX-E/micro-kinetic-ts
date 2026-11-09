@@ -1099,6 +1099,7 @@ describe('TreePruner', () => {
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
+        emissionWeight: 0,
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
         podStateWeight: 0.6,
@@ -1119,6 +1120,7 @@ describe('TreePruner', () => {
         poolMetricPenaltyWeight: 0.0679,
         stabilityWeight: 0,
         selfTimeWeight: 0.9,
+        emissionWeight: 0,
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
         podStateWeight: 0.6,
@@ -2311,6 +2313,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      emissionWeight: 0,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
@@ -2579,6 +2582,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       poolMetricPenaltyWeight: 0.0679,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      emissionWeight: 0,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
@@ -2612,6 +2616,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       poolMetricPenaltyWeight: 0,
       stabilityWeight: 0,
       selfTimeWeight: 0.9,
+      emissionWeight: 0,
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
@@ -3094,6 +3099,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'pool',
       'stability',
       'selfTime',
+      'emission',
       'victim',
       'dualFamily',
       'podState',
@@ -4018,11 +4024,13 @@ describe('the base term’s weight — the one quantity the formula used to writ
       poolMetricPenaltyWeight: 0.07,
       stabilityWeight: 0.007,
       selfTimeWeight: 0,
+      emissionWeight: 0,
       victimWeight: 0,
       dualFamilyWeight: 0.25,
       podStateWeight: 0.5,
     });
     expect(weights.selfAnomalyWeight).toBe(0.75);
+    expect(weights.emissionWeight).toBe(0);
   });
 });
 

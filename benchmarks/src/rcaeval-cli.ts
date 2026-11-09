@@ -55,6 +55,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_EMISSION_WEIGHT,
   DEFAULT_FAILED_EDGE_CREDIT,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
@@ -342,6 +343,15 @@ export interface CliOptions {
    * outranking the truth's `cpu` (14.35×) because a caller's response time contains its callees'.
    */
   selfTimeWeight: number;
+  /**
+   * Weight on the EMISSION term — the collision source's own `Δλ`, in errors per request (see
+   * `TreePrunerOptions.emissionWeight`).
+   *
+   * Read from {@link DEFAULT_EMISSION_WEIGHT}. A direct flag rather than a member of a packed block: the
+   * packed blocks exist because the golden half's 25-input budget is full, and a flag that only this
+   * runner accepts costs no input at all.
+   */
+  emissionWeight: number;
   /**
    * Weight on the BASE term — the candidate's own anomaly, `log1p(anomaly(v))` (see
    * `TreePrunerOptions.selfAnomalyWeight`).
@@ -828,6 +838,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    emissionWeight: DEFAULT_EMISSION_WEIGHT,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
@@ -956,6 +967,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
     else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    else if (args[i] === '--emission-weight' && hasValue(args, i + 1))
+      opts.emissionWeight = parseWeight(args[++i]!, DEFAULT_EMISSION_WEIGHT);
     else if (args[i] === '--self-anomaly-weight' && hasValue(args, i + 1))
       opts.selfAnomalyWeight = parseWeight(args[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);
     else if (args[i] === '--victim-weight' && hasValue(args, i + 1))

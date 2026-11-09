@@ -35,10 +35,16 @@ import type {
   FaultLogEntry,
   MetricMap,
   ServiceId,
+  TimeSeries,
   TraceActivityCounts,
 } from '@agentix-e/micro-kinetic-core';
 
-import { isLatencyMetric, medianOfRange } from '../causal/topology-fault-graph.js';
+import {
+  isDemandMetric,
+  isEventMetric,
+  isLatencyMetric,
+  medianOfRange,
+} from '../causal/topology-fault-graph.js';
 
 /**
  * The log signal's scoring mode.
@@ -2116,5 +2122,142 @@ export function computeEdgeLatencyScores(
   if (max <= 0) return scores;
 
   for (const [callee, value] of compressed) scores.set(callee, value / max);
+  return scores;
+}
+
+/**
+ * The smallest `Δλ` — errors per REQUEST — a case must carry before {@link computeEmissionScores} is
+ * admitted at all.
+ *
+ * An additive term beside `log1p(anomaly)` is a share, so it has a maximum on every case whether or not
+ * the case has anything to say; max-normalisation would then promote the case's noisiest node to `1.0` on
+ * populations where nobody emitted anything. The floor is what makes the term's absence a MEASUREMENT:
+ * below it the map is empty and the term contributes exactly zero to every candidate.
+ *
+ * `0.1` errors per request is one extra error per ten requests. The corpus says where that line falls, and
+ * it is not a preference — measured over all 735 cases (`docs/emission-intensity.md` §2), the largest `Δλ`
+ * per case is `p99 = 0.0003` on RE1:OnlineBoutique, `p50 = 0.000` on all three RE1 cells, and `p50 = 0.28`
+ * on RE3:SockShop, so a floor anywhere in `[0.05, 0.2]` leaves the cell that must stay flat silent while
+ * admitting the cell the term exists for.
+ */
+export const EMISSION_MIN_RISE = 0.1;
+
+/**
+ * Per-service change in ABSOLUTE emission intensity — the collision source's own rate at `t₀`.
+ *
+ * ```
+ *   λ(v)  = mean(error | window) / mean(workload | window)          errors per REQUEST
+ *   Δλ(v) = λ(v) | post-injection − λ(v) | pre-injection              in the same unit
+ *   score = max(0, Δλ(v)) / max over the case of max(0, Δλ)
+ * ```
+ *
+ * ## Why this quantity and not a relative rise
+ *
+ * The engine's per-channel statistic is `log10(1 + riseRatio)` against the channel's OWN baseline, which is
+ * a statement about one node. A source and a victim of the same fault both rise, and the node with the
+ * SMALLER baseline wins the ratio — which on the corpus is systematically the victim, because a victim
+ * carries the fault's traffic while the source carries its own. `docs/rcaeval-error-scale.md` §1 states the
+ * case in the corpus' numbers: on `re3ss_orders_f1_1` the truth rises 8.8× and a victim 6.1× in relative
+ * terms, while their changes in errors per request are `0.84` and `0.07` — an order of magnitude apart.
+ *
+ * In Deng Yu's framing the source is the node whose OWN emission changed at `t₀`; the propagation `τ` is what
+ * raises everyone else's level afterwards without their emission having changed. `Δλ` is that sentence as a
+ * number, and it is the only term in the sum whose unit is a RATE rather than a ratio.
+ *
+ * ## The windows
+ *
+ * `pre = [first sample, inject)`, `post = [inject, inject + span)` with `span` the recording's own
+ * pre-injection length — equal amounts of time on each side, so a fault that decays is not averaged against
+ * a longer tail. The tail is not hypothetical: on the `carts` cases it is nine tenths of the recording.
+ *
+ * ## What it refuses
+ *
+ * - **An unknown boundary** (`injectTimeMs <= 0`): no split, so no reading.
+ * - **Unaligned channels**: an element-wise quotient across two series that merely happen to be the same
+ *   LENGTH pairs an error count from one instant with a request count from another, and a misaligned
+ *   denominator is not a denominator. The rule is the one the refused `toPerRequestError` transform used.
+ * - **A zero-traffic window**: `λ` is undefined without a denominator, and treating an idle sample as one
+ *   request would invent an emission rate out of an absence.
+ * - **A node whose emission FELL**: a collision source emits more; crediting a recovery would invert the
+ *   instrument. Such a node is ABSENT rather than present with a negative share.
+ * - **A case whose best `Δλ` is below {@link EMISSION_MIN_RISE}**: the map is empty, because "this case
+ *   carries no emission evidence" is an absence and not a measured zero.
+ *
+ * @param metrics - Raw per-service series, the same map the anomaly features read.
+ * @param injectTimeMs - The injection instant in Unix milliseconds; `0` means unknown.
+ * @returns Per-service share in `(0, 1]`, sparse; empty when the case carries no measurable emission change.
+ */
+export function computeEmissionScores(
+  metrics: MetricMap,
+  injectTimeMs: number,
+): ReadonlyMap<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (injectTimeMs <= 0) return scores;
+
+  let max = 0;
+  for (const [serviceId, seriesList] of metrics) {
+    let error: TimeSeries | undefined;
+    let workload: TimeSeries | undefined;
+    for (const ts of seriesList) {
+      if (error === undefined && isEventMetric(ts.label)) error = ts;
+      else if (workload === undefined && isDemandMetric(ts.label)) workload = ts;
+    }
+    if (error === undefined || workload === undefined) continue;
+
+    // Alignment is a property of the PAIR, not of either channel: same number of samples at the same
+    // instants, or the quotient is between two different moments.
+    const n = error.values.length;
+    if (n === 0 || workload.values.length !== n) continue;
+    let aligned = true;
+    for (let i = 0; i < n; i++) {
+      if (error.timestamps[i] !== workload.timestamps[i]) {
+        aligned = false;
+        break;
+      }
+    }
+    if (!aligned) continue;
+
+    // The boundary as an index, in ONE walk: `split` is the first sample at or after the injection, and
+    // `postEnd` is the first sample at or after the end of the equal-length post window.
+    const timestamps = error.timestamps;
+    const span = injectTimeMs - timestamps[0]!;
+    if (span <= 0) continue;
+    let split = -1;
+    let postEnd = -1;
+    for (let i = 0; i < n; i++) {
+      const t = timestamps[i]!;
+      if (split < 0 && t >= injectTimeMs) split = i;
+      if (split >= 0 && t >= injectTimeMs + span) {
+        postEnd = i;
+        break;
+      }
+    }
+    if (postEnd < 0) postEnd = n;
+    if (split <= 0 || postEnd <= split) continue;
+
+    const rate = (from: number, to: number): number | undefined => {
+      let errors = 0;
+      let requests = 0;
+      for (let i = from; i < to; i++) {
+        errors += error!.values[i]!;
+        requests += workload!.values[i]!;
+      }
+      if (requests <= 0) return undefined;
+      return errors / requests;
+    };
+    const pre = rate(0, split);
+    const post = rate(split, postEnd);
+    if (pre === undefined || post === undefined) continue;
+    const delta = post - pre;
+    if (!Number.isFinite(delta) || delta <= 0) continue;
+    scores.set(serviceId, delta);
+    if (delta > max) max = delta;
+  }
+
+  // The floor, and the reason it is tested on the case MAXIMUM rather than per node: the term is a share,
+  // so admitting one node admits all of them, and the decision belongs to the case rather than to whoever
+  // happened to be ranked last.
+  if (max < EMISSION_MIN_RISE) return new Map();
+  for (const [serviceId, value] of scores) scores.set(serviceId, value / max);
   return scores;
 }

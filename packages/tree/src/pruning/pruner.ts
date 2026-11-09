@@ -105,6 +105,7 @@ import {
   computeDeepestExceptions,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
+  computeEmissionScores,
   computeFailedEdgeLedger,
   computeLogScores,
   computePoolMetricScores,
@@ -887,6 +888,26 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly selfTimeWeight: number;
   /**
+   * Weight on the EMISSION change — the collision source's own `Δλ`, in errors per REQUEST.
+   *
+   *   finalScore(v) += emissionWeight × emissionShare(v)
+   *
+   * Every other term in the sum scores a RATIO: how far a node moved against its own baseline, how much of
+   * its rise a neighbour explains, whether its shape returns. A ratio cannot say that one node's emission
+   * changed ten times as much as another's while both moved by the same multiple — and that is exactly the
+   * reading `docs/rcaeval-error-scale.md` §1 shows the RE3:SockShop misses need: the truth's per-request
+   * error rate rises `0.84` against a victim's `0.07`, while the victim's RELATIVE rise is the larger of the
+   * two. `Δλ` is Deng Yu's source at `t₀` stated as a number: the node whose own emission changed, before
+   * anything the propagation `τ` carries has been added to it.
+   *
+   * The share is max-normalised over the case, so the term lives on the same `[0, 1]` scale as the others,
+   * and it is ABSENT — not zero — on a case whose best `Δλ` is below {@link EMISSION_MIN_RISE}, which is what
+   * keeps a population with no emission evidence silent rather than maximally noisy.
+   *
+   * Ships at {@link DEFAULT_EMISSION_WEIGHT}, whose docblock is where the nine-cell measurement is recorded.
+   */
+  readonly emissionWeight: number;
+  /**
    * Weight on the INTERNAL/EXTERNAL SYMMETRY MASK — PRISM's axiom (arXiv:2601.21359) applied as a bounded
    * discount on a candidate's own evidence rather than as an extra score.
    *
@@ -1006,6 +1027,7 @@ export function toRankingWeights(
     | 'poolMetricPenaltyWeight'
     | 'stabilityWeight'
     | 'selfTimeWeight'
+    | 'emissionWeight'
     | 'victimWeight'
     | 'dualFamilyWeight'
     | 'podStateWeight'
@@ -1026,6 +1048,7 @@ export function toRankingWeights(
     poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
     stabilityWeight: options.stabilityWeight,
     selfTimeWeight: options.selfTimeWeight,
+    emissionWeight: options.emissionWeight,
     victimWeight: options.victimWeight,
     dualFamilyWeight: options.dualFamilyWeight,
     podStateWeight: options.podStateWeight,
@@ -1162,6 +1185,13 @@ export const DEFAULT_SELF_ANOMALY_WEIGHT = 1;
  * the weight is the only thing that differs between two runs. The map is not even built at 0.
  */
 export const DEFAULT_SELF_TIME_WEIGHT = 0;
+
+/**
+ * The shipped weight of the emission term — see {@link TreePrunerOptions.emissionWeight}.
+ *
+ * PLACEHOLDER: the measurement is being taken now.
+ */
+export const DEFAULT_EMISSION_WEIGHT = 0;
 
 /**
  * The shipped weight of the internal/external symmetry mask — `0`, and **REFUSED at the first weight it was
@@ -1930,6 +1960,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+  emissionWeight: DEFAULT_EMISSION_WEIGHT,
   victimWeight: DEFAULT_VICTIM_WEIGHT,
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
   dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
@@ -2290,6 +2321,14 @@ export class TreePruner {
         ? computeSelfTimeScores(topologyGraph.edges, metrics)
         : undefined;
 
+    // The EMISSION change — the collision source's own `Δλ`, in errors per REQUEST. Computed from the raw
+    // series for the same reason the self-time share is: the guards delete the error channel on exactly the
+    // cases this term exists for (18 of the 30 RE3:SockShop cases refuse the truth's own `error` channel as
+    // `duty-cycled-idle`, and never the winner's), so the term cannot read the feature map. At weight 0 the
+    // map is not built at all, which is what makes the shipped path byte-identical by construction.
+    const emissionScores =
+      this.options.emissionWeight !== 0 ? computeEmissionScores(metrics, injectTimeMs) : undefined;
+
     // The INTERNAL/EXTERNAL SYMMETRY, PRISM's axiom in the form the six-arm sweep argued for: a mask on a
     // candidate's own evidence rather than a score beside it. Built only when the weight is non-zero, so
     // the shipped path is byte-identical by construction rather than by arithmetic — the rule the
@@ -2343,6 +2382,7 @@ export class TreePruner {
       poolMetricScores,
       stabilityScores,
       selfTimeScores,
+      emissionScores,
       channelSymmetry,
       dualFamilyServices,
     };
@@ -2421,6 +2461,7 @@ export class TreePruner {
       graph.poolMetricScores,
       graph.stabilityScores,
       graph.selfTimeScores,
+      graph.emissionScores,
       graph.channelSymmetry,
       graph.dualFamilyServices,
       graph.podStateScores,
@@ -2486,6 +2527,7 @@ export class TreePruner {
         graph.poolMetricScores,
         graph.stabilityScores,
         graph.selfTimeScores,
+        graph.emissionScores,
         graph.channelSymmetry,
         graph.dualFamilyServices,
         graph.podStateScores,
@@ -2784,6 +2826,7 @@ function performTreeRCA(
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
   stabilityScores?: ReadonlyMap<ServiceId, number>,
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
+  emissionScores?: ReadonlyMap<ServiceId, number>,
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
   dualFamilyServices?: ReadonlySet<ServiceId>,
   podStateScores?: ReadonlyMap<ServiceId, number>,
@@ -3125,6 +3168,12 @@ function performTreeRCA(
   // candidate has an undecidable callee), so the lookup keeps the neutral 0 — the same rule the other
   // sparse maps follow: a missing measurement is not a measured zero, and this term only ever rewards.
   const selfTimeWeight = options.selfTimeWeight;
+  // The emission term: the ABSOLUTE change in a candidate's own per-request error rate. The only term in the
+  // sum whose quantity is a RATE rather than a ratio, and the only one that can separate a source from a
+  // victim whose relative rise is larger — see `computeEmissionScores` for the corpus numbers. Its map is
+  // ABSENT (not empty) when the case carries no measurable emission change, and the lookup's neutral 0 then
+  // means "no evidence" rather than "measured no change".
+  const emissionWeight = options.emissionWeight;
   // The internal/external symmetry mask. Its map is ABSENT at the shipped weight (not built), and a
   // candidate missing from it is NEUTRAL rather than fully discounted — a case the map cannot judge is not
   // a case it can punish, which is why the lookup substitutes the symmetry 1 the map would have given a
@@ -3215,6 +3264,7 @@ function performTreeRCA(
       const poolEntry = poolMetricScores?.get(id);
       const stabilityEntry = stabilityScores?.get(id);
       const selfTimeEntry = selfTimeScores?.get(id);
+      const emissionEntry = emissionScores?.get(id);
       const symmetryEntry = channelSymmetry?.get(id);
       const riseHasLogic = (logEntry ?? 0) > 0;
       // The direction the map carried, or the NEUTRAL 0.5 the formula substitutes. Read once so the value and
@@ -3310,6 +3360,15 @@ function performTreeRCA(
         buildTerm('selfTime', selfTimeWeight, selfTimeEntry ?? 0, {
           presence: presenceOf(selfTimeScores, id),
           source: 'selfTimeScores',
+        }),
+        // The collision source's own EMISSION: `Δλ`, the change in errors per request at the candidate
+        // itself. Every other term here reads a ratio, and a ratio cannot say that one node's emission
+        // changed ten times as much as another's while both moved by the same multiple. Sparse for the
+        // reason the self-time term is: a case with no measurable emission change admits no candidate, and a
+        // candidate that emitted LESS is absent rather than present with a negative share.
+        buildTerm('emission', emissionWeight, emissionEntry ?? 0, {
+          presence: presenceOf(emissionScores, id),
+          source: 'emissionScores',
         }),
         // PRISM's axiom as a MASK: a component whose anomaly is EXTERNAL-ONLY is downstream of something, so
         // the term removes a share of its own evidence rather than adding a score beside it. The value is

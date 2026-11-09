@@ -1466,3 +1466,56 @@ Two more mechanisms came out of the same pass, and one candidate mechanism was *
   **0 of 1,422** ranked orders. It was reverted rather than shipped; the misses are a `log`-dominance loss
   (`ts2-mysql-pod-kill-xvzmxb`) and a chronic-restarter tie (`ts3-mysql-pod-failure-58qts5`), and the second
   one is now closed by the rule above.
+
+## Iteration 252 — one guard whose denominator mixed two periods, and the first term measured PAST its own ceiling
+
+Neither entry is a coefficient that was moved and refused. The first is a **correctness** repair to a guard this
+register already leans on, and the second is the first term in the register's history whose pre-registered bound
+was **beaten** and which is still refused — so the two numbers that close it are on opposite sides of the bar.
+
+**The guard.** `duty-cycled-idle` drops a channel that sits near zero for more than 40% of its samples, and it
+counted those samples over the **whole recording** — while the first half of every recording is the pre-injection
+window, in which a fault's `error` channel is quiet *by construction*. The denominator mixed a period where zero
+is the expected reading with a period where zero is information. On `RE3:SockShop` that refused the **truth's own
+`error` channel on 18 of 30 cases and the winner's on none**, and the refuse/keep split is the proof rather than
+the symptom:
+
+| truth's `error` channel, `RE3:SockShop` | cases | rank-1 correct | rate      |
+| --------------------------------------- | ----: | -------------: | --------: |
+| refused (`duty-cycled-idle`)            |    18 |              8 | **44.4%** |
+| kept                                    |    12 |             11 | **91.7%** |
+| **winner's** channel refused            | **0** |              — |         — |
+
+The window is now the post-injection slice for `EVENT_METRIC_LABELS = ['error']` — the one family whose zero is a
+measured zero — and the corpus census over all 735 cases reads **39 channels admitted, 0 newly refused**. The
+latency families were deliberately NOT windowed, and the same census is why: they would admit 20 of 39 and 25 of 38
+there, which is a different axis than the one being repaired. What the change is worth on the published numbers is
+one cell's secondary metric and nothing else:
+
+| population                     | before        | after         | movement                                   |
+| ------------------------------ | ------------: | ------------: | ------------------------------------------ |
+| RCAEval, nine cells, `AC@1`    |  660 = 89.80% |  660 = 89.80% | **0 — no cell moves, in either direction** |
+| `RE3:SockShop`, type-mean `Avg@5` |        84.6% |    **85.6%** | **+1.0 pp**                                |
+
+**The term.** `docs/rcaeval-error-scale.md` §6 pre-registered a collision-source term over `Δλ` — the ABSOLUTE
+change in a node's own per-request error rate, the only quantity in the fusion whose unit is a rate — with an upper
+bound of **26/30** on `RE3:SockShop`, written before the code existed. Built (`emissionWeight`, floor `0.1`
+errors/request, absent-not-zero on every refusal), swept, and it **beats the bound**: `19 → 28/30` at `w = 0.65`.
+It ships at **0**, because the same weight that buys that cell costs four others:
+
+| `RE3:SockShop` | `RE3:TrainTicket` | `RE3:OnlineBoutique` | `RE2:SockShop` | total |
+| -------------: | ----------------: | -------------------: | -------------: | ----: |
+| 19 → **28**    |        22 → **19** |           26 → **24** |    89 → **88** |  **+3** |
+
+Net `+3` with four cells down is the trade this register's law refuses, and `w = 0` is not a compromise: the term's
+map is not even built, so the shipped order is byte-identical to the whole table above. `docs/emission-intensity.md`
+carries the sweep, the floor's justification (`RE1:OnlineBoutique`'s largest change in any case is `0.0003`, so
+`0.1` cannot make that cell noisy) and the refutation that was visible **before** any engine ran: on
+`RE3:TrainTicket` the truth's own `Δλ` has `p90 = 0` while the case's largest is `0.96`, so the node emitting more
+per request there is the service returning the bad value, not the source. **A term whose premise is false on one
+cell and inverted on another cannot be priced globally**, and the axis it names next is a case-level conjunction of
+`Δλ` with the direction evidence (`failedEdge` / `lat`) — which is why the term is retained as code rather than
+deleted: the next arm is a gate on it, not a weight on it.
+
+`docs/duty-cycle-window.md` holds the confound proof, the 735-case flip census and the nine cells; both documents
+are registered here by name because a measurement a reader cannot find is a measurement that gets re-derived.

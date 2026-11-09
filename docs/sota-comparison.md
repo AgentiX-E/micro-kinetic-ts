@@ -170,7 +170,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42505425507 on 6412d69a, read 2026-11-09, config 486ad3e0486b -->
+<!-- standing-anchor: battery 42505425507 on 6412d69a, read 2026-11-09, config 1a67d9681c45 -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -1886,3 +1886,30 @@ comparison could not have found**: it required running an opponent that reads wh
 
 Everything measured, with per-type tables, costs and provenance, is in
 `docs/rcabench-baseline-replication.md`.
+
+## 2026-11-09 — the guard that refused the truth's own channel, and a term that was priced and refused
+
+Iteration 252 changed two things and the **anchor does not move on either**: the block above is still
+`113/119/112 · 84/89/76 · 26/19/22` = **660/735**, and the configuration marker rolled `486ad3e0486b →
+1a67d9681c45` because the `signals:` line gained one field whose shipped value is `0`.
+
+**1. A correctness fix that the published metric cannot see.** The `duty-cycled-idle` guard counted a channel's
+near-zero samples over the WHOLE recording, and the whole recording's first half is the pre-injection period — a
+period in which a fault's error channel is quiet by construction. On `RE3:SockShop` it therefore refused the
+**truth's own `error` channel on 18 of 30 cases and the winner's on none** (44% correct when refused, 92% when
+kept). The window is now the post-injection slice for `EVENT_METRIC_LABELS = ['error']`, whose zero is a measured
+zero; 39 channels are admitted corpus-wide, **none is newly refused**, and every cell's `AC@1` is unchanged while
+`RE3:SockShop`'s type-mean `Avg@5` rises `84.6 → 85.6`. `docs/duty-cycle-window.md`.
+
+**2. A pre-registered term, measured, refused.** `docs/rcaeval-error-scale.md` §6 pre-registered a collision-source
+term over `Δλ` — the ABSOLUTE change in a node's own per-request error rate — with an upper bound of `26/30` on
+`RE3:SockShop` measured before the code existed. Implemented (`emissionWeight`, floor `0.1` errors/request),
+swept, and it **beats the bound**: `19 → 28/30` at `w = 0.65`. It is nevertheless shipped at **0**, because at
+`w = 0.5` it costs `RE3:TrainTicket` three cases, `RE3:OnlineBoutique` two and one each in two RE2 cells — net
+`+3` with four cells down, which is the trade this record refuses. `docs/emission-intensity.md` carries the sweep,
+the corpus census behind it (the truth's own `Δλ` is `p90 = 0` on `RE3:TrainTicket` and `0.795` on
+`RE3:SockShop`), and the one axis the data names next: a case-level conjunction with the direction evidence.
+
+**Nothing above is a claim on the standing table.** Both changes are recorded here because the marker rolled;
+neither moves a published number, and the anchor stays battery `42505425507` at `6412d69a`, re-verified per cell
+after both.

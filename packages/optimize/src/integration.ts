@@ -73,6 +73,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:
     'the self-time prior, shipped OFF and measured outside this search space: it is a transport-causality term whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
+  emissionWeight:
+    'the emission term, shipped OFF and REFUSED at the weight it was measured at (docs/emission-intensity.md: +9 on RE3:SockShop for -3, -2 and two -1s on four other cells), so there is no fusion coefficient here to search — a continuous search would spend its evaluations interpolating toward an arm the record already rejected',
   traceSkipsLeader:
     'the trace vote\u2019s leader mask, shipped false: it withholds a BINARY unit from one named candidate rather than scaling any term, so a weight search could only move it by accident \u2014 a discrete precondition belongs to a dispatch',
   failedEdgeWeight:

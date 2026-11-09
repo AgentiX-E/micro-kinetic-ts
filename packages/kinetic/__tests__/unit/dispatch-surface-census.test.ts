@@ -646,6 +646,15 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
+  emissionWeight: {
+    // The collision source's own emission, in errors per REQUEST — the one quantity in the fusion that is a rate
+    // rather than a ratio. OFF at 0, and the arm that measured it is `docs/emission-intensity.md` §4, which is
+    // also where the refusal is: +9 on RE3:SockShop against −3, −2, −1 and −1 on four other cells.
+    flag: '--emission-weight',
+    owner: 'emission-intensity.md',
+    fse26: null,
+    rcaeval: null,
+  },
   selfTimeWeight: {
     flag: '--self-time-weight',
     owner: 'transient-guard-window.md',
@@ -1059,6 +1068,10 @@ function axisOf(option: string): string {
  * so the departures are listed here rather than dropped.
  */
 const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
+  // Iteration 252: the emission term, on this list for the credit's reason — the golden workflow is at GitHub's
+  // 25-input ceiling, so the packed block has no spare input. It travels as `emissionWeight=<value>` on the
+  // configuration line, so a run that sets it is attributable even though no dispatch can ask for it.
+  '--emission-weight',
   '--fusion-ceiling',
   // Iteration 235: the credit the direction term's bar scales. Unlike the two poles below this is a real axis —
   // `constant` and `proportional` are different credit rules, not two spellings of one — and it is on this list

@@ -149,7 +149,7 @@ const RETIRED = [
   '75/90',
   // ── Retired by iteration 250's log-fidelity repair, which is §0p-iii. The cell moved UP and the baseline gate
   // refused the silence: `RE3:OnlineBoutique 25 -> 26` and `TOTAL 659 -> 660`, at an UNCHANGED configuration digest
-  // (`486ad3e0486b`), so the movement is an input repair rather than an arm. The percentages are not retired as
+  // (`1a67d9681c45`), so the movement is an input repair rather than an arm. The percentages are not retired as
   // tokens: `83.3%` is `25/30` on this cell and `75/90` on another, and the fraction is the form that is unique to
   // the reading being retired.
   '659/735',

@@ -32,6 +32,7 @@
  *                 − poolMetricPenaltyWeight × poolMetricScore(v)
  *                 + stabilityWeight × stabilityScore(v)
  *                 + selfTimeWeight  × selfTimeShare(v)
+ *                 + emissionWeight  × emissionShare(v)
  *                 + selfAnomalyWeight × log1p(anomaly(v))
  *
  * All weights are dimensionless and default to 0 (signal disabled) — except `selfAnomalyWeight`,
@@ -243,6 +244,19 @@ export interface RankingWeights {
    * OPTIONAL: absent means 0 (disabled).
    */
   readonly selfTimeWeight?: number;
+  /**
+   * EMISSION prior: rewards the node whose OWN error emission intensity rose most, measured per REQUEST —
+   * `Δλ(v)`, in errors per request, max-normalised over the case.
+   *
+   *   finalScore(v) += emissionWeight × emissionShare(v)
+   *
+   * The only quantity in the sum that is a RATE rather than a ratio. A ratio reports how far a node moved
+   * against its own baseline, so a victim carrying the fault's traffic can out-rise the source that created
+   * it; an absolute change in errors per request cannot be inflated by traffic, which is why this is the
+   * collision source's own reading of `t₀` rather than another view of the propagation. See
+   * `docs/emission-intensity.md`. OPTIONAL: absent means 0 (disabled).
+   */
+  readonly emissionWeight?: number;
   /**
    * Weight on the POD-STATE term: the share of a pod's lifecycle channels that changed across the injection
    * boundary (restart counter incremented, container went not-ready, phase left Running).

@@ -70,6 +70,14 @@ export interface RCAEvalSignalOptions {
    * prevent, one term over. It ships at the engine's 0 until a measurement enrols it.
    */
   readonly selfTimeWeight: number;
+  /**
+   * The emission term — the collision source's own `Δλ`, in errors per request.
+   *
+   * Required here for the reason every other weight is: the engine ships it at 0, so a runner that inherited
+   * the default by omission could not state the term on an artifact, and the measured arm and the shipped run
+   * would render identically.
+   */
+  readonly emissionWeight: number;
   /** The internal/external symmetry mask — see `CliOptions.victimWeight`. */
   readonly victimWeight: number;
   /** The dual-family presence bonus — see `CliOptions.dualFamilyWeight`. */
@@ -266,6 +274,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       stabilityWeight: opts.stabilityWeight,
       selfAnomalyWeight: opts.selfAnomalyWeight,
       selfTimeWeight: opts.selfTimeWeight,
+      emissionWeight: opts.emissionWeight,
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
       dualFamilyGate: opts.dualFamilyGate,
@@ -412,6 +421,9 @@ export function formatSignalLine(opts: CliOptions): string {
     // APPENDED on the same rule as the four fields above, and unconditional for the same reason: `off` is a
     // VALUE the published corpus ran under, so a line that omitted it on the default would render the `onset`
     // arm and the published run identically on the one artifact whose job is to say which guard was armed.
-    ` topoPrecedence=${opts.topoPrecedence}`
+    ` topoPrecedence=${opts.topoPrecedence}` +
+    // APPENDED on the same rule as every field above, and unconditional because 0 is the shipped weight: a
+    // line that omitted it on the default would render the measured arm and the shipped run identically.
+    ` emissionWeight=${opts.emissionWeight}`
   );
 }

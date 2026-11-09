@@ -469,6 +469,19 @@ export interface FaultPropagationGraph {
    */
   readonly selfTimeScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service change in ABSOLUTE emission intensity — `Δλ`, in errors per REQUEST, max-normalised over the
+   * case. Feeds the (opt-in) `emissionWeight` term.
+   *
+   * The only map here whose unit is a rate rather than a ratio, and the reason it exists: a relative rise
+   * cannot separate a source from a victim that carries more traffic, because the node with the smaller
+   * baseline wins the ratio. `docs/rcaeval-error-scale.md` §1 states the corpus case (`0.84` against `0.07`
+   * errors per request under relative rises of 8.8× and 6.1×).
+   *
+   * ABSENT (not empty) when the weight is 0, when the injection instant is unknown, or when the case's best
+   * `Δλ` is below the term's floor — three absences with one meaning: the case carries no emission evidence.
+   */
+  readonly emissionScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service INTERNAL/EXTERNAL SYMMETRY in [0, 1]: `2·min(Sⁱ,Sᵉ)/(Sⁱ+Sᵉ)` over the component's internal
    * (cpu/mem/disk/socket) and external (latency/error/…) deviation z-scores. Feeds the (opt-in)
    * `victimWeight` term.

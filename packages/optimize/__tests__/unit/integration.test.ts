@@ -226,6 +226,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'dualFamilyGateMode',
       'dualFamilyWeight',
       'edgeLatency',
+      // Iteration 252: the emission term, held at the self-time term's reason — shipped OFF, and REFUSED at the
+      // weight it was measured at (`docs/emission-intensity.md`), so there is no coefficient here for a
+      // continuous search to move and an arm for it to interpolate toward.
+      'emissionWeight',
       // Iteration 168: the direction term's BAR and the share it is made of. Held for the reason the dual-family
       // gate mode above is held — a search interpolates coefficients, and these two pick WHICH rise a fixed
       // weight may act on, so there is nothing between `absolute` and a share of a case's own champion.
