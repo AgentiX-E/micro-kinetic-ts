@@ -1692,3 +1692,38 @@ None of these moves `666/735`, and the register states why rather than assuming 
 as a `NaN` confidence, and `analyze` is not on the benchmark path. The last point is the one worth keeping: a
 public API with no production caller is where defects go to survive a green CI, so the contracts are now
 asserted by 15 tests that never touch the battery's own arithmetic.
+
+## Iteration 256 — the vector, priced; and the arm that gains
+
+The 255th iteration ended with an accounting that had one measured column and one prose column, and named the
+arms that would close it. This iteration ran them: ten single-coefficient removals on the configuration behind
+`666/735`, one per suite, with the shipped configuration as the control row. `docs/production-weight-leave-one-out.md`
+carries the table; the axis is recorded here because it closes the last claim the register has been carrying
+without a number — *what each shipped term is worth* — and because two of its findings are directions rather than
+measurements:
+
+- **Five of the ten coefficients move no case at all**, and the artifact's own verdict block separates the two
+  reasons. `latWeight` — the largest weight in the vector — is `STARVED` on `RE1` and both SockShop packs (those
+  corpora carry no spans) and `INERT` where it has an input; the pool penalty, the stability prior and the
+  failed-edge term are `INERT` on every cell. **A `0.0` from a starved channel is a statement about the corpus**,
+  and the register now says which of the five zeros are which.
+- **`anomalyCvWeight = 0.05` costs two cases** (`RE2:TrainTicket`, `RE3:TrainTicket`) and buys none: `LESS CV`
+  reads `668/735`, the only arm in the study that gains — and the arm survives the instrument that publishes. The
+  golden runner at `anomaly_knobs=cv=0` (`42666007350`) reads `345 / 250 / 73`, i.e. the same two cells and
+  nothing else, so the reading is not an artefact of the ablation's own corpus assembly. **The default is not
+  changed here**: the criterion is an AND over both halves and the coefficient is live on FSE'26, which is why the
+  change is pre-registered rather than taken. `LESS TREND` reads the same `RE3` case back and loses
+  two elsewhere, so it is refused — the two shares are not symmetric and the reason is that dispersion is not
+  evidence of a fault shape while monotone drift is. The joint arm (`TREND + CV OFF`) is **pre-registered, not
+  run**, because the two single arms landing on the same case count is consistent with one shared mechanism and
+  with two independent cases, and choosing between those readings after seeing the gain is the fitting this
+  register has refused three times.
+- **`podStateWeight = 8` cannot be priced here**, and the register records the reason the docblock on the
+  exemption already gave, now checked: no metric family in the corpus is a pod lifecycle reading. The term is
+  priced on FSE'26 (`docs/pod-state-term.md`) and is `0` on this half by construction, not by measurement.
+
+One defect was found by building the instrument rather than by running it: `run-ablation.ts` measures every Δ from
+`allRuns[0]`, so a selection that began at an arm reported ten numbers against an arm — visible in the verdict
+block as `varies=selfAnomalyWeight,<own field>` on every row. The selection now carries its control explicitly
+(`PRODUCTION_WEIGHT_CONFIGS`), and the fence asserts the control is the shipped configuration. The same fence
+holds the partition: a weight that ships non-zero and has neither an arm nor a stated reason fails the build.

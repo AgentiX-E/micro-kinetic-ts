@@ -75,6 +75,15 @@ The next arms to add are therefore **not** more flags. They are `SELF-ANOMALY OF
 `LAT OFF`, `EMISSION OFF`, `POOL PENALTY OFF`, `STABILITY OFF` and the trend/CV/breadth triple — one weight
 each, the same single-removal discipline, so the two columns above become one table.
 
+> **Those arms exist as of iteration 256, and the table they make is `docs/production-weight-leave-one-out.md`.**
+> The left column is no longer prose: five of the ten coefficients moved no case on any suite, one of them
+> (`anomalyCvWeight`) **costs** two, and `podStateWeight` — the largest number the vector carries after the base
+> term — is recorded there as unpriceable on this corpus rather than as zero. The short version: the base term is
+> `133` of the `666` cases, the dual-family test `24` and the emission term `6`, while the remaining seven
+> coefficients move five cases between them and net **minus one** — three of those seven move nothing at all, and
+> the one that gains (`anomalyCvWeight`, `+2`) is the only measured default this project should consider
+> removing.
+
 ## The instruments that measure nothing, stated as such
 
 The same battery prices the collision-theory instruments, and they are all `0.0`:
