@@ -26,7 +26,7 @@ the `RE3:SockShop` misses need: on `re3ss_orders_f1_1` the truth's per-request r
 `0.07`, while the victim's RELATIVE rise is the larger of the two.
 
 In the collision framing the source is the node whose own emission changed at `t₀`; the propagation `τ` is what
-raises everyone else's *level* afterwards without their emission having changed. `Δλ` is that sentence as a number,
+raises everyone else's _level_ afterwards without their emission having changed. `Δλ` is that sentence as a number,
 and it is the only quantity in the sum whose unit is a rate.
 
 The windows are `pre = [first sample, inject)` and `post = [inject, inject + span)` with `span` the recording's own
@@ -38,17 +38,17 @@ whose emission FELL, and a case whose best change is below the floor all produce
 
 Measured over all 735 cases (`/root/work/emission-scale.py`), the largest `Δλ` per case and the truth's own `Δλ`:
 
-| cell | n | max Δλ p50 | p90 | p99 | truth Δλ p10 | p50 | p90 |
-| ---- | -: | --------: | --: | --: | -----------: | --: | --: |
-| RE1:OnlineBoutique | 74 | 0.0000 | 0.0001 | 0.0003 | 0.0000 | 0.0000 | 0.0000 |
-| RE1:SockShop | 122 | 0.0000 | 0.0458 | 0.2076 | 0.0000 | 0.0000 | 0.0347 |
-| RE1:TrainTicket | 123 | 0.0000 | 0.0030 | 0.2250 | 0.0000 | 0.0000 | 0.0000 |
-| RE2:OnlineBoutique | 84 | 0.0000 | 0.0029 | 0.1444 | 0.0000 | 0.0000 | 0.0000 |
-| RE2:SockShop | 67 | 0.0000 | 0.0514 | 0.4546 | 0.0000 | 0.0000 | 0.0056 |
-| RE2:TrainTicket | 89 | 0.0000 | 0.0015 | 0.0279 | 0.0000 | 0.0000 | 0.0000 |
-| RE3:OnlineBoutique | 24 | 0.0013 | 0.5865 | 0.7878 | 0.0000 | 0.0000 | 0.0034 |
-| **RE3:SockShop** | 30 | **0.2806** | **0.7954** | 0.8348 | 0.0423 | **0.2806** | **0.7954** |
-| RE3:TrainTicket | 30 | 0.1003 | 0.9621 | 0.9931 | 0.0000 | **0.0000** | **0.0000** |
+| cell               |   n | max Δλ p50 |        p90 |    p99 | truth Δλ p10 |        p50 |        p90 |
+| ------------------ | --: | ---------: | ---------: | -----: | -----------: | ---------: | ---------: |
+| RE1:OnlineBoutique |  74 |     0.0000 |     0.0001 | 0.0003 |       0.0000 |     0.0000 |     0.0000 |
+| RE1:SockShop       | 122 |     0.0000 |     0.0458 | 0.2076 |       0.0000 |     0.0000 |     0.0347 |
+| RE1:TrainTicket    | 123 |     0.0000 |     0.0030 | 0.2250 |       0.0000 |     0.0000 |     0.0000 |
+| RE2:OnlineBoutique |  84 |     0.0000 |     0.0029 | 0.1444 |       0.0000 |     0.0000 |     0.0000 |
+| RE2:SockShop       |  67 |     0.0000 |     0.0514 | 0.4546 |       0.0000 |     0.0000 |     0.0056 |
+| RE2:TrainTicket    |  89 |     0.0000 |     0.0015 | 0.0279 |       0.0000 |     0.0000 |     0.0000 |
+| RE3:OnlineBoutique |  24 |     0.0013 |     0.5865 | 0.7878 |       0.0000 |     0.0000 |     0.0034 |
+| **RE3:SockShop**   |  30 | **0.2806** | **0.7954** | 0.8348 |       0.0423 | **0.2806** | **0.7954** |
+| RE3:TrainTicket    |  30 |     0.1003 |     0.9621 | 0.9931 |       0.0000 | **0.0000** | **0.0000** |
 
 Two facts decide this document. First, the floor has a place to stand: `RE1:OnlineBoutique`'s largest change in any
 case is `0.0003` errors per request, so a floor of `0.1` cannot make that cell noisy. Second — and this is the
@@ -60,17 +60,17 @@ emitting more per request is not the fault's source but the service that returns
 
 Ranking by `Δλ` alone, with no engine, no logs and no traces (`/root/work/probe-lambda0.py`):
 
-| cell | count ranking | **`Δλ` ranking** | engine (shipped) |
-| ---- | ------------: | ---------------: | ---------------: |
-| RE1:OnlineBoutique | 6/74 | 6/74 | 113/125 |
-| RE1:SockShop | 44/122 | 44/122 | 119/125 |
-| RE1:TrainTicket | 5/123 | 6/123 | 112/125 |
-| RE2:OnlineBoutique | 5/84 | 4/84 | 84/90 |
-| RE2:SockShop | 7/67 | 11/67 | 89/90 |
-| RE2:TrainTicket | 4/89 | 3/89 | 76/90 |
-| RE3:OnlineBoutique | 6/24 | 6/24 | 26/30 |
-| **RE3:SockShop** | 18/30 | **26/30** | **19/30** |
-| RE3:TrainTicket | 0/30 | 0/30 | 22/30 |
+| cell               | count ranking | **`Δλ` ranking** | engine (shipped) |
+| ------------------ | ------------: | ---------------: | ---------------: |
+| RE1:OnlineBoutique |          6/74 |             6/74 |          113/125 |
+| RE1:SockShop       |        44/122 |           44/122 |          119/125 |
+| RE1:TrainTicket    |         5/123 |            6/123 |          112/125 |
+| RE2:OnlineBoutique |          5/84 |             4/84 |            84/90 |
+| RE2:SockShop       |          7/67 |            11/67 |            89/90 |
+| RE2:TrainTicket    |          4/89 |             3/89 |            76/90 |
+| RE3:OnlineBoutique |          6/24 |             6/24 |            26/30 |
+| **RE3:SockShop**   |         18/30 |        **26/30** |        **19/30** |
+| RE3:TrainTicket    |          0/30 |             0/30 |            22/30 |
 
 The free reading separates the cell the engine loses (19 → 26) and is catastrophic exactly where the engine is
 strong, which is why this was never a candidate as a ranking on its own, and why `docs/rcaeval-error-scale.md` §6
@@ -80,17 +80,17 @@ pre-registered it as a TERM with a cap of **26/30 measured before the code exist
 
 `--emission-weight`, everything else shipped, cells that moved (the five not listed were unchanged in every arm):
 
-| arm | RE3:SockShop | RE3:TrainTicket | RE3:OnlineBoutique | RE2:SockShop | RE1:SockShop | total |
-| --: | -----------: | --------------: | -----------------: | -----------: | -----------: | ----: |
-| 0 (shipped) | 19 | 22 | 26 | 89 | 119 | **660** |
-| 0.1 | 21 | — | — | — | — | — |
-| 0.3 | 23 | — | — | — | — | — |
-| 0.4 | 26 | 20 | — | — | — | — |
-| 0.5 | 27 | 19 | — | 88 | 119 | — |
-| 0.65 | 28 | 19 | — | 88 | 119 | — |
-| 0.7 | 28 | 19 | — | 88 | 119 | — |
-| 0.8 | 28 | 17 | — | 88 | 118 | — |
-| 1.0 | 28 | 13 | 26 | 88 | 117 | — |
+|         arm | RE3:SockShop | RE3:TrainTicket | RE3:OnlineBoutique | RE2:SockShop | RE1:SockShop |   total |
+| ----------: | -----------: | --------------: | -----------------: | -----------: | -----------: | ------: |
+| 0 (shipped) |           19 |              22 |                 26 |           89 |          119 | **660** |
+|         0.1 |           21 |               — |                  — |            — |            — |       — |
+|         0.3 |           23 |               — |                  — |            — |            — |       — |
+|         0.4 |           26 |              20 |                  — |            — |            — |       — |
+|         0.5 |           27 |              19 |                  — |           88 |          119 |       — |
+|        0.65 |           28 |              19 |                  — |           88 |          119 |       — |
+|         0.7 |           28 |              19 |                  — |           88 |          119 |       — |
+|         0.8 |           28 |              17 |                  — |           88 |          118 |       — |
+|         1.0 |           28 |              13 |                 26 |           88 |          117 |       — |
 
 Two readings, both of which matter:
 
@@ -104,18 +104,18 @@ Two readings, both of which matter:
 The full nine cells at `w = 0.5`, re-measured **after** the duty-cycle window repair of
 `docs/duty-cycle-window.md` so the two changes are not confounded:
 
-| cell | shipped | `emission = 0.5` | Δ |
-| ---- | ------: | ---------------: | -: |
-| RE1:OnlineBoutique | 113 | 113 | 0 |
-| RE1:SockShop | 119 | 119 | 0 |
-| RE1:TrainTicket | 112 | **113** | **+1** |
-| RE2:OnlineBoutique | 84 | **83** | **−1** |
-| RE2:SockShop | 89 | **88** | **−1** |
-| RE2:TrainTicket | 76 | 76 | 0 |
-| RE3:OnlineBoutique | 26 | **24** | **−2** |
-| RE3:SockShop | 19 | **28** | **+9** |
-| RE3:TrainTicket | 22 | **19** | **−3** |
-| **total** | **660** | **663** | **+3** |
+| cell               | shipped | `emission = 0.5` |      Δ |
+| ------------------ | ------: | ---------------: | -----: |
+| RE1:OnlineBoutique |     113 |              113 |      0 |
+| RE1:SockShop       |     119 |              119 |      0 |
+| RE1:TrainTicket    |     112 |          **113** | **+1** |
+| RE2:OnlineBoutique |      84 |           **83** | **−1** |
+| RE2:SockShop       |      89 |           **88** | **−1** |
+| RE2:TrainTicket    |      76 |               76 |      0 |
+| RE3:OnlineBoutique |      26 |           **24** | **−2** |
+| RE3:SockShop       |      19 |           **28** | **+9** |
+| RE3:TrainTicket    |      22 |           **19** | **−3** |
+| **total**          | **660** |          **663** | **+3** |
 
 ## 5. Why it is refused
 
@@ -137,6 +137,66 @@ this project is the three things a refusal can contribute:
    moved (`RE3:SockShop`, truth `p50 = 0.28`) and wrong where it did not (`RE3:TrainTicket`, truth `p90 = 0`), which
    is a property of the CORPUS and is now in the record as a number rather than as a suspicion.
 3. **A named next step.** A term that helps one cell and hurts another by the same mechanism needs a
-   *case-level admission*, not a weight: what distinguishes the two is whether the node the emission points at is
+   _case-level admission_, not a weight: what distinguishes the two is whether the node the emission points at is
    also the node the DIRECTION evidence points at (`failedEdge`, `lat`). That conjunction is a separate axis, and it
    is not measured yet.
+
+## 6. The axis this record named next, measured and CLOSED
+
+§5 ends by naming the next step: a **case-level admission** that lets the term speak only where the node the
+emission points at is also the node the DIRECTION evidence points at. That axis is now measured, on the
+complete corpus, without a single engine run — because a case-level gate only switches a term on or off, so its
+effect replays EXACTLY from two dumps that already exist (`w = 0` and `w = 0.5`, same tree): take the
+`w = 0.5` winner where the gate opens and the `w = 0` winner where it shuts. The replay reproduces both
+published arms to the case (`660` and `663`), which is what licenses it.
+
+### 6.1 The direction channel is not there to be conjoined with
+
+| population            | node-reads with `failedEdgeRecords = 0` | with a record |
+| --------------------- | --------------------------------------: | ------------: |
+| nine cells, 735 cases |                              **23,079** |        **26** |
+
+All 26 are on `RE3:OnlineBoutique`. So a conjunction against the failed-call ledger admits **0 of 735 cases**
+and the emission term would be inert everywhere — the axis, as written, is not measurable on this corpus.
+This is the same starvation `docs/evidence-starvation-audit.md` records (2 of 74 cases), read at node
+granularity: the channel is not weak here, it is **absent**.
+
+### 6.2 The two admissions that CAN be computed both lose the same way
+
+Two statistics are available from the emission channel itself, and both were priced on all 735 cases:
+
+| admission                            | what it asks                                                             |   total | RE3:SockShop | RE3:TrainTicket | RE2:OB | RE2:SS | RE3:OB |
+| ------------------------------------ | ------------------------------------------------------------------------ | ------: | -----------: | --------------: | -----: | -----: | -----: |
+| point estimate (published `w = 0.5`) | is the largest `Δλ` above the `0.1` floor                                |     663 |       **28** |          **19** |     83 |     88 |     24 |
+| Newcombe lower bound                 | is the lower confidence bound of that change above the floor             | **666** |           28 |          **22** |     83 |     88 |     24 |
+| excess over callees                  | is the change still positive after subtracting the largest CALLEE change | **666** |           28 |          **22** |     83 |     88 |     24 |
+| shipped (`w = 0`)                    | —                                                                        |     660 |           19 |              22 | **84** | **89** | **26** |
+
+The bound is Newcombe's hybrid score interval for a difference of two proportions (`Stat. Med. 17:857`, 1998) applied to the same `Σ error` / `Σ workload` counts the engine already forms, and it repairs
+`RE3:TrainTicket` completely: the three cases it was losing have `Δλ` in `0.104 … 0.125` and lower bounds in
+`0.074 … 0.091`, all under the floor. The excess rule _also_ closes exactly those three. So the honest version
+of the term is **statistically visible and still refused** — `+6` net with three cells down
+(`RE2:OB −1`, `RE2:SS −1`, `RE3:OB −2`) is the trade this record's law rejects, and a term whose defect is a
+misattribution does not become admissible because its estimator got better.
+
+### 6.3 Why no admission computed from the emission channel can succeed
+
+The four cases the term loses in `RE2:OnlineBoutique`, `RE2:SockShop` and `RE3:OnlineBoutique` have one thing
+in common, and it is not visible from the emission side:
+
+| case                           | truth             | truth's error count, pre → post | truth's `Δλ` | the term's pick           |
+| ------------------------------ | ----------------- | ------------------------------: | -----------: | ------------------------- |
+| `re2ob_currencyservice_loss_1` | `currencyservice` |     0 / 54,682 → **0 / 13,217** |    **0.000** | `frontend-external` 0.346 |
+| `re2ss_payment_loss_1`         | `payment`         |         0 / 1,466 → **0 / 710** |    **0.000** | `orders` 0.510            |
+| `re3ob_cartservice_f1_1`       | `cartservice`     |          **no `error` channel** |            — | `frontend-external` 0.124 |
+| `re3ob_cartservice_f1_2`       | `cartservice`     |          **no `error` channel** |            — | `frontend` 0.120          |
+
+On a `loss` fault the source stops answering and its CALLERS emit on its behalf, so the top of the emission
+ranking is a victim by construction — and no statistic of the emission channel can tell that apart from a
+source, because in both cases a node's own errors-per-request rose. What separates them is who stopped
+answering, which is a statement about DIRECTION, and §6.1 measures that this corpus does not carry it.
+
+**The axis is closed, not deferred.** The term stays at `0` (inert: its map is not built), the two admissions
+are recorded here so nobody prices them again, and the prerequisite is named: a direction channel with
+coverage. On the FSE'26 half, `edgeRecords` is the one signal the separator census reports as holding
+(AUC 0.908, 60–2, stable in all five folds) — which is where this term would have to be measured, not here.

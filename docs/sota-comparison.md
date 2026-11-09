@@ -32,7 +32,7 @@
 >   case-level **89.8%** against a telemetry-free frequency prior of 23.4%. Those cells are **not** comparable to the
 >   `85.44%` headline above, which is the 735-case population; the 12-case difference is a corpus-enrolment question and
 >   reconciling it is the open P1, not a defect this document may average away. Two of the cells move for a reason that
->   *is* a defect repair rather than a population change, and both are documented: `RE3:OnlineBoutique` 87.5 → 90.0
+>   _is_ a defect repair rather than a population change, and both are documented: `RE3:OnlineBoutique` 87.5 → 90.0
 >   because `split(',')` had been truncating every quoted log message, and the two SockShop RE cells are back to their
 >   pre-repair readings with **zero per-case flips** across all 120 cases (`docs/rcaeval-log-fidelity.md` §4).
 >
@@ -198,10 +198,10 @@ produced them, and **the engine changed**. `DEFAULT_TRANSIENT_GUARD_TEST` moved 
 statistic to `evidence-trimmed`, the policy that reads each case's own observation and asks the matching
 instrument, so every cell on both benchmarks is a different measurement from `1c18c76` onward. The retired set:
 
-| #   | as printed, on `1c18c76` and every revision before it                                                                                                                                    | what it read once that enrolment landed                                                                                                                                                 | why it moved                                                                                                                                                                                                                                                                                                                         |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 5   | overall `87.21% (641/735)`, RE1 `88.00% (330/375)`, RE2-OB `92.2% (83/90)`, RE2 suite `246/270`, RE1-SS `93.6%`, RE3-SS `60.0%` (`18/30`), RE3 suite `65/90`, RE1-OB `85.6%` (`107/125`) | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-OB `93.3% (84/90)`, RE2 suite `247/270`, RE1-SS `95.2%`, RE3-SS `63.3%` (`19/30`), RE3 suite `66/90`, RE1-OB `89.6%` (`112/125`) | one POLICY replaced one statistic (`docs/transient-guard-evidence.md` §10–§11), and it is the first change on this axis to move **both** halves in the same direction: `+15` cases on the nine cells with **no cell down**, `+9` on FSE'26 (`60.50%` / `860/1422` → `61.10%` / `869/1422`)                                           |
-| 6   | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-SS `97.8% (88/90)`, RE2 suite `247/270`, RE2-TT `83.3% (75/90)`, RE1-OB `89.6% (112/125)`, FSE'26 `61.10% (869/1422)`             | overall `89.66% (659/735)`, RE1 `91.7% (344/375)`, RE2-SS `98.9% (89/90)`, RE2 suite `249/270`, RE2-TT `84.4% (76/90)`, RE1-OB `90.4% (113/125)`, FSE'26 `61.46% (874/1422)`            | two sources, and only the second is the enrolment: `re1ob_currencyservice_loss_1` was already fixed at `0ffc38f0` and the anchor had never absorbed it (§0p-ii), while the guard policy `hump` moved `re2ss_payment_loss_1`, `re2tt_ts-travel-service_disk_2` and five FSE'26 fault types (`docs/transient-guard-evidence.md` §13.3)  — and this endpoint is itself superseded by §0p-iii |
+| #   | as printed, on `1c18c76` and every revision before it                                                                                                                                    | what it read once that enrolment landed                                                                                                                                                 | why it moved                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5   | overall `87.21% (641/735)`, RE1 `88.00% (330/375)`, RE2-OB `92.2% (83/90)`, RE2 suite `246/270`, RE1-SS `93.6%`, RE3-SS `60.0%` (`18/30`), RE3 suite `65/90`, RE1-OB `85.6%` (`107/125`) | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-OB `93.3% (84/90)`, RE2 suite `247/270`, RE1-SS `95.2%`, RE3-SS `63.3%` (`19/30`), RE3 suite `66/90`, RE1-OB `89.6%` (`112/125`) | one POLICY replaced one statistic (`docs/transient-guard-evidence.md` §10–§11), and it is the first change on this axis to move **both** halves in the same direction: `+15` cases on the nine cells with **no cell down**, `+9` on FSE'26 (`60.50%` / `860/1422` → `61.10%` / `869/1422`)                                                                                               |
+| 6   | overall `89.25% (656/735)`, RE1 `91.5% (343/375)`, RE2-SS `97.8% (88/90)`, RE2 suite `247/270`, RE2-TT `83.3% (75/90)`, RE1-OB `89.6% (112/125)`, FSE'26 `61.10% (869/1422)`             | overall `89.66% (659/735)`, RE1 `91.7% (344/375)`, RE2-SS `98.9% (89/90)`, RE2 suite `249/270`, RE2-TT `84.4% (76/90)`, RE1-OB `90.4% (113/125)`, FSE'26 `61.46% (874/1422)`            | two sources, and only the second is the enrolment: `re1ob_currencyservice_loss_1` was already fixed at `0ffc38f0` and the anchor had never absorbed it (§0p-ii), while the guard policy `hump` moved `re2ss_payment_loss_1`, `re2tt_ts-travel-service_disk_2` and five FSE'26 fault types (`docs/transient-guard-evidence.md` §13.3) — and this endpoint is itself superseded by §0p-iii |
 
 **Why a policy rather than a better statistic, stated in one sentence and defended in the evidence document.** The
 same statistic wins and loses on cells of ONE corpus: `level-window` is `+37` on FSE'26 and `−22` on the golden half,
@@ -290,26 +290,26 @@ it cannot have a proof.** It is a comparison now, and it is a comparison on ever
 **What happened, and who noticed.** The log reader was repaired in iteration 250: `logs.csv` had been split on every
 comma rather than on the ones outside quotes, so 11–32% of every message in every sampled case was missing its tail,
 and the classifier was reading the surviving prefix. With faithful messages the cells moved **down**, because the
-truncation had been *masking* a second defect, and two counted clauses — a serialized exception is not a thrown one,
+truncation had been _masking_ a second defect, and two counted clauses — a serialized exception is not a thrown one,
 and an exception that blames an I/O cause is not self-caused — put them back (`docs/rcaeval-log-fidelity.md` §3, §4).
 The net reads `RE3:OnlineBoutique 25 → 26 (+1)` and `TOTAL 659 → 660`, and **nothing else moved**: across all nine
 cells the only movement is that one, which is what a clause that changes one case is supposed to look like.
 
 **The gate found it before a human did.** `benchmarks/src/cell-baseline.ts` compared the run's per-case census against
 `benchmarks/baselines/rcaeval-nine-cells.json`, found `RE3:OnlineBoutique 25 -> 26 (+1)` and `total 659 -> 660`, and
-**failed the dashboard job** on the battery that carried the repair. That is the mechanism working as designed — *a
-movement is not automatically a defect, it is a claim nobody has made yet* — and this subsection is the claim, made in
+**failed the dashboard job** on the battery that carried the repair. That is the mechanism working as designed — _a
+movement is not automatically a defect, it is a claim nobody has made yet_ — and this subsection is the claim, made in
 the same commit that updates the baseline file.
 
 **Why it is a repair and not an arm.** The run's own `signals:` line digests to `486ad3e0486b`, byte-identical to the
 anchor it replaces, so the movement cannot be a configuration change: a changed default would have skipped the
 comparison rather than tripping it. The three evidence lines that carry the claim are:
 
-| what was measured | reading |
-| --- | --- |
+| what was measured                                                                          | reading                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | four-state ablation on `ss:2` and `ss:3` (old reader / faithful, no clause / +3a / +3a+3b) | `RE2:SockShop 98.9 → 94.4 → 94.4 → 98.9`, `RE3:SockShop 63.3 → 50.0 → 56.7 → 63.3` — the clauses recover **exactly** what faithfulness cost, and no more |
-| per-case census, shipped reader against the truncating one, all 120 SockShop RE cases | **zero flips** — the recovery is identity, not proximity |
-| `RE3:OnlineBoutique` | `82.1 → 85.7` case-level (`25/30 → 26/30` published), the one case faithfulness itself won and the clauses do not touch |
+| per-case census, shipped reader against the truncating one, all 120 SockShop RE cases      | **zero flips** — the recovery is identity, not proximity                                                                                                 |
+| `RE3:OnlineBoutique`                                                                       | `82.1 → 85.7` case-level (`25/30 → 26/30` published), the one case faithfulness itself won and the clauses do not touch                                  |
 
 **Two readings this subsection retires, and why only two.** The fractions `659/735` and `25/30` are retired in
 `standing-anchor.test.ts`'s `RETIRED`; the percentages that went with them are **not** retired as tokens, because
@@ -1816,11 +1816,11 @@ The obvious move on seeing a 90.0 % row is to take that implementation apart and
 the result of checking whether that move is available, and the answer is that **the row is not the artefact**. It
 was checked on 2026-11-07 against each competitor's own repository and full text.
 
-| competitor | headline | artefact state (verified) | usable on our 735? |
-| --- | --- | --- | --- |
-| `Sonnet · ThinkDepth.ai`, RCABench **90.0 %** | `arXiv:2608.21310` | ThinkDepth.ai **is** open source (`thinkdepthai/Deep_Research`, MIT, 190 ★, 24 commits) — but it is a **web-research writer**: `OPENAI_API_KEY` + `TAVILY_API_KEY`, no telemetry tool. The paper says "ThinkDepth.ai **adapted to** AIOps 2025"; **the adapter is unpublished** | **No** — different label space (service-to-code hierarchical, re-annotated propagation graph), 500-case sample with no published case IDs, paid backbone at `$0.01–$4.64`/case |
-| `RCLAgent V2`, RCAEval **56.67 %** | `arXiv:2605.14866` | **fully open** (`LLM4AIOps/RCLAgent-V2`): any OpenAI-compatible endpoint, `sample_data` self-check, and the paper evaluates on **RCAEval** | **Yes** — and we lead it **+36.6 pp** on RE2-OnlineBoutique (93.3 % vs 56.67 %) |
-| `OpenRCA`, RCABench **46.6 %** | ICLR'25, `microsoft/OpenRCA` | fully open (MIT) | No — OpenRCA's own corpus, 80 GB telemetry, no RCAEval |
+| competitor                                    | headline                     | artefact state (verified)                                                                                                                                                                                                                                                       | usable on our 735?                                                                                                                                                             |
+| --------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Sonnet · ThinkDepth.ai`, RCABench **90.0 %** | `arXiv:2608.21310`           | ThinkDepth.ai **is** open source (`thinkdepthai/Deep_Research`, MIT, 190 ★, 24 commits) — but it is a **web-research writer**: `OPENAI_API_KEY` + `TAVILY_API_KEY`, no telemetry tool. The paper says "ThinkDepth.ai **adapted to** AIOps 2025"; **the adapter is unpublished** | **No** — different label space (service-to-code hierarchical, re-annotated propagation graph), 500-case sample with no published case IDs, paid backbone at `$0.01–$4.64`/case |
+| `RCLAgent V2`, RCAEval **56.67 %**            | `arXiv:2605.14866`           | **fully open** (`LLM4AIOps/RCLAgent-V2`): any OpenAI-compatible endpoint, `sample_data` self-check, and the paper evaluates on **RCAEval**                                                                                                                                      | **Yes** — and we lead it **+36.6 pp** on RE2-OnlineBoutique (93.3 % vs 56.67 %)                                                                                                |
+| `OpenRCA`, RCABench **46.6 %**                | ICLR'25, `microsoft/OpenRCA` | fully open (MIT)                                                                                                                                                                                                                                                                | No — OpenRCA's own corpus, 80 GB telemetry, no RCAEval                                                                                                                         |
 
 | `OperationsPAI/rca-algo-contrib` — the RCABench **field itself** | `arXiv:2510.04711` | **fully open**: the authors' harness (`rcabench-platform` 0.4.46 on PyPI), their data (Zenodo, 1,422 cases) and **their own containerised re-implementations** — twelve `LGU-SE-Internal` repositories, **eleven resolve**, eleven unlicensed (run and quote, never vendor) | **Yes — and it has been run.** `baro` on all 1,422: **41.21%** set-valued, **29.68%** endpoint-only; ours **62.17% / 48.03%**. Paired, **+20.96 pp**, McNemar `p = 4.8e-29`. §0r |
 
@@ -1842,8 +1842,7 @@ Three conclusions, and only the third is comfortable:
 
 **And that transplantation produced the most useful negative result in this document.** Two of the three
 predicates failed their pre-registered criterion — `omitted` because it restates the topology discount, and
-`misinterpreted` because it is **structurally unreachable**: the term it was anchored on, `rise`, ships at weight
-0. Checking why turned up the fact that matters:
+`misinterpreted` because it is **structurally unreachable**: the term it was anchored on, `rise`, ships at weight 0. Checking why turned up the fact that matters:
 
 > **every term that expresses a direction ships switched off** — `rise` 0, `topo` 0, `collision` 0, `prism` 0.
 
@@ -1863,10 +1862,10 @@ field and false of the benchmark itself. RCABench's authors released their harne
 implementation of every baseline**, so the field is re-runnable in a way the RCAEval field is not. One baseline
 has now been run on all 1,422 cases against this engine, paired case by case.
 
-| all 1,422 cases | this engine | `baro` | margin | McNemar |
-| --- | ---: | ---: | ---: | --- |
+| all 1,422 cases                             |      this engine |       `baro` |        margin | McNemar     |
+| ------------------------------------------- | ---------------: | -----------: | ------------: | ----------- |
 | set-valued (`top-1 ∈ ground_truth.service`) | **884 = 62.17%** | 586 = 41.21% | **+20.96 pp** | p = 4.8e-29 |
-| endpoint-only (`top-1 == injection_point`) | **683 = 48.03%** | 422 = 29.68% | **+18.35 pp** | p = 2.1e-30 |
+| endpoint-only (`top-1 == injection_point`)  | **683 = 48.03%** | 422 = 29.68% | **+18.35 pp** | p = 2.1e-30 |
 
 The standing row above measures against the paper's `avg 21 / best 37`; this measures against a run. **The
 margin is +20.96 pp, not +24.5 pp**, and it is paired rather than two proportions — 512 cases resolved only by
@@ -1913,3 +1912,35 @@ the corpus census behind it (the truth's own `Δλ` is `p90 = 0` on `RE3:TrainTi
 **Nothing above is a claim on the standing table.** Both changes are recorded here because the marker rolled;
 neither moves a published number, and the anchor stays battery `42505425507` at `6412d69a`, re-verified per cell
 after both.
+
+## 2026-11-09 — the graph that named a service the metrics had never heard of
+
+`RE2:OnlineBoutique`'s trace files spell the front end `frontendservice` while `metrics.json` spells it
+`frontend`, and nothing joined the two. `augmentTopologyWithTraces` keeps only the edges a span confirms, so all
+seven YAML edges starting at `frontend` were dropped and four were installed from a node with **no metrics** —
+on **89 of that cell's 90 cases**, with a `latRise` of `14.233` reported against the phantom while the node the
+cell ranks reported no latency evidence at all. `traceServiceResolver` now binds the two vocabularies in three
+ordered rules and refuses an ambiguous spelling; the join is applied once, in the corpus owner, and handed to
+the two streaming passes that read `traces.csv` again.
+
+**What it is worth on the standing table: nothing, measured rather than assumed.** Both arms ran the nine cells
+from the same tree with the change stashed and unstashed: `660` before and after, every cell's `AC@1` and
+`Avg@5` identical, and **0 of 735 cases changed winner**. The null has two mechanisms and both are properties of
+the shipped configuration — `latWeight` reads a callee's INBOUND rise as a maximum over its callers (the front
+end has no callers; the maximum was already held by `checkoutservice`), and the outbound readers are
+`topoWeight` (shipped `0`) and the failed-call channel, which carries a record on 26 of 23,105 node-reads. It
+ships because a term priced tomorrow would otherwise be measured on a graph where the front end of 90 cases had
+no edges.
+
+**And the axis iteration 252 named next is closed.** The case-level conjunction with the direction evidence is
+unmeasurable here: the failed-call ledger admits **0 of 735 cases** (26 records in 23,105 node-reads). The two
+admissions computable from the emission channel — Newcombe's lower bound and the excess over a node's callees —
+both repair `RE3:TrainTicket` (`19 → 22`) and both still cost `RE2:OB −1`, `RE2:SS −1`, `RE3:OB −2`; net `+6`
+with three cells down, refused by the same law. The four losses have one cause: on a `loss` fault the truth
+**does not emit** (`0 / 13,217` and `0 / 710` post-window requests on two cases; no `error` channel on the other
+two), so the top of the emission ranking is a victim by construction, and telling a source from a caller that
+emits for a dead dependency is a DIRECTION question this corpus cannot answer. `docs/span-name-join.md` and
+`docs/emission-intensity.md` §6 carry both records.
+
+**Nothing above is a claim on the standing table**, and the marker does not roll: no ranking knob changed, so the
+configuration fingerprint stays `1a67d9681c45` and the anchor stays battery `42505425507` at `6412d69a`.
