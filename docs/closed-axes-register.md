@@ -1669,8 +1669,10 @@ failed-edge latency records over 125 cases) and the FSE'26 half does (`docs/fse2
 
 The 254th iteration's defect was "a sparse map's absence was read as a measured zero". This iteration asked
 what else answers a question the caller was never asked, and found three more, in the one public API that had
-no caller to notice them. `docs/engine-input-contracts.md` carries the whole audit; the axis itself is recorded
-here because it closes a SEARCH direction, not a single line of code:
+no caller to notice them. `docs/engine-input-contracts.md` carries the whole audit, and `docs/production-leave-one-out.md` carries the
+accounting that audit made possible (three counterfactuals where the battery had one, and the discovery that
+`RE1`'s score lives entirely in weights no flag can reach); the axis itself is recorded here because it closes a
+SEARCH direction, not a single line of code:
 
 - **Do not guess an input contract, and do not guard it three ways.** `TreeRCAEngine.analyze` enforced
   "endpoints are nodes" as two silent skips plus one unguarded write, and the unguarded one crashed the engine
