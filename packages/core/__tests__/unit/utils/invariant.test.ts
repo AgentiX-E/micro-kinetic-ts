@@ -166,6 +166,34 @@ describe('invariantRange', () => {
     expect(() => invariantRange(5, 5, 5, 'val')).not.toThrow();
     expect(() => invariantRange(4, 5, 5, 'val')).toThrow();
   });
+
+  // A range check is a pair of comparisons, and NaN answers `false` to both. So the value that poisons
+  // every downstream number was the one value the guard waved through — reported as "in range" while it
+  // was the only thing in the process that was not a number at all.
+  it('should throw for NaN, which no range can contain', () => {
+    expect(() => invariantRange(Number.NaN, 0, 1, 'score')).toThrow(KineticValidationError);
+  });
+
+  it('should name the label when rejecting NaN, so the caller knows which value went bad', () => {
+    expect(() => invariantRange(Number.NaN, 0, 1, 'score')).toThrow('score');
+  });
+
+  it('should reject NaN even when the range is unbounded above', () => {
+    // The `[0, Infinity]` shape is in use (`latencyMs`); it must not become a hole for NaN.
+    expect(() => invariantRange(Number.NaN, 0, Infinity, 'latencyMs')).toThrow(
+      KineticValidationError,
+    );
+  });
+
+  it('should still accept an infinite value when the range allows it', () => {
+    // `Infinity > Infinity` is false, so `[0, Infinity]` has always admitted `Infinity`. Tightening that
+    // is a different decision with its own justification; this guard is only about NaN.
+    expect(() => invariantRange(Infinity, 0, Infinity, 'latencyMs')).not.toThrow();
+  });
+
+  it('should reject -Infinity as below min rather than as a separate case', () => {
+    expect(() => invariantRange(-Infinity, 0, 1, 'score')).toThrow(KineticValidationError);
+  });
 });
 
 describe('invariantNonEmpty', () => {

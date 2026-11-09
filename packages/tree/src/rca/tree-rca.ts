@@ -114,6 +114,9 @@ export class TreeRCAEngine {
    *
    * **Invariant preconditions:**
    * - tree must have at least one node
+   * - every edge must connect two nodes of `tree.nodes` (see {@link assertEdgeEndpointsAreNodes})
+   * - every tree edge must appear in `allEdges` with a finite weight and p99 latency (see
+   *   {@link assertTreeEdgesAreMeasurable}); `allEdges` may contain edges the tree does not
    * - anomalyScores must cover all nodes in the tree
    * - topK must be ≥ 1
    *
@@ -134,6 +137,7 @@ export class TreeRCAEngine {
     const k = topK ?? this.options.defaultTopK;
     invariant(tree.nodes.size > 0, 'tree must have at least one node');
     invariantPositiveInt(k, 'topK');
+    assertEdgeEndpointsAreNodes(tree);
 
     // Step 1: Build graph structure
     const { reverseAdj, forwardAdj, inDegree } = buildTreeStructure(tree.edges, tree.nodes);
@@ -161,6 +165,8 @@ export class TreeRCAEngine {
       edgeWeightMap.set(key, propagationWeights[i]!);
       edgeLatencyMap.set(key, e.p99Latency);
     }
+
+    assertTreeEdgesAreMeasurable(tree, edgeWeightMap, edgeLatencyMap);
 
     for (const nodeId of topoOrder) {
       const acc = accumulators.get(nodeId)!;
@@ -263,7 +269,99 @@ export class TreeRCAEngine {
 }
 
 /**
+ * Assert that every tree edge can be measured from the maps built over `allEdges`.
+ *
+ * ## Why the maps needed a guard at the call site
+ *
+ * `edgeWeightMap.get(key)!` and `edgeLatencyMap.get(key)!` are compile-time promises about a runtime map.
+ * Both were used inside the accumulation loop, so a tree edge absent from `allEdges` — or a
+ * `propagationWeights` array shorter than `allEdges` — produced `undefined`, and
+ * `undefined × score × decay` produced `NaN`. From there it was arithmetic, not validation: `childContrib`
+ * NaN, `totalScore` NaN, `confidence` NaN on the emitted row, and the ranking already sorted by the poison.
+ *
+ * `invariantRange` now rejects NaN (see `@agentix-e/micro-kinetic-core/utils/invariant`), which converts
+ * that silent NaN into `Expected score in [0, 1], got NaN` — a true statement about a number that has
+ * already lost the information the caller needs. This guard is the layer that still HAS the information: it
+ * names the edge, at the boundary, before the arithmetic starts.
+ *
+ * The check is one-directional on purpose. `allEdges` is the pre-pruning graph, so it normally contains
+ * edges the tree does not; requiring equality would reject every real tree.
+ *
+ * @param tree - The tree whose edges must be measurable.
+ * @param edgeWeightMap - Propagation weight per ordered pair, built from `allEdges`.
+ * @param edgeLatencyMap - p99 latency per ordered pair, built from `allEdges`.
+ * @throws KineticValidationError naming the edge and the missing quantity.
+ * @internal
+ */
+function assertTreeEdgesAreMeasurable(
+  tree: PrunedTree,
+  edgeWeightMap: ReadonlyMap<string, number>,
+  edgeLatencyMap: ReadonlyMap<string, number>,
+): void {
+  for (const edge of tree.edges) {
+    const key = `${edge.from}→${edge.to}`;
+    invariant(
+      Number.isFinite(edgeWeightMap.get(key)),
+      `tree edge ${key} has no finite propagation weight in allEdges; ` +
+        `propagationWeights must be aligned with allEdges, one entry per edge`,
+    );
+    invariant(
+      Number.isFinite(edgeLatencyMap.get(key)),
+      `tree edge ${key} has no finite p99Latency in allEdges, so its latency decay is undefined`,
+    );
+  }
+}
+
+/**
+ * Assert that every edge connects two nodes that the tree actually has.
+ *
+ * ## Why this is a check and not a `?.`
+ *
+ * The adjacency build below used to enforce this assumption in three places, three different ways:
+ * a dangling SOURCE was skipped by `forwardAdj.get(...) &&`, a dangling TARGET was skipped by
+ * `reverseAdj.get(...) &&`, and `inDegree.set(edge.to, inDegree.get(edge.to)! + 1)` was not guarded at
+ * all — writing `NaN` under a key that is not a node. The unguarded write is what made the other two
+ * matter: `topologicalSort` iterates `inDegree`, so the phantom key reached
+ * `forwardAdj.get(nodeId)!.length`, and the engine died with
+ * `TypeError: Cannot read properties of undefined (reading 'length')` — an internal helper's line
+ * number, on input the caller can fix.
+ *
+ * The repair is a stated precondition rather than three defensive defaults, because the three defaults
+ * disagreed with each other: "skip the edge" and "keep the edge with a `NaN` degree" are different
+ * graphs, and neither is the graph the caller passed. A dangling endpoint is an INPUT ERROR; reporting
+ * it as one is the only behaviour that leaves the engine's arithmetic meaningful.
+ *
+ * O(E), once per `analyze()` call, on a list the caller already materialised.
+ *
+ * @param tree - The tree whose edges are checked.
+ * @throws KineticValidationError naming the offending edge when an endpoint is not a node.
+ * @internal
+ */
+function assertEdgeEndpointsAreNodes(tree: PrunedTree): void {
+  for (const edge of tree.edges) {
+    const sourceIsNode = tree.nodes.has(edge.from);
+    const targetIsNode = tree.nodes.has(edge.to);
+    invariant(
+      sourceIsNode && targetIsNode,
+      `tree edge ${edge.from}→${edge.to} must connect two nodes of tree.nodes, but ` +
+        `${sourceIsNode ? `target "${edge.to}"` : `source "${edge.from}"`} is not one`,
+    );
+  }
+}
+
+/**
  * Build tree structure: adjacency maps and in-degrees.
+ *
+ * Every endpoint is guaranteed by {@link assertEdgeEndpointsAreNodes}, which is why the three writes
+ * below are unconditional: a `?.` here would be a second, contradiction-prone answer to a question the
+ * caller has already been asked.
+ *
+ * Repeated records for one `(from, to)` pair are collapsed. A call graph is a SIMPLE graph — the count of
+ * observations is already a field of the edge (`callRate`), so a second record for the same pair adds no
+ * topology, only a second measurement of the same edge. Pushing both into `forwardAdj` made the bottom-up
+ * accumulation add the child's contribution twice, and the child cap hid it only when the doubled sum
+ * already exceeded the cap: below the cap, one edge scored `0.495` and two records for that same edge
+ * scored `0.528`. `packages/tree/__tests__/unit/tree-rca-duplicate-edges.test.ts` holds both numbers.
  *
  * @internal
  */
@@ -278,14 +376,17 @@ function buildTreeStructure(edges: readonly CallEdge[], nodes: ReadonlyMap<strin
     inDegree.set(nodeId, 0);
   }
 
+  const seen = new Set<string>();
   for (const edge of edges) {
+    const pair = `${edge.from}→${edge.to}`;
+    if (seen.has(pair)) continue;
+    seen.add(pair);
+
     // Forward: parent → child (propagation direction)
-    const fwList = forwardAdj.get(edge.from);
-    if (fwList) fwList.push(edge.to);
+    forwardAdj.get(edge.from)!.push(edge.to);
 
     // Reverse: child → parent
-    const revList = reverseAdj.get(edge.to);
-    if (revList) revList.push(edge.from);
+    reverseAdj.get(edge.to)!.push(edge.from);
 
     inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
   }
@@ -327,12 +428,15 @@ function topologicalSort(
     // Process parents (nodes that point TO this node)
     const parents = reverseAdj.get(node)!;
     for (const parent of parents) {
-      if (!visited.has(parent)) {
-        // Check if all children of parent are processed
-        const siblings = forwardAdj.get(parent)!;
-        if (siblings.every((s) => visited.has(s))) {
-          queue.push(parent);
-        }
+      // `siblings.every` alone is the whole condition. It is true only for the LAST of a parent's children
+      // to be processed — every earlier child is seen while at least one sibling is still unvisited — so
+      // each parent is enqueued exactly once. The `!visited.has(parent)` guard that used to wrap this was
+      // unreachable for the same reason, and was removed rather than covered: `buildTreeStructure`
+      // collapses duplicate pairs, so a parent cannot appear twice in one `parents` list and be enqueued
+      // twice either.
+      const siblings = forwardAdj.get(parent)!;
+      if (siblings.every((s) => visited.has(s))) {
+        queue.push(parent);
       }
     }
   }

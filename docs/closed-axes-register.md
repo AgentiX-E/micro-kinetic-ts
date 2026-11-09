@@ -1664,3 +1664,29 @@ Recorded so the axis is not re-attempted from per-node data: **on this corpus, d
 any per-node statistic the export carries.** It needs an edge-level one, which RCAEval does not ship (`0`
 failed-edge latency records over 125 cases) and the FSE'26 half does (`docs/fse26-separator-verdict.md`:
 `edgeRecords`, AUC `0.908`, `60–2`).
+
+## Iteration 255 — four ways an absent lookup was answered with a value
+
+The 254th iteration's defect was "a sparse map's absence was read as a measured zero". This iteration asked
+what else answers a question the caller was never asked, and found three more, in the one public API that had
+no caller to notice them. `docs/engine-input-contracts.md` carries the whole audit; the axis itself is recorded
+here because it closes a SEARCH direction, not a single line of code:
+
+- **Do not guess an input contract, and do not guard it three ways.** `TreeRCAEngine.analyze` enforced
+  "endpoints are nodes" as two silent skips plus one unguarded write, and the unguarded one crashed the engine
+  inside `topologicalSort` with a message about `.length`. Three inconsistent defaults is worse than none: they
+  disagree with each other, and the disagreement is not visible from any of them.
+- **A validation helper that cannot see `NaN` is not a validation helper.** `invariantRange` was used 38 times
+  and `NaN` passed every one; `topo-deduction.ts` had already worked around it locally, which is the signature
+  of a tool that is wrong rather than a caller that is careful.
+- **A record is not an edge.** A repeated `(from, to)` pair was worth `+0.033` on the parent's score
+  (`0.528` against `0.495`) whenever the cap did not mask it — the cap masked it on every shipped corpus,
+  which is why "it never happened" was true and "it cannot happen" was not.
+- **`!` on a map read is a promise the compiler does not keep.** Four of them turned a missing edge into `NaN`,
+  and only the range check downstream was in a position to see it — with no idea which edge.
+
+None of these moves `666/735`, and the register states why rather than assuming it: the three topologies carry
+121 unique edges, a dangling endpoint would have crashed the previous battery, a `NaN` score would have printed
+as a `NaN` confidence, and `analyze` is not on the benchmark path. The last point is the one worth keeping: a
+public API with no production caller is where defects go to survive a green CI, so the contracts are now
+asserted by 15 tests that never touch the battery's own arithmetic.
