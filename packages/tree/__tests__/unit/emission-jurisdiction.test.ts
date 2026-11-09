@@ -209,6 +209,37 @@ describe('TreePruner under the emission term', () => {
     expect(frontEnd.terms?.find((t) => t.name === 'emission')?.cause).toBe('INPUT_ENTRY_ABSENT');
   });
 
+  it('breaks a tie between equal scores by service id, on the shipped configuration', () => {
+    // The comparator the jurisdiction path shares with the plain one has two keys, and the second only fires on an
+    // exact tie. Two independent nodes with the SAME series score identically by construction, so this is the one
+    // fixture that can reach the tie-break: without it the engine's order would be the array order, and a ranking
+    // that depends on which map entry a caller happened to insert first is not reproducible.
+    // A shared, FLAT child gives both candidates the same topology as well as the same series, so nothing
+    // distinguishes them and the tie is exact; `quiet` itself never enters the pool.
+    const tie = {
+      nodes: new Map<string, ServiceNode>([
+        ['zeta', node('zeta')],
+        ['mike', node('mike')],
+        ['alpha', node('alpha')],
+        ['quiet', node('quiet')],
+      ]),
+      edges: [edge('alpha', 'quiet'), edge('mike', 'quiet'), edge('zeta', 'quiet')],
+      systemLoad: 0.3,
+    };
+    const same: MetricMap = new Map([
+      ['zeta', [ts('cpu', step(1, 3))]],
+      ['mike', [ts('cpu', step(1, 3))]],
+      ['alpha', [ts('cpu', step(1, 3))]],
+      ['quiet', [ts('cpu', step(1, 1))]],
+    ]);
+    // Both comparators are exercised: the shipped one runs the jurisdiction's own ordering, and `w = 0` runs the
+    // plain score sort — a tie that only one of them breaks by id would be a tie the other breaks by insertion.
+    for (const pruner of [new TreePruner(), new TreePruner({ emissionWeight: 0 })]) {
+      const graph = pruner.buildFaultGraph(tie, same, { injectTimeMs: INJECT });
+      expect(pruner.analyze(graph, 3).map((r) => r.serviceId)).toEqual(['alpha', 'mike', 'zeta']);
+    }
+  });
+
   it('reaches the engine at the shipped default, and does not exist at zero', () => {
     // The ternary iteration 254 moved: the DEFAULT now carries the term. What a fixture can check about that is
     // that the default is FORWARDED rather than merely declared — a weight with three owners is the defect

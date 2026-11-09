@@ -170,7 +170,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery BATTERY254 on REV254, read 2026-11-09, config a0ed4a8a906e -->
+<!-- standing-anchor: battery 42607302393 on aeb35f29, read 2026-11-09, config a0ed4a8a906e -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -340,11 +340,11 @@ it measured and may not move one across a candidate it could not measure (`docs/
 digest moved with it, `1a67d9681c45 → a0ed4a8a906e`, which is why this section exists before a number is
 published under the old anchor.
 
-| cell | before | after | why |
-| --- | --: | --: | --- |
-| `RE1:TrainTicket` | 112 | **113** | `re1tt_ts-travel-service_loss_4`: the truth's `Δλ` 0.153 against the shipped leader's 0.123, and both are measurable |
-| `RE3:SockShop` | 19 | **24** | five cases of the nine the ungated arm already won, kept |
-| the other seven cells | — | unchanged | the term either does not apply or cannot reach the leader |
+| cell                  | before |     after | why                                                                                                                  |
+| --------------------- | -----: | --------: | -------------------------------------------------------------------------------------------------------------------- |
+| `RE1:TrainTicket`     |    112 |   **113** | `re1tt_ts-travel-service_loss_4`: the truth's `Δλ` 0.153 against the shipped leader's 0.123, and both are measurable |
+| `RE3:SockShop`        |     19 |    **24** | five cases of the nine the ungated arm already won, kept                                                             |
+| the other seven cells |      — | unchanged | the term either does not apply or cannot reach the leader                                                            |
 
 `RE1 344 → 345`, `RE3 67 → 72`, `TOTAL 660 → 666`, and the retired readings are `660/735`, `89.80`, `344/375`,
 `67/90` and `19/30` in the forms this document prints them. The `w = 0` arm is bit-identical to the previous
@@ -363,6 +363,14 @@ the jurisdiction's prediction came from a case-level replay of the same rule off
 prices exactly and read `666` with the same two cells moving before the engine ran. The sensitivity sweep
 (`0.35 / 0.50 / 0.65`) reads `RE3:SockShop 22 / 24 / 24` and `RE1:TrainTicket 113 / 113 / 113`: the value shipped
 is the pre-registered one, and it is not a peak found by search.
+
+**Reproduced on a battery a stranger can pull, because a standing figure has to be one.** The nine cells above
+were read off run `42607302393` at `aeb35f29` — the push-triggered run on the branch that carries this tree — from
+its own three `rcaeval-re{1,2,3}-results.txt` loss censuses: `113/119/113`, `84/89/76`, `26/24/22`, i.e.
+`345/249/72` and `666`, case for case. And the same run names the CONFIGURATION: its own printed `signals:` line
+is byte-identical to the line a bare `parseRCAEvalArgs([])` produces from this tree, both hashing to
+`a0ed4a8a906e`. That is the fingerprint `anchor-config-fingerprint.test.ts` holds the block to, so the reading and
+the configuration it belongs to are now asserted from the same artifact rather than from the same document.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
@@ -625,6 +633,38 @@ scenario scripts, the answer keys and the scoring code under MIT, so this is a c
    **§2b-ii carries the full treatment**, including the third-party referee reading that disputes the metric's
    interpretation and the one part of the method that is worth borrowing.
 
+### 0b-ii. The NeurIPS'26 retrieval-reranking decomposition — our own population, our own metric, and the closest thing to us on two of three cells
+
+**`Where Root Cause Analysis Fails: A Retrieval-Reranking Decomposition`** — Hada Melino Muhammad, Luan Pham,
+Laure Barrière, Sachin Shetty, Leonardo Pulga, Flora D. Salim; **arXiv:2609.36686**, submitted 2026-09-29,
+**accepted at NeurIPS 2026 (Evaluations & Datasets Track)**, code at `github.com/cruiseresearchgroup/DecompRCA`.
+Read 2026-11-09, and it is the first competitor this document has found whose numbers sit within two cases of
+ours on a cell.
+
+Three things make it comparable, and they are the same three §0b applies: **service-level `top@1`**, the
+**RCAEval RE1 split** (125 injections per suite, the benchmark's own preprocessing, quantile latency columns kept
+unmerged so its BARO figures reproduce), and a **fixed single configuration** across all six suites.
+
+| suite              | DecompRCA, LLM reranker with domain knowledge |                ours |             margin |
+| ------------------ | --------------------------------------------: | ------------------: | -----------------: |
+| RE1-OnlineBoutique |                             **0.888 ± 0.008** | **0.904** (113/125) | +1.6 pp, two cases |
+| RE1-SockShop       |                             **0.944 ± 0.008** | **0.952** (119/125) |  +0.8 pp, one case |
+| RE1-TrainTicket    |                                 0.685 ± 0.009 | **0.904** (113/125) | +21.9 pp, 28 cases |
+
+Its strongest statistical baseline is BARO (0.784 / 0.856 / 0.560 on the same three cells), so the LLM reranker
+buys it +10.4 / +8.8 / +12.5 pp over the best non-LLM method — and it still lands below a deterministic engine on
+all three. **The margin on two of the three cells is now one or two cases**, which is the honest reading of this
+row: it is the first entry in this document whose population and metric leave us no room for a stale number.
+
+**And its decomposition says where the remaining headroom is.** `Retrieval@15` is `0.98 / 1.00 / 0.91` on the
+three cells, i.e. the true service is in the candidate pool almost always and the entire deficit is RE-RANKING —
+which is this repository's own finding from the other side (`docs/emission-jurisdiction.md`: the term that moved
+five `RE3:SockShop` cases is a rank statistic, and the case-level gates that failed were retrieval-shaped
+absences). A fixed configuration that reranks with no causal graph and an LLM beats every graph method on the
+board, which is the strongest published argument yet that **the graph is not where the accuracy lives** — the
+same conclusion this document's §0b draws from RCA-DCM's own ablation, now from a second team on a second
+mechanism.
+
 ### 0c. A NEW PUBLIC BENCHMARK — small, vendor-authored, and REPRODUCIBLE
 
 **Project Arena**, released 2026-10-08 by **Edge Delta** (with an evaluation by GPT-6-Astra and a comparison
@@ -643,6 +683,33 @@ Excluded: **21 scenarios is not a population we can compare a 68-service Top-1 t
 the corpus is 735), and its unit is a **whole incident report scored by a model**, not a service ranked first. It
 is a candidate instrument and not a candidate number, and it is named so that "the field has no public benchmark"
 cannot be said of this repository's own standing.
+
+### 0c-ii. Two 2026 arrivals that are NOT comparable, and are named so nobody has to look them up twice
+
+- **KRCA** (ASE '26, `10.1145/3832783.3834468`, Kuaishou; preprint `arXiv:2607.01788`): `AC@1 0.88` for service
+  localization and `0.79` for failure-type classification, from a multi-stage pipeline (API-level drilldown →
+  skeleton causal graph → memory-augmented multi-agent verification), deployed in production for six months with a
+  `−77.3%` diagnosis time. **The DOI and the preprint are one work**: the DOI resolves through Crossref to _KRCA:
+  An Efficient Root Cause Analysis System in Hyper-scale Microservice Systems via Agentic AI_, 41st ASE,
+  2026-10-07 (verified 2026-11-09), which is why both identifiers are registered against a single row in
+  `docs/sota-populations.md` rather than two. **Its population is its own production system**, not RCAEval or
+  RCABench; the 0.88 is therefore not a number this document may place in a table against ours, and the row exists
+  only so a later survey finds it named rather than re-derived. Its architecture is the one this repository
+  measured against in Phase III (`docs/GALA_PHASE3_AGENTIC_RCA.md`): a skeleton graph as a HIGH-RECALL prior, then
+  agents to verify — which is the same division of labour as a deterministic score plus a case-level gate, with
+  the verification moved into an LLM.
+
+- **Alibaba Cloud RCA Benchmark** (2026, open source): a **runtime environment** + four-level structured ground
+  truth (fault type, normalized root-cause entity, causal propagation chain, key evidence checkpoints) + a
+  deterministic scoring protocol for AGENTIC ops, weighted `40 / 30 / 30` over identification, demarcation and
+  procedure, with "nearly 70%" of the score computed from topology distance rather than from an LLM judge. Its own
+  announcement states **200+ compliant samples over `L1–L4`** on a Kubernetes e-commerce system of **40+ services
+  with call chains 7 layers deep** — so its population is **its own simulation, not RCAEval, and not a case count
+  of ours either** (verified 2026-11-09 from the vendor's own release note, its full text and not a summary of
+  it). It is a **protocol, not a published table**: no per-case results and no `AC@1` on any population exist yet,
+  its scoring unit is a three-dimension composite rather than a service ranked first, and it carries **no DOI or
+  arXiv identifier** for `docs/sota-populations.md`'s grammar to register — so it is named here rather than priced
+  there, and it moves the day it publishes readings under an identifier.
 
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 

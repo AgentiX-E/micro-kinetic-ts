@@ -3448,8 +3448,13 @@ function performTreeRCA(
       : orderWithEmissionJurisdiction(
           scoredNodes.map((node) => {
             const score = finalScoreOf(node.serviceId);
-            const contribution =
-              termsOf(node.serviceId).find((term) => term.name === 'emission')?.contribution ?? 0;
+            // Read back the contribution the term ALREADY recorded rather than recomputing `weight × share`: the
+            // breakdown is the owner of that product, and a second expression here could disagree with it. The
+            // term is built unconditionally in the array above, so the lookup cannot miss — an optional chain here
+            // would be a branch no configuration can reach, which is dead code wearing a defensive costume.
+            const contribution = termsOf(node.serviceId).find(
+              (term) => term.name === 'emission',
+            )!.contribution;
             return {
               node,
               serviceId: node.serviceId,
