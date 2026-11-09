@@ -109,9 +109,18 @@ rule that a weight selected by its own result is not a weight.
   the truth IS the largest emitter. The term could have taken all four; the jurisdiction refuses to speak about
   a node it cannot measure, so it does not. That is the honest price of the rule, and it is why the total is
   `666` rather than `670`.
-- **The direction question is still open.** A gate that could tell "the leader is a caller of a dead dependency"
-  from "the leader is a silent source" would take those four back. This corpus does not carry that channel
-  (`docs/emission-intensity.md` §6.1: 26 records in 23,105 node-reads), and the FSE'26 half is where it exists.
+- **The direction question is still open, and now it is closed from two more sides.** A gate that could tell "the
+  leader is a caller of a dead dependency" from "the leader is a silent source" would take those four back, and
+  it is the whole of the residual: of the 69 misses this block leaves, **37 are a one-hop neighbour of the truth**
+  (25 a caller, 12 a callee). Two per-node rules were priced against the shipped dumps and REFUSED, with the
+  engine's own order reproducing `666` first so the probe could not be measuring itself: "a caller may not
+  outrank a called dependency whose self-anomaly is at least its own" reads `665` (`179` cases reordered, one won,
+  two lost), and "a node may not outrank a dependency whose onset precedes its own" reads `591 / 603 / 613 / 617`
+  at `0 / 1,000 / 5,000 / 10,000` ms — never fewer than `49` losses against at most `6` wins. Magnitude is
+  imported and onset is a detection bucket, not a propagation time, so neither carries direction.
+  `docs/closed-axes-register.md` iteration 254 records both refutations with their tables; what remains is an
+  EDGE-level channel, which this corpus does not export (`0` failed-edge latency records over 125 cases) and the
+  FSE'26 half does.
 - **`RE3:TrainTicket`'s three error-value cases are untouched** (`22` before and after). They are not emission
   failures at all: the truth emits nothing and ranks first, and the term never had a case against it.
 - **The intake hypothesis was measured and REFUTED.** The first candidate for a direction channel was the

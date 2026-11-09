@@ -1604,3 +1604,63 @@ largest emitter — a direction gate would have taken them, and this corpus does
 sensitivity table and the refutation; `docs/emission-intensity.md` §7 records that its own §6 refused the term
 for the right observation and the wrong reason.
 
+### The residual it leaves, mapped — and the next candidate refused before it was built
+
+`666/735` leaves **69 misses**, and they are not spread evenly enough for "improve ranking" to be a plan:
+
+By fault type:
+
+| fault type | misses |
+| --- | --: |
+| `loss` | **35** |
+| `delay` | 12 |
+| `f4` (RE3) | 7 |
+| `f3` (RE3) | 5 |
+| `f1` (RE3) | 4 |
+| `f2` (RE3) | 2 |
+| `cpu` / `disk` / `mem` / `socket` | 1 each |
+
+By cell:
+
+| cell | correct | misses |
+| --- | --: | --: |
+| `RE1:OnlineBoutique` | 113/125 | 12 |
+| `RE1:SockShop` | 119/125 | 6 |
+| `RE1:TrainTicket` | 113/125 | 12 |
+| `RE2:OnlineBoutique` | 84/90 | 6 |
+| `RE2:SockShop` | 89/90 | 1 |
+| `RE2:TrainTicket` | 76/90 | 14 |
+| `RE3:OnlineBoutique` | 26/30 | 4 |
+| `RE3:SockShop` | 24/30 | 6 |
+| `RE3:TrainTicket` | 22/30 | 8 |
+
+Half the residual is one fault type, and **37 of the 69 are a one-hop NEIGHBOUR of the truth** — 25 where the
+winner is a direct caller, 12 where it is a callee, 32 unrelated. That is a direction signature, and the census
+says where the advantage sits: over the 33 `loss` misses that carry a full term breakdown, the winner's margin
+is `selfAnomalyLog1p` `0.657` against the truth's `0.448` (`+0.209`) and `dualFamily` `0.121` against `0.023`
+(`+0.098`), with **every other term at `0.000`** — the weights are zero or the inputs are absent.
+
+So the next candidate had to be direction, and it was priced from the shipped dumps before any code existed, with
+the engine's own `prediction=` order as the control — it must reproduce the battery, or the probe is measuring
+the probe:
+
+| rule applied to the engine's own order | total | reordered | won | lost |
+| --- | --: | --: | --: | --: |
+| engine order (control) | **666** | — | — | — |
+| a caller may not outrank a called dependency whose `selfAnomaly` is at least its own | 665 | 179 | 1 | 2 |
+| a node may not outrank a dependency whose onset precedes its own by ≥ `0` ms | 591 | 272 | 6 | 81 |
+| … ≥ `1,000` ms | 603 | 269 | 6 | 69 |
+| … ≥ `5,000` ms | 613 | 256 | 6 | 59 |
+| … ≥ `10,000` ms | 617 | 231 | 3 | 52 |
+
+**Both refused, and for stated reasons.** Magnitude is IMPORTED, not authored: a caller's anomaly is its callee's
+plus its own, so "equally anomalous dependency" fires on healthy aggregators — `ts-order-service`, `carts` and
+`checkoutservice` lose their own cases to `carts-db`, `ts-seat-service` and `paymentservice`, which is the same
+error the rule was meant to repair, mirrored. Onset is a DETECTION BUCKET, not a propagation time: leaf
+datastores flip their bucket first because they have one metric family, so the rule demotes sources wholesale.
+Neither is a direction channel, and no threshold rescues either — the best lag still loses `49`.
+
+Recorded so the axis is not re-attempted from per-node data: **on this corpus, direction is not expressible from
+any per-node statistic the export carries.** It needs an edge-level one, which RCAEval does not ship (`0`
+failed-edge latency records over 125 cases) and the FSE'26 half does (`docs/fse26-separator-verdict.md`:
+`edgeRecords`, AUC `0.908`, `60–2`).

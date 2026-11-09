@@ -170,7 +170,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42607302393 on aeb35f29, read 2026-11-09, config a0ed4a8a906e -->
+<!-- standing-anchor: battery 42616136723 on 44c8eb5e, read 2026-11-09, config a0ed4a8a906e -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -364,13 +364,16 @@ prices exactly and read `666` with the same two cells moving before the engine r
 (`0.35 / 0.50 / 0.65`) reads `RE3:SockShop 22 / 24 / 24` and `RE1:TrainTicket 113 / 113 / 113`: the value shipped
 is the pre-registered one, and it is not a peak found by search.
 
-**Reproduced on a battery a stranger can pull, because a standing figure has to be one.** The nine cells above
-were read off run `42607302393` at `aeb35f29` — the push-triggered run on the branch that carries this tree — from
+**Reproduced on a battery a stranger can pull, because a standing figure has to be one — TWICE, from two trees.**
+The nine cells above were read off run `42616136723` at `44c8eb5e`, the push-triggered battery on `master`, from
 its own three `rcaeval-re{1,2,3}-results.txt` loss censuses: `113/119/113`, `84/89/76`, `26/24/22`, i.e.
-`345/249/72` and `666`, case for case. And the same run names the CONFIGURATION: its own printed `signals:` line
-is byte-identical to the line a bare `parseRCAEvalArgs([])` produces from this tree, both hashing to
-`a0ed4a8a906e`. That is the fingerprint `anchor-config-fingerprint.test.ts` holds the block to, so the reading and
-the configuration it belongs to are now asserted from the same artifact rather than from the same document.
+`345/249/72` and `666`, case for case. The pre-merge battery `42607302393` at `aeb35f29` — the same engine with
+one unreachable fallback still in place, `?.contribution ?? 0` in the jurisdiction's read-back — reads the
+**identical nine**, so the enrolment is not a property of one dispatch or of one tree. And each run names its own
+CONFIGURATION: its printed `signals:` line is byte-identical to the line a bare `parseRCAEvalArgs([])` produces
+from this tree, both hashing to `a0ed4a8a906e`. That is the fingerprint `anchor-config-fingerprint.test.ts` holds
+the block to, so the reading and the configuration it belongs to are asserted from the same artifact rather than
+from the same document.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
