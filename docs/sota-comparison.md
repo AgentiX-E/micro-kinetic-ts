@@ -714,6 +714,54 @@ cannot be said of this repository's own standing.
   arXiv identifier** for `docs/sota-populations.md`'s grammar to register — so it is named here rather than priced
   there, and it moves the day it publishes readings under an identifier.
 
+### 0c-iii. Two 2026 papers about WHAT THIS BENCHMARK MEASURES — one of them an audit of it
+
+Both arrived after the last survey and both change how a reader should read the nine cells above, so they are
+placed here rather than in the competitor table: neither reports a `top@1` on our population, and one of them
+argues that such a number is not the measure it looks like.
+
+- **`arXiv:2609.27069`**, Buljić, _Does Graph Structure Earn Its Place in Microservice Root-Cause Analysis? A
+  Controlled Study on RCAEval, and What the Benchmark Was Really Measuring_ (2026-09-22, preprint also at
+  `10.5281/zenodo.22832168`). It runs three learned arms with identical features, optimiser, split, early-stopping
+  and scoring head, separated by one graph-specific term, and finds **no reliable graph-specific effect**
+  (`+0.003` Avg@5, `p = 0.844`, `n = 6` disjoint folds). It then audits the benchmark and reports two properties
+  that condition any result on it: **faults are injected into only five services per system while telemetry
+  exposes 12–70**, so a ranker reading **no telemetry at all** puts the culprit in the **top five on `99.7%`** of
+  held-out incidents (`Avg@5 0.488`, against a uniform-random `0.137`); and **a non-uniform column schema silently
+  zeroes telemetry for most RE1 cases**. Its twelve-item checklist for graph-versus-flat ablations is distilled
+  from **62 recorded defects**.
+
+  **This document agrees with all of it, and the agreement is already instrumented rather than argued.** The
+  `[prior-floor]` report every run prints is the same measurement, at a stricter metric:
+
+  | cell | injected services `S` | telemetry-free **AC@1** (frequency prior) | engine **AC@1** | lift |
+  | --- | --: | --: | --: | --: |
+  | `RE1:OnlineBoutique` | 5 | `20.0%` | `90.4%` | 88.0% of the reachable margin |
+  | `RE3:SockShop` | 3 | `40.0%` | `80.0%` | 66.7% of the reachable margin |
+
+  And the report says of its own `Top@5 100.0%`: _«Top@5 is SATURATED by the prior here, so it is not evidence
+  for this cell»_ — which is this paper's central point, stated in the artifact before the paper existed. The
+  difference is the metric: `Avg@5` saturates under a five-service prior, and **`AC@1` does not** (`20.0%` and
+  `40.0%` are the floors here, so `90.4%` and `80.0%` are not prior effects). Its second property — a schema that
+  silently zeroes telemetry — is the same defect family this repository has now repaired four times
+  (`docs/engine-input-contracts.md`, `docs/emission-jurisdiction.md`): a missing measurement answered with a
+  number that looks like one.
+
+  What it costs us is not the nine cells but a claim we should not make: **on this benchmark, the graph's marginal
+  contribution is not separable from the prior by a learned arm** — which is why the ablation in §3 is built from
+  single-flag counterfactuals on the shipped engine rather than from graph-vs-flat training.
+
+- **`arXiv:2610.35767`**, Bi, Zhang, Li, Wang & Ma (PKU / BUPT), _Free to Look, Free to Reason: Simple LLM
+  Harnesses Outdiagnose Hand-Crafted Root Cause Analysis Agents_ (2026-10-26). **RCAtlas**: `542` cases screened
+  from **eight public datasets** (RCAEval among the cited ones), `90` validated across `23` scenarios and `10`
+  fault classes. `PR@1`: simple harnesses **`65–77%`**, five published LLM RCA agents **`16–53%`**, statistical
+  and causal methods **`6–39%`**, on every model where both families ran. Its mechanism claim — a program that
+  fixes which evidence is read will skip the decisive evidence — is the strongest published argument for the
+  design this repository already uses: **a deterministic score with one case-level gate**, and no staged
+  investigation to skip anything. Its `non-LLM 6–39%` band is **not** our band and must not be read as one: those
+  arms are statistical and causal rankers on an eight-dataset pool, while our `90.61%` is `top@1` on RCAEval's
+  735 with the injection-time protocol, and the two share neither population nor metric.
+
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 
 **OpsHarness**, _From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis_

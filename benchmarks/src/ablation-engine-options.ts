@@ -446,14 +446,22 @@ export function isProductionFlags(
 }
 
 /**
- * The battery rows that ARE the published configuration, owned here so a test can hold them to
- * {@link productionFlags} without importing the runner (which executes at import time).
+ * The battery rows that ARE the published configuration, plus one single-flag counterfactual per term the
+ * nine cells depend on, owned here so a test can hold them to {@link productionFlags} without importing the
+ * runner (which executes at import time).
  *
- * One production row now that the configuration is one vector, plus the single-flag **counterfactual** the nine
- * cells needed: `PRODUCTION LESS TRACE` claims no suite, because it is not the published configuration of any —
- * it is the arm that prices the term. Keeping it as a row is what lets the battery answer "what does
- * `traceWeight` buy" without a dispatch argument, and marking it as claiming nothing is what keeps
- * `isProductionFlags` from ever calling it production.
+ * One production row, and three counterfactuals that each remove exactly one member of it. The trace arm was
+ * the first because the nine cells needed it; `LESS LOG` and `LESS RANK` followed because the report of the
+ * 254th iteration could price only the trace term and had to say so, and a term with no counterfactual is a
+ * term whose contribution the battery cannot state. All three claim no suite — none of them is the published
+ * configuration of anything, they exist to price a member — and marking them that way is what keeps
+ * `isProductionFlags` from ever calling one of them production.
+ *
+ * Growing this list is the ONLY way to add an arm: the runner takes its production rows from here
+ * (`...PRODUCTION_ROWS.map`), so a second hand-written copy of the vector cannot drift from this one. A flag
+ * that is a suppression rather than a signal (`suppressIdleTransients`, `suppressDemandMetrics`) is
+ * deliberately absent: removing one of those changes which cases enter the corpus, not how a case is scored,
+ * and a row that changed both would not isolate either.
  */
 export interface AblationProductionRow {
   /** The label the artifact prints. */
@@ -464,7 +472,7 @@ export interface AblationProductionRow {
   readonly flags: AblationFeatureFlags;
 }
 
-/** The production row and its single-flag counterfactual, in the order the battery states them. */
+/** The production row and its single-flag counterfactuals, in the order the battery states them. */
 export const PRODUCTION_ROWS: readonly AblationProductionRow[] = [
   {
     label: 'PRODUCTION (log + trace + rank)',
@@ -477,6 +485,20 @@ export const PRODUCTION_ROWS: readonly AblationProductionRow[] = [
     // differ in.
     suites: [],
     flags: { ...productionFlags('re3'), traceSignal: false },
+  },
+  {
+    label: 'PRODUCTION LESS LOG (trace + rank)',
+    // The log term is the one member that ships ON for every suite, so this is the arm that says what the
+    // shipped ranking would be with no metric-anomaly channel at all.
+    suites: [],
+    flags: { ...productionFlags('re3'), logSignal: false },
+  },
+  {
+    label: 'PRODUCTION LESS RANK (log + trace)',
+    // Rank normalisation changes the ORDER of the terms rather than the weight of one, so it needs its own arm
+    // for the same reason the others do: without it, the artifact prices three of production's four members.
+    suites: [],
+    flags: { ...productionFlags('re3'), rankNormalization: false },
   },
 ];
 

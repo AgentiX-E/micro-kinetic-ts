@@ -623,7 +623,7 @@ describe('the row that IS the published configuration, and the label that was no
     expect(isProductionFlags(productionFlags('re3'), 'all')).toBe(false);
   });
 
-  it('carries ONE production row and the single-flag counterfactual that prices the trace term', () => {
+  it('carries ONE production row and one single-flag counterfactual per term it prices', () => {
     const claimed = PRODUCTION_ROWS.flatMap((row) => row.suites);
     expect([...claimed].sort(), 'every suite is claimed exactly once').toEqual([
       're1',
@@ -640,15 +640,22 @@ describe('the row that IS the published configuration, and the label that was no
     expect(PRODUCTION_ROWS.map((row) => row.label)).toEqual([
       'PRODUCTION (log + trace + rank)',
       'PRODUCTION LESS TRACE (log + rank)',
+      'PRODUCTION LESS LOG (trace + rank)',
+      'PRODUCTION LESS RANK (log + trace)',
     ]);
-    // The counterfactual claims NO suite: it is not the published configuration of anything, and a row that
+    // Every counterfactual claims NO suite: it is not the published configuration of anything, and a row that
     // claimed one would be reported as production while measuring the other arm.
-    expect(PRODUCTION_ROWS[1]!.suites).toEqual([]);
-    // The two rows are a single-flag pair, which is what makes the battery able to price the term at all.
-    const differing = (
-      Object.keys(PRODUCTION_ROWS[0]!.flags) as Array<keyof AblationFeatureFlags>
-    ).filter((key) => PRODUCTION_ROWS[0]!.flags[key] !== PRODUCTION_ROWS[1]!.flags[key]);
-    expect(differing).toEqual(['traceSignal']);
+    for (const row of PRODUCTION_ROWS.slice(1)) expect(row.suites).toEqual([]);
+    // Each is a SINGLE-flag pair with production, and no two price the same flag — that is what lets the
+    // battery answer "what does this term buy" at all, and it is why the list is grown here rather than in the
+    // runner, where a second copy of the vector would drift.
+    const priced = PRODUCTION_ROWS.slice(1).map((row) =>
+      (Object.keys(PRODUCTION_ROWS[0]!.flags) as Array<keyof AblationFeatureFlags>).filter(
+        (key) => PRODUCTION_ROWS[0]!.flags[key] !== row.flags[key],
+      ),
+    );
+    for (const differing of priced) expect(differing).toHaveLength(1);
+    expect(priced.flat().sort()).toEqual(['logSignal', 'rankNormalization', 'traceSignal']);
   });
 
   it('prints the production row differently from the other rows, and says which one it is', () => {
