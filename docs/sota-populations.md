@@ -125,18 +125,23 @@ negative and only one of them is a finding.
   carries the authors' own three affiliations (Nankai, Huawei, Tsinghua) where it used to carry the two that
   omitted the seven-authors' institution.
 
-## Two papers that are not competitors and do bound a premise
+## Three papers that are not competitors and do bound a premise
 
 The 2026-11-10 sweep found no new **entrant** — no new RCA system reporting a number on a benchmark this
-project reads. It did find two observability-infrastructure papers that are not entries and that matter anyway,
-because each prices a premise this engine's theory leans on.
+project reads. It did find three papers that are not entries and that matter anyway, because each prices a
+premise this engine's theory leans on. Two are observability infrastructure; the third is a testing benchmark
+whose *setup* says something about a corpus this project reads.
 
 | work | what it measures | the premise it bounds |
 | --- | --- | --- |
 | **arXiv:2609.23301** (TempoTrace) | formally, that NTP-grade clocks produce **causal inversions in 25–30 % of directed operation pairs** under WAN/cloud conditions (11.3 % under LAN NTP), with a Laplace heavy-tail model giving a 27.76 % weighted expected misorder rate | that a trace's two timestamps are ordered by causality. `latWeight = 0.561495` multiplies an edge latency measured from exactly those two stamps, and the propagation-τ axis this project keeps deferring is an ESTIMATE OF A TIME DIFFERENCE — so a τ fitted from traces is bounded by the clock, and any future claim about it has to state which inversion rate it assumes. The paper's own fix (PTP + hardware timestamping) is a precondition of the measurement, not of the ranking |
 | **arXiv:2609.27538** (Backstitch) | that **673 of 1133 production services** carry at least one silent break in request-context propagation, and that a repair takes the break rate at 240 calls from 90.46 % to 4.69 % | that a call graph augmented from traces is COMPLETE. `docs/rcaeval-corpus.md` records the shipped path augmenting the graph from the case's own spans with `minCallFrequency: 1`; a handoff that drops context is an edge that augmentation cannot see, so a fleet whose break rate is Backstitch's is not a fleet where "edges observed" equals "edges that exist". This is a bound on the corpus, not on the ranker |
+| **arXiv:2611.04769** (RESTberus) | that stock Train Ticket instruments its operations with Hystrix circuit breakers which **intercept a downstream failure and return a synthetic response — an empty payload or an `HTTP 200 OK`** — so "a downstream failure converted into a successful response is never reported"; the authors disable the fallbacks so failures propagate as `5xx`, and their own threats-to-validity section states that disabling them exposes *more* downstream failures than a production deployment retaining the mechanism | that a caller's `error` channel reveals a fault on the service it calls. `docs/emission-jurisdiction.md` §1 already records the shape on this corpus: of the seven cases where the truth had no emission reading, **five are "no `error` channel at all"** and **two of those five are `RE3:TrainTicket` `ts-route-service`** — the *wrong value* axis, whose fault type asserts a corrupted payload rather than a failed call. A boundary that answers `200` with a wrong payload is exactly what Hystrix manufactures, so the absence is **consistent with the premise and not proof of it**. Named and not yet run: on the cached TT telemetry, ask whether a caller's `error` / `http_code` series moves at all during a fault on a service it calls — if it stays flat while latency and payload move, the status channel is muted on this corpus and the TT reading has to be built on level and payload channels. Whether the RCAEval TT deployment retains Hystrix is **not documented** by the corpus |
 
-Neither is a threat to the standing numbers and neither is filed as one. They are recorded because the next
-axis this project has pre-registered — a fleet-common-channel abstention for level channels — depends on
-*which* channels are independent, and both papers say the independence assumptions under a trace-derived channel
-are weaker than the trace format suggests.
+None of the three is a threat to the standing numbers and none is filed as one. The first two are recorded
+because the next axis this project has pre-registered — a fleet-common-channel abstention for level channels —
+depends on *which* channels are independent, and they say the independence assumptions under a trace-derived
+channel are weaker than the trace format suggests. The third is recorded because **RE3 is this project's weakest
+row** (`90.0 / 66.1 / 74.5` against `90.4 / 95.0 / 90.0` and `93.1 / 98.9 / 84.4`), and the paper names a
+mechanism by which a TrainTicket deployment can be silent at the API boundary about exactly the fault type RE3
+is built on.

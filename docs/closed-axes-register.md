@@ -1884,13 +1884,19 @@ rank). The engine ships `victimWeight = 0`, so the completion is a **victim/sour
 acceptance test that would admit the label is pre-registered and falsifiable: `Top@1 >= 1082` **with no fault
 type down**, on this cache, measured per case.
 
-**Two papers entered the record without entering the leaderboard.** `arXiv:2609.23301` (TempoTrace) proves
+**Three papers entered the record without entering the leaderboard.** `arXiv:2609.23301` (TempoTrace) proves
 NTP-grade clocks invert causality on **25–30 %** of directed operation pairs — the shipped `latWeight`
 multiplies a latency measured from exactly those two stamps, and the propagation-τ axis is an estimate of a time
 difference, so a τ fitted from traces is bounded by the clock. `arXiv:2609.27538` (Backstitch) measures silent
 request-context breaks in **673 of 1133** production services — the graph is augmented from the case's own spans,
-so an edge that drops context is an edge augmentation cannot see. Neither is a competitor; both bound a premise
-(`docs/sota-populations.md`).
+so an edge that drops context is an edge augmentation cannot see. `arXiv:2611.04769` (RESTberus) reports that
+stock Train Ticket wires Hystrix circuit breakers which turn a downstream failure into an **empty payload or an
+`HTTP 200 OK`**, so the boundary never reports it; the authors disable the fallbacks to make failures
+observable, and their threats-to-validity admits that doing so exposes more than a production deployment would.
+That last one lands on this project's own record: of the five cases `docs/emission-jurisdiction.md` §1 lists as
+"no `error` channel at all", **two are `RE3:TrainTicket` `ts-route-service`** — the *wrong value* axis, a
+corrupted-payload fault whose caller sees `200`. Consistent, not proof, and the test that would settle it is
+named (`docs/sota-populations.md`). None of the three is a competitor; all three bound a premise.
 
 **What the iteration leaves behind that outlives its verdict:** a replay tool that prices the guard on any
 corpus (`scripts/fse26_duty_cycle_sweep.py`, 28 tests, 100 % branch), a census that makes a producer's error
