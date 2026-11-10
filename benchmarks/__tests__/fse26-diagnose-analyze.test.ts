@@ -57,6 +57,7 @@ import {
   capResolution,
   caseWeightInterval,
   classifyMiss,
+  compileFamilyGlob,
   computeWeightSeparation,
   computeZeroRegressionWindow,
   criterionReadings,
@@ -997,8 +998,80 @@ describe('parseDiagnosticDump — metric competition', () => {
   });
 });
 
+describe('compileFamilyGlob — the only metacharacter is *', () => {
+  it('matches a bare literal anywhere in the label, which is what an unanchored test did', () => {
+    const latency = compileFamilyGlob('latency');
+
+    expect(latency('http.server.duration.latency.p90')).toBe(true);
+    expect(latency('latency')).toBe(true);
+    // Not an equality test: the implicit wildcards at both ends are the point.
+    expect(latency('error.rate')).toBe(false);
+  });
+
+  it('treats a dot as a dot, which is the correction of the regular expression it replaced', () => {
+    const db = compileFamilyGlob('db.*');
+
+    expect(db('db.mysql.latency')).toBe(true);
+    expect(db('db.postgres.connections')).toBe(true);
+    // Under the old `new RegExp('db.*')` this matched, because `.` was any character
+    // and `*` was zero-or-more of it. A family screen over `dbX` is not a family.
+    expect(db('dbx')).toBe(false);
+    // And the pattern is still a SUBSTRING query, which is the other half of the
+    // contract: `db.*` does not anchor, so a label that carries `db.` mid-way belongs
+    // to the family. Anchoring is spelled by giving the segment's own edges.
+    expect(db('vdb.mysql')).toBe(true);
+  });
+
+  it('keeps the segments in order, so a trailing segment cannot arrive first', () => {
+    const glob = compileFamilyGlob('http*.duration');
+
+    expect(glob('http.client.duration')).toBe(true);
+    expect(glob('http.server.duration')).toBe(true);
+    // Both segments are present here and the order is wrong, which is the only
+    // spelling that tests the ordering rather than the presence: `duration.http`
+    // carries neither `.duration` nor an order violation, and it was the first
+    // version of this case — it passed against a compiler that ignored the order.
+    expect(glob('.duration.http')).toBe(false);
+  });
+
+  it('treats every other regular-expression metacharacter as a literal', () => {
+    const glob = compileFamilyGlob('a+b');
+
+    expect(glob('xa+b')).toBe(true);
+    expect(glob('aaab')).toBe(false);
+    // `[` used to make `new RegExp` throw; a glob has no malformed form, so the
+    // character is simply part of the family's name.
+    expect(compileFamilyGlob('[')('a[b')).toBe(true);
+    expect(compileFamilyGlob('[')('ab')).toBe(false);
+  });
+
+  it('is case-sensitive, like the pattern it replaced without flags', () => {
+    expect(compileFamilyGlob('JVM')('jvm.heap.used')).toBe(false);
+    expect(compileFamilyGlob('JVM')('JVM.heap.used')).toBe(true);
+  });
+
+  it('is pure: no call changes the answer to the next one', () => {
+    const glob = compileFamilyGlob('mem*ory');
+    const first = glob('container.memory.rss');
+    // Interleaving a MISS between two hits is what a stateful matcher fails: a
+    // sticky pattern left `lastIndex` past the end and the second call answered false.
+    expect(glob('cpu.usage')).toBe(false);
+    expect(glob('container.memory.rss')).toBe(first);
+    expect(glob('container.memory.rss')).toBe(true);
+  });
+
+  it('refuses the two patterns that look like a filter and behave like its absence', () => {
+    expect(() => compileFamilyGlob('')).toThrow(/empty glob selects no label/);
+    expect(() => compileFamilyGlob('*')).toThrow(/selects every metric/);
+    expect(() => compileFamilyGlob('**')).toThrow(/selects every metric/);
+    // And the message names the pattern that was refused, because a dispatch input
+    // is the usual way an empty one arrives.
+    expect(() => compileFamilyGlob('*')).toThrow(/'\*'/);
+  });
+});
+
 describe('familyCompetition', () => {
-  const MEMORY = { label: 'memory', pattern: /memory/i };
+  const MEMORY = { label: 'memory', isMember: (label: string) => /memory/i.test(label) };
   const caseWith = (faultType: string, services: ServiceSpec[]): DiagnosedCase =>
     parseDiagnosticDump(
       dump({
@@ -1091,10 +1164,11 @@ describe('familyCompetition', () => {
     expect(cell!.sourcesWithoutFamily).toBe(0);
   });
 
-  it('counts every case once even when a global pattern is supplied', () => {
-    // `test` on a global regex advances `lastIndex`, so a naive reducer answers
-    // differently on alternate calls and silently halves its counts.
-    const global = { label: 'memory', pattern: /memory/gi };
+  it('counts every case once, which a stateful matcher would halve', () => {
+    // This test existed to pin `lastIndex` clearing on a GLOBAL pattern. The family
+    // now carries a predicate, so the stateful configuration cannot be expressed at
+    // all — the count is kept because it is the property that broke, not the
+    // mechanism that fixed it.
     const one = caseWith('JVMMemoryStress', [
       {
         serviceId: 'ts-a',
@@ -1103,7 +1177,7 @@ describe('familyCompetition', () => {
       },
     ]);
 
-    const [cell] = familyCompetition([one, one, one], global);
+    const [cell] = familyCompetition([one, one, one], MEMORY);
 
     expect(cell!.cases).toBe(3);
     expect(cell!.sourcesWithFamily).toBe(3);
@@ -4632,9 +4706,12 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
   it('labels a metric family with the pattern when no label is given', () => {
     const opts = dumpMode([...dumpArg, '--family', 'HTTP.*']);
 
-    expect(opts.family).toEqual({ label: 'HTTP.*', pattern: /HTTP.*/ });
+    expect(opts.family?.label).toBe('HTTP.*');
+    expect(opts.family?.isMember('HTTP.client.duration')).toBe(true);
+    expect(opts.family?.isMember('JVM.heap.used')).toBe(false);
     // An unusable pattern is a loud failure, never a report that matches nothing.
-    expect(() => parseAnalyzeArgs([...dumpArg, '--family', '['])).toThrow();
+    expect(() => parseAnalyzeArgs([...dumpArg, '--family', ''])).toThrow(/empty glob/);
+    expect(() => parseAnalyzeArgs([...dumpArg, '--family', '*'])).toThrow(/every metric/);
   });
 
   it('still parses the comparison mode', () => {

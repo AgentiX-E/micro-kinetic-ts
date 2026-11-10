@@ -7013,8 +7013,70 @@ export function formatZeroRegressionWindowReport(
 export interface MetricFamily {
   /** How the report names the family. */
   readonly label: string;
-  /** Matches the labels that belong to the family. */
-  readonly pattern: RegExp;
+  /**
+   * Answers whether a metric label belongs to the family.
+   *
+   * A predicate rather than a `RegExp` because the pattern can arrive on a command
+   * line, and a regular expression assembled from a string is a sink: `--family '.*'`
+   * would compile, and `--family '(a+)+$'` would backtrack. Compiling the pattern
+   * here instead ({@link compileFamilyGlob}) removes the construction rather than
+   * suppressing the report of it, and it makes the matcher stateless by
+   * construction — a predicate that closes over its literal segments holds no
+   * `lastIndex`, so the reducer stays a pure function of its inputs.
+   */
+  readonly isMember: (label: string) => boolean;
+}
+
+/**
+ * Compile a metric-family GLOB into a membership test.
+ *
+ * `--family` names a family of metric labels (`db.*`, `http*`, `latency`), so the
+ * pattern is a query, not a program: the only metacharacter is `*`, which matches
+ * any run of characters including none, and EVERY other character is literal. The
+ * two consequences are deliberate and both are corrections of the regular
+ * expression this flag used to take:
+ *
+ * 1. A `.` is a dot. The recorded screens spell their family `db.*` because they
+ *    mean the labels that start with `db.`; under a regular expression the same
+ *    text also matched `dbX`, and under this glob it does not.
+ * 2. The pattern is matched ANYWHERE in the label, which is the behaviour the
+ *    regular expression had for free (an unanchored `test`). `--family latency`
+ *    therefore still finds `http.server.duration.latency.p90`. The semantics are
+ *    exactly `*<pattern>*`: the implicit wildcards at both ends are what make a
+ *    bare literal a substring query instead of an equality test.
+ *
+ * Two patterns are refused rather than answered, because both look like a filter
+ * and behave like its absence: the EMPTY pattern (a dispatch input that arrived
+ * empty would print a family screen over no labels) and a pattern made only of
+ * wildcards (a family that is every metric is not a family).
+ *
+ * @param source - The glob, as it arrived on the command line.
+ * @returns A pure predicate over metric labels.
+ * @throws Error when the glob is empty or carries no literal character.
+ */
+export function compileFamilyGlob(source: string): (label: string) => boolean {
+  if (source.length === 0) {
+    throw new Error('--family needs a pattern; an empty glob selects no label');
+  }
+  // Splitting on the one metacharacter and keeping the non-empty pieces IS the
+  // compiler: matching is then a left-to-right search for those pieces in order,
+  // which is what `*segment*segment*` means once the wildcards are implicit.
+  const segments = source.split('*').filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    throw new Error(
+      `--family '${source}' selects every metric, which is not a family; ` +
+        'state at least one literal character',
+    );
+  }
+  return (label) => {
+    let from = 0;
+    for (const segment of segments) {
+      const found = label.indexOf(segment, from);
+      if (found < 0) return false;
+      from = found + segment.length;
+    }
+    return true;
+  };
 }
 
 /**
@@ -7057,24 +7119,18 @@ export function tallyDeltas(
 }
 
 /**
- * A non-stateful matcher for a metric family.
+ * The matcher a family carries is already pure, so this reads it rather than
+ * wrapping it.
  *
- * A global or sticky pattern carries `lastIndex` between calls, so `test` would
- * answer differently on alternate invocations and silently halve every count.
- * Rebuilt without those flags, so the reducer stays a pure function of its
- * inputs regardless of how the caller wrote the pattern.
+ * This function used to neutralise a `RegExp`'s `lastIndex` here, because a global
+ * pattern carries that field between calls and `test` would then answer differently
+ * on alternate invocations. That hazard is gone with the pattern: a predicate built
+ * by {@link compileFamilyGlob} closes over its literal segments and nothing else, so
+ * there is no state to clear and the indirection is kept only because the reducer
+ * reads better with a name.
  */
 function familyMatcher(family: MetricFamily): (label: string) => boolean {
-  const { pattern } = family;
-  // `lastIndex` is cleared IN PLACE rather than rebuilt away. Rebuilding from `.source` was the older
-  // shape of this function and it is the construction `js/regex-injection` reports — a pattern assembled
-  // from a string, in a module whose whole input is a dump. Writing the one field that makes a global
-  // pattern stateful is the smaller and more honest operation: it makes the matcher pure without
-  // constructing anything, and it leaves the caller's pattern with the flags it asked for.
-  return (label) => {
-    pattern.lastIndex = 0;
-    return pattern.test(label);
-  };
+  return family.isMember;
 }
 
 /**
@@ -7746,7 +7802,7 @@ const ANALYZE_USAGE =
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
   '[--onset-screen] [--discriminator] [--cv-screen] [--separator-screen] ' +
   '[--guard-census] ' +
-  '[--at-weight <w>] [--family <regex>] [--allow-dropped-blocks] ' +
+  '[--at-weight <w>] [--family <glob>] [--allow-dropped-blocks] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
@@ -7939,29 +7995,20 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     // Carried on the options as well as handed to the reader, so a consumer that never sees the
     // loaded cases can still tell that a comparison was asked for.
     extraDumps,
-    // An invalid pattern is a loud failure, never a report whose family silently
-    // matches nothing. The pattern IS the parameter — `--family` takes a regular expression because the
-    // question the screen asks is "what happened to this family", and no other spelling of a family
-    // expresses `db\..*` — so this is the one construction in the module that is a sink by design. It
-    // reads a command line on the analyst's own machine, and the invalid-pattern path above is what
-    // keeps a malformed one from becoming a family that matches nothing.
-    //
-    // BOTH suppression spellings are carried, and the measurement behind that is the reason they are
-    // still here: `AlertSuppression.ql` documents `codeql[rule-id]` on the line BEFORE the sink and
-    // `lgtm[rule-id]` on the sink's own line, and NEITHER closes this result — the `codeql` form was
-    // in place for a fortnight across four default-setup scans (alert `#13` stayed open), and adding
-    // the `lgtm` form closed `#13` as fixed and opened `#14` on the same line, which is the hash
-    // churn the two forms are documented to trade. The alert is therefore a by-design false positive
-    // that needs a MANUAL dismissal: the REST call needs `security_events: write`, which the token
-    // this repository pushes with does not carry (`403`). Nothing here is untrusted input — it is an
-    // analyst's own command line — so the comment is the record, not the fix.
+    // The family is compiled, never interpreted: `--family` takes a GLOB and
+    // `compileFamilyGlob` turns it into a predicate over labels. That is what
+    // closed `js/regex-injection` `#14` as FIXED rather than dismissed — the sink
+    // was `new RegExp(commandLine)`, and no suppression spelling could close it
+    // because both `codeql[rule-id]` and `lgtm[rule-id]` were already carried here
+    // and neither is a fix. A malformed glob is still a loud failure (an empty one,
+    // or one made only of wildcards), because a family that silently selects
+    // nothing reads exactly like a family with no cases.
     family:
       family === undefined
         ? undefined
         : {
             label: values.get('family-label') ?? family,
-            // codeql[js/regex-injection]
-            pattern: new RegExp(family), // lgtm[js/regex-injection]
+            isMember: compileFamilyGlob(family),
           },
     sections: ANALYZE_SECTION_ORDER.filter((kind) => requested.has(kind)).map((kind) => ({
       kind,
