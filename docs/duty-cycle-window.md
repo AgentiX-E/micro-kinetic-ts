@@ -93,3 +93,56 @@ An unchanged AC@1 is not a licence to skip the fix: the refusal was asymmetric b
 competitors, so it biased the ranking whether or not the bias happened to move this cell's top-1. The change
 ships on the argument in §2 plus the census in §3 (39 admissions, 0 new refusals on the family), and the
 measurement above is what says it is free.
+
+## 5. The second producer: the repair was right, and it reached one corpus
+
+Everything above was measured on RCAEval, whose converter names the error family `error`. The FSE'26
+converter derives **the same quantity** — the share of a service's spans whose HTTP response status is `>= 400`
+— and names it `http.response.error_rate`. Membership of the event family is an exact list of literal labels,
+and that name was never in it, so on the archive where the published score is measured the guard kept the
+whole-recording denominator and refused the truth's own error channel.
+
+It was refused on the shape the guard exists to protect. `ts2-ts-ui-dashboard-response-replace-code-7nldtm`:
+the truth's series reads `0.00` for 24 samples, then `16.1 / 16.7 / 16.9 / …`, and every other service reads
+`0.00` throughout. The dump for that case prints
+
+```
+metricDrop(30): … http.response.error_rate:duty-cycled-idle …
+metricKept(15): http.response.error_rate=0.820 …   ← the same channel, in the run that KEPT it
+```
+
+so the family was the node's decisive evidence and was discarded in the same breath. The prediction for that
+case was `ts-auth-service` and the truth was not in the top five.
+
+### What the repair is worth, in two numbers
+
+**Population** (`scripts/fse26_duty_cycle_sweep.py`, which replays both windows on every case's own truth
+channel, and which names the truth service from the datapack by anchoring the fault phrase on the RIGHT):
+
+| reading | cases | share of judgeable |
+| --- | --: | --: |
+| datapacks in the archive | 1422 | — |
+| truth carries no rate series at all | 74 | — |
+| too short to judge | 1 | — |
+| **judgeable** | **1347** | 100% |
+| whole-recording rule drops the truth channel | **1344** | **99.8%** |
+| post-injection window keeps it | **661** | 49.1% |
+
+The `683` the window still refuses are the sporadic shape the guard was written for. The rescued population is
+concentrated exactly where the archive's remaining gap is — `response-replace-code` `219`,
+`request-replace-method` `177`, `response-replace-body` `48`, `request-abort` `46`, `exception` `39`,
+`request-replace-path` `38`, `response-abort` `38` — so this is not a repair that only touches one family's
+tail.
+
+**Effect** (a 60-case stratified sample, both arms on the same shards): Top@1 `43/60 → 44/60`
+(`71.7% → 73.3%`), Top@3 `83.3% → 86.7%`, Top@5 `85.0% → 91.7%`, **`+1/−0` at Top@1 and `+5/−0` at Top@5**.
+Four of the five Top@5 recoveries are `ts-ui-dashboard` cases that had been outside the top five entirely.
+
+### What it does not fix, and the number that says so
+
+The dashboard case still does not win. Its channel survives now and scores `0.820`, while eight decoy services
+carry `jvm.system.cpu.load_1m` at `0.884 / 0.847` with **identical** `dev / trend / cv / rise / base` — one
+fleet-wide shift reported eight times. That is the next axis and it is not this one: a channel whose shift is
+shared across the fleet cannot identify a service, and the engine has an abstention rule of that shape
+(`POD_STATE_MAX_FLEET_SHARE`) for the pod term only. It is pre-registered in
+`docs/closed-axes-register.md` iteration 259 with these numbers.

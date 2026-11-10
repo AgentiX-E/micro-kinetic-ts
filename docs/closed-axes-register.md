@@ -1843,3 +1843,49 @@ now prints both anchors, the position this corpus holds (**4th** in the agentic 
 best, `−28.5 pp` on the pre-rebuild corpus), and it names the panel in the cell rather than in a footnote. The
 2026-11-10 sweep found **no new entrant**: `2610.35767` (RCAtlas), `2611.02416` (SLM RCA) and `2609.27069`
 (graph-vs-flat) are each already in the record with their own caveats, so the sweep's only change is this row.
+
+## Iteration 259 — the guard reached one corpus, and the error channel was thrown away on the other
+
+**A repair that is correct, tested, documented — and unreachable where the score is measured.** Iteration 78
+found that the idle guard's denominator is the whole recording, and that a fault case's first half is quiet BY
+CONSTRUCTION, so the 40% line sat below the structural floor of any channel a fault moves; the repair measures
+an EVENT channel over the post-injection half instead. Event membership is an exact list of literal labels
+(`EVENT_METRIC_LABELS`), written against the RCAEval converter's name for that channel, `error`. The FSE'26
+converter derives the same quantity from the same spans and calls it `http.response.error_rate`. It was never
+in the list, so on the archive where `1073/1422` is measured the guard kept the whole-recording denominator and
+dropped the truth's own error channel as `duty-cycled-idle`.
+
+The case that exposed it, from the diagnostic dump rather than from a hypothesis:
+`ts2-ts-ui-dashboard-response-replace-code-7nldtm`, truth `ts-ui-dashboard`, whose rate series reads `0.00` for
+24 samples then `16.1 / 16.7 / 16.9 / …` while every decoy reads `0.00` throughout. The dump prints the family
+in `metricDrop(30): … duty-cycled-idle` and the engine's prediction for that case does not contain the truth in
+its top five. Bringing the label into the family moves that case's channel to `metricKept`, decisive, at
+`0.820`.
+
+**Population, replayed rather than argued** (`scripts/fse26_duty_cycle_sweep.py`, which rebuilds the converter's
+series and asks the guard's question on the truth service in both windows): of **1347** judgeable datapacks
+(1422 total, 74 whose truth service carries no rate series at all and 1 too short), the whole-recording rule
+drops the truth's channel on **1344 — 99.8%** — and the post-injection window keeps it on **661**. The rescued
+population is spread across the fault types with the archive's remaining gap: `response-replace-code` `219`,
+`request-replace-method` `177`, `response-replace-body` `48`, `request-abort` `46`, `exception` `39`. The `683`
+the window still refuses are the sporadic shape the guard was built for, which is why the family gains a WINDOW
+and never an exemption.
+
+**Effect, on two disjoint local samples** (same shards, both arms, per-case verdicts): 60 HTTP cases
+`43 → 44` at Top@1 and `51 → 55` at Top@5, `+1/−0` and `+5/−0`; 48 Network/JVM cases **48 of 48 verdicts
+identical**, one rank-5 tie-break moved. Four of the five Top@5 recoveries are `ts-ui-dashboard` cases that had
+been outside the top five entirely.
+
+**The membership is now guarded rather than remembered.**
+`packages/tree/__tests__/causal/event-family-census.test.ts` reads the converter, takes every family it emits,
+and fails when an error-named family is undeclared — or when a level-named family IS declared, because that
+would move a window the guard was written to keep. A list of names cannot be checked against the producers that
+write names; this is that check.
+
+**What it does not fix, pre-registered here with its numbers.** The dashboard case still does not win. Its
+channel survives and scores `0.820`, while eight decoy services carry `jvm.system.cpu.load_1m` at
+`0.884 / 0.847` with **identical** `dev / trend / cv / rise / base` — one fleet-wide shift, reported eight
+times, outranking a channel with a unique `0.00 → 16.7` step. The engine has an abstention rule of that shape
+for the pod term (`POD_STATE_MAX_FLEET_SHARE`) and none for level channels. That is the next axis: a channel
+whose shift is shared across the fleet cannot identify a service, and the quantity that says so is measurable
+per case from the diagnostic dump the run already produces.
