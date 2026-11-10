@@ -1727,3 +1727,36 @@ One defect was found by building the instrument rather than by running it: `run-
 block as `varies=selfAnomalyWeight,<own field>` on every row. The selection now carries its control explicitly
 (`PRODUCTION_WEIGHT_CONFIGS`), and the fence asserts the control is the shipped configuration. The same fence
 holds the partition: a weight that ships non-zero and has neither an arm nor a stated reason fails the build.
+
+## Iteration 257 — the shares are one composite, and the half that could not be measured
+
+Two things happened, and the second is the larger one.
+
+**The pre-registered joint arm refutes the additive reading of the anomaly composition.** `TREND` and `CV` were
+the only pair whose single arms landed on the same case with opposite signs; the question was written down before
+the arms existed (`667` = one shared case, `668` = two independent cases) and neither number is what the pair
+reads. `LESS TREND + CV` is **`665/735`**: `RE1` `345`, `RE2` **`247`**, `RE3` `73`, against a sum of singles that
+predicts `667` and a measured interaction of `−2`. The witnesses are fault-type cells, not prose: `RE1` SockShop
+`loss` gains a case **only** when both shares are gone (`19/19/19 → 20`), `RE2` OnlineBoutique `loss` loses a
+second case the singles never touched (`12/11/12 → 10`), and `RE3` TrainTicket `f2` is recovered by either
+removal alone (`5/6/6 → 6`), i.e. one case, not two. The mechanism is in the code rather than inferred: the shares
+are additive in `featureScore`, and the interaction arrives when `buildTopologyFaultGraph` **re-scales the field
+over the fleet** — a share moves the maximum, so it moves every candidate's base term, and only then is the
+result compared against the weighted signals. **`anomalyCvWeight = 0` is therefore not shipped** despite its
+`+2`: the same corpus moves to `665` under one adjacent edit, so the margin is a knife edge, and the register's
+rule about summaries outliving corrections applies to a default change exactly as it applies to a sentence.
+
+**And the FSE'26 half cannot be measured at all right now, which invalidates the AND criterion for every
+candidate rather than only this one.** A dispatch at `74e1a306` is refused by the provenance gate:
+`converterDigest mismatch: cache sha256:f83af14d…, checkout sha256:f72899e5…`. The cache tag the consumer defaults
+to (`rcabench-latency-full`) was last built **2026-09-14**, and the converter changed on **2026-11-08**
+(`cc26232d`, *read the pod lifecycle*). So the accepted shape — *golden half up AND FSE'26 zero regressed fault
+types* — has had no measurable second half since that commit, and the published `61.46% (874/1422)` is a
+reading of an older converter's shards. The rebuild is dispatched (`AgentiX-E/rcabench-data` run `42721719446`,
+new tag `rcabench-pod-v1`) rather than worked around: the gate is doing its job, and the repository's own rule is
+that a staleness a gate can see must not be answered by pinning an older checkout of the thing under test.
+
+The register records both because they are the same failure in two costumes — a number whose provenance was one
+step weaker than the sentence it supported — and because the second one explains why this iteration ends with no
+default changed: the criterion that would license it is temporarily unsatisfiable, and saying so is the
+measurement.

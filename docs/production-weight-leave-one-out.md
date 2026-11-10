@@ -99,12 +99,20 @@ deviation — and on TrainTicket, the only cell with 63–69 services and near-z
 channel receives that bonus and outranks the truth. Removing the share does not make the ranking worse anywhere
 else, which is what a tie-break score of `0.05` against a base term of `1.0` predicts.
 
-`LESS TREND` reads the same `RE3` case (`+1`) and loses two (`RE1:OnlineBoutique`, `RE2:SockShop`), netting
-`−1`; it is therefore **not** a candidate, and it is worth naming why the two arms are not symmetric: the trend
-share (`0.15`) is three times the dispersion share and measures monotone drift, which is real evidence for a
-ramp-shaped fault; dispersion is not evidence of anything.
+`LESS TREND` reads the same `RE3` case (`+1`) and nets `−1`, and the cell-level rows say it is **three losses
+against two gains** rather than the two losses this paragraph claimed before the fault-type rows were read:
+`RE1` OnlineBoutique `delay` `24 → 23`, `RE2` OnlineBoutique `loss` `12 → 11`, `RE2` SockShop `delay`
+`14 → 13`, against gains on `RE2` TrainTicket `mem` `14 → 15` and `RE3` TrainTicket `f2` `5 → 6`. It is
+therefore **not** a candidate, and it is worth naming why the two arms are not symmetric: the trend share
+(`0.15`) is three times the dispersion share and measures monotone drift, which is real evidence for a
+ramp-shaped fault; dispersion is not evidence of anything — **but that reading is itself qualified below**, where
+the pre-registered pair shows the two shares do not compose additively.
 
 ## The confirmation, on the instrument that publishes
+
+> **Superseded in part** by *The joint arm* below: the `+2` is reproduced here as a configuration reading, and the
+> pre-registered pair shows the composition's response to its own coefficients is larger than the margin. The
+> default is consequently unchanged.
 
 The two cases the arm found were re-measured on the **golden** runner — `run-rcaeval.ts`, the code path the nine
 published cells come from — with the knob passed as a dispatch input rather than by editing a default
@@ -131,6 +139,55 @@ the same coefficient is live on the FSE'26 half's 1422 datapacks. A default chan
 would be the mistake iterations 129 and 249 each paid for. The change is pre-registered for the next iteration
 with the FSE'26 dispatch as its first step; the arm, its confirmation and the exact command are recorded here so
 that the next session starts from a measurement instead of an intuition.
+
+## The joint arm: the two shares are not separable, and the pair refutes the sum
+
+`TREND` and `CV` were the only pair whose single arms landed on the same case with opposite signs, and the
+question was pre-registered above: `667` if the `RE2` gain and the `RE2` loss are one case, `668` if they are not.
+The pair was run (`42722364076`, twelve rows, one job per suite) and **neither number is what it reads**:
+
+| arm | `RE1` (375) | `RE2` (270) | `RE3` (90) | total (735) |
+| --- | --: | --: | --: | --: |
+| **production** (control) | 345 | 249 | 72 | **666** |
+| `LESS TREND` | 344 | 248 | 73 | 665 |
+| `LESS CV` | 345 | **250** | 73 | **668** |
+| **`LESS TREND + CV`** | 345 | **247** | 73 | **665** |
+| sum of the two singles' deltas | `−1` | `0` | `+2` | `+1` |
+| measured joint delta | `0` | `−2` | `+1` | **`−1`** |
+
+**The interaction is the same size as the effects it was supposed to compose, and it changes sign with the
+suite.** Three witnesses, each a fault-type cell whose case count is `caseReps / 3`:
+
+| cell | cases | production | `−TREND` | `−CV` | `−TREND + CV` | what it is |
+| --- | --: | --: | --: | --: | --: | --- |
+| `RE1` SockShop `loss` | 25 | 19 | 19 | 19 | **20** | a case **neither removal fixes alone** |
+| `RE2` OnlineBoutique `loss` | 15 | 12 | 11 | 12 | **10** | the pair costs **two** where the singles cost one and none |
+| `RE3` TrainTicket `f2` | 7 | 5 | 6 | 6 | **6** | both removals recover **the same** case |
+
+### The mechanism, read off the code rather than inferred from the table
+
+The shares are additive in `featureScore` (`deviation + trendBonus + burstBonus + cvBonus`), so the interaction
+cannot come from the sum. It comes from what happens next: `buildTopologyFaultGraph` **re-scales the field to
+`[0,1]` over the fleet**, and the base term is `log1p` of that rescaled value. A share therefore does not add to
+the truth's score alone — it moves the fleet's maximum, which re-scales **every** candidate, and only then is the
+result compared against the weighted signals. That is why `RE1` SockShop `loss` gains a case only when both
+shares are gone (the two competitors that were above the truth each lose their amplifier, and neither removal
+alone is enough to reorder them) and why `RE2` OnlineBoutique `loss` loses a second case the singles never
+touched.
+
+### What this refutes, and the decision it forces
+
+1. **The vector is not additive under removal, and this document cannot price it as if it were.** The 256th
+   iteration warned that leave-one-out is a first-order marginal; this is the measured counterexample, and it is
+   larger than three of the nine margins it qualifies.
+2. **`anomalyCvWeight = 0` is NOT shipped.** Its `+2` is real as a *configuration* reading — the golden runner
+   reproduced it cell for cell — but the neighbourhood probe says a single adjacent edit takes the same corpus to
+   `665`. A 0.27 pp difference whose sign is not stable under the next edit is not a default to change; it is a
+   knife edge, and shipping it would be fitting noise dressed as a mechanism (`docs/drop-deviation-symmetry.md`
+   records the same refusal for the same reason).
+3. **The three anomaly shares are read as ONE composite for the rest of the accounting.** Any future arm that
+   varies `trend`, `cv` or `breadth` has to be read against `TREND + CV`-style neighbours before its margin is
+   quoted anywhere, because their single-arm deltas are not components of it.
 
 ## What is not priced, and why the omission is stated
 
@@ -192,10 +249,11 @@ transfers is the direction of the evidence, and it points the same way this iter
 ## Reproduction
 
 ```
-gh workflow run benchmark-production-weights.yml          # eleven rows, one job per suite
+gh workflow run benchmark-production-weights.yml          # twelve rows, one job per suite
 pnpm exec tsx benchmarks/src/run-ablation.ts --suite re1 --only production-weights
 ```
 
-The first command is the artifact this document cites (`42660148243`); the second is the same selection locally.
-`--only` selects eleven rows rather than the battery's fifty, which is why one suite takes ten minutes instead of
-forty — and its control row is what lets a local run be compared with a published cell at all.
+The first command is the artifact this document cites (`42722364076`, and `42660148243` before the joint arm
+joined the table); the second is the same selection locally. `--only` selects twelve rows rather than the
+battery's fifty, which is why one suite takes ten minutes instead of forty — and its control row is what lets a
+local run be compared with a published cell at all.
