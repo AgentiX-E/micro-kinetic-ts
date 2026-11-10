@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       shard_tag:
-        description: 'rcabench-data release tag holding the shards (explicit; never `latest`). The default names the cache the CURRENT converter revision matches, so a bare dispatch runs; any other tag is refused by the provenance gate below unless its manifest digest was built from this checkout'
+        description: 'rcabench-data release tag holding the shards (never `latest`). EMPTY = resolve it from this checkout''s converter digest, which is the only property that identifies a usable cache: the workflow lists every released cache, reads its manifest digest, and selects the one this converter produced (refusing when none or several match). An explicit tag PINS the cache and is still refused by the provenance gate below unless its manifest was built from this checkout. The pinned default this input used to carry (`rcabench-latency-full`) went stale on 2026-11-08, when the converter gained the pod-lifecycle channel: for one iteration every bare dispatch was refused by its own gate, and the refusal named two digests and no tag'
         required: false
-        default: 'rcabench-latency-full'
+        default: ''
       categories:
         description: 'Comma-separated fault categories to download (empty = all 7)'
         required: false
@@ -106,13 +106,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Resolve which released cache this checkout can consume ──
+      #   The identification of a cache is its manifest's `converterDigest` — the
+      #   same field the gate below checks — so the tag can be DISCOVERED from the
+      #   digest instead of remembered by a human. That is the difference between a
+      #   default that can go stale and one that cannot: `rcabench-latency-full`
+      #   shipped as the default and stopped matching when the converter gained the
+      #   pod-lifecycle channel (`cc26232d`), so every bare dispatch was refused by
+      #   its own gate until an operator downloaded manifests by hand and found the
+      #   rebuild sitting on a release whose NAME (`rcabench-pod-v1`) describes the
+      #   converter change. The selection is exact and refuses on both sides: no
+      #   match means a rebuild is needed, two matches mean the choice between them
+      #   cannot be made by name and the dispatch must pin `shard_tag`.
+      #
+      #   A pinned tag skips this step entirely, and is still gate-checked below.
+      - name: Resolve the cache tag from this checkout's converter digest
+        env:
+          PINNED_TAG: ${{ inputs.shard_tag }}
+          DATA_REPO: https://github.com/AgentiX-E/rcabench-data
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/rcabench"
+          if [ -n "$PINNED_TAG" ]; then
+            echo "SHARD_TAG=$PINNED_TAG" >> "$GITHUB_ENV"
+            echo "Cache tag PINNED by the dispatch: $PINNED_TAG"
+            exit 0
+          fi
+          # `git ls-remote` rather than the releases API: the runner's token is
+          # scoped to THIS repository, and an unauthenticated API listing shares a
+          # 60/hour budget with every other job on the host's IP.
+          CANDIDATES="$HOME/rcabench/candidates.txt"
+          : > "$CANDIDATES"
+          for tag in $(git ls-remote --tags --refs "$DATA_REPO" | awk '{print $2}' | sed 's|refs/tags/||'); do
+            if curl -fsSL --retry 5 --retry-all-errors \
+                 -o "$HOME/rcabench/manifest-$tag.json" \
+                 "$DATA_REPO/releases/download/$tag/manifest.json"; then
+              digest=$(python3 -c \
+                "import json,sys;print(json.load(open(sys.argv[1])).get('converterDigest') or '')" \
+                "$HOME/rcabench/manifest-$tag.json")
+              printf '%s\t%s\n' "$tag" "$digest" >> "$CANDIDATES"
+            else
+              echo "  $tag: no manifest.json, so it is not a cache release"
+            fi
+          done
+          echo "Released caches and the converter that built each:"
+          sed 's/^/  /' "$CANDIDATES"
+          EXPECTED=$(python3 scripts/fse26_provenance.py --root scripts --digest)
+          TAG=$(python3 scripts/fse26_cache_select.py --expected "$EXPECTED" --candidates "$CANDIDATES")
+          echo "SHARD_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Cache tag resolved for converter $EXPECTED: $TAG"
+
       # ── Download pre-built per-category shards from rcabench-data ──
       #   The converted case.json output is pre-split into 7 fault-category
       #   shards and hosted as Release assets on AgentiX-E/rcabench-data, so
       #   the benchmark no longer downloads the 13.4 GB archive or re-runs the
       #   Parquet conversion.
       #
-      #   The tag is explicit, never `releases/latest`. Re-uploading assets with
+      #   The tag is never `releases/latest`. Re-uploading assets with
       #   `gh release upload --clobber` does not refresh a release's
       #   `published_at`, so `latest` keeps pointing at whichever release was
       #   *created* most recently and silently serves a superseded set. That is
@@ -120,8 +170,6 @@ jobs:
       #   predate the label fan-out fix, while the rebuilt shards sat on
       #   `rcabench-full` -- and a full run was dispatched against the stale set.
       - name: Download shards from rcabench-data
-        env:
-          SHARD_TAG: ${{ inputs.shard_tag }}
         run: |
           mkdir -p "$HOME/rcabench/json"
           BASE="https://github.com/AgentiX-E/rcabench-data/releases/download/$SHARD_TAG"
@@ -158,6 +206,7 @@ jobs:
           python3 scripts/fse26_provenance.py \
             --root scripts \
             --manifest "$HOME/rcabench/manifest.json" \
+            --cache-label "$SHARD_TAG" \
             --shard-dir "$HOME/rcabench" \
             --categories "$RCABENCH_CATEGORIES"
           cp "$HOME/rcabench/manifest.json" manifest.json

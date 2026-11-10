@@ -361,6 +361,40 @@ class TestVerifyShards(unittest.TestCase):
 
 
 class TestMain(unittest.TestCase):
+    def test_digest_prints_only_the_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _write_sources(Path(tmp))
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                rc = provenance.main(["--root", str(root), "--digest"])
+            expected_digest = provenance.converter_digest(root)
+        self.assertEqual(rc, 0)
+        # The caller pipes this straight into the cache selector, so it is one line
+        # and nothing else -- a JSON block here would be a parsing step in a shell.
+        self.assertEqual(buffer.getvalue().strip(), expected_digest)
+
+    def test_digest_fails_loudly_when_the_sources_are_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            errors = io.StringIO()
+            with contextlib.redirect_stderr(errors):
+                rc = provenance.main(["--root", tmp, "--digest"])
+        self.assertEqual(rc, 1)
+        self.assertIn("ERROR:", errors.getvalue())
+
+    def test_the_cache_label_names_the_tag_in_a_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _write_sources(Path(tmp))
+            manifest = _manifest(root, converterDigest="sha256:" + "0" * 64)
+            problems = provenance.verify_provenance(manifest, root, label="rcabench-latency-full")
+        self.assertIn("(cache 'rcabench-latency-full')", problems[0])
+
+    def test_without_a_label_the_message_keeps_its_old_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _write_sources(Path(tmp))
+            manifest = _manifest(root, converterDigest="sha256:" + "0" * 64)
+            problems = provenance.verify_provenance(manifest, root)
+        self.assertNotIn("cache '", problems[0])
+
     def test_print_emits_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = _write_sources(Path(tmp))

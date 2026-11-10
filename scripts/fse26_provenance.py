@@ -171,14 +171,23 @@ def provenance(root: Path, revision: str | None = None) -> dict[str, Any]:
     }
 
 
-def verify_provenance(manifest: dict[str, Any], root: Path) -> list[str]:
+def verify_provenance(
+    manifest: dict[str, Any], root: Path, *, label: str | None = None
+) -> list[str]:
     """
     Return the provenance mismatches between `manifest` and the converter at `root`.
 
     An empty list means this checkout produced that cache. A manifest predating
     provenance is reported as a failure rather than skipped: the whole purpose is
     to refuse an unknown cache, and "no digest recorded" is the unknown case.
+
+    `label` names the cache in the mismatch messages. It is optional because the
+    function is also called without a tag, but the caller that HAS one should pass
+    it: on 2026-11-10 this gate printed the two digests and no tag, and the operator
+    had to download release manifests by hand to learn which cache the run had
+    actually asked for.
     """
+    where = f" (cache {label!r})" if label else ""
     problems: list[str] = []
     recorded_version = manifest.get("schemaVersion")
     if recorded_version != SCHEMA_VERSION:
@@ -188,14 +197,14 @@ def verify_provenance(manifest: dict[str, Any], root: Path) -> list[str]:
     recorded_digest = manifest.get("converterDigest")
     if not recorded_digest:
         problems.append(
-            "manifest has no converterDigest (predates provenance): "
+            f"manifest has no converterDigest{where} (predates provenance): "
             "the cache's converter revision is unknown"
         )
         return problems
     expected_digest = converter_digest(root)
     if recorded_digest != expected_digest:
         problems.append(
-            f"converterDigest mismatch: cache {recorded_digest}, checkout {expected_digest}"
+            f"converterDigest mismatch{where}: cache {recorded_digest}, checkout {expected_digest}"
         )
     return problems
 
@@ -257,8 +266,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--print", dest="emit", action="store_true", help="Print this checkout's provenance block."
     )
+    parser.add_argument(
+        "--digest",
+        action="store_true",
+        help="Print only this checkout's converter digest, for a caller that has to compare it.",
+    )
+    parser.add_argument(
+        "--cache-label",
+        help="Name the cache in mismatch messages (the release tag, when the caller knows it).",
+    )
     args = parser.parse_args(argv)
     root = Path(args.root)
+
+    if args.digest:
+        try:
+            print(converter_digest(root))
+        except (OSError, FileNotFoundError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     if args.emit:
         try:
@@ -283,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest = json.loads(manifest_path.read_text("utf-8"))
     try:
-        problems = verify_provenance(manifest, root)
+        problems = verify_provenance(manifest, root, label=args.cache_label)
     except (OSError, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
