@@ -1819,3 +1819,25 @@ name must not decide). `shard_tag` is still accepted as an explicit override and
 inventory this produced is recorded in `docs/fse26-cache-selection.md`, including the two tags that share
 `f83af14d…` (`rcabench-prefix-latency` and `rcabench-latency-full`) — which is the ambiguity branch of the
 selector, measured rather than imagined, and the reason it refuses rather than picks.
+
+**The per-case verdicts are published, and the census is what caught it.** `run-fse26.ts` has taken
+`--per-case-out` since the judgement question came up and no workflow ever passed it; the census listed it as an
+operational flag no workflow reaches, with the reason *"the ranking it exports is the one the run already
+counted"*. That reason is the same mistake the joint arm punished one iteration earlier — a fault type's **count**
+cannot distinguish `+2/−0` from `+2/−2` — so the flag is now passed, the file is uploaded with the other two, and
+`scripts/compare_fse26_per_case.py` reads two runs as cases: gained, lost, corpus differences excluded (a corpus
+difference is not a flip), and a `NET-ZERO BUT NOT IDENTICAL` section for every type whose count is unchanged and
+whose case set is not. The push that wired the flag failed `Release` on `dispatch-surface-census`, which is the
+census doing its job in the direction it was built for; the entry was **removed**, not reworded, because that
+list only moves by removal when a flag becomes reachable. Correctness is recomputed from each row's own
+`accepted`/`ranked`, so `--depth` re-judges Top@1 as Top@3 over the same bytes.
+
+**And the most-read line of `docs/sota-comparison.md` was anchored to a panel that cannot read telemetry.** The
+FSE'26 STANDING row printed `+38.5 pp over the best 37%` — arithmetic against the benchmark paper's own panel
+(avg 21%, best 37%, `arXiv:2510.04711`) — while the 2026 agent literature on the same benchmark reports up to
+**90.0%** (Sonnet·ThinkDepth.ai, `arXiv:2608.21310` Table 2). The document said *"we are not first on RCABench"*
+three sections later, so nothing in it was false; the row was, by omission, and the row is what gets quoted. It
+now prints both anchors, the position this corpus holds (**4th** in the agentic panel, `−14.5 pp` behind the
+best, `−28.5 pp` on the pre-rebuild corpus), and it names the panel in the cell rather than in a footnote. The
+2026-11-10 sweep found **no new entrant**: `2610.35767` (RCAtlas), `2611.02416` (SLM RCA) and `2609.27069`
+(graph-vs-flat) are each already in the record with their own caveats, so the sweep's only change is this row.
