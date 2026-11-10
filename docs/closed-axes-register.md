@@ -1827,7 +1827,7 @@ selector, measured rather than imagined, and the reason it refuses rather than p
 operational flag no workflow reaches, with the reason *"the ranking it exports is the one the run already
 counted"*. That reason is the same mistake the joint arm punished one iteration earlier — a fault type's **count**
 cannot distinguish `+2/−0` from `+2/−2` — so the flag is now passed, the file is uploaded with the other two, and
-`scripts/compare_fse26_per_case.py` reads two runs as cases: gained, lost, corpus differences excluded (a corpus
+`scripts/compare_fse26_per_case.py` reads two runs as cases — `docs/fse26-per-case-verdicts.md` —: gained, lost, corpus differences excluded (a corpus
 difference is not a flip), and a `NET-ZERO BUT NOT IDENTICAL` section for every type whose count is unchanged and
 whose case set is not. The push that wired the flag failed `Release` on `dispatch-surface-census`, which is the
 census doing its job in the direction it was built for; the entry was **removed**, not reworded, because that
