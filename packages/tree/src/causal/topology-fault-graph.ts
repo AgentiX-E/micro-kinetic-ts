@@ -773,8 +773,30 @@ export function isDemandMetric(label: string): boolean {
  * structural floor of any channel a fault moves, and on RE3:SockShop it refused the TRUTH's own `error` channel
  * on 18 of 30 cases while never refusing the winner's (`docs/duty-cycle-window.md` §1). The family is named
  * here, on the same rule as {@link DEMAND_METRIC_LABELS}: a channel is not in it until somebody says it is.
+ *
+ * ## Two producers, one quantity, and the two iterations the second name cost
+ *
+ * An exact list is only as complete as the producers somebody remembered. This one was written against the
+ * RCAEval converter, which names the family `error`; the FSE'26 converter derives the SAME quantity from the
+ * same spans and names it `http.response.error_rate`. Membership never followed, so the window repair above was
+ * correct, tested, documented — and **unreachable on the corpus where the published score is measured**. The
+ * guard kept the whole-recording denominator there and refused the truth's own error channel as
+ * `duty-cycled-idle`: in `ts2-ts-ui-dashboard-response-replace-code-7nldtm` the channel steps `0.00 → 16.7`
+ * and was the service's DECISIVE evidence in the same dump that dropped it.
+ *
+ * Measured over the archive rather than argued (`scripts/fse26_duty_cycle_sweep.py` replays both windows on
+ * every case's own truth channel): of the **1347** datapacks that carry a truth-side rate series long enough to
+ * judge, the whole-recording rule drops the channel on **1344** and the post-injection window keeps it on
+ * **661** — `219` of them `response-replace-code` and `177` `request-replace-method`, the two fault types with
+ * the archive's largest remaining gaps. The **683** it still refuses are the shape the guard exists for — a
+ * channel that is sporadic inside the fault window too — which is why the family gains a WINDOW here and never
+ * an exemption.
+ *
+ * The name is not the mechanism, so the next one is guarded rather than remembered:
+ * `__tests__/causal/event-family-census.test.ts` reads every producer, takes the families it emits, and fails
+ * when an error-named family is undeclared — or when a level family IS declared.
  */
-export const EVENT_METRIC_LABELS: readonly string[] = ['error'];
+export const EVENT_METRIC_LABELS: readonly string[] = ['error', 'http.response.error_rate'];
 
 /**
  * Whether a label names an EVENT channel — a count of things that happened, whose zero is a measurement.
