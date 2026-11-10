@@ -1149,11 +1149,13 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
 const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
   '--routing-probe':
     'writes a routing-feasibility probe; an output path the workflow does not read back',
-  '--per-case-out':
-    'writes one verdict line per case so a published average can be re-scored under a judgement chosen after ' +
-    "the run; an output path the workflow does not read back, and the FSE'26 dispatch needs no second file " +
-    'because the ranking it exports is the one the run already counted. It exists for a COMPARISON run, which ' +
-    'is executed on the corpus directly rather than through the dispatch',
+  // `--per-case-out` USED TO BE HERE, with the reason "an output path the workflow does not read back,
+  // and the FSE'26 dispatch needs no second file because the ranking it exports is the one the run
+  // already counted". Both halves of that reason were wrong and the second one was expensive: a fault
+  // type's count cannot distinguish "+2 gained, 0 lost" from "+2 gained, 2 lost", and iteration 257's
+  // joint arm was the second shape while its aggregate read `+2 − 2 = 0`. The workflow now passes the
+  // flag and publishes the verdict file, so the entry is REMOVED rather than reworded — this list only
+  // moves by removal when a flag becomes reachable, which is the direction it is allowed to move.
   '--system':
     'narrows one suite to a single microservice system; the workflow dispatches whole suites',
   '--max-cases':
