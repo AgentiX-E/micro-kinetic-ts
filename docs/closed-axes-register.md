@@ -1746,17 +1746,30 @@ result compared against the weighted signals. **`anomalyCvWeight = 0` is therefo
 `+2`: the same corpus moves to `665` under one adjacent edit, so the margin is a knife edge, and the register's
 rule about summaries outliving corrections applies to a default change exactly as it applies to a sentence.
 
-**And the FSE'26 half cannot be measured at all right now, which invalidates the AND criterion for every
-candidate rather than only this one.** A dispatch at `74e1a306` is refused by the provenance gate:
-`converterDigest mismatch: cache sha256:f83af14d…, checkout sha256:f72899e5…`. The cache tag the consumer defaults
-to (`rcabench-latency-full`) was last built **2026-09-14**, and the converter changed on **2026-11-08**
-(`cc26232d`, *read the pod lifecycle*). So the accepted shape — *golden half up AND FSE'26 zero regressed fault
-types* — has had no measurable second half since that commit, and the published `61.46% (874/1422)` is a
-reading of an older converter's shards. The rebuild is dispatched (`AgentiX-E/rcabench-data` run `42721719446`,
-new tag `rcabench-pod-v1`) rather than worked around: the gate is doing its job, and the repository's own rule is
-that a staleness a gate can see must not be answered by pinning an older checkout of the thing under test.
+**And the second half of the kill criterion was, until this iteration, measuring a corpus the engine could not
+read.** A dispatch at `74e1a306` was refused outright: `converterDigest mismatch: cache sha256:f83af14d…,
+checkout sha256:f72899e5…`. The cache the consumer defaults to (`rcabench-latency-full`) was built **2026-09-14**;
+the converter gained the pod-lifecycle channel on **2026-11-08** (`cc26232d`), which `podStateWeight = 8` reads. So
+the published `61.46% (874/1422)` is a reading of shards on which that term's map was **empty by construction**,
+and no dispatch could produce a different one. The cache was rebuilt through its own documented path
+(`rcabench-data` run `42721719446`, tag `rcabench-pod-v1`, converter digest equal to this checkout's) and the pair
+re-run at `4d0050d7`:
 
-The register records both because they are the same failure in two costumes — a number whose provenance was one
-step weaker than the sentence it supported — and because the second one explains why this iteration ends with no
-default changed: the criterion that would license it is temporarily unsatisfiable, and saying so is the
-measurement.
+| run | knobs | Top@1 | cases |
+| --- | --- | --: | --: |
+| `42729721072` | shipped | **75.46%** | 1073/1422 |
+| `42729735767` | `anomaly_cv_weight=0` | **75.46%** | 1073/1422 |
+
+**The aggregate is byte-identical and the criterion still fails**, which is the finding worth keeping: the two runs
+differ on **four fault types** — `JVMException` 30→31 and `HTTPRequestReplacePath` 38→39 up, `HTTPRequestDelay`
+57→56 and `PodKill` 10→9 **down**. `+2` and `−2` are the same total and not the same result, and the rule this
+project applies to every candidate is *zero regressed fault types*, so **`anomalyCvWeight = 0` is refused on the
+criterion itself**, not merely on the knife-edge argument above. A 1422-case aggregate that hides a two-for-two
+swap is exactly the class of summary this register exists to keep out of a decision.
+
+The `61.46% → 75.46%` move is a **corpus** change and is recorded as one in `docs/sota-comparison.md`: the engine
+did not improve, the evidence it can see did, and which converter change produced the 199 cases is unmeasured.
+
+The register records all three because they are the same failure in three costumes — a number whose provenance was
+one step weaker than the sentence it supported — and because the third one is the reason this iteration ends with
+no default changed: the criterion was satisfiable after all, and the answer it gave was *no*.

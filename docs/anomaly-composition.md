@@ -318,3 +318,21 @@ re-measured on the merged commit `5b65751` with **no dispatch input at all**:
 
 All three workflows are green on `5b65751` (`40255890307` CI, `40255890173` Release, `40255890256` the
 benchmark). The enrolment is therefore a property of the engine's defaults, not of a dispatch that names it.
+
+### 6.4 The pair, measured — and the reason the shares cannot be priced one at a time
+
+§6.1 noted in passing that `trend` and `burst` "are not separable" on the strength of one coordinate: at
+`burst=0.05` the `trend=0.20` arm loses five cases it gains at the shipped `burst`. Iteration 257 turned that
+observation into a pre-registered **pair** arm over the two shares that interact most often (`trend`, `cv`) and
+the answer is stronger than "not separable": `LESS TREND + CV` reads `665/735` against a sum of singles that
+predicts `667`, and the interaction **changes sign per suite** — superadditive on `RE1`, subadditive on `RE2`,
+and *shared* on `RE3`, where both removals recover the same TrainTicket `f2` case
+(`docs/production-weight-leave-one-out.md`, *The joint arm*).
+
+The mechanism belongs here rather than there, because it is a property of this composition: the shares are
+additive in `featureScore`, and the interaction arrives in what follows it — `buildTopologyFaultGraph` **re-scales
+the field to `[0,1]` over the fleet**, so a share moves the fleet's maximum and thereby re-scales every candidate
+before the base term is taken. A coefficient is therefore not an increment on the truth's score; it is a claim
+about the whole field, and two such claims do not compose linearly. That is why §6's coordinate scan cannot be
+read as a gradient, and why every arm over these three shares now owes a joint neighbour before its margin is
+quoted.
