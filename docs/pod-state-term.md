@@ -378,11 +378,14 @@ Network, JVM and Resource families, which the term does not name:
    candidate, and this arm is the cleanest instance of it: at full strength the term costs nothing anywhere,
    because the twenty-one untouched types are untouched by construction (a service with no lifecycle evidence
    scores `undefined`, and the term reports an ABSENT entry rather than a zero).
-3. **Type-level zero is not case-level zero.** A case that the term broke and a case it fixed inside the same
-   fault type would cancel in this table. The mechanism argument says that cannot happen — the term only adds
-   score to services whose own channels moved across the boundary — but "cannot happen by construction" is an
-   argument, not a measurement, and the register's rule is to say which one a sentence is. The measurement that
-   would settle it is a per-case outcome table in the result artifact; it does not exist yet.
+3. **Type-level zero is not case-level zero, and the case level was measured the same day.** A case the term
+   broke and a case it fixed inside one unchanged type cancel in the table above, so the table's twenty-one zeros
+   are a statement about counts. The verdict artefact (`docs/fse26-per-case-verdicts.md`) settles it: both runs
+   published one line per case, and the comparator reads them as cases — **`gained 0, lost 200, net −200` at
+   Top@1, and `gained 0, lost 91` at Top@3**, with **every one of the twenty-one untouched types at `0/0`**. The
+   term changes the engine's Top-1 answer on exactly **200 of 1422** cases, and on all 200 the change is
+   wrong→right: there is not one case where the answer moved and the verdict did not, in either direction. The
+   mechanism argument and the measurement now agree, which is the only order this project accepts them in.
 4. **This is not a corpus artefact and it is not leakage.** The three channels are ordinary Kubernetes
    observables (`k8s.container.restarts`, `k8s.container.ready`, `k8s.pod.phase`), the predicate compares two
    sides of the injection anchor rather than reading any annotation, and the fleet-share gate

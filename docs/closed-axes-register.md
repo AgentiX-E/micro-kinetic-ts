@@ -1789,11 +1789,13 @@ evidence it can now see") and loses the meaning it never had ("the engine improv
 §11 carries the four-type table and the Top@3/Top@5 shifts (`86.29 → 79.89`, `87.83 → 83.26`), which say the term
 moves RANKS and not only the top one.
 
-The caveat is stated rather than smoothed: **type-level zero is not case-level zero.** A case this term broke and
-a case it fixed inside one unchanged type would cancel above. The mechanism (the term adds score only to services
-whose own channels moved across the anchor, and abstains past half the fleet) says that cannot happen, but that is
-an argument, and this register's rule is that a sentence says which of the two it is. The measurement that would
-settle it is a per-case outcome table in the result artefact — it does not exist yet, and it is pre-registered.
+The caveat was stated rather than smoothed — **type-level zero is not case-level zero** — and then measured
+instead of left standing. The same day's dispatches published the verdict artefact, and the case level reads
+**`gained 0, lost 200`** at Top@1 and `gained 0, lost 91` at Top@3, with **every one of the twenty-one
+untouched types at exactly `0/0`**. The term moves the Top-1 answer on 200 of 1422 cases and on all 200 the
+movement is the verdict's: no case changed its answer without changing from wrong to right. The type table and
+the case table agree, which is the first time this repository has been able to say that about a term rather than
+about a summary.
 
 **`js/regex-injection` `#14` is closed as FIXED, not dismissed.** Two suppression spellings had been carried on
 the sink for several iterations (`codeql[rule-id]` above it, `lgtm[rule-id]` on it), and the register's own rule
