@@ -63,34 +63,6 @@ describe('the idle guard measures an event channel where its evidence is claimed
     expect(outcomeOf('error', values, 20_000)).toBe('duty-cycled-idle');
   });
 
-  it("ADMITS the FSE'26 error family, which is the same channel under the other producer's name", () => {
-    // The repair above was written against the RCAEval corpus, whose converter names this family `error`. The
-    // FSE'26 converter names the same quantity `http.response.error_rate`, and membership of the event family
-    // is an EXACT label list — so on that corpus the guard kept the whole-recording denominator and refused
-    // the truth's own error channel on a series that steps 0.00 -> 16.7 (measured: `ts-ui-dashboard` under
-    // `HTTPResponseReplaceCode`, where the channel was the service's decisive evidence and was dropped anyway).
-    // `event-family-census.test.ts` holds the producer side of this; this is the behaviour it buys.
-    //
-    // The fixture is the corpus shape rather than the one above: a 10 s-window error rate over a 4-minute
-    // recording is roughly half quiet and half sustained, because the pre-injection half is quiet BY
-    // CONSTRUCTION. That is what puts the whole-recording reading over the 40 % line (24 of 49 samples are
-    // zero) while the post-window reading never approaches it.
-    const halfQuietThenSustained = [...Array<number>(24).fill(0), ...Array<number>(25).fill(16.4)];
-    expect(outcomeOf('error', halfQuietThenSustained, 24_000)).not.toBe('duty-cycled-idle');
-    expect(outcomeOf('http.response.error_rate', halfQuietThenSustained, 24_000)).not.toBe(
-      'duty-cycled-idle',
-    );
-  });
-
-  it("REFUSES the FSE'26 error family when the whole recording reads it as idle for its own reasons", () => {
-    // The family gains a WINDOW, never an exemption, and the exemption has to be refused where the window is
-    // not the reason: the pre-half of every case is quiet, so a case with no boundary to place it against is
-    // refused on the whole recording exactly as before. This is `docs/duty-cycle-window.md`'s own rule — the
-    // repair is scoped to the window, not to the label.
-    const values = [...Array<number>(20).fill(0), 5, ...Array<number>(719).fill(0)];
-    expect(outcomeOf('http.response.error_rate', values, 0)).toBe('duty-cycled-idle');
-  });
-
   it('keeps the WHOLE-RECORDING rule for a level channel, which is what it was written for', () => {
     // A latency percentile that is 0 whenever there is no traffic is idle over its whole history; the fix is
     // scoped to the family whose zero is a measurement, so this channel is refused exactly as before.

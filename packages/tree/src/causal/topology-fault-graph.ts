@@ -774,29 +774,40 @@ export function isDemandMetric(label: string): boolean {
  * on 18 of 30 cases while never refusing the winner's (`docs/duty-cycle-window.md` §1). The family is named
  * here, on the same rule as {@link DEMAND_METRIC_LABELS}: a channel is not in it until somebody says it is.
  *
- * ## Two producers, one quantity, and the two iterations the second name cost
+ * ## Two producers, one quantity, and why the second name is NOT in this list
  *
  * An exact list is only as complete as the producers somebody remembered. This one was written against the
  * RCAEval converter, which names the family `error`; the FSE'26 converter derives the SAME quantity from the
  * same spans and names it `http.response.error_rate`. Membership never followed, so the window repair above was
  * correct, tested, documented — and **unreachable on the corpus where the published score is measured**. The
  * guard kept the whole-recording denominator there and refused the truth's own error channel as
- * `duty-cycled-idle`: in `ts2-ts-ui-dashboard-response-replace-code-7nldtm` the channel steps `0.00 → 16.7`
- * and was the service's DECISIVE evidence in the same dump that dropped it.
+ * `duty-cycled-idle`: in `ts2-ts-ui-dashboard-response-replace-code-7nldtm` the channel steps `0.00 → 16.7` and
+ * was the service's DECISIVE evidence in the same dump that dropped it.
  *
- * Measured over the archive rather than argued (`scripts/fse26_duty_cycle_sweep.py` replays both windows on
- * every case's own truth channel): of the **1347** datapacks that carry a truth-side rate series long enough to
- * judge, the whole-recording rule drops the channel on **1344** and the post-injection window keeps it on
- * **661** — `219` of them `response-replace-code` and `177` `request-replace-method`, the two fault types with
- * the archive's largest remaining gaps. The **683** it still refuses are the shape the guard exists for — a
- * channel that is sporadic inside the fault window too — which is why the family gains a WINDOW here and never
- * an exemption.
+ * **Adding the name was measured, and it is refused here on the criterion this register applies to every
+ * candidate — not on the size of the gain.** Population first (`scripts/fse26_duty_cycle_sweep.py`, both
+ * windows replayed on every case's own truth channel): of **1347** judgeable datapacks the whole-recording rule
+ * drops the truth channel on **1344 — 99.8 %** — and the post-injection window keeps **661**. The defect is
+ * therefore real and enormous, and one label closes it.
  *
- * The name is not the mechanism, so the next one is guarded rather than remembered:
- * `__tests__/causal/event-family-census.test.ts` reads every producer, takes the families it emits, and fails
- * when an error-named family is undeclared — or when a level family IS declared.
+ * Then the corpus (`31971bf1`, cache `rcabench-pod-v1`, 1422 cases, per-case verdicts against the shipped
+ * `59cd1ad3`): **`1073 → 1082`**, Top@3 `86.29 → 87.90`, Top@5 `87.83 → 90.51` — and **eight fault types move,
+ * six up and four down**: `HTTPResponseReplaceCode +9`, `HTTPRequestReplaceMethod +4`, `HTTPResponseAbort +2`,
+ * `HTTPResponseReplaceBody +1`, `JVMException +1`, `NetworkCorrupt +1`, against `NetworkPartition −4`,
+ * `NetworkBandwidth −3`, `HTTPRequestReplacePath −1`, `NetworkLoss −1`. The 14 lost cases are all one shape and
+ * it is not the fleet-share shape the pod term abstains on (the affected fleet reads 23–38 %, under that
+ * gate): the truth is a service that **cannot produce this channel at all** (`mysql` has no HTTP spans) while
+ * its callers can, so a channel that proves a caller was AFFECTED is priced as proof that it is the CAUSE.
+ * `NetworkPartition` and `NetworkBandwidth` are exactly the fault types where that substitution is available.
+ *
+ * So the membership stays absent **with its reason written down**, and the completion is pre-registered rather
+ * than smuggled in: the admission has to be conditioned on the victim/source asymmetry (`victimWeight` ships at
+ * `0`), and the acceptance test is the one this project applies to itself — `Top@1 ≥ 1082` **with no fault type
+ * down**, on this cache, measured per case. `__tests__/causal/event-family-census.test.ts` holds the absence as
+ * a NAMED exemption so it cannot rot into an oversight, and `docs/duty-cycle-window.md` §5 carries both readings
+ * and the 14 cases.
  */
-export const EVENT_METRIC_LABELS: readonly string[] = ['error', 'http.response.error_rate'];
+export const EVENT_METRIC_LABELS: readonly string[] = ['error'];
 
 /**
  * Whether a label names an EVENT channel — a count of things that happened, whose zero is a measurement.
