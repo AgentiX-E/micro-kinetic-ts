@@ -1773,3 +1773,49 @@ did not improve, the evidence it can see did, and which converter change produce
 The register records all three because they are the same failure in three costumes — a number whose provenance was
 one step weaker than the sentence it supported — and because the third one is the reason this iteration ends with
 no default changed: the criterion was satisfiable after all, and the answer it gave was *no*.
+
+## Iteration 258 — the corpus move is one term; and two things that decided a number were not the number
+
+**The 199 cases iteration 257 could not attribute are the pod-state term, and the arithmetic closes.** The
+question was written as a complement before it was run: switch the term off on the same cache at the same commit
+and see whether the published score falls back to the pre-rebuild reading. It does.
+`ranking_knobs=pod_state_weight=0` (`42736219773`, cache `rcabench-pod-v1`, digest `f72899e5…`, commit
+`59cd1ad3`) reads **`873/1422 = 61.39%`** against the shipped **`1073/1422 = 75.46%`** (`42729721072`), and the
+two runs' 49-field `config` blocks differ in **one field**. Four fault types move — `JVMMemoryStress` `171→61`,
+`ContainerKill` `89→27`, `PodFailure` `24→1`, `PodKill` `10→5`, `−200` in total — and **twenty-one do not move at
+all**. So `874 (old corpus) ≈ 873 (new corpus, term off)`: the corpus change is that one term, and the engine's
+own contribution to the move is **one case, in the wrong direction**. `75.46%` keeps its meaning ("the engine on
+evidence it can now see") and loses the meaning it never had ("the engine improved"). `docs/pod-state-term.md`
+§11 carries the four-type table and the Top@3/Top@5 shifts (`86.29 → 79.89`, `87.83 → 83.26`), which say the term
+moves RANKS and not only the top one.
+
+The caveat is stated rather than smoothed: **type-level zero is not case-level zero.** A case this term broke and
+a case it fixed inside one unchanged type would cancel above. The mechanism (the term adds score only to services
+whose own channels moved across the anchor, and abstains past half the fleet) says that cannot happen, but that is
+an argument, and this register's rule is that a sentence says which of the two it is. The measurement that would
+settle it is a per-case outcome table in the result artefact — it does not exist yet, and it is pre-registered.
+
+**`js/regex-injection` `#14` is closed as FIXED, not dismissed.** Two suppression spellings had been carried on
+the sink for several iterations (`codeql[rule-id]` above it, `lgtm[rule-id]` on it), and the register's own rule
+— *a comment is not a fix* — applied to them the whole time: `#13` stayed open for a fortnight and adding the
+second spelling only relocated the alert. The sink was `new RegExp(commandLine)`, and the honest removal is to
+stop constructing a regular expression from a command line at all. `--family` now takes a **glob** compiled into
+a predicate (`compileFamilyGlob`): `*` is the only metacharacter, every other character is literal, and matching
+is a left-to-right search for the pattern's literal segments — which is exactly what an unanchored `test` meant.
+Two behaviours change and both are corrections: `db.*` no longer matches `dbx` (a dot is a dot), and there is no
+malformed-pattern throw because a glob has no malformed form — replaced by two refusals that a filter cannot have
+and a family must not: the empty pattern, and a pattern made only of wildcards. The `lastIndex` invariant the old
+matcher neutralised is now structural (a predicate closing over its segments has no state), and its test is kept
+as a COUNT because the count is what broke, not the mechanism that fixed it.
+
+**The FSE'26 cache was selected by a human-maintained tag, and the tag went stale in the one way that costs a
+run.** `shard_tag` defaulted to `rcabench-latency-full`, whose manifest records converter `f83af14d…`; this
+checkout computes `f72899e5…` since `cc26232d`. For one iteration **every bare dispatch was refused by the
+workflow's own provenance gate**, and the refusal named two digests and no tag, so the operator's next step was
+to download eight release manifests by hand. The identification of a cache is its digest — the field the gate
+already checks — so the tag is now **discovered from it**: `fse26_cache_select.py` takes this checkout's digest
+and the set of released caches, and refuses on both sides (zero matches = rebuild; two matches = pin, because a
+name must not decide). `shard_tag` is still accepted as an explicit override and is still gate-checked. The
+inventory this produced is recorded in `docs/fse26-cache-selection.md`, including the two tags that share
+`f83af14d…` (`rcabench-prefix-latency` and `rcabench-latency-full`) — which is the ambiguity branch of the
+selector, measured rather than imagined, and the reason it refuses rather than picks.

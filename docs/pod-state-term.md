@@ -321,3 +321,71 @@ What it is NOT is a licence to keep climbing: `16` is identical to `8` to the da
 
 The channels arrive through a converter fix rather than a new data source: the archive always had them,
 and the only reason the engine could not read them is that they were filed under a service named `''`.
+
+## 11. What the term is worth on the whole archive — the complement, measured
+
+Every number above prices the term on the datapacks that carry its channel, and the weight was chosen from that
+curve (`31.7 / 99.3 / 100.0 / 100.0` at `0 / 4 / 8 / 16`, §6). The complement — what the archive reads with the
+term OFF — had never been measured on the corpus the published score comes from, because until iteration 257
+the default cache made the answer unmeasurable: the map was empty by construction, so the `0` arm and the
+shipped arm were the same run.
+
+Iteration 257 rebuilt the cache (`rcabench-pod-v1`, converter digest `f72899e5…`, equal to the checkout) and
+recorded that the score moved `61.46% → 75.46%`. It also recorded, accurately, that **which** converter change
+produced the 199 cases was unmeasured. This is that measurement.
+
+### The instrument
+
+One dispatch input, nothing else. Battery `42736219773` at `59cd1ad3` on the same cache as the published run
+`42729721072`, with `ranking_knobs=pod_state_weight=0`. The two runs' `config` blocks are 49 fields each and
+**48 of them are equal** — the control is the same experiment, not a neighbouring one:
+
+| config field | shipped (`42729721072`) | arm (`42736219773`) |
+| --- | --: | --: |
+| `podStateWeight` | `8` | **`0`** |
+| the other 48 fields | — | identical |
+
+### The reading
+
+| metric | shipped | `pod_state_weight=0` | Δ |
+| --- | --: | --: | --: |
+| Top@1 | **75.46%** (1073/1422) | **61.39%** (873/1422) | **−14.07 pp** |
+| Top@3 | 86.29% | 79.89% | −6.40 pp |
+| Top@5 | 87.83% | 83.26% | −4.57 pp |
+
+**Four fault types move and twenty-one do not.** The four are exactly the lifecycle families whose decisive
+evidence is a restart, a readiness dip, a phase change or a replacement — and the twenty-one are the HTTP,
+Network, JVM and Resource families, which the term does not name:
+
+| fault type | total | shipped | `pod=0` | Δ |
+| --- | --: | --: | --: | --: |
+| `JVMMemoryStress` | 171 | 171 | 61 | **−110** |
+| `ContainerKill` | 89 | 89 | 27 | **−62** |
+| `PodFailure` | 24 | 24 | 1 | **−23** |
+| `PodKill` | 10 | 10 | 5 | **−5** |
+| the other 21 types | 1128 | 779 | 779 | **0** |
+
+`sum(−110, −62, −23, −5) = −200`, and `1073 − 200 = 873`. The arithmetic closes.
+
+### What this settles, and what it does not
+
+1. **The 199-case corpus move is this term, and the engine contributed nothing to it.** The published
+   pre-rebuild reading was `874/1422` (`61.46%`); the shipped weights with this term switched off on the new
+   cache read `873/1422` (`61.39%`). One case apart, in the direction of the engine's own drift between those
+   two commits. The `75.46%` therefore says *the evidence became readable*, not *the ranking improved*, and
+   `docs/sota-comparison.md` states it that way.
+2. **The term regresses no fault type.** This was already the criterion the register applies to every
+   candidate, and this arm is the cleanest instance of it: at full strength the term costs nothing anywhere,
+   because the twenty-one untouched types are untouched by construction (a service with no lifecycle evidence
+   scores `undefined`, and the term reports an ABSENT entry rather than a zero).
+3. **Type-level zero is not case-level zero.** A case that the term broke and a case it fixed inside the same
+   fault type would cancel in this table. The mechanism argument says that cannot happen — the term only adds
+   score to services whose own channels moved across the boundary — but "cannot happen by construction" is an
+   argument, not a measurement, and the register's rule is to say which one a sentence is. The measurement that
+   would settle it is a per-case outcome table in the result artifact; it does not exist yet.
+4. **This is not a corpus artefact and it is not leakage.** The three channels are ordinary Kubernetes
+   observables (`k8s.container.restarts`, `k8s.container.ready`, `k8s.pod.phase`), the predicate compares two
+   sides of the injection anchor rather than reading any annotation, and the fleet-share gate
+   (`POD_STATE_MAX_FLEET_SHARE`) abstains when the evidence names more than half the candidates. What the
+   converter fix removed was a mis-filing: those rows carried an EMPTY `service_name`, so they were dropped or
+   filed under a phantom service `''`, and no amount of engine work could read them.
