@@ -548,6 +548,13 @@ describe('the sweep axis is two-dimensional, and its first column is the shipped
     ).toBeLessThan(repLoop);
     // So the unit MUST be stated where the table is printed — the one place a reader reconciles it with the
     // `N cases` line — and it must name both the factor and its source rather than only the word.
+    // …and the ARTIFACT carries the unit too, because a JSON reader has no header. An entry named `cases`
+    // holding `REPETITIONS x cases` is a label that disagrees with its own value, and it is the shape that
+    // misled one reading of `ablation-results.json` by a factor of three before the console header was compared
+    // against it. Both the declared type and the serializer are pinned: a rename in one place only would put the
+    // two back into disagreement without failing anything.
+    expect(RUNNER).toContain('perFaultType: Map<string, { caseReps: number; accuracy: number }>');
+    expect(RUNNER).not.toMatch(/perFaultType[^\n]*\{ cases: number/);
     expect(RUNNER).toContain('(n) = case-reps: cases x REPETITIONS');
     expect(RUNNER).toMatch(/cases x REPETITIONS \(\$\{REPETITIONS\}\)/);
   });

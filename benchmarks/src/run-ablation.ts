@@ -182,8 +182,9 @@ interface AblationResult {
   totalCases: number;
   duration: number;
   failures: number;
-  // Per-fault-type breakdown
-  perFaultType: Map<string, { cases: number; accuracy: number }>;
+  // Per-fault-type breakdown. The count is named for the unit it holds — see the accumulator's docblock: this
+  // map is filled INSIDE the repetition loop, so an entry holds `REPETITIONS x cases`, not `cases`.
+  perFaultType: Map<string, { caseReps: number; accuracy: number }>;
   // Individual repetitions for stddev
   reps: number[];
 }
@@ -1651,7 +1652,7 @@ async function main(): Promise<void> {
       // ratio a mean over three samples needs. What was missing is the UNIT: this count is printed as a bare
       // `(N)` in a table whose sibling line prints `(N cases)`, so a reader reconciles them by dividing by
       // `REPETITIONS` or concludes the corpus is three times its size. The header states it now.
-      const perFaultType = new Map<string, { cases: number; accuracy: number }>();
+      const perFaultType = new Map<string, { caseReps: number; accuracy: number }>();
       const reps: number[] = [];
 
       for (let rep = 0; rep < REPETITIONS; rep++) {
@@ -1711,17 +1712,17 @@ async function main(): Promise<void> {
           ftSamples.push(result.avgTop1);
 
           // Per-fault-type
-          const existing = perFaultType.get(ft) ?? { cases: 0, accuracy: 0 };
+          const existing = perFaultType.get(ft) ?? { caseReps: 0, accuracy: 0 };
           let ftAcc: number;
           const ftMetric = result.perFaultType.get(ft);
           if (ftMetric) {
             ftAcc =
-              (existing.accuracy * existing.cases + ftMetric.accuracy * ftMetric.cases) /
-              Math.max(1, existing.cases + ftMetric.cases);
+              (existing.accuracy * existing.caseReps + ftMetric.accuracy * ftMetric.cases) /
+              Math.max(1, existing.caseReps + ftMetric.cases);
           } else {
             ftAcc = existing.accuracy;
           }
-          perFaultType.set(ft, { cases: existing.cases + ftCases.length, accuracy: ftAcc });
+          perFaultType.set(ft, { caseReps: existing.caseReps + ftCases.length, accuracy: ftAcc });
         }
 
         reps.push(repCases > 0 ? repA1 / repCases : 0);
@@ -1953,7 +1954,7 @@ async function main(): Promise<void> {
         for (const ft of faultTypes) {
           const ftData = r.perFaultType.get(ft);
           const val = ftData
-            ? (ftData.accuracy * 100).toFixed(0) + '%' + `(${ftData.cases})`.padStart(5)
+            ? (ftData.accuracy * 100).toFixed(0) + '%' + `(${ftData.caseReps})`.padStart(5)
             : '   N/A    ';
           ftRow += ` ${val.padEnd(10)}`;
         }
@@ -1988,6 +1989,11 @@ async function main(): Promise<void> {
             duration: res.duration,
             failures: res.failures,
             reps: res.reps,
+            // The map's key is `caseReps`, not `cases`, and that is the point of serialising it as-is: the
+            // console line carries a header that says `(n) = case-reps: cases x REPETITIONS`, and a JSON reader
+            // has no header. An artifact field named `cases` holding `3 x cases` is a label disagreeing with its
+            // own value — the defect `docs/reported-config.md` names — and it cost one reading of this file
+            // three numbers before the unit was checked.
             perFaultType: Object.fromEntries(res.perFaultType),
           },
         ]),
