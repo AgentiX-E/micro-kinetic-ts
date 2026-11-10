@@ -94,12 +94,12 @@ competitors, so it biased the ranking whether or not the bias happened to move t
 ships on the argument in §2 plus the census in §3 (39 admissions, 0 new refusals on the family), and the
 measurement above is what says it is free.
 
-## 5. The second producer: the repair was right, and it reached one corpus
+## 5. The second producer: the repair was right, it reached one corpus — and completing it is refused
 
-Everything above was measured on RCAEval, whose converter names the error family `error`. The FSE'26
-converter derives **the same quantity** — the share of a service's spans whose HTTP response status is `>= 400`
-— and names it `http.response.error_rate`. Membership of the event family is an exact list of literal labels,
-and that name was never in it, so on the archive where the published score is measured the guard kept the
+Everything above was measured on RCAEval, whose converter names the error family `error`. The FSE'26 converter
+derives **the same quantity** — the share of a service's spans whose HTTP response status is `>= 400` — and
+names it `http.response.error_rate`. Membership of the event family is an exact list of literal labels, and that
+name was never in it, so on the archive where the published score is measured the guard kept the
 whole-recording denominator and refused the truth's own error channel.
 
 It was refused on the shape the guard exists to protect. `ts2-ts-ui-dashboard-response-replace-code-7nldtm`:
@@ -107,42 +107,82 @@ the truth's series reads `0.00` for 24 samples, then `16.1 / 16.7 / 16.9 / …`,
 `0.00` throughout. The dump for that case prints
 
 ```
-metricDrop(30): … http.response.error_rate:duty-cycled-idle …
-metricKept(15): http.response.error_rate=0.820 …   ← the same channel, in the run that KEPT it
+metricDecisive: http.response.error_rate=0.820{dev=0.328, …}     the channel that decides this node
+metricDrop(30): … http.response.error_rate:duty-cycled-idle …    dropped, with reason
+prediction = [ts-auth-service, ts-route-service, ts-gateway-service, …]   truth not in the top five
 ```
 
-so the family was the node's decisive evidence and was discarded in the same breath. The prediction for that
-case was `ts-auth-service` and the truth was not in the top five.
+### Population, replayed rather than argued
 
-### What the repair is worth, in two numbers
-
-**Population** (`scripts/fse26_duty_cycle_sweep.py`, which replays both windows on every case's own truth
-channel, and which names the truth service from the datapack by anchoring the fault phrase on the RIGHT):
+`scripts/fse26_duty_cycle_sweep.py` rebuilds the converter's series and asks the guard's question twice on the
+ground-truth service of every datapack:
 
 | reading | cases | share of judgeable |
 | --- | --: | --: |
 | datapacks in the archive | 1422 | — |
 | truth carries no rate series at all | 74 | — |
 | too short to judge | 1 | — |
-| **judgeable** | **1347** | 100% |
-| whole-recording rule drops the truth channel | **1344** | **99.8%** |
-| post-injection window keeps it | **661** | 49.1% |
+| **judgeable** | **1347** | 100 % |
+| whole-recording rule drops the truth channel | **1344** | **99.8 %** |
+| post-injection window keeps it | **661** | 49.1 % |
 
 The `683` the window still refuses are the sporadic shape the guard was written for. The rescued population is
 concentrated exactly where the archive's remaining gap is — `response-replace-code` `219`,
 `request-replace-method` `177`, `response-replace-body` `48`, `request-abort` `46`, `exception` `39`,
-`request-replace-path` `38`, `response-abort` `38` — so this is not a repair that only touches one family's
-tail.
+`request-replace-path` `38`, `response-abort` `38`. The defect is real, and one label closes it.
 
-**Effect** (a 60-case stratified sample, both arms on the same shards): Top@1 `43/60 → 44/60`
-(`71.7% → 73.3%`), Top@3 `83.3% → 86.7%`, Top@5 `85.0% → 91.7%`, **`+1/−0` at Top@1 and `+5/−0` at Top@5**.
-Four of the five Top@5 recoveries are `ts-ui-dashboard` cases that had been outside the top five entirely.
+### What one label does to the corpus, and why it is NOT shipped
 
-### What it does not fix, and the number that says so
+Measured at `31971bf1` on cache `rcabench-pod-v1`, 1422 cases, per-case verdicts against the shipped arm at
+`59cd1ad3`:
 
-The dashboard case still does not win. Its channel survives now and scores `0.820`, while eight decoy services
-carry `jvm.system.cpu.load_1m` at `0.884 / 0.847` with **identical** `dev / trend / cv / rise / base` — one
-fleet-wide shift reported eight times. That is the next axis and it is not this one: a channel whose shift is
-shared across the fleet cannot identify a service, and the engine has an abstention rule of that shape
-(`POD_STATE_MAX_FLEET_SHARE`) for the pod term only. It is pre-registered in
-`docs/closed-axes-register.md` iteration 259 with these numbers.
+| metric | shipped | one label added | Δ |
+| --- | --: | --: | --: |
+| Top@1 | 75.46 % (1073) | **76.09 % (1082)** | **+0.63 pp** |
+| Top@3 | 86.29 % | 87.90 % | +1.61 pp |
+| Top@5 | 87.83 % | 90.51 % | +2.68 pp |
+
+And **eight fault types move, six up and four down**:
+
+| fault type | Δ | | fault type | Δ |
+| --- | --: | --- | --- | --: |
+| `HTTPResponseReplaceCode` | **+9** | | `NetworkPartition` | **−4** |
+| `HTTPRequestReplaceMethod` | **+4** | | `NetworkBandwidth` | **−3** |
+| `HTTPResponseAbort` | +2 | | `HTTPRequestReplacePath` | −1 |
+| `HTTPResponseReplaceBody` | +1 | | `NetworkLoss` | −1 |
+| `JVMException` | +1 | | | |
+| `NetworkCorrupt` | +1 | | | |
+
+**That is a trade, and this register refuses trades.** The rule it has applied to every candidate — `cv=0`, the
+`pre-injection` anchor, the trend weight — is *no regressed fault type*, and it does not have an exception for
+arms whose total rises. So the label stays out, and the reason it stays out is written down where the next
+session reads it (`event-family-census.test.ts` carries the FSE'26 family as a NAMED exemption with its number).
+
+### The mechanism, which is not the one that was predicted
+
+The 14 lost cases are one shape, and it is not the fleet-share shape the pod term abstains on: the affected
+fleet reads **23–38 %**, under that gate. The truth in those cases is a service that **cannot produce the
+channel at all** — `mysql` has no HTTP spans — while its callers can. During a network fault on `mysql`, every
+caller's error rate rises, and once the channel is admitted that rise is priced as evidence *for the caller*.
+Six of nineteen services move; the truth contributes nothing because it has nothing to contribute.
+
+| lost case | fault | rank of truth | new rank-1 |
+| --- | --- | --- | --- |
+| `ts2-mysql-bandwidth-jlzd96` | NetworkBandwidth | 1 → out of five | `ts-config-service` |
+| `ts3-mysql-partition-xgmtkl` | NetworkPartition | 1 → out of five | `ts-station-service` |
+| `ts3-ts-config-service-partition-gpznpx` | NetworkPartition | 1 → out of five | `ts-seat-service` |
+| `ts5-mysql-bandwidth-2ctlcv` | NetworkBandwidth | 1 → out of five | `ts-train-service` |
+| `ts5-mysql-bandwidth-r5tp67` | NetworkBandwidth | 1 → 3 | `ts-order-service` |
+| `ts2-ts-order-service-loss-lp8wln` | NetworkLoss | 1 → 4 | `ts-seat-service` |
+| `ts2-mysql-partition-995nz4` | NetworkPartition | 1 → 5 | `ts-seat-service` |
+| `ts3-ts-train-service-partition-r58pxm` | NetworkPartition | 1 → 5 | `ts-basic-service` |
+
+The other six are a sibling swap — `ts-route-plan-service` losing to `ts-travel-plan-service` by one rank in
+four `route-plan` cases, plus two single-rank moves — which is the same shape at lower magnitude: two candidates
+that both carry the channel, separated by noise.
+
+So the completion is a **victim/source asymmetry**, not a fleet-share gate: the engine ships `victimWeight = 0`,
+and a channel that proves a caller was *affected* is being priced as proof that it is the *cause*. The
+acceptance test that would let the label in is pre-registered and falsifiable — `Top@1 >= 1082` **with no fault
+type down**, on this cache, measured per case — and it is carried in the exemption record itself so it cannot be
+forgotten.

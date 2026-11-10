@@ -1844,48 +1844,55 @@ best, `−28.5 pp` on the pre-rebuild corpus), and it names the panel in the cel
 2026-11-10 sweep found **no new entrant**: `2610.35767` (RCAtlas), `2611.02416` (SLM RCA) and `2609.27069`
 (graph-vs-flat) are each already in the record with their own caveats, so the sweep's only change is this row.
 
-## Iteration 259 — the guard reached one corpus, and the error channel was thrown away on the other
+## Iteration 259 — the guard reached one corpus, the error channel is thrown away on the other, and completing it is refused
 
 **A repair that is correct, tested, documented — and unreachable where the score is measured.** Iteration 78
 found that the idle guard's denominator is the whole recording, and that a fault case's first half is quiet BY
-CONSTRUCTION, so the 40% line sat below the structural floor of any channel a fault moves; the repair measures
+CONSTRUCTION, so the 40 % line sat below the structural floor of any channel a fault moves; the repair measures
 an EVENT channel over the post-injection half instead. Event membership is an exact list of literal labels
 (`EVENT_METRIC_LABELS`), written against the RCAEval converter's name for that channel, `error`. The FSE'26
-converter derives the same quantity from the same spans and calls it `http.response.error_rate`. It was never
-in the list, so on the archive where `1073/1422` is measured the guard kept the whole-recording denominator and
+converter derives the same quantity from the same spans and calls it `http.response.error_rate`. It was never in
+the list, so on the archive where `1073/1422` is measured the guard kept the whole-recording denominator and
 dropped the truth's own error channel as `duty-cycled-idle`.
 
-The case that exposed it, from the diagnostic dump rather than from a hypothesis:
-`ts2-ts-ui-dashboard-response-replace-code-7nldtm`, truth `ts-ui-dashboard`, whose rate series reads `0.00` for
-24 samples then `16.1 / 16.7 / 16.9 / …` while every decoy reads `0.00` throughout. The dump prints the family
-in `metricDrop(30): … duty-cycled-idle` and the engine's prediction for that case does not contain the truth in
-its top five. Bringing the label into the family moves that case's channel to `metricKept`, decisive, at
-`0.820`.
+The dump, not a hypothesis: `ts2-ts-ui-dashboard-response-replace-code-7nldtm`, truth `ts-ui-dashboard`, whose
+rate series reads `0.00` for 24 samples then `16.1 / 16.7 / 16.9 / …` while every decoy reads `0.00` throughout.
+The same dump prints the family in `metricDrop(30): … duty-cycled-idle` AND as the node's decisive signal, and
+the engine's prediction for that case does not contain the truth in its top five.
 
-**Population, replayed rather than argued** (`scripts/fse26_duty_cycle_sweep.py`, which rebuilds the converter's
-series and asks the guard's question on the truth service in both windows): of **1347** judgeable datapacks
-(1422 total, 74 whose truth service carries no rate series at all and 1 too short), the whole-recording rule
-drops the truth's channel on **1344 — 99.8%** — and the post-injection window keeps it on **661**. The rescued
-population is spread across the fault types with the archive's remaining gap: `response-replace-code` `219`,
-`request-replace-method` `177`, `response-replace-body` `48`, `request-abort` `46`, `exception` `39`. The `683`
-the window still refuses are the sporadic shape the guard was built for, which is why the family gains a WINDOW
-and never an exemption.
+**Population** (`scripts/fse26_duty_cycle_sweep.py`, both windows replayed on every case's own truth channel):
+of **1347** judgeable datapacks (1422 total, 74 whose truth service carries no rate series at all, 1 too short)
+the whole-recording rule drops the truth's channel on **1344 — 99.8 %** — and the post-injection window keeps
+**661**. The defect is enormous, and one label closes it.
 
-**Effect, on two disjoint local samples** (same shards, both arms, per-case verdicts): 60 HTTP cases
-`43 → 44` at Top@1 and `51 → 55` at Top@5, `+1/−0` and `+5/−0`; 48 Network/JVM cases **48 of 48 verdicts
-identical**, one rank-5 tie-break moved. Four of the five Top@5 recoveries are `ts-ui-dashboard` cases that had
-been outside the top five entirely.
+**And one label is refused.** Measured at `31971bf1` on cache `rcabench-pod-v1`, per-case verdicts against the
+shipped `59cd1ad3`: `Top@1 1073 → 1082`, `Top@3 86.29 → 87.90`, `Top@5 87.83 → 90.51` — with **eight fault
+types moving, six up and four down** (`HTTPResponseReplaceCode +9`, `HTTPRequestReplaceMethod +4`,
+`HTTPResponseAbort +2`, `HTTPResponseReplaceBody +1`, `JVMException +1`, `NetworkCorrupt +1` against
+`NetworkPartition −4`, `NetworkBandwidth −3`, `HTTPRequestReplacePath −1`, `NetworkLoss −1`). That is a trade,
+and this register's rule for every candidate — no regressed fault type, stated for `cv=0`, for the `pre-injection`
+anchor and for the trend weight — has no exception for an arm whose total rises. The family therefore stays out
+of the list, and the absence is written down as a **NAMED exemption with its number and its falsifier**
+(`event-family-census.test.ts`) rather than left as the oversight it was.
 
-**The membership is now guarded rather than remembered.**
-`packages/tree/__tests__/causal/event-family-census.test.ts` reads the converter, takes every family it emits,
-and fails when an error-named family is undeclared — or when a level-named family IS declared, because that
-would move a window the guard was written to keep. A list of names cannot be checked against the producers that
-write names; this is that check.
+**The mechanism is not the one that was predicted, and saying so is the point.** The 14 lost cases are not the
+fleet-share shape the pod term abstains on — the affected fleet reads 23–38 %, under that gate. The truth in
+eight of them is a service that **cannot produce the channel at all** (`mysql` has no HTTP spans) while its
+callers can, so during a network fault on `mysql` the callers' error rise is priced as evidence *for the
+callers*. The other six are a sibling swap (`ts-route-plan-service` losing to `ts-travel-plan-service` by one
+rank). The engine ships `victimWeight = 0`, so the completion is a **victim/source asymmetry**, and the
+acceptance test that would admit the label is pre-registered and falsifiable: `Top@1 >= 1082` **with no fault
+type down**, on this cache, measured per case.
 
-**What it does not fix, pre-registered here with its numbers.** The dashboard case still does not win. Its
-channel survives and scores `0.820`, while eight decoy services carry `jvm.system.cpu.load_1m` at
-`0.884 / 0.847` with **identical** `dev / trend / cv / rise / base` — one fleet-wide shift, reported eight
-times, outranking a channel with a unique `0.00 → 16.7` step. The engine has an abstention rule of that shape
-for the pod term (`POD_STATE_MAX_FLEET_SHARE`) and none for level channels. That is the next axis: a channel
-whose shift is shared across the fleet cannot identify a service, and the quantity that says so is measurable
-per case from the diagnostic dump the run already produces.
+**Two papers entered the record without entering the leaderboard.** `arXiv:2609.23301` (TempoTrace) proves
+NTP-grade clocks invert causality on **25–30 %** of directed operation pairs — the shipped `latWeight`
+multiplies a latency measured from exactly those two stamps, and the propagation-τ axis is an estimate of a time
+difference, so a τ fitted from traces is bounded by the clock. `arXiv:2609.27538` (Backstitch) measures silent
+request-context breaks in **673 of 1133** production services — the graph is augmented from the case's own spans,
+so an edge that drops context is an edge augmentation cannot see. Neither is a competitor; both bound a premise
+(`docs/sota-populations.md`).
+
+**What the iteration leaves behind that outlives its verdict:** a replay tool that prices the guard on any
+corpus (`scripts/fse26_duty_cycle_sweep.py`, 28 tests, 100 % branch), a census that makes a producer's error
+family impossible to forget (`event-family-census.test.ts`), and a refusal with a number and a falsifier instead
+of a preference.
