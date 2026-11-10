@@ -558,6 +558,7 @@ jobs:
             "${DIAGNOSE_ARG[@]}" \
             "${DIAGNOSE_LIMIT_ARG[@]}" \
             "${DIAGNOSE_DECIMALS_ARG[@]}" \
+            --per-case-out fse26-per-case.ndjson \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
 
       - name: Upload results
@@ -568,4 +569,5 @@ jobs:
           path: |
             fse26-results.txt
             fse26-results.json
+            fse26-per-case.ndjson
             manifest.json
