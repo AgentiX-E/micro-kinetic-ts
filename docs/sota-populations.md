@@ -145,3 +145,39 @@ channel are weaker than the trace format suggests. The third is recorded because
 row** (`90.0 / 66.1 / 74.5` against `90.4 / 95.0 / 90.0` and `93.1 / 98.9 / 84.4`), and the paper names a
 mechanism by which a TrainTicket deployment can be silent at the API boundary about exactly the fault type RE3
 is built on.
+
+## The corpus page grew three dataset names, and they are not three cells
+
+RCAEval's package page (PyPI, version 1.12.0 as read on 2026-11-11) now lists **twelve** dataset names rather
+than nine: `RE1/RE2/RE3 × {OB, SS, TT}` plus `TORAI-OB`, `TORAI-SS`, `TORAI-TT`. A tenth, eleventh and twelfth
+cell would be the single largest change to this project's evaluation surface since the nine were completed, so
+the question was asked before any number was read off them.
+
+The published table answers it column for column. `TORAI-OB` is listed as **90 cases, `cpu, mem, disk, delay,
+loss, socket`, 69–77 metrics, logs Yes, traces Yes**; `RE2-OB` is listed as the same six types, the same case
+count and the same metric range with the same two side channels. The same holds for `SS` (74–82) and `TT`
+(340–376). Three independent columns agreeing across three systems is a rename, not a corpus: the names follow
+TORAI's method (`10.1145/3808137`), and the page's own summary still counts the benchmark as **735 cases**, which
+is `375 + 270 + 90` — the nine cells and nothing else.
+
+**Verdict: not a new population, and the count that matters is unchanged.** It is recorded here rather than left
+silent because the alternative — adding three cells whose cases are the ones already scored — would have
+inflated every pooled rate by double-counting 270 cases, and the inflation would have been invisible in the
+output.
+
+**What is NOT established, and is therefore not claimed:** the page was read through a search index rather than
+fetched (the site serves a captcha to direct requests), no archive was downloaded, and whether `TORAI-*` is a
+byte-identical copy or a re-cut of the same recordings with a different window is unknown. If it turns out to be
+a re-cut, it is a *new view of the same faults* and would be worth one cell as a robustness check — not three
+as a larger corpus. Resolving it needs the parquet, not the table.
+
+**And one entry that does move the comparability needle.** `arXiv:2610.35767` (RCAtlas, 90 validated incidents
+from eight public datasets) reports the non-LLM baselines on a single mixed population, which is the closest
+thing to a third-party reading of methods in this project's own family: **NSigma 38.9 %, TORAI 33.3 %, SimpleRCA
+33.3 %, BARO 22.2 %, FaultInsight 18.9 %, CIRCA 17.8 %, RCD 5.9 %, random 5.5 %** at PR@1, against 65–77 % for
+simple LLM harnesses. Its own limitations section states that its numbers are **not** comparable with the source
+benchmarks' published figures (it removes fault types from the prompt, maps answers up a hierarchy, and scores
+only the first five), which is exactly the discipline this project applies when it refuses to pool 735-case and
+1422-case populations. The useful fact is therefore the ORDERING within one instrument, not any cross-paper
+ratio: on a mixed population assembled by a third party, non-LLM statistical and causal methods top out near
+39 %, and this project's shipments are measured on corpora where the same methods are the baselines.
