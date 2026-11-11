@@ -752,6 +752,7 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   no_rank_normalization: 'runner',
   anomaly_normalize_threshold: 'runner',
   drop_metrics: 'runner',
+  event_extra_labels: 'runner',
   failed_edge_weight: 'runner',
   failed_edge_mode: 'runner',
   failed_edge_min_records: 'runner',
@@ -968,6 +969,9 @@ const DESCRIBES_IN_WORDS: Readonly<Record<string, string>> = {
   rise_ceiling:
     'the default is the SENTINEL 0, whose meaning ("unbounded") is what the description states; a numeric check would pass on a `0` inside any other number',
   drop_metrics: 'the default is an EMPTY LIST, and the description says "(empty = no ablation)"',
+  event_extra_labels:
+    'the default is an EMPTY LIST, and the description says "(empty = the shipped family, `error`)" — the ' +
+    'shipped membership is a SET the engine carries, not a scalar this file could compare a token against',
   fleet_baseline:
     "the default is the boolean measured and REJECTED at +0.49pp with 6 regressed fault types, and the description states the flag's effect rather than its shipped state",
   // The anomaly composition. Its shipped values are the three coefficients plus the OFF breadth term, and

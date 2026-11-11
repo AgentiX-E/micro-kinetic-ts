@@ -59,6 +59,10 @@ on:
         description: 'Comma-separated metric labels to strip from every case before scoring (empty = no ablation). Applied at load time, so the engine is unchanged'
         required: false
         default: ''
+      event_extra_labels:
+        description: 'Comma-separated metric labels to ADMIT to the event family, as a converter spells them (empty = the shipped family, `error`). The complement of drop_metrics and it exists because the two converters that produced this project''s two corpora spell one physical quantity two ways: RCAEval writes `error`, FSE''26 writes `http.response.error_rate`, so the guard''s post-injection repair is unreachable on this archive without this switch. Admitting the FSE''26 spelling run-wide is MEASURED and REFUSED (Top@1 1073 → 1082 with four fault types down, docs/duty-cycle-window.md §5); this input is the surface that keeps the refusal re-measurable, and the acceptance test that would reverse it is Top@1 >= 1082 with no fault type down'
+        required: false
+        default: ''
       failed_edge_weight:
         description: 'Weight of the failed-edge-direction signal, which charges each failed call to its CALLEE (empty = the runner default, which is the SHIPPED 3: a gated term worth +41 cases on this corpus with zero regressed fault types). Set it to 0 for the ablation, which is the configuration every published cell before iteration 125 ran'
         required: false
@@ -298,6 +302,13 @@ jobs:
           DROP_METRICS_ARG=()
           if [ -n "${{ inputs.drop_metrics }}" ]; then
             DROP_METRICS_ARG=(--drop-metrics "${{ inputs.drop_metrics }}")
+          fi
+          # The complement of the ablation above: labels to ADD to the event family rather than remove from a
+          # case. Two switches rather than one signed list because they answer two questions, and because a
+          # single list with a +/− prefix is a parser nobody can read off the artifact.
+          EVENT_EXTRA_ARG=()
+          if [ -n "${{ inputs.event_extra_labels }}" ]; then
+            EVENT_EXTRA_ARG=(--event-extra-labels "${{ inputs.event_extra_labels }}")
           fi
           FAILED_EDGE_ARG=()
           if [ -n "${{ inputs.failed_edge_weight }}" ]; then
@@ -542,6 +553,7 @@ jobs:
             "${LOG_MODE_ARG[@]}" \
             "${RANK_NORM_ARG[@]}" \
             "${DROP_METRICS_ARG[@]}" \
+            "${EVENT_EXTRA_ARG[@]}" \
             "${FAILED_EDGE_ARG[@]}" \
             "${FAILED_EDGE_MODE_ARG[@]}" \
             "${FAILED_EDGE_MIN_ARG[@]}" \

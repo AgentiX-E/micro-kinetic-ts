@@ -1960,3 +1960,59 @@ needs its own pre-registration.
 
 **Acceptance test for the label remains unmet:** `Top@1 >= 1082` with no fault type down. The shipped reading is
 `1073/1422`. No end-of-programme signal.
+
+## Iteration 261 — the truth that is never shown, and the two conditions that could not separate it
+
+Iteration 260 closed the deduction's parameter space and named the next question as the SET the ranking covers
+rather than a fifth threshold. This iteration took that question to the archive and found the set is not a
+rounding error there: **173 of 1422 datapacks (12.2 %) have their truth in none of the top five**, against 12 of
+641 misses on the nine golden cells. `docs/absent-census.md` is the census.
+
+**The class is nearly one service.** 149 of the 173 (86.1 %) accept **`ts-ui-dashboard`**, the Train Ticket entry
+point; the remaining 24 spread over fifteen services, and 34 of the 173 are multi-label. The asymmetry that
+makes it a defect: the same service appears in the top five of **191 of the 1236** cases where it is NOT the
+truth (15.5 %), and of **37 of the 186** where it is (19.9 %) — the ranking finds it as a distractor about as
+often as it finds it as the answer.
+
+**The deduction is exonerated, by an arm with zero on both sides.** `docs/topo-discount-scope.md` §9.3–§9.4 make
+it the natural suspect (the gate cannot charge the argmax; the caller-side predicate was blind on this corpus),
+so it was measured first: on the 142 absent datapacks whose shards convert locally, `--topo-discount 0` reads
+**0/142 at Top@1, @3 and @5 — zero gained, zero lost** against a shipped arm that reads the same. The truth is
+not being deleted; it is being outscored.
+
+**The truth carries evidence, and the census says how much.** `ts0-ts-ui-dashboard-response-replace-code-69j7gg`
+prints `selfAnomaly=0.551 dominant=k8s.pod.network.io failedEdge=1.000 latRise=1.386`. A pod channel dominating a
+node whose fault-carrying channel is its response error rate is the signature of a DROP upstream of scoring, and
+`docs/duty-cycle-window.md` §5 measures that drop: the idle guard applies the whole-recording rule to a channel
+the family does not name, and the whole recording's first half is pre-injection.
+
+**The switch that repairs it is worth 33 cases here and costs 14 elsewhere.** On the same 142 cases the admitted
+spelling reads **Top@1 6, @3 24, @5 33 with ZERO lost**; adding `topoDiscount=0` reads 7/26/37 with zero lost —
+so the deduction's entire contribution to this subset is four nodes. On the full archive the same switch reads
+`1073 → 1082` with fourteen datapacks moving correct → incorrect, which is why §5 of that document refuses it.
+The reconciliation is the population split, and the mechanism is read off one lost datapack: the winner
+saturates at 1.000 with its dominant switching to `http.response.error_rate`, while the TRUTH drops 0.980 → 0.939
+because `anomalyNormalization` is `rank` above twenty nodes, so any node whose raw score moves re-orders a surface
+every node is then read against.
+
+**Two conditional admissions were designed to split the populations, and both are refuted.** "Admit only where
+the shipped reading is zero" never fires — the truth reads 0.551 — and the arm is bit-identical to shipped
+(0/142). "Admit only where the node has no event channel" is true for the dashboard AND for the mysql callers,
+so it admits exactly the cases that cost the corpus 14. What separates them is a property of the **pair**
+(whether the node's rise is explained by a callee's), which is what the deduction computes and cannot charge at
+any profitable gate — so the axis stays open as a source/symptom reading, not as another admission flag.
+
+**One separate lead, recorded rather than chased.** In the same datapack the truth `ts-config-service` carries
+**108 ERROR lines and `logScore = 0.000`** while the node outranking it carries **18 and `logScore = 1.000`**: the
+shipped `logicHttp` mode admits logic exceptions and framework HTTP exceptions and nothing else, and a hundred
+and eight connection-level ERRORs are neither. The modes that count them (`count`, `novelty`, `all`) were
+measured on the 142 absent cases and move Top@1 by two cases (1.4 % against 0.0 %) — real, small, and not this
+class's owner.
+
+**Shipped, therefore:** `docs/absent-census.md`, and the dispatch surface that keeps the refused arm
+re-measurable — `event_extra_labels` as a workflow input (the 24th of the hard limit's 25), the complement of
+`drop_metrics`, classified as an operational option rather than a knob because it decides which channels the
+guard may measure at all.
+
+**Acceptance test still unmet:** `Top@1 >= 1082` with no fault type down. The shipped reading is `1073/1422`;
+the admission arm reaches 1082 and regresses four fault types. No end-of-programme signal.

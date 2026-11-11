@@ -217,6 +217,12 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'writes one verdict line per case (datapack, label set, top-5) for a judgement chosen after the run; an ' +
     'output path, and the engine never reads it back — the ranking it exports is the one `top1` already counts',
   dropMetrics: 'load-time ablation of the INPUT, applied before the engine runs',
+  eventExtraLabels:
+    'the COMPLEMENT of dropMetrics: labels ADMITTED to the event family rather than removed from a case. A ' +
+    'membership rather than a coefficient — it decides which channels the idle guard may measure at all, and ' +
+    'the run-wide arm it exists to re-measure is REFUSED (Top@1 1073 → 1082 with four fault types down, ' +
+    'docs/duty-cycle-window.md §5). Not a knob because a knob is multiplied by a magnitude this one decides ' +
+    'whether to compute',
   caseChunk:
     'bounds how many cases one memory slice holds; a property of the LOADER, not of the ranking — two chunk ' +
     'sizes are two ways of walking the same corpus, and `docs/rcaeval-memory-bound.md` pins the invariance ' +
@@ -645,16 +651,6 @@ const KNOBS: Readonly<
     owner: 'prism-symmetry-mask.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
-  },
-  eventExtraLabels: {
-    // The complement of `--drop-metrics`: labels to ADD to the event family, not remove from a case. A list
-    // rather than a weight, which is why neither dispatch half can carry it as `name=value` — `null` on both,
-    // and the absence is the shipped family. Owner is the document that records the arm this surface exists to
-    // keep re-measurable: the second producer's spelling, priced and refused.
-    flag: '--event-extra-labels',
-    owner: 'duty-cycle-window.md',
-    fse26: null,
-    rcaeval: null,
   },
   emissionWeight: {
     // The collision source's own emission, in errors per REQUEST — the one quantity in the fusion that is a rate
@@ -1902,7 +1898,10 @@ describe('the dispatch surface has one owner per knob', () => {
       // A report rather than an assertion, pinned as exact counts so a change to either is a deliberate edit
       // and not a drift. `benchmark-rcaeval` is the one to watch: it is the larger surface and it is the half
       // a new knob is most likely to be added to first.
-      expect(inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'))).toHaveLength(23);
+      // 24 of the hard limit's 25: `event_extra_labels` (it.261) is the last one a new axis can be added as
+      // before this workflow has to pack two inputs into one, which is the move `ranking_knobs` already made
+      // once after taking the file to 30 inputs and invalidating it.
+      expect(inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'))).toHaveLength(24);
       expect(inputNames(readFileSync(RCAEVAL_WORKFLOW, 'utf8')).length).toBeLessThanOrEqual(
         GITHUB_DISPATCH_INPUT_LIMIT,
       );

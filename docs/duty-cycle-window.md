@@ -206,3 +206,13 @@ eight datapacks. The blocker turned out to be in the operator rather than in the
 satisfy, so the deduction cannot charge the highest-anomaly node at all. `docs/topo-discount-scope.md` §9 carries
 the arithmetic, the two independent mechanisms that additionally made the term inert on this corpus, and the four
 arms that were refused. The acceptance test above is unchanged and unmet.
+
+**The population, priced again on the archive (iteration 261, `docs/absent-census.md`).** The fourteen lost
+datapacks are the half of this section that argues against the admission; the other half had never been counted.
+Of the 1422 datapacks, 173 have their truth outside the top five, and **149 of those (86.1 %) accept
+`ts-ui-dashboard`** — the entry point whose only fault-carrying channel is the response error rate this family
+does not name. On the 142 such datapacks that convert locally, the admission reads **Top@1 6, @3 24, @5 33 with
+zero lost**; on the full archive it reads +9 at Top@1 with fourteen correct→incorrect. The populations are
+disjoint, which is why one switch moves both directions, and the two conditions that would have separated them
+by a property of the NODE are refuted in §6 of that document. The axis that could separate them is a property
+of the PAIR, and it is open.
