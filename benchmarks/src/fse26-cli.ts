@@ -214,6 +214,28 @@ export interface Fse26CliOptions {
    */
   readonly diagnoseDecimals: number;
   /**
+   * Path to write a machine-readable per-candidate TERM dump to (empty = none).
+   *
+   * The `--diagnose` block is for a human reader: it renders the four magnitudes a
+   * previous screen needed, at a declared precision, one case at a time. That is the
+   * wrong artifact for the question every remaining axis asks — "what would this score
+   * have been at a DIFFERENT weight" — because answering it from text means rebuilding
+   * the terms outside the engine, and a rebuild is a second implementation of the sum
+   * this repository treats as a defect.
+   *
+   * `--terms-dump` writes the engine's OWN breakdown instead: one JSON object per case,
+   * one entry per candidate, each term carrying the `weight` and `slope` that produced
+   * its contribution. The engine already attaches those two factors to every term
+   * ({@link ScoreTerm}), so a score at any weight vector is
+   * `Σ (w'ᵢ − wᵢ) × slopeᵢ` away from the recorded one — exactly, in one pass, with no
+   * dispatch. That is what turns a weight or architecture screen from one run per
+   * candidate configuration into a local computation over one run.
+   *
+   * Off by default: it is a diagnostic artifact, and a run that does not ask for it must
+   * not pay for serialising 51 candidates × 18 terms × 1422 cases.
+   */
+  readonly termsOut: string;
+  /**
    * Metric names to filter out of every case before scoring (empty = none).
    * Component-ablation switch: the bridge merges four metric sources into one
    * map, so removing a source's names here re-scores the same cases as if the
@@ -626,6 +648,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnose: [] as string[],
     diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
+    termsOut: '',
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -716,6 +739,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // case, i.e. after a suite has been loaded and scored. A non-integer falls back to the
       // producer's precision rather than being rounded, because `4.5` digits names no artifact.
       opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
+    else if (arg === '--terms-dump' && hasValue(argv, i + 1)) opts.termsOut = argv[++i]!;
     else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
       opts.eventExtraLabels = csv(argv[++i]!);

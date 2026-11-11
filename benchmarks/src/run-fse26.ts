@@ -34,7 +34,7 @@
  * @module benchmarks/run-fse26
  */
 
-import { readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
@@ -206,6 +206,11 @@ async function main(): Promise<void> {
   let emptyGraphs = 0;
   const diagnosed = new Map<string, number>();
 
+  // The term dump is truncated ONCE, before the first case, so a rerun replaces the
+  // previous artifact rather than appending a second population onto it — an artifact
+  // that silently concatenates two runs is a population nobody declared.
+  if (opts.termsOut !== '') writeFileSync(opts.termsOut, '');
+
   for (const dir of selected) {
     let raw: FSE26RawCase;
     try {
@@ -284,6 +289,38 @@ async function main(): Promise<void> {
           );
         }
       }
+    }
+
+    // ── Optional per-candidate TERM dump (--terms-out) ──
+    // The scoring run above asks for the top 5, which is what every published number is read
+    // from. A weight screen cannot use that list: re-weighting can promote a candidate that the
+    // shipped ranking never showed, and a screen restricted to the shipped top 5 would report a
+    // promotion it could not make. So the dump re-ranks the SAME graph over the whole node set —
+    // the same engine, the same terms, a different `topK` — and the first five of that order are
+    // the five above, because the ranking is a total order sliced at the end.
+    if (opts.termsOut !== '' && faultGraph) {
+      const full = pruner.analyze(faultGraph, Math.max(1, benchCase.callGraph.nodes.size));
+      appendFileSync(
+        opts.termsOut,
+        `${JSON.stringify({
+          datapack: basename(dir),
+          faultType,
+          accepted,
+          candidates: full.map((result) => ({
+            id: result.serviceId,
+            score: result.finalScore ?? null,
+            // `[name, weight, slope]` rather than an object per term: the dump is 51 candidates
+            // × 18 terms × 1422 cases, and the repeated keys would be most of the bytes. A term
+            // whose source did not carry this candidate has no factors — `null` is that absence,
+            // and it is not the same as a measured slope of 0.
+            terms: (result.terms ?? []).map((term) => [
+              term.name,
+              term.weight ?? null,
+              term.slope ?? null,
+            ]),
+          })),
+        })}\n`,
+      );
     }
 
     predictionsPerCase.push(ranking.map((r) => r.serviceId));

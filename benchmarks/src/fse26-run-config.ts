@@ -52,6 +52,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'diagnose',
   'diagnoseLimit',
   'diagnoseDecimals',
+  'termsOut',
 ] as const;
 
 /**

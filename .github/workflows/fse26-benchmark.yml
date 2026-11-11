@@ -99,6 +99,10 @@ on:
         description: "Shape the temporal prior reads the onset delays in (empty = the runner default, which is earliness, the engine's own min-max normalisation and the shape every published number was measured with): order is linear in the onset RANK, earliest-only credits ONLY whoever moved first, latest-only is a REVERSED control. It is a PAIR with temporal_weight, because a weight is a claim about a shape — earliest-only is the shape the REVERTED 0.036552 candidate was measured on, so do not pair it with a non-zero weight without re-measuring BOTH halves of the kill criterion"
         required: false
         default: ''
+      terms_dump:
+        description: 'Emit the per-candidate TERM dump (fse26-terms.ndjson) alongside the results. Each line is one case; each candidate carries the engine''s own named terms with the weight and slope that produced each contribution, so any weight vector can be re-scored offline as sum (w''-w)*slope from this one artifact. This is what makes a weight or architecture screen a local computation instead of one dispatch per candidate configuration. It costs a second full ranking pass over each case (the dump needs EVERY candidate, not the shipped top 5), so it is off unless asked for, and it changes nothing about the score. Set to anything non-empty to emit it; empty writes nothing'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -268,6 +272,14 @@ jobs:
           DIAGNOSE_DECIMALS_ARG=()
           if [ -n "${{ inputs.diagnose_decimals }}" ]; then
             DIAGNOSE_DECIMALS_ARG=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+          fi
+          # The term dump is a boolean and it WRITES a file rather than setting a knob, so it is expanded to a
+          # path the runner owns here instead of being passed through: a caller that had to name the path would
+          # be able to place the artifact outside the upload set, which is a run whose instrument silently
+          # produced nothing.
+          TERMS_ARG=()
+          if [ -n "${{ inputs.terms_dump }}" ]; then
+            TERMS_ARG=(--terms-dump fse26-terms.ndjson)
           fi
           LOG_WEIGHT_ARG=()
           if [ -n "${{ inputs.log_weight }}" ]; then
@@ -570,6 +582,7 @@ jobs:
             "${DIAGNOSE_ARG[@]}" \
             "${DIAGNOSE_LIMIT_ARG[@]}" \
             "${DIAGNOSE_DECIMALS_ARG[@]}" \
+            "${TERMS_ARG[@]}" \
             --per-case-out fse26-per-case.ndjson \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
 
@@ -582,4 +595,6 @@ jobs:
             fse26-results.txt
             fse26-results.json
             fse26-per-case.ndjson
+            fse26-terms.ndjson
             manifest.json
+          if-no-files-found: warn

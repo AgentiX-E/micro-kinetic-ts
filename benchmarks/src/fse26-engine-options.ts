@@ -174,6 +174,11 @@ export const NON_ENGINE_OPTION_KEYS = [
   'diagnose',
   'diagnoseLimit',
   'diagnoseDecimals',
+  // The same kind of writer as `perCaseOut`, and on the same rule: `--terms-out` serialises the breakdown
+  // the engine already produced for its own answer, and the engine never reads the file back. It is
+  // classified here for the reason stated above rather than left out, because a path that reaches neither
+  // the engine nor this list is exactly the silent drop the completeness test exists to catch.
+  'termsOut',
   'dropMetrics',
 ] as const;
 

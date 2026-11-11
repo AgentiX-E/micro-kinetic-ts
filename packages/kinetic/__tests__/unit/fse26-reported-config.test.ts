@@ -771,6 +771,10 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   // `runner` because every one of the eight reaches a runner flag; the input itself binds no single flag by
   // name, which is why the reach is asserted in the dispatch-surface census's `case`-block reading instead.
   ranking_knobs: 'runner',
+  // Iteration 262: the term dump takes the surface's last free slot. `runner` on the same rule the row above
+  // states — the input passes straight through to a flag the parser accepts — and empty by default, so the
+  // runner is the sole owner of whether an artifact is produced.
+  terms_dump: 'runner',
 };
 
 /**

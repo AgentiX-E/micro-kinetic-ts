@@ -232,6 +232,11 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'in the ranking — the knob it feeds is `latWeight`, which has a row of its own. It is the axis of the ' +
     'floor interaction (`docs/latency-channel-views.md` §7.5): the floor and the corpus move no published ' +
     'cell alone and two of them together, so an instrument able to vary one of the two measures neither',
+  termsOut:
+    'writes the per-candidate TERM dump (--terms-dump); an OUTPUT PATH, and the engine never reads it back. It is not a ' +
+    'knob because it multiplies nothing: it serialises the breakdown the engine already produced, together ' +
+    'with the weight and slope of each term, so a weight vector can be re-scored offline instead of ' +
+    'dispatched. `docs/architecture-audit-262.md` owns the measurement it exists to make possible',
 };
 
 /**
@@ -1898,10 +1903,12 @@ describe('the dispatch surface has one owner per knob', () => {
       // A report rather than an assertion, pinned as exact counts so a change to either is a deliberate edit
       // and not a drift. `benchmark-rcaeval` is the one to watch: it is the larger surface and it is the half
       // a new knob is most likely to be added to first.
-      // 24 of the hard limit's 25: `event_extra_labels` (it.261) is the last one a new axis can be added as
-      // before this workflow has to pack two inputs into one, which is the move `ranking_knobs` already made
-      // once after taking the file to 30 inputs and invalidating it.
-      expect(inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'))).toHaveLength(24);
+      // 25 = the hard limit itself. `event_extra_labels` (it.261) took the surface to 24 and
+      // `terms_dump` (it.262) takes the last slot, so the NEXT axis cannot be a new input: it has to be packed
+      // into an existing one the way `ranking_knobs` already packs sixteen weights. That is not a nuisance —
+      // the count is the measured size of the knob surface, and a surface that needs 25 dispatch inputs to
+      // describe one ranking is the symptom `docs/architecture-audit-262.md` prices.
+      expect(inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'))).toHaveLength(25);
       expect(inputNames(readFileSync(RCAEVAL_WORKFLOW, 'utf8')).length).toBeLessThanOrEqual(
         GITHUB_DISPATCH_INPUT_LIMIT,
       );
