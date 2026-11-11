@@ -132,16 +132,38 @@ channel is idle by construction in exactly the period that makes it look idle.
 **No case is lost on this subset by either admission arm.** The four-case difference between the two is the
 deduction's whole contribution here: it charges four nodes the admission had just given evidence to.
 
-On the full archive the same switch, measured in iteration 259 (run `42754912342`, HEAD `31971bf1`), reads
-`Top@1 1073 → 1082`, `Top@3 86.29 → 87.90`, `Top@5 87.83 → 90.51` — **and fourteen datapacks move from
-correct to incorrect at Top@1**, which is why it is refused (`docs/duty-cycle-window.md` §5).
+On the full archive the same switch, re-measured on this iteration's code (run `43040001015`, HEAD `25ca7783`,
+control `43021484829` on the same HEAD), reads **`Top@1 1073 → 1082` (75.46 % → 76.09 %), `Top@3 86.29 → 87.97 %`,
+`Top@5 87.83 → 90.44 %`**. Iteration 259 measured the same arm at `87.90 / 90.51` on the pre-260 predicate; the
+0.07 pp difference is the family-aware `isResponseChannel` of iteration 260 and nothing else.
 
-Those two readings are not in conflict, and the reconciliation is the point of this section:
+The type-level split is what refuses it, and it is **seven types up, four down**:
 
-- The 33 cases gained here are the class the family cannot see at all, and they are **86 % one service**.
-- The 14 lost there are nodes the family **can** see, whose score the second spelling inflates: a physical
-  truth that emits no HTTP span (`mysql`) cannot produce the channel, so its callers' rises — genuine responses
-  to a fault beneath them — are read as each caller's own evidence.
+| Δ | fault type | control | arm | n |
+| --: | --- | --: | --: | --: |
+| **−4** | NetworkPartition | 64 | 60 | 97 |
+| **−3** | NetworkBandwidth | 20 | 17 | 42 |
+| **−2** | HTTPRequestReplacePath | 38 | 36 | 39 |
+| **−1** | NetworkLoss | 29 | 28 | 48 |
+| +1 | HTTPRequestAbort | 46 | 47 | 60 |
+| +1 | HTTPRequestReplaceMethod | 125 | 126 | 190 |
+| +1 | JVMException | 30 | 31 | 43 |
+| +1 | NetworkCorrupt | 31 | 32 | 46 |
+| +3 | HTTPResponseAbort | 34 | 37 | 44 |
+| +3 | HTTPResponseReplaceBody | 45 | 48 | 51 |
+| **+9** | HTTPResponseReplaceCode | 162 | 171 | 231 |
+
+A gain of nine cases is not worth four regressed network types, on this project's rule that a regressed type
+ends an arm whatever the total did. The rule has now been applied to this switch in three iterations (259 wrote
+it, 260 re-read it under a repaired predicate, 261 re-measured it on a fresh control) and has not been relaxed.
+
+The per-case reason is a population split, not a defect:
+
+- The 33 cases gained on the absent subset are nodes the family cannot see at all, and they are **86 % one
+  service**.
+- The 14 lost on the corpus are nodes the family **can** see, whose score the second spelling inflates: a
+  physical truth that emits no HTTP span (`mysql`) cannot produce the channel, so its callers' rises — genuine
+  responses to a fault beneath them — are read as each caller's own evidence.
 
 The mechanism, read off one of the lost datapacks under the admitted spelling:
 

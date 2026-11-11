@@ -1988,12 +1988,15 @@ the family does not name, and the whole recording's first half is pre-injection.
 
 **The switch that repairs it is worth 33 cases here and costs 14 elsewhere.** On the same 142 cases the admitted
 spelling reads **Top@1 6, @3 24, @5 33 with ZERO lost**; adding `topoDiscount=0` reads 7/26/37 with zero lost —
-so the deduction's entire contribution to this subset is four nodes. On the full archive the same switch reads
-`1073 → 1082` with fourteen datapacks moving correct → incorrect, which is why §5 of that document refuses it.
-The reconciliation is the population split, and the mechanism is read off one lost datapack: the winner
-saturates at 1.000 with its dominant switching to `http.response.error_rate`, while the TRUTH drops 0.980 → 0.939
-because `anomalyNormalization` is `rank` above twenty nodes, so any node whose raw score moves re-orders a surface
-every node is then read against.
+so the deduction's entire contribution to this subset is four nodes. On the full archive, re-measured this
+iteration on a fresh control (`43040001015` against `43021484829`, both on `25ca7783`), the switch reads
+**`Top@1 1073 → 1082`, `@3 86.29 → 87.97`, `@5 87.83 → 90.44`** with **seven types up and four down**
+(`NetworkPartition −4`, `NetworkBandwidth −3`, `HTTPRequestReplacePath −2`, `NetworkLoss −1`), which is why
+`docs/duty-cycle-window.md` §5 refuses it. The 0.07 pp difference from 259's own reading (`87.90 / 90.51`) is
+iteration 260's family-aware `isResponseChannel` and nothing else. The reconciliation is the population split,
+and the mechanism is read off one lost datapack: the winner saturates at 1.000 with its dominant switching to
+`http.response.error_rate`, while the TRUTH drops 0.980 → 0.939 because `anomalyNormalization` is `rank` above
+twenty nodes, so any node whose raw score moves re-orders a surface every node is then read against.
 
 **Two conditional admissions were designed to split the populations, and both are refuted.** "Admit only where
 the shipped reading is zero" never fires — the truth reads 0.551 — and the arm is bit-identical to shipped
