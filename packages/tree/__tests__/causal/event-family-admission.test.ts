@@ -78,7 +78,6 @@ describe('isResponseChannel agrees with the event family', () => {
   });
 });
 
-
 describe('the topological discount can see the spelling it is given', () => {
   /** A caller on the FSE'26 error spelling, calling a callee that is slow. */
   const scenario = (labels: ReadonlySet<string>) => {

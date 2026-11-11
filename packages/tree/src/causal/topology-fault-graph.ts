@@ -2043,7 +2043,6 @@ export function isLatencyMetric(label: string): boolean {
   return label.startsWith('latency');
 }
 
-
 /**
  * Whether a metric label names a **response** channel — one whose movement at a callee can be inherited by
  * its caller, and therefore the only kind of channel a callee's anomaly is able to explain.
@@ -2434,7 +2433,11 @@ function computeAnomalyFeatures(
     // and a LEVEL channel keeps the whole-recording rule it was written for (a latency percentile that is 0
     // whenever there is no traffic is idle over its whole history, not over one half of it).
     let window = { from: 0, to: n, peak: max };
-    if (isEventMetric(ts.label, eventFamily) && cfg.injectTimeMs !== undefined && cfg.injectTimeMs > 0) {
+    if (
+      isEventMetric(ts.label, eventFamily) &&
+      cfg.injectTimeMs !== undefined &&
+      cfg.injectTimeMs > 0
+    ) {
       let from = -1;
       for (let i = 0; i < n; i++) {
         if (ts.timestamps[i]! >= cfg.injectTimeMs) {
