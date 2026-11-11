@@ -85,7 +85,7 @@ describe('the topological discount can see the spelling it is given', () => {
       {
         from: 'ts-seat-service',
         to: 'ts-config-service',
-        type: 'http',
+        type: 'REST',
         callRate: 60,
         p99Latency: 40,
         errorRate: 0,
