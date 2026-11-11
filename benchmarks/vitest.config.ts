@@ -61,6 +61,12 @@ export default defineConfig({
         'src/fse26-report.ts',
         'src/fse26-diagnose-dump.ts',
         'src/fse26-diagnose-sink.ts',
+        // Added with the module: the writer of the per-candidate TERM dump, which two runners now share and two
+        // scripts read. Its whole value is the two distinctions it draws — `null` for a factor the term never had
+        // against `0` for a weight a gate zeroed, and a whole ranking against the reported top five — so the
+        // newline shape, the null round-trip, the count it reports and the truncation on construction are all
+        // asserted rather than trusted.
+        'src/terms-dump.ts',
         // Added with the module: the dual-family census reads the term's POPULATION off the ranking the
         // correctness checks count from. Its whole value is the distinction it draws — a paid member, a
         // non-member, a `WEIGHT_ZERO` case and a retrieval failure are four different findings that render as

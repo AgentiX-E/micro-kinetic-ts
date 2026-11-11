@@ -236,7 +236,10 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'writes the per-candidate TERM dump (--terms-dump); an OUTPUT PATH, and the engine never reads it back. It is not a ' +
     'knob because it multiplies nothing: it serialises the breakdown the engine already produced, together ' +
     'with the weight and slope of each term, so a weight vector can be re-scored offline instead of ' +
-    'dispatched. `docs/architecture-audit-262.md` owns the measurement it exists to make possible',
+    'dispatched — 1.7 s for the whole corpus against a dispatch per point. Required on BOTH halves because a ' +
+    'screen that reads one corpus cannot subtract it from the other otherwise, and measured: the dispatch ' +
+    "that produced the FSE'26 dump reproduced that run's own reading exactly (1073/1227/1249 of 1422). " +
+    '`docs/architecture-audit-262.md` owns what it made measurable',
 };
 
 /**
@@ -1710,7 +1713,7 @@ describe('the dispatch surface has one owner per knob', () => {
         return inFse26 && inRcaeval;
       })
       .sort();
-    expect(both).toEqual(['dataDir', 'diagnoseDecimals', 'maxCases']);
+    expect(both).toEqual(['dataDir', 'diagnoseDecimals', 'maxCases', 'termsOut']);
     // Non-vacuity: the derived population must not be empty, and it must be a strict subset of
     // what one runner accepts — otherwise "both" would be measuring a single runner twice.
     expect(both.length).toBeGreaterThan(1);
@@ -1736,7 +1739,7 @@ describe('the dispatch surface has one owner per knob', () => {
     // one workflow, and required NOT to be reachable from the other. An exclusion without a direction
     // would be indistinguishable from the hole this test exists to close.
     const bothRequired = both.filter((o) => !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE));
-    expect(bothRequired).toEqual(['dataDir', 'diagnoseDecimals']);
+    expect(bothRequired).toEqual(['dataDir', 'diagnoseDecimals', 'termsOut']);
     for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE)) {
       expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
       expect(reason.length, `${option} needs a reason`).toBeGreaterThan(60);

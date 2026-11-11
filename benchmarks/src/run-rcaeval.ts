@@ -54,6 +54,7 @@ import type {
   BenchmarkCase,
   BenchmarkSuite,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { acceptedTruthServiceIds } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type {
   CasePrediction,
   RunResult,
@@ -146,6 +147,7 @@ import {
   type PrintedSignalWeights,
 } from './signal-evidence.js';
 import { accumulateTermGap, createTermGapCensus, formatTermGapLine } from './term-gap-census.js';
+import { TermDump } from './terms-dump.js';
 import {
   accumulateTraceShare,
   createTraceShareCensus,
@@ -1350,6 +1352,9 @@ async function main(): Promise<void> {
   // run while the console printed the same count three times.
   const diagnoseDump =
     opts.diagnoseDump === '' ? undefined : new DiagnoseDump(opts.diagnoseDump, configuration);
+  // The term dump truncates on construction, so a second dispatch into the same path cannot read
+  // as one run with twice the cases.
+  const termDump = opts.termsOut === '' ? undefined : new TermDump(opts.termsOut);
 
   // One prior-floor census per cell, kept so the run can close with the pooled floor beside the pooled rate.
   // Declared outside the cell loop because the summary is over the WHOLE run: a per-cell floor answers "is this
@@ -1522,6 +1527,16 @@ async function main(): Promise<void> {
           accumulateDualFamilyCensus(dualFamily, record);
           accumulateEvidenceAuditCensus(evidenceAudit, record);
           accumulateFailedEdgeGateCensus(failedEdgeGate, record);
+          if (termDump !== undefined) {
+            // The FULL ranking the runner already produced — `rankingCaptureDepth` asks for one
+            // entry per node, so this needs no second analysis and re-ranks nothing.
+            termDump.record({
+              datapack: record.case.id,
+              faultType: record.case.groundTruth.faultType,
+              accepted: acceptedTruthServiceIds(record.case.groundTruth),
+              ranking: record.ranking,
+            });
+          }
           if (diagnoseDump !== undefined) {
             diagnoseDump.record(
               groupKey,

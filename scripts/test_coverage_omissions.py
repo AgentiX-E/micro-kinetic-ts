@@ -182,6 +182,10 @@ COVERED_BY_ANOTHER_TEST = {
     'convert-parquet-to-json.py': 'test_convert_parquet_to_json.py',
     'convert-rcabench-to-rcaeval.py': 'test_convert_rcabench_to_rcaeval.py',
     'fse26_convert_tar.py': 'test_fse26_convert.py',
+    # The two instruments over an engine term dump. Both names contain a hyphen, so the by-name
+    # branch cannot reach them; both are measured, and both carry a test file that names them.
+    'terms-oracle.py': 'test_terms_oracle.py',
+    'terms-fit.py': 'test_terms_fit.py',
 }
 
 

@@ -248,6 +248,10 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   'routingProbe',
   'diagnoseDump',
   'diagnoseDecimals',
+  // The per-candidate TERM dump. It writes an artifact and changes nothing about the score — the
+  // dispatch that produced `fse26-terms.ndjson` reproduced the run's own Top@1 exactly, which is
+  // the only reading under which a screen built on such a dump is measuring the engine.
+  'termsOut',
   'lossCensus',
   // How many cases the loader holds at once. A property of the walk, not of the engine: the cell is folded from
   // the slices exactly as it would be folded from one pass (`mergeLoadStats`/`mergeRunResults`), so the published

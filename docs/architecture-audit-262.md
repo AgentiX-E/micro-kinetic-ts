@@ -147,3 +147,112 @@ It does not retract a published cell. The FSE'26 and RCAEval numbers are what th
 corpora; §1 says they are produced by coefficients fitted to those corpora, which is a statement about
 portability and not about arithmetic. It also does not propose a new default: nothing here ships until the
 oracle screen and one dispatch agree, on both corpora, with zero regressed fault types.
+
+---
+
+## 9. Readback — what the instrument said on the first real dump
+
+Everything below was measured from one dispatch (`43055506630`, 1422 cases, 69 688 candidate rows),
+re-scored locally. The control reproduced the run's own `Top@1 / @3 / @5 = 1073 / 1227 / 1249`, so
+the arithmetic under every row is the engine's.
+
+### 9.1 S1, the unit hypothesis: REFUTED
+
+| per-case rescaling of each term, weights held fixed | Top@1 | Δ |
+| --- | ---: | ---: |
+| none (the run) | 1073 | — |
+| `minmax` to [0, 1] | 1058 | −15 |
+| percentile `rank` | 833 | −240 |
+
+The units are incompatible, and repairing them by rescaling is a loss: `rank` discards the cardinal
+gap that decides a case, and `minmax` rescales one term around a vector fitted in the original units.
+
+### 9.2 The weights are worth +114 held-out — and +1 under the rule every acceptance test uses
+
+| reading | Top@1 | Δ vs shipped |
+| --- | ---: | ---: |
+| shipped | 1073 | — |
+| one vector, fitted in-sample, aggregate objective | **1204** | **+131** |
+| one vector, 5-fold held-out, stratified, seed 20261112 | **1187** | **+114** |
+| one vector, fitted with a per-fault-type non-regression gate (types with n ≥ 20) | **1074** | **+1** |
+
+The fourth row is the verdict. Every accepted change in this repository has had to hold "no fault type
+down", and under that rule the best single weight vector in the whole space is worth **one case**. The
++131 is a TRADE: `HTTPResponseReplaceCode +62` and `HTTPRequestReplaceMethod +24` are bought with
+`HTTPResponsePatchBody −3`, `HTTPRequestAbort −2` and `HTTPRequestReplacePath −1`. A single vector
+cannot buy the big shapes without selling the small ones, which is what "one vector" means.
+
+### 9.3 The ceiling: 99.30 %, and the gap is heterogeneity
+
+| reading | Top@1 | share |
+| --- | ---: | ---: |
+| shipped | 1073 | 75.46 % |
+| best single vector, held-out | 1187 | 83.47 % |
+| **any** per-case non-negative weight vector (one LP per case) | **1412** | **99.30 %** |
+| …with every weight's sign free | 1422 | 100.00 % |
+
+A per-case LP is not jointly achievable, so 1412 is a strict upper bound on **every** weight vector
+this architecture admits — including ones nobody has tried. It sits 15 pp above the best single vector
+and 24 pp above the shipped one. **The model class is expressive enough; a constant parameter vector is
+not.** Ten of the 1422 cases cannot be separated even with free signs, and those are the `absent`
+class of `docs/absent-census.md` — a truth the candidate set never contained, which no weight can
+rescue.
+
+### 9.4 The conditioner is a label-free per-case observable, and it predicts accuracy
+
+Which evidence channels a case carries is a property of the case, not of its label. Measured over the
+corpus, with the shipped ranking:
+
+| latency channel | failed-edge channel | log channel | cases | shipped Top@1 |
+| :---: | :---: | :---: | ---: | ---: |
+| ✓ | ✓ | ✓ | 598 | 86.0 % |
+| – | ✓ | ✓ | 402 | 83.6 % |
+| ✓ | ✓ | – | 63 | 74.6 % |
+| ✓ | – | – | 99 | 70.7 % |
+| – | – | – | 101 | 50.5 % |
+| – | ✓ | – | **159** | **34.6 %** |
+
+The worst bucket is not a fault type and not a system: it is **159 cases that carry a failed-edge
+channel, no latency channel and no log channel**, answered at 34.6 %. That is 159 of the corpus's 349
+misses in one cell of a 3-bit signature, and the signature is computable before scoring. This is the
+rule that "adaptive" should have been from the start: not a different dataset, but a **mixture
+conditioned on the channels the case can support**, which is also BARO's decision structure
+(per-source reliability) applied where this engine actually has a choice.
+
+### 9.5 Priorities, revised by the readback
+
+| id | item | acceptance |
+| --- | --- | --- |
+| **P0** | the 159-case `failedEdge`-only bucket: a mixture over the 6 channel signatures, fitted per bucket, held-out | held-out Top@1 above 1187 with no fault type down |
+| **P0** | the RCAEval dump (`--terms-dump` is now on that workflow, unconditionally) | the FSE'26-fitted vector applied to 735 cases, Top@1 not below 89.8 % |
+| **P1** | re-read the 173 `absent` cases as the LP's 10 inseparable ones plus 163 that a near-miss weight could reach | the count falls, or the residue is named |
+| **P2** | PRISM's subtraction as a DECISION (mask adjudication), not a term | one ablation, no fault type down |
+
+Neither of the first two is a knob. Both are the architecture the ceiling points at.
+
+### 9.6 The mixture, measured — and why it is not yet admissible
+
+`--only regimes` fits one weight vector per channel signature, on four folds, and reports the fifth.
+
+| variant | held-out Top@1 | Δ | fault types down |
+| --- | ---: | ---: | --- |
+| shipped | 1073 | — | — |
+| one vector, aggregate objective | 1187 | **+114** | 3 types, 6 cases |
+| one vector, per-type gate (n ≥ 20) | 1074 (in-sample) | **+1** | **none** |
+| mixture, 6 signatures | 1185 | **+112** | 3 types, 3 cases |
+| mixture, gate applied per bucket | 1144 | **+71** | 3 types, 3 cases |
+
+The mixture and the single vector land within two cases of each other, and neither clears the rule.
+The reason is structural rather than statistical: the gate is applied to ONE bucket's vector on that
+bucket's training cases, while the number that has to clear is the mixture's over the whole corpus.
+A per-bucket fit cannot see the interaction, so three types lose one case each and the best
+admissible answer stays at +1.
+
+What the mixture does show is where the headroom physically is: `-lat +failedEdge -log` — 159 cases,
+11.2 % of the corpus — goes from **55 to 132** held-out (+77), i.e. from 34.6 % to 83.0 %. The
+conditioner works; the objective does not yet compose.
+
+**Therefore the next step is a JOINT fit**: one coordinate ascent over all six vectors with the
+corpus-level gate as its objective, which is a different optimisation (the buckets share the metric)
+and not a harder parameter search. The alternative — a new channel for the 159 cases — is what
+`docs/absent-census.md` asked for and is unchanged by this result.

@@ -19,12 +19,12 @@ on:
         default: ''
         type: string
       temporal_weight:
-        description: "Weight of the injection-anchored temporal prior (empty = the runner default, which is 0). The runner has accepted this flag all along and no dispatch could reach it — a pin whose replacement is unreachable is still a pin"
+        description: 'Weight of the injection-anchored temporal prior (empty = the runner default, which is 0). The runner has accepted this flag all along and no dispatch could reach it — a pin whose replacement is unreachable is still a pin'
         required: false
         default: ''
         type: string
       onset_shape:
-        description: "Shape the temporal prior reads the onset delays in (empty = the runner default, earliness). A weight is a claim about a SHAPE, so the two travel together or neither is a configuration"
+        description: 'Shape the temporal prior reads the onset delays in (empty = the runner default, earliness). A weight is a claim about a SHAPE, so the two travel together or neither is a configuration'
         required: false
         default: ''
         type: string
@@ -49,22 +49,22 @@ on:
         default: ''
         type: string
       collision_weight:
-        description: "Weight on the collision-energy term — the Deng-Yu-inspired Q(f,f) aggregation (empty = the runner default, the SHIPPED 0 = disabled). The cause family it reads was measured at 19084 instances ALL `WEIGHT_ZERO`, so its contribution to every miss in the published configuration is exactly 0.0000; this input is what lets a dispatch make it non-zero and read what it does"
+        description: 'Weight on the collision-energy term — the Deng-Yu-inspired Q(f,f) aggregation (empty = the runner default, the SHIPPED 0 = disabled). The cause family it reads was measured at 19084 instances ALL `WEIGHT_ZERO`, so its contribution to every miss in the published configuration is exactly 0.0000; this input is what lets a dispatch make it non-zero and read what it does'
         required: false
         default: ''
         type: string
       prism_weight:
-        description: "Weight on the PRISM-derived term (empty = the runner default, the SHIPPED 0 = disabled). PRISM is the competitor this project leads by +10.8pp on the published convention, and `prismWeight=0` is a recorded never-revert fact — so a non-zero dispatch here re-tests a recorded rejection instead of leaving it as one measurement on one instrument"
+        description: 'Weight on the PRISM-derived term (empty = the runner default, the SHIPPED 0 = disabled). PRISM is the competitor this project leads by +10.8pp on the published convention, and `prismWeight=0` is a recorded never-revert fact — so a non-zero dispatch here re-tests a recorded rejection instead of leaving it as one measurement on one instrument'
         required: false
         default: ''
         type: string
       prism_pooling:
-        description: "The COMBINATION function the prism term pools its per-service contributions with (`additive` = the runner default and the shipped primitive). The pooling was implemented in the primitive and selectable by the standalone evaluator, while no ENGINE configuration could name it until the call site was repaired — and this input is the second half of that repair, because an option a dispatch cannot state is the same hole one level up"
+        description: 'The COMBINATION function the prism term pools its per-service contributions with (`additive` = the runner default and the shipped primitive). The pooling was implemented in the primitive and selectable by the standalone evaluator, while no ENGINE configuration could name it until the call site was repaired — and this input is the second half of that repair, because an option a dispatch cannot state is the same hole one level up'
         required: false
         default: ''
         type: string
       collapse_discount:
-        description: "The discount applied to a DROP relative to an equivalent rise (empty = the runner default, the SHIPPED 0 = symmetric). It is a MASK rather than a compression — it drops only discounts strictly between 0 and the value — so a masked setting and an inert one can print the same Δ, and only a dispatch can separate them"
+        description: 'The discount applied to a DROP relative to an equivalent rise (empty = the runner default, the SHIPPED 0 = symmetric). It is a MASK rather than a compression — it drops only discounts strictly between 0 and the value — so a masked setting and an inert one can print the same Δ, and only a dispatch can separate them'
         required: false
         default: ''
         type: string
@@ -74,7 +74,7 @@ on:
         default: ''
         type: string
       suppress_near_zero_baseline_rise:
-        description: "Set to anything non-empty to suppress a rise measured against a near-zero baseline (empty = the runner default, false = the shipped scoring). The companion of the switch above and the same shape of hole: an engine option that ships off, is named on every configuration line, and that no dispatch could turn on"
+        description: 'Set to anything non-empty to suppress a rise measured against a near-zero baseline (empty = the runner default, false = the shipped scoring). The companion of the switch above and the same shape of hole: an engine option that ships off, is named on every configuration line, and that no dispatch could turn on'
         required: false
         default: ''
         type: string
@@ -94,7 +94,7 @@ on:
         default: ''
         type: string
       pool_penalty:
-        description: "Weight of the pool-metric penalty (empty = the runner default, which is the SHIPPED 0.0679, measured as +6 cases). Added with the other two that the artifact named before any command line could set them: a value that is printed, forwarded to the engine and unreachable by dispatch makes the configuration line assert a configuration nobody can state. Set it to 0 for the ablation"
+        description: 'Weight of the pool-metric penalty (empty = the runner default, which is the SHIPPED 0.0679, measured as +6 cases). Added with the other two that the artifact named before any command line could set them: a value that is printed, forwarded to the engine and unreachable by dispatch makes the configuration line assert a configuration nobody can state. Set it to 0 for the ablation'
         required: false
         default: ''
         type: string
@@ -124,7 +124,7 @@ on:
         default: ''
         type: string
       scopes:
-        description: "Which jobs of the battery to run, comma separated (empty = every job, the shipped behaviour). `golden` runs only the three RCAEval runners and the dashboard; `ablation` and `optimize` name the two exploration jobs. It exists because the answer this workflow produces takes 30 minutes and the run that delivers it takes two: `optimize-rcaeval` and `ablation-re2` are serialised after the golden jobs, they are exploration rather than gates, and a dispatch that asks one question should not pay for them. Run `40133507548` is the argument — the optimiser hit its 60-minute bound at 22:17 and the RUN was reported `cancelled` although all nine cells had already succeeded and been uploaded. A job that did not run is not a job that failed, and this input is how a dispatch says which it is asking for"
+        description: 'Which jobs of the battery to run, comma separated (empty = every job, the shipped behaviour). `golden` runs only the three RCAEval runners and the dashboard; `ablation` and `optimize` name the two exploration jobs. It exists because the answer this workflow produces takes 30 minutes and the run that delivers it takes two: `optimize-rcaeval` and `ablation-re2` are serialised after the golden jobs, they are exploration rather than gates, and a dispatch that asks one question should not pay for them. Run `40133507548` is the argument — the optimiser hit its 60-minute bound at 22:17 and the RUN was reported `cancelled` although all nine cells had already succeeded and been uploaded. A job that did not run is not a job that failed, and this input is how a dispatch says which it is asking for'
         required: false
         default: ''
         type: string
@@ -496,8 +496,15 @@ jobs:
           fi
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          # The per-candidate TERM dump, always on. It records `(weight, slope)` per candidate, so any
+          # weight vector can be re-scored offline (`scripts/terms-oracle.py`) and "what is left in the
+          # weights" becomes an LP over one artifact (`scripts/terms-fit.py`) rather than one dispatch per
+          # point. It costs no second analysis here — `BenchmarkRunner` already ranks over the whole node
+          # set — which is why it is unconditional on THIS workflow and opt-in on FSE'26, where producing
+          # it means re-analysing every case.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re1.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re1.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -511,6 +518,7 @@ jobs:
           path: |
             rcaeval-re1-results.txt
             rcaeval-loss-census-re1.jsonl
+            rcaeval-terms-re1.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -778,8 +786,9 @@ jobs:
           fi
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re1-noinject.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re1-noinject.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
       - name: Upload RE1 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -793,6 +802,7 @@ jobs:
           path: |
             rcaeval-re1-noinject-results.txt
             rcaeval-loss-census-re1-noinject.jsonl
+            rcaeval-terms-re1-noinject.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -1094,8 +1104,9 @@ jobs:
           # change: the corpus grows for RE2 alone and their cells must not move.
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re2.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re2.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1109,6 +1120,7 @@ jobs:
           path: |
             rcaeval-re2-results.txt
             rcaeval-loss-census-re2.jsonl
+            rcaeval-terms-re2.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -1378,8 +1390,9 @@ jobs:
           # full corpus against a subset, which is the defect the cap removal repaired one level up.
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re2-noinject.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re2-noinject.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
       - name: Upload RE2 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1393,6 +1406,7 @@ jobs:
           path: |
             rcaeval-re2-noinject-results.txt
             rcaeval-loss-census-re2-noinject.jsonl
+            rcaeval-terms-re2-noinject.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -1690,8 +1704,9 @@ jobs:
           fi
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re3.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re3.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1705,6 +1720,7 @@ jobs:
           path: |
             rcaeval-re3-results.txt
             rcaeval-loss-census-re3.jsonl
+            rcaeval-terms-re3.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -1973,8 +1989,9 @@ jobs:
           fi
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re3-noinject.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re3-noinject.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
       - name: Upload RE3 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1988,6 +2005,7 @@ jobs:
           path: |
             rcaeval-re3-noinject-results.txt
             rcaeval-loss-census-re3-noinject.jsonl
+            rcaeval-terms-re3-noinject.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
@@ -2257,8 +2275,9 @@ jobs:
           fi
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          TERMS_ARG=(--terms-dump rcaeval-terms-re3-novelty.ndjson)
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re3-novelty.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${TERMS_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
       - name: Upload RE3 novelty results
         if: always()
         uses: actions/upload-artifact@v4
@@ -2272,6 +2291,7 @@ jobs:
           path: |
             rcaeval-re3-novelty-results.txt
             rcaeval-loss-census-re3-novelty.jsonl
+            rcaeval-terms-re3-novelty.ndjson
       # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
       # condition that produces it. Listed beside unconditional files it made an artifact that named a
       # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.

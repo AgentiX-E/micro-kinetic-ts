@@ -26,3 +26,15 @@ coverage==7.16.0
 # cache-datasets.yml installs from it, `rcaeval_provenance.PRODUCER_FILES` digests it so a pin change
 # invalidates the cached artifact, and this file pulls it in.
 -r requirements-rcaeval.txt
+
+# The two instruments over an engine term dump (`scripts/terms-oracle.py`, `scripts/terms-fit.py`).
+#
+# `numpy` is how the fit evaluates a weight vector in a millisecond rather than in twenty — the
+# difference between sweeping a surface and sampling four points of it. `scipy` provides the LP
+# that answers "does ANY weight vector rank this case first", which is the ceiling every later
+# coefficient decision is priced against.
+#
+# Pinned for the reason this file exists: a solver whose tolerance or pivot rule drifts moves the
+# ceiling, and the ceiling is quoted in `docs/architecture-audit-262.md`.
+numpy==2.3.5
+scipy==1.17.0

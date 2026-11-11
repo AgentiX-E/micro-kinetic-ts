@@ -796,6 +796,19 @@ export interface CliOptions {
    */
   diagnoseDump: string;
   /**
+   * The per-candidate TERM dump, or empty for none.
+   *
+   * The diagnostic dump above reads a case BODY and prints what the graph held; this one records
+   * the arithmetic — every candidate, every term, with the weight and slope that produced its
+   * contribution — so that any weight vector can be re-scored OFFLINE
+   * (`scripts/terms-oracle.py`) and the question "what is left in the weights" becomes an LP
+   * rather than one dispatch per point (`scripts/terms-fit.py`).
+   *
+   * Two corpora have to produce the same format for a screen to subtract one column from the
+   * other, which is why the writer is `terms-dump.ts` and not a block in each runner.
+   */
+  termsOut: string;
+  /**
    * How many decimals the dump's per-service fields are rendered with.
    *
    * Defaults to the producer's {@link SERVICE_FIELD_DECIMALS}, so a dispatch that says nothing gets
@@ -918,6 +931,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
+    termsOut: '',
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     lossCensus: '',
   };
@@ -1214,6 +1228,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.routingProbe = args[++i]!;
     } else if (args[i] === '--diagnose-dump' && hasValue(args, i + 1)) {
       opts.diagnoseDump = args[++i]!;
+    } else if (args[i] === '--terms-dump' && hasValue(args, i + 1)) {
+      opts.termsOut = args[++i]!;
     } else if (args[i] === '--loss-census' && hasValue(args, i + 1)) {
       opts.lossCensus = args[++i]!;
     } else if (args[i] === '--diagnose-decimals' && hasValue(args, i + 1)) {

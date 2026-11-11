@@ -107,7 +107,9 @@ def rescale(
             for s in out:
                 if name in s:
                     s[name] = (s[name] - lo) / (hi - lo)
-        elif mode == "rank":
+        else:
+            # `none` returned above, so the only mode left is `rank` — written as `else` rather
+            # than as a second test because a branch no input can reach is not a behaviour.
             # Percentile rank in [0, 1], ties sharing the mean rank — the same convention
             # `rankNormalizeScores` uses, so the two instruments agree about what a tie is.
             order = sorted(values)

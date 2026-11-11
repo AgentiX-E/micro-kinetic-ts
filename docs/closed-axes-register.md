@@ -2019,3 +2019,109 @@ guard may measure at all.
 
 **Acceptance test still unmet:** `Top@1 >= 1082` with no fault type down. The shipped reading is `1073/1422`;
 the admission arm reaches 1082 and regresses four fault types. No end-of-programme signal.
+
+---
+
+## Iteration 262 — the weights are not the architecture, and the ceiling says so
+
+**The question this iteration answers, and it was asked in the right words.** After a fortnight of
+single-knob arms that each moved one corpus and lost another, the question was whether the failure
+is in the implementation (a hard-coded parameter, a missing adaptive layer) rather than at the
+margins. It is. Three defects were measured, and one number reframes the programme.
+
+**Defect 1 — five of eight measured coefficients do not transfer.** Setting each to zero on the
+other corpus prices the other half of every decision:
+
+| coefficient | FSE'26 (1422) | RCAEval (735) |
+|---|---:|---:|
+| `latWeight` | **+77** | **0** |
+| `failedEdgeWeight` | **+80** | **0** |
+| `poolMetricPenalty` | +6 | **0** |
+| `stabilityWeight` | +1 | **0** |
+| `temporalWeight` | +4 | **−40.8 / −42.4 pp** |
+
+A coefficient worth eighty cases on one corpus and exactly zero on the other, with a third changing
+sign by forty points, is not tuning noise: each was fitted and then reported on the SAME corpus. The
+`+80` on `failedEdgeWeight` is the sharpest case — the term is measurable on **394 of 69 688**
+candidate rows, so its ablation value is a statement about a handful of cases.
+
+**Defect 2 — the coefficients are unit conversions, not importances.** The score is a sum of terms
+in incompatible units: `log1p(selfAnomaly)` lives in `[0, 0.693]` at weight 1 while `podState` is
+`[0, 1]` at weight **8**, so one term's ceiling is 11.5× the base term's. Six-decimal values such as
+`0.561495` are midpoints of a bisected window, and every added term re-solves its neighbours.
+
+**Defect 3 — almost all of it is in-sample.** `split.ts` (70/15/15) and the GP/BO/meta-learner all
+exist and none is on a default path; every published coefficient was chosen and then reported on the
+same 1422 cases.
+
+**The instrument that makes the rest of this measurable.** `--terms-dump` records, per candidate, the
+`(weight, slope)` of every term. A contribution is exactly `weight × slope`, so re-scoring at ANY
+weight vector is arithmetic — and the dispatch that produced the dump reproduced the run's own
+reading **exactly**: `Top@1 1073 / @3 1227 / @5 1249`, against the run's own `75.5 / 86.3 / 87.8 %`
+on 1422 cases (`43055506630`). A screen that does not reproduce its control is measuring its own bug,
+so this is the gate the instrument had to clear first. It now re-scores the whole corpus in 1.7 s,
+against one 12-minute dispatch per point.
+
+**S1 — per-case normalisation, REFUTED.** With weights held fixed and each term rescaled within its
+case, `minmax` reads **1058** (−15) and `rank` reads **833** (−240). The unit-incompatibility defect
+is real but it is NOT what a global rescaling repairs: `rank` destroys the cardinal gaps that decide
+the ranking, and `minmax` only rescales one term at a time around a weight vector that was fitted in
+the original units.
+
+**The number that reframes the programme: a per-case LINEAR PROGRAM against a fitted single vector.**
+
+| reading | Top@1 | share |
+|---|---:|---:|
+| shipped control | 1073 | 75.46 % |
+| one weight vector, fitted in-sample | **1204** | **84.67 %** |
+| one weight vector, 5-fold held-out (stratified) | **1187** | **83.47 %** |
+| ANY per-case non-negative weight vector (LP per case) | **1412** | **99.30 %** |
+| …and with the sign of every weight free | 1422 | 100.00 % |
+
+The third row is the first honest gain in a fortnight and it is a HELD-OUT one: **+114 cases,
++8.01 pp**, with folds that never see each other. The fourth row is the verdict on the architecture:
+the additive model is expressive enough for 99.3 % of cases, and no single vector reaches 85 %. **The
+bottleneck is the single global parameter vector, not the model class** — which is what "adaptive"
+had to mean, and it is now a measurable target (15 pp of heterogeneity) rather than a slogan.
+
+Two of the four coefficients that the fit moved far are terms the run had switched OFF, and it
+switched them on in every fold: `prism` 0 → 0.25–1.0, `temporal` 0 → 0.25–0.71, `topo` 0 → 0.06–0.5.
+`temporal` is the documented one — RCAEval's onset anchors to the source's slow response, so "the
+source moved first" is systematically wrong there — which makes the cross-corpus test the shipment
+gate, not a formality.
+
+**Two CI defects of my own, found by the gates I had written, and repaired.** The previous push
+(`5de458fa`) was reported green and was not: `test (kinetic)` and `Release` both failed on
+`architecture-audit-262.md` being absent from this register, and `converter-tests` failed because
+`scripts/terms-oracle.py` had no test and the coverage fence
+(`test_coverage_omissions.py`) refuses a measured script with nothing addressing it. Both scripts now
+read **100.00 % statement AND branch**: 27 tests over the oracle's three rescaling regimes, its
+tiebreak, its override arithmetic and its `--diff` attribution in both directions; 28 over the fit's
+control, its two-maximum Top@1 against the sorted one ON A TIE, its LP's separability and its floor,
+its stratified seeded folds, and its three tables.
+
+**Shipped:** `scripts/terms-fit.py` (the ceiling, the fit, and the held-out report), the shared
+`benchmarks/src/terms-dump.ts` writer now used by BOTH runners, `--terms-dump` on the RCAEval runner
+and unconditionally on its workflow (it costs no second analysis there — `BenchmarkRunner` already
+ranks over the whole node set — which is why the FSE'26 side stays opt-in).
+
+**Acceptance test:** `Top@1 >= 1082` with no fault type down. **Still unmet**: the fitted vector
+reaches 1204 in-sample but regresses `HTTPRequestAbort −2`, `HTTPRequestReplacePath −1` and
+`HTTPResponsePatchBody −3`, and a default change additionally has to survive the RCAEval corpus
+where `temporal` alone is documented at −40 pp. No end-of-programme signal.
+
+**Readback of the instrument, and the two numbers it settled.** The FSE'26 dump (`43055506630`, 1422
+cases, 69 688 candidate rows) reproduced its own run exactly — `1073/1227/1249` — so the screen's
+arithmetic is the engine's, and the S1 unit hypothesis is **refuted at the shipped weights**
+(`minmax` 1058, `rank` 833 against 1073). A per-case LP then answered the question the whole fortnight
+of arms could not: **99.30 %** of cases admit a weight vector that ranks the answer first (100.00 %
+with free signs), against **84.67 %** for the best single vector in-sample and **83.47 %** held-out.
+The gap is heterogeneity, not capacity.
+
+**And the admission rule holds the line.** Under "no fault type down" the best single vector is worth
+**+1 case** (1074); the +131 is a trade — `ReplaceCode +62` and `ReplaceMethod +24` bought with
+`PatchBody −3`, `Abort −2`, `Path −1`. A mixture over six label-free channel signatures reaches
+**+112** held-out and lifts the corpus's worst regime (`-lat +failedEdge -log`, 159 cases, 34.6 %)
+to 83.0 %, and still loses one case in three types, because the gate is applied per bucket while the
+number that must clear is the mixture's. **Next: one joint coordinate ascent over all six vectors
+with the corpus-level gate as the objective.**
