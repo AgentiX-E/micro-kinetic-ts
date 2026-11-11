@@ -73,6 +73,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     rankNormalization: opts.rankNormalization,
     anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
     dropMetrics: opts.dropMetrics,
+    eventExtraLabels: opts.eventExtraLabels,
     metricRiseCeiling: opts.metricRiseCeiling,
     dropDeviationMode: opts.dropDeviationMode,
     baselineAnchor: opts.baselineAnchor,

@@ -43,16 +43,17 @@ function outcomeOf(label: string, values: readonly number[], injectTimeMs: numbe
 }
 
 describe('the idle guard measures an event channel where its evidence is claimed', () => {
-  // The corpus shape: 20 quiet samples, then a dense fault, then a long decay back to quiet. Over the whole
-  // recording this channel is ~0 for 86% of its samples — the reading that refused `carts` on 18 of 30 cases.
+  // The corpus shape, at the length that makes the defect real: a long quiet PRE-INJECTION half and a dense
+  // fault half. Over the whole recording this channel is ~0 for 47.6% of its samples, which is the reading that
+  // refused `carts` on 18 of 30 cases; over the post-injection window it is never idle.
   const quietThenFaultThenDecay = (): number[] => [
-    ...Array<number>(20).fill(0),
-    ...Array<number>(20).fill(3.13),
+    ...Array<number>(400).fill(0),
+    ...Array<number>(40).fill(3.13),
     ...Array<number>(400).fill(0.36),
   ];
 
   it('ADMITS an error channel that is quiet before the fault and dense after it', () => {
-    const outcome = outcomeOf('error', quietThenFaultThenDecay(), 20_000);
+    const outcome = outcomeOf('error', quietThenFaultThenDecay(), 400_000);
     expect(outcome).not.toBe('duty-cycled-idle');
   });
 
@@ -88,5 +89,66 @@ describe('the idle guard measures an event channel where its evidence is claimed
       ...Array<number>(400).fill(0),
     ];
     expect(outcomeOf('error', values, 0)).toBe('duty-cycled-idle');
+  });
+});
+
+/**
+ * THE SECOND PRODUCER, and the fact that membership is a CONFIGURATION rather than a constant.
+ *
+ * The FSE'26 converter derives the same quantity from the same spans and spells it
+ * `http.response.error_rate`. At the shipped family the label is not an event channel, so the repair above —
+ * which is correct, tested and documented — is unreachable on the corpus where the published score is
+ * measured, and the truth's own channel is refused on 99.8 % of the judgeable datapacks.
+ *
+ * The family is therefore readable from the graph's config. The default is the shipped single label, so a
+ * bare run is unchanged by construction, and an admitted spelling reaches this guard through the SAME
+ * predicate the first one does — there is no second list.
+ */
+describe('the event family is a configuration, and its default is the shipped one', () => {
+  const quietThenFaultThenDecay = (): number[] => [
+    ...Array<number>(400).fill(0),
+    ...Array<number>(40).fill(3.13),
+    ...Array<number>(400).fill(0.36),
+  ];
+
+  const outcomeWhen = (
+    label: string,
+    values: readonly number[],
+    injectTimeMs: number,
+    eventExtraLabels?: readonly string[],
+  ): string => {
+    const result = buildTopologyFaultGraph(
+      oneNodeGraph(),
+      new Map([['svc', [series(label, values)]]]) as never,
+      { injectTimeMs, eventExtraLabels } as never,
+    );
+    return result.metricDiagnostics.get('svc')!.find((d) => d.label === label)!.outcome;
+  };
+
+  it('refuses the FSE26 spelling at the shipped family, which is the defect and not a preference', () => {
+    expect(outcomeWhen('http.response.error_rate', quietThenFaultThenDecay(), 400_000)).toBe(
+      'duty-cycled-idle',
+    );
+  });
+
+  it('measures the same series over the post-injection window once the family admits it', () => {
+    const outcome = outcomeWhen('http.response.error_rate', quietThenFaultThenDecay(), 400_000, [
+      'http.response.error_rate',
+    ]);
+    expect(outcome).not.toBe('duty-cycled-idle');
+  });
+
+  it('does not widen the LEVEL rule to anything the admission did not name', () => {
+    // Admission is per-label. A run that admits one spelling must not thereby measure a latency percentile
+    // over the post-injection half, which is the reading that made the window necessary to scope in the first
+    // place.
+    const values = [
+      ...Array<number>(20).fill(0),
+      ...Array<number>(20).fill(3),
+      ...Array<number>(400).fill(0),
+    ];
+    expect(outcomeWhen('latency-90', values, 20_000, ['http.response.error_rate'])).toBe(
+      'duty-cycled-idle',
+    );
   });
 });

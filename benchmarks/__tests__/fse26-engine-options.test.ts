@@ -234,6 +234,10 @@ describe('buildFse26EngineOptions', () => {
     );
 
     expect(engine.topology).toEqual({
+      // The EVENT family, at its shipped membership. It lands in THIS object because the graph's own idle guard
+      // is what reads it, and it is asserted HERE because a family that arrives empty is the shipped one — an
+      // omission would read identically, which is the class this test exists for.
+      eventExtraLabels: [],
       rankNormalization: false,
       // The axis's POPULATION, and it travels with the boolean rather than beside it: the two are read as
       // one configuration, because a reader holding only `rankNormalization: false` cannot tell which cases

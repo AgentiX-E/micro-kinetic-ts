@@ -262,7 +262,11 @@ describe('the deduction formula, fenced at the source', () => {
     expect(deduction).toMatch(
       /const deductibleOn[\s\S]{0,240}scope === 'all'[\s\S]{0,80}isResponseChannelOf/,
     );
-    expect(deduction).toMatch(/isResponseChannel\(dominant\.label\)/);
+    // The predicate is asked WITH the run's event family. It is not a detail of the call: the shipped literal
+    // list knew `error` and not `http.response.error_rate`, so a node whose dominant channel was the second
+    // spelling had no response channel as far as this operator was concerned and kept an anomaly its callee had
+    // caused. The family argument is what makes the two predicates one question.
+    expect(deduction).toMatch(/isResponseChannel\(dominant\.label, input\.eventLabels\)/);
     // The callee side must be consulted where the explanation is FOLDED, and the caller side where the charge
     // is applied: a swapped pair would compile, pass every same-channel fixture, and only a corpus would see it.
     expect(deduction).toMatch(/if \(!explainsThrough\(edge\.to\)\) continue;/);

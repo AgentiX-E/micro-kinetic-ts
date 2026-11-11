@@ -76,6 +76,7 @@ import {
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   buildTopologyFaultGraph,
+  resolveEventFamily,
 } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
@@ -2004,6 +2005,15 @@ export class TreePruner {
   private readonly options: TreePrunerOptions;
   private readonly cycleDetector: JohnsonCycleDetector;
   private readonly topologyConfig?: Partial<TopologyFaultGraphConfig>;
+  /**
+   * The event family, resolved ONCE for the instance.
+   *
+   * Three consumers read it and they must not be able to disagree: the graph's idle guard, the emission term,
+   * and the response-channel predicate behind `topoDiscount`. Resolving it in the constructor makes the
+   * configuration the only thing that decides, which is what the defect this field was introduced for was
+   * missing — two consumers each held their own copy of the list.
+   */
+  private readonly eventFamily: ReadonlySet<string>;
 
   constructor(
     options?: Partial<TreePrunerOptions>,
@@ -2011,6 +2021,7 @@ export class TreePruner {
   ) {
     this.options = { ...DEFAULT_TREE_PRUNER_OPTIONS, ...options };
     this.topologyConfig = topologyConfig;
+    this.eventFamily = resolveEventFamily(this.topologyConfig?.eventExtraLabels);
     invariantRange(this.options.pruneEpsilon, 0, 1, 'pruneEpsilon');
     invariantRange(this.options.criticalLoadThreshold, 0, 1, 'criticalLoadThreshold');
     invariantPositiveInt(this.options.defaultTopK, 'defaultTopK');
@@ -2346,7 +2357,9 @@ export class TreePruner {
     // `duty-cycled-idle`, and never the winner's), so the term cannot read the feature map. At weight 0 the
     // map is not built at all, which is what makes the shipped path byte-identical by construction.
     const emissionScores =
-      this.options.emissionWeight !== 0 ? computeEmissionScores(metrics, injectTimeMs) : undefined;
+      this.options.emissionWeight !== 0
+        ? computeEmissionScores(metrics, injectTimeMs, this.eventFamily)
+        : undefined;
 
     // The INTERNAL/EXTERNAL SYMMETRY, PRISM's axiom in the form the six-arm sweep argued for: a mask on a
     // candidate's own evidence rather than a score beside it. Built only when the weight is non-zero, so
@@ -2607,6 +2620,7 @@ export class TreePruner {
         // `onset`, and a caller that filtered them here would be a second place that knows which arm is
         // running — the defect the deduction's own `off` branch exists to avoid.
         onsets: graph.anomalyOnsetTimes,
+        eventLabels: this.eventFamily,
       },
       rho,
       this.options.topoDiscountScope,

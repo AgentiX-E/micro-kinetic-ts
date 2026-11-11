@@ -1902,3 +1902,61 @@ named (`docs/sota-populations.md`). None of the three is a competitor; all three
 corpus (`scripts/fse26_duty_cycle_sweep.py`, 28 tests, 100 % branch), a census that makes a producer's error
 family impossible to forget (`event-family-census.test.ts`), and a refusal with a number and a falsifier instead
 of a preference.
+
+## Iteration 260 — the mechanism was not the predicate, and the gate cannot charge the winner
+
+Iteration 259 wrote the fourteen lost datapacks of the second-spelling arm down as a victim/source asymmetry and
+pre-registered the mechanism that would admit the label: the caller's error rise is priced as evidence for the
+caller because the truth (`mysql`) cannot emit the channel at all. The next step was to make the caller
+**chargeable**, and the first reading of the code said the reason it was not is a second copy of the event family
+inside `isResponseChannel` — a literal `lower === 'error'` beside an `isEventMetric` that had been taught the
+FSE'26 spelling.
+
+**That defect is real and is fixed.** `isResponseChannel` is now expressed over the family
+(`isResponseChannel(label, eventLabels?)`), the family travels as `eventExtraLabels` from the CLI through
+`TopologyFaultGraphConfig` and is resolved **once** per pruner so the idle guard, the emission term and the
+response predicate cannot disagree, and `__tests__/causal/event-family-admission.test.ts` asserts the relation
+for every member — the assertion the literal would have failed. At the shipped family the change is inert by
+construction: `lower === 'error'` became `EVENT_METRIC_LABEL_SET.has(lower)` on a set built from that
+one-element array.
+
+**It is not the mechanism, and the arm says so.** With the predicate agreeing, the eight `mysql`-truth datapacks
+still read **0/8** — the refused arm's own answer. `ts2-mysql-bandwidth-jlzd96` is why: the accepted pair is
+`[mysql, ts-config-service]`, the arm's rank 1 is `ts-seat-service` at anomaly `1.000` against the truth's
+`0.939`, and `ts-seat-service` is the truth's **caller** (`ts-seat-service > ts-config-service > mysql`). The
+term asks the right question of the right pair and the gate refuses the answer, because
+
+```
+charged(v) ⟺ min(a(v), e(v)) >= gate × a(v),   gate = 1  ⟺  e(v) >= a(v)
+```
+
+and for the **argmax** `a(c) <= a(v)` over every callee, so `e(v) <= a(v)` — the condition holds only on a tie.
+**At the shipped gate the operator cannot charge the highest-anomaly node at all**, which is the only node a
+ranking has to get right.
+
+**And the term was additionally blind on this corpus.** `isLatencyMetric` is `startsWith('latency')`; the
+FSE'26 converter writes `http.server.request.duration.max` and its mesh `hubble_http_request_duration_p50_seconds`,
+so the caller-side predicate was false for nearly every node and `topoDiscount` did nothing on 1422 datapacks.
+Widening it was built and **refused on measurement**: Top@1 on the eight datapacks falls **8/8 → 6/8**
+(`NetworkPartition −1`, `NetworkBandwidth −1`), and `gate=0.5` recovers only one of the two (7/8, still a loss);
+`gate=0.5` with the label reads 0/8. The widening is recorded as a test rather than as a comment so the next
+reader inherits the reading.
+
+**What this invalidates.** The enrolment note for `topoDiscount` says FSE'26 came out "byte-identical on all
+three headline numbers and all twenty-five fault types". Against the two mechanisms above, that sentence is the
+signature of a term that **never ran** on that corpus, not evidence that it did no harm — a distinction the note
+could not have drawn, because neither mechanism was visible in the output and neither was fenced. The nine-cell
+enrolment reading (`641/735` against `631`) stands on its own corpus and is untouched.
+
+**What is kept:** the family relation and its fence, the `eventExtraLabels` surface (default absent = shipped,
+registered in the dispatch census with both halves `null` and its reason), and `docs/topo-discount-scope.md` §9,
+which carries the gate arithmetic, the two inertness mechanisms and the four refused arms.
+
+**What the next arm must change:** not a weight and not a scope. The gate has to become a **fleet-normalised
+share** — compare `e(v)/a(v)` against the fleet's distribution of that ratio, the requirement
+`docs/prism-symmetry-mask.md` §5 already states for any successor statistic — because the current gate compares
+two anomalies on a scale that saturates at the maximum it is trying to charge. That is a different operator and it
+needs its own pre-registration.
+
+**Acceptance test for the label remains unmet:** `Top@1 >= 1082` with no fault type down. The shipped reading is
+`1073/1422`. No end-of-programme signal.

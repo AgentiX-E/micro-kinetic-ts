@@ -646,6 +646,16 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
+  eventExtraLabels: {
+    // The complement of `--drop-metrics`: labels to ADD to the event family, not remove from a case. A list
+    // rather than a weight, which is why neither dispatch half can carry it as `name=value` — `null` on both,
+    // and the absence is the shipped family. Owner is the document that records the arm this surface exists to
+    // keep re-measurable: the second producer's spelling, priced and refused.
+    flag: '--event-extra-labels',
+    owner: 'duty-cycle-window.md',
+    fse26: null,
+    rcaeval: null,
+  },
   emissionWeight: {
     // The collision source's own emission, in errors per REQUEST — the one quantity in the fusion that is a rate
     // rather than a ratio. OFF at 0, and the arm that measured it is `docs/emission-intensity.md` §4, which is

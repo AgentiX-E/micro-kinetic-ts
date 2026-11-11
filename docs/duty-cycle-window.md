@@ -166,16 +166,27 @@ channel at all** — `mysql` has no HTTP spans — while its callers can. During
 caller's error rate rises, and once the channel is admitted that rise is priced as evidence *for the caller*.
 Six of nineteen services move; the truth contributes nothing because it has nothing to contribute.
 
-| lost case | fault | rank of truth | new rank-1 |
-| --- | --- | --- | --- |
-| `ts2-mysql-bandwidth-jlzd96` | NetworkBandwidth | 1 → out of five | `ts-config-service` |
-| `ts3-mysql-partition-xgmtkl` | NetworkPartition | 1 → out of five | `ts-station-service` |
-| `ts3-ts-config-service-partition-gpznpx` | NetworkPartition | 1 → out of five | `ts-seat-service` |
-| `ts5-mysql-bandwidth-2ctlcv` | NetworkBandwidth | 1 → out of five | `ts-train-service` |
-| `ts5-mysql-bandwidth-r5tp67` | NetworkBandwidth | 1 → 3 | `ts-order-service` |
-| `ts2-ts-order-service-loss-lp8wln` | NetworkLoss | 1 → 4 | `ts-seat-service` |
-| `ts2-mysql-partition-995nz4` | NetworkPartition | 1 → 5 | `ts-seat-service` |
-| `ts3-ts-train-service-partition-r58pxm` | NetworkPartition | 1 → 5 | `ts-basic-service` |
+| lost case | fault | accepted pair | rank of the pair | new rank-1 |
+| --- | --- | --- | --- | --- |
+| `ts2-mysql-bandwidth-jlzd96` | NetworkBandwidth | `mysql`, `ts-config-service` | 1 → out of five | **`ts-seat-service`** |
+| `ts3-mysql-partition-xgmtkl` | NetworkPartition | `mysql`, `ts-station-service` | 1 → out of five | **`ts-basic-service`** |
+| `ts3-ts-config-service-partition-gpznpx` | NetworkPartition | `ts-config-service`, `mysql` | 1 → out of five | **`ts-seat-service`** |
+| `ts5-mysql-bandwidth-2ctlcv` | NetworkBandwidth | `mysql`, `ts-train-service` | 1 → out of five | **`ts-basic-service`** |
+| `ts5-mysql-bandwidth-r5tp67` | NetworkBandwidth | `mysql`, `ts-order-service` | 1 → 3 | **`ts-seat-service`** |
+| `ts2-ts-order-service-loss-lp8wln` | NetworkLoss | `ts-order-service`, `mysql` | 1 → 4 | **`ts-seat-service`** |
+| `ts2-mysql-partition-995nz4` | NetworkPartition | `mysql`, `ts-config-service` | 1 → 5 | **`ts-seat-service`** |
+| `ts3-ts-train-service-partition-r58pxm` | NetworkPartition | `ts-train-service`, `mysql` | 1 → 5 | **`ts-basic-service`** |
+
+**Corrected in iteration 260.** Four of these eight rows carried the wrong winner, because the first reading
+took the accepted pair's second member for the arm's rank 1 instead of reading the arm's own ranking. The pair
+column is new and it is what makes the shape legible: the corpus accepts **two** services per datapack (the
+injected one and the affected one), and both were ranked first before the arm. Every new rank-1 is a **caller**
+of the accepted pair — `ts-seat-service > ts-config-service > mysql` in the graph — which is the asymmetry the
+section above describes, now with the right names attached. The identity of all fourteen lost datapacks was
+recomputed with the corpus's own multi-label rule
+(`scripts/compare_fse26_per_case.py`, `any(s in accepted for s in ranked[:k])`) and agrees with the aggregate
+`23 gained / 14 lost / net +9`.
+
 
 The other six are a sibling swap — `ts-route-plan-service` losing to `ts-travel-plan-service` by one rank in
 four `route-plan` cases, plus two single-rank moves — which is the same shape at lower magnitude: two candidates
@@ -186,3 +197,12 @@ and a channel that proves a caller was *affected* is being priced as proof that 
 acceptance test that would let the label in is pre-registered and falsifiable — `Top@1 >= 1082` **with no fault
 type down**, on this cache, measured per case — and it is carried in the exemption record itself so it cannot be
 forgotten.
+
+**Status of that repair, iteration 260.** The precondition named above — making the caller chargeable — was built
+and measured, and it is not sufficient. The caller *is* chargeable once `isResponseChannel` is expressed over the
+event family instead of a literal (a real defect, fixed and fenced), and the arm still reads **0/8** on these
+eight datapacks. The blocker turned out to be in the operator rather than in the predicate: at the shipped
+`topoDiscountGate = 1` the condition `min(a, e) >= a` reduces to `e >= a`, which the **argmax** can never
+satisfy, so the deduction cannot charge the highest-anomaly node at all. `docs/topo-discount-scope.md` §9 carries
+the arithmetic, the two independent mechanisms that additionally made the term inert on this corpus, and the four
+arms that were refused. The acceptance test above is unchanged and unmet.

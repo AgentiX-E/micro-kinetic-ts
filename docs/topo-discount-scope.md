@@ -376,3 +376,96 @@ instrument that can check it, on the two cells a local corpus runs, finds the op
 is `silent` (`truthAnomalyBefore = 0`, no callee could have explained a deviation that does not exist) and the
 count of `absent with truthAnomalyBefore > 0` across all 155 cases is **zero**. The class is real; the cause was
 assumed. `docs/pool-admission.md` owns the object, the three-way split, and the two local arms.
+
+## 9. The gate cannot charge the argmax, and two literals hid it
+
+Iteration 260 came to this term with a different question — whether admitting the FSE'26 spelling of the error
+rate (`http.response.error_rate`) is admissible once a caller can be charged for it — and left with a defect in
+the term itself. Both findings are below, because the second one invalidates the evidence the term was enrolled
+on.
+
+### 9.1 The second copy of the event family
+
+`isResponseChannel` named `error` as a literal, one line below a `delay`/`loss`/`socket` trio that is a
+genuinely different family. The event family has its own membership test (`isEventMetric`, over
+`EVENT_METRIC_LABELS`), so the literal was a **copy** of that membership — and two producers spell one quantity
+differently. The repair: the predicate is now expressed over the family
+(`isResponseChannel(label, eventLabels?)`), and `__tests__/causal/event-family-admission.test.ts` asserts the
+relation for every member rather than the literal, which is the assertion the defect would have failed. At the
+shipped family the change is inert by construction: the predicate's `lower === 'error'` becomes
+`EVENT_METRIC_LABEL_SET.has(lower)`, and the set is built from that one-element array.
+
+The family itself became readable from the graph's config (`eventExtraLabels`, threaded to all three consumers —
+the idle guard, the emission term, and this predicate — and resolved **once** per pruner instance so they cannot
+disagree). It ships absent, and absence returns the shipped set.
+
+### 9.2 The hypothesis the fix was for was wrong, and the arm says so
+
+`docs/duty-cycle-window.md` §5 reads the fourteen lost datapacks of the second-spelling arm as a victim/source
+asymmetry: the truth is `mysql`, which has no HTTP spans, so its callers' error rises are priced as evidence for
+the callers. The prediction was that the predicate was the mechanism, because a caller whose dominant channel is
+the unrecognised spelling is not deductible at all.
+
+**Measured on the eight `mysql`-truth datapacks, the predicate fix changes the arm's answer not at all:**
+
+| arm | datapacks | Top@1 | note |
+| --- | --: | --: | --- |
+| shipped | 8 | **8/8** | the control |
+| `eventExtraLabels=http.response.error_rate` | 8 | 0/8 | the refused arm, reproduced locally |
+| … with the family-aware predicate | 8 | **0/8** | the caller becomes deductible and it is not enough |
+| `topoDiscountGate=0.5` | 8 | 7/8 | the term made live, label off — already a loss |
+| `topoDiscountGate=0.5` + the label | 8 | **0/8** | |
+
+`ts2-mysql-bandwidth-jlzd96` is the case that says why. The accepted pair is `[mysql, ts-config-service]`; the
+arm's rank 1 is `ts-seat-service`, whose anomaly is **1.000** against the truth's **0.939**, and `ts-seat-service`
+is `ts-config-service`'s CALLER (`ts-seat-service > ts-config-service > mysql` in the graph). So the term's
+question is asked correctly and answered correctly — and then the gate refuses it.
+
+### 9.3 The gate of 1 is not "the strictest setting", it is a proof of inertness at rank 1
+
+```
+charged(v)  ⟺  min(a(v), e(v)) >= gate × a(v)          e(v) = ⊕ w(v→c) × a(c)
+```
+
+At `gate = 1` the condition is `e(v) >= a(v)`. For the node with the **largest** anomaly in the case, `a(c) <= a(v)`
+for every callee `c`, so `e(v) <= max_c a(c) <= a(v)` — the condition holds only on a tie. **The operator cannot
+charge the argmax.** It can reshuffle everything below the maximum, and the maximum is precisely the node a
+ranking has to get right.
+
+That is what the shipped value has been measuring for a hundred iterations. `DEFAULT_TOPO_DISCOUNT_GATE` is
+documented as "the strictest gate the axis has", and the enrolment record reads "+10 cases on the nine cells",
+which is consistent: on a dense graph plenty of nodes sit below the maximum. On FSE'26 the term was additionally
+blind (§9.4), so its total effect there was zero at every weight.
+
+### 9.4 The latency predicate is a prefix test and the FSE'26 converter does not use that prefix
+
+`isLatencyMetric(label)` is `label.startsWith('latency')`. RCAEval's converter writes `latency-90`; the FSE'26
+converter writes what the OpenTelemetry conventions call the same quantity —
+`http.server.request.duration.max`, `http.client.request.duration.max` — and its mesh writes
+`hubble_http_request_duration_p50_seconds`. None of them starts with `latency`, so on that archive the
+caller-side predicate was **false for nearly every node** and `topoDiscount` did nothing.
+
+Widening the predicate to the transport-duration spellings was built and measured:
+
+| arm | Top@1 on the eight datapacks | movement |
+| --- | --: | --- |
+| shipped | **8/8** | — |
+| + transport-duration spellings, shipped gate | **6/8** | `NetworkPartition −1`, `NetworkBandwidth −1` |
+| + those spellings, `gate=0.5` | 7/8 | one recovered, still a loss |
+
+**Refused**, on this project's rule that a regressed fault type ends the arm. The widening is recorded in
+`__tests__/causal/event-family-admission.test.ts` as a test rather than as a comment, so the next reader inherits
+the reading instead of the idea.
+
+### 9.5 What this invalidates, and what the next arm must change
+
+The enrolment note for this term says FSE'26 came out "byte-identical on all three headline numbers and all
+twenty-five fault types". Read against §9.3 and §9.4, that sentence is **the signature of a term that never ran**
+on that corpus, not evidence that it did no harm — a distinction the note could not have drawn, because the two
+mechanisms that made it inert were invisible from the output and neither was fenced by a test.
+
+So the next arm is not a weight and not a scope. It has to change the **gate's arithmetic** so the argmax is
+chargeable at all, and the only form that can do it is a **fleet-normalised share**: compare `e(v)/a(v)` against
+the fleet's distribution of the same ratio (the requirement §5 of `docs/prism-symmetry-mask.md` already states for
+any successor statistic), rather than compare two anomalies on a scale that saturates at the maximum. That is a
+different operator, it needs its own pre-registration, and `docs/closed-axes-register.md` carries it as open.

@@ -222,6 +222,10 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       prismPooling: opts.prismPooling,
     },
     topology: {
+      // The EVENT family the run measures against. It lives in THIS object because it is a
+      // `TopologyFaultGraphConfig` member — the graph's own guard reads it — and because the same name on two
+      // interfaces is a name whose owner nobody can name, which `rcaeval-reported-config.test.ts` refuses.
+      eventExtraLabels: opts.eventExtraLabels,
       // Load-bearing on Train Ticket's large topologies.
       rankNormalization: opts.rankNormalization,
       // …and the node count that decides which topologies count as large. Named on the artifact for the same

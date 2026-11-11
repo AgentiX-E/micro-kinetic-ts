@@ -85,6 +85,14 @@ export interface FSE26RunConfig {
   /** Metric names dropped for this run (empty = no ablation). */
   readonly dropMetrics: readonly string[];
   /**
+   * Additional metric labels the run admitted to the EVENT family (absent = the shipped family, `['error']`).
+   *
+   * Stated on the record rather than left to the line's default because it changes which channels are
+   * measurable at all: a reader comparing two artifacts must be able to tell a run that admitted the FSE'26
+   * spelling of the error rate from one that did not, without knowing what the shipped family was.
+   */
+  readonly eventExtraLabels?: readonly string[];
+  /**
    * Ceiling on one metric's relative deviation (0 = unbounded, the shipped
    * behaviour). An ablation switch for the anomaly score's dynamic range: the
    * RISE direction is unbounded while a DROP is capped at `log10(2)`, so a

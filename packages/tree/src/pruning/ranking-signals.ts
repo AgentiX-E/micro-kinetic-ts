@@ -2190,6 +2190,7 @@ export const EMISSION_MIN_RISE = 0.1;
 export function computeEmissionScores(
   metrics: MetricMap,
   injectTimeMs: number,
+  eventLabels?: ReadonlySet<string>,
 ): ReadonlyMap<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (injectTimeMs <= 0) return scores;
@@ -2199,7 +2200,7 @@ export function computeEmissionScores(
     let error: TimeSeries | undefined;
     let workload: TimeSeries | undefined;
     for (const ts of seriesList) {
-      if (error === undefined && isEventMetric(ts.label)) error = ts;
+      if (error === undefined && isEventMetric(ts.label, eventLabels)) error = ts;
       else if (workload === undefined && isDemandMetric(ts.label)) workload = ts;
     }
     if (error === undefined || workload === undefined) continue;

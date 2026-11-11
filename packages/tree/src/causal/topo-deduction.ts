@@ -138,6 +138,18 @@ export interface TopoDeductionInput {
    * {@link TopoPrecedence}.
    */
   readonly onsets?: ReadonlyMap<ServiceId, number>;
+  /**
+   * The EVENT family this run measures against, so `isResponseChannel` and the idle guard cannot disagree
+   * about which labels name a channel a call boundary transmits.
+   *
+   * Absent means the shipped family (`['error']`), which is what every caller written before the family became
+   * a configuration means. It exists because the two predicates had two copies of one list: the guard knew
+   * `http.response.error_rate` as an event channel and this file's predicate did not, so a node whose dominant
+   * channel was that spelling had NO response channel as far as the discount was concerned — the callback
+   * predicate skipped it and the node kept an anomaly its callee had caused. See
+   * `__tests__/causal/event-family-admission.test.ts`.
+   */
+  readonly eventLabels?: ReadonlySet<string>;
 }
 
 /**
@@ -379,7 +391,7 @@ export function deductExplainedAnomalies(
   // `__tests__/causal/topo-discount-scope.test.ts` pins which scope appears in which predicate.
   const isResponseChannelOf = (nodeId: ServiceId): boolean => {
     const dominant = input.dominantMetrics?.get(nodeId);
-    return dominant !== undefined && isResponseChannel(dominant.label);
+    return dominant !== undefined && isResponseChannel(dominant.label, input.eventLabels);
   };
   const explainsThrough = (nodeId: ServiceId): boolean => {
     if (scope === 'external') return isResponseChannelOf(nodeId);

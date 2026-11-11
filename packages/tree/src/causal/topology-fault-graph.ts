@@ -179,6 +179,25 @@ export interface TopologyFaultGraphConfig {
    */
   readonly injectTimeMs?: number;
   /**
+   * Additional metric labels to admit to the EVENT family, as the converter spells them.
+   *
+   * The family is `['error']` by default, and that list was written against the RCAEval converter. The FSE'26
+   * converter derives the same quantity from the same spans and calls it `http.response.error_rate`, so at the
+   * default the idle guard never measures it over the post-injection window and refuses it on 99.8 % of the
+   * judgeable datapacks in that archive — the truth's own channel, dropped as `duty-cycled-idle`. This field is
+   * how a run states the second spelling, so the completion can be MEASURED without editing the default.
+   *
+   * It ships ABSENT and the absence is bit-identical to the old behaviour by construction
+   * ({@link resolveEventFamily} returns the shipped set when nothing is named), which is the property that lets
+   * a refused admission stay refused without a dead code path.
+   *
+   * Admitting a label here is NOT the same decision as shipping it. The full-corpus arm at the second spelling
+   * reads `Top@1 1073 → 1082` with four fault types down, which this project refuses; the mechanism that would
+   * make it admissible is pre-registered in `docs/duty-cycle-window.md` §5 and its acceptance test is
+   * `Top@1 >= 1082` with no fault type down.
+   */
+  readonly eventExtraLabels?: readonly string[];
+  /**
    * Direction-aware deviation: the factor by which the DROP component of a
    * metric's deviation is discounted, in [0, 1].
    *
@@ -810,13 +829,43 @@ export function isDemandMetric(label: string): boolean {
 export const EVENT_METRIC_LABELS: readonly string[] = ['error'];
 
 /**
+ * The shipped family as a SET, because membership is asked once per series and once per candidate.
+ *
+ * Built once at module load rather than per call: `EVENT_METRIC_LABELS` is `readonly` and frozen by
+ * convention, so the set cannot drift from the array it was built from.
+ */
+export const EVENT_METRIC_LABEL_SET: ReadonlySet<string> = new Set(EVENT_METRIC_LABELS);
+
+/**
+ * Resolve the event family a run measures against, from the labels the run was told to admit.
+ *
+ * The DEFAULT is the shipped family, and passing no extras has to be bit-identical to not having this
+ * parameter at all — the whole point of the configuration is that a bare run is unchanged.
+ *
+ * @param extra - Additional labels to admit, as the converter spells them. Case-insensitive; blanks ignored.
+ * @returns The family as a set, always containing the shipped labels.
+ */
+export function resolveEventFamily(extra?: readonly string[]): ReadonlySet<string> {
+  if (extra === undefined || extra.length === 0) return EVENT_METRIC_LABEL_SET;
+  const family = new Set(EVENT_METRIC_LABELS);
+  for (const label of extra) {
+    const lower = label.trim().toLowerCase();
+    if (lower.length > 0) family.add(lower);
+  }
+  return family;
+}
+
+/**
  * Whether a label names an EVENT channel — a count of things that happened, whose zero is a measurement.
  *
  * @param label - The metric label as the converter wrote it.
+ * @param eventLabels - The family to test against. Absent means the shipped family, which is what every
+ *   caller written before the family became a configuration means and what every published number was read
+ *   under.
  * @returns Whether it belongs to the event family.
  */
-export function isEventMetric(label: string): boolean {
-  return EVENT_METRIC_LABELS.includes(label.toLowerCase());
+export function isEventMetric(label: string, eventLabels?: ReadonlySet<string>): boolean {
+  return (eventLabels ?? EVENT_METRIC_LABEL_SET).has(label.toLowerCase());
 }
 
 /**
@@ -1623,6 +1672,9 @@ export function buildTopologyFaultGraph(
   config?: Partial<TopologyFaultGraphConfig>,
 ): TopologyFaultGraphResult {
   const cfg = { ...DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG, ...config };
+  // The event family, resolved ONCE for the graph rather than per series: the admission is a property of the
+  // run, and a set rebuilt inside the guard loop could only ever disagree with itself.
+  const eventFamily = resolveEventFamily(cfg.eventExtraLabels);
 
   // The three composition coefficients are validated ONCE, at the boundary, rather than per metric: they
   // are properties of the configuration and a graph with no metrics would otherwise accept them silently.
@@ -1681,7 +1733,7 @@ export function buildTopologyFaultGraph(
   for (const [serviceId] of callGraph.nodes) {
     diagSvcCount++;
     const serviceMetrics = metrics.get(serviceId);
-    const result = computeAnomalyFeatures(serviceMetrics, cfg);
+    const result = computeAnomalyFeatures(serviceMetrics, cfg, eventFamily);
     anomalyScores.set(serviceId, result.score);
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
     postInjectOnsetDelays.set(serviceId, result.postInjectOnsetDelay);
@@ -1991,6 +2043,7 @@ export function isLatencyMetric(label: string): boolean {
   return label.startsWith('latency');
 }
 
+
 /**
  * Whether a metric label names a **response** channel — one whose movement at a callee can be inherited by
  * its caller, and therefore the only kind of channel a callee's anomaly is able to explain.
@@ -2010,14 +2063,35 @@ export function isLatencyMetric(label: string): boolean {
  * RE1/OnlineBoutique. `docs/topo-discount-scope.md` records both readings.
  *
  * @param label - The metric label as the converter wrote it.
+ * @param eventLabels - The event family to test against. Absent means the shipped family, so every caller
+ *   written before the family became a configuration keeps the reading it was written against.
  * @returns Whether the channel is a boundary-observable response.
+ *
+ * ## The second copy of the list, and the term that failed OPEN because of it
+ *
+ * This predicate used to name `error` as a literal, one line below a `delay`/`loss`/`socket` trio that is
+ * genuinely a different family. The event family has its own name and its own membership test
+ * ({@link isEventMetric}); the literal was a COPY of that membership, and the two producers of the same
+ * quantity spell it differently — the RCAEval converter writes `error`, the FSE'26 converter writes
+ * `http.response.error_rate` for the rate it derives from the same spans.
+ *
+ * The copy is what made a term fail OPEN rather than closed. Admitting the second spelling to the event family
+ * changes which channel wins a node's anomaly MAXIMUM; a node whose maximum then lands on a label the literal
+ * did not know became a node with no response channel at all, so `topoDiscount` at scope `external` skipped
+ * the caller-side predicate for it and the caller kept an anomaly its callee had caused. That is eight
+ * `mysql`-truth datapacks in iteration 259 — a caller called `ts-seat-service` outranking the
+ * `ts-config-service` whose latency rise produced its errors, because it could not be charged at all.
+ *
+ * The predicate is therefore expressed over the FAMILY rather than over a label, so a third spelling cannot
+ * reintroduce the defect: `__tests__/causal/event-family-admission.test.ts` asserts the relation for every
+ * member, which is a test the literal would have failed.
  */
-export function isResponseChannel(label: string): boolean {
+export function isResponseChannel(label: string, eventLabels?: ReadonlySet<string>): boolean {
   const lower = label.toLowerCase();
   return (
     isLatencyMetric(lower) ||
+    isEventMetric(lower, eventLabels) ||
     lower === 'delay' ||
-    lower === 'error' ||
     lower === 'loss' ||
     lower === 'socket'
   );
@@ -2224,6 +2298,7 @@ interface EdgeWeightResult {
 function computeAnomalyFeatures(
   serviceMetrics: readonly TimeSeries[] | undefined,
   cfg: TopologyFaultGraphConfig,
+  eventFamily: ReadonlySet<string>,
 ): AnomalyFeatures {
   if (!serviceMetrics || serviceMetrics.length === 0) {
     return {
@@ -2359,7 +2434,7 @@ function computeAnomalyFeatures(
     // and a LEVEL channel keeps the whole-recording rule it was written for (a latency percentile that is 0
     // whenever there is no traffic is idle over its whole history, not over one half of it).
     let window = { from: 0, to: n, peak: max };
-    if (isEventMetric(ts.label) && cfg.injectTimeMs !== undefined && cfg.injectTimeMs > 0) {
+    if (isEventMetric(ts.label, eventFamily) && cfg.injectTimeMs !== undefined && cfg.injectTimeMs > 0) {
       let from = -1;
       for (let i = 0; i < n; i++) {
         if (ts.timestamps[i]! >= cfg.injectTimeMs) {

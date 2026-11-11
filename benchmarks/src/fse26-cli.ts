@@ -221,6 +221,14 @@ export interface Fse26CliOptions {
    */
   readonly dropMetrics: readonly string[];
   /**
+   * Additional metric labels admitted to the EVENT family (empty = the shipped family, `['error']`).
+   *
+   * The complement of {@link dropMetrics}, and it exists for the same reason: the two converters that produced
+   * this project's two corpora spell the same error rate differently, and a run has to be able to state the
+   * second spelling without editing a constant that the published number was measured against.
+   */
+  readonly eventExtraLabels: readonly string[];
+  /**
    * Ceiling on one metric's relative deviation (0 = unbounded, the shipped
    * behaviour).
    *
@@ -619,6 +627,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     dropMetrics: [] as string[],
+    eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
     metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE,
     failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
@@ -708,6 +717,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // producer's precision rather than being rounded, because `4.5` digits names no artifact.
       opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
     else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
+    else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
+      opts.eventExtraLabels = csv(argv[++i]!);
     else if (arg === '--rise-ceiling' && hasValue(argv, i + 1)) {
       // STRICT, unlike the other numeric flags: `parseFloat('1O')` is 1, so a
       // typo would run a plausible but DIFFERENT ablation than the one asked
