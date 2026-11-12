@@ -2134,3 +2134,53 @@ emits for a dead dependency is a DIRECTION question this corpus cannot answer. `
 
 **Nothing above is a claim on the standing table**, and the marker does not roll: no ranking knob changed, so the
 configuration fingerprint stays `1a67d9681c45` and the anchor stays battery `42505425507` at `6412d69a`.
+
+## 2026-11-12 — the third corpus, and the number a non-LLM engine has to beat
+
+The four checks this iteration ran against the live literature, and the one that changes the standings page
+rather than restating it.
+
+**The paper behind the channel is confirmed in its own words.** Lee et al. (arXiv 2611.02416 v1, §4.1.1) define
+`r(s) = Pr_{W′ ∈ 𝒲_normal}[φ(s; W′) > τ]` and say why the count is the point: *"because r(s) is counted directly
+without assuming a distribution, it places KPIs with different σ and logs counted as entries on a single scale."*
+`packages/tree/src/pruning/fault-free-profile.ts` implements exactly that — a count of windows, no fitted family —
+and the departure this repository forces is in the WINDOW (§4.1.1's profiling period is 18 to 211 hours; a
+datapack here is one recording, so a case is one window) rather than in the statistic. The paper also corroborates
+the `r = 1` population this iteration measured: on Bank, *"garbage collection causes a JVM memory metric to be
+flagged in 97 % of fault-free windows"*. That is the same object as the 22 channels at `r = 1` and the 31 at
+`r = 0` — routine deviation posing as evidence — found independently on this corpus.
+
+**The evaluation set was incomplete in a way this page has to state.** RCAtlas-Core (Bi, Zhang, Li, Wang and Ma,
+Peking University and BUPT, arXiv 26 October 2026, *Free to Look, Free to Reason*) is a validated 90-case
+benchmark assembled from **eight** public RCA sources: 2 359 released cases screened, 542 examined, 348 passing
+eight exclusion rules, 90 sampled across **23 scenarios** and 10 suites, with injection-tool traces **removed** to
+prevent answer leakage. Service 59 / pod 20 / node 11 at three root-cause levels, telemetry from 37 thousand to
+5.6 million rows per case, scored by **PR@1**.
+
+| method family | best on RCAtlas-Core | what it is |
+| --- | --: | --- |
+| random ranking | 5.5 % | the floor; the median per-case guess rate is 3.45 % |
+| statistical / causal (`NSigma`, `BARO`, `CIRCA`, `RCD`, `TORAI`, `FaultInsight`, `SimpleRCA`) | **38.9 %** | `NSigma`, i.e. metrics scored by how far they deviate |
+| published LLM agents (`FoA`, `RCAgent`, `RCA-Agent`, `DecompRCA`, `mABC`) | 53.3 % | `FoA`, which hard-codes 51 % of its model calls |
+| simple LLM harnesses (one-shot / SQL agent / Codex) | 77.2 % | averaged over three mid-tier models; 84–89 % with the strongest |
+
+**This is the first corpus where the number to beat is a STATISTICAL method's, not an agent's** — and this engine
+is a statistical method. `NSigma` at 38.9 % is the threshold that decides whether a non-LLM ranker is credible on
+RCAtlas-Core, and this page cannot answer it: no cell here has been measured on those 90 cases. Recording the
+denominator matters more than the ranking would: 90 cases across 23 scenarios is **3.9 cases per scenario**, so a
+one-case move is 1.1 pp and any comparison at that granularity needs the case list, not the headline. The corpus
+also removes injection-tool traces, which is precisely the anchor this engine's pre-segment windows lean on, so
+the first task on it is not a score — it is whether the fault-free window is recoverable at all.
+
+**Two adjacent benchmarks are named and deliberately not added to the table.** `SWEOps-Bench` (arXiv 2611.06099,
+55 tasks over 16 Kubernetes operators, verified recovery 14.5–52.7 %) scores *repair*, not localization;
+`DistDebug-Bench` (arXiv 2611.03523, 120 distributed-system bugs, root-cause BLOCK in source) scores a location
+inside a repository. Neither is a ranker's denominator, and putting either beside `Top@1` on a service would be
+the category error `§0q` exists to avoid.
+
+**What this changes on the standing table: nothing yet, and the reason is a missing measurement rather than a
+missing claim.** The published cells are RCAEval's nine (89.8 %) and FSE'26's 1 422 (75.46 %), and RCAtlas-Core is
+a third denominator this repository does not report on — the same gap iteration 264 recorded and this iteration
+did not close. It is the first item of the next plan, ahead of any further weight work: a 90-case corpus with a
+public non-LLM threshold is worth more to the standings page than one more case on a corpus the engine already
+wins 90 % of.
