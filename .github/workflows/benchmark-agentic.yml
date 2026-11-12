@@ -1,0 +1,252 @@
+name: Benchmark — agentic elimination study
+
+# The elimination layer's measurement line, run where the corpus and the keys already are.
+#
+# ## Why this is a workflow and not a local script
+#
+# The corpus is 1 422 datapacks whose CONVERTED form is the artifact a run needs, and that artifact is
+# hosted as release assets on `AgentiX-E/rcabench-data` (see `.github/actions/rcabench-shards`). A
+# development machine therefore has to hold ~19 GB of derived data to reproduce one number, while a
+# runner holds it for the length of a job and throws it away. The same is true of the model arm, whose
+# key lives in `secrets` and must not be anywhere else. Measurement belongs where the inputs are.
+#
+# ## Why it is a SEPARATE workflow rather than two more inputs on `fse26-benchmark.yml`
+#
+# That file declares exactly 25 dispatch inputs, which is the hard `workflow_dispatch` limit, and
+# `dispatch-surface-census.test.ts` pins the count as an exact 25 with the reason recorded: `terms_dump`
+# took the last slot, so "the NEXT axis cannot be a new input". The study needs three artifact flags
+# (`--fingerprint-out`, `--per-case-out`, `--fault-free-profile`) that no dispatch of that file can
+# state. Splitting the workflow rather than evicting a knob from the ranking surface is the choice that
+# leaves the published surface alone; a knob removed to make room would be an axis nobody could dispatch.
+#
+# ## What it produces, and the boundary that makes it checkable
+#
+# Job `measure` writes three artifacts: the elimination fingerprints (every candidate's channel
+# pre/post/band/rate, ~5 MB), the per-case verdict file, and the run's own report. Job `study` reads
+# ONLY those artifacts and re-scores them offline. That boundary is deliberate: the study has no access
+# to the corpus, so a number it prints cannot be an accident of the data it happened to load, and the
+# same artifacts re-scored under a different `weight` cost nothing at all — which is what makes the
+# control arm (`weight=0`) free rather than a second 25-minute run.
+#
+# ## What is NOT cached here, and the measurement behind it
+#
+# `GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage` reports 10 743 940 592 bytes against a
+# 10 GB budget across 84 entries -- 80 `codeql-overlay-base-database-*` pairs (5 686 MB, one per commit
+# SHA) and one `RCAEvalJSON-*` (3 952 MB) that every push-triggered RCAEval battery reads. The budget is
+# over quota, so every save evicts something: a 2.5 GB shard cache would evict a 3.9 GB artifact that
+# costs ~30 minutes to rebuild, to save a download this organisation's own release assets serve in about
+# a minute. `.github/workflows/cache-prune.yml` reclaims the dead per-SHA entries instead, and the
+# converted corpus stays on a release, which has no budget and no eviction and carries a digest.
+#
+# The two remaining candidates are treated differently, and both by measurement:
+#
+# * **the shards are not cached.** A cache hit would save the 114 s the download step takes in run
+#   `43055506630` (16:09:45 -> 16:11:39), at the cost of 2.5 GB of a budget that is already over its
+#   quota -- so the entry would be paid for by evicting the 3.9 GB RCAEval artifact. A cache that
+#   wins 114 s and loses 30 minutes is not a cache.
+# * **the fault-free profile is cached.** It costs 6 m 46 s to build (711 cases, measured) and writes
+#   437 KB, and its key is derived from the corpus digest times a digest of every source file the
+#   build reads, so a hit cannot be stale by construction.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shard_tag:
+        description: 'rcabench-data release tag holding the shards (never `latest`). EMPTY = resolve it from this checkout''s converter digest, which is the only property that identifies a usable cache: the action lists every released cache, reads its manifest digest, and selects the one this converter produced (refusing when none or several match). An explicit tag PINS the cache and is still refused by the provenance gate unless its manifest was built from this checkout'
+        required: false
+        default: ''
+      categories:
+        description: 'Comma-separated fault categories to download (empty = all 7). A subset is a SCOPE, not a smaller corpus: a category that was not downloaded cannot report anything at all'
+        required: false
+        default: ''
+      max_cases:
+        description: 'Number of datapacks to evaluate (empty = the runner default, which is all downloaded). Passed only when non-empty, because the runner owns its default'
+        required: false
+        default: ''
+      weight:
+        description: 'Elimination weight the study applies to a recorded claim (empty = the study''s own default, which is 1). It is a POST-processing parameter: the same fingerprints re-scored at 0 are the control arm, so a weight sweep costs no run and no tokens'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: measure (engine + elimination dumps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      # The corpus, through the one action that owns which released cache is consumable, where it is
+      # extracted and what proves it came from this converter. A second copy of those three steps is
+      # how a provenance gate ends up enforced in one workflow and skipped in another.
+      - name: Fetch the converted corpus
+        id: corpus
+        uses: ./.github/actions/rcabench-shards
+        with:
+          tag: ${{ inputs.shard_tag }}
+          categories: ${{ inputs.categories }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      # The elimination fingerprint IS a fault-free band per channel, so the dump cannot be produced
+      # without the profile — `run-fse26.ts` refuses the flag by name rather than writing a file of
+      # empty candidate lists, which would read as "no verifiable claim" about the corpus instead of
+      # about that run. Built over the WHOLE corpus rather than the `max_cases` scope, because the
+      # profile is a property of the corpus and an arm that rebuilt it per scope could not be compared
+      # with an arm that read it.
+      #
+      #   It is also the one step in this job worth caching, and the only one: measured at **6 m 46 s**
+      #   for 711 cases here, so ~10 minutes for the full corpus, for a 437 KB output. The key is
+      #   DERIVED rather than typed -- the converter digest (which corpus) times a digest of every
+      #   `.ts` file the build reads (which builder) -- because a hand-written key is the defect
+      #   `cache-datasets.yml` records: `2b15f6e` fixed the conversion pipeline, hit the cache the OLD
+      #   pipeline had produced, and converted nothing while the step read `skipped`.
+      - name: Derive the profile key from the corpus and the builder
+        id: key
+        run: |
+          set -euo pipefail
+          #   The `sha256:` prefix is stripped because the value is pasted into a cache key, and a key is
+          #   an identifier rather than a digest declaration.
+          CORPUS=$(python3 scripts/fse26_provenance.py --root scripts --digest | sed 's/^sha256://')
+          #   Directory roots rather than a hand list of files: a list is a second owner of "what the
+          #   profile depends on", and it drifts silently in the safe direction (a miss costs minutes)
+          #   and in the unsafe one (a hit on a changed builder publishes a stale band). The roots are
+          #   the loader the build reads cases through, the profile builder, and the tree package that
+          #   computes the bands.
+          BUILDER=$(python3 - <<'PY'
+          import hashlib, pathlib
+          roots = ['benchmarks/src', 'packages/tree/src', 'packages/kinetic/src/benchmarks', 'packages/core/src']
+          digest = hashlib.sha256()
+          for root in roots:
+              for path in sorted(pathlib.Path(root).rglob('*.ts')):
+                  digest.update(str(path).encode())
+                  digest.update(path.read_bytes())
+          print(digest.hexdigest()[:16])
+          PY
+          )
+          echo "key=fault-free-profile-$CORPUS-$BUILDER"
+          echo "key=fault-free-profile-$CORPUS-$BUILDER" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the profile
+        id: profile
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/fault-free-profile.json
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Build the fault-free profile
+        if: steps.profile.outputs.cache-hit != 'true'
+        run: |
+          pnpm exec tsx benchmarks/src/build-fault-free-profile.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --out "$HOME/fault-free-profile.json"
+          ls -l "$HOME/fault-free-profile.json"
+
+      - name: Publish the profile
+        if: steps.profile.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/fault-free-profile.json
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Run the engine with the elimination dumps
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/agentic
+          #   The rule the other workflow earned the hard way: pass a flag only when its input is
+          #   non-empty, so the runner's own default is the single owner of the configuration. An empty
+          #   `--max-cases` parses to 0, which is "all" here but is "zero" in the flags whose parser has
+          #   no such sentinel, so the safe form is the conditional one.
+          MAX_CASES_ARG=()
+          if [ -n "${{ inputs.max_cases }}" ]; then
+            MAX_CASES_ARG=(--max-cases "${{ inputs.max_cases }}")
+          fi
+          #   `--fault-free-profile` is passed with the SHIPPED weight (0, `DEFAULT_FAULT_FREE_WEIGHT`),
+          #   so it supplies the bands the dump records and changes no ranking term. A run that also
+          #   passed `--fault-free-weight` would be measuring a different configuration than the one the
+          #   standing document quotes.
+          pnpm exec tsx benchmarks/src/run-fse26.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --fault-free-profile "$HOME/fault-free-profile.json" \
+            --fingerprint-out artifacts/agentic/fingerprints.ndjson \
+            --per-case-out artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/results.json \
+            "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
+          echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
+          echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
+
+      - name: Upload the measurement
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-measure
+          path: |
+            artifacts/agentic/fingerprints.ndjson
+            artifacts/agentic/per-case.ndjson
+            artifacts/agentic/results.txt
+            artifacts/agentic/results.json
+            ${{ github.workspace }}/manifest.json
+          if-no-files-found: warn
+
+  study:
+    name: study (offline re-scoring)
+    needs: measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Download the measurement
+        uses: actions/download-artifact@v4
+        with:
+          name: agentic-measure
+          path: artifacts/agentic
+
+      # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
+      # a verdict whose published order disagrees, because two artifacts from different runs would
+      # produce a number for a configuration neither of them ran -- and the CLI exits non-zero on that
+      # refusal, so this job fails rather than printing a confident table over a broken join.
+      - name: Score the ceiling, the evidence arm and the control
+        run: |
+          set -o pipefail
+          WEIGHT_ARG=()
+          if [ -n "${{ inputs.weight }}" ]; then
+            WEIGHT_ARG=(--weight "${{ inputs.weight }}")
+          fi
+          pnpm exec tsx benchmarks/src/run-agentic-headroom.ts \
+            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            "${WEIGHT_ARG[@]}" 2>&1 | tee artifacts/agentic/headroom.txt
+
+      - name: Upload the study
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-headroom
+          path: artifacts/agentic/headroom.txt
+          if-no-files-found: warn

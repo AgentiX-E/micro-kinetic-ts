@@ -201,3 +201,57 @@ and therefore a spend decision the ceiling in §3 has now been made against.
 The analyzer refuses to score artifacts from different runs: it compares the dumped order with the published order
 case for case and stops if they disagree, because a dump left over from an earlier commit produces a number for a
 configuration neither run had.
+
+## 8. Where the next reading runs, and why it is not on a workstation
+
+§1 labels every number above "over 711" because the other 711 datapacks were never converted **in this
+environment**. That sentence hides a decision, and iteration 269 made it explicit: the converted corpus is not
+something a machine should build. It is something a **release** holds.
+
+| resource | where it lives | size | measured cost to reproduce locally | cost in CI |
+| --- | --- | --- | --- | --- |
+| converted `case.json` corpus (1 422 cases) | release assets, `AgentiX-E/rcabench-data` | 2.48 GB compressed | ~19 GB of disk, one conversion run | **114 s** (`43055506630`, 16:09:45 → 16:11:39) |
+| fault-free profile | derived | 437 KB | **6 m 46 s** for 711 cases | cached, key derived from corpus × builder |
+| fingerprints + verdicts | run artifact | 4.8 MB / 711 cases | the run itself | one job |
+
+So the study moved to `.github/workflows/benchmark-agentic.yml`, which fetches the corpus through
+`.github/actions/rcabench-shards` (one owner for the tag, the extraction, and the provenance gate), builds the
+profile, runs the engine with `--fingerprint-out` and `--per-case-out`, and re-scores the artifacts in a second
+job that has **no access to the corpus at all**. `fse26-benchmark.yml` was moved onto the same action in the same
+iteration, which is what makes it one owner instead of one more copy: the three inline steps it carried — resolve,
+download, verify — are now in exactly one file, and a test fails if either workflow re-inlines them. That boundary is the point: a number the study prints is then a
+property of the artifact, and the control arm (`--weight 0`) is free rather than a second 25-minute run.
+
+### The cache question, answered with the quota rather than with the idea
+
+"Use the Actions cache to reuse the corpus" is the obvious next thought, and the API says no:
+
+```text
+GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage
+{"active_caches_size_in_bytes": 10743940592, "active_caches_count": 84}
+```
+
+10.74 GB against a 10 GB budget. Eighty of the 84 entries are `codeql-overlay-base-database-*` — a pair per commit
+SHA, 5.69 GB — and the key embeds the SHA, so **no later commit can address them**. They are written and read
+inside one workflow run and are a log with a size limit afterwards. Because the budget is over quota, every save
+evicts by LRU, which is how the entry that *is* reused — `RCAEvalJSON-*`, 3.95 GB, ~30 minutes to rebuild — competes
+with entries whose next reader does not exist.
+
+Two decisions follow, both measured rather than argued:
+
+1. **The corpus is not cached.** A 2.5 GB entry would buy the 114 s download and pay for it by evicting the 3.9 GB
+   artifact. A cache that wins two minutes and loses thirty is not a cache, and the release asset has no budget,
+   no eviction and a digest.
+2. **The profile is cached.** 6 m 46 s and 437 KB, keyed by the converter digest times a digest of every `.ts` the
+   build reads, so a hit cannot be stale by construction.
+
+`scripts/prune_caches.py` reclaims the other half of the measurement: 5.69 GB of per-SHA overlays, keeping the
+newest two of each family, denying by default (a key outside the named prefixes is never touched), reporting unless
+`--apply` is given, and applying on a schedule where the overlays actually accumulate. 100 % branch coverage over
+123 statements.
+
+### What this makes answerable that was not
+
+The ceiling in §3 is a bound on a **711-case** population. The same artifacts over 1 422 cases are now one dispatch
+away, at $0 and no laptop: the study's `engine` arm over the full corpus is the control the model arm will be
+compared against, and it is the first number in this document that will not carry a population caveat.

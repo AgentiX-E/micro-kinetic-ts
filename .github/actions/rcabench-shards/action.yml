@@ -1,0 +1,173 @@
+name: RCABench shard cache
+description: >-
+  Fetch the pre-converted RCABench case corpus that this checkout's converter produced, and refuse
+  anything else. One owner for the five things that were typed twice: which released cache is
+  consumable, where it is extracted, whether it is complete, what it is called in the artifact, and
+  what a run is allowed to assume about it.
+
+
+  Before this action the FSE'26 workflow carried three steps -- `Resolve the cache tag from this
+  checkout's converter digest`, `Download shards from rcabench-data`, `Verify cache provenance` -- and
+  every second consumer of the same corpus would have carried a second copy of them. That copy is the
+  defect this repository keeps finding one level up: §0p of `sota-comparison.md` records an allow-list
+  of fenced tables, and `cell-baseline.ts` records a skip condition that also fired on its own
+  staleness. Two copies of a provenance gate fail in two directions, and only one of them is watched.
+
+
+  ## There is deliberately NO `actions/cache` here, and the reason is measured
+
+  `GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage` reports **10 743 940 592 bytes** of a
+  10 GB budget across 84 entries, of which 80 are `codeql-overlay-base-database-*` (5 686 MB, one
+  pair per commit SHA, so a new key every push) and one is `RCAEvalJSON-*` (3 952 MB, read by every
+  push-triggered RCAEval battery). The budget is over its quota, so **every save evicts something**:
+  a 2.5 GB shard entry would buy a download this repository's own release assets serve in about a
+  minute, and would pay for it by evicting a 3.9 GB artifact that costs ~30 minutes to rebuild.
+
+  The corpus therefore stays where it already is -- a release asset on `AgentiX-E/rcabench-data`,
+  fetched over GitHub's own network, verified by digest -- and the cache budget is spent on what
+  cannot be regenerated from a URL. See `.github/workflows/cache-prune.yml` for the other half of
+  that measurement: the 5.7 GB of per-SHA overlay entries are reclaimed on a schedule so the entries
+  that ARE worth keeping stop being evicted by them.
+
+inputs:
+  tag:
+    description: >-
+      The `rcabench-data` release tag to consume. EMPTY resolves it from this checkout's converter
+      digest, which is the only property that identifies a usable cache: the action lists every
+      released cache, reads its manifest digest, and selects the one this converter produced,
+      refusing when none or several match. An explicit tag PINS the cache and is still refused by
+      the provenance gate below unless its manifest was built from this checkout.
+    required: false
+    default: ''
+  categories:
+    description: >-
+      Comma-separated fault categories to download (empty = every category the manifest declares).
+      A subset is a SCOPE, not a smaller corpus: the run reports the cells it scored, and a category
+      that was not downloaded cannot report anything at all.
+    required: false
+    default: ''
+
+outputs:
+  tag:
+    description: The released cache that was resolved or pinned, which is also the provenance label.
+    value: ${{ steps.resolve.outputs.tag }}
+  categories:
+    description: The categories actually downloaded, comma-separated, in the manifest's order.
+    value: ${{ steps.download.outputs.categories }}
+  case-count:
+    description: How many `case.json` files the extraction produced, which is the corpus's own size.
+    value: ${{ steps.download.outputs.case-count }}
+
+runs:
+  using: composite
+  steps:
+    # ── Resolve which released cache this checkout can consume ──
+    #   The identification of a cache is its manifest's `converterDigest` — the same field the gate
+    #   below checks — so the tag can be DISCOVERED from the digest instead of remembered by a human.
+    #   That is the difference between a default that can go stale and one that cannot:
+    #   `rcabench-latency-full` shipped as the default and stopped matching when the converter gained
+    #   the pod-lifecycle channel (`cc26232d`), so every bare dispatch was refused by its own gate
+    #   until an operator downloaded manifests by hand.
+    #
+    #   A pinned tag skips discovery entirely, and is still gate-checked below: skipping the CHECK is
+    #   what the old code did, and that is the failure mode this action exists to make unexpressible.
+    - name: Resolve the cache tag from this checkout's converter digest
+      id: resolve
+      shell: bash
+      env:
+        PINNED_TAG: ${{ inputs.tag }}
+        DATA_REPO: https://github.com/AgentiX-E/rcabench-data
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/rcabench"
+        if [ -n "$PINNED_TAG" ]; then
+          echo "tag=$PINNED_TAG" >> "$GITHUB_OUTPUT"
+          echo "Cache tag PINNED by the caller: $PINNED_TAG"
+          exit 0
+        fi
+        # `git ls-remote` rather than the releases API: the runner's token is scoped to THIS
+        # repository, and an unauthenticated API listing shares a 60/hour budget with every other job
+        # on the host's IP.
+        CANDIDATES="$HOME/rcabench/candidates.txt"
+        : > "$CANDIDATES"
+        for tag in $(git ls-remote --tags --refs "$DATA_REPO" | awk '{print $2}' | sed 's|refs/tags/||'); do
+          if curl -fsSL --retry 5 --retry-all-errors \
+               -o "$HOME/rcabench/manifest-$tag.json" \
+               "$DATA_REPO/releases/download/$tag/manifest.json"; then
+            digest=$(python3 -c \
+              "import json,sys;print(json.load(open(sys.argv[1])).get('converterDigest') or '')" \
+              "$HOME/rcabench/manifest-$tag.json")
+            printf '%s\t%s\n' "$tag" "$digest" >> "$CANDIDATES"
+          else
+            echo "  $tag: no manifest.json, so it is not a cache release"
+          fi
+        done
+        echo "Released caches and the converter that built each:"
+        sed 's/^/  /' "$CANDIDATES"
+        EXPECTED=$(python3 scripts/fse26_provenance.py --root scripts --digest)
+        TAG=$(python3 scripts/fse26_cache_select.py --expected "$EXPECTED" --candidates "$CANDIDATES")
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "Cache tag resolved for converter $EXPECTED: $TAG"
+
+    # ── Download pre-built per-category shards ──
+    #   The converted `case.json` output is pre-split into seven fault-category shards and hosted as
+    #   Release assets, so a consumer no longer downloads the 13.4 GB archive or re-runs the Parquet
+    #   conversion. The tag is never `releases/latest`: re-uploading assets with
+    #   `gh release upload --clobber` does not refresh a release's `published_at`, so `latest` keeps
+    #   pointing at whichever release was *created* most recently and silently serves a superseded
+    #   set — which is how a full run was dispatched against `rcabench-full-v2`, whose assets predate
+    #   the label fan-out fix, while the rebuilt shards sat on `rcabench-full`.
+    - name: Download shards
+      id: download
+      shell: bash
+      env:
+        TAG: ${{ steps.resolve.outputs.tag }}
+        REQUESTED: ${{ inputs.categories }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/rcabench/json"
+        BASE="https://github.com/AgentiX-E/rcabench-data/releases/download/$TAG"
+        curl -L --fail --retry 10 --retry-all-errors \
+          -o "$HOME/rcabench/manifest.json" "$BASE/manifest.json"
+        if [ -n "$REQUESTED" ]; then
+          CATS=$(echo "$REQUESTED" | tr ',' ' ')
+        else
+          CATS=$(python3 -c "import json; print(' '.join(s['category'] for s in json.load(open('$HOME/rcabench/manifest.json'))['shards']))")
+        fi
+        for cat in $CATS; do
+          curl -L --fail --retry 10 --retry-all-errors \
+            -o "$HOME/rcabench/rcabench-$cat.tar.gz" \
+            "$BASE/rcabench-$cat.tar.gz"
+          tar xzf "$HOME/rcabench/rcabench-$cat.tar.gz" -C "$HOME/rcabench/json"
+        done
+        COUNT=$(find "$HOME/rcabench/json" -name case.json | wc -l)
+        echo "Shard tag: $TAG"
+        echo "Downloaded categories: $CATS"
+        echo "case.json count: $COUNT"
+        df -h "$HOME"
+        echo "categories=$(echo $CATS | tr ' ' ',')" >> "$GITHUB_OUTPUT"
+        echo "case-count=$COUNT" >> "$GITHUB_OUTPUT"
+        echo "RCABENCH_CATEGORIES=$(echo $CATS | tr ' ' ',')" >> "$GITHUB_ENV"
+        echo "SHARD_TAG=$TAG" >> "$GITHUB_ENV"
+
+    # ── Provenance gate ──
+    #   A converted cache is consumed WITHOUT re-conversion, so nothing in the data reveals which
+    #   converter produced it: a set built from an older revision is byte-indistinguishable from a
+    #   current one and publishes a wrong score with no error. Refuse unless the manifest's converter
+    #   digest matches this checkout and every shard matches the size and sha256 the manifest
+    #   recorded, then copy the manifest to the workspace root so the run artifact carries the exact
+    #   cache every published number came from.
+    - name: Verify cache provenance
+      shell: bash
+      env:
+        TAG: ${{ steps.resolve.outputs.tag }}
+        CATEGORIES: ${{ steps.download.outputs.categories }}
+      run: |
+        set -euo pipefail
+        python3 scripts/fse26_provenance.py \
+          --root scripts \
+          --manifest "$HOME/rcabench/manifest.json" \
+          --cache-label "$TAG" \
+          --shard-dir "$HOME/rcabench" \
+          --categories "$CATEGORIES"
+        cp "$HOME/rcabench/manifest.json" manifest.json
