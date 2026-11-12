@@ -227,3 +227,46 @@ that carry FSE'26's mixture are **absent on RCAEval almost everywhere** — `fai
 therefore collapses 656 of RCAEval's 735 cases into `-lat -failedEdge -log` — the same _label_ as 101
 FSE'26 cases whose vector was fitted on a population where those channels exist elsewhere. The signature
 is a corpus-internal routing key, and the measurement now says why rather than only that.
+
+## 2026's competitor set, checked against the corpus this project reports on
+
+Four papers landed between iterations 263 and 264 that change what a comparison may claim, and one of
+them changes what the next measurement should be.
+
+**Qian, Zhao, Wang et al. (2026), _ARMOR: A Robust Self-Supervised Framework for Root Cause Analysis in
+Microservices under Missing Modality_**, ASE '26, doi [10.1145/3832783.3834338](https://doi.org/10.1145/3832783.3834338).
+A modality-specific asymmetric encoder plus missing-aware gated fusion, self-supervised, joint AD/FT/RCL,
+"state-of-the-art under complete data conditions" and robust under severe modality loss. This is the
+strongest published claim in the class this project competes in, and it makes **modality loss** a first
+class axis: a ranking that reads a channel as zero when the channel is _absent_ scores the same as one
+that reads it as zero when the channel is _routine_, and ARMOR is the paper that says those must be
+separated. The engine currently cannot tell them apart either — `docs/absent-census.md` §4 is the same
+defect on this corpus.
+
+**Gao, Yang, Meng, Zhu and Cao (2026), _Towards the Localization of Multi-Root-Cause Failures in
+Microservice Systems: An Active Intervention Framework_**, FSE 2026. Hierarchical RL with an
+intervention-enhanced graph attention network, framing diagnosis as active intervention rather than
+passive propagation. **Multi-root-cause** is a setting this project's metric already tolerates (a case is
+credited when _any_ accepted service is ranked first) but does not measure: 34 of the 173 unretrievable
+cases on the FSE'26 archive are multi-label. A metric that credits the injection point and ignores the
+endpoint would read higher than the corpus supports, so the ranking reported here is a **lower bound** on
+the multi-root population rather than an upper one.
+
+**RCLAgent (Zhang, Jia, Wang et al., 2026).** Multi-agent recursion-of-thought, strong MRR, weak Recall by
+the authors' own account. `OTHER` population, no gap readable, and the mechanism — parallel reasoning over
+log-derived evidence — is not on the engine's axis.
+
+**RCAtlas-Core (Peking University and BUPT, 2026, arXiv 2610.35767).** 90 curated cases over 8 public
+sources, 23 fault scenarios, three root-cause levels (59 service, 20 pod, 11 node), telemetry 3.7 × 10⁴
+to 5.6 × 10⁶ rows, injection-tool artefacts removed to prevent answer leakage. The paper's own arms:
+simple harnesses 65–77 % PR@1 on mid-tier models, published LLM agents 16–53 %, non-LLM statistical
+methods 6–39 % (NSigma 38.9 %), random 5.5 %. **This is the third corpus this project could report on**
+and the only one whose construction is audited for leakage; it is public, and adding it is the concrete
+answer to "is the evaluation set complete" — as of this iteration it is not, because the project reports
+on two of the three.
+
+One number from the survey of that corpus is worth recording because it is the same finding this
+iteration reached from the other side: RCAtlas reports that hand-written agent pipelines "may skip
+decisive evidence, for example a log line, or a service that no longer receives calls". The 36
+regressions measured in `architecture-audit-264.md` §2 are exactly that failure at the coefficient level:
+a service that stops being answered correctly because a coordinate moved, not because its evidence did.

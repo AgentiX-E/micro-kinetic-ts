@@ -2194,3 +2194,43 @@ the information the ranking needs. The next iteration is a **new measurable chan
 regime at 34.6 %, lifted to 83.0 % by its own vector and only to 61 % by a vector fitted elsewhere.
 
 Full readings, the eight tables and the three refutations in derivation order: `architecture-audit-263.md`.
+
+## Iteration 264 — the floor was a wall, and the wall was hiding thirty-six regressions
+
+Iteration 263 concluded that no training-time constraint can keep a fault type whole on held-out data.
+This iteration tested that as an **instrument** question and the answer is that the conclusion was true
+and incomplete. `TypeGate` charges `n_cases + 1` per lost case — more than any total the corpus can
+produce — so a coordinate ascent that starts inside the barrier never leaves it. The same rule with a
+**finite per-type price, learnt by dual ascent**, and a **warm start** from the ungated optimum, reads
+**1204 (+131)** where the barrier read **+1**. The admission test is unchanged; what changed is that the
+search may walk through a violating state to reach an admissible one.
+
+**The deficits are not where the rule looks.** The +131 vector's net table says three types down by
+1–3 cases. The gross table says **36 cases lost and 167 gained**: `HTTPRequestAbort` loses five and
+wins three (net −2), `HTTPResponseReplaceCode` gains sixty-six and loses four (net +62, four regressions
+unreported). A rule over counts is therefore **too strict** — it refused +131 over two net cases — and
+**too lax** — a level net would have admitted all thirty-six.
+
+**So the strict form was built and measured: `CaseFloor`, no case the control answers may be lost.**
+Over ten configurations (hard and soft, cold and warm, prices to 10⁹) the best reading that preserves
+every control-won case is **1074 (+1)**, and every serious gain hands back 17 to 36. **No monotone vector
+exists in the neighbourhood**: the shipped default is on the Pareto frontier of `(Top@1, cases
+preserved)`, and the frontier is steep — 113 cases cost 17 regressions.
+
+**Why, measured rather than argued.** The 36 lost cases are the thin wins, and none of them is a tie
+(0 of 1073 control-won cases is won by less than 10⁻⁹). Median won margin **0.947**, median lost margin
+**0.260**, thinnest **0.0063**, 16 of 36 inside the bottom decile. The term that flips each one is
+`prism` (13), `failedEdge` (10), `temporal` (7), `lat` (3) — the same twelve coordinates the gains are
+made of. The score is linear in the weights, the no-loss region is the intersection of 1 073 half-spaces,
+and the shipped point lies six thousandths from its nearest boundary.
+
+**The margin surrogate confirms the diagnosis from a third direction.** `Top@1` is only the sign of the
+margin, so `Σ tanh(margin/τ)` was fitted instead: best reading of the programme (**1212, +139**, τ = 0.1)
+and not one deficit repaired.
+
+**Acceptance test: not met.** No vector is shipped; the reading is unchanged at 1073. The next iteration
+is not a weight fit and not a new rule — it is a **coordinate that is zero on the cases the ranking wins
+thinly**, so its contribution can rise where it must without moving the marginal ones. That is the
+fault-free baseline frequency channel of Lee et al. (2026, arXiv 2611.02416).
+
+Full readings, the eight tables and the four refutations in derivation order: `architecture-audit-264.md`.

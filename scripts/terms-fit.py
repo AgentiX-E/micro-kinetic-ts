@@ -416,6 +416,7 @@ def hill_climb(
     passes: int,
     eps_grid: float = 0.25,
     gate: TypeGate | None = None,
+    start: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """Coordinate ascent on Top@1 over a multiplicative grid around the incumbent.
 
@@ -425,12 +426,13 @@ def hill_climb(
     @param passes - How many sweeps.
     @param eps_grid - The smallest and largest factor, as `eps_grid` and its reciprocal.
     @param gate - The per-type non-regression gate, or None to optimise the aggregate alone.
+    @param start - The vector the climb begins at; empty means the shipped run.
     @returns The weight overrides the climb settled on; empty when nothing improved.
     """
     def objective(candidate: dict[str, float]) -> int:
         return gate.score(corpus, candidate, train) if gate is not None else top1_on(corpus, candidate, train)
 
-    weights: dict[str, float] = {}
+    weights: dict[str, float] = dict(start or {})
     best = objective(weights)
     factors = np.geomspace(eps_grid, 1.0 / eps_grid, grid)
     for _ in range(passes):
@@ -447,6 +449,158 @@ def hill_climb(
         if not improved:
             break
     return weights
+
+
+class Lagrangian:
+    """The non-regression rule as a PRICE that can be paid, instead of a wall that cannot.
+
+    `TypeGate.score` charges `n_cases + 1 + |lost|` for a single lowered type, which is more than
+    the whole corpus can yield: the admissible set becomes a barrier and a coordinate ascent that
+    starts inside it never leaves. Iteration 263 measured exactly that — the gated climb returns
+    +1 case where the ungated one returns +131, and a two-case type loss is the only thing between
+    the two. A floor that has to be ATTAINED needs a finite price, and the price has to be per type,
+    because one type's case is worth what no price affordable to another type would buy.
+
+    The price is learnt rather than tuned: each round the climb maximises `top1 - sum_t price_t *
+    lost_t`, and the types it still lowers are the ones whose price rises. This is dual ascent on
+    the multipliers of the floor constraints, and it is the instrument the constraint needs — a
+    fixed coefficient cannot satisfy a constraint and optimise the objective at once (Hashemi et
+    al., 2025, arXiv 2505.20628; Constrained GRPO, 2026, arXiv 2602.05863, shows the same failure
+    when per-component terms are not scalarised before the multiplier is read).
+    """
+
+    def __init__(
+        self,
+        corpus: Corpus,
+        min_population: int,
+        step: float = 2.0,
+        cap: float = 64.0,
+    ) -> None:
+        """@param corpus - The corpus. @param min_population - Smallest gated type.
+        @param step - Factor the price of a still-lowered type is multiplied by each round.
+        @param cap - Highest price any single type may reach, so a hopeless floor cannot bid the
+        corpus away and disguise "no move exists" as "the control is optimal".
+        """
+        self.oracle = TypeGate(corpus, min_population)
+        self.duals: dict[str, float] = {name: 1.0 for name in self.oracle.control}
+        self.step = step
+        self.cap = cap
+
+    def price_of(self, lost: dict[str, int]) -> float:
+        """What a violation costs at the current prices.
+
+        @param lost - Type name to cases lost.
+        @returns The charge, in cases.
+        """
+        return sum(self.duals.get(name, 1.0) * abs(value) for name, value in lost.items())
+
+    def learn(self, lost: dict[str, int]) -> None:
+        """Raise the price of every type this round still lowered.
+
+        @param lost - Type name to cases lost.
+        """
+        for name in lost:
+            self.duals[name] = min(self.cap, self.duals.get(name, 1.0) * self.step)
+
+    def violations(
+        self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None = None
+    ) -> dict[str, int]:
+        """The floor reading of a vector — the admission test, unchanged by the price.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The population to judge on; None for all.
+        @returns Type name to cases lost; empty when the vector clears the floor.
+        """
+        return self.oracle.violations(corpus, weights, mask)
+
+    def score(self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None) -> int:
+        """The priced objective the climb maximises.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The cases the fit is scored on, or None for all.
+        @returns Cases won minus the priced cost of the floor it still breaks.
+        """
+        total = top1_on(corpus, weights, mask)
+        return total - int(round(self.price_of(self.oracle.violations(corpus, weights, mask))))
+
+
+def repair(
+    corpus: Corpus,
+    train: np.ndarray,
+    grid: int,
+    passes: int,
+    rounds: int,
+    min_population: int,
+    eps_grid: float = 0.25,
+    step: float = 2.0,
+    cap: float = 64.0,
+    start: dict[str, float] | None = None,
+    surrogate_tau: float | None = None,
+    floor: Any = None,
+) -> dict[str, Any]:
+    """Climb, re-price what is still broken, and climb again from where the last one stopped.
+
+    Two defects are repaired here and neither is a rule change: the climb is WARM-STARTED, and the
+    floor is priced instead of walled. Iteration 263's gated fit returned +1 case because both
+    were missing, and its conclusion — that no training-time constraint can keep a type whole on
+    held-out data — was a conclusion about the instrument.
+
+    @param corpus - The corpus.
+    @param train - The cases to fit on.
+    @param grid - Factors per coordinate in each climb.
+    @param passes - Sweeps per climb.
+    @param rounds - Climb/re-price rounds allowed.
+    @param min_population - Smallest gated type.
+    @param eps_grid - The smallest and largest factor, as `eps_grid` and its reciprocal.
+    @param step - Factor a still-lowered type's price is multiplied by each round.
+    @param cap - Highest price any single type may reach.
+    @param start - The vector the first climb begins at; empty means the shipped run.
+    @param surrogate_tau - Fit on the margin surrogate at this scale instead of on `Top@1`, or None.
+    @param floor - The floor to clear, as `Lagrangian` (per type) or `CaseFloor` (per case); None
+    builds the per-type one from `min_population`.
+    @returns The vector, its total, the floor reading, whether it cleared, the round schedule, and
+    the best vector the floor turned down.
+    """
+    lagrangian = Lagrangian(corpus, min_population, step=step, cap=cap) if floor is None else floor
+    objective: Any = lagrangian
+    if surrogate_tau is not None:
+        objective = Surrogate(corpus, tau=surrogate_tau, floor=lagrangian)
+    weights: dict[str, float] = dict(start or {})
+    schedule: list[tuple[int, int, int]] = []
+    # A warm start may already break the floor — the archive's ungated optimum does, by two cases —
+    # so the fallback is the SHIPPED vector, which defines the floor and therefore always clears it.
+    fallback: dict[str, float] = {}
+    accepted: tuple[dict[str, float], int] | None = None
+    refused: dict[str, Any] | None = None
+    lost: dict[str, int] = {}
+    total = top1_on(corpus, weights, train)
+    for _round in range(max(rounds, 1)):
+        weights = hill_climb(
+            corpus, train, grid, passes, eps_grid=eps_grid, gate=objective, start=weights
+        )
+        total = top1_on(corpus, weights, train)
+        lost = lagrangian.violations(corpus, weights, train)
+        schedule.append((total, len(lost), int(round(lagrangian.price_of(lost)))))
+        if not lost:
+            accepted = (dict(weights), total)
+            break
+        if refused is None or total > refused["total"]:
+            refused = {"weights": dict(weights), "total": total, "lost": dict(lost)}
+        lagrangian.learn(lost)
+    if accepted is None:
+        accepted = (fallback, top1_on(corpus, fallback, train))
+    best, best_total = accepted
+    return {
+        "weights": best,
+        "total": best_total,
+        "lost": {} if best is fallback else dict(lost),
+        "feasible": True,
+        "schedule": schedule,
+        "duals": dict(lagrangian.duals),
+        "refused": refused,
+    }
 
 
 #: The channels whose PRESENCE conditions a case. Each is a term the engine measures only where its
@@ -856,12 +1010,289 @@ def folds_of(corpus: Corpus, k: int, seed: int) -> list[np.ndarray]:
     return [np.where(assignment == fold)[0] for fold in range(k)]
 
 
+def members_of(mask: np.ndarray | None, n_cases: int) -> np.ndarray | None:
+    """Normalise a population mask, which arrives as case INDICES or as booleans.
+
+    @param mask - The mask, or None for the whole corpus.
+    @param n_cases - How many cases the corpus has.
+    @returns A boolean membership array, or None.
+    """
+    if mask is None:
+        return None
+    arr = np.asarray(mask)
+    if arr.dtype == bool and arr.size == n_cases:
+        return arr
+    members = np.zeros(n_cases, dtype=bool)
+    members[arr] = True
+    return members
+
+
+class CaseFloor:
+    """No case the shipped ranking answers correctly may stop being answered correctly.
+
+    This is the STRICTEST reading of the non-regression rule and the one a delivered default
+    actually owes: a corpus is a set of cases, not a table of counts. `TypeGate` compares counts, so
+    a type at 38/39 may lose a case as long as it wins another — and over four iterations that rule
+    has refused every arm, because the counts it compares are sums over cases whose margins differ
+    by two orders of magnitude (median win 0.947, the thin ones 0.006). A floor over the cases
+    themselves cannot be satisfied that way: every case the control wins must still be won.
+
+    Satisfying it is therefore a strictly stronger claim than the type rule, and a vector that
+    clears it satisfies the type rule for free.
+    """
+
+    def __init__(self, corpus: Corpus, price: float = 1.0, step: float = 2.0, cap: float = 64.0) -> None:
+        """@param corpus - The corpus. @param price - The starting price of a lost case.
+        @param step - Factor the price rises by each round a case is still lost.
+        @param cap - Highest price the floor may reach.
+        """
+        self.won = corpus.top1_mask(corpus.scores({}))
+        self.price = price
+        self.step = step
+        self.cap = cap
+
+    def violations(
+        self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None = None
+    ) -> dict[str, int]:
+        """The cases the control answered correctly that this vector does not.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The population to judge on; None for all.
+        @returns `{'case': -lost}` when any case is lost, else empty.
+        """
+        hit = corpus.top1_mask(corpus.scores(weights))
+        members = members_of(mask, corpus.n_cases)
+        guarded = self.won if members is None else self.won & members
+        lost = int((guarded & ~hit).sum())
+        return {"case": -lost} if lost else {}
+
+    @property
+    def duals(self) -> dict[str, float]:
+        """The price as a single multiplier, so the report of a fit reads the same for both floors."""
+        return {"case": self.price}
+
+    def price_of(self, lost: dict[str, int]) -> float:
+        """What a violation costs at the current price.
+
+        @param lost - The violation reading.
+        @returns The charge, in cases.
+        """
+        return sum(self.price * abs(value) for value in lost.values())
+
+    def learn(self, lost: dict[str, int]) -> None:
+        """Raise the price of a case that is still lost.
+
+        @param lost - The violation reading.
+        """
+        if lost:
+            self.price = min(self.cap, self.price * self.step)
+
+    def score(self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None) -> int:
+        """The priced objective the climb maximises.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The cases the fit is scored on, or None for all.
+        @returns Cases won minus the priced cost of the cases it broke.
+        """
+        total = top1_on(corpus, weights, mask)
+        return total - int(round(self.price_of(self.violations(corpus, weights, mask))))
+
+
+def margins(corpus: Corpus, scores: np.ndarray) -> np.ndarray:
+    """Per case, the best accepted candidate's score minus the best rejected one's.
+
+    `Top@1` is the sign of this number and nothing else, which is why a fit that optimises it can
+    trade a hundred comfortable wins for sixteen cases it had won by 0.006 and report the total as
+    a gain. On the archive those sixteen are exactly the cases the +131 vector loses: every one of
+    them was a thin win (median control-won margin 0.947, the lost ones 0.006 to 0.64) and **none**
+    of them was a tie, so the loss is real information about the objective and not a tie-break.
+
+    A case whose truth is not among its candidates has no margin: `-inf`, so no surrogate can pay
+    for it. A case whose every candidate is accepted has no competitor and is won outright: `+inf`.
+
+    @param corpus - The corpus.
+    @param scores - Candidate scores, one per row.
+    @returns One margin per case, in case order.
+    """
+    starts = corpus.starts()
+    accepted = np.where(corpus.is_answer, scores, -np.inf)
+    rejected = np.where(corpus.is_answer, -np.inf, scores)
+    best_accepted = np.maximum.reduceat(accepted, starts)
+    best_rejected = np.maximum.reduceat(rejected, starts)
+    # A segment with no rejected row reduces to `-inf`; everything is accepted, so the case is won
+    # whatever the weights do and the margin is unbounded in the only direction that matters.
+    return np.where(
+        np.isneginf(best_rejected),
+        np.where(np.isneginf(best_accepted), -np.inf, np.inf),
+        best_accepted - best_rejected,
+    )
+
+
+def margin_paid(corpus: Corpus, scores: np.ndarray, tau: float) -> np.ndarray:
+    """The surrogate, per case, so a fit can be scored on part of the corpus.
+
+    @param corpus - The corpus.
+    @param scores - Candidate scores, one per row.
+    @param tau - The margin at which the surrogate is about 76 % paid.
+    @returns One payment per case: `tanh(margin / tau)`, 1 where every candidate is accepted, 0
+    where the truth is not a candidate.
+    """
+    margin = margins(corpus, scores)
+    finite = np.isfinite(margin)
+    paid = np.zeros(margin.shape, dtype=np.float64)
+    paid[finite] = np.tanh(margin[finite] / tau)
+    paid[np.isposinf(margin)] = 1.0
+    return paid
+
+
+def margin_score(corpus: Corpus, scores: np.ndarray, tau: float) -> float:
+    """The surrogate a margin-aware fit maximises: `sum tanh(margin / tau)`.
+
+    Bounded, so one case cannot dominate the fit the way an unclipped margin would; monotone in the
+    margin, so it never prefers a wrong ranking; and steepest where the margin is small, which is
+    where the archive's decisions are decided.
+
+    @param corpus - The corpus.
+    @param scores - Candidate scores, one per row.
+    @param tau - The margin at which the surrogate is about 76 % paid.
+    @returns The surrogate value.
+    """
+    return float(margin_paid(corpus, scores, tau).sum())
+
+
+#: The fixed-point scale the surrogate is carried in, because `hill_climb` compares integers and a
+#: surrogate worth one case per case must weigh the same as one case in the floor's price.
+SURROGATE_SCALE = 1_000_000
+
+
+class Surrogate:
+    """The margin surrogate as an objective, optionally still subject to the type floor.
+
+    A fit scored on this cannot be paid for trading sixteen thin wins for a hundred wide ones: the
+    thin ones are where `tanh` is steep and the wide ones are where it is flat. That is the whole
+    defect of the step objective, and it is measured — the +131 vector's sixteen losses were the
+    thinnest margins on the corpus, from 0.006 where the median win is 0.947.
+    """
+
+    def __init__(
+        self, corpus: Corpus, tau: float = 0.25, floor: Lagrangian | None = None
+    ) -> None:
+        """@param corpus - The corpus. @param tau - The margin scale.
+        @param floor - The priced type floor, or None to fit on margins alone.
+        """
+        self.tau = tau
+        self.floor = floor
+
+    def score(self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None) -> int:
+        """The priced surrogate.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The cases the fit is scored on, or None for all.
+        @returns The surrogate in fixed point, minus the floor's price in the same units.
+        """
+        paid = margin_paid(corpus, corpus.scores(weights), self.tau)
+        seen = paid if mask is None else paid[mask]
+        total = int(round(SURROGATE_SCALE * float(seen.sum())))
+        if self.floor is None:
+            return total
+        return total - int(round(SURROGATE_SCALE * self.floor.price_of(self.floor.violations(corpus, weights, mask))))
+
+
+def repair_fit(
+    corpus: Corpus,
+    folds: Sequence[np.ndarray],
+    grid: int,
+    passes: int,
+    rounds: int,
+    min_population: int,
+    step: float = 2.0,
+    cap: float = 64.0,
+    surrogate_tau: float | None = None,
+) -> dict[str, Any]:
+    """The priced floor fitted on everything, then fitted per fold and read on the held-out part.
+
+    Two readings of one instrument. The in-sample one is the configuration that would ship; the
+    held-out one is the only number that says whether the floor survives a corpus it was not fitted
+    on. Iteration 263 could not separate the two, because its climb never left the control and both
+    numbers were the same number.
+
+    @param corpus - The corpus.
+    @param folds - Held-out case indices, one array per fold.
+    @param grid - Factors per coordinate in each climb.
+    @param passes - Sweeps per climb.
+    @param rounds - Climb/re-price rounds allowed per fit.
+    @param min_population - Smallest gated type.
+    @param step - Factor a still-lowered type's price is multiplied by each round.
+    @param cap - Highest price any single type may reach.
+    @param surrogate_tau - Fit on the margin surrogate at this scale instead of on `Top@1`, or None.
+    @returns The in-sample fit, the per-type held-out split, the pooled reading and the per-fold
+    vectors.
+    """
+    every = np.arange(corpus.n_cases)
+
+    def start_from(train: np.ndarray) -> dict[str, float]:
+        # The warm start is the `Top@1` optimum of the same population: a margin fit begun there
+        # keeps the cases the step objective already won and spends its budget on the thin ones.
+        return {} if surrogate_tau is not None else hill_climb(corpus, train, grid, passes)
+
+    inside = repair(
+        corpus,
+        every,
+        grid,
+        passes,
+        rounds,
+        min_population,
+        step=step,
+        cap=cap,
+        start=start_from(every),
+        surrogate_tau=surrogate_tau,
+    )
+    control_hit = corpus.top1_mask(corpus.scores({}))
+    by_type: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    vectors: dict[int, dict[str, float]] = {}
+    holdout_hits = 0
+    improved = 0
+    for index, held in enumerate(folds):
+        train = np.setdiff1d(every, held)
+        out = repair(
+            corpus,
+            train,
+            grid,
+            passes,
+            rounds,
+            min_population,
+            step=step,
+            cap=cap,
+            start=start_from(train),
+            surrogate_tau=surrogate_tau,
+        )
+        vectors[index] = out["weights"]
+        improved += int(out["total"] > top1_on(corpus, {}, train))
+        hit = corpus.top1_mask(corpus.scores(out["weights"]))
+        holdout_hits += int(hit[held].sum())
+        for case_index in held:
+            entry = by_type[corpus.fault_type[int(case_index)]]
+            entry[0] += int(hit[int(case_index)])
+            entry[1] += int(control_hit[int(case_index)])
+    return {
+        "inside": inside,
+        "by_type": dict(by_type),
+        "holdout": holdout_hits,
+        "folds": len(folds),
+        "vectors": vectors,
+        "improved": improved,
+    }
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", help="fse26-terms.ndjson from --terms-dump")
     parser.add_argument(
         "--only",
-        choices=("ceiling", "global", "heldout", "regimes", "joint", "transfer"),
+        choices=("ceiling", "global", "heldout", "regimes", "joint", "transfer", "repair"),
         default=None,
     )
     parser.add_argument("--min-bucket", type=int, default=40)
@@ -870,6 +1301,34 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--grid", type=int, default=9)
     parser.add_argument("--passes", type=int, default=3)
     parser.add_argument("--eps", type=float, default=1e-6)
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=4,
+        metavar="N",
+        help="climb/re-price rounds a priced floor is given before it settles",
+    )
+    parser.add_argument(
+        "--price-step",
+        type=float,
+        default=2.0,
+        metavar="FACTOR",
+        help="what a still-lowered fault type's price is multiplied by each round",
+    )
+    parser.add_argument(
+        "--surrogate",
+        type=float,
+        default=None,
+        metavar="TAU",
+        help="fit on sum tanh(margin/TAU) instead of on Top@1, so a thin win costs what it is",
+    )
+    parser.add_argument(
+        "--price-cap",
+        type=float,
+        default=64.0,
+        metavar="PRICE",
+        help="highest price one type may reach, so a hopeless floor cannot bid the corpus away",
+    )
     parser.add_argument(
         "--gate-types",
         type=int,
@@ -1043,6 +1502,65 @@ def main(argv: Sequence[str]) -> int:
                     for bucket, vector in sorted(vectors.items())
                 )
                 print(f"  fold {fold_index}: {rendered if rendered else 'no bucket above the floor'}")
+
+    if args.only in (None, "repair"):
+        if args.gate_types <= 0:
+            raise SystemExit(
+                "--only repair needs --gate-types N: a priced floor is defined by a population "
+                "floor, and without one every one-case type becomes a constraint"
+            )
+        folds = folds_of(corpus, args.folds, args.seed)
+        report = repair_fit(
+            corpus,
+            folds,
+            args.grid,
+            args.passes,
+            args.rounds,
+            args.gate_types,
+            step=args.price_step,
+            cap=args.price_cap,
+            surrogate_tau=args.surrogate,
+        )
+        inside = report["inside"]
+        print(
+            f"\nREPAIR one priced floor, {args.rounds} rounds, price x{args.price_step:g} to a cap of "
+            f"{args.price_cap:g}, types of {args.gate_types}+ cases, {report['folds']}-fold held-out, "
+            f"{'margins at tau ' + format(args.surrogate, 'g') if args.surrogate else 'Top@1'}"
+        )
+        print(f"  {'round':>5s} {'total':>7s} {'types down':>11s} {'charged':>8s}")
+        for index, (total, down, price) in enumerate(inside["schedule"]):
+            print(f"  {index:5d} {total:7d} {down:11d} {price:8d}")
+        refused = inside["refused"]
+        print(
+            f"  accepted {inside['total']} ({100.0 * inside['total'] / total:.2f}%)  "
+            f"shipped {100.0 * control['at1'] / total:.2f}%  delta {inside['total'] - control['at1']:+d}  "
+            f"types down: {', '.join(inside['lost']) if inside['lost'] else 'none'}"
+        )
+        if refused is not None:
+            print(
+                f"  refused  {refused['total']} ({100.0 * refused['total'] / total:.2f}%)  "
+                f"types down: "
+                f"{', '.join(f'{name} {value:+d}' for name, value in sorted(refused['lost'].items()))}"
+            )
+        print(f"  {'faultType':32s} {'control':>8s} {'repair':>8s} {'delta':>7s}")
+        for name, (hits, control_hits) in sorted(report["by_type"].items()):
+            print(f"  {name:32s} {control_hits:8d} {hits:8d} {hits - control_hits:+7d}")
+        regressed = [name for name, (hits, base) in report["by_type"].items() if hits < base]
+        print(
+            f"  pooled holdout {report['holdout']}/{total} "
+            f"({100.0 * report['holdout'] / max(total, 1):.2f}%)  "
+            f"shipped {100.0 * control['at1'] / total:.2f}%  "
+            f"delta {report['holdout'] - control['at1']:+d}  "
+            f"folds improved {report['improved']}/{report['folds']}  "
+            f"types down: {', '.join(regressed) if regressed else 'none'}"
+        )
+        for fold_index, vector in sorted(report["vectors"].items()):
+            print(
+                f"  fold {fold_index}: "
+                f"{ {name: round(float(value), 4) for name, value in vector.items()} }"
+                if vector
+                else f"  fold {fold_index}: no move cleared the floor"
+            )
 
     if args.transfer_from:
         source = load(args.transfer_from)

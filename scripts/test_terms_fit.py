@@ -558,6 +558,277 @@ class TheTransfer(unittest.TestCase):
         self.assertEqual(sum(entry[0] for entry in report["table"].values()), corpus.n_cases)
 
 
+#: A floor that a BARRIER cannot reach and a PRICE can. `u` repairs six `Delay` cases and breaks two
+#: of the four `Kill` cases; `v` repairs those two and nothing else. The pair is feasible and worth
+#: ten cases; every intermediate state is not, so an objective that refuses every violating vector
+#: can never take the first step. This is the shape the real archive has: +135 cases behind a
+#: two-case type loss.
+#:
+#: `u` and `v` ship at weight 0, so the control reading is the shipped one and neither channel is
+#: carrying anything until a fit turns it on — the same shape as the second spelling on the archive.
+TRAP = [
+    case('K1', ['a'], 'Kill', [
+        row('a', {'s': 0.9, 'u': 0.0, 'v': 0.9}, {'u': 0.0, 'v': 0.0}),
+        row('b', {'s': 0.1, 'u': 1.5, 'v': 0.0}, {'u': 0.0, 'v': 0.0}),
+    ]),
+    case('K2', ['a'], 'Kill', [
+        row('a', {'s': 0.9, 'u': 0.0, 'v': 0.9}, {'u': 0.0, 'v': 0.0}),
+        row('b', {'s': 0.1, 'u': 1.5, 'v': 0.0}, {'u': 0.0, 'v': 0.0}),
+    ]),
+    case('K3', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+    case('K4', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+] + [
+    case(f'D{index}', ['b'], 'Delay', [
+        row('a', {'s': 0.9, 'u': 0.0}, {'u': 0.0}),
+        row('b', {'s': 0.1, 'u': 0.9}, {'u': 0.0}),
+    ])
+    for index in range(1, 7)
+]
+
+#: The same trap with the repair channel removed: `u` buys six `Delay` cases for two `Kill` ones and
+#: nothing buys them back, so no vector clears the floor and the instrument must say so.
+UNREPAIRABLE = [
+    case('K1', ['a'], 'Kill', [row('a', {'s': 0.9, 'u': 0.0}, {'u': 0.0}), row('b', {'s': 0.1, 'u': 1.5}, {'u': 0.0})]),
+    case('K2', ['a'], 'Kill', [row('a', {'s': 0.9, 'u': 0.0}, {'u': 0.0}), row('b', {'s': 0.1, 'u': 1.5}, {'u': 0.0})]),
+    case('K3', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+    case('K4', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+] + [
+    case(f'D{index}', ['b'], 'Delay', [
+        row('a', {'s': 0.9, 'u': 0.0}, {'u': 0.0}),
+        row('b', {'s': 0.1, 'u': 0.9}, {'u': 0.0}),
+    ])
+    for index in range(1, 7)
+]
+
+
+class ThePriceOfACase(unittest.TestCase):
+    """A rule that must be ATTAINED needs a finite price; a barrier only proves it was not tried."""
+
+    def test_the_duals_start_at_one_for_every_gated_type_and_no_other(self) -> None:
+        corpus = corpus_of(TRAP)
+        lagrangian = fit.Lagrangian(corpus, 4)
+        self.assertEqual(lagrangian.duals, {'Delay': 1.0, 'Kill': 1.0})
+
+    def test_a_type_below_the_floor_is_not_priced(self) -> None:
+        # Priced, a four-case type would let the search buy three cases of a thirty-case type to
+        # satisfy it, which is the opposite of what the floor is for.
+        self.assertEqual(fit.Lagrangian(corpus_of(TRAP), 5).duals, {'Delay': 1.0})
+
+    def test_the_charge_is_the_price_times_the_cases_lost(self) -> None:
+        corpus = corpus_of(TRAP)
+        lagrangian = fit.Lagrangian(corpus, 4)
+        # `u` repairs six `Delay` cases and breaks two `Kill` ones: eight won, two lost.
+        self.assertEqual(fit.top1_on(corpus, {'u': 1.0}, None), 8)
+        self.assertEqual(lagrangian.score(corpus, {'u': 1.0}, None), 6)
+
+    def test_a_learnt_price_rises_only_on_the_type_that_was_lowered(self) -> None:
+        corpus = corpus_of(TRAP)
+        lagrangian = fit.Lagrangian(corpus, 4, step=3.0)
+        lagrangian.learn({'Kill': -2})
+        self.assertEqual(lagrangian.duals, {'Delay': 1.0, 'Kill': 3.0})
+
+    def test_a_price_stops_rising_at_the_cap(self) -> None:
+        # Without a cap a type that cannot be repaired bids the whole corpus away and the search
+        # reports the control as its best finding, which reads as "no move exists".
+        lagrangian = fit.Lagrangian(corpus_of(TRAP), 4, step=4.0, cap=8.0)
+        for _ in range(4):
+            lagrangian.learn({'Kill': -1})
+        self.assertEqual(lagrangian.duals['Kill'], 8.0)
+
+    def test_a_vector_that_lowers_nothing_is_scored_by_its_total(self) -> None:
+        corpus = corpus_of(TRAP)
+        lagrangian = fit.Lagrangian(corpus, 4)
+        self.assertEqual(lagrangian.score(corpus, {'v': 1.0}, None), fit.top1_on(corpus, {'v': 1.0}, None))
+
+
+class TheRepair(unittest.TestCase):
+    """Alternating primal climb and dual ascent is the instrument; the barrier was the defect."""
+
+    def test_the_barrier_cannot_take_the_step_the_price_takes(self) -> None:
+        corpus = corpus_of(TRAP)
+        control = corpus.metrics(corpus.scores({}))['at1']
+        barrier = fit.hill_climb(corpus, np.arange(corpus.n_cases), 9, 3, gate=fit.TypeGate(corpus, 4))
+        repaired = fit.repair(corpus, np.arange(corpus.n_cases), 9, 3, 4, 4)
+        self.assertEqual(control, 4)
+        self.assertEqual(fit.top1_on(corpus, barrier, None), control)
+        self.assertTrue(repaired['feasible'])
+        self.assertGreater(repaired['total'], control)
+
+    def test_the_repaired_vector_clears_the_floor_it_was_asked_to_clear(self) -> None:
+        corpus = corpus_of(TRAP)
+        repaired = fit.repair(corpus, np.arange(corpus.n_cases), 9, 3, 4, 4)
+        gate = fit.TypeGate(corpus, 4)
+        self.assertEqual(gate.violations(corpus, repaired['weights'], None), {})
+        self.assertEqual(repaired['total'], 10)
+
+    def test_every_round_is_reported_with_its_total_and_its_deficit(self) -> None:
+        corpus = corpus_of(TRAP)
+        repaired = fit.repair(corpus, np.arange(corpus.n_cases), 9, 3, 4, 4)
+        self.assertEqual(len(repaired['schedule']), 1)
+        self.assertEqual(repaired['schedule'][0][:2], (10, 0))
+
+    def test_the_climb_stops_as_soon_as_the_floor_holds(self) -> None:
+        # Four rounds are allowed and the first clears it; spending the rest would be work that
+        # cannot change the answer, and on the archive that work is minutes.
+        corpus = corpus_of(TRAP)
+        self.assertLess(len(fit.repair(corpus, np.arange(corpus.n_cases), 9, 3, 4, 4)['schedule']), 4)
+
+    def test_a_floor_no_move_clears_keeps_the_control_and_records_what_it_refused(self) -> None:
+        # The control DEFINED the floor, so it always clears it; the failure mode is that nothing
+        # better does. Then the answer must be the control, and the gain it turned down has to be
+        # reported rather than returned, or the fit ships a vector that breaks the rule it was
+        # given. Iteration 263's joint fit returned exactly such a vector three times.
+        corpus = corpus_of(UNREPAIRABLE)
+        repaired = fit.repair(corpus, np.arange(corpus.n_cases), 9, 3, 3, 4)
+        control = corpus.metrics(corpus.scores({}))['at1']
+        self.assertTrue(repaired['feasible'])
+        self.assertEqual(repaired['lost'], {})
+        self.assertEqual(repaired['total'], control)
+        self.assertIsNotNone(repaired['refused'])
+        self.assertGreater(repaired['refused']['total'], control)
+
+    def test_a_warm_start_that_breaks_the_floor_falls_back_to_the_shipped_vector(self) -> None:
+        # The archive's start is the ungated optimum, which breaks the floor by two cases. One
+        # round cannot repair it, so the answer is the shipped vector and not the warm start.
+        corpus = corpus_of(UNREPAIRABLE)
+        repaired = fit.repair(corpus, np.arange(corpus.n_cases), 9, 1, 1, 4, start={'u': 1.0})
+        self.assertEqual(repaired['weights'], {})
+        self.assertEqual(repaired['total'], corpus.metrics(corpus.scores({}))['at1'])
+        self.assertEqual(repaired['lost'], {})
+        self.assertIsNotNone(repaired['refused'])
+
+    def test_a_warm_start_is_where_the_climb_begins(self) -> None:
+        # The archive's defect was that every climb re-derived from the SHIPPED vector, so a fit
+        # that had already found +135 was thrown away before the floor was applied to it.
+        corpus = corpus_of(TRAP)
+        starting = {'u': 1.0}
+        warm = fit.hill_climb(corpus, np.arange(corpus.n_cases), 9, 2, start=starting)
+        self.assertGreaterEqual(fit.top1_on(corpus, warm, None), fit.top1_on(corpus, starting, None))
+
+
+class TheCaseFloor(unittest.TestCase):
+    """A corpus is a set of cases; a rule that compares counts can keep the count and lose the case."""
+
+    def test_a_case_the_control_won_and_this_vector_loses_is_the_violation(self) -> None:
+        corpus = corpus_of(TRAP)
+        case_floor = fit.CaseFloor(corpus)
+        # `u` alone buys six `Delay` cases and loses `K1` and `K2`, which the control answered.
+        self.assertEqual(case_floor.violations(corpus, {'u': 1.0}), {'case': -2})
+
+    def test_a_type_may_keep_its_count_and_still_break_the_floor(self) -> None:
+        # The defect that makes this a stronger rule than `TypeGate`: `u` plus `v` repairs the two
+        # `Kill` cases, but a vector that lost one and won another would satisfy the count and not
+        # this. Built explicitly, on one type, so the difference is a number and not a claim.
+        corpus = corpus_of(TRAP)
+        gate = fit.TypeGate(corpus, 4)
+        case_floor = fit.CaseFloor(corpus)
+        self.assertEqual(gate.violations(corpus, {'u': 1.0}), {'Kill': -2})
+        self.assertEqual(case_floor.violations(corpus, {'u': 1.0}), {'case': -2})
+
+    def test_a_floor_met_by_everything_reports_nothing(self) -> None:
+        corpus = corpus_of(TRAP)
+        self.assertEqual(fit.CaseFloor(corpus).violations(corpus, {}), {})
+
+    def test_a_floor_that_was_not_broken_is_not_re_priced(self) -> None:
+        case_floor = fit.CaseFloor(corpus_of(TRAP), price=1.0, step=2.0)
+        case_floor.learn({})
+        self.assertEqual(case_floor.price, 1.0)
+
+    def test_the_price_rises_and_stops_at_the_cap(self) -> None:
+        case_floor = fit.CaseFloor(corpus_of(TRAP), price=1.0, step=4.0, cap=8.0)
+        for _ in range(3):
+            case_floor.learn({'case': -1})
+        self.assertEqual(case_floor.price, 8.0)
+        self.assertEqual(case_floor.price_of({'case': -2}), 16.0)
+
+    def test_a_masked_reading_judges_only_the_cases_it_is_given(self) -> None:
+        # `K3` and `K4` carry no `u`, so a fit judged on them alone has nothing to answer for. Both
+        # spellings of a mask must agree, because the fold splitter hands one and the report the
+        # other.
+        corpus = corpus_of(TRAP)
+        case_floor = fit.CaseFloor(corpus)
+        members = np.zeros(corpus.n_cases, dtype=bool)
+        members[[2, 3]] = True
+        for mask in (np.array([2, 3]), members):
+            self.assertEqual(case_floor.violations(corpus, {'u': 1.0}, mask), {})
+            self.assertEqual(
+                case_floor.score(corpus, {'u': 1.0}, mask),
+                fit.top1_on(corpus, {'u': 1.0}, mask),
+            )
+
+    def test_the_repair_takes_the_floor_it_is_given(self) -> None:
+        corpus = corpus_of(TRAP)
+        repaired = fit.repair(
+            corpus, np.arange(corpus.n_cases), 9, 3, 3, 4, floor=fit.CaseFloor(corpus)
+        )
+        self.assertTrue(repaired['feasible'])
+        self.assertEqual(repaired['total'], 10)
+
+
+class TheMargin(unittest.TestCase):
+    """`Top@1` is a sign test: it cannot tell a case won by 0.006 from one won by five."""
+
+    def test_a_margin_is_the_best_answer_score_minus_the_best_other(self) -> None:
+        corpus = corpus_of(CORPUS)
+        margin = fit.margins(corpus, corpus.scores({}))
+        # `K1`: 0.9 against 0.5. `K2`: the truth is second, so the margin is negative and equal.
+        self.assertAlmostEqual(float(margin[0]), 0.4)
+        self.assertAlmostEqual(float(margin[1]), -0.4)
+
+    def test_a_case_whose_truth_is_not_a_candidate_has_no_margin(self) -> None:
+        # `D2` accepts a service that is not among its candidates: no weighting can win it, so it
+        # must not be able to pay for one either.
+        corpus = corpus_of(CORPUS)
+        margin = fit.margins(corpus, corpus.scores({}))
+        self.assertTrue(np.isneginf(margin[3]))
+
+    def test_a_case_whose_every_candidate_is_accepted_is_won_outright(self) -> None:
+        corpus = corpus_of([case('A1', ['a', 'b'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})])])
+        margin = fit.margins(corpus, corpus.scores({}))
+        self.assertTrue(np.isposinf(margin[0]))
+
+    def test_the_surrogate_pays_nothing_for_a_truth_that_is_absent(self) -> None:
+        corpus = corpus_of(CORPUS)
+        scores = corpus.scores({})
+        paid = fit.margin_score(corpus, scores, 1.0)
+        # Three of the four cases can be won: `K1` by 0.4, `K2` by -0.4, `D1` by 0.1.
+        expected = np.tanh(0.4) + np.tanh(-0.4) + np.tanh(0.1)
+        self.assertAlmostEqual(paid, float(expected))
+
+    def test_a_thin_margin_and_a_wide_one_are_not_paid_the_same(self) -> None:
+        # The defect the surrogate exists to repair: the step objective scores both of these the
+        # same, so a fit that trades sixteen thin wins for a hundred thick ones looks free.
+        thin = corpus_of([case('T1', ['a'], 'Kill', [row('a', {'s': 0.51}), row('b', {'s': 0.50})])])
+        wide = corpus_of([case('W1', ['a'], 'Kill', [row('a', {'s': 5.0}), row('b', {'s': 0.01})])])
+        self.assertEqual(fit.top1_on(thin, {}, None), fit.top1_on(wide, {}, None))
+        self.assertLess(fit.margin_score(thin, thin.scores({}), 1.0), fit.margin_score(wide, wide.scores({}), 1.0))
+
+
+class TheSurrogateObjective(unittest.TestCase):
+    """A fit scored on margins, so a thin win cannot be spent as if it were a wide one."""
+
+    def test_the_surrogate_is_the_margin_score_in_fixed_point(self) -> None:
+        corpus = corpus_of(CORPUS)
+        objective = fit.Surrogate(corpus, tau=1.0)
+        expected = fit.margin_score(corpus, corpus.scores({}), 1.0)
+        self.assertEqual(objective.score(corpus, {}, None), int(round(fit.SURROGATE_SCALE * expected)))
+
+    def test_a_mask_is_the_cases_the_fit_is_judged_on(self) -> None:
+        corpus = corpus_of(CORPUS)
+        objective = fit.Surrogate(corpus, tau=1.0)
+        masked = objective.score(corpus, {}, np.array([True, False, False, False]))
+        self.assertEqual(masked, int(round(fit.SURROGATE_SCALE * np.tanh(0.4))))
+
+    def test_the_floor_lowers_a_surrogate_that_breaks_it(self) -> None:
+        corpus = corpus_of(CORPUS)
+        floor = fit.Lagrangian(corpus, 2)
+        plain = fit.Surrogate(corpus, tau=1.0)
+        priced = fit.Surrogate(corpus, tau=1.0, floor=floor)
+        # The masked fit that lowers `Kill` is worth the same to the plain objective and less to
+        # the priced one, which is the whole point of carrying the floor into the search.
+        self.assertLess(priced.score(corpus, {'s': -1.0}, None), plain.score(corpus, {'s': -1.0}, None))
+
+
 class Splits(unittest.TestCase):
     """The held-out report is only a held-out report if the split is stratified and seeded."""
 
@@ -599,6 +870,41 @@ class CommandLine(unittest.TestCase):
         with contextlib.redirect_stdout(buffer):
             fit.main([self.dump, *args])
         return buffer.getvalue()
+
+    def test_a_margin_fit_is_reported_as_such(self) -> None:
+        dump = write(TRAP, self.directory, 'trap-margin.ndjson')
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            fit.main([dump, '--only', 'repair', '--gate-types', '4', '--folds', '2',
+                      '--rounds', '2', '--surrogate', '0.25'])
+        self.assertIn('margins at tau 0.25', buffer.getvalue())
+
+    def test_the_repair_report_prints_the_schedule_and_the_gain_it_turned_down(self) -> None:
+        dump = write(TRAP, self.directory, 'trap.ndjson')
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            fit.main([dump, '--only', 'repair', '--gate-types', '4', '--folds', '2', '--rounds', '2'])
+        printed = buffer.getvalue()
+        self.assertIn('REPAIR', printed)
+        self.assertRegex(printed, r'round\s+total\s+types down\s+charged')
+        self.assertIn('accepted 10', printed)
+        self.assertIn('types down: none', printed)
+
+    def test_the_report_names_the_vector_the_floor_turned_down(self) -> None:
+        # A report that only prints what it accepted cannot be audited: the refused line is the
+        # counter-example the rule was applied to.
+        dump = write(UNREPAIRABLE, self.directory, 'unrepairable.ndjson')
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            fit.main([dump, '--only', 'repair', '--gate-types', '4', '--folds', '2', '--rounds', '1'])
+        self.assertIn('refused', buffer.getvalue())
+
+    def test_a_priced_floor_without_a_population_floor_is_refused(self) -> None:
+        # `--gate-types 0` would make every one-case type a constraint, which is a different rule
+        # wearing the same name; the command says so rather than fitting one.
+        with self.assertRaises(SystemExit) as raised:
+            self.run_main('--only', 'repair')
+        self.assertIn('--gate-types', str(raised.exception))
 
     def test_the_control_line_is_printed_before_any_table(self) -> None:
         printed = self.run_main('--only', 'ceiling')
