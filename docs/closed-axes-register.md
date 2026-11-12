@@ -2387,3 +2387,32 @@ own forbidden edge. And two guards the fingerprint module carried could not fire
 branches of the kind this repository deletes rather than documents.
 
 Full readings, the census, the gate grid and the reproduction commands: `docs/agentic-headroom.md`.
+
+## Iteration 270 — the ceiling was the width of the window, and the bucket named "absent" was not
+
+The elimination layer was priced against `Top@5` and the price was written down as `+12.19 pp` over 1 422 cases.
+That is a true statement about a five-wide presentation and a false one about the ranking. `--depth-out` dumps
+where the corpus's answer sits in the order the engine actually sorted, and a stratified 106-case reading of it
+finds the answer **somewhere in the order in 106 of 106 cases** — median miss depth 4, maximum 42, **zero absent**
+(`docs/agentic-headroom.md` §10). Over a twenty-wide window the reachable ceiling is **97.2 %**, i.e. **+21.7 pp**
+against the control rather than +12.19 pp.
+
+**Closed: the fingerprint COLUMNS as a tie-break decider.** Over the 176 cases a perfect eliminator can fix, none of
+the five columns separates the source from the wrong leader: the source's onset is earlier in 87/176 (49.4 %, exact
+binomial p = 0.94), its largest deviation is larger in 102/176 (58.0 %, p = 0.042 before the correction for four
+columns), its minimum fault-free rate is lower in 85/176 (48.3 %, p = 0.71), and its outside-band channel count is
+*equal* in 111/176 (63.1 %). Each column used as the PRIMARY signal scores 26–34 % against the engine's 75.9 %, and
+the best gated top-1/top-2 tie-break over four keys and seven margins moves **+0.14 pp held out — one case in 709**,
+while every wider gate loses. That does not close a model that reasons across the columns jointly; it closes the
+claim that the columns carry the split, which is what the presentation change was supposed to deliver.
+
+**Reinterpreted, not reopened: the `absent` bucket.** `docs/absent-census.md`'s 173 cases are absent from the
+reported FIVE, and the document's opening paragraph read that as absent from the candidate SET ("no coefficient of a
+term it never entered can reach it"). The depth reading refutes the second reading and leaves the first intact: those
+cases are *deep*, their owner is ordering — the same owner the `top5` bucket has — and the document's own §4
+diagnostic had already said so ("the service is **not invisible** … it loses because every competitor carries
+more"). The bucket keeps its count and loses its inference.
+
+**Opened, with a kill criterion written before the data:** `docs/depth-reranking-preregistration.md`. If no term in
+the engine's own sum favours the truth in ≥ 65 % of a family's deep cases (n ≥ 20, Bonferroni over 18 terms), the
+term axis closes and the depth headroom belongs to a model arm over a twenty-wide presentation.

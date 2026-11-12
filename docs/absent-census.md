@@ -19,6 +19,16 @@ is what it turned out to be.
 | `top5` | the truth is in the top five but not first | 176 | 12.38 % |
 | **`absent`** | the truth is in **none** of the five | **173** | **12.17 %** |
 
+> **Corrected in iteration 270 — the bucket's NAME overstated its meaning, and §4 already said so.** "Absent" here
+> means absent from the **reported five**, not from the order: a stratified 106-case reading with the full ranking
+> dumped (`--depth-out`, `docs/agentic-headroom.md` §10) finds the corpus answer somewhere in the order in **106 of
+> 106** cases, median miss depth 4, maximum 42, zero absent from the order. The 173 are therefore *deep*, and the
+> owner of the loss is the same one the `top5` bucket has — ordering — not the candidate SET this document's
+> opening paragraph distinguishes it from. §4's own diagnostic already contradicted the name: it renders the node
+> with `selfAnomaly=0.551` and concludes the service "is **not invisible** … It loses because every competitor
+> carries more." Column 4 below still counts the right thing (a truth outside the reported five); only the
+> interpretation of what that costs changed, and the next iteration's terms are re-aimed accordingly.
+
 The per-type split is where the campaign's type tables come from, and it says the two buckets have different
 owners:
 
