@@ -2393,9 +2393,10 @@ Full readings, the census, the gate grid and the reproduction commands: `docs/ag
 The elimination layer was priced against `Top@5` and the price was written down as `+12.19 pp` over 1 422 cases.
 That is a true statement about a five-wide presentation and a false one about the ranking. `--depth-out` dumps
 where the corpus's answer sits in the order the engine actually sorted, and a stratified 106-case reading of it
-finds the answer **somewhere in the order in 106 of 106 cases** — median miss depth 4, maximum 42, **zero absent**
-(`docs/agentic-headroom.md` §10). Over a twenty-wide window the reachable ceiling is **97.2 %**, i.e. **+21.7 pp**
-against the control rather than +12.19 pp.
+finds the answer **somewhere in the order in 1 422 of 1 422 cases** — median miss depth 4, maximum 44, **zero
+absent** (`docs/agentic-headroom.md` §10). Over a twenty-wide window the reachable ceiling is **92.12 %**, i.e.
+**+16.66 pp** against the control rather than +12.19 pp. (A 106-case pilot put that window at 97.2 %; it drew 3 of
+the 112 cases past twenty and is recorded as the pilot's error rather than as the ceiling.)
 
 **Closed: the fingerprint COLUMNS as a tie-break decider.** Over the 176 cases a perfect eliminator can fix, none of
 the five columns separates the source from the wrong leader: the source's onset is earlier in 87/176 (49.4 %, exact

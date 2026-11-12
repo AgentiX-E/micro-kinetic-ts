@@ -6,12 +6,12 @@ layer's deterministic arms already win it**. Both are computed offline, from one
 
 ## 0. Headline
 
-| arm                                                 | Top@1 (711 cases) |      Δ | moved | claims | refused |
-| --------------------------------------------------- | ----------------: | -----: | ----: | -----: | ------: |
-| engine (control, shipped configuration)             |         **68.07%** |      — |     — |      — |       — |
-| `oracle` eliminator (ceiling, reads the label)      |         **84.70%** | **+16.63 pp** |   118 |    173 |       0 |
-| `evidence` rule (EBR, best held-out thresholds)      |             68.2% |  −0.6 pp |     4 |      4 |       0 |
-| `evidence` rule (EBR, most permissive thresholds)    |             46.3% | −21.8 pp |   310 |    310 |       0 |
+| arm                                               | Top@1 (711 cases) |             Δ | moved | claims | refused |
+| ------------------------------------------------- | ----------------: | ------------: | ----: | -----: | ------: |
+| engine (control, shipped configuration)           |        **68.07%** |             — |     — |      — |       — |
+| `oracle` eliminator (ceiling, reads the label)    |        **84.70%** | **+16.63 pp** |   118 |    173 |       0 |
+| `evidence` rule (EBR, best held-out thresholds)   |             68.2% |       −0.6 pp |     4 |      4 |       0 |
+| `evidence` rule (EBR, most permissive thresholds) |             46.3% |      −21.8 pp |   310 |    310 |       0 |
 
 Two conclusions, and they point in opposite directions:
 
@@ -47,26 +47,26 @@ Engine reading on this population: **Top@1 68.07% (484/711)**, Top@3 82.98%, **T
 
 The census the dump writes, summed over the corpus:
 
-| counter        |      count | share of considered |
-| -------------- | ---------: | ------------------: |
-| `considered`   |    234 477 |               100 % |
-| `offered`      |     28 395 |              12.1 % |
-| `unprofiled`   |     89 955 |              38.4 % |
-| `capped`       |    110 707 |              47.2 % |
-| `unmeasurable` |      5 420 |               2.3 % |
-| `shadowed`     |          0 |                 0 % |
+| counter        |   count | share of considered |
+| -------------- | ------: | ------------------: |
+| `considered`   | 234 477 |               100 % |
+| `offered`      |  28 395 |              12.1 % |
+| `unprofiled`   |  89 955 |              38.4 % |
+| `capped`       | 110 707 |              47.2 % |
+| `unmeasurable` |   5 420 |               2.3 % |
+| `shadowed`     |       0 |                 0 % |
 
 Three facts follow, and the third one decides a design question the plan left open:
 
 - **A candidate carries 7.99 channels on average**, i.e. the eight-channel cap binds and is what a model would
-  actually read. 47.2 % of the measured channels are dropped by it — but they are dropped from the *tail* of an
+  actually read. 47.2 % of the measured channels are dropped by it — but they are dropped from the _tail_ of an
   order sorted by departure, so what is dropped is the least decisive evidence a candidate has.
 - **38.4 % of channels have no published band.** A channel is published only when it is profiled over at least
-  three fault-free windows *and* has a positive scale; the rest cannot support a verifiable claim, so offering
+  three fault-free windows _and_ has a positive scale; the rest cannot support a verifiable claim, so offering
   them would produce refusals that read as the model's fault rather than the corpus's.
 - **99.6 % of candidates carry at least one out-of-band channel** (3 542 of 3 555). The `evidence` arm's whole
-  premise — "the leader's evidence is ordinary, a rival's is rare" — has to separate on *rates*, because the
-  presence of *evidence* is universal.
+  premise — "the leader's evidence is ordinary, a rival's is rare" — has to separate on _rates_, because the
+  presence of _evidence_ is universal.
 
 And the rates themselves are, on this corpus, systematically high: mean 0.749, median 0.796, and only **0.8 %** of
 channels ever read zero. That is the mechanical reason §5's rule cannot separate: on a corpus where four fifths of
@@ -128,7 +128,7 @@ Relaxing it does not help, because the quantity is anti-correlated with what the
 |   1.00 |          8 |     573 |                    410 |                **85** |       138 |
 
 The most selective gate in the grid still discards 85 of 118 fixable cases — **72 % of the entire headroom** — to
-save 138 model calls out of 711. A fixable case is, mechanically, a case where a *symptom* outranks the source
+save 138 model calls out of 711. A fixable case is, mechanically, a case where a _symptom_ outranks the source
 confidently, i.e. exactly a case with a wide margin and many deviating channels. The rule's signal and the layer's
 value live on the same cases.
 
@@ -138,21 +138,21 @@ than left carrying a saving this measurement refused.
 
 ## 5. The evidence rule, refused — and why the axis now closes
 
-`evidenceClaims` states the expected-outlier baseline as an elimination rule: *demote the leader when the least
+`evidenceClaims` states the expected-outlier baseline as an elimination rule: _demote the leader when the least
 ordinary thing it can point at leaves its fault-free band in most clean windows, in favour of a rival whose
-evidence is rarer*. It reads no label, so it is a candidate method rather than a ceiling. Swept over six floors and
+evidence is rarer_. It reads no label, so it is a candidate method rather than a ceiling. Swept over six floors and
 three margins, on a hash split of the corpus:
 
-| rate floor | margin | in-sample Top@1 | moved |
-| ---------: | -----: | --------------: | ----: |
-|       0.00 |   0.00 |          49.3 % |   147 |
-|       0.33 |   0.00 |          49.6 % |   134 |
-|       0.67 |   0.00 |          55.1 % |    89 |
-|       0.80 |   0.00 |          61.5 % |    47 |
-|       0.00 |   0.10 |          63.0 % |    51 |
-|       0.80 |   0.10 |          65.6 % |    19 |
-| **0.00**   |**0.25**|      **67.1 %** | **8** |
-| **0.80**   |**0.25**|      **67.1 %** | **5** |
+| rate floor |   margin | in-sample Top@1 | moved |
+| ---------: | -------: | --------------: | ----: |
+|       0.00 |     0.00 |          49.3 % |   147 |
+|       0.33 |     0.00 |          49.6 % |   134 |
+|       0.67 |     0.00 |          55.1 % |    89 |
+|       0.80 |     0.00 |          61.5 % |    47 |
+|       0.00 |     0.10 |          63.0 % |    51 |
+|       0.80 |     0.10 |          65.6 % |    19 |
+|   **0.00** | **0.25** |      **67.1 %** | **8** |
+|   **0.80** | **0.25** |      **67.1 %** | **5** |
 
 The in-sample engine reading on the same half is **67.35 %**; the best point re-read on the held-out half is
 **68.2 %** against the engine's **68.75 %** there. So the arm's entire effect, once the margin is wide enough to
@@ -161,18 +161,18 @@ it.
 
 This is the third presentation of the same quantity:
 
-| presentation                                 | where                                    | result                    |
-| -------------------------------------------- | ---------------------------------------- | ------------------------- |
-| additive term `w·(1 − r)`                    | iteration 265, `--fault-free-weight`     | +1 case at slope 130, CI crosses zero |
+| presentation                                 | where                                              | result                                       |
+| -------------------------------------------- | -------------------------------------------------- | -------------------------------------------- |
+| additive term `w·(1 − r)`                    | iteration 265, `--fault-free-weight`               | +1 case at slope 130, CI crosses zero        |
 | fingerprint column (evidence the model sees) | iteration 266/267, `docs/agentic-layer-plan.md` §3 | kept: it is what makes the ceiling checkable |
-| elimination rule over the posterior          | this document, §5                        | **−0.6 pp held out; refused** |
+| elimination rule over the posterior          | this document, §5                                  | **−0.6 pp held out; refused**                |
 
-The middle row is why the axis stays open in a *different* role: as a column, the rate tells a model which channels
+The middle row is why the axis stays open in a _different_ role: as a column, the rate tells a model which channels
 are evidence and which are noise, and §3 shows a verifiable claim built on that column can reach the truth in 118
 cases. As a **decider**, it cannot: on a corpus where 0.8 % of channels are clean by this measure, "this channel
 swings anyway" does not distinguish two candidates.
 
-**Register entry.** The rule is closed. What remains open is the layer *using* the column, which requires a model
+**Register entry.** The rule is closed. What remains open is the layer _using_ the column, which requires a model
 and therefore a spend decision the ceiling in §3 has now been made against.
 
 ## 6. What this changes in the plan
@@ -192,11 +192,11 @@ and therefore a spend decision the ceiling in §3 has now been made against.
 
 ## 7. Reproduction
 
-| artifact                    | command                                                                   |
-| --------------------------- | ------------------------------------------------------------------------- |
-| profile                     | `build-fault-free-profile --data-dir <corpus> --out profile.json`         |
-| fingerprints + verdicts      | `run-fse26 --fault-free-profile profile.json --fingerprint-out fp.ndjson --per-case-out percase.ndjson` |
-| ceiling, gate, rule, sweep   | `run-agentic-headroom --fingerprints fp.ndjson --verdicts percase.ndjson`  |
+| artifact                   | command                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| profile                    | `build-fault-free-profile --data-dir <corpus> --out profile.json`                                       |
+| fingerprints + verdicts    | `run-fse26 --fault-free-profile profile.json --fingerprint-out fp.ndjson --per-case-out percase.ndjson` |
+| ceiling, gate, rule, sweep | `run-agentic-headroom --fingerprints fp.ndjson --verdicts percase.ndjson`                               |
 
 The analyzer refuses to score artifacts from different runs: it compares the dumped order with the published order
 case for case and stops if they disagree, because a dump left over from an earlier commit produces a number for a
@@ -208,11 +208,11 @@ configuration neither run had.
 environment**. That sentence hides a decision, and iteration 269 made it explicit: the converted corpus is not
 something a machine should build. It is something a **release** holds.
 
-| resource | where it lives | size | measured cost to reproduce locally | cost in CI |
-| --- | --- | --- | --- | --- |
+| resource                                   | where it lives                            | size               | measured cost to reproduce locally | cost in CI                                     |
+| ------------------------------------------ | ----------------------------------------- | ------------------ | ---------------------------------- | ---------------------------------------------- |
 | converted `case.json` corpus (1 422 cases) | release assets, `AgentiX-E/rcabench-data` | 2.48 GB compressed | ~19 GB of disk, one conversion run | **114 s** (`43055506630`, 16:09:45 → 16:11:39) |
-| fault-free profile | derived | 437 KB | **6 m 46 s** for 711 cases | cached, key derived from corpus × builder |
-| fingerprints + verdicts | run artifact | 4.8 MB / 711 cases | the run itself | one job |
+| fault-free profile                         | derived                                   | 437 KB             | **6 m 46 s** for 711 cases         | cached, key derived from corpus × builder      |
+| fingerprints + verdicts                    | run artifact                              | 4.8 MB / 711 cases | the run itself                     | one job                                        |
 
 So the study moved to `.github/workflows/benchmark-agentic.yml`, which fetches the corpus through
 `.github/actions/rcabench-shards` (one owner for the tag, the extraction, and the provenance gate), builds the
@@ -237,7 +237,7 @@ inside one workflow run; afterwards they are a log whose retention is somebody e
 policy as 10 GB per repository by default (usage beyond it billed), eviction oldest-last-access-first, and removal
 of anything not accessed in seven days — so the overlays die by churn and, until they do, they are what the budget is
 spent on. Because the quota is exceeded, every save evicts the least recently used entry, which is how the entry
-that *is* reused — `RCAEvalJSON-*`, 3.95 GB, ~30 minutes to rebuild — competes with entries whose next reader does
+that _is_ reused — `RCAEvalJSON-*`, 3.95 GB, ~30 minutes to rebuild — competes with entries whose next reader does
 not exist.
 
 Two decisions follow, both measured rather than argued:
@@ -270,13 +270,13 @@ Run `43253302440` at `8e3df293`, the first reading this line has produced outsid
 fetched the corpus through the action, built the profile, ran the engine with both dumps and published the
 artifacts; job `study` re-scored those artifacts with no access to the corpus at all.
 
-| arm                                              | Top@1 (1 422 cases) |            Δ | moved | claims | refused |
-| ------------------------------------------------ | ------------------: | -----------: | ----: | -----: | ------: |
-| engine (control, shipped configuration)          |          **75.50%** |            — |     — |      — |       — |
-| `oracle` eliminator (ceiling)                    |          **87.69%** | **+12.19 pp** |   174 |    269 |       0 |
-| `evidence` rule at the CLI's default thresholds  |              44.20% |      −31.30 pp |   695 |    695 |       0 |
+| arm                                             | Top@1 (1 422 cases) |             Δ | moved | claims | refused |
+| ----------------------------------------------- | ------------------: | ------------: | ----: | -----: | ------: |
+| engine (control, shipped configuration)         |          **75.50%** |             — |     — |      — |       — |
+| `oracle` eliminator (ceiling)                   |          **87.69%** | **+12.19 pp** |   174 |    269 |       0 |
+| `evidence` rule at the CLI's default thresholds |              44.20% |     −31.30 pp |   695 |    695 |       0 |
 
-The rule's *best* point is a separate measurement and a separate population, because it is chosen in sample: the
+The rule's _best_ point is a separate measurement and a separate population, because it is chosen in sample: the
 in-sample half (713 cases) picks `floor=0.8, margin=0.25` at 74.8%, and re-read on the 709 held-out cases it scores
 **74.54% against the control's 75.00%** there — **−0.46 pp**, four cases moved out of 709. That is the same verdict
 as §5 at the same magnitude, which is what a refusal should look like when the population doubles.
@@ -291,10 +291,10 @@ Three things this changes, and one it corrects:
    gap of one case in 1 422: an eliminator that may only remove candidates cannot reach a service the engine never
    ranked. §3's 711-case reading said the same thing (84.70 vs 84.81) and this is the confirmation at full width.
    **Corrected in iteration 270, and the correction is the more important one:** the last clause is false. The
-   engine *does* rank those services — a stratified 106-case sample finds the answer somewhere in the order in
-   **106 of 106** cases, at a median miss depth of 4 and a maximum of 42 (§10). `87.8%` is the width of the
-   PRESENTATION (`At-K` reporting stops at five), not the reach of the ranking, and the reachable ceiling over a
-   twenty-wide window is `97.2%`, not `87.8%`.
+   engine _does_ rank those services — a full-corpus depth dump finds the answer somewhere in the order in
+   **1 422 of 1 422** cases, at a median miss depth of 4 and a maximum of 44 (§10). `87.8%` is the width of the
+   PRESENTATION (`At-K` reporting stops at five), not the reach of the ranking: over a twenty-wide window the
+   reachable ceiling is `92.12%` (**+16.66 pp**), not `87.83%`.
 3. **Both refusals replicate.** The EBR rule loses 0.46 pp on the held-out half (§5 measured 0.6 pp on 711), and the skip rule discards
    **173 of the 174** cases the ceiling can win — it resolves 1 420 of 1 422 cases without a model, and 173 of
    those are cases a claim would have fixed. §4's verdict was not an artifact of the `waveB2` half.
@@ -312,80 +312,148 @@ every number above can be recomputed from them with no corpus:
 run-agentic-headroom --fingerprints fingerprints.ndjson --verdicts per-case.ndjson --weight 1
 ```
 
-## 10. The depth split: the ceiling is a PRESENTATION, not the order
+## 10. The depth split: the ceiling was the width of the window, and nothing is absent from the order
 
 §9 called `87.69%` the ceiling and explained it as "an eliminator that may only remove candidates cannot reach a
-service the engine never ranked". The second half of that sentence is wrong, and one artifact settled it: the
-answer is almost always **in the order**, below the fifth line, and `Top@5` was measuring the width of the
-presentation rather than the reach of the ranking.
+service the engine never ranked". The second half of that sentence is false, and one artifact settled it: the answer
+is **always** in the order, below the fifth line. `Top@5` was measuring the width of the presentation, and the 173
+cases `docs/absent-census.md` files as "absent" are absent from the reported five, not from the candidate set.
 
 ### 10.1 The instrument
 
-`--depth-out` (benchmarks/src/ranking-depth.ts) writes one compact row per case: the first-hit depth in the order
-the engine actually sorted, the candidate count, and the head of that order with the `finalScore` the sort used.
-Two reasons it is a row and not a wider `Top@K`:
+`--depth-out` (`benchmarks/src/ranking-depth.ts`) writes one compact row per case: the first-hit depth in the order
+the engine actually sorted, the candidate count, and the head of that order with the `finalScore` the sort used. Two
+reasons it is a row rather than a wider `Top@K`:
 
-- a depth **separates** two families the averages merge — *ranked too low* (a scoring defect a re-ranking can
-  recover) from *not ranked at all* (a graph or label defect no re-ranking can touch). The second family is what
-  §9 assumed the 173 misses were;
-- the head carries the **margins**, which is what a tie-break premise is a claim about. A rule that only fires
-  when two candidates are within a few percent has to be checked against the margins that actually occur.
+- a depth **separates** two families the averages merge — _ranked too low_ (a scoring defect a re-ranking can
+  recover) from _not ranked at all_ (a graph or label defect no re-ranking can reach). The second family is what §9
+  assumed the 173 misses were;
+- the head carries the **margins**, which is what a tie-break premise is a claim about.
 
-`benchmarks/src/run-depth-report.ts` reads the artifact in the corpus-free job and prints the cumulative ladder
-plus a per-family table. Both are wired into `benchmark-agentic.yml` (`measure` writes it, `study` prints it
-before any arm is scored), and four assertions in `agentic-workflow-wiring.test.ts` fail if either wire is cut.
+`depth-report.ts` turns rows into the two tables a roadmap is read from — the cumulative ladder and the per-family
+split — and `run-depth-report.ts` is the console around it. `benchmark-agentic.yml` writes the rows in `measure` and
+prints both tables in the corpus-free job **before** any arm is scored; five assertions in
+`agentic-workflow-wiring.test.ts` fail if either wire is cut.
 
-### 10.2 The reading: 106 cases, stratified, run end to end
+### 10.2 The reading, on all 1 422 cases
 
-One worker, no CI: 106 of the 1 422 datapacks, selected by FNV-1a hash order within each fault family with a floor
-of 1 and a cap of 10 per family (106 cases, 25 families), converted from the raw Parquet with
-`scripts/fse26_convert.py` and scored by the shipped engine. **The sample reproduces the corpus's own `Top@1` to
-within 0.04 pp** (`80/106 = 75.47%` against `1073/1422 = 75.46%`), and it agrees with the corpus-wide per-case
-artifact on all 106 cases, so it is a sample of this corpus and not of a nearby one.
+Every datapack of the corpus, converted from the raw Parquet and scored by the shipped engine with `--depth-out`.
+**The run reproduces the published numbers exactly** — `Top@1 1073`, `Top@3 1227`, `Top@5 1249`, which are the
+digits `docs/sota-comparison.md` quotes — so the ladder below is a reading of this corpus in its shipped
+configuration and not of a nearby one.
 
-| K      | hits / 106 | share | 95% Wilson | what it bounds                                             |
-| ------ | ---------: | ----: | ---------: | ---------------------------------------------------------- |
-| @1     |         80 | 75.5% |   66.5–82.7 | the control                                                |
-| @2     |         85 | 80.2% |            |                                                            |
-| @3     |         93 | 87.7% |            |                                                            |
-| @5     |         94 | 88.7% |   81.2–93.4 | the ceiling §9 published as saturated                      |
-| @8     |         96 | 90.6% |            |                                                            |
-| @10    |         96 | 90.6% |   83.5–94.8 |                                                            |
-| @15    |         99 | 93.4% |            |                                                            |
-| @20    |        103 | 97.2% |   92.0–99.0 | what a re-ranker over a 20-wide presentation could reach    |
-| > 20   |          3 |  2.8% |            |                                                            |
-| absent |          0 |  0.0% | upper 3.50 | what §9 assumed the 173 misses were                        |
+| K      | hits / 1 422 |      share | 95% Wilson | what it bounds                                               |
+| ------ | -----------: | ---------: | ---------: | ------------------------------------------------------------ |
+| @1     |        1 073 |     75.46% |  73.2–77.6 | the control                                                  |
+| @2     |        1 184 |     83.26% |  81.2–85.1 |                                                              |
+| @3     |        1 227 |     86.29% |  84.4–88.0 |                                                              |
+| @5     |        1 249 |     87.83% |  86.0–89.4 | the ceiling §9 published as saturated                        |
+| @8     |        1 263 |     88.82% |  87.1–90.4 |                                                              |
+| @10    |        1 278 |     89.87% |  88.2–91.3 |                                                              |
+| @15    |        1 294 |     91.00% |  89.4–92.4 |                                                              |
+| @20    |    **1 310** | **92.12%** |  90.6–93.4 | what a re-ranker over a twenty-wide presentation could reach |
+| > 20   |          112 |      7.88% |            |                                                              |
+| absent |        **0** |      0.00% |     ≤ 0.27 | the family §9 assumed the 173 misses belonged to             |
 
-The miss population is 26 cases and its depth histogram is `{1:5, 2:8, 4:1, 6:1, 7:1, 10:1, 11:2, 15:1, 18:3,
-22:1, 28:1, 42:1}` — median 4, maximum 42. Half the misses are within three lines of the answer the engine did
-print; the tail is thin and long.
+The 349 misses split by depth as `{1–4: 176, 5–9: 29, 10–19: 32, ≥20: 112}`, median 4, maximum 44. Half the misses
+are within four lines of the answer the engine did print; the tail past twenty is 112 cases and it is the largest
+single block of the remaining headroom.
 
-### 10.3 What it changes
+### 10.3 The pilot that was wrong, and by how much
 
-1. **The `absent` family is empty in this sample.** `0/106`, 95% upper bound 3.50 %, i.e. at most ~50 of the 1 422
-   cases could be absent even at the upper bound. The graph does carry the answers; the losses are ordering.
-2. **The reachable ceiling nearly doubles.** A re-ranker allowed to see twenty candidates faces `97.2%`, not
-   `87.8%` — **+21.7 pp over the control against the +12.19 pp** the elimination framing priced, because that
-   framing inherited a five-wide window from `At-K` reporting rather than from the order.
-3. **The eliminator's premise lost its support in the columns it is shown.** Measured on the full-corpus artifact,
+The first reading was a stratified sample of 106 cases (FNV-1a order within each fault family, floor 1, cap 10 per
+family), and it said `absent 0/106` and `@20 97.2%`. The first statement survived — the full corpus says
+`0/1 422` — and the second did not: **the sample overestimated `@20` by 5.1 pp**, because it drew 3 of the 112
+cases past twenty where the corpus holds 7.9% of them. Both readings are published here, and the sample is kept as
+what it is: a pilot whose interval (`[92.0, 99.0]`) contained the truth by 0.1 pp at its lower edge, which is a
+reminder that a tail is exactly what a 106-case sample is worst at estimating. The corpus is the number.
+
+### 10.4 What it changes
+
+1. **Nothing is absent from the order.** `0 of 1 422` — the graph carries every answer the corpus labels, and the
+   173 cases `absent-census.md` calls absent are _deep_. That document's own §4 had already said so ("the service
+   is **not invisible** … it loses because every competitor carries more"); the bucket keeps its count and loses its
+   inference, and the axis it implied — candidate-set repair — has no population to act on.
+2. **Widening the window buys +4.5 pp of ceiling.** A re-ranker that may reorder the first twenty faces **92.12%**,
+   i.e. **+16.66 pp** over the control, against the **+12.37 pp** an eliminator over five can reach. The earlier
+   framing's error was not the arithmetic, it was reading a five-wide window as the reach of the ranking.
+3. **The whole order is worth 100%, which is why the LP bound was 99.30%.** Every case's answer is somewhere in the
+   order, so a per-case ordering — a vector fitted to each case — can reach everything; the 99.30% of
+   `PROGRESS_2026-11-12.md` §4 is that statement under a non-negativity constraint, and the ten cases separating it
+   from 100% are the ones that need a free sign rather than a different order.
+4. **The eliminator's premise lost its support in the columns it is shown.** Measured on the full-corpus artifact,
    over the 176 cases a perfect eliminator can fix, none of the fingerprint's own columns separates the source from
-   the wrong leader: the source's onset is earlier in `87/176` (49.4 %, exact binomial p = 0.94), its largest
-   deviation is larger in `102/176` (58.0 %, p = 0.042 uncorrected and not significant after a Bonferroni
-   correction over four columns), its minimum fault-free rate is lower in `85/176` (48.3 %, p = 0.71), and its
-   outside-band channel count is *equal* in `111/176` (63.1 %). A rule built on any of them as the primary signal
-   scores 26–34 % against the engine's 75.9 %, and the best gated tie-break measured (four keys × seven margins on
-   the top-1/top-2 pair) moves **+0.14 pp held out** — one case in 709 — while every wider gate loses. That does
-   not prove a model cannot reason across the columns jointly; it proves the columns do not carry the split, so an
-   arm that moves has to be reading something outside them.
-4. **The next instrument is a term decomposition, not another weight.** The misses at depth 6–42 are not close
-   calls the fingerprint can arbitrate; they are cases where the engine's own sum put a symptom ten lines above the
-   source. Which term paid for that is a question the existing `--terms-dump` can answer for a sample, and it is
-   the question §11 opens with.
+   the wrong leader: the source's onset is earlier in `87/176` (49.4%, exact binomial p = 0.94), its largest
+   deviation is larger in `102/176` (58.0%, p = 0.042 uncorrected and not significant after a Bonferroni correction
+   over four columns), its minimum fault-free rate is lower in `85/176` (48.3%, p = 0.71), and its outside-band
+   channel count is _equal_ in `111/176` (63.1%). Any of them as the primary signal scores 26–34% against the
+   engine's 75.9%, and the best gated tie-break measured — four keys × seven margins on the top-1/top-2 pair —
+   moves **+0.14 pp held out**, one case in 709, while every wider gate loses. That does not prove a model cannot
+   reason across the columns jointly; it proves the columns do not carry the split, so an arm that moves has to be
+   reading something outside them.
+5. **The next instrument is a term decomposition, not another weight.** `docs/depth-reranking-preregistration.md`
+   states the hypothesis and the kill criterion for it before any data: if no term in the engine's own sum favours
+   the truth in ≥ 65% of a family's deep cases (n ≥ 20, Bonferroni over 18 terms), the term axis closes and the
+   depth headroom belongs to a model arm over a twenty-wide presentation.
 
-### 10.4 The full-corpus ladder, and why it is still owed
+### 10.5 Reproduction
 
-The 106-case sample is a rate with a ±7 pp interval, not the number. The corpus-wide ladder comes from one
-`benchmark-agentic` dispatch, which now writes `depth.ndjson` beside the dumps and prints the table in the
-corpus-free job; §11 records that reading when it lands. Until then every figure above is stated with its
-denominator and its interval, and the plan below is conditioned on the full-width ladder agreeing with the sample
-in sign.
+The whole reading is one command plus the artifact, with no corpus on the reading side:
+
+```text
+run-fse26 --data-dir <corpus> --depth-out depth.ndjson --output results.json
+run-depth-report --depth depth.ndjson        # ladder + per-family table
+```
+
+The rows carry `datapack`, `faultType`, `accepted`, `depth`, `candidates` and the first twenty `[service, score]`
+pairs, so any rung, any family and any margin can be recomputed from the file alone.
+
+### 10.6 Replicated on a runner, and where the deep tail lives
+
+The same reading was produced twice, by different machines through different paths: once locally over the raw
+Parquet on one worker (62 minutes), and once by the `benchmark-agentic` dispatch `43276123043` on a GitHub runner,
+which fetches the converted corpus through the release artifact, builds the profile from cache-or-build and prints
+the table from the artifact in a job with no corpus access. **The two ladders agree digit for digit** — `1073 / 1184
+/ 1227 / 1249 / 1263 / 1278 / 1294 / 1310`, `beyond@20 112`, `absent 0` — which is the property that makes the
+number a property of the corpus rather than of a machine.
+
+The family split is where the work is. `≥6` is the column that did not exist before this instrument: cases whose
+answer the engine ranked below the fifth line, i.e. the population a wider presentation would have to carry.
+
+| faultType                | cases |           @1 | 2–5 |     ≥6 | absent |
+| ------------------------ | ----: | -----------: | --: | -----: | -----: |
+| HTTPResponseReplaceCode  |   231 |  162 (70.1%) |  14 | **55** |      0 |
+| HTTPRequestReplaceMethod |   190 |  125 (65.8%) |  27 | **38** |      0 |
+| JVMMemoryStress          |   171 | 171 (100.0%) |   0 |      0 |      0 |
+| NetworkPartition         |    97 |   64 (66.0%) |  18 |     15 |      0 |
+| ContainerKill            |    89 |  89 (100.0%) |   0 |      0 |      0 |
+| HTTPResponseDelay        |    89 |   56 (62.9%) |  26 |      7 |      0 |
+| HTTPRequestDelay         |    88 |   57 (64.8%) |  20 |     11 |      0 |
+| HTTPRequestAbort         |    60 |   46 (76.7%) |   4 |     10 |      0 |
+| HTTPResponseReplaceBody  |    51 |   45 (88.2%) |   6 |      0 |      0 |
+| NetworkLoss              |    48 |   29 (60.4%) |  12 |      7 |      0 |
+| NetworkCorrupt           |    46 |   31 (67.4%) |   9 |      6 |      0 |
+| HTTPResponseAbort        |    44 |   34 (77.3%) |   6 |      4 |      0 |
+| JVMException             |    43 |   30 (69.8%) |   9 |      4 |      0 |
+| NetworkBandwidth         |    42 |   20 (47.6%) |  16 |      6 |      0 |
+| HTTPRequestReplacePath   |    39 |   38 (97.4%) |   1 |      0 |      0 |
+| PodFailure               |    24 |  24 (100.0%) |   0 |      0 |      0 |
+| NetworkDelay             |    21 |   20 (95.2%) |   1 |      0 |      0 |
+| JVMReturn                |    21 |   12 (57.1%) |   2 |      7 |      0 |
+| PodKill                  |    10 |  10 (100.0%) |   0 |      0 |      0 |
+| (six others, n ≤ 7)      |    20 |           10 |   5 |      3 |      0 |
+
+Two facts a corpus average hides:
+
+- the four resource classes (`JVMMemoryStress`, `ContainerKill`, `PodFailure`, `PodKill`, 294 cases) are **100%** and
+  contribute nothing to either miss column — consistent with `docs/absent-census.md` §1's "the four resource classes
+  are complete";
+- **`HTTPResponseReplaceCode` alone holds 55 of the 112 cases past twenty**, 23.8% of its own family, and widening
+  the window moves it the least: `70.1% → 76.2% (@5) → 80.1% (@20) → 100% (whole order)`. `NetworkPartition` is the
+  family a wider window helps most (`66.0 → 84.5 → 91.8 → 100`), because its misses are shallow rather than deep.
+  The distinction is the instrument's point: a re-ranker's payoff depends on **where** a family's misses sit, and
+  the two families that dominate the corpus's miss count need opposite amounts of window.
+
+The artifact behind this table is `agentic-measure` on run `43276123043` (`depth.ndjson`, 1 422 rows), and the
+corpus-free table is `agentic-headroom`'s `depth.txt` from the same run. The run predates the column-width fix in
+`c38a51c7`, so its printed `@1%` column collides with `@1` at 100.0% — cosmetic, and the numbers are unaffected.

@@ -13,16 +13,16 @@ is what it turned out to be.
 
 ## 1. The three buckets, on 1422 datapacks
 
-| bucket | what it means | cases | share |
-| --- | --- | --: | --: |
-| `top1` | the truth is the ranking's first answer | 1073 | 75.46 % |
-| `top5` | the truth is in the top five but not first | 176 | 12.38 % |
-| **`absent`** | the truth is in **none** of the five | **173** | **12.17 %** |
+| bucket       | what it means                              |   cases |       share |
+| ------------ | ------------------------------------------ | ------: | ----------: |
+| `top1`       | the truth is the ranking's first answer    |    1073 |     75.46 % |
+| `top5`       | the truth is in the top five but not first |     176 |     12.38 % |
+| **`absent`** | the truth is in **none** of the five       | **173** | **12.17 %** |
 
 > **Corrected in iteration 270 — the bucket's NAME overstated its meaning, and §4 already said so.** "Absent" here
 > means absent from the **reported five**, not from the order: a stratified 106-case reading with the full ranking
-> dumped (`--depth-out`, `docs/agentic-headroom.md` §10) finds the corpus answer somewhere in the order in **106 of
-> 106** cases, median miss depth 4, maximum 42, zero absent from the order. The 173 are therefore *deep*, and the
+> dumped (`--depth-out`, `docs/agentic-headroom.md` §10) finds the corpus answer somewhere in the order in **1 422 of
+> 1 422** cases, median miss depth 4, maximum 44, zero absent from the order. The 173 are therefore _deep_, and the
 > owner of the loss is the same one the `top5` bucket has — ordering — not the candidate SET this document's
 > opening paragraph distinguishes it from. §4's own diagnostic already contradicted the name: it renders the node
 > with `selfAnomaly=0.551` and concludes the service "is **not invisible** … It loses because every competitor
@@ -32,27 +32,27 @@ is what it turned out to be.
 The per-type split is where the campaign's type tables come from, and it says the two buckets have different
 owners:
 
-| fault type | n | top1 | top5 | absent | miss % |
-| --- | --: | --: | --: | --: | --: |
-| HTTPResponseReplaceCode | 231 | 162 | 14 | **55** | 29.9 |
-| HTTPRequestReplaceMethod | 190 | 125 | 27 | **36** | 34.2 |
-| NetworkPartition | 97 | 64 | 18 | 15 | 34.0 |
-| HTTPResponseDelay | 89 | 56 | 26 | 7 | 37.1 |
-| HTTPRequestDelay | 88 | 57 | 20 | 11 | 35.2 |
-| NetworkBandwidth | 42 | 20 | 16 | 6 | 52.4 |
-| NetworkLoss | 48 | 29 | 12 | 7 | 39.6 |
-| NetworkCorrupt | 46 | 31 | 9 | 6 | 32.6 |
-| HTTPRequestAbort | 60 | 46 | 4 | 10 | 23.3 |
-| JVMException | 43 | 30 | 9 | 4 | 30.2 |
-| HTTPResponseAbort | 44 | 34 | 6 | 4 | 22.7 |
-| JVMReturn | 21 | 12 | 2 | 7 | 42.9 |
-| HTTPResponseReplaceBody | 51 | 45 | 6 | 0 | 11.8 |
-| HTTPRequestReplacePath | 39 | 38 | 1 | 0 | 2.6 |
-| NetworkDelay | 21 | 20 | 1 | 0 | 4.8 |
-| ContainerKill | 89 | 89 | 0 | 0 | 0.0 |
-| JVMMemoryStress | 171 | 171 | 0 | 0 | 0.0 |
-| PodFailure | 24 | 24 | 0 | 0 | 0.0 |
-| PodKill | 10 | 10 | 0 | 0 | 0.0 |
+| fault type               |   n | top1 | top5 | absent | miss % |
+| ------------------------ | --: | ---: | ---: | -----: | -----: |
+| HTTPResponseReplaceCode  | 231 |  162 |   14 | **55** |   29.9 |
+| HTTPRequestReplaceMethod | 190 |  125 |   27 | **36** |   34.2 |
+| NetworkPartition         |  97 |   64 |   18 |     15 |   34.0 |
+| HTTPResponseDelay        |  89 |   56 |   26 |      7 |   37.1 |
+| HTTPRequestDelay         |  88 |   57 |   20 |     11 |   35.2 |
+| NetworkBandwidth         |  42 |   20 |   16 |      6 |   52.4 |
+| NetworkLoss              |  48 |   29 |   12 |      7 |   39.6 |
+| NetworkCorrupt           |  46 |   31 |    9 |      6 |   32.6 |
+| HTTPRequestAbort         |  60 |   46 |    4 |     10 |   23.3 |
+| JVMException             |  43 |   30 |    9 |      4 |   30.2 |
+| HTTPResponseAbort        |  44 |   34 |    6 |      4 |   22.7 |
+| JVMReturn                |  21 |   12 |    2 |      7 |   42.9 |
+| HTTPResponseReplaceBody  |  51 |   45 |    6 |      0 |   11.8 |
+| HTTPRequestReplacePath   |  39 |   38 |    1 |      0 |    2.6 |
+| NetworkDelay             |  21 |   20 |    1 |      0 |    4.8 |
+| ContainerKill            |  89 |   89 |    0 |      0 |    0.0 |
+| JVMMemoryStress          | 171 |  171 |    0 |      0 |    0.0 |
+| PodFailure               |  24 |   24 |    0 |      0 |    0.0 |
+| PodKill                  |  10 |   10 |    0 |      0 |    0.0 |
 
 The four resource classes are complete (0 misses), which is the fact `docs/fault-census.md` records on the
 other corpus: a permanent resource shift is a large stable deviation at the injected service and every corpus
@@ -63,29 +63,29 @@ finds it. Everything this document is about is in the classes whose signature is
 Of the 173 absent cases, **149 (86.1 %) carry `ts-ui-dashboard` as an accepted root cause**, and the remaining
 24 are spread over fifteen services:
 
-| truth service | absent cases |
-| --- | --: |
-| `ts-ui-dashboard` | **149** |
-| `ts-travel-service` | 6 |
-| `ts-assurance-service` | 6 |
-| `ts-preserve-service` | 5 |
-| `ts-order-service` | 4 |
-| `ts-config-service` | 3 |
-| `ts-consign-service` | 3 |
-| `ts-seat-service` | 3 |
-| `ts-travel2-service` | 3 |
-| `ts-route-plan-service` | 3 |
-| (twelve others) | 12 |
+| truth service           | absent cases |
+| ----------------------- | -----------: |
+| `ts-ui-dashboard`       |      **149** |
+| `ts-travel-service`     |            6 |
+| `ts-assurance-service`  |            6 |
+| `ts-preserve-service`   |            5 |
+| `ts-order-service`      |            4 |
+| `ts-config-service`     |            3 |
+| `ts-consign-service`    |            3 |
+| `ts-seat-service`       |            3 |
+| `ts-travel2-service`    |            3 |
+| `ts-route-plan-service` |            3 |
+| (twelve others)         |           12 |
 
 Thirty-four of the 173 are multi-label (the corpus accepts both the injection point and the affected
 endpoint); 139 are single-label.
 
 The asymmetry that makes this a defect rather than a property of the service:
 
-| population | n | in the top five |
-| --- | --: | --: |
-| cases whose truth INCLUDES `ts-ui-dashboard` | 186 | 37 (19.9 %) |
-| cases whose truth EXCLUDES it | 1236 | 191 (15.5 %) |
+| population                                   |    n | in the top five |
+| -------------------------------------------- | ---: | --------------: |
+| cases whose truth INCLUDES `ts-ui-dashboard` |  186 |     37 (19.9 %) |
+| cases whose truth EXCLUDES it                | 1236 |    191 (15.5 %) |
 
 `ts-ui-dashboard` is found as often when it is **irrelevant** as when it is the answer. A ranking whose answer
 is less retrievable than its distractors is not measuring the same thing in the two populations.
@@ -99,9 +99,9 @@ those make it a natural suspect for a truth that vanishes.
 
 It is not the cause, and one arm says so. On the 142 absent datapacks whose shards were converted locally:
 
-| arm | Top@1 | Top@3 | Top@5 |
-| --- | --: | --: | --: |
-| shipped | 0/142 | 0/142 | 0/142 |
+| arm                 | Top@1 | Top@3 | Top@5 |
+| ------------------- | ----: | ----: | ----: |
+| shipped             | 0/142 | 0/142 | 0/142 |
 | `--topo-discount 0` | 0/142 | 0/142 | 0/142 |
 
 Zero gained, zero lost, and `ts-ui-dashboard` appears in the top five of four cases instead of none — four
@@ -132,12 +132,12 @@ channel is idle by construction in exactly the period that makes it look idle.
 
 `eventExtraLabels=['http.response.error_rate']` is the switch that repairs the drop. On the same 142 cases:
 
-| arm | Top@1 | Top@3 | Top@5 | gained vs shipped | lost |
-| --- | --: | --: | --: | --: | --: |
-| shipped | 0 | 0 | 0 | — | — |
-| `topoDiscount=0` | 0 | 0 | 0 | 0 | 0 |
-| **admission, shipped discount** | **6** | **24** | **33** | **+33** | **0** |
-| admission + `topoDiscount=0` | 7 | 26 | 37 | +37 | 0 |
+| arm                             | Top@1 |  Top@3 |  Top@5 | gained vs shipped |  lost |
+| ------------------------------- | ----: | -----: | -----: | ----------------: | ----: |
+| shipped                         |     0 |      0 |      0 |                 — |     — |
+| `topoDiscount=0`                |     0 |      0 |      0 |                 0 |     0 |
+| **admission, shipped discount** | **6** | **24** | **33** |           **+33** | **0** |
+| admission + `topoDiscount=0`    |     7 |     26 |     37 |               +37 |     0 |
 
 **No case is lost on this subset by either admission arm.** The four-case difference between the two is the
 deduction's whole contribution here: it charges four nodes the admission had just given evidence to.
@@ -149,19 +149,19 @@ control `43021484829` on the same HEAD), reads **`Top@1 1073 → 1082` (75.46 % 
 
 The type-level split is what refuses it, and it is **seven types up, four down**:
 
-| Δ | fault type | control | arm | n |
-| --: | --- | --: | --: | --: |
-| **−4** | NetworkPartition | 64 | 60 | 97 |
-| **−3** | NetworkBandwidth | 20 | 17 | 42 |
-| **−2** | HTTPRequestReplacePath | 38 | 36 | 39 |
-| **−1** | NetworkLoss | 29 | 28 | 48 |
-| +1 | HTTPRequestAbort | 46 | 47 | 60 |
-| +1 | HTTPRequestReplaceMethod | 125 | 126 | 190 |
-| +1 | JVMException | 30 | 31 | 43 |
-| +1 | NetworkCorrupt | 31 | 32 | 46 |
-| +3 | HTTPResponseAbort | 34 | 37 | 44 |
-| +3 | HTTPResponseReplaceBody | 45 | 48 | 51 |
-| **+9** | HTTPResponseReplaceCode | 162 | 171 | 231 |
+|      Δ | fault type               | control | arm |   n |
+| -----: | ------------------------ | ------: | --: | --: |
+| **−4** | NetworkPartition         |      64 |  60 |  97 |
+| **−3** | NetworkBandwidth         |      20 |  17 |  42 |
+| **−2** | HTTPRequestReplacePath   |      38 |  36 |  39 |
+| **−1** | NetworkLoss              |      29 |  28 |  48 |
+|     +1 | HTTPRequestAbort         |      46 |  47 |  60 |
+|     +1 | HTTPRequestReplaceMethod |     125 | 126 | 190 |
+|     +1 | JVMException             |      30 |  31 |  43 |
+|     +1 | NetworkCorrupt           |      31 |  32 |  46 |
+|     +3 | HTTPResponseAbort        |      34 |  37 |  44 |
+|     +3 | HTTPResponseReplaceBody  |      45 |  48 |  51 |
+| **+9** | HTTPResponseReplaceCode  |     162 | 171 | 231 |
 
 A gain of nine cases is not worth four regressed network types, on this project's rule that a regressed type
 ends an arm whatever the total did. The rule has now been applied to this switch in three iterations (259 wrote
@@ -177,11 +177,11 @@ The per-case reason is a population split, not a defect:
 
 The mechanism, read off one of the lost datapacks under the admitted spelling:
 
-| node | shipped score | admitted score | dominant (admitted) | rank |
-| --- | --: | --: | --- | --- |
-| `ts-seat-service` | 1.000 | 1.000 | **`http.response.error_rate`** | **1** |
-| `ts-config-service` (truth) | 0.980 | **0.939** | `hubble_http_request_duration_p99` | 3 |
-| `mysql` (truth) | 0.327 | 0.327 | `k8s.pod.cpu.node.utilization` | — |
+| node                        | shipped score | admitted score | dominant (admitted)                | rank  |
+| --------------------------- | ------------: | -------------: | ---------------------------------- | ----- |
+| `ts-seat-service`           |         1.000 |          1.000 | **`http.response.error_rate`**     | **1** |
+| `ts-config-service` (truth) |         0.980 |      **0.939** | `hubble_http_request_duration_p99` | 3     |
+| `mysql` (truth)             |         0.327 |          0.327 | `k8s.pod.cpu.node.utilization`     | —     |
 
 The winner saturates at 1.000 and its dominant channel switches to the admitted spelling. The truth does not
 merely fail to gain — it **loses 0.041**, because `anomalyNormalization` is `rank` above

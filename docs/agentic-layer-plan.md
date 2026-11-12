@@ -142,10 +142,9 @@ arm and why it runs second.
 
 Two free arms sit underneath:
 
-- ~~the **skip rule** is deterministic — `top1_margin > θ ∧ top1 anomalous channels ≥ 3`~~ — **refused, iteration
-  267.** Measured on 711 RCABench cases it skips **710 of 711**, and the cases it skips include **117 of the 118**
+- ~~the **skip rule** is deterministic — `top1_margin > θ ∧ top1 anomalous channels ≥ 3`~~ — **refused, iteration 267.** Measured on 711 RCABench cases it skips **710 of 711**, and the cases it skips include **117 of the 118**
   a perfect eliminator could fix. The reason is mechanical and reverses the rule's premise: a fixable case is one
-  where a *symptom* outranks the source confidently, so a wide margin and many deviating channels are evidence
+  where a _symptom_ outranks the source confidently, so a wide margin and many deviating channels are evidence
   **for** consultation, not against it. `docs/agentic-headroom.md` §4 carries the grid; the honest spend is the
   full corpus, $5.3, not $2.7;
 - the **cache** (record/replay) means every weight/mode/budget ablation after the first costs **$0**. The 500-case
@@ -175,14 +174,14 @@ informative, so the comparison is like-for-like on n and better on design.
 **Arms 0, added in iteration 267, and they ran first because they cost nothing:**
 
 0a. **the ceiling.** A perfect eliminator that may only remove candidates by a verifiable claim reaches
-    **87.69 %** on all **1 422** RCABench cases against the engine's **75.50 %** — **+12.19 pp**, 174 cases, zero
-    refused claims (`docs/agentic-headroom.md` §9, run `43253302440`). The first reading was over the `waveB2` half
-    and said **+16.63 pp** (`84.70 %` vs `68.07 %` on 711); the full corpus corrects that by 4.4 pp and this row now
-    quotes the full-width number. The ceiling equals Top@5 to within one case (87.69 % vs a saturated 87.8 %), so no
-    layer can beat 87.8 % without the *ranking* improving first;
+**87.69 %** on all **1 422** RCABench cases against the engine's **75.50 %** — **+12.19 pp**, 174 cases, zero
+refused claims (`docs/agentic-headroom.md` §9, run `43253302440`). The first reading was over the `waveB2` half
+and said **+16.63 pp** (`84.70 %` vs `68.07 %` on 711); the full corpus corrects that by 4.4 pp and this row now
+quotes the full-width number. The ceiling equals Top@5 to within one case (87.69 % vs a saturated 87.8 %), so no
+layer can beat 87.8 % without the _ranking_ improving first;
 0b. **the evidence rule**, refused: −0.6 pp held out at its best thresholds, −21.8 pp at its most permissive. The
-    expected-outlier rate survives as a **fingerprint column** — it is what makes 0a's claims checkable — and dies
-    as a **decider** (`docs/agentic-headroom.md` §5);
+expected-outlier rate survives as a **fingerprint column** — it is what makes 0a's claims checkable — and dies
+as a **decider** (`docs/agentic-headroom.md` §5);
 0c. **the skip rule**, refused (above).
 
 ## 7. Dependency layering, and the cycle that killed the first attempt
@@ -219,13 +218,13 @@ exposes only the two primitives the join must not re-implement: `injectionSplitI
 
 ## 9. Acceptance
 
-| #   | requirement                                                      | how it is checked                               |
-| --- | ---------------------------------------------------------------- | ----------------------------------------------- |
+| #   | requirement                                                      | how it is checked                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | `weight=0` is bit-identical to the engine without the layer      | asserted twice: `agentic-headroom.test.ts` scores `oracle` at weight 0 and requires `moved = 0` with the engine's own Top@1, and each run's own fingerprint dump reproduces the published control digit for digit (75.50 % over 1 422, `docs/agentic-headroom.md` §9). The nine-cell half is still owed |
-| 2   | no case leaves the scope at any arm                              | stratum-coverage test (§6)                      |
-| 3   | per-case cost is reported with the score                         | `reported-config` gains the three budget fields |
-| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator, measured on the full corpus**: the ceiling is +12.19 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily |
-| 5   | RE3:TT error-value class converts, or the layer is refused again | wrong→correct > 0, 3 of 3 reps                  |
+| 2   | no case leaves the scope at any arm                              | stratum-coverage test (§6)                                                                                                                                                                                                                                                                              |
+| 3   | per-case cost is reported with the score                         | `reported-config` gains the three budget fields                                                                                                                                                                                                                                                         |
+| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator, measured on the full corpus**: the ceiling is +12.19 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily                                                 |
+| 5   | RE3:TT error-value class converts, or the layer is refused again | wrong→correct > 0, 3 of 3 reps                                                                                                                                                                                                                                                                          |
 
 Requirement 5 is the one `0d6ae609` failed, and it is kept **unchanged on purpose**: the point of changing the
 presentation is to find out whether that specific class was a presentation problem or a real ceiling. If it fails
@@ -236,12 +235,16 @@ again under a new presentation, the answer is the second one and the axis closes
 §6's arm 0a priced the elimination layer against a **five-wide** presentation and called the result the ceiling.
 A 106-case stratified reading of the full order (`docs/agentic-headroom.md` §10) overturned the premise:
 
-| window | reachable share | Δ over the control |
-| ------ | --------------: | -----------------: |
-| `Top@1` (the control) | 75.5% | — |
-| `Top@5` (§6's ceiling) | 88.7% | +13.2 pp |
-| `Top@20` | **97.2%** | **+21.7 pp** |
-| `absent` from the order | **0 of 106** (95% upper bound 3.5%) | — |
+| window                  |                        reachable share | Δ over the control |
+| ----------------------- | -------------------------------------: | -----------------: |
+| `Top@1` (the control)   |                                 75.46% |                  — |
+| `Top@5` (§6's ceiling)  |                                 87.83% |          +12.37 pp |
+| `Top@20`                |                             **92.12%** |      **+16.66 pp** |
+| `absent` from the order | **0 of 1 422** (95% upper bound 0.27%) |                  — |
+
+(The table is the full corpus. The same measurement was first taken on a stratified 106-case sample, which put
+`Top@20` at 97.2% — 5.1 pp optimistic, because it drew 3 of the 112 cases past twenty where the corpus holds 7.9%.
+Both readings are recorded in `docs/agentic-headroom.md` §10.2–§10.3; the corpus is the number.)
 
 Three consequences, and they reorder the arms rather than cancelling them:
 
