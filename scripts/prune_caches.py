@@ -13,7 +13,10 @@ against a 10 GB budget** across 84 entries:
 | `setup-python-*`                     | 1       | 161 MB    | yes — the toolchain pin               |
 
 Eighty of eighty-four entries are a pair per commit SHA, written by the CodeQL job and then addressed
-by a name no later commit can produce. They are not a cache; they are a log with a size limit. Because
+by a name no later commit can produce. GitHub's own limits -- 10 GB per repository by default, with
+usage beyond it billed, eviction oldest-last-access-first, and removal of anything not accessed in
+seven days -- mean such an entry is consumed by churn: nothing can address it, so nothing keeps it
+alive, and it holds budget until the policy takes it. They are not a cache; they are a log. Because
 the budget is over quota, **every save evicts something**, and what gets evicted is chosen by LRU —
 which is how the artifact that actually is reused (3 952 MB, ~30 minutes to rebuild) competes with
 entries that nothing will ever read again.

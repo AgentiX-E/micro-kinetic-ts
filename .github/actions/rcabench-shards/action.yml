@@ -19,7 +19,10 @@ description: >-
   `GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage` reports **10 743 940 592 bytes** of a
   10 GB budget across 84 entries, of which 80 are `codeql-overlay-base-database-*` (5 686 MB, one
   pair per commit SHA, so a new key every push) and one is `RCAEvalJSON-*` (3 952 MB, read by every
-  push-triggered RCAEval battery). The budget is over its quota, so **every save evicts something**:
+  push-triggered RCAEval battery). GitHub documents that default as 10 GB per repository with usage
+  beyond it billed, eviction oldest-last-access-first, and any entry not accessed for seven days
+  removed -- so the 80 overlays are consumed by that churn rather than by anything a reader can
+  address. The budget is over its quota, so **every save evicts something**:
   a 2.5 GB shard entry would buy a download this repository's own release assets serve in about a
   minute, and would pay for it by evicting a 3.9 GB artifact that costs ~30 minutes to rebuild.
 

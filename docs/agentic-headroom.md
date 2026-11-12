@@ -233,9 +233,12 @@ GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage
 
 10.74 GB against a 10 GB budget. Eighty of the 84 entries are `codeql-overlay-base-database-*` — a pair per commit
 SHA, 5.69 GB — and the key embeds the SHA, so **no later commit can address them**. They are written and read
-inside one workflow run and are a log with a size limit afterwards. Because the budget is over quota, every save
-evicts by LRU, which is how the entry that *is* reused — `RCAEvalJSON-*`, 3.95 GB, ~30 minutes to rebuild — competes
-with entries whose next reader does not exist.
+inside one workflow run; afterwards they are a log whose retention is somebody else's policy. GitHub documents that
+policy as 10 GB per repository by default (usage beyond it billed), eviction oldest-last-access-first, and removal
+of anything not accessed in seven days — so the overlays die by churn and, until they do, they are what the budget is
+spent on. Because the quota is exceeded, every save evicts the least recently used entry, which is how the entry
+that *is* reused — `RCAEvalJSON-*`, 3.95 GB, ~30 minutes to rebuild — competes with entries whose next reader does
+not exist.
 
 Two decisions follow, both measured rather than argued:
 

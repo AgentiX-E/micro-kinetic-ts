@@ -5,9 +5,12 @@ name: Cache — reclaim per-commit overlays
 # `GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage` reports **10 743 940 592 bytes against
 # 10 GB** across 84 entries. Eighty of them are `codeql-overlay-base-database-*` pairs — one per commit
 # SHA, 5 686 MB in total — and the key embeds the SHA, so no later commit can address them. They are
-# written by the CodeQL job and read by the next job of the SAME run; after that they are a log with a
-# size limit, and because the budget is over quota every new save evicts whatever was used least
-# recently. The entries that ARE reused pay for them:
+# written by the CodeQL job and read by the next job of the SAME run; after that they are a log whose
+# retention is somebody else's policy. GitHub documents the default as 10 GB per repository (usage
+# beyond it billed), eviction oldest-last-access-first, and removal of anything not accessed in seven
+# days — three mechanisms that together mean the overlays are consumed by churn and, in the meantime,
+# are what the budget is spent on. Because the quota is exceeded, every new save evicts the entry that
+# was used least recently. The entries that ARE reused pay for them:
 #
 #   RCAEvalJSON-*            3 952 MB   read by every push-triggered RCAEval battery, ~30 min to rebuild
 #   node-cache-*               332 MB   the lockfile's pnpm store
