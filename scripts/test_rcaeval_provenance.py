@@ -718,10 +718,22 @@ class TheStampIsInvisibleToEveryReader(unittest.TestCase):
 
     def test_every_reader_excludes_a_DOT_directory(self) -> None:
         readers = walkers_that_descend_directories()
-        # Non-vacuity: nine modules descend the artifact directory. A rule over an empty population
+        names = {path.name for path in readers}
+        # Non-vacuity: eight modules descend the artifact directory. A rule over an empty population
         # passes for a predicate that always returns true, which is the trap this repository keeps
         # meeting.
-        self.assertGreaterEqual(len(readers), 9)
+        #
+        # THE FLOOR FELL FROM NINE TO EIGHT IN ITERATION 265, and the departure is named rather than
+        # the number adjusted: `run-fse26.ts` and `run-optimize.ts` each carried a PRIVATE copy of the
+        # same corpus walk, and both now delegate to `case-discovery.ts` -- so two members became one,
+        # with one implementation where there had been three. A floor pinned to nine would have made a
+        # consolidation look like a regression, which is the same failure the dispatch census records
+        # about a set that shrinks without a note.
+        self.assertGreaterEqual(len(readers), 8)
+        # ...and the member that replaced the two is asserted BY NAME, because the floor alone cannot
+        # see it: the population would still hold eight if the shared owner vanished and some other
+        # module grew a walk, which is exactly the drift the consolidation was made to end.
+        self.assertIn('case-discovery.ts', names)
         for path in readers:
             text = path.read_text('utf-8')
             # EVERY decision point, not one per file. `run-rcaeval.ts` tests for a directory twice,
