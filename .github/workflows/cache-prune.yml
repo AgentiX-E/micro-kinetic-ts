@@ -1,0 +1,75 @@
+name: Cache — reclaim per-commit overlays
+
+# Actions cache is a fixed budget, and this repository spends all of it on entries that cannot be reused.
+#
+# `GET /repos/AgentiX-E/micro-kinetic-ts/actions/cache/usage` reports **10 743 940 592 bytes against
+# 10 GB** across 84 entries. Eighty of them are `codeql-overlay-base-database-*` pairs — one per commit
+# SHA, 5 686 MB in total — and the key embeds the SHA, so no later commit can address them. They are
+# written by the CodeQL job and read by the next job of the SAME run; after that they are a log with a
+# size limit, and because the budget is over quota every new save evicts whatever was used least
+# recently. The entries that ARE reused pay for them:
+#
+#   RCAEvalJSON-*            3 952 MB   read by every push-triggered RCAEval battery, ~30 min to rebuild
+#   node-cache-*               332 MB   the lockfile's pnpm store
+#   setup-python-*             161 MB   the converter toolchain
+#
+# That is the reason this file exists rather than another cache being added somewhere: reusing cached
+# resources is only possible while the budget has room, and 5.7 GB of the 10 GB is held by entries whose
+# next reader does not exist.
+#
+# ## Why a schedule and a dry-run dispatch, and not just a dispatch
+#
+# The overlays accumulate one pair per push, so a job that only runs when a human remembers is a job
+# that runs after the eviction it was meant to prevent. The schedule therefore APPLIES, and a manual
+# dispatch defaults to REPORTING: the first thing an operator runs is the plan, and the same script
+# produces both.
+#
+# `scripts/prune_caches.py` is deny-by-default: only the prefixes named on its command line are in
+# scope, and it refuses a prefix that names a family which is actually reused. `RCAEvalJSON`,
+# `RCAEval-datasets`, `node-cache-` and `setup-python-` are protected by name, so the guard is a fact
+# of the code rather than a comment in this file — see `scripts/test_prune_caches.py`.
+
+on:
+  schedule:
+    # 03:00 UTC, before the weekly dataset refresh (Sunday 02:00) can be evicted by a day of pushes.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Set to anything non-empty to DELETE; empty prints the same plan and changes nothing. A manually dispatched prune is a reading unless it says otherwise'
+        required: false
+        default: ''
+      keep_recent:
+        description: 'How many of each in-scope prefix to keep, newest first (empty = 2, the two languages the CodeQL job analyses). Zero is refused: it would delete the overlay the currently-running analysis is about to read'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim the entries no later run can address
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #   `github.event_name == 'schedule'` applies; a dispatch applies only when it asked to. The
+          #   distinction is derived from the event rather than from a second input, so a scheduled run
+          #   cannot become a no-op by someone clearing a default.
+          APPLY: ${{ github.event_name == 'schedule' && '1' || inputs.apply }}
+          KEEP_RECENT: ${{ inputs.keep_recent }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [ -n "$APPLY" ]; then
+            ARGS+=(--apply)
+          fi
+          if [ -n "$KEEP_RECENT" ]; then
+            ARGS+=(--keep-recent "$KEEP_RECENT")
+          fi
+          python3 scripts/prune_caches.py "${ARGS[@]}"
