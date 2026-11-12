@@ -240,6 +240,19 @@ export interface Fse26CliOptions {
    */
   readonly termsOut: string;
   /**
+   * Path to write the per-case elimination FINGERPRINT to (empty = none).
+   *
+   * The artifact an elimination layer is allowed to read: at most five ranked candidates, at most eight channels
+   * each, and five numbers per channel — the case's own medians either side of the injection, the fault-free band
+   * the corpus profile published, the rate that channel leaves it in clean windows, and when it first did. It
+   * carries no label, for the reason `agentic-fingerprint-file.ts` records: an arm that can see a fingerprint and
+   * a label in one object can condition on the label by accident.
+   *
+   * Off by default and an output path rather than a knob: it changes nothing the engine computes, which is why
+   * `NON_ENGINE_OPTION_KEYS` and `NOT_REPORTED_FSE26_OPTION_KEYS` both name it.
+   */
+  readonly fingerprintOut: string;
+  /**
    * Metric names to filter out of every case before scoring (empty = none).
    * Component-ablation switch: the bridge merges four metric sources into one
    * map, so removing a source's names here re-scores the same cases as if the
@@ -673,6 +686,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     termsOut: '',
+    fingerprintOut: '',
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -767,6 +781,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // producer's precision rather than being rounded, because `4.5` digits names no artifact.
       opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
     else if (arg === '--terms-dump' && hasValue(argv, i + 1)) opts.termsOut = argv[++i]!;
+    else if (arg === '--fingerprint-out' && hasValue(argv, i + 1)) opts.fingerprintOut = argv[++i]!;
     else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
       opts.eventExtraLabels = csv(argv[++i]!);

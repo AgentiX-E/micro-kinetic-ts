@@ -151,6 +151,36 @@ describe('verifyClaim', () => {
     });
   });
 
+  it('refuses an expected-outlier rate the profile does not publish, and accepts one it does', () => {
+    // The rate is the second thing a claim may rest on: the band says "this moved", the rate says "and it moves
+    // like this when nothing is wrong". A claim that makes the second argument must state the number it is making
+    // it with, and the number is checked like every other field.
+    const faithful: EliminationClaim = {
+      ...grounded,
+      because: { ...grounded.because, rate: 0 },
+    };
+    expect(verifyClaim(faithful, posterior).ok).toBe(true);
+    const invented: EliminationClaim = {
+      ...grounded,
+      because: { ...grounded.because, rate: 0.4 },
+    };
+    expect(verifyClaim(invented, posterior)).toMatchObject({
+      ok: false,
+      reason: 'rate-disagrees-with-fingerprint',
+    });
+  });
+
+  it('checks the rate AFTER the value, so a claim wrong about both names the first disagreement', () => {
+    const both: EliminationClaim = {
+      ...grounded,
+      because: { ...grounded.because, observed: 41, rate: 0.4 },
+    };
+    expect(verifyClaim(both, posterior)).toMatchObject({
+      ok: false,
+      reason: 'value-disagrees-with-fingerprint',
+    });
+  });
+
   it('treats a remembered NaN as the value it is, not as a mismatch', () => {
     // A channel whose post mean is NaN is a channel the engine could not measure. A claim copying that NaN is
     // faithful, so `sameNumber` must not reject it for the reason `NaN !== NaN` — the claim then fails or passes

@@ -25,7 +25,7 @@
  * @module benchmarks/fse26-per-case
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 /** How many ranked services a row carries. Five, because Top@5 is the deepest `At-K` this suite reports. */
 export const PER_CASE_RANK_LIMIT = 5;
@@ -74,4 +74,66 @@ export function writePerCaseVerdicts(path: string, verdicts: readonly PerCaseVer
   const body = verdicts.map((verdict) => `${formatPerCaseVerdict(verdict)}\n`).join('');
   writeFileSync(path, body);
   return verdicts.length;
+}
+
+/** Refuses a string array that carries an empty or non-string entry. */
+function stringsAt(value: unknown, field: string, line: number): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry === '')) {
+    throw new Error(`${field} on line ${line} is not an array of non-empty strings`);
+  }
+  return value as string[];
+}
+
+/**
+ * Read a verdict file back.
+ *
+ * The reader exists because the format's own argument is that a judgement may be chosen AFTER a run: an artifact
+ * only a human can read is an artifact whose judgement cannot be re-derived. Blank lines are skipped (a file that
+ * ends with a newline is not an error); every other unrecognised shape is refused by line number, because a
+ * silently-coerced row would be scored as a different case than the one the corpus states.
+ *
+ * @param text - The ndjson contents.
+ * @returns One verdict per non-blank line, in file order.
+ * @throws Error when a line is not a row this module would have written.
+ */
+export function parsePerCaseVerdicts(text: string): PerCaseVerdict[] {
+  const verdicts: PerCaseVerdict[] = [];
+  const lines = text.split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line.trim() === '') continue;
+    const lineNumber = index + 1;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line);
+    } catch {
+      throw new Error(`line ${lineNumber} is not JSON`);
+    }
+    if (typeof raw !== 'object' || raw === null)
+      throw new Error(`line ${lineNumber} is not an object`);
+    const row = raw as Record<string, unknown>;
+    if (typeof row.datapack !== 'string' || row.datapack === '') {
+      throw new Error(`datapack on line ${lineNumber} is not a non-empty string`);
+    }
+    if (typeof row.faultType !== 'string') {
+      throw new Error(`faultType on line ${lineNumber} is not a string`);
+    }
+    verdicts.push({
+      datapack: row.datapack,
+      faultType: row.faultType,
+      accepted: stringsAt(row.accepted, `accepted on line ${lineNumber}`, lineNumber),
+      ranked: stringsAt(row.ranked, `ranked on line ${lineNumber}`, lineNumber),
+    });
+  }
+  return verdicts;
+}
+
+/**
+ * Read a verdict file from disk.
+ *
+ * @param path - The ndjson file.
+ * @returns One verdict per case.
+ */
+export function readPerCaseVerdicts(path: string): PerCaseVerdict[] {
+  return parsePerCaseVerdicts(readFileSync(path, 'utf8'));
 }

@@ -119,6 +119,12 @@ export {
   isResponseChannel,
   isTopoDiscountScope,
   judgePreWindowDrift,
+  // The median, public for the reason `injectionSplitIndex` above is: a consumer that has to say "what did this
+  // channel read BEFORE the injection, against the band somebody else measured" must split the series where the
+  // ENGINE splits it and must summarise the segment with the same estimator the band's centre was built from. A
+  // second definition of "the middle of these samples" would let a fingerprint disagree with the profile about a
+  // number both of them claim to have read.
+  medianOfRange,
   preWindowDrift,
   probePreInjectionWindow,
 } from './causal/topology-fault-graph.js';

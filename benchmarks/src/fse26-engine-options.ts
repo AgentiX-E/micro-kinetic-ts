@@ -201,6 +201,10 @@ export const NON_ENGINE_OPTION_KEYS = [
   // classified here for the reason stated above rather than left out, because a path that reaches neither
   // the engine nor this list is exactly the silent drop the completeness test exists to catch.
   'termsOut',
+  // The fingerprint writer, on exactly the same rule as `termsOut` above: it serialises a summary of the ranking
+  // the engine already produced, for a layer that runs AFTER the ranking, and the engine never reads it back. A
+  // path that reached neither the engine nor this list is the silent drop the completeness test exists to catch.
+  'fingerprintOut',
   'dropMetrics',
   // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
   // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the

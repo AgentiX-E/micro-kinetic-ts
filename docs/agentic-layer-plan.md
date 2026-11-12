@@ -142,10 +142,16 @@ arm and why it runs second.
 
 Two free arms sit underneath:
 
-- the **skip rule** is deterministic — `top1_margin > θ ∧ top1 anomalous channels ≥ 3` — so it costs nothing and its
-  coverage is itself a measurement;
-- the **cache** (record/replay, `benchmarks/src/agentic-cache.ts`) means every weight/mode/budget ablation after
-  the first costs **$0**. The 500-case arm and the full-1422 arm then differ in _replay_, not in spend.
+- ~~the **skip rule** is deterministic — `top1_margin > θ ∧ top1 anomalous channels ≥ 3`~~ — **refused, iteration
+  267.** Measured on 711 RCABench cases it skips **710 of 711**, and the cases it skips include **117 of the 118**
+  a perfect eliminator could fix. The reason is mechanical and reverses the rule's premise: a fixable case is one
+  where a *symptom* outranks the source confidently, so a wide margin and many deviating channels are evidence
+  **for** consultation, not against it. `docs/agentic-headroom.md` §4 carries the grid; the honest spend is the
+  full corpus, $5.3, not $2.7;
+- the **cache** (record/replay) means every weight/mode/budget ablation after the first costs **$0**. The 500-case
+  arm and the full-1422 arm then differ in _replay_, not in spend. Iteration 267's offline harness
+  (`benchmarks/src/agentic-headroom.ts`, `arm: 'recorded'`) is the scoring side of that cache: it takes claims
+  keyed by case id and reports accuracy, refusals, moves and the skip census without calling a model.
 
 ## 6. Sampling that holds the scope
 
@@ -166,6 +172,17 @@ informative, so the comparison is like-for-like on n and better on design.
 2. the stratified 500 of RCABench — ≈$2.7, paired, with the pre-registered detection floor of **2.8 pp** at n=500;
 3. full 1 422 — only if (2) clears its floor with a CI that does not cross zero.
 
+**Arms 0, added in iteration 267, and they ran first because they cost nothing:**
+
+0a. **the ceiling.** A perfect eliminator that may only remove candidates by a verifiable claim reaches
+    **84.70 %** on 711 RCABench cases against the engine's **68.07 %** — **+16.63 pp**, zero refused claims, 118
+    cases, at most 3 rounds for 95 % of them. The ceiling equals Top@5 to within one case, so no layer can beat
+    84.8 % without the *ranking* improving first (`docs/agentic-headroom.md` §3);
+0b. **the evidence rule**, refused: −0.6 pp held out at its best thresholds, −21.8 pp at its most permissive. The
+    expected-outlier rate survives as a **fingerprint column** — it is what makes 0a's claims checkable — and dies
+    as a **decider** (`docs/agentic-headroom.md` §5);
+0c. **the skip rule**, refused (above).
+
 ## 7. Dependency layering, and the cycle that killed the first attempt
 
 ```
@@ -181,6 +198,15 @@ core  ←  tree (pruner; owns the fingerprint builder)
 retired attempt let `ai` reach into the graph, which is why removing it also removed `packages/ai`'s ability to be
 tested without a pruner. A test asserts the import direction.
 
+**Amended in iteration 267: the builder is in `benchmarks`, not in `tree`.** The diagram above put the fingerprint
+builder in `tree`, and that sentence was wrong for a dependency reason rather than a stylistic one. The builder
+joins three artifacts — the case's `MetricMap`, the engine's posterior and the corpus profile — and its output type
+belongs to `packages/ai`. Building it in `tree` would force `tree` to import the `ai` value type or to duplicate it,
+and `ai` importing `tree` is exactly what the diagram forbids; a duplicated interface would be the defect this
+repository refuses by name. `benchmarks` already depends on both packages, so the join happens there
+(`benchmarks/src/agentic-fingerprint.ts`), the import direction the diagram states is still asserted, and `tree`
+exposes only the two primitives the join must not re-implement: `injectionSplitIndex` and `medianOfRange`.
+
 ## 8. What this layer may NOT do
 
 1. It may not see ground truth. Truth isolation is a type-level boundary plus a test, not a prompt instruction.
@@ -193,10 +219,10 @@ tested without a pruner. A test asserts the import direction.
 
 | #   | requirement                                                      | how it is checked                               |
 | --- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | `weight=0` is bit-identical to the engine without the layer      | integration assertion over all nine cells       |
+| 1   | `weight=0` is bit-identical to the engine without the layer      | **asserted over the 711-case RCABench corpus** (`agentic-headroom.test.ts` scores `oracle` at weight 0 and requires `moved = 0` and the engine's own Top@1); the nine-cell half is still owed |
 | 2   | no case leaves the scope at any arm                              | stratum-coverage test (§6)                      |
 | 3   | per-case cost is reported with the score                         | `reported-config` gains the three budget fields |
-| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero  |
+| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator**: the ceiling is +16.63 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily |
 | 5   | RE3:TT error-value class converts, or the layer is refused again | wrong→correct > 0, 3 of 3 reps                  |
 
 Requirement 5 is the one `0d6ae609` failed, and it is kept **unchanged on purpose**: the point of changing the

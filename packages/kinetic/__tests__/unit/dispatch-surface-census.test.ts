@@ -247,6 +247,13 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'the file IS the measurement the term consumes. A runner cannot invent it either — a non-zero weight ' +
     'without a profile is refused rather than silently read as zero — which is why it travels beside ' +
     '`faultFreeWeight` instead of being defaultable. `docs/architecture-audit-265.md` owns the profile it names',
+  fingerprintOut:
+    'writes the per-case elimination FINGERPRINT; an OUTPUT PATH, and the engine never reads it back. It is not ' +
+    'a knob because it multiplies nothing: it serialises the bounded view of the ranking a layer that runs AFTER ' +
+    'the ranking is allowed to see — five candidates, eight channels, five numbers each, no label — so a ' +
+    'threshold, a weight or a skip rule can be scored offline against one run instead of dispatched per point. ' +
+    'It is the same trade `termsOut` above makes for weight screens, and it requires the same corpus artifact ' +
+    '(`--fault-free-profile`), because the band in a fingerprint comes from the profile rather than from the case',
 };
 
 /**
@@ -1231,6 +1238,14 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'ARTIFACT rather than a knob or an output path: a dispatch that could name a path could name one fitted ' +
     'on another corpus, and nothing downstream could tell that reading from this one. ' +
     '`docs/architecture-audit-265.md` pins the file it produced',
+  // Iteration 267: the fingerprint dump. Unreachable for the reason the profile above is, and one more: a
+  // fingerprint is only interpretable next to the profile it was built against, so a dispatch that could name
+  // the output path would be describing a file whose meaning depends on a second file the dispatch cannot name
+  // at all. The dump is produced by the arm that reads it, in one local invocation.
+  '--fingerprint-out':
+    'writes the per-case elimination fingerprint an offline arm reads; an output path whose meaning depends on ' +
+    'the profile it was built against, which a dispatch cannot name either — so the dump and the arm that reads ' +
+    'it are produced by one local invocation rather than by two dispatches that could disagree',
 };
 
 /**

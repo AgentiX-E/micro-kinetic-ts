@@ -49,6 +49,8 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
+import { FingerprintDump } from './agentic-fingerprint-file.js';
+import { buildCandidateFingerprints } from './agentic-fingerprint.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
@@ -145,6 +147,12 @@ async function main(): Promise<void> {
   if (opts.faultFreeWeight !== 0 && opts.faultFreeProfilePath === undefined) {
     throw new Error('--fault-free-weight requires --fault-free-profile');
   }
+  // Same rule, one layer over: an elimination fingerprint IS the fault-free band per channel, so a dump asked
+  // for without a profile would be a file of empty candidate lists — and an offline arm reading it would report
+  // "no verifiable claim" for every case, which is a statement about the run rather than about the corpus.
+  if (opts.fingerprintOut !== '' && opts.faultFreeProfilePath === undefined) {
+    throw new Error('--fingerprint-out requires --fault-free-profile');
+  }
   const faultFreeProfile =
     opts.faultFreeProfilePath === undefined
       ? undefined
@@ -198,6 +206,10 @@ async function main(): Promise<void> {
   // Constructing the dump truncates it, so a second dispatch into the same path cannot read as one
   // run with twice the cases.
   const termDump = opts.termsOut === '' ? undefined : new TermDump(opts.termsOut);
+  // The fingerprint dump, on the same truncate-once rule: an arm reads a POPULATION, and a file that appended a
+  // second run onto the first would describe a corpus nobody dispatched.
+  const fingerprintDump =
+    opts.fingerprintOut === '' ? undefined : new FingerprintDump(opts.fingerprintOut);
 
   for (const dir of selected) {
     let raw: FSE26RawCase;
@@ -291,6 +303,27 @@ async function main(): Promise<void> {
       termDump.record({ datapack: basename(dir), faultType, accepted, ranking: full });
     }
 
+    // ── Optional per-case elimination FINGERPRINT (--fingerprint-out) ──
+    // Built from the ranking that was just published, not from a re-rank: the layer's claim is about the answer
+    // the run reports, and a fingerprint taken from a wider `topK` would let an offline arm claim a movement this
+    // run never made.
+    if (fingerprintDump !== undefined && faultFreeProfile !== undefined) {
+      const injectTimeMs = benchCase.injectTime > 0 ? benchCase.injectTime : 0;
+      const built = buildCandidateFingerprints({
+        metrics: benchCase.metrics,
+        ranking,
+        injectTimeMs,
+        profile: faultFreeProfile,
+      });
+      fingerprintDump.record({
+        datapack: basename(dir),
+        faultType,
+        injectTimeMs,
+        candidates: built.candidates,
+        census: built.census,
+      });
+    }
+
     predictionsPerCase.push(ranking.map((r) => r.serviceId));
     verdicts.push({
       datapack: basename(dir),
@@ -371,6 +404,20 @@ async function main(): Promise<void> {
   if (opts.perCaseOut !== '') {
     const written = writePerCaseVerdicts(opts.perCaseOut, verdicts);
     console.log(`  Per-case verdicts: ${written} rows -> ${opts.perCaseOut}`);
+  }
+  if (fingerprintDump !== undefined) {
+    // The census is printed rather than only written: a fingerprint that offered nothing is indistinguishable
+    // from a model that abstained, and the four counters are what tell the two apart.
+    const summary = fingerprintDump.summary;
+    console.log(
+      `  Fingerprints: ${summary.cases} cases, ${summary.candidates} candidates, ` +
+        `${summary.channels} channels -> ${summary.path}`,
+    );
+    console.log(
+      `  Fingerprint census: considered=${summary.census.considered} offered=${summary.census.offered} ` +
+        `unmeasurable=${summary.census.unmeasurable} unprofiled=${summary.census.unprofiled} ` +
+        `shadowed=${summary.census.shadowed} capped=${summary.census.capped}`,
+    );
   }
 }
 

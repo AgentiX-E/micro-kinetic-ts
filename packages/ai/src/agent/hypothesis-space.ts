@@ -15,6 +15,11 @@
  *
  * Zero IO, no clock, no randomness: everything here is a pure function of its arguments, so the whole layer can be
  * replayed byte for byte from a cache (the property that makes every ablation after the first one free).
+ *
+ * **What the verifier is not.** It refuses FABRICATION, not bad judgement. A claim whose every field is true and
+ * whose conclusion is wrong is accepted here, because whether the conclusion is right is what the accuracy number
+ * measures — a verifier that also policed judgement would be a second scorer hidden inside the layer, and the
+ * reported score would be a function of two things with only one of them published.
  */
 
 import type { ServiceId } from '@agentix-e/micro-kinetic-core';
@@ -34,6 +39,7 @@ export const CLAIM_REJECTIONS = [
   'unsupported-statistic',
   'band-disagrees-with-fingerprint',
   'value-disagrees-with-fingerprint',
+  'rate-disagrees-with-fingerprint',
   'removed-candidate-is-inside-its-band',
 ] as const;
 
@@ -82,6 +88,15 @@ export interface ClaimBasis {
   readonly observed: number;
   /** The band the claim asserts — verified against the fingerprint, never taken on trust. */
   readonly band: readonly [number, number];
+  /**
+   * The expected-outlier rate the claim asserts for the cited channel on the REMOVED candidate.
+   *
+   * Optional because a claim may rest on the band alone, and the two are different arguments: the band says
+   * "this moved", the rate says "and it moves like this when nothing is wrong". A proposer that makes the
+   * second argument must state the number it is making it with, and stating it is what subjects it to
+   * {@link verifyClaim}'s check — a claim may assert less, never something other than what the profile says.
+   */
+  readonly rate?: number;
 }
 
 /** The only thing an agent may say: remove one candidate, keep another, for a checkable reason. */
@@ -133,7 +148,8 @@ function sameNumber(a: number, b: number): boolean {
  * 4. does that channel carry the statistic the claim names;
  * 5. does the band match the one the profile published;
  * 6. does the observed value match the one the engine measured;
- * 7. and — the only judgement in the list — is the removed candidate actually outside that band? A claim that
+ * 7. does the asserted expected-outlier rate, when the claim asserts one, match the profile;
+ * 8. and — the only judgement in the list — is the removed candidate actually outside that band? A claim that
  *    removes a candidate whose own evidence sits INSIDE its fault-free band is not comparing evidence, it is
  *    asserting a preference, and that is the failure family `arXiv:2608.21310` calls unsupported reasoning.
  *
@@ -173,6 +189,9 @@ export function verifyClaim(
   }
   if (!sameNumber(observedOnRemoved, claim.because.observed)) {
     return { ok: false, reason: 'value-disagrees-with-fingerprint', claim };
+  }
+  if (claim.because.rate !== undefined && !sameNumber(onRemoved.rate, claim.because.rate)) {
+    return { ok: false, reason: 'rate-disagrees-with-fingerprint', claim };
   }
   if (insideBand(observedOnRemoved, onRemoved.band)) {
     return { ok: false, reason: 'removed-candidate-is-inside-its-band', claim };

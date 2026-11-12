@@ -265,6 +265,16 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`stratum.members`, whose case ids are asserted unique on entry',
     },
   ],
+  'benchmarks/src/agentic-fingerprint.ts': [
+    // The channel ordering inside one candidate. The population is `measurements`, whose labels the loop above
+    // has already deduplicated (`shadowed` counts the repeats), so no two entries share a label and the two-arm
+    // form never claims an order between equals. That is also why the `maxChannels` cap can be a property of the
+    // case: a cap applied to an order with ties would depend on the order the series arrived in.
+    {
+      signature: 'a.channel.label < b.channel.label',
+      population: '`measurements`, whose labels the shadow check has already made unique',
+    },
+  ],
 };
 
 /** Every `.ts` under a root, relative to the repository, sorted so two runs agree. */

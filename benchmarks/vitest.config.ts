@@ -265,6 +265,23 @@ export default defineConfig({
         // proportional share it misses are four different findings, and three of them would read as success if
         // only the happy path were asserted.
         'src/agentic-sampling.ts',
+        // Added with the modules: the elimination layer's three measurable parts, and each is here for its own
+        // reason. The FINGERPRINT is what a model would be allowed to see, so every number in it is attested —
+        // the medians either side of the injection, the published band and rate, the onset — and the four
+        // refusal counters are what separate a sparse fingerprint caused by an unprofiled corpus from one caused
+        // by a cap. The DUMP is the artifact every offline arm reads, so a field it writes as `null` or forgets
+        // to validate becomes an arm's number rather than an error, and the reader is asserted against every
+        // shape that would do it. The HEADROOM is the ceiling that decides whether the layer is worth paying
+        // for: its arms are asserted separately because an oracle that also respected the skip rule would
+        // report a bound on the method rather than on the population, and weight zero is asserted to be the
+        // identity, which is the property the whole ablation rests on.
+        'src/agentic-fingerprint.ts',
+        'src/agentic-fingerprint-file.ts',
+        'src/agentic-headroom.ts',
+        // Added with the module: the rendering that puts a rate BESIDE the population that bounds it and the
+        // refusals that qualify it. An arm that abstained on most of a corpus has a number describing the rest,
+        // and a layout is only worth its coverage if a test can read it.
+        'src/agentic-headroom-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
