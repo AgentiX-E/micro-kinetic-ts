@@ -259,6 +259,12 @@ export default defineConfig({
         'src/fault-free-profile-file.ts',
         'src/fault-free-profile-build.ts',
         'src/case-discovery.ts',
+        // Added with the module: the stratified subsample that lets a 500-case arm stand in for the 1 422-case
+        // corpus without dropping a fault family. Every branch is measured because the module's whole claim is a
+        // coverage claim — a floor it cannot afford, a stratum it cannot fill, a target it cannot reach and a
+        // proportional share it misses are four different findings, and three of them would read as success if
+        // only the happy path were asserted.
+        'src/agentic-sampling.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

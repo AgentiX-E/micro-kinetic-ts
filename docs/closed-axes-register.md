@@ -2285,3 +2285,59 @@ typed; it now refuses an unknown token by name. Both were found by coverage — 
 `else` — which is the second iteration running in which the coverage gate located a real bug rather than a metric.
 
 Full readings, the two measurement tables and the design notes: `architecture-audit-265.md`.
+
+## Iteration 266 — the axis this register closed, reopened in the one shape it left room for
+
+**The entry at line 145 ends with a sentence that is also an instruction: a reopening needs the presentation to
+change, not the weight.** Two iterations then spent their whole budget on `faultFreeWeight` — a weight. The axis was
+not reopened; it was walked past. This iteration builds the reopening.
+
+**Three things differ from `0d6ae609`, and each is why the earlier verdict cannot be transferred.**
+
+| dimension    | what `0d6ae609` measured                                       | what this layer will measure                                                                                    |
+| ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| population   | RE3:TrainTicket's three error-value families, ~30 cases        | **RCABench, all 1 422**, plus the nine RCAEval cells                                                            |
+| shape        | a ReAct loop walking an evidence dump with a retrieval toolkit | a **typed elimination claim** the engine verifies, or `abstain`                                                 |
+| presentation | unchanged                                                      | a **fingerprint**: ≤5 candidates × ≤8 channels × 5 numbers, ~1 600 tokens against the retired layer's 1 500 000 |
+
+**The 90.0 % that motivated the question decomposes, and the decomposition is why this is not a copy.** `arXiv:
+2608.21310` Table 2 reads 42.6 % → 90.0 % across ten configurations, and its own sections price the gap four ways:
+the population is a **500-case random sample**, not the 1 422; the top-band frameworks span **2.0 pp** (79.2 / 79.6
+/ 77.6) while swapping Sonnet for Qwen moves **10.8 pp**, i.e. the backbone is five times the design; the paper's
+own reconstruction ceiling is **√Edge F1 ≤ 0.67** even on correct localisations; and its defence prototype reads
+**43.5 % → 52.5 %** in an independent setting. Our second-path reading on this corpus is **42.69 %**, level with the
+worst name in that table — and the table contains **no non-LLM method at all**, so "4th in the agentic panel" was
+never the right sentence about where this engine stands.
+
+**Two roles, because the axis that separates them has no control in any published table.** `eliminator` anchors on
+the engine's top-K and may only remove or promote a candidate with a claim that re-derives from the fingerprint;
+`investigator` decides what to look at and when to stop. The trajectory study's Finding 1 is that no top agent was
+built for RCA and every purpose-built one trails — which is a claim about the eliminator's ceiling, and it is only
+falsifiable here because the eliminator sits on a ranker that is not an LLM.
+
+**The cost is a structural claim, not a discount.** Fingerprint instead of dump (166×), three rounds instead of
+45–54 (15×), a deterministic skip rule over cases the engine already leads clearly (~2×), and a model chosen for a
+numeric comparison rather than for judgement (~10×). Worked at list prices the eliminator is **$5.3 for all 1 422
+cases** against the published $284, and after the first run the cache makes every ablation **$0**. None of those
+terms removes a case from the scope: the 500-case arm is **stratified** on fault family × engine correctness ×
+causal-chain depth, so it is the same benchmark at a smaller n, and the published 90.0 % rests on a random 500.
+
+**Four flags, and the default is off.** `--agentic-mode` (`off` | `eliminator` | `investigator`),
+`--agentic-weight`, `--agentic-budget` (rounds, tokens, µ$), `--agentic-model`. `weight = 0` means the layer does
+not run — not that it runs and is ignored — and an integration test asserts the ranking is bit-identical to the
+engine that has no agentic code.
+
+**What is built this iteration, and what is not.** Built and measured: the bounded hypothesis space and its claim
+verifier (`packages/ai/src/agent/hypothesis-space.ts`, 28 tests), the three-gate budget ledger
+(`budget.ts`, 24 tests), and the stratified sampler (`benchmarks/src/agentic-sampling.ts`, 26 tests) — all at
+100 % on all four coverage dimensions. Not built: the runner wiring, the cache, and the dispatch. **No score moved
+this iteration**, so there is nothing here to enrol.
+
+**Two defects the coverage gate found in this iteration's own code, both real.** The floor can overspend — a
+stratum smaller than the floor takes only what it holds while its neighbours still take the full floor — so an arm
+announced as 500 cases could have run 502; the clawback now takes the excess from the strata ABOVE their floor,
+because taking it from the smallest would have cut a two-case family to one to pay for a two-hundred-case family,
+which is the vanishing the plan exists to prevent. And the sampler accepted a corpus holding the same case twice,
+which would have weighted one case double in the arm's accuracy and shown nowhere in the coverage table.
+
+Full design, cost model and acceptance criteria: `docs/agentic-layer-plan.md`.

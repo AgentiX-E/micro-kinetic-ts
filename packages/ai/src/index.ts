@@ -50,3 +50,42 @@ export {
   jaccardSimilarity,
   normalizeL2,
 } from './utils/similarity.js';
+
+// ── Agent ────────────────────────────────────────────────
+// The bounded hypothesis space, the claim verifier and the budget ledger. `docs/agentic-layer-plan.md` owns what
+// this layer may and may not do; `0d6ae609` owns why the previous one was removed.
+export {
+  AgentBudget,
+  CLAIM_REJECTIONS,
+  CLAIM_STATISTICS,
+  DEEPSEEK_PRICE,
+  DEFAULT_CONSULTATION_OPTIONS,
+  DEFAULT_ELIMINATOR_BUDGET,
+  DEFAULT_INVESTIGATOR_BUDGET,
+  GATE_TRIPS,
+  SKIP_REASONS,
+  applyClaims,
+  decideConsultation,
+  formatMicroUsd,
+  parseBudget,
+  roundCost,
+  tokenCost,
+  verifyClaim,
+} from './agent/index.js';
+
+export type {
+  BudgetLimits,
+  BudgetSpend,
+  CandidateFingerprint,
+  ChannelFingerprint,
+  ClaimBasis,
+  ClaimRejection,
+  ClaimStatistic,
+  ClaimVerdict,
+  ConsultationDecision,
+  EliminationClaim,
+  GateTrip,
+  ModelPrice,
+  RoundCost,
+  SkipReason,
+} from './agent/index.js';

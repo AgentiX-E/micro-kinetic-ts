@@ -248,6 +248,23 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     { signature: 'a.serviceId < b.serviceId', population: '`scoredNodes`, one per `allNodes` key' },
     { signature: 'a.id < b.id', population: '`defined`, from `postInjectOnsetDelays`' },
   ],
+  'benchmarks/src/agentic-sampling.ts': [
+    // The stratum ordering. Its keys ARE `Map` keys (a flattened family/depth/correctness triple), so they are
+    // distinct by construction and the two-arm form never claims an order between equals. Recorded rather than
+    // exempted because the census's rule is that every `? -1 : 1` site states the list it sorts — and this one
+    // states it twice, in the docstring and here.
+    {
+      signature: 'a[0] < b[0]',
+      population: '`groups.entries()`, a Map keyed by the stratum triple',
+    },
+    // The within-stratum scatter. Its keys are case ids, which the function asserts unique before this runs —
+    // the assertion is what lets the tie-break carry no equality arm, and it is a test (`refuses a corpus holding
+    // the same case twice`) rather than a comment.
+    {
+      signature: 'a.caseId < b.caseId',
+      population: '`stratum.members`, whose case ids are asserted unique on entry',
+    },
+  ],
 };
 
 /** Every `.ts` under a root, relative to the repository, sorted so two runs agree. */
