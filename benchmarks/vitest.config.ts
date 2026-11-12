@@ -288,7 +288,7 @@ export default defineConfig({
         // roadmap is read from. Both are measured because a wrong depth is not an error anywhere: it is a
         // plausible share in a table, which is the failure mode this repository refuses by name.
         'src/ranking-depth.ts',
-        'src/run-depth-report.ts',
+        'src/depth-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

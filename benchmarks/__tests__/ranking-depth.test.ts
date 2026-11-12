@@ -163,6 +163,15 @@ describe('formatDepthLadder', () => {
     expect(text).toContain('cases=4');
   });
 
+  it('prints a ladder over an EMPTY population without dividing by zero', () => {
+    // A dispatch that downloaded no cases still prints a table, and `0/0` would render as `NaN%` in every rung —
+    // a number that reads as a measurement of something.
+    const text = formatDepthLadder([]);
+    expect(text).toContain('cases=0');
+    expect(text).not.toContain('NaN');
+    expect(text).toContain('0.00%');
+  });
+
   it('states the population size, so a ladder cannot be read as a share of an unstated denominator', () => {
     const text = formatDepthLadder([
       { datapack: 'a', faultType: 'F', accepted: ['x'], depth: 0, candidates: 1, top: [['x', 1]] },
@@ -293,6 +302,23 @@ describe('parseDepthDump', () => {
     expect(() => parseDepthDump(`${JSON.stringify({ ...base, top: [['a']] })}\n`)).toThrow(/top/);
     expect(() => parseDepthDump(`${JSON.stringify({ ...base, top: [['a', 'x']] })}\n`)).toThrow(
       /top/,
+    );
+  });
+
+  it('refuses a top entry whose service is not a non-empty string', () => {
+    const base = { datapack: 'a', faultType: 'F', accepted: [], depth: null, candidates: 1 };
+    expect(() => parseDepthDump(`${JSON.stringify({ ...base, top: [[1, 0]] })}\n`)).toThrow(
+      /top on line 1/,
+    );
+    expect(() => parseDepthDump(`${JSON.stringify({ ...base, top: [['', 0]] })}\n`)).toThrow(
+      /top on line 1/,
+    );
+  });
+
+  it('refuses a faultType that is not a string rather than coercing it into a family name', () => {
+    const base = { datapack: 'a', accepted: [], depth: null, candidates: 1, top: [] };
+    expect(() => parseDepthDump(`${JSON.stringify({ ...base, faultType: 7 })}\n`)).toThrow(
+      /faultType/,
     );
   });
 

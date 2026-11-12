@@ -10,12 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { formatFamilyTable, parseDepthReportArgs, summariseFamilies } from '../src/depth-report.js';
 import type { DepthRow } from '../src/ranking-depth.js';
-import {
-  formatFamilyTable,
-  parseDepthReportArgs,
-  summariseFamilies,
-} from '../src/run-depth-report.js';
 
 /**
  * A depth row.
@@ -128,6 +124,21 @@ describe('formatFamilyTable', () => {
     // Both families have one case, so the tie is broken by NAME — the rule the ordering test pins.
     expect(lines[1]).toContain('JVMReturn');
     expect(lines[2]).toContain('NetworkDelay');
+  });
+
+  it('keeps every column separable at the widest cell, so `1` beside `100.0%` is two fields', () => {
+    // The defect this pins was found by running the report rather than by reading it: a six-wide `@1` beside a
+    // six-wide `@1%` rendered a family at 100 % as `10100.0%`, one token that is neither number.
+    const text = formatFamilyTable(
+      summariseFamilies([
+        { ...row('F', 0), faultType: 'AFamilyWhoseNameIsLong' },
+        { ...row('F', 0), faultType: 'AFamilyWhoseNameIsLong' },
+      ]),
+    );
+    for (const line of text.split('\n')) {
+      expect(line.trim().split(/\s+/)).toHaveLength(6);
+    }
+    expect(text).toContain('100.0%');
   });
 
   it('prints percentages as shares of the family, and a dash when the family is empty', () => {
