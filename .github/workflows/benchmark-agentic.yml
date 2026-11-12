@@ -189,6 +189,21 @@ jobs:
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
 
+      # The corpus manifest is STAGED BESIDE THE DUMPS rather than uploaded from the workspace root.
+      #   `upload-artifact` computes the least common ancestor of every path it is given, so one path outside
+      #   `artifacts/agentic/` makes the artifact's root the workspace: the dumps then arrive at
+      #   `artifacts/agentic/artifacts/agentic/…` and the study reads a file that is not there. Staging keeps
+      #   every path under one root, which is the only thing that makes the artifact's layout a property of
+      #   this list rather than of where each file happened to be written.
+      - name: Stage the corpus manifest beside the dumps
+        if: always()
+        run: |
+          mkdir -p artifacts/agentic
+          if [ -f manifest.json ]; then
+            cp manifest.json artifacts/agentic/manifest.json
+          fi
+          ls -l artifacts/agentic
+
       - name: Upload the measurement
         if: always()
         uses: actions/upload-artifact@v4
@@ -199,7 +214,7 @@ jobs:
             artifacts/agentic/per-case.ndjson
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
-            ${{ github.workspace }}/manifest.json
+            artifacts/agentic/manifest.json
           if-no-files-found: warn
 
   study:
@@ -226,6 +241,11 @@ jobs:
         with:
           name: agentic-measure
           path: artifacts/agentic
+
+      - name: Show what arrived
+        #   Printed before the study runs, so a failure names a missing file rather than a stack trace from a
+        #   parser that was handed an empty path.
+        run: ls -l artifacts/agentic
 
       # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
       # a verdict whose published order disagrees, because two artifacts from different runs would

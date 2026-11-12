@@ -165,6 +165,23 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(measure).toContain('name: agentic-measure');
   });
 
+  it('keeps every uploaded path under one root, because the artifact root is their common ancestor', () => {
+    // `upload-artifact` computes the least common ancestor of the paths it is given. One path outside
+    // `artifacts/agentic/` -- `${{ github.workspace }}/manifest.json` was the tempting one -- makes the root the
+    // workspace, and the dumps then arrive at `artifacts/agentic/artifacts/agentic/...`: the study reads a file
+    // that is not there and the job fails one step after the measurement it spent 25 minutes producing.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).not.toContain('github.workspace');
+    const paths = [...block.matchAll(/^ {12}(artifacts\/agentic\/\S+)$/gm)].map(
+      (match) => match[1]!,
+    );
+    expect(paths.length).toBeGreaterThanOrEqual(5);
+    expect(paths.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+    // And the manifest is staged INTO that root rather than uploaded from where the action left it.
+    expect(WORKFLOW).toContain('cp manifest.json artifacts/agentic/manifest.json');
+  });
+
   it('derives the profile cache key instead of typing one', () => {
     // `cache-datasets.yml` records the version of this that shipped: the constant `RCAEvalJSON` hit the
     // cache the OLD bridge had produced, so the fix converted nothing and the step read `skipped`. Here the
