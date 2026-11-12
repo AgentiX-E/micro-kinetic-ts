@@ -12,7 +12,7 @@ import { computePropagationVelocity } from '../../src/causal/propagation-velocit
  * Deterministic step series: a low-variance baseline (ripple around 10) that
  * jumps to a high plateau (ripple around 100) at `onset`. The ripple gives the
  * baseline non-zero MAD so onset detection has a real threshold to exceed,
- * while the plateau stays far above it. Unlike the `Math.random()` noise used
+ * while the plateau stays far above it. Unlike the `random()` noise used
  * in the legacy cases, this is fully reproducible.
  */
 function deterministicStep(length: number, onset: number): Float64Array {
@@ -27,17 +27,47 @@ function deterministicStep(length: number, onset: number): Float64Array {
 /** Aggressive BOCPD tuning that reliably detects a changepoint on short series. */
 const SENSITIVE_BOCPD = { hazardRate: 0.3, changepointThreshold: 0.7, minRunLength: 10 };
 
+/**
+ * A seeded PRNG standing in for `Math.random`.
+ *
+ * Twenty-nine call sites in this file used to draw their noise from `Math.random`, which made every one of them a
+ * re-roll. A channel that sits at `5 ± 0.5` with fresh noise each run can move an onset detector by one sample, and
+ * `should classify implausible latency gap as indirect` asserted a threshold against a propagation delay computed
+ * from exactly those onsets: it failed in CI on 2026-11-12 against data that was statistically identical to the
+ * runs that passed before it. **The test was measuring the seed, not the code.** The helper above already says as
+ * much in its docstring — it was written to escape this — but the legacy cases kept the re-roll.
+ *
+ * mulberry32 rather than a fixed array because the series are built in loops with a shared shape, and rather than
+ * a mock because the point is still to feed the detector plausible noise: the numbers keep the same distribution,
+ * they are simply the same numbers on every run. One generator for the whole file, consumed in declaration order,
+ * so the sequence is a function of this file alone — inserting a case changes the numbers the later cases see, and
+ * that is the failure mode worth having: a case that only passes on one particular draw will say so immediately.
+ */
+function makeRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+/** The file's only source of pseudo-randomness. See {@link makeRandom} for why it is seeded. */
+const random = makeRandom(0x5eed);
+
 describe('computePropagationVelocity — basic cases', () => {
   it('should detect forward propagation (source fails first)', () => {
     // Source: baseline with variance, then sustained spike
     const source = new Float64Array(30);
-    for (let i = 0; i < 10; i++) source[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 10; i < 30; i++) source[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 10; i++) source[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 10; i < 30; i++) source[i] = 100 + random() * 5;
 
     // Target: baseline with variance, then later spike
     const target = new Float64Array(30);
-    for (let i = 0; i < 20; i++) target[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 20; i < 30; i++) target[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 20; i++) target[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 20; i < 30; i++) target[i] = 100 + random() * 5;
 
     const result = computePropagationVelocity(source, target, {
       expectedDirectLatency: 10,
@@ -53,12 +83,12 @@ describe('computePropagationVelocity — basic cases', () => {
   it('should return zero propagation for reverse causality', () => {
     // Source: anomaly LATER than target
     const source = new Float64Array(30);
-    for (let i = 0; i < 20; i++) source[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 20; i < 30; i++) source[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 20; i++) source[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 20; i < 30; i++) source[i] = 100 + random() * 5;
 
     const target = new Float64Array(30);
-    for (let i = 0; i < 10; i++) target[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 10; i < 30; i++) target[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 10; i++) target[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 10; i < 30; i++) target[i] = 100 + random() * 5;
 
     const result = computePropagationVelocity(source, target, {
       useBOCPD: false,
@@ -70,8 +100,8 @@ describe('computePropagationVelocity — basic cases', () => {
 
   it('should handle both onsets detected (same data, same timing)', () => {
     const values = new Float64Array(20);
-    for (let i = 0; i < 10; i++) values[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 10; i < 20; i++) values[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 10; i++) values[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 10; i < 20; i++) values[i] = 100 + random() * 5;
 
     const result = computePropagationVelocity(values, values, {
       useBOCPD: false,
@@ -85,11 +115,11 @@ describe('computePropagationVelocity — basic cases', () => {
 describe('computePropagationVelocity — edge cases', () => {
   it('should handle no anomaly in source (returns neutral)', () => {
     const source = new Float64Array(20);
-    for (let i = 0; i < 20; i++) source[i] = 10 + Math.random() * 0.1;
+    for (let i = 0; i < 20; i++) source[i] = 10 + random() * 0.1;
 
     const target = new Float64Array(20);
-    for (let i = 0; i < 10; i++) target[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 10; i < 20; i++) target[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 10; i++) target[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 10; i < 20; i++) target[i] = 100 + random() * 5;
 
     const result = computePropagationVelocity(source, target, { useBOCPD: false });
 
@@ -99,11 +129,11 @@ describe('computePropagationVelocity — edge cases', () => {
 
   it('should handle no anomaly in target (returns neutral)', () => {
     const source = new Float64Array(20);
-    for (let i = 0; i < 10; i++) source[i] = 10 + (Math.random() - 0.5) * 2;
-    for (let i = 10; i < 20; i++) source[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 10; i++) source[i] = 10 + (random() - 0.5) * 2;
+    for (let i = 10; i < 20; i++) source[i] = 100 + random() * 5;
 
     const target = new Float64Array(20);
-    for (let i = 0; i < 20; i++) target[i] = 10 + Math.random() * 0.1;
+    for (let i = 0; i < 20; i++) target[i] = 10 + random() * 0.1;
 
     const result = computePropagationVelocity(source, target, { useBOCPD: false });
 
@@ -121,12 +151,12 @@ describe('computePropagationVelocity — edge cases', () => {
 
   it('should produce valid fields with BOCPD mode', () => {
     const source = new Float64Array(50);
-    for (let i = 0; i < 20; i++) source[i] = 10 + Math.random() * 2;
-    for (let i = 20; i < 50; i++) source[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 20; i++) source[i] = 10 + random() * 2;
+    for (let i = 20; i < 50; i++) source[i] = 100 + random() * 5;
 
     const target = new Float64Array(50);
-    for (let i = 0; i < 30; i++) target[i] = 10 + Math.random() * 2;
-    for (let i = 30; i < 50; i++) target[i] = 100 + Math.random() * 5;
+    for (let i = 0; i < 30; i++) target[i] = 10 + random() * 2;
+    for (let i = 30; i < 50; i++) target[i] = 100 + random() * 5;
 
     const result = computePropagationVelocity(source, target, {
       useBOCPD: true,
@@ -192,12 +222,12 @@ describe('computePropagationVelocity — latency matching', () => {
   it('should match expected latency when gap is consistent', () => {
     // Source onset ~10, target onset ~20
     const source = new Float64Array(30);
-    for (let i = 0; i < 10; i++) source[i] = 5 + (Math.random() - 0.5) * 1;
-    for (let i = 10; i < 30; i++) source[i] = 50 + Math.random() * 3;
+    for (let i = 0; i < 10; i++) source[i] = 5 + (random() - 0.5) * 1;
+    for (let i = 10; i < 30; i++) source[i] = 50 + random() * 3;
 
     const target = new Float64Array(30);
-    for (let i = 0; i < 20; i++) target[i] = 5 + (Math.random() - 0.5) * 1;
-    for (let i = 20; i < 30; i++) target[i] = 50 + Math.random() * 3;
+    for (let i = 0; i < 20; i++) target[i] = 5 + (random() - 0.5) * 1;
+    for (let i = 20; i < 30; i++) target[i] = 50 + random() * 3;
 
     const result = computePropagationVelocity(source, target, {
       expectedDirectLatency: 10,
@@ -214,12 +244,12 @@ describe('computePropagationVelocity — latency matching', () => {
   it('should classify implausible latency gap as indirect', () => {
     // Source onset early, target onset much later
     const source = new Float64Array(50);
-    for (let i = 0; i < 5; i++) source[i] = 5 + (Math.random() - 0.5) * 1;
-    for (let i = 5; i < 50; i++) source[i] = 50 + Math.random() * 3;
+    for (let i = 0; i < 5; i++) source[i] = 5 + (random() - 0.5) * 1;
+    for (let i = 5; i < 50; i++) source[i] = 50 + random() * 3;
 
     const target = new Float64Array(50);
-    for (let i = 0; i < 45; i++) target[i] = 5 + (Math.random() - 0.5) * 1;
-    for (let i = 45; i < 50; i++) target[i] = 50 + Math.random() * 3;
+    for (let i = 0; i < 45; i++) target[i] = 5 + (random() - 0.5) * 1;
+    for (let i = 45; i < 50; i++) target[i] = 50 + random() * 3;
 
     const result = computePropagationVelocity(source, target, {
       expectedDirectLatency: 5,
