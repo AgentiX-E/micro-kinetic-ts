@@ -205,6 +205,26 @@ export interface RankingWeights {
    */
   readonly stabilityWeight?: number;
   /**
+   * Weight on the FAULT-FREE FREQUENCY prior — how often the candidate's channel looks anomalous when
+   * nothing is wrong:
+   *
+   *   finalScore(v) += faultFreeWeight × (1 − r_e(v))
+   *
+   * `r_e(v)` is the Expected Outlier Baseline of Lee et al. (arXiv 2611.02416, §4.1.1): the fraction of
+   * fault-free windows in which the channel's own anomaly score leaves a three-σ band. The windows are
+   * the corpus' OTHER cases — each case contributes its pre-injection segment — because a datapack holds
+   * minutes and one window is a flag rather than a rate. See `pruning/fault-free-profile.ts`.
+   *
+   * The ONLY term in this structure whose value does not come from the case being ranked. Every other
+   * prior asks what this case did; this one asks what the system does when nothing is being done to it.
+   * That is what makes it worth a weight: it is orthogonal by construction, so it can separate two
+   * candidates the case-local evidence ties.
+   *
+   * OPTIONAL: absent means 0 (disabled), and at 0 the profile is not read at all, so a run without one
+   * is bit-identical to the engine that had no such term.
+   */
+  readonly faultFreeWeight?: number;
+  /**
    * Weight on the internal/external SYMMETRY mask — PRISM's axiom as a bounded discount on a candidate's
    * own evidence:
    *

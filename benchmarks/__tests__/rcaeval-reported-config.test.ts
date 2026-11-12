@@ -294,7 +294,9 @@ describe('RCAEval runner configuration ownership', () => {
     // at the construction site is a SECOND owner of the option list, and the field present in one
     // and absent from the other is exactly how the line came to omit three of its own values — and
     // how the topology switches came to be restated by hand beside an argument that also carried them.
-    expect(source).toMatch(/createContainer\(buildRCAEvalEngineOptions\(opts\)\)/);
+    expect(source).toMatch(
+      /createContainer\(buildRCAEvalEngineOptions\(opts, faultFreeProfile\)\)/,
+    );
     expect(source).toMatch(/function createContainer\(engine: RCAEvalEngineOptions\)/);
     expect(source).toContain("from './rcaeval-engine-options.js'");
     // And no object literal at either site: the only `createContainer(` followed by a brace would be
@@ -353,6 +355,20 @@ describe('the RCAEval engine arguments are the TWO objects the constructor takes
     // ground: the two membership assertions above already say that, and this states the union's size so
     // a field silently MOVING between the two objects cannot shrink the run's configuration.
     expect(signals.size + topology.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('carries the profile when this run has one, and shows no key when it does not', () => {
+    // Both arms, for the FSE'26 twin's two reasons: the key is built CONDITIONALLY, so an always-present
+    // `faultFreeProfile: undefined` would join the forwarded set above and break the partition against the
+    // parsed options — and the PRESENT arm is the only path by which the outlier term is reachable at all.
+    const profile = new Map([
+      [
+        'frontend',
+        new Map([['cpu', { label: 'cpu', centre: 0.4, scale: 0.02, rate: 0.1, windows: 7 }]]),
+      ],
+    ]);
+    expect(buildRCAEvalEngineOptions(shipped, profile).signals.faultFreeProfile).toBe(profile);
+    expect(Object.hasOwn(built.signals, 'faultFreeProfile')).toBe(false);
   });
 });
 
@@ -493,7 +509,11 @@ describe('the RCAEval configuration line carries the configuration that produced
       // deduction now ships at 1 with the boundary gate, so this line names three fields that a release ago
       // were inert. All three are printed unconditionally, which is what lets a reader separate the enrolled
       // run from the twelve configurations that drew it — the defect every field above exists to prevent.
-      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 topoDiscount=1 ' +
+      // Iteration 265: the fault-free prior's weight and aggregation, printed unconditionally on the rule
+      // every field here follows — the weight ships at 0, so an omitted-when-default line would render a
+      // measured arm and the shipped run byte-identically.
+      'signals: stabilityWeight=0.007352 faultFreeWeight=0 faultFreeSelection=rarest ' +
+        'collisionWeight=0 topoWeight=0 topoDiscount=1 ' +
         'topoDiscountScope=external logWeight=1 ' +
         'logSignalMode=count logNormalisation=max latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         // Iteration 235 appended the CREDIT behind the bar it scales. Unconditional for the reason the bar is:

@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FAULT_FREE_WEIGHT } from '../../packages/tree/src/index.js';
 
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -61,6 +62,14 @@ describe('buildFse26EngineOptions', () => {
       latMinRise: DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+      // The corpus-wide prior, at its shipped 0 — which is the ablation, and therefore the value a silently
+      // dropped forwarding would also produce. That is why it is asserted here rather than trusted.
+      faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+      faultFreeSelection: 'rarest',
+      // `undefined` when the run has no profile, and the assertion is that the KEY is present: the engine's option
+      // is optional, so an absent key and an explicitly-undefined one look the same to the pruner and different to
+      // a reader of this object.
+      faultFreeProfile: undefined,
       selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
       victimWeight: DEFAULT_VICTIM_WEIGHT,
       // The base term's coefficient, on the same rule as every weight here: read from the engine's own
@@ -328,5 +337,22 @@ describe('buildFse26EngineOptions', () => {
   it('is a pure function of its input', () => {
     const opts: Fse26CliOptions = { ...BASE, metricFleetBaseline: true };
     expect(buildFse26EngineOptions(opts)).toEqual(buildFse26EngineOptions(opts));
+  });
+
+  it('carries the profile when the run has one, and shows no key when it does not', () => {
+    // Both arms, because the key is built CONDITIONALLY and the two arms say different things. The absent
+    // arm is the census's: `forwarded ∪ nonEngine = parsed` is asserted over key SETS, and the profile is
+    // not a parsed option — an always-present `faultFreeProfile: undefined` would join the forwarded set
+    // and break that partition in six places. The present arm is the run's: a weight with no profile is
+    // refused, so the one path that makes the term reachable has to be seen landing under `signals`.
+    const profile = new Map([
+      [
+        'frontend',
+        new Map([['cpu', { label: 'cpu', centre: 0.4, scale: 0.02, rate: 0.1, windows: 7 }]]),
+      ],
+    ]);
+    const withProfile = buildFse26EngineOptions(BASE, profile);
+    expect(withProfile.signals.faultFreeProfile).toBe(profile);
+    expect(Object.hasOwn(buildFse26EngineOptions(BASE).signals, 'faultFreeProfile')).toBe(false);
   });
 });

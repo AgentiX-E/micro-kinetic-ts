@@ -28,6 +28,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FaultFreeSelection,
   OnsetShape,
   PoolAdmission,
   PrismPooling,
@@ -146,6 +147,19 @@ export interface FSE26RunConfig {
    * path and the DEFAULT path agree on this line.
    */
   readonly stabilityWeight: number;
+  /**
+   * Weight on the FAULT-FREE FREQUENCY prior; the shipped value is the engine's 0, i.e. OFF.
+   *
+   * Printed unconditionally for the reason the two weights above are: the term's shipped value is 0, so an
+   * omitted-when-default rule would render a measured arm and the shipped run byte-identically.
+   */
+  readonly faultFreeWeight: number;
+  /**
+   * Which channel that prior reads when it is on. Printed beside the weight because the two are one
+   * hypothesis: `rarest` and `dominant` are different readings of the same profile, and a number published
+   * without the spelling could belong to either.
+   */
+  readonly faultFreeSelection: FaultFreeSelection;
   /**
    * Weight on the SELF-TIME prior; the shipped value is the engine's 0, i.e. OFF. Printed
    * unconditionally, because the term ships at 0 and an omitted-when-default rule would render the
@@ -404,6 +418,8 @@ export const REPORTED_CONFIG_FIELDS = [
   'latMinRise',
   'poolMetricPenaltyWeight',
   'stabilityWeight',
+  'faultFreeWeight',
+  'faultFreeSelection',
   'selfTimeWeight',
   'victimWeight',
   'dualFamilyWeight',
@@ -524,6 +540,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // become non-zero, and an omitted-when-default field would then render a byte-identical line for
   // the shipped run and for its ablation.
   line += ` stabilityWeight=${config.stabilityWeight}`;
+  // Unconditional on the same rule. The weight ships at 0, so this pair IS the only thing on the artifact that
+  // can distinguish a measured arm from the shipped run.
+  line += ` faultFreeWeight=${config.faultFreeWeight} faultFreeSelection=${config.faultFreeSelection}`;
   // Unconditional on the same rule: the term ships OFF, so the only thing that can distinguish a
   // measured arm from the shipped run on an artifact is this field.
   line += ` selfTimeWeight=${config.selfTimeWeight}`;

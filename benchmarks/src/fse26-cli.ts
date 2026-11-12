@@ -37,6 +37,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   FailedEdgeMode,
+  FaultFreeSelection,
   LogNormalisation,
   LogSignalMode,
   PoolAdmission,
@@ -62,6 +63,7 @@ import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_NORMALISATION,
@@ -92,9 +94,11 @@ import {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_TRANSIENT_GUARD_TEST,
   DEFAULT_VICTIM_WEIGHT,
+  FAULT_FREE_SELECTIONS,
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
+  isFaultFreeSelection,
   isLogNormalisation,
   isLogSignalMode,
   isOnsetShape,
@@ -328,6 +332,26 @@ export interface Fse26CliOptions {
    * this repo published one 24.2pp off the best-measured value.
    */
   readonly stabilityWeight: number;
+  /**
+   * Weight on the FAULT-FREE FREQUENCY prior, SHIPPED OFF at {@link DEFAULT_FAULT_FREE_WEIGHT} = 0.
+   *
+   * The term reads a CORPUS profile — see `--fault-free-profile` — so the weight and the profile are a pair:
+   * a non-zero weight with no profile scores nothing, and the run's own `Config:` line reports both so the
+   * artifact cannot describe a configuration the ranking did not have.
+   */
+  readonly faultFreeWeight: number;
+  /**
+   * Where the fault-free frequency profile is read from, or `undefined` when the term is off.
+   *
+   * A HARNESS option rather than a configuration one: two runs of the same configuration from two files are
+   * the same configuration, which is the rule `NOT_REPORTED_FSE26_OPTION_KEYS` states for `dataDir`.
+   */
+  readonly faultFreeProfilePath?: string | undefined;
+  /**
+   * Which of a candidate's channels the fault-free term reads: `rarest` (the paper's aggregation) or
+   * `dominant` (this engine's own reading). Both are hypotheses; the corpus is the only thing that chooses.
+   */
+  readonly faultFreeSelection: FaultFreeSelection;
   /**
    * Weight on the SELF-TIME prior, SHIPPED OFF at {@link DEFAULT_SELF_TIME_WEIGHT} = 0.
    *
@@ -660,6 +684,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+    faultFreeProfilePath: undefined as string | undefined,
+    faultFreeSelection: 'rarest' as FaultFreeSelection,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
@@ -797,6 +824,22 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
       // turn a blank flag into a measurement of the ablation).
       opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
+    } else if (arg === '--fault-free-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight` on the same rule as every other weight: an empty value falls back to the
+      // SHIPPED weight rather than selecting a configuration nobody asked for.
+      opts.faultFreeWeight = parseWeight(argv[++i]!, DEFAULT_FAULT_FREE_WEIGHT);
+    } else if (arg === '--fault-free-profile' && hasValue(argv, i + 1)) {
+      opts.faultFreeProfilePath = argv[++i]!;
+    } else if (arg === '--fault-free-selection' && hasValue(argv, i + 1)) {
+      // An unrecognised value FAILS rather than falling back: a run that asked for `dominant` and silently
+      // read `rarest` would publish one aggregation's numbers under the other's name.
+      const value = argv[++i]!;
+      if (!isFaultFreeSelection(value)) {
+        throw new Error(
+          `--fault-free-selection must be one of ${FAULT_FREE_SELECTIONS.join(', ')}, got ${value}`,
+        );
+      }
+      opts.faultFreeSelection = value;
     } else if (arg === '--self-time-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
       // selecting the ablation — the rule every weight on this parser follows.

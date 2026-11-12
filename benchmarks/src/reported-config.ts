@@ -67,4 +67,12 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
     'ships at `max` and no row of the battery varies it; it is read only when the weight is non-zero',
   poolAdmission:
     'ships at `positive` and no row of the battery varies it; it is the SET the ranking covers, so every row of the battery runs on the published one',
+  // Iteration 265: the fault-free prior. Exempt for a reason neither record above had to state before — the
+  // term's input is not an option at all but a CORPUS ARTIFACT, and the battery is a flag-by-flag study over
+  // one corpus that never builds one. No row can vary the weight without also supplying a profile, and a row
+  // that named the weight alone would describe an arm that scored nothing.
+  faultFreeWeight:
+    'needs a corpus profile artifact that no row of the battery builds, so no row can vary it',
+  faultFreeSelection:
+    'needs a corpus profile artifact that no row of the battery builds, so no row can vary it',
 };

@@ -91,6 +91,12 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the rule a mutually failing PAIR is read under, shipped at `credit`: it decides whether both charges are kept or dropped, so it is a discrete choice about which evidence exists at all rather than a coefficient — a search interpolating between two rules would be averaging two populations',
   failedEdgeGateShare:
     'the share a fleet bar is made of, read only at `fleet` and inert at the shipped `absolute`: a population parameter like the dual-family gate, so a continuous search over it would be tuning a threshold on a term whose weight it does not move',
+  faultFreeWeight:
+    'the outlier-baseline term, shipped OFF at 0 and not searched: it scores a service by how rarely its pre-injection windows depart from their own centre, so what its weight buys is one number per arm (docs/architecture-audit-265.md records the sweep, which found one case at 130 and a dose-response that turns over past 0.3) — a continuous search would spend its evaluations on a coefficient whose sign of benefit the record has not established',
+  faultFreeSelection:
+    'WHICH aggregate the term reads rather than how much of it: `rarest` takes the minimum departure rate over a service\u2019s channels and `dominant` takes the rate on the channels its fused candidacy implies, so the two are different populations of evidence and a search interpolating between them would be averaging two readings',
+  faultFreeProfile:
+    'the fitted profile itself rather than a parameter of the ranking: it is an ARTIFACT of the corpus (built by benchmarks/src/build-fault-free-profile.ts from the same datapacks a run ranks), so a search cannot search it and a mapping cannot synthesise it — a run whose weight is non-zero without it is refused rather than read as zero',
   topoDiscount:
     'the topological deduction, shipped ON at 1 since iteration 163 and not searched: its scale-free form is recorded in docs/topo-discount-scope.md, and its weight is a dispatch question whose answer the occupancy of the candidate pool decides rather than a fusion coefficient a continuous search can interpolate',
   topoDiscountScope:

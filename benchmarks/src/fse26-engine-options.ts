@@ -22,6 +22,8 @@
 import type {
   DualFamilyGateMode,
   FailedEdgeMode,
+  FaultFreeProfile,
+  FaultFreeSelection,
   LogNormalisation,
   LogSignalMode,
   OnsetShape,
@@ -81,6 +83,26 @@ export interface Fse26SignalOptions {
   readonly poolMetricPenaltyWeight: number;
   /** Weight on the decisive-stability prior. Required for the same reason as the pool penalty. */
   readonly stabilityWeight: number;
+  /**
+   * Weight on the fault-free frequency prior. Required for the reason every weight here is: its shipped value
+   * is 0, which is exactly what a silently dropped option produces.
+   */
+  readonly faultFreeWeight: number;
+  /**
+   * Which of a candidate's channels that prior reads. Required rather than omitted-when-default because the two
+   * spellings are different hypotheses, and a run that published one under the other's label would be the same
+   * defect this module's docblock records.
+   */
+  readonly faultFreeSelection: FaultFreeSelection;
+  /**
+   * The corpus profile, when this run has one.
+   *
+   * DECLARED here but never WRITTEN by {@link buildFse26EngineOptions}: the profile is data rather than
+   * configuration, so the runner merges it in after the projection. Declaring it keeps the merge type-checked
+   * and leaving it unwritten keeps the reported-config parity fence honest.
+   */
+  readonly faultFreeProfile?: FaultFreeProfile | undefined;
+
   /**
    * Weight on the SELF-TIME prior. Required for the same reason as the pool penalty: a PARTIAL
    * passed through here would be a silent no-op if the key were ever misspelled, and the term's
@@ -180,6 +202,11 @@ export const NON_ENGINE_OPTION_KEYS = [
   // the engine nor this list is exactly the silent drop the completeness test exists to catch.
   'termsOut',
   'dropMetrics',
+  // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
+  // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the
+  // PATH is therefore a harness option on the same rule as `dataDir` — two runs of one configuration from two
+  // files are one configuration.
+  'faultFreeProfilePath',
 ] as const;
 
 /**
@@ -188,7 +215,10 @@ export const NON_ENGINE_OPTION_KEYS = [
  * @param opts - Parsed command-line options.
  * @returns The signal options and the topology config the engine is built with.
  */
-export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptions {
+export function buildFse26EngineOptions(
+  opts: Fse26CliOptions,
+  profile?: FaultFreeProfile | undefined,
+): Fse26EngineOptions {
   return {
     signals: {
       logWeight: opts.logWeight,
@@ -201,6 +231,15 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       latMinRise: opts.latMinRise,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       stabilityWeight: opts.stabilityWeight,
+      faultFreeWeight: opts.faultFreeWeight,
+      faultFreeSelection: opts.faultFreeSelection,
+      // Handed in rather than loaded here: reading a file is IO and this module is the pure projection a test
+      // checks against the parsed options. The key is built CONDITIONALLY rather than assigned `undefined`,
+      // and the reason is a census rather than taste: `forwarded ∪ nonEngine = parsed` is asserted over the
+      // returned key SET, and the profile is not a parsed option — it arrives as a second argument. An
+      // always-present key would put a non-parsed name into the forwarded set and break that partition in
+      // six places (measured, not predicted: that is exactly what assigning it unconditionally did).
+      ...(profile === undefined ? {} : { faultFreeProfile: profile }),
       selfTimeWeight: opts.selfTimeWeight,
       victimWeight: opts.victimWeight,
       selfAnomalyWeight: opts.selfAnomalyWeight,

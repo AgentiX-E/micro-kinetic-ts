@@ -258,7 +258,10 @@ describe('the corpus traversal population', () => {
       'packages/kinetic/src/benchmarks/loaders/aiops2025-loader.ts',
       'packages/kinetic/src/benchmarks/loaders/rca100-loader.ts',
       'scripts/run-prism.ts',
-      'benchmarks/src/run-fse26.ts',
+      // Iteration 265: the ONE walk the two runners share. It is in the population because it IS the traversal;
+      // the runners that call it left the population by DELEGATION, which is asserted below on the rule the
+      // `run-ablation.ts` note states — a site that leaves a population must arrive in another one.
+      'benchmarks/src/case-discovery.ts',
     ]) {
       expect(files.has(file), `${file} must be in the traversal population`).toBe(true);
     }
@@ -268,6 +271,13 @@ describe('the corpus traversal population', () => {
     // after that law was written. The delegation is asserted below instead, because a site that leaves a
     // population must arrive in another one or the repair is only a disappearance.
     expect(files.has('benchmarks/src/run-ablation.ts')).toBe(false);
+    // The two runners that carried the walk before `case-discovery.ts` owned it. Both DELEGATE now, so neither
+    // holds a `readdirSync` of its own — and the delegation is asserted rather than inferred from their absence,
+    // because an absence is also what a deleted feature looks like.
+    for (const file of ['benchmarks/src/run-fse26.ts', 'benchmarks/src/run-optimize.ts']) {
+      expect(files.has(file), `${file} left the population`).toBe(false);
+      expect(readFileSync(resolve(repoRoot, file), 'utf8')).toContain('discoverCaseDirs');
+    }
   });
 });
 

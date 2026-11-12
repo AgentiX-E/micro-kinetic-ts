@@ -70,6 +70,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     latMinRise: 1,
     poolMetricPenaltyWeight: 0,
     stabilityWeight: 0,
+    faultFreeWeight: 0,
+    faultFreeSelection: 'rarest',
     selfTimeWeight: 0,
     victimWeight: 0,
     dualFamilyWeight: 0,
@@ -187,6 +189,8 @@ describe('FSE26 report — attribution', () => {
       'latMinRise',
       'poolMetricPenaltyWeight',
       'stabilityWeight',
+      'faultFreeWeight',
+      'faultFreeSelection',
       'selfTimeWeight',
       'victimWeight',
       'dualFamilyWeight',
@@ -265,7 +269,8 @@ describe('FSE26 report — the two renderings agree', () => {
         // every metric against the pre-injection segment byte-identically — the exact confusion the line is for.
         'baselineAnchor=whole-file ' +
         'transientGuardTest=hump ' +
-        'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 selfTimeWeight=0 victimWeight=0 ' +
+        'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 ' +
+        'faultFreeWeight=0 faultFreeSelection=rarest selfTimeWeight=0 victimWeight=0 ' +
         'dualFamilyWeight=0 podStateWeight=0 ' +
         `dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +

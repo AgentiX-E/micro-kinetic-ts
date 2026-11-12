@@ -82,6 +82,11 @@ import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
 import {
+  computeFaultFreeScores,
+  type FaultFreeProfile,
+  type FaultFreeSelection,
+} from './fault-free-profile.js';
+import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   computeChannelSymmetry,
@@ -1009,6 +1014,38 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * votes; `docs/pod-state-term.md` owns the sweep.
    */
   readonly podStateWeight: number;
+  /**
+   * Weight on the FAULT-FREE FREQUENCY prior: rewards a node whose anomalous channel is one the system
+   * RARELY produces when nothing is wrong (see {@link computeFaultFreeScores}).
+   *
+   *   finalScore(v) += faultFreeWeight × (1 − r_e(v))
+   *
+   * The profile is a CORPUS artifact, not a case one — see `pruning/fault-free-profile.ts` for why the
+   * windows come from other cases. It is therefore an input rather than something the engine derives:
+   * `faultFreeProfile` below carries it, and a run that does not pass one scores nothing here whatever
+   * the weight says, because a weight times an absent map is the absence of evidence and not a zero
+   * reading of it.
+   *
+   * Ships at {@link DEFAULT_FAULT_FREE_WEIGHT} = 0, which is the ablation: at 0 the map is neither built
+   * nor read, and the ranking is bit-identical to the engine that had no such term.
+   */
+  readonly faultFreeWeight: number;
+  /**
+   * The fault-free frequency profile this run scores against, or `undefined` when none was built.
+   *
+   * An OPTION rather than a field on the metrics because it is a statement about the corpus: the same
+   * service's channel in two cases must be measured against one band, or the term would be comparing
+   * two estimates rather than two candidates.
+   */
+  readonly faultFreeProfile?: FaultFreeProfile | undefined;
+  /**
+   * Which of a candidate's channels the fault-free term reads.
+   *
+   * Default `rarest`, the paper's aggregation. `dominant` is the engine's own reading and exists because
+   * the two rest on different arguments — see {@link computeFaultFreeScores} — and only a corpus can
+   * choose between them.
+   */
+  readonly faultFreeSelection?: FaultFreeSelection | undefined;
 }
 
 /**
@@ -1038,6 +1075,7 @@ export function toRankingWeights(
     | 'victimWeight'
     | 'dualFamilyWeight'
     | 'podStateWeight'
+    | 'faultFreeWeight'
   >,
 ): RankingWeights {
   return {
@@ -1059,6 +1097,7 @@ export function toRankingWeights(
     victimWeight: options.victimWeight,
     dualFamilyWeight: options.dualFamilyWeight,
     podStateWeight: options.podStateWeight,
+    faultFreeWeight: options.faultFreeWeight,
   };
 }
 
@@ -1302,6 +1341,20 @@ export const DEFAULT_DUAL_FAMILY_WEIGHT = 0.25;
  *   the previous and the current scheme.
  */
 export const DEFAULT_POD_STATE_WEIGHT = 8;
+
+/**
+ * Shipped weight on the fault-free frequency prior — DISABLED, and the reason is not conservatism.
+ *
+ * The term reads a CORPUS artifact. A weight that ships non-zero would require every caller to pass a
+ * profile, and a caller that forgot one would silently score the term at zero while the run's title said
+ * otherwise — the exact failure mode the recorded-runs table exists to prevent. `0` makes the absence
+ * inert: the profile is not read, the term contributes nothing, and a run without one is bit-identical
+ * to the engine that had no such term.
+ *
+ * The measurement that decides whether it ships is `docs/architecture-audit-265.md`, and the number it
+ * has to beat is the one the shipped vector already reads on the same corpus with the same folds.
+ */
+export const DEFAULT_FAULT_FREE_WEIGHT = 0;
 
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
@@ -1986,6 +2039,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
   dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
   podStateWeight: DEFAULT_POD_STATE_WEIGHT,
+  faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
 };
 
 /**
@@ -2256,6 +2310,19 @@ export class TreePruner {
       dominantMetrics,
       new Set(callGraph.nodes.keys()),
     );
+    // The FAULT-FREE FREQUENCY prior. Unlike every other map here it is not derived from this case: it is
+    // read off a corpus profile the caller built, so at weight 0 nothing is read at all and the ranking is
+    // bit-identical to the engine that had no such term.
+    const faultFreeScores =
+      this.options.faultFreeWeight === 0
+        ? undefined
+        : computeFaultFreeScores(
+            metrics,
+            dominantMetrics,
+            this.options.faultFreeProfile,
+            this.options.faultFreeSelection,
+          );
+    const faultFreeWeight = this.options.faultFreeWeight;
     const deepestExceptions = computeDeepestExceptions(
       options?.logs,
       new Set(callGraph.nodes.keys()),
@@ -2413,6 +2480,7 @@ export class TreePruner {
       edgeLatencyByCallee,
       poolMetricScores,
       stabilityScores,
+      faultFreeScores,
       selfTimeScores,
       emissionScores,
       channelSymmetry,
@@ -2492,6 +2560,7 @@ export class TreePruner {
       graph.edgeLatencyScores,
       graph.poolMetricScores,
       graph.stabilityScores,
+      graph.faultFreeScores,
       graph.selfTimeScores,
       graph.emissionScores,
       graph.channelSymmetry,
@@ -2558,6 +2627,7 @@ export class TreePruner {
         graph.edgeLatencyScores,
         graph.poolMetricScores,
         graph.stabilityScores,
+        graph.faultFreeScores,
         graph.selfTimeScores,
         graph.emissionScores,
         graph.channelSymmetry,
@@ -2858,6 +2928,7 @@ function performTreeRCA(
   edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
   stabilityScores?: ReadonlyMap<ServiceId, number>,
+  faultFreeScores?: ReadonlyMap<ServiceId, number>,
   selfTimeScores?: ReadonlyMap<ServiceId, number>,
   emissionScores?: ReadonlyMap<ServiceId, number>,
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
@@ -3220,6 +3291,10 @@ function performTreeRCA(
   // measured zero, so the lookup keeps the neutral 0 and the term can only ever reward a node the case's own
   // lifecycle evidence corroborates.
   const podStateWeight = options.podStateWeight;
+  // The corpus-wide prior. Its weight is read here rather than through `weights.faultFreeWeight`, because
+  // `RankingWeights` is the OPTIMIZER's search space where absent means 0, while this option is the engine's
+  // and always carries a number; reading the engine's own field keeps the two defaults from drifting apart.
+  const faultFreeWeight = options.faultFreeWeight;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -3296,6 +3371,7 @@ function performTreeRCA(
       const latEntry = edgeLatencyScores?.get(id);
       const poolEntry = poolMetricScores?.get(id);
       const stabilityEntry = stabilityScores?.get(id);
+      const faultFreeEntry = faultFreeScores?.get(id);
       const selfTimeEntry = selfTimeScores?.get(id);
       const emissionEntry = emissionScores?.get(id);
       const symmetryEntry = channelSymmetry?.get(id);
@@ -3385,6 +3461,13 @@ function performTreeRCA(
         buildTerm('stability', stabilityWeight, stabilityEntry ?? 0, {
           presence: presenceOf(stabilityScores, id),
           source: 'stabilityScores',
+        }),
+        // The only term whose source is a CORPUS rather than a case. Its absence is therefore not a
+        // failure to measure this candidate: it is the run not having a profile at all, or the profile
+        // not carrying this node — and those are two different statements about the same zero.
+        buildTerm('faultFree', faultFreeWeight, faultFreeEntry ?? 0, {
+          presence: presenceOf(faultFreeScores, id),
+          source: 'faultFreeScores',
         }),
         // The only term whose INPUT is a comparison with the candidate's CALLEES rather than a
         // property of the candidate: `selfTimeShare` is 0 for a service whose rise a callee fully

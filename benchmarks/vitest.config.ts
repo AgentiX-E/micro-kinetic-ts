@@ -248,6 +248,17 @@ export default defineConfig({
         // difference between a release and a reclamation — the runner drops 3 GB of cases per cell and, without a
         // collection, keeps every page until V8 next feels pressure.
         'src/collect-garbage.ts',
+        // Added with the modules: the fault-free frequency profile — the ONE term whose input is a property of
+        // the CORPUS rather than of the case being ranked. Three files, and each is measured for its own reason.
+        // The writer decides what a second arm can even read, so its round trip and its two refusals (a file
+        // with no channel list, a record with a non-finite field) are asserted rather than trusted: an empty
+        // profile scores the term at nothing and is indistinguishable from a corpus whose channels all fell
+        // below the floor. The builder's BAND is what every arm is scored against, so its two floors and its
+        // refusal to let a case profile itself are the whole of its correctness. The walk is a property of the
+        // corpus and must not be a property of the filesystem.
+        'src/fault-free-profile-file.ts',
+        'src/fault-free-profile-build.ts',
+        'src/case-discovery.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

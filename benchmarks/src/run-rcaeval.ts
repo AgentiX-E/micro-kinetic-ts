@@ -118,6 +118,7 @@ import {
   formatFailedEdgeInputLine,
 } from './failed-edge-gate-census.js';
 import { accumulateFaultCensus, createFaultCensus, formatFaultLine } from './fault-census.js';
+import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
@@ -1246,6 +1247,16 @@ async function main(): Promise<void> {
   // INPUT was assembled in — which is not an engine option and therefore cannot live on that line, but is
   // just as able to move a published cell. Two lines, one owner, printed here and written into the dump's
   // header verbatim (`DiagnoseDump` takes it as one string for the same reason).
+  // The fault-free profile is a corpus artifact and is read once, before any case: every case in one run must
+  // be scored against the same band. A weight without a profile is refused by name, because a non-zero weight
+  // over an absent map scores nothing and would publish the control's numbers under the arm's configuration.
+  if (opts.faultFreeWeight !== 0 && opts.faultFreeProfilePath === undefined) {
+    throw new Error('--fault-free-weight requires --fault-free-profile');
+  }
+  const faultFreeProfile =
+    opts.faultFreeProfilePath === undefined
+      ? undefined
+      : readFaultFreeProfileFile(opts.faultFreeProfilePath).profile;
   const configuration = `${formatSignalLine(opts)}\n${formatCorpusLine(opts.latencyView)}`;
   console.log(configuration);
 
@@ -1393,7 +1404,7 @@ async function main(): Promise<void> {
     // Measured with them hoisted, the heap at each cell's end ran 73 MB, 106 MB, 176 MB, 634 MB, 2339 MB — a climb
     // that tracks the CELL INDEX rather than the cell's size, which is what a retained case looks like. Rebuilding
     // them makes a cell's last record unreachable at the same moment its cases are.
-    const container = createContainer(buildRCAEvalEngineOptions(opts));
+    const container = createContainer(buildRCAEvalEngineOptions(opts, faultFreeProfile));
     const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
     const runner = new BenchmarkRunner(
       container,

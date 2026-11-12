@@ -34,6 +34,21 @@ import type { Fse26CliOptions } from './fse26-cli.js';
 import type { FSE26RunConfig } from './fse26-report.js';
 
 /**
+ * Engine options that are deliberately NOT part of the reported configuration, and are not options at all.
+ *
+ * `faultFreeProfile` is a CORPUS ARTIFACT — hundreds of `(service, channel, centre, scale, rate, windows)`
+ * records — handed to the engine as a second argument because the engine is a pure function of its
+ * options. It is excluded from the record on the same rule that keeps `dataDir` off it, and with a second
+ * reason that list does not have: the artifact's whole content is determined by the profile FILE and by the
+ * two fields that ARE reported (`faultFreeWeight`, `faultFreeSelection`), so a record carrying the data
+ * would be a multi-megabyte copy of a file the run never quotes.
+ *
+ * It is named here, rather than silently skipped, so that a reader of this module can tell an exclusion
+ * from an oversight — and so that the parity test's filter has one owner.
+ */
+export const NOT_REPORTED_ENGINE_KEYS = ['faultFreeProfile'] as const;
+
+/**
  * Options that are deliberately NOT part of the reported configuration.
  *
  * Each describes how the run was INVOKED rather than how it was configured: where the corpus was read from,
@@ -53,6 +68,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'diagnoseLimit',
   'diagnoseDecimals',
   'termsOut',
+  'faultFreeProfilePath',
 ] as const;
 
 /**
@@ -88,6 +104,8 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     latMinRise: opts.latMinRise,
     poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
     stabilityWeight: opts.stabilityWeight,
+    faultFreeWeight: opts.faultFreeWeight,
+    faultFreeSelection: opts.faultFreeSelection,
     selfTimeWeight: opts.selfTimeWeight,
     victimWeight: opts.victimWeight,
     dualFamilyWeight: opts.dualFamilyWeight,

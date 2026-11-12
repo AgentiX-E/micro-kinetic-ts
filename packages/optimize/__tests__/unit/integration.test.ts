@@ -249,6 +249,15 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // resizing one, so there is nothing for the search to interpolate between `override` and `return-path`.
       'failedEdgeOverrideRule',
       'failedEdgeWeight',
+      // Iteration 265: the outlier baseline's weight, its aggregate and the profile both read. The weight is
+      // held at 0 for the reason `emissionWeight` above is held at its arm — the record measured one case on
+      // 130 and a dose-response that turns over past 0.3, so there is no coefficient here whose benefit is
+      // established. The other two are held for the reasons every discrete axis here is: `rarest` and
+      // `dominant` are different populations of evidence rather than two magnitudes, and the profile is a
+      // corpus artifact a mapping cannot synthesise.
+      'faultFreeProfile',
+      'faultFreeSelection',
+      'faultFreeWeight',
       'latMinRise',
       'latWeight',
       // Iteration 249: the SCALE the log signal is measured on. Held for the mutual rule's reason, one step

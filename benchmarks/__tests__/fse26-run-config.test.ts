@@ -41,7 +41,11 @@ import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../src/fse26-engine-options.js';
 import { formatFSE26ConfigLine } from '../src/fse26-report.js';
-import { buildFse26RunConfig, NOT_REPORTED_FSE26_OPTION_KEYS } from '../src/fse26-run-config.js';
+import {
+  buildFse26RunConfig,
+  NOT_REPORTED_ENGINE_KEYS,
+  NOT_REPORTED_FSE26_OPTION_KEYS,
+} from '../src/fse26-run-config.js';
 
 const BASE = parseFSE26Args([]);
 
@@ -167,6 +171,8 @@ describe('buildFse26RunConfig', () => {
         // engine holding `sum` and the record holding nothing.
         const forwarded = { ...engine.signals, ...engine.topology } as Record<string, unknown>;
         for (const [key, value] of Object.entries(forwarded)) {
+          // The one engine field that is DATA rather than configuration — see `NOT_REPORTED_ENGINE_KEYS`.
+          if ((NOT_REPORTED_ENGINE_KEYS as readonly string[]).includes(key)) continue;
           expect({ key, stated: key in config, value: config[key] }).toEqual({
             key,
             stated: true,

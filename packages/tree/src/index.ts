@@ -185,6 +185,7 @@ export {
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_NORMALISATION,
@@ -310,6 +311,26 @@ export {
   type DualFamilyGateMode,
 } from './pruning/prism-signal.js';
 export type { PrismPooling } from './pruning/prism-signal.js';
+
+// The fault-free frequency profile (EOB). Built from a CORPUS rather than a case: one window per case,
+// counted per (service, channel). See `pruning/fault-free-profile.ts` for why the windows come from
+// other cases and why the paper's 10-minute windowing is not reproduced here.
+export {
+  DEFAULT_FAULT_FREE_MIN_SAMPLES,
+  DEFAULT_FAULT_FREE_MIN_WINDOWS,
+  DEFAULT_FAULT_FREE_SIGMA,
+  FAULT_FREE_SELECTIONS,
+  buildFaultFreeProfile,
+  computeFaultFreeScores,
+  isFaultFreeSelection,
+} from './pruning/fault-free-profile.js';
+export type {
+  FaultFreeChannel,
+  FaultFreeObservation,
+  FaultFreeProfile,
+  FaultFreeProfileOptions,
+  FaultFreeSelection,
+} from './pruning/fault-free-profile.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

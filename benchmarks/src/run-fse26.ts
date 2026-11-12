@@ -34,8 +34,8 @@
  * @module benchmarks/run-fse26
  */
 
-import { readdirSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
 
 import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
 
@@ -49,6 +49,8 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
+import { discoverCaseDirs } from './case-discovery.js';
+import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
 import { TermDump } from './terms-dump.js';
@@ -72,35 +74,6 @@ import {
   summariseFailedEdgeCoverage,
   type FSE26RunConfig,
 } from './fse26-report.js';
-
-/**
- * Discover every case directory (a `case.json` present) under `dataDir`, via a
- * breadth-first walk. Datapack directories are flat under the bridge output
- * root, but the walk tolerates a nested layout without matching on names.
- */
-function discoverCaseDirs(dataDir: string): string[] {
-  const dirs: string[] = [];
-  const queue = [dataDir];
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    let entries;
-    try {
-      entries = readdirSync(cur, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    const hasCase = entries.some((e) => e.isFile() && e.name === 'case.json');
-    if (hasCase) {
-      dirs.push(cur);
-      continue;
-    }
-    for (const e of entries) {
-      if (e.isDirectory() && !e.name.startsWith('.')) queue.push(join(cur, e.name));
-    }
-  }
-  dirs.sort();
-  return dirs;
-}
 
 /** The published FSE'26 anchor: 11 SOTA models average 0.21 Top@1 (best 0.37). */
 const ANCHOR_AVG = 0.21;
@@ -165,7 +138,18 @@ async function main(): Promise<void> {
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
   // Rank normalization is load-bearing on Train Ticket's large topologies.
-  const engineOptions = buildFse26EngineOptions(opts);
+  // The fault-free profile is READ here rather than derived: it is a corpus artifact, and every arm of one
+  // experiment must be scored against the same band or the arms differ by two estimates rather than by one
+  // weight. A weight without a profile is refused by name, because a non-zero weight over an absent map
+  // scores nothing and would publish the control's numbers under the arm's configuration.
+  if (opts.faultFreeWeight !== 0 && opts.faultFreeProfilePath === undefined) {
+    throw new Error('--fault-free-weight requires --fault-free-profile');
+  }
+  const faultFreeProfile =
+    opts.faultFreeProfilePath === undefined
+      ? undefined
+      : readFaultFreeProfileFile(opts.faultFreeProfilePath).profile;
+  const engineOptions = buildFse26EngineOptions(opts, faultFreeProfile);
   const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
 
   console.log("Micro-Kinetic — FSE'26 RCABench");

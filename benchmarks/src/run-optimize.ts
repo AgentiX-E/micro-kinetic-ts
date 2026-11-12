@@ -28,9 +28,10 @@
  * @module benchmarks/run-optimize
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { discoverCaseDirs } from './case-discovery.js';
 
 import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
@@ -113,37 +114,6 @@ function parseArgs(): CliOptions {
 
 // ── Case discovery ────────────────────────────────────────
 
-/**
- * Walk `dataDir` recursively and return every directory that contains a
- * `metrics.json` (i.e. an RCAEval case directory), in deterministic order.
- */
-function discoverCaseDirs(dataDir: string): string[] {
-  const found: string[] = [];
-  const queue: string[] = [dataDir];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    let entries;
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    if (entries.some((e) => e.isFile() && e.name === 'metrics.json')) {
-      found.push(current);
-      continue; // do not descend into a case directory
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) {
-        queue.push(join(current, entry.name));
-      }
-    }
-  }
-
-  found.sort();
-  return found;
-}
-
 /** Extract the suite (RE1/RE2/RE3) from a case directory path. */
 function detectSuite(dirPath: string): 'RE1' | 'RE2' | 'RE3' {
   const segments = dirPath.replace(/\\/g, '/').split('/');
@@ -180,7 +150,7 @@ async function loadAllCases(
   const loader = new RCAEvalLoader();
   await initRCAEvalTopology(); // exact-match topology (no semantic/API dependency)
 
-  let dirs = discoverCaseDirs(dataDir);
+  let dirs = discoverCaseDirs(dataDir, 'metrics.json');
 
   // Deterministic, stratified down-sample before loading: the full dataset
   // (735 cases) does not fit in the CI heap when every case's logs+metrics are
@@ -374,7 +344,7 @@ async function main(): Promise<void> {
   // samples from, and its stratum sizes are what decide whether a larger cap could give the held-out splits
   // full coverage — a stratum with fewer than the boundary's cases in the whole dataset cannot be covered at
   // any cap, so the cap is not always the lever. `discoverCaseDirs` opens no file.
-  const allCaseDirs = discoverCaseDirs(opts.dataDir);
+  const allCaseDirs = discoverCaseDirs(opts.dataDir, 'metrics.json');
   const SPLIT_RATIOS_FOR_DATASET = OPTIMIZE_SPLIT_RATIOS;
   console.log(
     formatDatasetStrata(

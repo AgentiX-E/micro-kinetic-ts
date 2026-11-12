@@ -458,6 +458,18 @@ export interface FaultPropagationGraph {
    */
   readonly stabilityScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service FAULT-FREE FREQUENCY score in [0, 1]: the complement of the node's Expected Outlier
+   * Baseline, `1 − r_e` — how rarely the node's anomalous channel looks anomalous when nothing is wrong.
+   * Feeds the (opt-in) `faultFreeWeight` term, whose default of 0 is the ablation.
+   *
+   * The ONLY score on this graph that is not derived from the graph: it is read off a corpus profile the
+   * caller builds (`buildFaultFreeProfile`) and passes in, because the quantity is a property of the
+   * system across cases rather than of any one case. Absent when no profile was supplied, or when the
+   * profile cannot speak about this node — never present with a neutral 0.5, which would be a measurement
+   * nobody made.
+   */
+  readonly faultFreeScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service SELF-TIME share in [0, 1]: the fraction of a service's own transport (latency) rise
    * that no callee can explain. Feeds the (opt-in) `selfTimeWeight` term.
    *

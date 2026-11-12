@@ -240,6 +240,13 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'screen that reads one corpus cannot subtract it from the other otherwise, and measured: the dispatch ' +
     "that produced the FSE'26 dump reproduced that run's own reading exactly (1073/1227/1249 of 1422). " +
     '`docs/architecture-audit-262.md` owns what it made measurable',
+  faultFreeProfilePath:
+    'reads the fault-free profile the weighting term scores against; a property of the CORPUS rather than a ' +
+    'term in the ranking. It is the one option here that is neither an output path nor a selector of the ' +
+    'population: the profile is built FROM the corpus by `build-fault-free-profile` and then read back, so ' +
+    'the file IS the measurement the term consumes. A runner cannot invent it either — a non-zero weight ' +
+    'without a profile is refused rather than silently read as zero — which is why it travels beside ' +
+    '`faultFreeWeight` instead of being defaultable. `docs/architecture-audit-265.md` owns the profile it names',
 };
 
 /**
@@ -854,6 +861,28 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
+  // Iteration 265: the outlier baseline. A weight and the SELECTION of which of two aggregates it reads, and
+  // the pair is the whole axis: the term scores a service by how rarely its pre-injection windows depart from
+  // their own centre, and `rarest` (the paper's `min` over channels) and `dominant` (the reading this engine's
+  // fused candidate implies) are different rules rather than two spellings of one.
+  //
+  // `fse26: null` and `rcaeval: null` are facts about the dispatch surfaces, not about the field: both runners
+  // accept the flags and both carry them on the configuration line, so a run that sets them is attributable.
+  // Neither workflow can ask for them — the golden half is at GitHub's 25-input ceiling and the FSE'26 half's
+  // packed block is the one its own census caps — which is what puts the two flags in
+  // `UNDISPATCHABLE_ON_RCAEVAL` rather than in a dispatch nobody can issue.
+  faultFreeWeight: {
+    flag: '--fault-free-weight',
+    owner: 'architecture-audit-265.md',
+    fse26: null,
+    rcaeval: null,
+  },
+  faultFreeSelection: {
+    flag: '--fault-free-selection',
+    owner: 'architecture-audit-265.md',
+    fse26: null,
+    rcaeval: null,
+  },
   fusionCeiling: {
     flag: '--fusion-ceiling',
     owner: NOT_A_RANKING_KNOB,
@@ -1086,6 +1115,12 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // 25-input ceiling, so the packed block has no spare input. It travels as `emissionWeight=<value>` on the
   // configuration line, so a run that sets it is attributable even though no dispatch can ask for it.
   '--emission-weight',
+  // Iteration 265: the outlier baseline's weight and the aggregate it reads, on this list for the emission
+  // credit's reason exactly — the golden workflow is at GitHub's 25-input ceiling, so the packed block has no
+  // spare input. Both travel on the configuration line (`faultFreeWeight=… faultFreeSelection=…`), so a run
+  // that sets them is attributable even though no dispatch can ask for it.
+  '--fault-free-weight',
+  '--fault-free-selection',
   '--fusion-ceiling',
   // Iteration 235: the credit the direction term's bar scales. Unlike the two poles below this is a real axis —
   // `constant` and `proportional` are different credit rules, not two spellings of one — and it is on this list
@@ -1185,6 +1220,17 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'could OOM the job. The published cell is independent of the value — ' +
     '`docs/rcaeval-memory-bound.md` runs one cell at two chunk sizes and diffs the outputs line by line — ' +
     'which is exactly why it belongs on this list rather than as a workflow input',
+  // Iteration 265: the fault-free profile a weighting term scores against. A dispatch must not ask for it for
+  // a reason no other member of this list has: the file is an ARTIFACT of the corpus rather than a choice,
+  // fifty-three kilobytes built once by `build-fault-free-profile` from the very datapacks a run is about to
+  // rank. A dispatch that could name a path could name a STALE one, and a profile fitted on a different
+  // corpus reads as a measurement of this one. The reproducibility rule the whole register keeps — a run is
+  // recomputable from its dispatch — would then be false in the one direction nobody would think to check.
+  '--fault-free-profile':
+    'the fault-free profile is built FROM the corpus by `build-fault-free-profile` and read back, so it is an ' +
+    'ARTIFACT rather than a knob or an output path: a dispatch that could name a path could name one fitted ' +
+    'on another corpus, and nothing downstream could tell that reading from this one. ' +
+    '`docs/architecture-audit-265.md` pins the file it produced',
 };
 
 /**
@@ -1204,6 +1250,27 @@ const OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE: Readonly<Record<string, string>> =
     "caps the population a benchmark is scored on: required reachable from the FSE'26 dispatch, whose " +
     'corpus size is its own sampling decision, and required UNREACHABLE from the RCAEval benchmark, ' +
     'whose whole corpus is the population every one of its claims is weighted by',
+};
+
+/**
+ * Options both parsers accept and NEITHER workflow may pass, with the reason.
+ *
+ * The third direction, and it exists because the other two would have filed these as holes. A
+ * `bothRequired` entry with no exclusion reads as an unreached flag, which is exactly the shape the
+ * test above is built to fail on — so the direction has to be stated, and here it is the NEGATIVE
+ * one: reachable from neither workflow, and that is the requirement rather than the defect.
+ *
+ * `faultFreeProfilePath` is the first and only member. It names the fault-free profile a weighting
+ * term scores against, and the file is an ARTIFACT of the corpus — built from the same datapacks a
+ * run is about to rank. A dispatch that could name a path could name a stale one, and a profile
+ * fitted on another corpus is indistinguishable downstream from a measurement of this one, which
+ * would make "recomputable from its dispatch" false in the one direction nobody would check.
+ */
+const OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER: Readonly<Record<string, string>> = {
+  faultFreeProfilePath:
+    'the fault-free profile is built from the corpus and read back, so a dispatch that could name it could ' +
+    'name one fitted on a different corpus — an artifact, not a choice, and the one option here whose ' +
+    'miswiring would be invisible in the numbers it changes',
 };
 
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
@@ -1668,9 +1735,16 @@ describe('the dispatch surface has one owner per knob', () => {
         .filter((flag) => !reaches(flag, text))
         .sort();
     const found = [
-      ...unreached(fse26Flags, readFileSync(FSE26_WORKFLOW, 'utf8')),
-      ...unreached(rcaevalFlags, readFileSync(RCAEVAL_WORKFLOW, 'utf8')),
+      ...new Set([
+        ...unreached(fse26Flags, readFileSync(FSE26_WORKFLOW, 'utf8')),
+        ...unreached(rcaevalFlags, readFileSync(RCAEVAL_WORKFLOW, 'utf8')),
+      ]),
     ].sort();
+    // Deduplicated through a Set, because the claim is about FLAGS and not about runner-flag pairs: an
+    // operational flag that BOTH runners accept and NEITHER workflow passes was unreached twice, and the
+    // concatenation counted it twice against a keyed table that can only name it once. The first such
+    // member is `--fault-free-profile` (iteration 265), and the failure it produced was in this
+    // assertion rather than in the state it describes.
     expect(found).toEqual(Object.keys(OPERATIONAL_FLAGS_UNREACHABLE).sort());
     // Non-vacuity: the check must have a population to walk on BOTH sides, or it is asserting over
     // one runner and reporting the other as clean.
@@ -1713,7 +1787,13 @@ describe('the dispatch surface has one owner per knob', () => {
         return inFse26 && inRcaeval;
       })
       .sort();
-    expect(both).toEqual(['dataDir', 'diagnoseDecimals', 'maxCases', 'termsOut']);
+    expect(both).toEqual([
+      'dataDir',
+      'diagnoseDecimals',
+      'faultFreeProfilePath',
+      'maxCases',
+      'termsOut',
+    ]);
     // Non-vacuity: the derived population must not be empty, and it must be a strict subset of
     // what one runner accepts — otherwise "both" would be measuring a single runner twice.
     expect(both.length).toBeGreaterThan(1);
@@ -1729,6 +1809,7 @@ describe('the dispatch surface has one owner per knob', () => {
     const accepted = { fse26: fse26Flags, rcaeval: rcaevalFlags };
     for (const option of both) {
       if (option in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE) continue;
+      if (option in OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER) continue;
       for (const which of ['fse26', 'rcaeval'] as const) {
         const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
         expect(flag, `${which} accepts ${option}`).toBeDefined();
@@ -1738,7 +1819,11 @@ describe('the dispatch surface has one owner per knob', () => {
     // …and the options that are NOT required on both are named WITH a direction: reachable from exactly
     // one workflow, and required NOT to be reachable from the other. An exclusion without a direction
     // would be indistinguishable from the hole this test exists to close.
-    const bothRequired = both.filter((o) => !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE));
+    const bothRequired = both.filter(
+      (o) =>
+        !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE) &&
+        !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER),
+    );
     expect(bothRequired).toEqual(['dataDir', 'diagnoseDecimals', 'termsOut']);
     for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE)) {
       expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
@@ -1754,6 +1839,19 @@ describe('the dispatch surface has one owner per knob', () => {
       expect(reaches(flagOf('rcaeval'), texts.rcaeval), 'must NOT be reachable from RCAEval').toBe(
         false,
       );
+    }
+    // The NEGATIVE direction, asserted rather than assumed: an option in the third table must be
+    // accepted by both parsers and reachable from NEITHER workflow. Without this the table would be a
+    // place to park a hole — the object would silence `bothRequired` while nothing checked the claim
+    // that made the exclusion legitimate.
+    for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER)) {
+      expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
+      expect(reason.length, `${option} needs a reason`).toBeGreaterThan(60);
+      for (const which of ['fse26', 'rcaeval'] as const) {
+        const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
+        expect(flag, `${which} accepts ${option}`).toBeDefined();
+        expect(reaches(flag!, texts[which]), `${which} must NOT reach ${flag}`).toBe(false);
+      }
     }
   });
 

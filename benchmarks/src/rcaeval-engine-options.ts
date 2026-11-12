@@ -36,6 +36,8 @@ import type {
   FailedEdgeGateMode,
   FailedEdgeMutualRule,
   FailedEdgeOverrideRule,
+  FaultFreeProfile,
+  FaultFreeSelection,
   LogNormalisation,
   LogSignalMode,
   OnsetShape,
@@ -54,6 +56,23 @@ export interface RCAEvalSignalOptions {
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
   readonly stabilityWeight: number;
+  /**
+   * Weight on the fault-free frequency prior. Required for the reason every weight here is: the shipped value
+   * is 0, which is exactly what a silently dropped option produces.
+   */
+  readonly faultFreeWeight: number;
+  /** Which channel that prior reads. Two hypotheses, not two spellings — see `fault-free-profile.ts`. */
+  readonly faultFreeSelection: FaultFreeSelection;
+  /**
+   * The corpus profile, when this run has one.
+   *
+   * DECLARED here but never WRITTEN by {@link buildRCAEvalEngineOptions}: the profile is data rather than
+   * configuration, so the runner merges it in after the projection. Declaring it keeps the merge type-checked
+   * instead of passing an excess property, and leaving it unwritten keeps the option-key fence honest — a key
+   * with no parser counterpart would make that fence unprovable rather than false.
+   */
+  readonly faultFreeProfile?: FaultFreeProfile | undefined;
+
   /**
    * The BASE term's coefficient — see `CliOptions.selfAnomalyWeight`.
    *
@@ -257,6 +276,11 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   // the slices exactly as it would be folded from one pass (`mergeLoadStats`/`mergeRunResults`), so the published
   // numbers must be identical at any chunk size — `docs/rcaeval-memory-bound.md` measures that invariance.
   'caseChunk',
+  // Where the fault-free profile is read FROM. The profile itself reaches the engine through the projection's
+  // second argument, because reading a file is IO and this module is the pure projection the fences check; the
+  // PATH is a harness option on the same rule as `dataDir` — two runs of one configuration from two files are
+  // one configuration.
+  'faultFreeProfilePath',
 ];
 
 /**
@@ -270,12 +294,22 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
  * @param opts - The parsed command-line options.
  * @returns `signals` (the first constructor argument) and `topology` (the second).
  */
-export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOptions {
+export function buildRCAEvalEngineOptions(
+  opts: CliOptions,
+  profile?: FaultFreeProfile | undefined,
+): RCAEvalEngineOptions {
   return {
     signals: {
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
       stabilityWeight: opts.stabilityWeight,
+      faultFreeWeight: opts.faultFreeWeight,
+      faultFreeSelection: opts.faultFreeSelection,
+      // Handed in rather than loaded here, for the reason the FSE'26 twin records: this module is the pure
+      // projection, and reading a file inside it would make the projection untestable. Built CONDITIONALLY for
+      // the twin's second reason too — the profile is not a parsed option, so an always-present key would enter
+      // the forwarded set and break `forwarded ∪ nonEngine = parsed`.
+      ...(profile === undefined ? {} : { faultFreeProfile: profile }),
       selfAnomalyWeight: opts.selfAnomalyWeight,
       selfTimeWeight: opts.selfTimeWeight,
       emissionWeight: opts.emissionWeight,
@@ -352,7 +386,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
  */
 export function formatSignalLine(opts: CliOptions): string {
   return (
-    `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} ` +
+    `signals: stabilityWeight=${opts.stabilityWeight} faultFreeWeight=${opts.faultFreeWeight} faultFreeSelection=${opts.faultFreeSelection} collisionWeight=${opts.collisionWeight} ` +
     `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} topoDiscountScope=${opts.topoDiscountScope} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} logNormalisation=${opts.logNormalisation} ` +
     // The three the golden half inherited in silence until this line named them.
     `latWeight=${opts.latWeight} latMinRise=${opts.latMinRise} ` +

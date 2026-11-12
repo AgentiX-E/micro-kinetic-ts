@@ -49,6 +49,11 @@ import {
   DEFAULT_TOPO_DISCOUNT_SCOPE,
   isTopoDiscountScope,
 } from '../../packages/tree/src/causal/topology-fault-graph.js';
+import {
+  FAULT_FREE_SELECTIONS,
+  isFaultFreeSelection,
+  type FaultFreeSelection,
+} from '../../packages/tree/src/pruning/fault-free-profile.js';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
@@ -62,6 +67,7 @@ import {
   DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_NORMALISATION,
@@ -332,6 +338,17 @@ export interface CliOptions {
    * was REJECTED for moving four of the nine golden cells, one of them by 15.8pp.
    */
   stabilityWeight: number;
+  /**
+   * Weight on the FAULT-FREE FREQUENCY prior, SHIPPED OFF at the engine's 0.
+   *
+   * Paired with `--fault-free-profile`: the term reads a CORPUS artifact, so a non-zero weight with no
+   * profile scores nothing for every candidate — and the line reports both, so that pairing is visible.
+   */
+  faultFreeWeight: number;
+  /** Where the profile is read from. A harness option: two runs of one configuration from two files agree. */
+  faultFreeProfilePath?: string;
+  /** Which channel the term reads: `rarest` (the paper's aggregation) or `dominant` (this engine's own). */
+  faultFreeSelection: FaultFreeSelection;
   /**
    * Strength of the SELF-TIME prior: the share of a service's own latency rise that no callee can
    * explain.
@@ -850,6 +867,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+    faultFreeProfilePath: undefined,
+    faultFreeSelection: 'rarest',
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     emissionWeight: DEFAULT_EMISSION_WEIGHT,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
@@ -979,7 +999,20 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
     } else if (args[i] === '--stability-weight' && hasValue(args, i + 1))
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
-    else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
+    else if (args[i] === '--fault-free-weight' && hasValue(args, i + 1))
+      opts.faultFreeWeight = parseWeight(args[++i]!, DEFAULT_FAULT_FREE_WEIGHT);
+    else if (args[i] === '--fault-free-profile' && hasValue(args, i + 1))
+      opts.faultFreeProfilePath = args[++i]!;
+    else if (args[i] === '--fault-free-selection' && hasValue(args, i + 1)) {
+      // Fails rather than falls back, on the rule the FSE'26 half records: a run that asked for `dominant`
+      // and silently read `rarest` would publish one aggregation's numbers under the other's name.
+      const value = args[++i]!;
+      if (!isFaultFreeSelection(value))
+        throw new Error(
+          `--fault-free-selection must be one of ${FAULT_FREE_SELECTIONS.join(', ')}, got ${value}`,
+        );
+      opts.faultFreeSelection = value;
+    } else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
     else if (args[i] === '--emission-weight' && hasValue(args, i + 1))
       opts.emissionWeight = parseWeight(args[++i]!, DEFAULT_EMISSION_WEIGHT);

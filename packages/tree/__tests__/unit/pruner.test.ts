@@ -1103,6 +1103,8 @@ describe('TreePruner', () => {
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
         podStateWeight: 0.6,
+
+        faultFreeWeight: 0,
       });
 
       expect(weights).toEqual({
@@ -1124,6 +1126,7 @@ describe('TreePruner', () => {
         victimWeight: 0.9,
         dualFamilyWeight: 0.7,
         podStateWeight: 0.6,
+        faultFreeWeight: 0,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -2317,6 +2320,8 @@ describe('TreePruner — failed-edge-direction signal', () => {
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
+
+      faultFreeWeight: 0,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -2586,6 +2591,8 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
+
+      faultFreeWeight: 0,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -2620,6 +2627,8 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       victimWeight: 0.9,
       dualFamilyWeight: 0.7,
       podStateWeight: 0.6,
+
+      faultFreeWeight: 0,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -3081,9 +3090,10 @@ describe('the score breakdown — the total IS its terms', () => {
   it('names the term set EXACTLY, so a term added to the formula cannot go missing from the breakdown', () => {
     // The identity above is satisfied by any array whose sum is the total, including one that silently DROPPED
     // a term from both sides — and that is the failure the identity alone cannot see. So the population is
-    // enumerated: these are the sixteen terms `finalScore(v)` is made of, in the formula's order, and a
-    // seventeenth added to the ranking weights without a line here fails this test rather than entering the
-    // total unaccounted for.
+    // enumerated: these are the terms `finalScore(v)` is made of, in the formula's order, and a term added to
+    // the ranking weights without a line here fails this test rather than entering the total unaccounted for.
+    // The list is deliberately not counted in prose: it was called "the five" once, then "the ten", then "the
+    // sixteen", and each of those sentences was wrong within two iterations.
     expect(ranked()[0]!.terms!.map((t) => t.name)).toEqual([
       'selfAnomalyLog1p',
       'source',
@@ -3098,6 +3108,7 @@ describe('the score breakdown — the total IS its terms', () => {
       'lat',
       'pool',
       'stability',
+      'faultFree',
       'selfTime',
       'emission',
       'victim',
@@ -4028,6 +4039,8 @@ describe('the base term’s weight — the one quantity the formula used to writ
       victimWeight: 0,
       dualFamilyWeight: 0.25,
       podStateWeight: 0.5,
+
+      faultFreeWeight: 0,
     });
     expect(weights.selfAnomalyWeight).toBe(0.75);
     expect(weights.emissionWeight).toBe(0);

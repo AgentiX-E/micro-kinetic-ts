@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config a0ed4a8a906e -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 1fa9e7bca975 -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -399,6 +399,21 @@ own CONFIGURATION: its printed `signals:` line is byte-identical to the line a b
 produces from this tree, both hashing to `a0ed4a8a906e`. That is the fingerprint
 `anchor-config-fingerprint.test.ts` holds the block to, so the reading and the configuration it belongs to are
 asserted from the same artifact rather than from the same document.
+
+### 0p-v. The sixth correction — two fields, no behaviour, and the line that has to say so
+
+The digest moved again, `a0ed4a8a906e → 1fa9e7bca975`, and this time **nothing the ranking does has changed**. The
+fault-free frequency term was added to the engine at weight `0`, which is its ablation, and the reported line
+gained the two fields that NAME it: `faultFreeWeight=0 faultFreeSelection=rarest`. A reader of an artifact built
+after this iteration can therefore see that the term exists and is off; a reader of one built before it cannot be
+told apart from a run where the term did not exist at all — which is exactly why the fields are printed at their
+defaults rather than omitted.
+
+**The prediction, stated before the run rather than after it.** At `faultFreeWeight = 0` the engine does not read
+the profile map (`pruner.ts`: the map is `undefined`, not an empty one), so every score is bit-identical and the
+nine cells must be unmoved: `RE1 345/375`, `RE2 249/270`, `RE3 72/90`, `TOTAL 666/735`. The battery that
+confirms it is named in the paragraph below once it has run; a block that moved would mean the term reads
+something at zero.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 

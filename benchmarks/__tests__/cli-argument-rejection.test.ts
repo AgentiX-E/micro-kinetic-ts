@@ -58,6 +58,7 @@ import {
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
+  FAULT_FREE_SELECTIONS,
   LOG_NORMALISATIONS,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
@@ -163,6 +164,9 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // Iteration 214: the transient guard's STATISTIC. A word union of two like the two above, and the probe's
   // job is to prove the option MOVES — `level-window` is the arm, i.e. the value the flag exists to name.
   '--transient-guard-test': 'level-window',
+  // Iteration 265: which of a candidate's channels the fault-free prior reads. A word union of two, so `1` is
+  // refused; `dominant` is the arm this flag exists to be able to name, since `rarest` is the shipped default.
+  '--fault-free-selection': 'dominant',
   // Iteration 218: the SYSTEM filter. It took any token and ignored it until this iteration — the comparison
   // that consumed the value named the three systems instead of the filter — so the probe passed on `1` and
   // proved only that the branch existed. It is now a vocabulary (`RCAEVAL_SYSTEM_CODES`), and `ss` is a
@@ -330,6 +334,31 @@ describe('an unrecognised argument fails loudly', () => {
     // And a typo is a typo: the message must not silently accept the near-miss.
     expect(message.length).toBeGreaterThan(20);
   });
+
+  it('refuses a mode value it cannot name, on both runners, rather than falling back to the shipped one', () => {
+    // The value-level twin of the flag-level refusal above, and it is the one the fault-free selection needs:
+    // `rarest` and `dominant` read DIFFERENT populations of evidence, so a run that asked for one aggregation
+    // and silently got the other would publish one hypothesis's numbers under the other's name. Every other
+    // mode flag on these parsers shares the shape; this is the newest member and the reason it is spelled out
+    // is that `MODE_VALUES` above drives each flag with a value that SUCCEEDS, which leaves the refusal
+    // unexercised — measured, not assumed: the throw was the only uncovered line in `fse26-cli.ts`.
+    expect(() => parseFSE26Args(['--fault-free-selection', 'common'])).toThrow(
+      /--fault-free-selection/,
+    );
+    expect(() => parseRCAEvalArgs(['--fault-free-selection', 'common'])).toThrow(
+      /--fault-free-selection/,
+    );
+    // …and the message names the vocabulary rather than only the token, so a dispatcher does not have to read
+    // the source to learn what the alternatives are. The two members are read from the owner, so a third one
+    // would widen this assertion by existing.
+    for (const selection of FAULT_FREE_SELECTIONS) {
+      expect(() => parseFSE26Args(['--fault-free-selection', selection])).not.toThrow();
+      expect(parseFSE26Args(['--fault-free-selection', selection]).faultFreeSelection).toBe(
+        selection,
+      );
+    }
+    expect(() => parseFSE26Args(['--fault-free-selection', 'common'])).toThrow(/rarest/);
+  });
 });
 
 describe('a knob stated twice, with two different values, is refused', () => {
@@ -471,6 +500,11 @@ describe('every option the golden runner forwards can be set from the command li
       // question about WHETHER a term speaks but about HOW MUCH. Probed from the union for the reason every
       // other entry is, and it needs both members: `constant` is what the field already holds, so only
       // `proportional` can move it — which is exactly the arm that has to be reachable from a dispatch.
+      // Iteration 265: the fault-free prior's AGGREGATION, the eleventh word-vocabulary and the only one whose
+      // members are two readings of the same profile rather than two mechanisms. Probed from the union for the
+      // reason every other entry is, and it needs both: `rarest` is what the field already holds, so only
+      // `dominant` can move it.
+      ...FAULT_FREE_SELECTIONS,
       ...FAILED_EDGE_CREDITS,
       // Iteration 236: the MUTUAL-PAIR rule, and it is the same kind of question as the credit — the field
       // already holds `credit`, so only `drop` can move it, and a set that probed only the shipped member would

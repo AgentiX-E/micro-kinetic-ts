@@ -2234,3 +2234,54 @@ thinly**, so its contribution can rise where it must without moving the marginal
 fault-free baseline frequency channel of Lee et al. (2026, arXiv 2611.02416).
 
 Full readings, the eight tables and the four refutations in derivation order: `architecture-audit-264.md`.
+
+## Iteration 265 — the coordinate that is not in the case
+
+Iteration 264 closed with a shape rather than a gain: _a coordinate that is zero on the cases the ranking wins
+thinly_. This iteration built it — the **fault-free frequency** prior of Lee et al. (arXiv 2611.02416, §4.1.1), the
+fraction of fault-free windows in which a channel's own anomaly leaves a three-σ band — and reports **no shipped
+change**.
+
+**The departure the corpus forces, and it is the one that makes the measurement possible.** The paper profiles 18 to
+211 hours of fault-free operation; a datapack here is one recording with one injection time. But the same
+`(service, channel)` pair re-appears in every case that touches that service, and each case's pre-segment is
+fault-free by construction. **A case is one window**, the rate is counted over the cases that carried the channel,
+and a corpus of `n` cases gives an `n`-window rate. Weaker than the paper's 10-minute windowing in one direction —
+a channel that swings within a case but holds its level across cases reads as clean — stronger in another: no
+boundary choice can bias a window that is a whole pre-segment.
+
+**The mechanism exists, and it was measured before it was wired.** On the 131 RCAEval datapacks whose raw metrics
+are local: 138 channels published, `r` spanning the whole range (quantiles 0 / 0.077 / **0.332** / 0.686 / 1), 31
+channels that never fired and 22 that fired in every fault-free window they were ever observed in. The two ends are
+the two populations the term exists to separate: `frontend_mem` and three `*_latency` at `r = 0` against
+`front-end_cpu`, `orders-db_cpu`, `rabbitmq_cpu` and `catalogue_workload` at `r = 1`.
+
+**It is not a ranker, and the paper's own baseline says so.** Ordering by `r` alone reads 12.3 % Top@1 against ~7 %
+uniform; the paper's "Statistical EOB" baseline reads 7.1 % Exact on Bank and its headline belongs to a model
+reading the profile as context. **The term therefore enters as one slope in the fusion, not as a re-ranker.**
+
+**As an added coordinate, on the 130 cases that are local: one case.** Shipped score + `w · (1 − r_e)` reads
+90.8 % → **91.5 %** at `w ∈ [0.1, 0.3]`, and degrades past 0.5 (89.2 / 86.9 / 78.5 / 60.8 at 0.5 / 0.8 / 1.2 / 2.0).
+A one-case move at n = 130 is 0.77 pp and spans zero — and the population is the wrong one: RE1:OnlineBoutique, where
+the engine already reads 90.8 %, while the 349 cases this term was built for live in RE3:TrainTicket and the FSE'26
+archive.
+
+**Acceptance test: not met**, and nothing ships. `DEFAULT_FAULT_FREE_WEIGHT = 0`; the ranking is bit-identical to
+the engine that had no such term (asserted, not argued — the same corpus with a profile at 0 and with no profile
+produces the same order). The standing anchor's digest moved only because the reported line gained the two fields
+that name the term at their defaults; the nine cells are predicted unmoved in `docs/sota-comparison.md` §0p-v.
+
+**The next iteration is the two-arm dispatch**, and it is cheap because the profile is an artifact: build it once per
+corpus, run the control and one arm on the same file with `--terms-dump`, and read the **held-out** number from
+`scripts/terms-fit.py --only repair`. The prediction to be wrong about is stated: on the FSE'26 archive the prior
+moves the **absent** bucket (173 cases) far more than the top-1 bucket.
+
+**Two defects the guards found, and neither was the one being looked for.** The projections build the profile key
+CONDITIONALLY because `forwarded ∪ nonEngine = parsed` is asserted over key SETS and the profile is a second
+argument rather than a parsed option — assigning it unconditionally broke six guards in three packages, which is how
+that was learned rather than argued. And the profile builder's argument chain ended at its last `else if`, so a
+mistyped `--min-sample 8` left the sample floor at its default and published a band fitted at a threshold nobody
+typed; it now refuses an unknown token by name. Both were found by coverage — an uncovered arm and an uncovered
+`else` — which is the second iteration running in which the coverage gate located a real bug rather than a metric.
+
+Full readings, the two measurement tables and the design notes: `architecture-audit-265.md`.

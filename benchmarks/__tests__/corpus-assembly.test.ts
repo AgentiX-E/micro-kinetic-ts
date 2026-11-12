@@ -69,6 +69,16 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   'run-fse26.ts',
   // Synthetic cases built by `generateCase`: there are no traces, so there is nothing to assemble.
   'run-local-bench.ts',
+  // Iteration 265: the fault-free profile builder. It READS cases — that is the whole job, one window per case
+  // — and it never builds a corpus to rank: nothing it produces is scored, and its output is a band per
+  // (service, channel) rather than a case. It is listed here because the census reads "loads a case without the
+  // owner" and that reading is correct about the code and wrong about the question.
+  //
+  // The LIBRARY half is the one named, and only it: the entry (`build-fault-free-profile.ts`) is the three-line
+  // `main()` shim every runner here has, so it loads nothing and the regex does not match it. Naming both would
+  // have made this exact set a superset of what the census can find, which is the same drift in the other
+  // direction.
+  'fault-free-profile-build.ts',
 ];
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {
