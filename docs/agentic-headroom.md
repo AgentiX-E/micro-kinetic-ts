@@ -242,8 +242,13 @@ Two decisions follow, both measured rather than argued:
 1. **The corpus is not cached.** A 2.5 GB entry would buy the 114 s download and pay for it by evicting the 3.9 GB
    artifact. A cache that wins two minutes and loses thirty is not a cache, and the release asset has no budget,
    no eviction and a digest.
-2. **The profile is cached.** 6 m 46 s and 437 KB, keyed by the converter digest times a digest of every `.ts` the
-   build reads, so a hit cannot be stale by construction.
+2. **The profile is cached, and the hit is measured.** 437 KB, keyed by the converter digest times a digest of every
+   `.ts` the build reads, so a hit cannot be stale by construction. The full-corpus build costs **11 m 13 s**
+   (`43253302440`, 16:01:28 → 16:12:41) — 40 % of the measure job — and the next dispatch skipped it: run
+   `43259525921` (a 200-case probe) shows `Build the fault-free profile` **skipped**, the measure job finishing in
+   **6 m 04 s** against **28 m 09 s**. What the probe also shows is that the 114 s download is not a constant: the
+   same 2.48 GB took **172 s** on that runner (16:31:15 → 16:34:07), which is the number a shard cache would have
+   to beat with 2.5 GB of a 10 GB budget.
 
 `scripts/prune_caches.py` reclaims the other half of the measurement: 5.69 GB of per-SHA overlays, keeping the
 newest two of each family, denying by default (a key outside the named prefixes is never touched), reporting unless
@@ -255,3 +260,46 @@ newest two of each family, denying by default (a key outside the named prefixes 
 The ceiling in §3 is a bound on a **711-case** population. The same artifacts over 1 422 cases are now one dispatch
 away, at $0 and no laptop: the study's `engine` arm over the full corpus is the control the model arm will be
 compared against, and it is the first number in this document that will not carry a population caveat.
+
+## 9. The full corpus, measured: the ceiling on all 1 422
+
+Run `43253302440` at `8e3df293`, the first reading this line has produced outside a workstation. Job `measure`
+fetched the corpus through the action, built the profile, ran the engine with both dumps and published the
+artifacts; job `study` re-scored those artifacts with no access to the corpus at all.
+
+| arm                                              | Top@1 (1 422 cases) |            Δ | moved | claims | refused |
+| ------------------------------------------------ | ------------------: | -----------: | ----: | -----: | ------: |
+| engine (control, shipped configuration)          |          **75.50%** |            — |     — |      — |       — |
+| `oracle` eliminator (ceiling)                    |          **87.69%** | **+12.19 pp** |   174 |    269 |       0 |
+| `evidence` rule at the CLI's default thresholds  |              44.20% |      −31.30 pp |   695 |    695 |       0 |
+
+The rule's *best* point is a separate measurement and a separate population, because it is chosen in sample: the
+in-sample half (713 cases) picks `floor=0.8, margin=0.25` at 74.8%, and re-read on the 709 held-out cases it scores
+**74.54% against the control's 75.00%** there — **−0.46 pp**, four cases moved out of 709. That is the same verdict
+as §5 at the same magnitude, which is what a refusal should look like when the population doubles.
+
+Three things this changes, and one it corrects:
+
+1. **The control is the published number, to the digit.** 75.50% over 1 422 is `1073/1422 = 75.46%`, the figure
+   `docs/sota-comparison.md` quotes for this corpus, and the dump's own `Top@3 = 86.3%` / `Top@5 = 87.8%` match the
+   battery. `--fault-free-profile` therefore does what it was claimed to do: it supplies the bands and moves no
+   ranking term, at the shipped weight of 0.
+2. **The ceiling is Top@5, now measured rather than asserted.** `87.69%` against a saturated `87.8%` `Top@5` is a
+   gap of one case in 1 422: an eliminator that may only remove candidates cannot reach a service the engine never
+   ranked. §3's 711-case reading said the same thing (84.70 vs 84.81) and this is the confirmation at full width.
+3. **Both refusals replicate.** The EBR rule loses 0.46 pp on the held-out half (§5 measured 0.6 pp on 711), and the skip rule discards
+   **173 of the 174** cases the ceiling can win — it resolves 1 420 of 1 422 cases without a model, and 173 of
+   those are cases a claim would have fixed. §4's verdict was not an artifact of the `waveB2` half.
+4. **The correction: the 711-case ceiling was 4.4 pp optimistic.** `84.70%` on `waveB2` against `87.69%` on the
+   whole corpus, from a control of `68.07%` against `75.50%`. `waveB2` was the harder half for the engine and the
+   lower half for the ceiling, so every +pp figure in §3 and §6 computed against 711 overstated the win by that
+   margin. The direction of the conclusion is unchanged — there is a large, verifiable ceiling and no deterministic
+   rule that reaches it — but the size is `+12.19 pp` and not `+16.63 pp`, and this document now quotes the former.
+
+**Artifacts.** `agentic-measure` (1.8 MB: `fingerprints.ndjson`, `per-case.ndjson`, `results.txt`,
+`results.json`, `manifest.json`) and `agentic-headroom` (the study's own output), both attached to the run, so
+every number above can be recomputed from them with no corpus:
+
+```text
+run-agentic-headroom --fingerprints fingerprints.ndjson --verdicts per-case.ndjson --weight 1
+```

@@ -175,9 +175,11 @@ informative, so the comparison is like-for-like on n and better on design.
 **Arms 0, added in iteration 267, and they ran first because they cost nothing:**
 
 0a. **the ceiling.** A perfect eliminator that may only remove candidates by a verifiable claim reaches
-    **84.70 %** on 711 RCABench cases against the engine's **68.07 %** — **+16.63 pp**, zero refused claims, 118
-    cases, at most 3 rounds for 95 % of them. The ceiling equals Top@5 to within one case, so no layer can beat
-    84.8 % without the *ranking* improving first (`docs/agentic-headroom.md` §3);
+    **87.69 %** on all **1 422** RCABench cases against the engine's **75.50 %** — **+12.19 pp**, 174 cases, zero
+    refused claims (`docs/agentic-headroom.md` §9, run `43253302440`). The first reading was over the `waveB2` half
+    and said **+16.63 pp** (`84.70 %` vs `68.07 %` on 711); the full corpus corrects that by 4.4 pp and this row now
+    quotes the full-width number. The ceiling equals Top@5 to within one case (87.69 % vs a saturated 87.8 %), so no
+    layer can beat 87.8 % without the *ranking* improving first;
 0b. **the evidence rule**, refused: −0.6 pp held out at its best thresholds, −21.8 pp at its most permissive. The
     expected-outlier rate survives as a **fingerprint column** — it is what makes 0a's claims checkable — and dies
     as a **decider** (`docs/agentic-headroom.md` §5);
@@ -219,10 +221,10 @@ exposes only the two primitives the join must not re-implement: `injectionSplitI
 
 | #   | requirement                                                      | how it is checked                               |
 | --- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | `weight=0` is bit-identical to the engine without the layer      | **asserted over the 711-case RCABench corpus** (`agentic-headroom.test.ts` scores `oracle` at weight 0 and requires `moved = 0` and the engine's own Top@1); the nine-cell half is still owed |
+| 1   | `weight=0` is bit-identical to the engine without the layer      | asserted twice: `agentic-headroom.test.ts` scores `oracle` at weight 0 and requires `moved = 0` with the engine's own Top@1, and each run's own fingerprint dump reproduces the published control digit for digit (75.50 % over 1 422, `docs/agentic-headroom.md` §9). The nine-cell half is still owed |
 | 2   | no case leaves the scope at any arm                              | stratum-coverage test (§6)                      |
 | 3   | per-case cost is reported with the score                         | `reported-config` gains the three budget fields |
-| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator**: the ceiling is +16.63 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily |
+| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator, measured on the full corpus**: the ceiling is +12.19 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily |
 | 5   | RE3:TT error-value class converts, or the layer is refused again | wrong→correct > 0, 3 of 3 reps                  |
 
 Requirement 5 is the one `0d6ae609` failed, and it is kept **unchanged on purpose**: the point of changing the
