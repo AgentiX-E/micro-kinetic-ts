@@ -2125,3 +2125,12 @@ The gap is heterogeneity, not capacity.
 to 83.0 %, and still loses one case in three types, because the gate is applied per bucket while the
 number that must clear is the mixture's. **Next: one joint coordinate ascent over all six vectors
 with the corpus-level gate as the objective.**
+
+**The cross-corpus gate, and it is decisive.** The RCAEval dump (`43120401664`, 735 cases = RE1 375 +
+RE2 270 + RE3 90) reproduces its own cells exactly — RE1 `345/375` (92.00 %, the artifact's own printed
+92.0 %), RE2 `248/270`, RE3 `71/90`, pooled **664/735 = 90.34 %**. Applying the FSE'26 vector of this
+iteration WITHOUT refitting reads **604/735 = 82.18 %**: **−60 cases, −8.16 pp**, cell by cell −43/−8/−9.
+So the coefficients are a property of the CORPUS and not of the mechanism, measured in the direction
+that costs: a re-fit worth +8 pp on one benchmark is worth −8 pp on the other. Restoring one term at a
+time does not recover it, and `prism` — which the fit switched ON — is worth **+75** there, so the
+failure is not one bad term but a vector that belongs to another corpus. **No default changes.**

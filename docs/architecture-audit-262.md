@@ -256,3 +256,34 @@ conditioner works; the objective does not yet compose.
 corpus-level gate as its objective, which is a different optimisation (the buckets share the metric)
 and not a harder parameter search. The alternative — a new channel for the 159 cases — is what
 `docs/absent-census.md` asked for and is unchanged by this result.
+
+### 9.7 The cross-corpus gate: the fitted vector is HARMFUL on the other corpus
+
+`--terms-dump` is now unconditional on the RCAEval workflow (no second analysis is needed there — the
+runner already ranks over the whole node set), and the run `43120401664` produced all **735** cases:
+375 RE1 + 270 RE2 + 90 RE3. The control reproduces the run's own cells exactly — RE1 `345/375`
+(92.00 %, the artifact's own printed `accuracy 92.0%`), RE2 `248/270` (91.85 %), RE3 `71/90`
+(78.89 %), pooled **664/735 = 90.34 %**.
+
+Applying the FSE'26 vector of §9.2 without refitting:
+
+| corpus | shipped | FSE'26 vector applied | Δ |
+| --- | ---: | ---: | ---: |
+| RE1 (375) | 345 | 302 | **−43** |
+| RE2 (270) | 248 | 240 | **−8** |
+| RE3 (90) | 71 | 62 | **−9** |
+| **pooled (735)** | **664 (90.34 %)** | **604 (82.18 %)** | **−60 = −8.16 pp** |
+
+This is the measurement the audit existed to make, and it settles the direction: the coefficients are
+a property of the CORPUS, not of the causal mechanism, and a re-fit that gains 8 pp on one benchmark
+loses 8 pp on the other. Restoring one term at a time to the corpus's own recorded weight does not
+recover it (`selfAnomalyLog1p` back to 1 recovers +40 of the 60, `temporal` back to 0 another +26,
+and the terms are entangled), and one term is the reverse of the expectation: `prism` at 0.5, which
+the fit switched ON, is worth **+75** on RCAEval — restoring it to 0 makes the reading 529.
+
+**What this means for the programme.** A single global vector cannot be both corpora's answer, which
+is the same conclusion §9.3 reaches from the other side: the parameter vector must be conditioned,
+and the conditioner must be something a case reveals about itself. The channel signature of §9.4 is
+one such thing; the corpus's own injection grammar is another, and it is the one the `temporal` result
+names — RCAEval anchors its onset to the source's slow response indicator, so "the source moved first"
+is systematically the wrong inference there.
