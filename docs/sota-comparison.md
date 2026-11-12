@@ -1807,26 +1807,51 @@ statistic on the **same** benchmark, and this repository has been emitting it al
 Both columns are **per-fault-type averages**, which is the convention the comparator uses and the one the run
 artifact prints beside `Avg@5`. The `cases` column is the case-level count the rest of this page reports, and on RE3
 the two differ — a cell there has fault types holding a single case each, so a type-average is not a case ratio:
-RE3:OnlineBoutique is 88.9% per type and 83.3% per case, RE3:SockShop 66.1% and 63.3%, RE3:TrainTicket 74.5% and
+RE3:OnlineBoutique is 91.1% per type and 86.7% per case, RE3:SockShop 79.6% and 80.0%, RE3:TrainTicket 74.5% and
 73.3%. On the other six cells the two figures coincide, because their types hold an equal number of cases.
 
-**Re-read 2026-11-07 on battery `42343505202` at `bd17912c`.** Every cell below is that run's own
+**Re-read 2026-11-12 on battery `43215496103` at `9f9d3d81`.** Every cell below is that run's own
 `rcaeval-re{1,2,3}-results.txt`: the `AC@1` and `Avg@5` columns are the file's `AVERAGE` column, which is the
 unweighted mean of the cell's fault types, and the `cases` column is the same run's own per-case census.
+
+> **Why this table had to be re-read, stated before it prints a number, because it is the one class the anchor fence
+> could not see.** The previous pin was `42343505202` at `bd17912c` (2026-11-07), and §0p-iv had since moved two of
+> its rows at a configuration change this document already records: `RE1:TrainTicket` `112 → 113` and `RE3:SockShop`
+> `19 → 24`, `TOTAL 660 → 666`. §0p's retirement list carries both forms — `112/125` and `19/30` — and §31.1 went on
+> printing exactly those two fractions. **`standing-anchor.test.ts` scans five named tables and this is not one of
+> them**: an allow-list of regions leaves every other table unfenced by default, which is the same defect as the
+> unfenced prose §0p confesses to, one level down. The fence was blind to the table's own arithmetic as well — the
+> footer had been re-anchored to `666/735` while the nine rows above it summed to **660**, and the printed `Avg@5`
+> mean of `93.4` is not the mean of the column beside it (`92.0`, recomputed from those very rows): it is the
+> case-weighted convention sitting in a row labelled *unweighted mean of the nine rows*, and the two conventions are
+> `1.7 pp` apart on this run (`92.5` unweighted against `94.2` case-weighted, both printed below). Three defects in
+> one table and none of them a wrong measurement: one pin that outlived two enrolments, one footer that had been
+> updated without its rows, and one mean computed under the other convention and printed under this one's label. The
+> fence this paragraph produced is **deny-by-default**: every table row that names a cell and prints a fraction over
+> that cell's own denominator must print the anchor's numerator, and §31.1's footer must sum the rows above it and
+> equal their means. Both are proved red rather than asserted: restored to its pre-iteration-268 text, this table
+> fails the new fence with `RE3:SockShop prints 19/30; the anchor is 24/30` **while the retired-reading assertion
+> beside it stays green** — which is the gap, measured on the document instead of argued from it.
 
 | cell                                              | AC@1 (per type) | Avg@5 (per type) | cases                           |
 | ------------------------------------------------- | --------------- | ---------------- | ------------------------------- |
 | RE1:OnlineBoutique                                | 90.4%           | 96.2%            | 113/125                         |
 | RE1:SockShop                                      | 95.2%           | 97.4%            | 119/125                         |
-| RE1:TrainTicket                                   | 89.6%           | 95.5%            | 112/125                         |
+| RE1:TrainTicket                                   | 90.4%           | 95.7%            | 113/125                         |
 | RE2:OnlineBoutique                                | 93.3%           | 94.9%            | 84/90                           |
 | RE2:SockShop                                      | 98.9%           | 98.9%            | 89/90                           |
 | RE2:TrainTicket                                   | 84.4%           | 88.0%            | 76/90                           |
 | RE3:OnlineBoutique                                | 91.1%           | 91.1%            | 26/30                           |
-| RE3:SockShop                                      | 66.1%           | 84.6%            | 19/30                           |
+| RE3:SockShop                                      | 79.6%           | 88.8%            | 24/30                           |
 | RE3:TrainTicket                                   | 74.5%           | 81.2%            | 22/30                           |
-| **RE1 (three systems, unweighted mean)**          | 91.7%           | **96.4%**        | 344/375                         |
-| **nine cells (unweighted mean of the nine rows)** | **88.1%**       | **93.4%**        | **666/735 = 90.61% case-level** |
+| **RE1 (three systems, unweighted mean)**          | **92.0%**       | **96.4%**        | 345/375                         |
+| **nine cells (unweighted mean of the nine rows)** | **88.6%**       | **92.5%**        | **666/735 = 90.61% case-level** |
+
+The two conventions, both from this run, side by side, because the row above is one of them and this document quotes
+the other elsewhere: **case-weighted** `AC@1` **90.61% (666/735)** and `Avg@5` **94.20%** — the `Avg@5` read off each
+case's own `truthRank` in `43215496103`'s censuses as `Σ max(0, 6 − rank)/5 / 735`, which reproduces every per-type
+`AVERAGE` in the run artifact to the rounding and is therefore the same statistic the artifact prints, aggregated the
+other way. The `1.70 pp` gap between `94.20` and `92.5` is the RE3 cells, where a fault type holds one case.
 
 ### 31.2 The comparator, and the one property that matters more than its headline
 
@@ -1948,16 +1973,28 @@ Microservice Service Call Graph_, Proc. ACM Softw. Eng. 2026, `10.1145/3808137`.
 
 This one is uncomfortable in a specific way, and it is the reason it is recorded rather than filed:
 
-- **It is the cell this project cannot move.** `RE3:SockShop` is `66.1 %` `AC@1` and **`87.4 %` `Avg@5`**, its
+- **It is the cell this project could not move — at the reading this entry was written against, and that clause is
+  now RETIRED.** `RE3:SockShop` was `66.1 %` `AC@1` (`19/30`) and **`87.4 %`** `Avg@5` on 2026-11-05, its
   ranking is metric-and-log only because the corpus carries no `traces.csv`
   (`docs/ablation-input-census.md` §9.1), and §4.8 of `docs/ablation-config-audit.md` has just measured the
   additive source credit making it **worse** (`63.3 → 60.0 → 46.7`). TORAI reports **0.94** on that same
   configuration and reaches it by a SHAPE this engine does not have: GMM-cluster the anomalous services first,
   run a local causal search _inside_ each cluster, aggregate, then re-rank fine-grained indicators with
   **median/IQR** rather than mean/σ.
+  > **Correction (iteration 268, battery `43215496103` at `9f9d3d81`).** The cell moved, and the sentence above is
+  > not a reading of the engine that ships. §0p-iv's emission enrolment took it `19 → 24 of 30`: `AC@1` `66.1 →
+  > 79.6%` per type and `63.3 → 80.0%` case-level, `Avg@5` `87.4 → 89.3%` case-level (`88.8%` per type), with the
+  > channel still absent — so the movement came from the JURISDICTION rule rather than from new evidence, which is
+  > the part that matters for this entry's argument: the five cases were always winnable and were being lost to a
+  > term scoring candidates it could not measure. What survives is the comparison and not the epitaph: TORAI's `0.94`
+  > is now `4.7` points of `Avg@5` headroom rather than `6.6`, and the median/IQR shape it reaches them by is still
+  > absent here. A stale reading that flattered us would have been a defect; a stale one that flattered the
+  > COMPETITOR is the same defect, and this is the third time §0p's class has been found in prose rather than in a
+  > table.
 - **It therefore refutes the corpus-ceiling reading.** The prior floor on that cell is `Avg@5` 82.0 % (frequency)
-  against a saturated `Top@5` of 100 %, so `87.4` is 5.4 of 18 available points. A published method claims 12 of
-  them without traces. The headroom is real and it is reachable.
+  against a saturated `Top@5` of 100 %, so `87.4` was `5.4` of 18 available points — and `89.3` is `7.3`, after a
+  change that added no evidence. A published method claims 12 of them without traces. The headroom is real and it is
+  reachable, and the `4.7` that remains is the part this engine has not explained.
 - **It does not license a rank.** No `AC@1` is reported at all, so the headline metric of this table cannot be
   compared; the corpora differ in service count and the case count is unstated.
 

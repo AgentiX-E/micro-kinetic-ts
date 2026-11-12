@@ -144,7 +144,9 @@ None of the three is a threat to the standing numbers and none is filed as one. 
 because the next axis this project has pre-registered — a fleet-common-channel abstention for level channels —
 depends on _which_ channels are independent, and they say the independence assumptions under a trace-derived
 channel are weaker than the trace format suggests. The third is recorded because **RE3 is this project's weakest
-row** (`90.0 / 66.1 / 74.5` against `90.4 / 95.0 / 90.0` and `93.1 / 98.9 / 84.4`), and the paper names a
+row** (`91.1 / 79.6 / 74.5` against `90.4 / 95.2 / 90.4` and `93.3 / 98.9 / 84.4`, battery `43215496103` at
+`9f9d3d81`; the `90.0 / 66.1 / 74.5` this paragraph carried was the iteration-250 reading, retired by §0p-iv's
+emission enrolment), and the paper names a
 mechanism by which a TrainTicket deployment can be silent at the API boundary about exactly the fault type RE3
 is built on.
 

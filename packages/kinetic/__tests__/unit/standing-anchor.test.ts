@@ -244,6 +244,92 @@ describe('the standing document is anchored to one battery', () => {
     }
   });
 
+  it('prints the anchor\u2019s own fraction on every table row that names a cell', () => {
+    // DENY BY DEFAULT, because the allow-list in the test above is precisely what let \u00a731.1 stand two enrolments
+    // stale: five named regions were fenced and every other table in the file was not, so a per-cell table could print
+    // `19/30` — a reading \u00a70p had already retired in the same file — for as long as nobody added its heading to a
+    // list. The rule here needs no list. A table row keyed by a cell that prints a fraction over that cell's OWN
+    // denominator is a statement about the cell's correctness, and it must be the anchor's numerator. A row that
+    // prints no such fraction is not a reading of this engine at all: the constant-answer table prints truth SPLITS
+    // (`15 / 15`), whose denominator is a truth multiplicity rather than a case count, and the filter below drops it
+    // for a reason rather than by exemption.
+    const rows = DOC.split('\n').filter((line) =>
+      /^\|\s*RE[123]:(OnlineBoutique|SockShop|TrainTicket)\b/.test(line),
+    );
+    expect(rows.length, 'the document prints per-cell table rows').toBeGreaterThanOrEqual(12);
+    let checked = 0;
+    for (const line of rows) {
+      const key = /^\|\s*(RE[123]:[A-Za-z]+)/.exec(line)?.[1];
+      expect(key, `a cell row names a cell: ${line}`).toBeDefined();
+      const expected = byKey(key!);
+      const fractions = [...line.matchAll(/(\d+)\s*\/\s*(\d+)/g)]
+        .map((m) => ({ correct: Number(m[1]), total: Number(m[2]) }))
+        .filter((f) => f.total === expected.total);
+      for (const fraction of fractions) {
+        checked += 1;
+        expect(
+          fraction.correct,
+          `${key} prints ${fraction.correct}/${fraction.total}; the anchor is ${expected.correct}/${expected.total}`,
+        ).toBe(expected.correct);
+      }
+    }
+    // Non-vacuity: a filter that dropped every row would make the loop above assert nothing.
+    expect(checked, 'the nine-cell table carries a fraction per cell').toBeGreaterThanOrEqual(9);
+  });
+
+  it('sums \u00a731.1\u2019s per-cell table to the total it prints beside it, and to that table\u2019s own means', () => {
+    // The second half of the same defect, and the half a fraction-per-row check cannot see: the footer of that table
+    // had been re-anchored to `666/735` while its nine rows still summed to `660`, and the `Avg@5` mean printed beside
+    // them (`93.4`) was the CASE-WEIGHTED convention in a row labelled *unweighted mean of the nine rows*. Both are
+    // arithmetic over strings the table itself carries, so both are decidable here: the rows must sum to the total,
+    // and the two printed means must be the means of the two columns above them.
+    const region = section('### 31.1', '### 31.2');
+    const rows = region.split('\n').filter((line) => /^\|\s*RE[123]:/.test(line));
+    expect(rows.length, 'the table carries nine cell rows').toBe(9);
+    const parsed = rows.map((line) => {
+      const cells = line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter((cell) => cell !== '');
+      const fraction = /(\d+)\/(\d+)/.exec(cells[3] ?? '');
+      expect(fraction, `the row carries a case fraction: ${line}`).not.toBeNull();
+      return {
+        ac1: Number((cells[1] ?? '').replace('%', '')),
+        avg5: Number((cells[2] ?? '').replace('%', '')),
+        correct: Number(fraction![1]),
+        total: Number(fraction![2]),
+      };
+    });
+    const total = byKey('TOTAL');
+    expect(
+      parsed.reduce((acc, row) => acc + row.correct, 0),
+      'the nine rows sum to the total printed below them',
+    ).toBe(total.correct);
+    expect(parsed.reduce((acc, row) => acc + row.total, 0)).toBe(total.total);
+    const footer = region
+      .split('\n')
+      .filter((line) => line.includes('nine cells (unweighted mean of the nine rows)'))[0];
+    expect(footer, 'the table prints a nine-cell footer row').toBeDefined();
+    const meanAc1 = (parsed.reduce((acc, row) => acc + row.ac1, 0) / 9).toFixed(1);
+    const meanAvg5 = (parsed.reduce((acc, row) => acc + row.avg5, 0) / 9).toFixed(1);
+    expect(footer, 'the footer prints the mean of the AC@1 column beside it').toContain(
+      `${meanAc1}%`,
+    );
+    expect(footer, 'the footer prints the mean of the Avg@5 column beside it').toContain(
+      `${meanAvg5}%`,
+    );
+    expect(footer, 'the footer prints the anchor\u2019s own case-level total').toContain(
+      `${((total.correct / total.total) * 100).toFixed(2)}%`,
+    );
+    // And the RE1 row is the mean of the three cells above it, for the same reason: it is a claim about THIS table.
+    const re1 = region
+      .split('\n')
+      .filter((line) => line.includes('RE1 (three systems, unweighted mean)'))[0];
+    expect(re1, 'the table prints an RE1 mean row').toBeDefined();
+    const re1Mean = (parsed.slice(0, 3).reduce((acc, row) => acc + row.ac1, 0) / 3).toFixed(1);
+    expect(re1, 'the RE1 row prints the mean of its own three cells').toContain(`${re1Mean}%`);
+  });
+
   it('does not claim first place on the 735 without the vendor gap beside it', () => {
     // The ranking sentence said "first on RCAEval's 735 overall" while \u00a70a entry 1 and two rows of \u00a73 said
     // SECOND to a vendor's self-reported 89 % — three statements, one fact, two answers. The defect is not that
