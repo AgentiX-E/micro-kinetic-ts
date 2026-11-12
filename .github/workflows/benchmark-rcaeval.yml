@@ -2559,11 +2559,26 @@ jobs:
       #   An ARM is skipped rather than failed: the tool reads the run's own `signals:` line, digests it, and
       #   compares only when that digest is the baseline's — a dispatch exists to move cells, and a gate that
       #   fails every experiment is a gate that gets deleted.
+      #
+      #   WHICH runs are arms is derived from the dispatch itself and not from a second list: `toJSON(inputs)` is an
+      #   empty object for a push, for `workflow_run` and for a bare dispatch — the three cases that measure the
+      #   shipped configuration — and carries the named knobs otherwise. Without that distinction a stale baseline
+      #   and an experiment were the same event, and run `43215496103` proved it: it measured `1fa9e7bca975`
+      #   against a baseline taken at `a0ed4a8a906e`, printed the arm line, and the job went green with every one
+      #   of the nine cells unread.
       - name: Compare the nine cells to the committed baseline
         if: ${{ needs.rcaeval-re1.result == 'success' && needs.rcaeval-re2.result == 'success' && needs.rcaeval-re3.result == 'success' }}
+        env:
+          DISPATCH_INPUTS: ${{ toJSON(inputs) }}
         run: |
+          ARM_ARG=()
+          case "$DISPATCH_INPUTS" in
+            ''|'{}'|'null') ;;
+            *) ARM_ARG=(--arm) ;;
+          esac
           npx --yes tsx@4 benchmarks/src/cell-baseline.ts \
             --baseline benchmarks/baselines/rcaeval-nine-cells.json \
+            "${ARM_ARG[@]}" \
             --results artifacts/rcaeval-re1-results/rcaeval-re1-results.txt \
             --results artifacts/rcaeval-re2-results/rcaeval-re2-results.txt \
             --results artifacts/rcaeval-re3-results/rcaeval-re3-results.txt \

@@ -291,6 +291,25 @@ the job on any cell that moved**. An ARM is skipped rather than failed — the t
 line and compares only when that is the baseline's, because a dispatch exists to move cells and a gate that fails
 every experiment gets deleted.
 
+**And that exemption was, until iteration 268, the gate's own off switch.** A digest mismatch has two causes and the
+tool treated them as one: an ARM, which is expected to move cells, and a STALE BASELINE, which is not. Because the
+first was a skip, the second was a skip too — and the second had happened. Run `43215496103` (a `push`, which cannot
+name a knob) measured configuration `1fa9e7bca975` against a baseline recorded at `a0ed4a8a906e`, printed
+
+```text
+cell-baseline: this run measured configuration 1fa9e7bca975 and the baseline was taken at a0ed4a8a906e
+               — an ARM, so its cells are not compared.
+```
+
+and the job went **green with all nine cells unread**. Three things follow, and all three are now enforced rather
+than described: the baseline is re-anchored to `43215496103` at `9f9d3d81` (`configuration 1fa9e7bca975`, cells
+unchanged at `666`); `cell-baseline.ts` takes an `--arm` flag, passed by the workflow **from the dispatch's own
+inputs** (`toJSON(inputs)` is empty for a push, a `workflow_run` and a bare dispatch), so a mismatch on anything else
+**fails** with "the baseline is stale, not the run"; and a test now holds the baseline's digest to the same value
+this section's marker is verified against, so an enrolment turns the baseline red *before* the gate that reads it can
+go quiet. Run on the current battery, the gate now answers `all nine cells match battery 43215496103 at 9f9d3d81 —
+total 666 -> 666 (unchanged)`.
+
 The mechanism is the whole point: **a movement is either announced or red**. Fixing `re1ob_currencyservice_loss_1`
 today would fail the job with
 

@@ -201,7 +201,26 @@ describe('the job answers with a code rather than with an opinion', () => {
 
   it('skips an ARM, because a dispatch exists to move cells', () => {
     // The arm's digest differs from the baseline's, so no cell is compared and the job stays green. Without this
-    // the gate would fail every experiment, and a gate that fails experiments gets removed.
+    // the gate would fail every experiment, and a gate that fails experiments gets removed. The caller has to SAY
+    // it is an arm (`--arm`, which the workflow derives from the dispatch's own inputs) because a digest mismatch
+    // alone cannot tell an experiment from a stale baseline — see the case below.
+    const { code, out } = run(files, [
+      '--baseline',
+      'baseline.json',
+      '--arm',
+      '--results',
+      'arm.txt',
+      '--census',
+      'match-re1.jsonl',
+    ]);
+    expect(code).toBe(0);
+    expect(out).toMatch(/an ARM, so its cells are not compared/);
+  });
+
+  it('FAILS a digest mismatch that is not declared an arm, because that is a stale baseline', () => {
+    // Run `43215496103` is the defect: it measured `1fa9e7bca975` against a baseline recorded at `a0ed4a8a906e`,
+    // printed the arm line and stayed green, so nine cells were never compared by the gate that exists to compare
+    // them. A push cannot name a knob, so a mismatch there has exactly one meaning and it is not "experiment".
     const { code, out } = run(files, [
       '--baseline',
       'baseline.json',
@@ -210,8 +229,12 @@ describe('the job answers with a code rather than with an opinion', () => {
       '--census',
       'match-re1.jsonl',
     ]);
-    expect(code).toBe(0);
-    expect(out).toMatch(/an ARM, so its cells are not compared/);
+    expect(code).toBe(1);
+    expect(out).toMatch(/this run is NOT an arm/);
+    expect(out).toMatch(/re-anchor/);
+    // And the two verdicts are distinguished in the text, not only in the code: a reader of the log must be able to
+    // tell a skipped experiment from an anchor that stopped matching.
+    expect(out).not.toMatch(/an ARM, so its cells are not compared/);
   });
 
   it('skips a run whose banner names no configuration at all', () => {

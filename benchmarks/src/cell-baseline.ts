@@ -33,8 +33,12 @@
  * FSE'26 and the RCABench archive. They have their own readings (`61.46% (874/1422)` and `759/1303`) and no baseline
  * file yet; the nine cells are first because they are what the standing document quotes first. It also says nothing
  * about an ARM: a dispatch that changes a default is *supposed* to move cells, so the tool compares the run's own
- * configuration digest against the baseline's and **skips the comparison** when they differ, printing why. That skip
- * is the difference between a gate and an obstacle.
+ * configuration digest against the baseline's and **skips the comparison** when they differ — but only for a run that
+ * says it is an arm (`--arm`, which the workflow derives from the dispatch's own inputs). A push cannot name a knob,
+ * so a digest mismatch there is a STALE BASELINE and the tool fails instead of skipping. The two were one condition
+ * until run `43215496103` was read: it measured `1fa9e7bca975` against a baseline taken at `a0ed4a8a906e`, printed
+ * the arm line, and the job went green with every cell unread — a skip that cannot distinguish an experiment from a
+ * stale anchor is a gate that has stopped gating.
  *
  * @module benchmarks/src/cell-baseline
  */
@@ -260,14 +264,24 @@ export function main(
   const baselinePath = values('--baseline')[0];
   const results = values('--results');
   const census = values('--census');
+  // `--arm` is the caller's ASSERTION that this run is an experiment rather than the shipped configuration. It is
+  // passed by the workflow from the dispatch's own inputs, so a bare dispatch and every push are held to the
+  // baseline and only a named arm is exempt.
+  const arm = argv.includes('--arm');
   if (baselinePath === undefined || results.length === 0 || census.length === 0) {
-    write('cell-baseline: usage: --baseline <json> --results <txt>... --census <jsonl>...\n');
+    write(
+      'cell-baseline: usage: --baseline <json> --results <txt>... --census <jsonl>... [--arm]\n',
+    );
     return 2;
   }
   const baseline = parseBaseline(read(baselinePath));
 
-  // An arm is not held to the baseline. The run's own banner says which configuration it measured, and the
-  // comparison is meaningful only when that is the one the baseline was taken from.
+  // The comparison is meaningful only when the run measured the configuration the baseline was taken from. Two
+  // different situations produce a mismatch and they must not share a verdict: an ARM is expected to move cells, while
+  // a PUSH cannot name a flag at all, so a digest that differs there means the BASELINE is stale — the configuration
+  // moved and the baseline was not re-anchored with it. That second case used to be reported as an arm and the job
+  // stayed green, which is a gate that had stopped gating: run `43215496103` measured `1fa9e7bca975` against a
+  // baseline taken at `a0ed4a8a906e` and printed the arm line while every cell it was built to check went unread.
   const signalLine = findSignalLine(read(results[0]!));
   if (signalLine === undefined) {
     write(
@@ -277,11 +291,20 @@ export function main(
   }
   const digest = configDigest(signalLine);
   if (digest !== baseline.configuration) {
+    if (arm) {
+      write(
+        `cell-baseline: this run measured configuration ${digest} and the baseline was taken at ` +
+          `${baseline.configuration} — an ARM, so its cells are not compared.\n`,
+      );
+      return 0;
+    }
     write(
       `cell-baseline: this run measured configuration ${digest} and the baseline was taken at ` +
-        `${baseline.configuration} — an ARM, so its cells are not compared.\n`,
+        `${baseline.configuration}, and this run is NOT an arm. The baseline is stale, not the run: re-anchor ` +
+        'benchmarks/baselines/rcaeval-nine-cells.json in the commit that moved the configuration, and pass --arm ' +
+        'only from a dispatch that names a knob.\n',
     );
-    return 0;
+    return 1;
   }
 
   const counts: Record<string, number> = {};

@@ -92,6 +92,34 @@ describe('the anchor names the configuration that ships', () => {
     ).toBe(DIGEST);
   });
 
+  it('holds the committed cell baseline to the same digest, so the dashboard gate cannot go inert', () => {
+    // `benchmarks/baselines/rcaeval-nine-cells.json` is the OTHER half of this mechanism: `cell-baseline.ts` compares
+    // each push battery's nine cells against it and fails the job on any movement. But that tool skips a run whose
+    // configuration digest is not the baseline's — it must, because a dispatch exists to move cells — so a baseline
+    // that falls behind the shipped digest turns the comparison OFF and reports it as an ARM. Run `43215496103` was
+    // that state: `1fa9e7bca975` against a baseline at `a0ed4a8a906e`, green job, nine cells unread. This assertion is
+    // the join: the baseline's digest must be the one this file already verifies against the shipped configuration,
+    // so an enrolment turns the baseline red before the gate that reads it can go quiet.
+    const baseline = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, 'benchmarks/baselines/rcaeval-nine-cells.json'), 'utf8'),
+    ) as {
+      readonly configuration: string;
+      readonly cells: Record<string, number>;
+      readonly total: number;
+    };
+    expect(
+      baseline.configuration,
+      'the cell baseline names a configuration the engine no longer ships, so cell-baseline.ts would skip every run ' +
+        'as an ARM. Re-anchor benchmarks/baselines/rcaeval-nine-cells.json (battery, revision and digest) against a ' +
+        'battery of the shipped configuration, in the same commit that declares the movement.',
+    ).toBe(DIGEST);
+    // And its own arithmetic, because a baseline whose cells do not sum to its total compares against a number no
+    // run can produce: every cell would have to move for the total to agree.
+    expect(Object.values(baseline.cells).reduce((acc, count) => acc + count, 0)).toBe(
+      baseline.total,
+    );
+  });
+
   it('recomputes from the same surface the artifact prints, and that surface names the guard policy', () => {
     // The fingerprint's VALUE is only meaningful if it comes from the string the run prints. Two properties make
     // that checkable without a run: the line is the one whose first field is `signals:`, and it names the shipped
