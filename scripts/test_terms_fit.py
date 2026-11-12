@@ -93,6 +93,24 @@ IMPROVING = [
 ]
 
 
+#: Two channel signatures and one term only the `+lat` bucket can see. `D` cases need `t`, which
+#: ships at weight 0; the `-lat` bucket holds two cases, fewer than any floor worth fitting on.
+JOINT = [
+    case('K1', ['a'], 'Kill', [row('a', {'s': 0.9, 'lat': 0.1}), row('b', {'s': 0.1, 'lat': 0.1})]),
+    case('K2', ['a'], 'Kill', [row('a', {'s': 0.9, 'lat': 0.1}), row('b', {'s': 0.1, 'lat': 0.1})]),
+    case('D1', ['a'], 'Delay', [
+        row('a', {'s': 0.1, 't': 0.9, 'lat': 0.1}, {'t': 0.0}),
+        row('b', {'s': 0.9, 't': 0.1, 'lat': 0.1}, {'t': 0.0}),
+    ]),
+    case('D2', ['a'], 'Delay', [
+        row('a', {'s': 0.1, 't': 0.9, 'lat': 0.1}, {'t': 0.0}),
+        row('b', {'s': 0.9, 't': 0.1, 'lat': 0.1}, {'t': 0.0}),
+    ]),
+    case('K3', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+    case('K4', ['a'], 'Kill', [row('a', {'s': 0.9}), row('b', {'s': 0.1})]),
+]
+
+
 def corpus_of(cases: list[dict]) -> 'fit.Corpus':
     """Build a corpus from case dicts.
 
@@ -358,6 +376,188 @@ class TheMixture(unittest.TestCase):
         self.assertEqual(len(fields["table"]), len(set(int(code) for code in fit.signatures(corpus))))
 
 
+class TheJointFit(unittest.TestCase):
+    """One climb over every signature's vector, scored on the mixture and not bucket by bucket.
+
+    The bucket-wise fit is a decomposition: it optimises each bucket's own Top@1 on that bucket's
+    own training cases. The joint climb optimises the metric a deployed mixture actually has —
+    the corpus, scored once — which is a different objective the moment a bucket is too small to
+    earn a vector, because the bucket-wise fit then hands it the GLOBAL vector and judges that
+    vector on cases it will never be applied to.
+    """
+
+    def test_the_mixture_of_no_vector_is_the_control(self) -> None:
+        corpus = corpus_of(JOINT)
+        mixture = fit.Mixture(corpus, fit.signatures(corpus))
+        np.testing.assert_array_equal(mixture.scores({}), corpus.base)
+        self.assertEqual(fit.top1_on(corpus, {}), 4)
+
+    def test_a_bucket_vector_moves_only_its_own_bucket(self) -> None:
+        corpus = corpus_of(JOINT)
+        mixture = fit.Mixture(corpus, fit.signatures(corpus))
+        control = mixture.scores({})
+        moved = mixture.scores({1: {'s': -1.0}})
+        np.testing.assert_array_equal(moved[mixture.rows[0]], control[mixture.rows[0]])
+        self.assertFalse(np.allclose(moved[mixture.rows[1]], control[mixture.rows[1]]))
+
+    def test_a_bucket_absent_from_the_corpus_cannot_be_scored_into(self) -> None:
+        # `scores` takes a mapping, so a signature the corpus does not carry has no rows to
+        # overwrite: the reading must stay the control rather than raise.
+        corpus = corpus_of(JOINT)
+        mixture = fit.Mixture(corpus, fit.signatures(corpus))
+        np.testing.assert_array_equal(mixture.scores({6: {'s': 5.0}}), corpus.base)
+
+    def test_the_row_restricted_reading_agrees_with_the_whole_corpus(self) -> None:
+        # The climb reads one bucket's rows at a time for speed; if the restricted form disagreed
+        # with `scores` at even one row the joint fit would be fitting a different metric.
+        corpus = corpus_of(JOINT)
+        rows = np.arange(2, 6)
+        for weights in ({}, {'t': 2.0}, {'s': -1.0, 't': 0.5}):
+            np.testing.assert_allclose(corpus.scores_rows(weights, rows), corpus.scores(weights)[rows])
+
+    def test_the_joint_climb_finds_the_term_the_recorded_weights_gated_to_zero(self) -> None:
+        corpus = corpus_of(JOINT)
+        code = fit.signatures(corpus)
+        vectors = fit.joint_climb(corpus, np.arange(corpus.n_cases), code, grid=5, passes=2, min_cases=3)
+        self.assertGreater(vectors.get(1, {}).get('t', 0.0), 0.0)
+        mixture = fit.Mixture(corpus, code)
+        self.assertEqual(int(corpus.top1_mask(mixture.scores(vectors)).sum()), 6)
+
+    def test_a_bucket_below_the_floor_keeps_the_recorded_weights(self) -> None:
+        # The bucket-wise fit hands this bucket the global vector; the joint climb refuses to
+        # invent a vector for two cases and leaves it at what shipped.
+        corpus = corpus_of(JOINT)
+        code = fit.signatures(corpus)
+        vectors = fit.joint_climb(corpus, np.arange(corpus.n_cases), code, grid=5, passes=2, min_cases=3)
+        self.assertNotIn(0, vectors)
+        self.assertEqual(int((code == 0).sum()), 2)
+
+    def test_the_joint_gate_reads_the_mixture_and_not_one_bucket(self) -> None:
+        # Flipping the only term ranks `K1`'s truth last, which costs `Kill` its case. A gate that
+        # judged buckets separately could not see this, because the vector that does it is the
+        # bucket that contains the case and the corpus is the only population holding both types.
+        corpus = corpus_of(CORPUS)
+        mixture = fit.Mixture(corpus, fit.signatures(corpus))
+        gate = fit.TypeGate(corpus, 2)
+        control = mixture.scores({})
+        hostile = mixture.scores({0: {'s': -1.0}})
+        self.assertEqual(gate.score_of(corpus, control, None), 2)
+        self.assertLess(gate.score_of(corpus, hostile, None), gate.score_of(corpus, control, None))
+        self.assertEqual(gate.violations_of(corpus, hostile, None), {'Kill': -1})
+
+    def test_the_gated_joint_climb_never_lowers_a_type(self) -> None:
+        # The acceptance rule this whole instrument exists for: whatever the joint climb returns,
+        # no gated fault type may lose a case against the shipped reading.
+        corpus = corpus_of(CORPUS)
+        gate = fit.TypeGate(corpus, 2)
+        vectors = fit.joint_climb(
+            corpus, np.arange(corpus.n_cases), fit.signatures(corpus), 5, 2, 1, gate=gate
+        )
+        self.assertEqual(gate.violations_of(corpus, fit.Mixture(corpus, fit.signatures(corpus)).scores(vectors), None), {})
+
+    def test_the_joint_report_covers_every_held_out_case_once(self) -> None:
+        corpus = corpus_of(JOINT + CORPUS)
+        report = fit.joint_fit(corpus, fit.folds_of(corpus, 2, seed=5), grid=3, passes=1, min_cases=2)
+        self.assertEqual(sum(entry[0] for entry in report["table"].values()), corpus.n_cases)
+        self.assertEqual(sum(entry[1] for entry in report["table"].values()), report["holdout"])
+        self.assertEqual(report["folds"], 2)
+
+    def test_every_held_out_case_lands_in_the_per_type_table(self) -> None:
+        corpus = corpus_of(JOINT + CORPUS)
+        report = fit.joint_fit(corpus, fit.folds_of(corpus, 2, seed=5), 3, 1, 2)
+        self.assertEqual(set(report["by_type"]), {'Kill', 'Delay'})
+        self.assertEqual(
+            sum(entry[0] for entry in report["by_type"].values()),
+            sum(entry[1] for entry in report["table"].values()),
+        )
+
+    def test_an_unknown_term_in_a_row_restricted_read_is_refused_too(self) -> None:
+        # The restricted form repeats the guard rather than delegating it, so it needs its own
+        # proof: a typo there would silently score every row at the recorded weights.
+        corpus = corpus_of(JOINT)
+        with self.assertRaises(SystemExit) as raised:
+            corpus.scores_rows({'nonsense': 1.0}, np.arange(2))
+        self.assertIn('unknown term', str(raised.exception))
+
+    def test_a_fold_that_holds_out_no_case_of_a_bucket_skips_that_bucket(self) -> None:
+        # The report has one row per bucket per fold, and a fold whose held-out cases all sit in
+        # one signature cannot contribute to the other's row: it must skip, not divide by zero.
+        corpus = corpus_of(JOINT)
+        folds = [np.array([index]) for index in range(4)] + [np.array([4, 5])]
+        report = fit.joint_fit(corpus, folds, 3, 1, 2)
+        self.assertEqual(sorted(report["table"]), [0, 1])
+        self.assertEqual(report["table"][0][3], 1)
+
+    def test_the_joint_report_carries_the_vector_it_fitted_for_each_fold(self) -> None:
+        corpus = corpus_of(JOINT + CORPUS)
+        report = fit.joint_fit(corpus, fit.folds_of(corpus, 2, seed=5), 3, 1, 2)
+        self.assertEqual(len(report["vectors"]), 2)
+        for vectors in report["vectors"].values():
+            for bucket, vector in vectors.items():
+                self.assertIn(bucket, report["table"])
+                self.assertTrue(vector)
+
+
+class TheShrink(unittest.TestCase):
+    """A coefficient fitted on a fold carries that fold; shrinkage is what removes the part that
+    does not replicate, and it acts on the reading's variance rather than on the search."""
+
+    def test_a_strength_of_one_keeps_the_fitted_vector_whole(self) -> None:
+        corpus = corpus_of(JOINT)
+        vectors = {1: {'t': 9.0}}
+        self.assertEqual(fit.shrink(corpus, vectors, 1.0), vectors)
+
+    def test_a_strength_of_zero_returns_the_recorded_weights_and_drops_the_bucket(self) -> None:
+        # `t` ships at 0, so every term lands on the recorded weight and the bucket stops being an
+        # override at all — reporting it as one would claim a fit that is the control.
+        corpus = corpus_of(JOINT)
+        self.assertEqual(fit.shrink(corpus, {1: {'t': 9.0}}, 0.0), {})
+
+    def test_half_the_strength_is_the_midpoint_between_the_fit_and_the_recorded_weight(self) -> None:
+        corpus = corpus_of([case('W', ['a'], 'Kill', [
+            row('a', {'s': 0.4}, {'s': 3.0}), row('b', {'s': 0.2}, {'s': 3.0}),
+        ])])
+        shrunk = fit.shrink(corpus, {0: {'s': 9.0}}, 0.5)
+        self.assertAlmostEqual(shrunk[0]['s'], 0.5 * 9.0 + 0.5 * 3.0)
+
+    def test_the_report_of_a_zero_strength_mixture_is_the_control(self) -> None:
+        corpus = corpus_of(JOINT + CORPUS)
+        report = fit.joint_fit(corpus, fit.folds_of(corpus, 2, seed=5), 3, 1, 2, strength=0.0)
+        self.assertEqual(report["holdout"], sum(entry[2] for entry in report["table"].values()))
+
+
+class TheTransfer(unittest.TestCase):
+    """A vector fitted on one corpus, scored on another: the only test of whether a coefficient
+    belongs to the mechanism or to the corpus it was measured on."""
+
+    def test_a_mixture_applied_to_the_corpus_it_was_fitted_on_reproduces_its_fit(self) -> None:
+        corpus = corpus_of(JOINT)
+        code = fit.signatures(corpus)
+        vectors = fit.joint_climb(corpus, np.arange(corpus.n_cases), code, 5, 2, 3)
+        report = fit.transfer(vectors, corpus)
+        self.assertEqual(report["at1"], int(corpus.top1_mask(fit.Mixture(corpus, code).scores(vectors)).sum()))
+        self.assertEqual(report["n_cases"], corpus.n_cases)
+
+    def test_a_bucket_the_source_never_fitted_keeps_the_recorded_weights(self) -> None:
+        # The table says which buckets were borrowed, because a dropped bucket that reported the
+        # shipped reading as a transfer would make the whole test unfalsifiable.
+        corpus = corpus_of(JOINT)
+        report = fit.transfer({1: {'t': 9.0}}, corpus)
+        self.assertTrue(report["table"][1][3])
+        self.assertFalse(report["table"][0][3])
+        self.assertEqual(report["table"][0][1], report["table"][0][2])
+
+    def test_an_empty_mixture_reads_as_the_control(self) -> None:
+        corpus = corpus_of(JOINT)
+        report = fit.transfer({}, corpus)
+        self.assertEqual(report["at1"], report["control"])
+
+    def test_the_table_partitions_the_corpus(self) -> None:
+        corpus = corpus_of(JOINT + CORPUS)
+        report = fit.transfer({}, corpus)
+        self.assertEqual(sum(entry[0] for entry in report["table"].values()), corpus.n_cases)
+
+
 class Splits(unittest.TestCase):
     """The held-out report is only a held-out report if the split is stratified and seeded."""
 
@@ -455,6 +655,54 @@ class CommandLine(unittest.TestCase):
     def test_the_type_gate_is_opt_in_and_reported(self) -> None:
         printed = self.run_main('--only', 'global', '--gate-types', '2', '--grid', '3', '--passes', '1')
         self.assertIn('GLOBAL', printed)
+
+    def test_the_joint_table_prints_a_row_per_signature_and_the_vectors_it_fitted(self) -> None:
+        printed = self.run_main('--only', 'joint', '--folds', '2', '--grid', '3', '--passes', '1')
+        self.assertIn('JOINT', printed)
+        self.assertIn('scored on the mixture', printed)
+        self.assertIn('types down:', printed)
+        self.assertIn('fold 0:', printed)
+
+    def test_the_joint_table_says_so_when_no_bucket_clears_the_floor(self) -> None:
+        # A floor above every bucket is a legal configuration and the one that makes the mixture
+        # equal to the shipped reading, so the report has to render that rather than print nothing.
+        printed = self.run_main(
+            '--only', 'joint', '--folds', '2', '--grid', '3', '--passes', '1', '--min-bucket', '100'
+        )
+        self.assertIn('no bucket above the floor', printed)
+
+    def test_the_joint_table_reports_the_shrinkage_it_was_asked_for(self) -> None:
+        printed = self.run_main(
+            '--only', 'joint', '--folds', '2', '--grid', '3', '--passes', '1', '--shrink', '0.5'
+        )
+        self.assertIn('shrink 0.5', printed)
+
+    def test_the_transfer_table_names_the_bucket_it_borrowed_from(self) -> None:
+        # The source is the same dump, so every bucket it can fit is borrowed; the point of the
+        # test is that the table renders the provenance column rather than that the reading moves.
+        printed = self.run_main(
+            '--only', 'ceiling', '--transfer-from', self.dump, '--grid', '3', '--passes', '1',
+            '--min-bucket', '2',
+        )
+        self.assertIn('TRANSFER fitted on', printed)
+        self.assertIn('recorded', printed)
+        self.assertIn('pooled', printed)
+
+    def test_a_zero_fold_run_reports_the_configuration_that_would_ship(self) -> None:
+        # The shipped vector is fitted on every case the corpus has, so the in-sample block is the
+        # acceptance reading; `--folds 0` is how that block is asked for.
+        printed = self.run_main('--only', 'joint', '--folds', '0', '--grid', '3', '--passes', '1')
+        self.assertIn('JOINT in-sample', printed)
+        self.assertIn('vectors:', printed)
+        self.assertNotIn('fold 0:', printed)
+
+    def test_the_in_sample_block_renders_the_same_table_as_the_folded_one(self) -> None:
+        # Both go through one renderer, so the column headings must be identical.
+        in_sample = self.run_main('--only', 'joint', '--folds', '0', '--grid', '3', '--passes', '1')
+        folded = self.run_main('--only', 'joint', '--folds', '2', '--grid', '3', '--passes', '1')
+        for line in ('signature', 'faultType', 'pooled'):
+            self.assertIn(line, in_sample)
+            self.assertIn(line, folded)
 
     def test_an_empty_dump_is_refused(self) -> None:
         empty = str(pathlib.Path(self.directory) / 'empty.ndjson')

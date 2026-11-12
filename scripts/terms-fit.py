@@ -111,6 +111,30 @@ class Corpus:
         slope = self.slope[:, columns]
         return self.base - (self.recorded[:, columns] * slope).sum(axis=1) + slope @ values
 
+    def scores_rows(self, weights: dict[str, float], rows: np.ndarray) -> np.ndarray:
+        """`scores` restricted to a row subset — the same number at a fraction of the cost.
+
+        A fit that owns one signature bucket only ever reads that bucket's rows, and re-deriving
+        every other bucket's score on every trial is work that cannot change the answer. The form
+        is the same delta as `scores`, taken on the rows asked for.
+
+        @param weights - The overrides, as for `scores`.
+        @param rows - The candidate rows to score.
+        @returns Those rows' scores under `weights`.
+        """
+        if not weights:
+            return self.base[rows].copy()
+        unknown = [name for name in weights if name not in self.names]
+        if unknown:
+            raise SystemExit(
+                f"unknown term(s) {', '.join(sorted(unknown))}; the dump has: {', '.join(self.names)}"
+            )
+        columns = np.asarray([self.names.index(name) for name in weights], dtype=np.int64)
+        values = np.asarray(list(weights.values()), dtype=np.float64)
+        slope = self.slope[rows][:, columns]
+        recorded = self.recorded[rows][:, columns]
+        return self.base[rows] - (recorded * slope).sum(axis=1) + slope @ values
+
     def positions(self, scores: np.ndarray) -> np.ndarray:
         """Each candidate's 0-based rank inside its own case.
 
@@ -301,19 +325,18 @@ class TypeGate:
             if count >= min_population
         }
         self.types = np.asarray(corpus.fault_type)
+        # The control reading is a property of the dump, so it is computed once. A climb asks for
+        # it on every trial, and re-deriving it there is the difference between 3 s and 200 s.
+        self.before = corpus.top1_mask(corpus.scores({}))
 
-    def violations(
-        self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None = None
-    ) -> dict[str, int]:
-        """Fault types this vector would lower, with how far.
+    def _lost(self, corpus: Corpus, hit: np.ndarray, mask: np.ndarray | None) -> dict[str, int]:
+        """Fault types `hit` lowers against the control, on the population `mask` selects.
 
         @param corpus - The corpus.
-        @param weights - The candidate vector.
+        @param hit - Per-case Top@1 under the candidate.
         @param mask - The population to judge on, as case indices or booleans; None for all.
         @returns Type name to the number of cases lost; empty when the vector is admissible.
         """
-        hit = corpus.top1_mask(corpus.scores(weights))
-        before = corpus.top1_mask(corpus.scores({}))
         members = None
         if mask is not None:
             # The mask arrives as case INDICES from the fold splitter and as a boolean array from
@@ -328,10 +351,52 @@ class TypeGate:
             if not selected.any():
                 continue
             now = int(hit[selected].sum())
-            was = int(before[selected].sum())
+            was = int(self.before[selected].sum())
             if now < was:
                 lost[name] = now - was
         return lost
+
+    def violations_of(
+        self, corpus: Corpus, scores: np.ndarray, mask: np.ndarray | None = None
+    ) -> dict[str, int]:
+        """Fault types a set of SCORES would lower, with how far.
+
+        The scores-labelled form is what a mixture needs: a per-bucket vector is already a
+        different weight vector for every case, so there is no single `scores(weights)` to take.
+
+        @param corpus - The corpus.
+        @param scores - Candidate scores, one per row.
+        @param mask - The population to judge on, as case indices or booleans; None for all.
+        @returns Type name to the number of cases lost; empty when the vector is admissible.
+        """
+        return self._lost(corpus, corpus.top1_mask(scores), mask)
+
+    def violations(
+        self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None = None
+    ) -> dict[str, int]:
+        """Fault types this vector would lower, with how far.
+
+        @param corpus - The corpus.
+        @param weights - The candidate vector.
+        @param mask - The population to judge on, as case indices or booleans; None for all.
+        @returns Type name to the number of cases lost; empty when the vector is admissible.
+        """
+        return self.violations_of(corpus, corpus.scores(weights), mask)
+
+    def score_of(self, corpus: Corpus, scores: np.ndarray, mask: np.ndarray | None) -> int:
+        """The objective on a set of scores: cases won, minus a penalty larger than the corpus.
+
+        @param corpus - The corpus.
+        @param scores - Candidate scores, one per row.
+        @param mask - The cases the fit is scored on, or None for all.
+        @returns The gated objective.
+        """
+        hit = corpus.top1_mask(scores)
+        total = int(hit.sum()) if mask is None else int(hit[mask].sum())
+        penalty = 0
+        for lost in self._lost(corpus, hit, mask).values():
+            penalty += corpus.n_cases + 1 + abs(lost)
+        return total - penalty
 
     def score(self, corpus: Corpus, weights: dict[str, float], mask: np.ndarray | None) -> int:
         """The objective: cases won, minus a penalty larger than the corpus for any type lost.
@@ -341,11 +406,7 @@ class TypeGate:
         @param mask - The cases the fit is scored on, or None for all.
         @returns The gated objective.
         """
-        total = top1_on(corpus, weights, mask)
-        penalty = 0
-        for lost in self.violations(corpus, weights, mask).values():
-            penalty += corpus.n_cases + 1 + abs(lost)
-        return total - penalty
+        return self.score_of(corpus, corpus.scores(weights), mask)
 
 
 def hill_climb(
@@ -492,6 +553,295 @@ def regime_fit(
     }
 
 
+class Mixture:
+    """A weight vector per channel signature, scored on the whole corpus as one array.
+
+    A mixture cannot be written as a single weight vector: `scores(weights)` applies one vector to
+    every case, while a mixture gives each case the vector of the bucket its CHANNELS put it in —
+    no label, no run, nothing that would not be available at inference time. The object exists so
+    that the objective of a fit can be the reading a deployed mixture actually has.
+    """
+
+    def __init__(self, corpus: Corpus, code: np.ndarray) -> None:
+        self.corpus = corpus
+        self.code = code
+        self.buckets = [int(bucket) for bucket in np.unique(code)]
+        self.rows = {bucket: np.where(code[corpus.case] == bucket)[0] for bucket in self.buckets}
+
+    def scores(self, vectors: dict[int, dict[str, float]]) -> np.ndarray:
+        """The corpus under `vectors`, one vector per signature.
+
+        @param vectors - Bucket to overrides; a missing or empty bucket keeps the recorded weights.
+        @returns Candidate scores, one per row.
+        """
+        out = self.corpus.base.copy()
+        for bucket, vector in vectors.items():
+            rows = self.rows.get(bucket)
+            if rows is None or not vector:
+                # A signature this corpus does not carry, or a bucket left at what shipped. Both
+                # are the recorded reading, and neither is an error worth raising over.
+                continue
+            out[rows] = self.corpus.scores_rows(vector, rows)
+        return out
+
+
+def joint_climb(
+    corpus: Corpus,
+    train: np.ndarray,
+    code: np.ndarray,
+    grid: int,
+    passes: int,
+    min_cases: int = 40,
+    gate: TypeGate | None = None,
+    eps_grid: float = 0.25,
+) -> dict[int, dict[str, float]]:
+    """Coordinate ascent over EVERY bucket's vector at once, scored on the mixture.
+
+    The bucket-wise fit optimises each bucket's own Top@1 on that bucket's own training cases, and
+    that decomposition hides one thing: a bucket too small to earn a vector is handed the GLOBAL
+    vector and judged on cases it is never applied to, so its guarantee is about a population that
+    will not see it. Here the objective is the corpus, scored once through the mixture — the
+    number a deployed configuration has — and a bucket below `min_cases` keeps the recorded
+    weights rather than borrowing a vector fitted somewhere else.
+
+    This is a different optimisation, not a harder search: the buckets share one metric, so a gain
+    in one bucket and a loss in another are the same number, and the gate sees both.
+
+    @param corpus - The corpus.
+    @param train - The cases to fit on.
+    @param code - Per-case signature from `signatures`.
+    @param grid - Factors per coordinate.
+    @param passes - Sweeps over every (bucket, term) pair.
+    @param min_cases - Smallest TRAINING bucket that earns a vector of its own.
+    @param gate - The per-type non-regression gate; None optimises the aggregate alone.
+    @param eps_grid - The smallest and largest factor, as `eps_grid` and its reciprocal.
+    @returns Bucket to overrides, with buckets that stayed at the recorded weights omitted.
+    """
+    mixture = Mixture(corpus, code)
+    fittable = [
+        bucket for bucket in mixture.buckets if int((code[train] == bucket).sum()) >= min_cases
+    ]
+    vectors: dict[int, dict[str, float]] = {bucket: {} for bucket in fittable}
+    current = mixture.scores({})
+
+    def objective(scores: np.ndarray) -> int:
+        if gate is not None:
+            return gate.score_of(corpus, scores, train)
+        return int(corpus.top1_mask(scores)[train].sum())
+
+    best = objective(current)
+    factors = np.geomspace(eps_grid, 1.0 / eps_grid, grid)
+    for _ in range(passes):
+        improved = False
+        for bucket in fittable:
+            rows = mixture.rows[bucket]
+            for name in corpus.names:
+                incumbent = vectors[bucket].get(name, default_weight(corpus, name))
+                reference = incumbent if abs(incumbent) > 1e-12 else 0.0
+                for factor in factors:
+                    trial = dict(vectors[bucket])
+                    trial[name] = reference * factor if abs(reference) > 1e-12 else float(factor)
+                    candidate = current.copy()
+                    candidate[rows] = corpus.scores_rows(trial, rows)
+                    score = objective(candidate)
+                    if score > best:
+                        best, vectors[bucket], current, improved = score, trial, candidate, True
+        if not improved:
+            break
+    return {bucket: vector for bucket, vector in vectors.items() if vector}
+
+
+def shrink(
+    corpus: Corpus, vectors: dict[int, dict[str, float]], strength: float
+) -> dict[int, dict[str, float]]:
+    """Pull every fitted coefficient back toward the weight that shipped.
+
+    A vector fitted on one fold is fitted to that fold: the coefficient carries the sample it saw,
+    and the part of it that does not replicate is exactly the part that costs a fault type a case
+    on the fold held out. A type gate constrains the SEARCH; shrinkage changes the VARIANCE of the
+    reading itself, which is the quantity the held-out report is noisy in.
+
+    @param corpus - The corpus, for each term's recorded weight.
+    @param vectors - Bucket to overrides, as `joint_climb` returns them.
+    @param strength - The share of the fitted vector kept; 1 keeps it whole, 0 returns the shipped.
+    @returns The shrunk vectors, omitting any bucket whose every term landed on the recorded weight.
+    """
+    if strength >= 1.0:
+        return {bucket: dict(vector) for bucket, vector in vectors.items()}
+    out: dict[int, dict[str, float]] = {}
+    for bucket, vector in vectors.items():
+        recorded = {name: default_weight(corpus, name) for name in vector}
+        shrunk = {
+            name: strength * value + (1.0 - strength) * recorded[name]
+            for name, value in vector.items()
+        }
+        if any(abs(shrunk[name] - recorded[name]) > 1e-12 for name in shrunk):
+            out[bucket] = shrunk
+    return out
+
+
+def evaluate(
+    corpus: Corpus, vectors: dict[int, dict[str, float]], cases: np.ndarray, code: np.ndarray
+) -> dict[str, Any]:
+    """A mixture's reading on a set of cases, per signature bucket and per fault type.
+
+    One function for both readings, because the in-sample number and the held-out number are the
+    same measurement on different populations, and a report that computed them separately could
+    disagree with itself about what "the mixture scored" means.
+
+    @param corpus - The corpus.
+    @param vectors - Bucket to overrides.
+    @param cases - The case indices to report on.
+    @param code - Per-case signature from `signatures`.
+    @returns Per-bucket `[n, hits, control]`, per-type `[hits, control]` and the pooled hits.
+    """
+    mixture = Mixture(corpus, code)
+    hit = corpus.top1_mask(mixture.scores(vectors))
+    control_hit = corpus.top1_mask(corpus.scores({}))
+    table: dict[int, list[int]] = {}
+    for bucket in mixture.buckets:
+        selected = cases[code[cases] == bucket]
+        if selected.size == 0:
+            continue
+        table[bucket] = [
+            int(selected.size),
+            int(hit[selected].sum()),
+            int(control_hit[selected].sum()),
+        ]
+    by_type: dict[str, list[int]] = {}
+    for case_index in cases:
+        entry = by_type.setdefault(corpus.fault_type[int(case_index)], [0, 0])
+        entry[0] += int(hit[int(case_index)])
+        entry[1] += int(control_hit[int(case_index)])
+    return {"table": table, "by_type": by_type, "hits": int(hit[cases].sum())}
+
+
+def joint_fit(
+    corpus: Corpus,
+    folds: Sequence[np.ndarray],
+    grid: int,
+    passes: int,
+    min_cases: int,
+    gate: TypeGate | None = None,
+    strength: float = 1.0,
+) -> dict[str, Any]:
+    """Fit a mixture jointly on k-1 folds and report the held-out one.
+
+    @param corpus - The corpus.
+    @param folds - Held-out case indices, one array per fold.
+    @param grid - Factors per coordinate in each climb.
+    @param passes - Sweeps per climb.
+    @param min_cases - Smallest training bucket that earns a vector of its own.
+    @param gate - The per-type non-regression gate, applied to the mixture as a whole.
+    @param strength - How much of each fitted vector to keep; see `shrink`.
+    @returns The per-bucket table, the per-type split and the pooled held-out reading.
+    """
+    code = signatures(corpus)
+    every = np.arange(corpus.n_cases)
+    table: dict[int, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+    by_type: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    vectors_by_fold: dict[int, dict[int, dict[str, float]]] = {}
+    holdout_hits = 0
+    for fold_index, holdout in enumerate(folds):
+        train = np.setdiff1d(every, holdout)
+        vectors = shrink(
+            corpus, joint_climb(corpus, train, code, grid, passes, min_cases, gate=gate), strength
+        )
+        vectors_by_fold[fold_index] = vectors
+        report = evaluate(corpus, vectors, holdout, code)
+        for bucket, (count, hits, control_hits) in report["table"].items():
+            entry = table[bucket]
+            entry[0] += count
+            entry[1] += hits
+            entry[2] += control_hits
+            entry[3] += 1
+        for name, (hits, control_hits) in report["by_type"].items():
+            entry = by_type[name]
+            entry[0] += hits
+            entry[1] += control_hits
+        holdout_hits += report["hits"]
+    return {
+        "table": dict(table),
+        "by_type": dict(by_type),
+        "hits": holdout_hits,
+        "holdout": holdout_hits,
+        "folds": len(folds),
+        "vectors": vectors_by_fold,
+    }
+
+
+def render_mixture(report: dict[str, Any], total: int, control: dict[str, Any], title: str) -> str:
+    """The mixture's table, its per-type split and its pooled line, as one printable block.
+
+    Both readings render through here — the one fitted on all of the corpus and the one fitted on
+    folds — so they can be read side by side without wondering whether the difference is in the
+    table or in the heading.
+
+    @param report - As `evaluate` or `joint_fit` returns it.
+    @param total - The cases the report covers.
+    @param control - The control metrics, for the shipped percentage.
+    @param title - The heading line.
+    @returns The block.
+    """
+    lines = [title]
+    lines.append(f"  {'signature':28s} {'n':>5s} {'control':>8s} {'mixture':>8s} {'delta':>7s}")
+    for bucket, entry in sorted(report["table"].items()):
+        count, hits, control_hits = entry[0], entry[1], entry[2]
+        lines.append(
+            f"  {describe_signature(bucket):28s} {count:5d} {control_hits:8d} {hits:8d} "
+            f"{hits - control_hits:+7d}"
+        )
+    lines.append(f"  {'faultType':32s} {'control':>8s} {'mixture':>8s} {'delta':>7s}")
+    for name, (hits, control_hits) in sorted(report["by_type"].items()):
+        lines.append(f"  {name:32s} {control_hits:8d} {hits:8d} {hits - control_hits:+7d}")
+    regressed = [
+        name for name, (hits, control_hits) in report["by_type"].items() if hits < control_hits
+    ]
+    lines.append(
+        f"  pooled {report['hits']}/{total} ({100.0 * report['hits'] / max(total, 1):.2f}%)  "
+        f"shipped {100.0 * control['at1'] / total:.2f}%  "
+        f"delta {report['hits'] - control['at1']:+d}  "
+        f"types down: {', '.join(regressed) if regressed else 'none'}"
+    )
+    return "\n".join(lines)
+
+
+def transfer(vectors: dict[int, dict[str, float]], target: Corpus) -> dict[str, Any]:
+    """Score a mixture fitted on one corpus on ANOTHER, bucket by bucket.
+
+    A vector that transfers is a claim about the mechanism: the signature says which channels a
+    case carries, so if the same signature wants the same coefficients in a corpus it was not
+    fitted on, the coefficients belong to the channels. A vector that does not transfer is a claim
+    about the corpus — which is what every in-sample coefficient is until this test is run.
+
+    A bucket the source never fitted keeps the recorded weights, and the table says so rather than
+    silently reporting a borrowed reading as a fit.
+
+    @param vectors - Bucket to overrides, as `joint_climb` returns them.
+    @param target - The corpus to score on.
+    @returns The per-bucket table, the pooled reading and the control it is measured against.
+    """
+    code = signatures(target)
+    mixture = Mixture(target, code)
+    hit = target.top1_mask(mixture.scores(vectors))
+    control_hit = target.top1_mask(target.scores({}))
+    table: dict[int, tuple[int, int, int, bool]] = {}
+    for bucket in mixture.buckets:
+        selected = code == bucket
+        table[bucket] = (
+            int(selected.sum()),
+            int(control_hit[selected].sum()),
+            int(hit[selected].sum()),
+            bool(vectors.get(bucket)),
+        )
+    return {
+        "table": table,
+        "at1": int(hit.sum()),
+        "control": int(control_hit.sum()),
+        "n_cases": target.n_cases,
+    }
+
+
 def folds_of(corpus: Corpus, k: int, seed: int) -> list[np.ndarray]:
     """Stratified by fault type, so every fold carries the corpus's mix of fault shapes."""
     rng = np.random.default_rng(seed)
@@ -509,7 +859,11 @@ def folds_of(corpus: Corpus, k: int, seed: int) -> list[np.ndarray]:
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", help="fse26-terms.ndjson from --terms-dump")
-    parser.add_argument("--only", choices=("ceiling", "global", "heldout", "regimes"), default=None)
+    parser.add_argument(
+        "--only",
+        choices=("ceiling", "global", "heldout", "regimes", "joint", "transfer"),
+        default=None,
+    )
     parser.add_argument("--min-bucket", type=int, default=40)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20261112)
@@ -522,6 +876,19 @@ def main(argv: Sequence[str]) -> int:
         default=0,
         metavar="MIN_CASES",
         help="refuse any vector that lowers a fault type with at least MIN_CASES cases",
+    )
+    parser.add_argument(
+        "--shrink",
+        type=float,
+        default=1.0,
+        metavar="STRENGTH",
+        help="share of each fitted vector to keep, the rest going back to the recorded weight",
+    )
+    parser.add_argument(
+        "--transfer-from",
+        metavar="SOURCE",
+        default=None,
+        help="fit the mixture on SOURCE and score it on the dump, bucket by bucket",
     )
     args = parser.parse_args(argv)
 
@@ -619,6 +986,94 @@ def main(argv: Sequence[str]) -> int:
             f"shipped {100.0 * control['at1'] / total:.2f}%  "
             f"delta {report['holdout'] - control['at1']:+d}  "
             f"types down: {', '.join(regressed) if regressed else 'none'}"
+        )
+
+    if args.only in (None, "joint"):
+        gate = None if args.gate_types <= 0 else TypeGate(corpus, args.gate_types)
+        code = signatures(corpus)
+        every = np.arange(total)
+        # `--folds 0` is the configuration that would ship: one vector per signature, fitted on
+        # every case the corpus has. The folds reading is the estimate of what that configuration
+        # does on cases it has not seen, and the two are reported through the same renderer so a
+        # difference between them can only be a difference in the numbers.
+        if args.folds <= 0:
+            vectors = shrink(
+                corpus, joint_climb(corpus, every, code, args.grid, args.passes, args.min_bucket, gate=gate), args.shrink
+            )
+            report = evaluate(corpus, vectors, every, code)
+            print(
+                render_mixture(
+                    report,
+                    total,
+                    control,
+                    f"\nJOINT in-sample, one climb over every signature at once, "
+                    f"min bucket {args.min_bucket}, shrink {args.shrink:g}",
+                )
+            )
+            rendered = ', '.join(
+                f"{describe_signature(bucket)}: "
+                f"{ {name: round(float(value), 4) for name, value in vector.items()} }"
+                for bucket, vector in sorted(vectors.items())
+            )
+            print(f"  vectors: {rendered if rendered else 'no bucket above the floor'}")
+        else:
+            report = joint_fit(
+                corpus,
+                folds_of(corpus, args.folds, args.seed),
+                args.grid,
+                args.passes,
+                args.min_bucket,
+                gate=gate,
+                strength=args.shrink,
+            )
+            print(
+                render_mixture(
+                    report,
+                    total,
+                    control,
+                    f"\nJOINT one climb over every signature at once, scored on the mixture, "
+                    f"{report['folds']}-fold held-out, min bucket {args.min_bucket}, "
+                    f"shrink {args.shrink:g}",
+                )
+            )
+            for fold_index, vectors in sorted(report["vectors"].items()):
+                rendered = ', '.join(
+                    f"{describe_signature(bucket)}: "
+                    f"{ {name: round(float(value), 4) for name, value in vector.items()} }"
+                    for bucket, vector in sorted(vectors.items())
+                )
+                print(f"  fold {fold_index}: {rendered if rendered else 'no bucket above the floor'}")
+
+    if args.transfer_from:
+        source = load(args.transfer_from)
+        vectors = shrink(
+            source,
+            joint_climb(
+                source,
+                np.arange(source.n_cases),
+                signatures(source),
+                args.grid,
+                args.passes,
+                args.min_bucket,
+            ),
+            args.shrink,
+        )
+        borrowed = transfer(vectors, corpus)
+        print(
+            f"\nTRANSFER fitted on {args.transfer_from} ({source.n_cases} cases) and scored on "
+            f"{corpus.n_cases}, min bucket {args.min_bucket}, shrink {args.shrink:g}"
+        )
+        print(f"  {'signature':28s} {'n':>5s} {'control':>8s} {'transfer':>9s} {'delta':>7s}  from")
+        for bucket, (count, control_hits, hits, used) in sorted(borrowed["table"].items()):
+            print(
+                f"  {describe_signature(bucket):28s} {count:5d} {control_hits:8d} {hits:9d} "
+                f"{hits - control_hits:+7d}  {'source' if used else 'recorded'}"
+            )
+        print(
+            f"  pooled {borrowed['at1']}/{borrowed['n_cases']} "
+            f"({100.0 * borrowed['at1'] / borrowed['n_cases']:.2f}%)  "
+            f"control {borrowed['control']} ({100.0 * borrowed['control'] / borrowed['n_cases']:.2f}%)  "
+            f"delta {borrowed['at1'] - borrowed['control']:+d}"
         )
 
     return 0

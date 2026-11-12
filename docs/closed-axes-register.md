@@ -1580,11 +1580,11 @@ The repair is an order rather than a coefficient: the term permutes the candidat
 one across a candidate it could not measure (`orderWithEmissionJurisdiction`). Measured on the nine cells, three
 arms from one tree:
 
-| arm | RE1:OB | RE1:SS | RE1:TT | RE2:OB | RE2:SS | RE2:TT | RE3:OB | RE3:SS | RE3:TT | total |
-| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
-| `w = 0` | 113 | 119 | 112 | 84 | 89 | 76 | 26 | 19 | 22 | **660** |
-| `w = 0.5`, ungated | 113 | 119 | 113 | 83 | 88 | 76 | 24 | **28** | 19 | 663 |
-| `w = 0.5`, jurisdiction (SHIPPED) | 113 | 119 | **113** | 84 | 89 | 76 | 26 | **24** | 22 | **666** |
+| arm                               | RE1:OB | RE1:SS |  RE1:TT | RE2:OB | RE2:SS | RE2:TT | RE3:OB | RE3:SS | RE3:TT |   total |
+| --------------------------------- | -----: | -----: | ------: | -----: | -----: | -----: | -----: | -----: | -----: | ------: |
+| `w = 0`                           |    113 |    119 |     112 |     84 |     89 |     76 |     26 |     19 |     22 | **660** |
+| `w = 0.5`, ungated                |    113 |    119 |     113 |     83 |     88 |     76 |     24 | **28** |     19 |     663 |
+| `w = 0.5`, jurisdiction (SHIPPED) |    113 |    119 | **113** |     84 |     89 |     76 |     26 | **24** |     22 | **666** |
 
 `+6` with **no cell down** — `RE1:TrainTicket +1`, `RE3:SockShop +5`, and all five cells the ungated arm moved
 the wrong way return to their shipped values. Paired sign test `6–0`, `p = 0.0156`. The case-level replay of the
@@ -1610,29 +1610,29 @@ for the right observation and the wrong reason.
 
 By fault type:
 
-| fault type | misses |
-| --- | --: |
-| `loss` | **35** |
-| `delay` | 12 |
-| `f4` (RE3) | 7 |
-| `f3` (RE3) | 5 |
-| `f1` (RE3) | 4 |
-| `f2` (RE3) | 2 |
+| fault type                        | misses |
+| --------------------------------- | -----: |
+| `loss`                            | **35** |
+| `delay`                           |     12 |
+| `f4` (RE3)                        |      7 |
+| `f3` (RE3)                        |      5 |
+| `f1` (RE3)                        |      4 |
+| `f2` (RE3)                        |      2 |
 | `cpu` / `disk` / `mem` / `socket` | 1 each |
 
 By cell:
 
-| cell | correct | misses |
-| --- | --: | --: |
-| `RE1:OnlineBoutique` | 113/125 | 12 |
-| `RE1:SockShop` | 119/125 | 6 |
-| `RE1:TrainTicket` | 113/125 | 12 |
-| `RE2:OnlineBoutique` | 84/90 | 6 |
-| `RE2:SockShop` | 89/90 | 1 |
-| `RE2:TrainTicket` | 76/90 | 14 |
-| `RE3:OnlineBoutique` | 26/30 | 4 |
-| `RE3:SockShop` | 24/30 | 6 |
-| `RE3:TrainTicket` | 22/30 | 8 |
+| cell                 | correct | misses |
+| -------------------- | ------: | -----: |
+| `RE1:OnlineBoutique` | 113/125 |     12 |
+| `RE1:SockShop`       | 119/125 |      6 |
+| `RE1:TrainTicket`    | 113/125 |     12 |
+| `RE2:OnlineBoutique` |   84/90 |      6 |
+| `RE2:SockShop`       |   89/90 |      1 |
+| `RE2:TrainTicket`    |   76/90 |     14 |
+| `RE3:OnlineBoutique` |   26/30 |      4 |
+| `RE3:SockShop`       |   24/30 |      6 |
+| `RE3:TrainTicket`    |   22/30 |      8 |
 
 Half the residual is one fault type, and **37 of the 69 are a one-hop NEIGHBOUR of the truth** — 25 where the
 winner is a direct caller, 12 where it is a callee, 32 unrelated. That is a direction signature, and the census
@@ -1644,14 +1644,14 @@ So the next candidate had to be direction, and it was priced from the shipped du
 the engine's own `prediction=` order as the control — it must reproduce the battery, or the probe is measuring
 the probe:
 
-| rule applied to the engine's own order | total | reordered | won | lost |
-| --- | --: | --: | --: | --: |
-| engine order (control) | **666** | — | — | — |
-| a caller may not outrank a called dependency whose `selfAnomaly` is at least its own | 665 | 179 | 1 | 2 |
-| a node may not outrank a dependency whose onset precedes its own by ≥ `0` ms | 591 | 272 | 6 | 81 |
-| … ≥ `1,000` ms | 603 | 269 | 6 | 69 |
-| … ≥ `5,000` ms | 613 | 256 | 6 | 59 |
-| … ≥ `10,000` ms | 617 | 231 | 3 | 52 |
+| rule applied to the engine's own order                                               |   total | reordered | won | lost |
+| ------------------------------------------------------------------------------------ | ------: | --------: | --: | ---: |
+| engine order (control)                                                               | **666** |         — |   — |    — |
+| a caller may not outrank a called dependency whose `selfAnomaly` is at least its own |     665 |       179 |   1 |    2 |
+| a node may not outrank a dependency whose onset precedes its own by ≥ `0` ms         |     591 |       272 |   6 |   81 |
+| … ≥ `1,000` ms                                                                       |     603 |       269 |   6 |   69 |
+| … ≥ `5,000` ms                                                                       |     613 |       256 |   6 |   59 |
+| … ≥ `10,000` ms                                                                      |     617 |       231 |   3 |   52 |
 
 **Both refused, and for stated reasons.** Magnitude is IMPORTED, not authored: a caller's anomaly is its callee's
 plus its own, so "equally anomalous dependency" fires on healthy aggregators — `ts-order-service`, `carts` and
@@ -1699,7 +1699,7 @@ The 255th iteration ended with an accounting that had one measured column and on
 arms that would close it. This iteration ran them: ten single-coefficient removals on the configuration behind
 `666/735`, one per suite, with the shipped configuration as the control row. `docs/production-weight-leave-one-out.md`
 carries the table; the axis is recorded here because it closes the last claim the register has been carrying
-without a number — *what each shipped term is worth* — and because two of its findings are directions rather than
+without a number — _what each shipped term is worth_ — and because two of its findings are directions rather than
 measurements:
 
 - **Five of the ten coefficients move no case at all**, and the artifact's own verdict block separates the two
@@ -1755,15 +1755,15 @@ and no dispatch could produce a different one. The cache was rebuilt through its
 (`rcabench-data` run `42721719446`, tag `rcabench-pod-v1`, converter digest equal to this checkout's) and the pair
 re-run at `4d0050d7`:
 
-| run | knobs | Top@1 | cases |
-| --- | --- | --: | --: |
-| `42729721072` | shipped | **75.46%** | 1073/1422 |
+| run           | knobs                 |      Top@1 |     cases |
+| ------------- | --------------------- | ---------: | --------: |
+| `42729721072` | shipped               | **75.46%** | 1073/1422 |
 | `42729735767` | `anomaly_cv_weight=0` | **75.46%** | 1073/1422 |
 
 **The aggregate is byte-identical and the criterion still fails**, which is the finding worth keeping: the two runs
 differ on **four fault types** — `JVMException` 30→31 and `HTTPRequestReplacePath` 38→39 up, `HTTPRequestDelay`
 57→56 and `PodKill` 10→9 **down**. `+2` and `−2` are the same total and not the same result, and the rule this
-project applies to every candidate is *zero regressed fault types*, so **`anomalyCvWeight = 0` is refused on the
+project applies to every candidate is _zero regressed fault types_, so **`anomalyCvWeight = 0` is refused on the
 criterion itself**, not merely on the knife-edge argument above. A 1422-case aggregate that hides a two-for-two
 swap is exactly the class of summary this register exists to keep out of a decision.
 
@@ -1772,7 +1772,7 @@ did not improve, the evidence it can see did, and which converter change produce
 
 The register records all three because they are the same failure in three costumes — a number whose provenance was
 one step weaker than the sentence it supported — and because the third one is the reason this iteration ends with
-no default changed: the criterion was satisfiable after all, and the answer it gave was *no*.
+no default changed: the criterion was satisfiable after all, and the answer it gave was _no_.
 
 ## Iteration 258 — the corpus move is one term; and two things that decided a number were not the number
 
@@ -1799,7 +1799,7 @@ about a summary.
 
 **`js/regex-injection` `#14` is closed as FIXED, not dismissed.** Two suppression spellings had been carried on
 the sink for several iterations (`codeql[rule-id]` above it, `lgtm[rule-id]` on it), and the register's own rule
-— *a comment is not a fix* — applied to them the whole time: `#13` stayed open for a fortnight and adding the
+— _a comment is not a fix_ — applied to them the whole time: `#13` stayed open for a fortnight and adding the
 second spelling only relocated the alert. The sink was `new RegExp(commandLine)`, and the honest removal is to
 stop constructing a regular expression from a command line at all. `--family` now takes a **glob** compiled into
 a predicate (`compileFamilyGlob`): `*` is the only metacharacter, every other character is literal, and matching
@@ -1824,8 +1824,8 @@ selector, measured rather than imagined, and the reason it refuses rather than p
 
 **The per-case verdicts are published, and the census is what caught it.** `run-fse26.ts` has taken
 `--per-case-out` since the judgement question came up and no workflow ever passed it; the census listed it as an
-operational flag no workflow reaches, with the reason *"the ranking it exports is the one the run already
-counted"*. That reason is the same mistake the joint arm punished one iteration earlier — a fault type's **count**
+operational flag no workflow reaches, with the reason _"the ranking it exports is the one the run already
+counted"_. That reason is the same mistake the joint arm punished one iteration earlier — a fault type's **count**
 cannot distinguish `+2/−0` from `+2/−2` — so the flag is now passed, the file is uploaded with the other two, and
 `scripts/compare_fse26_per_case.py` reads two runs as cases — `docs/fse26-per-case-verdicts.md` —: gained, lost, corpus differences excluded (a corpus
 difference is not a flip), and a `NET-ZERO BUT NOT IDENTICAL` section for every type whose count is unchanged and
@@ -1837,7 +1837,7 @@ list only moves by removal when a flag becomes reachable. Correctness is recompu
 **And the most-read line of `docs/sota-comparison.md` was anchored to a panel that cannot read telemetry.** The
 FSE'26 STANDING row printed `+38.5 pp over the best 37%` — arithmetic against the benchmark paper's own panel
 (avg 21%, best 37%, `arXiv:2510.04711`) — while the 2026 agent literature on the same benchmark reports up to
-**90.0%** (Sonnet·ThinkDepth.ai, `arXiv:2608.21310` Table 2). The document said *"we are not first on RCABench"*
+**90.0%** (Sonnet·ThinkDepth.ai, `arXiv:2608.21310` Table 2). The document said _"we are not first on RCABench"_
 three sections later, so nothing in it was false; the row was, by omission, and the row is what gets quoted. It
 now prints both anchors, the position this corpus holds (**4th** in the agentic panel, `−14.5 pp` behind the
 best, `−28.5 pp` on the pre-rebuild corpus), and it names the panel in the cell rather than in a footnote. The
@@ -1878,8 +1878,8 @@ of the list, and the absence is written down as a **NAMED exemption with its num
 **The mechanism is not the one that was predicted, and saying so is the point.** The 14 lost cases are not the
 fleet-share shape the pod term abstains on — the affected fleet reads 23–38 %, under that gate. The truth in
 eight of them is a service that **cannot produce the channel at all** (`mysql` has no HTTP spans) while its
-callers can, so during a network fault on `mysql` the callers' error rise is priced as evidence *for the
-callers*. The other six are a sibling swap (`ts-route-plan-service` losing to `ts-travel-plan-service` by one
+callers can, so during a network fault on `mysql` the callers' error rise is priced as evidence _for the
+callers_. The other six are a sibling swap (`ts-route-plan-service` losing to `ts-travel-plan-service` by one
 rank). The engine ships `victimWeight = 0`, so the completion is a **victim/source asymmetry**, and the
 acceptance test that would admit the label is pre-registered and falsifiable: `Top@1 >= 1082` **with no fault
 type down**, on this cache, measured per case.
@@ -1894,7 +1894,7 @@ stock Train Ticket wires Hystrix circuit breakers which turn a downstream failur
 `HTTP 200 OK`**, so the boundary never reports it; the authors disable the fallbacks to make failures
 observable, and their threats-to-validity admits that doing so exposes more than a production deployment would.
 That last one lands on this project's own record: of the five cases `docs/emission-jurisdiction.md` §1 lists as
-"no `error` channel at all", **two are `RE3:TrainTicket` `ts-route-service`** — the *wrong value* axis, a
+"no `error` channel at all", **two are `RE3:TrainTicket` `ts-route-service`** — the _wrong value_ axis, a
 corrupted-payload fault whose caller sees `200`. Consistent, not proof, and the test that would settle it is
 named (`docs/sota-populations.md`). None of the three is a competitor; all three bound a premise.
 
@@ -2032,13 +2032,13 @@ margins. It is. Three defects were measured, and one number reframes the program
 **Defect 1 — five of eight measured coefficients do not transfer.** Setting each to zero on the
 other corpus prices the other half of every decision:
 
-| coefficient | FSE'26 (1422) | RCAEval (735) |
-|---|---:|---:|
-| `latWeight` | **+77** | **0** |
-| `failedEdgeWeight` | **+80** | **0** |
-| `poolMetricPenalty` | +6 | **0** |
-| `stabilityWeight` | +1 | **0** |
-| `temporalWeight` | +4 | **−40.8 / −42.4 pp** |
+| coefficient         | FSE'26 (1422) |        RCAEval (735) |
+| ------------------- | ------------: | -------------------: |
+| `latWeight`         |       **+77** |                **0** |
+| `failedEdgeWeight`  |       **+80** |                **0** |
+| `poolMetricPenalty` |            +6 |                **0** |
+| `stabilityWeight`   |            +1 |                **0** |
+| `temporalWeight`    |            +4 | **−40.8 / −42.4 pp** |
 
 A coefficient worth eighty cases on one corpus and exactly zero on the other, with a third changing
 sign by forty points, is not tuning noise: each was fitted and then reported on the SAME corpus. The
@@ -2070,13 +2070,13 @@ the original units.
 
 **The number that reframes the programme: a per-case LINEAR PROGRAM against a fitted single vector.**
 
-| reading | Top@1 | share |
-|---|---:|---:|
-| shipped control | 1073 | 75.46 % |
-| one weight vector, fitted in-sample | **1204** | **84.67 %** |
-| one weight vector, 5-fold held-out (stratified) | **1187** | **83.47 %** |
+| reading                                               |    Top@1 |       share |
+| ----------------------------------------------------- | -------: | ----------: |
+| shipped control                                       |     1073 |     75.46 % |
+| one weight vector, fitted in-sample                   | **1204** | **84.67 %** |
+| one weight vector, 5-fold held-out (stratified)       | **1187** | **83.47 %** |
 | ANY per-case non-negative weight vector (LP per case) | **1412** | **99.30 %** |
-| …and with the sign of every weight free | 1422 | 100.00 % |
+| …and with the sign of every weight free               |     1422 |    100.00 % |
 
 The third row is the first honest gain in a fortnight and it is a HELD-OUT one: **+114 cases,
 +8.01 pp**, with folds that never see each other. The fourth row is the verdict on the architecture:
@@ -2134,3 +2134,63 @@ So the coefficients are a property of the CORPUS and not of the mechanism, measu
 that costs: a re-fit worth +8 pp on one benchmark is worth −8 pp on the other. Restoring one term at a
 time does not recover it, and `prism` — which the fit switched ON — is worth **+75** there, so the
 failure is not one bad term but a vector that belongs to another corpus. **No default changes.**
+
+## Iteration 263 — the joint fit is the bucket fit, and the weight axis is closed
+
+Iteration 262 named the next step as **one joint coordinate ascent over all six signature vectors
+with the corpus-level gate as its objective**, and asserted it was "a different optimisation and not
+a harder parameter search". It was implemented and it is **not different**: the joint climb returns
+**1185/1422 held-out, the same total as the bucket-wise mixture, to the case**, and the gated variant
+returns **1144, also identical**. The reason is structural and worth writing down, because it closes
+the axis: a bucket's vector reaches only that bucket's rows, so a gain it makes is booked entirely
+inside its own bucket, and an objective that sums over buckets has the same gradient as one that
+scores the corpus. The joint form is 13× faster (14.8 s against 197 s per five folds, from a
+row-restricted `scores_rows` and a cached control reading) and it states the objective correctly, and
+that is all it does.
+
+**The gate was the next hypothesis, and it fails in a way that generalises.** The gated joint fit
+still loses three fault types, each by **exactly one case** (`NetworkLoss` 29→28, `PodFailure` 24→23,
+`JVMCPUStress` 1→0) — but a _different_ three from the bucket-wise fit (`PodKill`, `NetworkDelay`).
+The gate is not broken: it is evaluated on the training split and the report is on the held-out one,
+and on a type with 24 cases one case is 4.2 pp with a standard deviation of about one case. **"No
+fault type down on held-out" is not a property any training-time constraint can guarantee.** It is a
+property of the corpus being large enough that the held-out count is stable, which 1 422 cases across
+25 types is not.
+
+**Shrinkage was the third attempt and it does not move them either.** Four strengths:
+
+| shrink | ungated                 | gated              |
+| ------ | ----------------------- | ------------------ |
+| 1.00   | 1185 (+112), 3 down     | 1144 (+71), 3 down |
+| 0.75   | **1187 (+114)**, 3 down | 1145 (+72), 3 down |
+| 0.50   | 1175 (+102), 4 down     | 1135 (+62), 3 down |
+| 0.25   | 1163 (+90), 2 down      | 1126 (+53), 3 down |
+
+Shrinkage produced the programme's best held-out reading (**1187, +114**) and changed nothing about
+the regressions, which is the definition of a bias that is not variance.
+
+**And the mixture does not transfer, which closes the last route to a default.** The single vector of
+262 transferred to RCAEval at −60 cases; the obvious reply was that the _signature_ is a label-free
+routing key and would route better. It does not: **472/735 = 64.22 % against a 90.34 % control,
+−192 cases (−26.12 pp)**, worse than the single vector. The bucket carrying 656 of RCAEval's 735
+cases — the same `-lat -failedEdge -log` signature that carries 101 of FSE'26's — loses **191**. A
+signature that identifies a bucket in both corpora and wants opposite coefficients in each is a
+**corpus-internal routing key**, not a mechanism.
+
+**Acceptance test:** `Top@1 >= 1082` with no fault type down. Read on the configuration that would
+ship — one vector per signature, fitted on every case — the gated joint climb reaches
+**1228/1422 = 86.36 % (+155)** with **zero fault types down among the gated population (≥ 4 cases)**;
+the sole regression is `JVMCPUStress`, a one-case type that is 100 pp of noise and the reason
+`--gate-types` exists as a separate floor. Two facts must be said in the same breath: that number is
+**in-sample**, and the honest generalisation estimate is the **1144 (+71)** held-out reading, which
+loses one case in each of two protected types. **No end-of-programme signal.**
+
+**Therefore the next iteration is not a weight fit.** The per-case LP ceiling says 99.30 % of cases
+are separable by _some_ non-negative vector; no single vector and no mixture over six channel
+signatures exceeds 84.5 % held-out. The distance between those two numbers is not a function of the
+slopes the engine already has — it is the distance between the information the engine measures and
+the information the ranking needs. The next iteration is a **new measurable channel**, and
+`docs/absent-census.md` names the population: the 159-case `-lat +failedEdge -log` bucket, worst
+regime at 34.6 %, lifted to 83.0 % by its own vector and only to 61 % by a vector fitted elsewhere.
+
+Full readings, the eight tables and the three refutations in derivation order: `architecture-audit-263.md`.
