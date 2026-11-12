@@ -282,6 +282,13 @@ export default defineConfig({
         // refusals that qualify it. An arm that abstained on most of a corpus has a number describing the rest,
         // and a layout is only worth its coverage if a test can read it.
         'src/agentic-headroom-report.ts',
+        // Added with the modules: the depth instrument and the two tables read off it. `ranking-depth.ts` is the
+        // only writer of a row that says whether a miss is a RANKING defect or a case the order never held, and
+        // `run-depth-report.ts` is the only place that split is turned into a per-family table — the artifact a
+        // roadmap is read from. Both are measured because a wrong depth is not an error anywhere: it is a
+        // plausible share in a table, which is the failure mode this repository refuses by name.
+        'src/ranking-depth.ts',
+        'src/run-depth-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

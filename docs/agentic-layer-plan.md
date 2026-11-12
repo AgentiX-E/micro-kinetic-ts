@@ -230,3 +230,31 @@ exposes only the two primitives the join must not re-implement: `injectionSplitI
 Requirement 5 is the one `0d6ae609` failed, and it is kept **unchanged on purpose**: the point of changing the
 presentation is to find out whether that specific class was a presentation problem or a real ceiling. If it fails
 again under a new presentation, the answer is the second one and the axis closes for good.
+
+## 10. Amended in iteration 270: the window was the ceiling, not the order
+
+§6's arm 0a priced the elimination layer against a **five-wide** presentation and called the result the ceiling.
+A 106-case stratified reading of the full order (`docs/agentic-headroom.md` §10) overturned the premise:
+
+| window | reachable share | Δ over the control |
+| ------ | --------------: | -----------------: |
+| `Top@1` (the control) | 75.5% | — |
+| `Top@5` (§6's ceiling) | 88.7% | +13.2 pp |
+| `Top@20` | **97.2%** | **+21.7 pp** |
+| `absent` from the order | **0 of 106** (95% upper bound 3.5%) | — |
+
+Three consequences, and they reorder the arms rather than cancelling them:
+
+1. **The presentation width becomes the first free parameter.** Five was inherited from `At-K` reporting, not
+   chosen: nothing about the engine stops at five, and the fingerprint's own bound (`maxCandidates`) is a constant
+   in `DEFAULT_FINGERPRINT_OPTIONS`. Widening it to twenty costs tokens and nothing else — 4× the candidates for a
+   surface that reaches eleven points further. The eliminator's three-round budget is unchanged in shape; the
+   ledger prices the input, and `AgentBudget` already does that exactly.
+2. **§6's order of arms changes.** Arm 0a is re-measured over a twenty-wide window before the model arm is priced,
+   because the ceiling an arm is compared against has to be the ceiling of the window it is allowed to see. An
+   eliminator paid for over five and scored against a twenty-wide oracle would look worse than it is, and one
+   scored against a five-wide oracle while being shown twenty would look better.
+3. **The `absent` column becomes a standing diagnostic.** It was 0/106 in the sample, which is the strongest single
+   piece of evidence this project has that its graph layer carries the answers and its losses are ordering. The
+   full-corpus number lands with the first `benchmark-agentic` dispatch that runs with `--depth-out`, and §11
+   records it there.

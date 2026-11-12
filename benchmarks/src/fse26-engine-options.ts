@@ -205,6 +205,11 @@ export const NON_ENGINE_OPTION_KEYS = [
   // the engine already produced, for a layer that runs AFTER the ranking, and the engine never reads it back. A
   // path that reached neither the engine nor this list is the silent drop the completeness test exists to catch.
   'fingerprintOut',
+  // The ranking-depth writer, on exactly the same rule: it serialises the position of the corpus's answer in
+  // the order the engine already produced. The engine never reads it back, so it is a harness artifact rather
+  // than a knob — but it is listed here because an option that reached neither the engine nor this list is the
+  // silent drop the completeness test exists to catch.
+  'depthOut',
   'dropMetrics',
   // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
   // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the

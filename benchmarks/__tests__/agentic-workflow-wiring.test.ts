@@ -286,3 +286,45 @@ describe('the cache reclaim is an action on a schedule and a reading on a dispat
     expect(PRUNE).toContain('python3 scripts/prune_caches.py');
   });
 });
+
+describe('the depth split is measured, uploaded, and printed by the side that has no corpus', () => {
+  it('asks the runner for the depth rows on the same invocation that asks for the other dumps', () => {
+    // One invocation, not a second pass: the depth is read from the order the shipped `topK=5` is a slice of,
+    // so a separate run could order a case differently and the split would describe a configuration no arm ran.
+    const invocation = WORKFLOW_CODE.split('\n').find((line) =>
+      line.includes('benchmarks/src/run-fse26.ts'),
+    );
+    expect(invocation).toBeDefined();
+    const block = WORKFLOW_CODE.slice(WORKFLOW_CODE.indexOf('run-fse26.ts'));
+    expect(block).toContain('--depth-out artifacts/agentic/depth.ndjson');
+  });
+
+  it('uploads the depth artifact under the SAME root as every other path, or the study reads nothing', () => {
+    // `upload-artifact` takes the least common ancestor of its paths as the artifact root. One path outside
+    // `artifacts/agentic/` moves every file down a level — the defect run 43250866718 hit on the manifest.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/depth.ndjson');
+    const listed = [...upload.matchAll(/^\s+(artifacts\/[^\s]+)$/gm)].map((match) => match[1]!);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+  });
+
+  it('prints the split in the corpus-free job, before any arm is scored', () => {
+    const study = jobs(WORKFLOW).get('study');
+    expect(study).toBeDefined();
+    expect(study).toContain('benchmarks/src/run-depth-report.ts');
+    expect(study).toContain('--depth artifacts/agentic/depth.ndjson');
+    // Order matters: a ceiling read before the split is a ceiling over a population whose shape is unknown.
+    expect(study!.indexOf('run-depth-report.ts')).toBeLessThan(
+      study!.indexOf('run-agentic-headroom.ts'),
+    );
+    // And the study still has no corpus access.
+    expect(study).not.toContain('--data-dir');
+  });
+
+  it('keeps the tool that reads the artifact next to the tool that writes it', () => {
+    // Non-vacuity: a workflow naming a script that does not exist passes every assertion above.
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/ranking-depth.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-depth-report.ts'))).toBe(true);
+  });
+});

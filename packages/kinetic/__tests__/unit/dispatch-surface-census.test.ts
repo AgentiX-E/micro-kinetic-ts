@@ -254,6 +254,13 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'threshold, a weight or a skip rule can be scored offline against one run instead of dispatched per point. ' +
     'It is the same trade `termsOut` above makes for weight screens, and it requires the same corpus artifact ' +
     '(`--fault-free-profile`), because the band in a fingerprint comes from the profile rather than from the case',
+  depthOut:
+    'writes the per-case RANKING DEPTH (--depth-out); an OUTPUT PATH, and the engine never reads it back. It is ' +
+    "not a knob because it multiplies nothing: it records where the corpus's own answer sits in the order the " +
+    'engine already sorted, which is what separates a case ranked too low from a case the order never held. ' +
+    'That split is a property of a configuration, not a degree of freedom — a depth at a second weight is a ' +
+    'second reading of the same run, so it travels beside the fingerprint as an artifact rather than as an ' +
+    'input. `docs/agentic-headroom.md` §10 owns the reading it made possible',
 };
 
 /**
@@ -1246,6 +1253,19 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'writes the per-case elimination fingerprint an offline arm reads; an output path whose meaning depends on ' +
     'the profile it was built against, which a dispatch cannot name either — so the dump and the arm that reads ' +
     'it are produced by one local invocation rather than by two dispatches that could disagree',
+  // Iteration 270: the ranking-depth rows. It belongs here for the reason the two entries above do, and with a
+  // note their rationales predate: `.github/workflows/benchmark-agentic.yml` now DOES pass
+  // `--fingerprint-out`, `--fault-free-profile` and this flag, because the elimination study needs artifacts the
+  // 25-input benchmark surface has no room for. That workflow is deliberately outside this census's scan set —
+  // the censuses here are about the RANKING surface (which knob a benchmark can vary, and what the dispatch
+  // budget is spent on), and a study workflow that dispatches a measurement is not a knob's owner. So the
+  // entries above and this one mean "no BENCHMARK dispatch can reach it", which is the direction that stays
+  // true: it can understate reachability, and understating is the safe error for a census whose purpose is to
+  // stop a document claiming a dispatch that does not exist.
+  '--depth-out':
+    'writes the per-case ranking depth — where the corpus answer sits in the full order — which is a reading of ' +
+    'a configuration rather than a knob: a second weight is a second reading of the same run, not a second ' +
+    'dispatch. `docs/agentic-headroom.md` §10 owns the split it made measurable',
 };
 
 /**

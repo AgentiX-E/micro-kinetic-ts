@@ -290,6 +290,11 @@ Three things this changes, and one it corrects:
 2. **The ceiling is Top@5, now measured rather than asserted.** `87.69%` against a saturated `87.8%` `Top@5` is a
    gap of one case in 1 422: an eliminator that may only remove candidates cannot reach a service the engine never
    ranked. §3's 711-case reading said the same thing (84.70 vs 84.81) and this is the confirmation at full width.
+   **Corrected in iteration 270, and the correction is the more important one:** the last clause is false. The
+   engine *does* rank those services — a stratified 106-case sample finds the answer somewhere in the order in
+   **106 of 106** cases, at a median miss depth of 4 and a maximum of 42 (§10). `87.8%` is the width of the
+   PRESENTATION (`At-K` reporting stops at five), not the reach of the ranking, and the reachable ceiling over a
+   twenty-wide window is `97.2%`, not `87.8%`.
 3. **Both refusals replicate.** The EBR rule loses 0.46 pp on the held-out half (§5 measured 0.6 pp on 711), and the skip rule discards
    **173 of the 174** cases the ceiling can win — it resolves 1 420 of 1 422 cases without a model, and 173 of
    those are cases a claim would have fixed. §4's verdict was not an artifact of the `waveB2` half.
@@ -306,3 +311,81 @@ every number above can be recomputed from them with no corpus:
 ```text
 run-agentic-headroom --fingerprints fingerprints.ndjson --verdicts per-case.ndjson --weight 1
 ```
+
+## 10. The depth split: the ceiling is a PRESENTATION, not the order
+
+§9 called `87.69%` the ceiling and explained it as "an eliminator that may only remove candidates cannot reach a
+service the engine never ranked". The second half of that sentence is wrong, and one artifact settled it: the
+answer is almost always **in the order**, below the fifth line, and `Top@5` was measuring the width of the
+presentation rather than the reach of the ranking.
+
+### 10.1 The instrument
+
+`--depth-out` (benchmarks/src/ranking-depth.ts) writes one compact row per case: the first-hit depth in the order
+the engine actually sorted, the candidate count, and the head of that order with the `finalScore` the sort used.
+Two reasons it is a row and not a wider `Top@K`:
+
+- a depth **separates** two families the averages merge — *ranked too low* (a scoring defect a re-ranking can
+  recover) from *not ranked at all* (a graph or label defect no re-ranking can touch). The second family is what
+  §9 assumed the 173 misses were;
+- the head carries the **margins**, which is what a tie-break premise is a claim about. A rule that only fires
+  when two candidates are within a few percent has to be checked against the margins that actually occur.
+
+`benchmarks/src/run-depth-report.ts` reads the artifact in the corpus-free job and prints the cumulative ladder
+plus a per-family table. Both are wired into `benchmark-agentic.yml` (`measure` writes it, `study` prints it
+before any arm is scored), and four assertions in `agentic-workflow-wiring.test.ts` fail if either wire is cut.
+
+### 10.2 The reading: 106 cases, stratified, run end to end
+
+One worker, no CI: 106 of the 1 422 datapacks, selected by FNV-1a hash order within each fault family with a floor
+of 1 and a cap of 10 per family (106 cases, 25 families), converted from the raw Parquet with
+`scripts/fse26_convert.py` and scored by the shipped engine. **The sample reproduces the corpus's own `Top@1` to
+within 0.04 pp** (`80/106 = 75.47%` against `1073/1422 = 75.46%`), and it agrees with the corpus-wide per-case
+artifact on all 106 cases, so it is a sample of this corpus and not of a nearby one.
+
+| K      | hits / 106 | share | 95% Wilson | what it bounds                                             |
+| ------ | ---------: | ----: | ---------: | ---------------------------------------------------------- |
+| @1     |         80 | 75.5% |   66.5–82.7 | the control                                                |
+| @2     |         85 | 80.2% |            |                                                            |
+| @3     |         93 | 87.7% |            |                                                            |
+| @5     |         94 | 88.7% |   81.2–93.4 | the ceiling §9 published as saturated                      |
+| @8     |         96 | 90.6% |            |                                                            |
+| @10    |         96 | 90.6% |   83.5–94.8 |                                                            |
+| @15    |         99 | 93.4% |            |                                                            |
+| @20    |        103 | 97.2% |   92.0–99.0 | what a re-ranker over a 20-wide presentation could reach    |
+| > 20   |          3 |  2.8% |            |                                                            |
+| absent |          0 |  0.0% | upper 3.50 | what §9 assumed the 173 misses were                        |
+
+The miss population is 26 cases and its depth histogram is `{1:5, 2:8, 4:1, 6:1, 7:1, 10:1, 11:2, 15:1, 18:3,
+22:1, 28:1, 42:1}` — median 4, maximum 42. Half the misses are within three lines of the answer the engine did
+print; the tail is thin and long.
+
+### 10.3 What it changes
+
+1. **The `absent` family is empty in this sample.** `0/106`, 95% upper bound 3.50 %, i.e. at most ~50 of the 1 422
+   cases could be absent even at the upper bound. The graph does carry the answers; the losses are ordering.
+2. **The reachable ceiling nearly doubles.** A re-ranker allowed to see twenty candidates faces `97.2%`, not
+   `87.8%` — **+21.7 pp over the control against the +12.19 pp** the elimination framing priced, because that
+   framing inherited a five-wide window from `At-K` reporting rather than from the order.
+3. **The eliminator's premise lost its support in the columns it is shown.** Measured on the full-corpus artifact,
+   over the 176 cases a perfect eliminator can fix, none of the fingerprint's own columns separates the source from
+   the wrong leader: the source's onset is earlier in `87/176` (49.4 %, exact binomial p = 0.94), its largest
+   deviation is larger in `102/176` (58.0 %, p = 0.042 uncorrected and not significant after a Bonferroni
+   correction over four columns), its minimum fault-free rate is lower in `85/176` (48.3 %, p = 0.71), and its
+   outside-band channel count is *equal* in `111/176` (63.1 %). A rule built on any of them as the primary signal
+   scores 26–34 % against the engine's 75.9 %, and the best gated tie-break measured (four keys × seven margins on
+   the top-1/top-2 pair) moves **+0.14 pp held out** — one case in 709 — while every wider gate loses. That does
+   not prove a model cannot reason across the columns jointly; it proves the columns do not carry the split, so an
+   arm that moves has to be reading something outside them.
+4. **The next instrument is a term decomposition, not another weight.** The misses at depth 6–42 are not close
+   calls the fingerprint can arbitrate; they are cases where the engine's own sum put a symptom ten lines above the
+   source. Which term paid for that is a question the existing `--terms-dump` can answer for a sample, and it is
+   the question §11 opens with.
+
+### 10.4 The full-corpus ladder, and why it is still owed
+
+The 106-case sample is a rate with a ±7 pp interval, not the number. The corpus-wide ladder comes from one
+`benchmark-agentic` dispatch, which now writes `depth.ndjson` beside the dumps and prints the table in the
+corpus-free job; §11 records that reading when it lands. Until then every figure above is stated with its
+denominator and its interval, and the plan below is conditioned on the full-width ladder agreeing with the sample
+in sign.

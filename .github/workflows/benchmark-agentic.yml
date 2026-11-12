@@ -19,10 +19,24 @@ name: Benchmark — agentic elimination study
 # state. Splitting the workflow rather than evicting a knob from the ranking surface is the choice that
 # leaves the published surface alone; a knob removed to make room would be an axis nobody could dispatch.
 #
+# ## Why a RANKING DEPTH artifact, when `Top@1` and `Top@5` are already reported
+#
+# Because the two misses they leave are different problems. A case the engine ranked sixth is a case a re-ranking
+# of a wider presentation could recover; a case whose answer appears nowhere in the order is one no re-ranking can
+# reach, because the graph does not carry it. `85.5 %`-versus-`93.8 %` cannot separate them, and which one dominates
+# is the question that decides whether the next iteration spends on scoring or on graph construction. So `measure`
+# writes the first-hit depth in the order the engine actually sorted, one compact row per case, and `study` prints
+# the cumulative `recall@K` ladder and the per-family split before it scores any arm — a ceiling quoted over a
+# population whose misses are mostly absent would be describing headroom this layer cannot collect.
+#
+# It costs a second ranking pass per case (the depth needs every candidate, not the reported five), which is the
+# same price `--terms-dump` charges and the reason both are opt-in flags rather than defaults in the runner.
+#
 # ## What it produces, and the boundary that makes it checkable
 #
-# Job `measure` writes three artifacts: the elimination fingerprints (every candidate's channel
-# pre/post/band/rate, ~5 MB), the per-case verdict file, and the run's own report. Job `study` reads
+# Job `measure` writes four artifacts: the elimination fingerprints (every candidate's channel
+# pre/post/band/rate, ~5 MB), the per-case verdict file, the ranking-depth rows (one line per case, with the head of
+# the order and the scores the sort used), and the run's own report. Job `study` reads
 # ONLY those artifacts and re-scores them offline. That boundary is deliberate: the study has no access
 # to the corpus, so a number it prints cannot be an accident of the data it happened to load, and the
 # same artifacts re-scored under a different `weight` cost nothing at all — which is what makes the
@@ -184,10 +198,12 @@ jobs:
             --fault-free-profile "$HOME/fault-free-profile.json" \
             --fingerprint-out artifacts/agentic/fingerprints.ndjson \
             --per-case-out artifacts/agentic/per-case.ndjson \
+            --depth-out artifacts/agentic/depth.ndjson \
             --output artifacts/agentic/results.json \
             "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
+          echo "depth lines:       $(wc -l < artifacts/agentic/depth.ndjson)"
 
       # The corpus manifest is STAGED BESIDE THE DUMPS rather than uploaded from the workspace root.
       #   `upload-artifact` computes the least common ancestor of every path it is given, so one path outside
@@ -212,6 +228,7 @@ jobs:
           path: |
             artifacts/agentic/fingerprints.ndjson
             artifacts/agentic/per-case.ndjson
+            artifacts/agentic/depth.ndjson
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
             artifacts/agentic/manifest.json
@@ -247,6 +264,17 @@ jobs:
         #   parser that was handed an empty path.
         run: ls -l artifacts/agentic
 
+      # The split the elimination layer's own headroom rests on: a case the engine ranked too low is a case a
+      # re-ranking could recover, and a case whose answer is nowhere in the order is one no re-ranking can reach.
+      # `Top@1` and `Top@5` cannot tell them apart, so the depth artifact is read here, per family, and printed
+      # before any arm is scored — a ceiling quoted over a population whose misses are mostly ABSENT would be
+      # describing headroom no layer of this shape can collect.
+      - name: Split the misses by depth and by family
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-depth-report.ts \
+            --depth artifacts/agentic/depth.ndjson 2>&1 | tee artifacts/agentic/depth.txt
+
       # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
       # a verdict whose published order disagrees, because two artifacts from different runs would
       # produce a number for a configuration neither of them ran -- and the CLI exits non-zero on that
@@ -268,5 +296,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agentic-headroom
-          path: artifacts/agentic/headroom.txt
+          path: |
+            artifacts/agentic/headroom.txt
+            artifacts/agentic/depth.txt
           if-no-files-found: warn

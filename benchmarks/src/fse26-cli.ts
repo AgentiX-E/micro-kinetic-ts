@@ -253,6 +253,22 @@ export interface Fse26CliOptions {
    */
   readonly fingerprintOut: string;
   /**
+   * Path to write the per-case RANKING DEPTH to (empty = none).
+   *
+   * `Top@1` and `Top@5` divide the corpus's misses into two families that an average cannot distinguish: a case
+   * whose answer is *deeper than five* (a ranking defect, reachable by re-ordering) and one whose answer is
+   * *nowhere in the order* (a graph, label or extraction defect that no re-ordering can reach). The second family
+   * is where the ceiling argument lives, so it has to be counted rather than inferred from `Top@5`'s shortfall.
+   *
+   * This records, per case, the first-hit depth in the order the engine actually sorted — the same order the
+   * shipped `Top@5` is a slice of — plus the candidate count and the head of the order with the scores the sort
+   * used, which is what makes a margin claim checkable without a second run.
+   *
+   * Costs a second ranking pass over each case (the depth needs EVERY candidate, not the reported five), so it is
+   * off unless asked for. It changes nothing the engine computes, which is why both classification lists name it.
+   */
+  readonly depthOut: string;
+  /**
    * Metric names to filter out of every case before scoring (empty = none).
    * Component-ablation switch: the bridge merges four metric sources into one
    * map, so removing a source's names here re-scores the same cases as if the
@@ -687,6 +703,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     termsOut: '',
     fingerprintOut: '',
+    depthOut: '',
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -782,6 +799,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
     else if (arg === '--terms-dump' && hasValue(argv, i + 1)) opts.termsOut = argv[++i]!;
     else if (arg === '--fingerprint-out' && hasValue(argv, i + 1)) opts.fingerprintOut = argv[++i]!;
+    else if (arg === '--depth-out' && hasValue(argv, i + 1)) opts.depthOut = argv[++i]!;
     else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
       opts.eventExtraLabels = csv(argv[++i]!);

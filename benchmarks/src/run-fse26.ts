@@ -55,6 +55,7 @@ import { discoverCaseDirs } from './case-discovery.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
+import { DepthDump, formatDepthLadder, readDepthDump } from './ranking-depth.js';
 import { TermDump } from './terms-dump.js';
 
 import {
@@ -210,6 +211,10 @@ async function main(): Promise<void> {
   // second run onto the first would describe a corpus nobody dispatched.
   const fingerprintDump =
     opts.fingerprintOut === '' ? undefined : new FingerprintDump(opts.fingerprintOut);
+  // The depth dump, on the same truncate-once rule and for the same reason: it describes a POPULATION.
+  // It is also the only artifact that can tell a case ranked too low from a case the order never held, which is
+  // the split that decides whether the remaining headroom is a ranking question or a graph question.
+  const depthDump = opts.depthOut === '' ? undefined : new DepthDump(opts.depthOut);
 
   for (const dir of selected) {
     let raw: FSE26RawCase;
@@ -298,9 +303,23 @@ async function main(): Promise<void> {
     // promotion it could not make. So the dump re-ranks the SAME graph over the whole node set —
     // the same engine, the same terms, a different `topK` — and the first five of that order are
     // the five above, because the ranking is a total order sliced at the end.
-    if (termDump !== undefined && faultGraph) {
-      const full = pruner.analyze(faultGraph, Math.max(1, benchCase.callGraph.nodes.size));
-      termDump.record({ datapack: basename(dir), faultType, accepted, ranking: full });
+    // Both writers below read the SAME full order, so it is computed once: two `analyze` calls over the whole
+    // node set would be two orderings of one graph, and every argument in this repository about a dump being a
+    // property of the run rather than of a second pass would stop being true.
+    //
+    // The DEPTH row is written even when the case produced no graph. A case the engine could not score has no
+    // accepted service in its (empty) order, and dropping it would shrink the ladder's denominator to the cases
+    // that happened to work — a table whose rungs are shares of a population the run never declared, and one
+    // that reads BETTER the more cases the loader failed on.
+    if (termDump !== undefined || depthDump !== undefined) {
+      const full =
+        faultGraph === undefined
+          ? []
+          : pruner.analyze(faultGraph, Math.max(1, benchCase.callGraph.nodes.size));
+      if (faultGraph !== undefined) {
+        termDump?.record({ datapack: basename(dir), faultType, accepted, ranking: full });
+      }
+      depthDump?.record({ datapack: basename(dir), faultType, accepted, ranking: full });
     }
 
     // ── Optional per-case elimination FINGERPRINT (--fingerprint-out) ──
@@ -404,6 +423,18 @@ async function main(): Promise<void> {
   if (opts.perCaseOut !== '') {
     const written = writePerCaseVerdicts(opts.perCaseOut, verdicts);
     console.log(`  Per-case verdicts: ${written} rows -> ${opts.perCaseOut}`);
+  }
+  if (opts.depthOut !== '') {
+    // The ladder is printed as well as written: the artifact is what an offline analysis joins on, and the table
+    // is what a dispatch reads in its own log. Both come from the same rows, so the log cannot state a ladder the
+    // file does not support.
+    const summary = depthDump!.summary();
+    const rows = readDepthDump(opts.depthOut);
+    console.log(formatDepthLadder(rows));
+    console.log(
+      `  Depth rows: ${summary.cases} cases, ${summary.candidates} candidates, ` +
+        `${summary.absent} absent, deepest=${summary.deepest ?? 'none'} -> ${summary.path}`,
+    );
   }
   if (fingerprintDump !== undefined) {
     // The census is printed rather than only written: a fingerprint that offered nothing is indistinguishable

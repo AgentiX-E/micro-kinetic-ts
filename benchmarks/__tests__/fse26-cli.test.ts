@@ -161,6 +161,46 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--no-rank-normalization']).rankNormalization).toBe(false);
   });
 
+  it('leaves every writer path empty by default, so a run writes only what it was asked for', () => {
+    const opts = parseFSE26Args([]);
+    expect(opts.perCaseOut).toBe('');
+    expect(opts.termsOut).toBe('');
+    expect(opts.fingerprintOut).toBe('');
+    expect(opts.depthOut).toBe('');
+  });
+
+  it('parses the three diagnostic writers, each onto its OWN field', () => {
+    // Separate fields rather than one "dump" path: the term dump is a 51-candidate × 18-term record, the
+    // fingerprint is a bounded five-candidate summary, and the depth row is a few hundred bytes — three artifacts
+    // with three lifetimes, and collapsing them would make asking for one mean paying for all.
+    const opts = parseFSE26Args([
+      '--per-case-out',
+      'per-case.ndjson',
+      '--terms-dump',
+      'terms.ndjson',
+      '--fingerprint-out',
+      'fingerprints.ndjson',
+      '--depth-out',
+      'depth.ndjson',
+    ]);
+    expect(opts.perCaseOut).toBe('per-case.ndjson');
+    expect(opts.termsOut).toBe('terms.ndjson');
+    expect(opts.fingerprintOut).toBe('fingerprints.ndjson');
+    expect(opts.depthOut).toBe('depth.ndjson');
+  });
+
+  it('takes the last occurrence of a writer path when the flag is repeated', () => {
+    expect(parseFSE26Args(['--depth-out', 'a.ndjson', '--depth-out', 'b.ndjson']).depthOut).toBe(
+      'b.ndjson',
+    );
+  });
+
+  it('refuses a writer flag with no value rather than writing to an empty path', () => {
+    for (const flag of ['--depth-out', '--terms-dump', '--fingerprint-out', '--per-case-out']) {
+      expect(() => parseFSE26Args([flag])).toThrow();
+    }
+  });
+
   it('splits and trims the comma-separated flags', () => {
     const opts = parseFSE26Args([
       '--diagnose',

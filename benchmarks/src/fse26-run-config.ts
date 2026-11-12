@@ -69,6 +69,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'diagnoseDecimals',
   'termsOut',
   'fingerprintOut',
+  'depthOut',
   'faultFreeProfilePath',
 ] as const;
 
