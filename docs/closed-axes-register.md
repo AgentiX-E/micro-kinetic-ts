@@ -187,6 +187,10 @@ measured against, not the current number. Both are still reachable as ablations 
 | the deviation WINDOW's anchor — whether a metric's baseline, `max` and `min` come from the whole file or from the segment before the injection, which is the difference between scoring a fault against the level a service RUNS at and against the level it warmed up to | `baseline-anchor.md` | **built, tested, dispatchable on both halves, and now MEASURED ON ALL NINE CELLS AND BOTH SUITES — and the answer is: the axis works, the default does not move.** Three arms on the 735-case corpus (pre-clause `e79c0b61` 627, control 631, anchored 634) price the two changes APART: the log-vocabulary clause is `+11/−7 = +4` and the window is `+13/−10 = +3`, and **the intersection of the two move-sets is EMPTY**, so the pair is strictly additive (627 + 4 + 3 = 634) — a single arm would have split +7 between two mechanisms by assertion. Per cell the window reads SS1 `116 → 119`, TT3 `21 → 25`, SS3 `18 → 19`, OB2 `80 → 79`, TT2 `75 → 72`, OB3 `25 → 24`. On FSE'26 it is `Top@1 60.478% → 61.181%` (+10 of 1422, `Top@3` +8, `Top@5` +6), and the clause is provably INERT there (`PROPAGATED_EXCEPTION_PATTERN` is reachable from one loader, and the pre-clause run reproduces `0.6047819971870605` to sixteen digits). The mechanism is still counted on `re3ss_carts_f4_2`: the truth's own `cpu` rises 5.8× from the level it runs at (4.41) to the warm-up level (29.99) and the whole-file window scores that as `drop=1.00, dev=0.301`, the capped end of the drop side, against `dev=0.833` anchored. **Ships at `whole-file`, i.e. OFF**: `RE2:TrainTicket 75 → 72` is a cell regression and a cell regression is refused on measurement even when the corpus total improves. The loss concentration bought a SECOND value rather than a default: `pre-injection-stationary` is the same window with one refusal — it anchors only when the pre-segment certifies itself as a level, `DRIFT = |median(second half) − median(first half)| / |median(pre-segment)| ≤ 0.25` over at least 6 samples, both halves summarised by the same MEDIAN the baseline uses. **Measured on all nine cells it is `635/735` (`+5/−4` against the unguarded arm) and it recovers exactly the losses it was built for — both remaining RE2:TrainTicket `_1` cases and the RE3:OnlineBoutique loss — at the price of four of the unguarded arm's near-swaps; on FSE'26 it is `864` against `870`, so the two suites DISAGREE and the condition cannot be stationarity alone.** The statistic already computes a SIGNED difference and the guard throws the sign away: a pre-segment that opens high and settles (this axis' founding case) and one that is still climbing are both `non-stationary` to it, and the next value has to separate them. | **the warm-up prediction is resolved, and half of it is FALSIFIED — which is what the row is for.** It predicted that losses "must fall in the warm-up population (`mem`/`cpu` series that open high)"; the concentration is real but it is on injection **INDEX**, not on family: **5 of the 10 losses are `_1` cases** (all five RE2-TT moves are, four losses and one gain), while the families are `disk`×3, `loss`×2, `delay`, `cpu`, `f*`×3. So the condition that predicts the losses is _the pre-window is the container's own ramp_ — a STATIONARITY condition — and the guard that follows is a stationarity test on the pre-window, not a family mask. Two further gates before the default may move: the run carries **no counter for refused anchors** (short window, non-positive baseline, `max(3, ⌈0.1n⌉)`), so "cell X did not move" cannot yet be told apart from "the guard refused the anchor on every series in X"; and it still does not compose with `dropdev=log`, whose explosion was measured against the whole-file window **The counter now exists** (`benchmarks/src/anchor-census.ts`, 100% covered, called through the engine's own `probePreInjectionWindow`/`judgePreWindowDrift` so the count and the decision cannot disagree), and its first reading closed the sign hypothesis rather than confirming it: a fourth value `pre-injection-non-rising` (refuse only a RISING pre-segment, `drift > 0.25`) was dispatched on all nine cells and FSE'26 and TIES the symmetric guard at `635/735` while losing `870 → 866` on FSE'26 — `stationary → non-rising` is `+4/−4`, four cases bought by refusing a SETTLING segment and four by allowing a RISING one, so no single threshold on one statistic can have both halves. The census also priced the guard's own population for the first time: the rising share of placeable series ranges from `0.6%` (RE2:OnlineBoutique) to `12.6%` (RE3:TrainTicket), a factor of 21, so a global threshold cannot be right at both ends. And it moved the next lever off this axis: the 23 moves of the unguarded arm separate on the CANDIDATE POOL (median 15 for gains, **39** for losses) and not on the truth's pre-window (gains `{level 4, settling 8, rising 1}` vs losses `{level 4, settling 6}`), i.e. the losses are a property of the ranking's DENSITY — `rankNormalization` and the top-of-graph score gap — rather than of the window's admissibility |
 | the **expected-outlier RATE as an elimination DECIDER** — whether a candidate whose channels leave their fault-free bands in most clean windows can be demoted in favour of one whose evidence is rarer, stated as a claim over the posterior rather than as a weight on it | `agentic-headroom.md` §5, on 711 converted RCABench cases against a 2 077-channel profile built from the same corpus | most permissive thresholds **46.3 % against the engine's 68.07 %** (−21.8 pp, 310 moves); the best held-out point **68.2 % against 68.75 %** there — four moves and −0.6 pp. The census says why: mean channel rate **0.749**, median 0.796, only **0.8 %** of channels clean, so "left its band" is not rare and a rate that counts it orders nothing| **CLOSED as a decider** — the third presentation to fail (additive term in iteration 265, this rule, and the column that survives only because its job is to make a claim checkable rather than to decide it). The layer keeps the column and the +16.63 pp ceiling it makes checkable |
 
+| **the weight vector as a DIRECTION** — every term moved at once, which no screen here had ever done: 28 single-term points, 84 revival points and a resolution floor are points on the AXES of a 14-dimensional space | `weight-reachability.md` | **REOPENED, and then constrained.** The hull theorem decides every case exactly: with the formula's support frozen, **131 of 349 misses are provably unreachable** by any re-weighting; with the support open, **all 349** are reachable, each by a vector of its own. A single vector fitted on half the corpus and read on the other half gains **+38 to +52 (mean +47.3, +6.7 pp)** in **six of six** fits — so 274's *"not reachable by re-weighting"* was a statement about the axes it swept. It does not ship YET: the family gate (`n ≥ 20` may not lose a case) rejects it on `HTTPRequestAbort −3`, `HTTPRequestReplacePath −4`, `NetworkDelay −6`, and the constrained fit is the next subject |
+| **the formula's SUPPORT** — WHICH terms carry weight at all, as opposed to how much, since six of the fourteen ship at zero on this corpus | `weight-reachability.md` | **measured as the difference between two ceilings, not as a sweep.** Freezing the support costs `131` cases and opening it costs none, so the support is the binding constraint of the weight dimension and the values are not — which is the reverse of how this register has read the weight axis since 272 |
+| the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4 | **a DEFECT in the artefact, open.** One corpus, one dispatch family, two values for one weight: `0` on 1 114 cases, absent on 200, `3` on 108. No single vector reproduces the recorded run, and the gap at `Δw = 0` is **24 cases** on a 711-case half — enough to flip the sign of a small effect. Not repaired here: the repair moves every published baseline |
+
 ## What this register holds besides its axes
 
 Every document in `docs/` is reachable from here, because this is the one file a session is told to read  
@@ -2682,3 +2686,87 @@ total. Resolution: the whole reachable population at revival scale is 12 cases i
 sit at gaps of `0.1` to `1`. The remaining misses are not reachable by re-weighting, reviving or re-shaping the
 nineteen terms the formula has — only by a term with a different **shape**, and the pod census says this corpus cannot
 supply one.
+
+## Iteration 275 — the weight axis REOPENS: 274's closing sentence was a statement about axes, not about the dimension
+
+> **Corrected at iteration 275.** The paragraph above ends *"the remaining misses are not reachable by re-weighting,
+> reviving or re-shaping the nineteen terms the formula has — only by a term with a different shape"*. The first half of
+> that sentence is **false**. Every screen behind it — 28 single-term points, 84 revival points, the resolution floor —
+> moves ONE term, or a handful, and reads the corpus. Those are points on the axes of a 14-dimensional space. A
+> direction that moves every term at once was never tested, and the test is not a sweep: it is a convex-hull question
+> with an exact answer per case.
+
+### The theorem, and the certificate on each side of it
+
+`score(v) = Σᵢ wᵢ·vᵢ` is linear in `v`, so if the accepted candidate's vector `a` is a convex combination of the
+competitors' — `a = Σ λᵢ vᵢ`, `λ` on the simplex — then for every `w`, `w·a ≤ maxᵢ w·vᵢ`, and `a` can only be first on a
+**tie**, which the engine's stable sort resolves against it. If `a` is outside the hull, the separating hyperplane
+theorem hands a witness. Reachability is therefore decided per case, not sampled, and `benchmarks/src/
+weight-reachability.ts` decides it by maximising the margin over `(vᵢ − a)·w + t ≤ 0`, `|w| ≤ 1` — reading the
+separator off the primal at `t > 0` and the hull combination off the **duals** at `t = 0`. Both come from one tableau.
+
+Every verdict is then checked by substitution, which is what makes the numbers below claims rather than solver output:
+a `separable` case is RE-RANKED with its witness and must come out first; an `in-hull` case is REBUILT from its
+combination and must reach `1e-9`. Certificates that fail fall through to `undecided`.
+
+### The two bases, which are the point
+
+| Basis | What a direction may move | hits | separable | in-hull | undecided | ceiling |
+|---|---|---:|---:|---:|---:|---:|
+| `slope` | any of the 14 terms, including the ones shipped at zero | 1 073 | 349 | 0 | 0 | **1 422 (100 %)** |
+| `paid` | only the terms that already pay (`weight × slope`) | 1 073 | 217 | **131** | 1 | 1 290 (90.72 %) |
+
+**The support is the constraint, not the values.** With the support frozen, 131 misses are provably unreachable — no
+re-weighting of the paying terms separates them, because on those columns their answers are convex combinations of
+their competitors. With the support open, **all 349** are reachable, each by a vector of its own, and that is the
+answer to the sentence 274 wrote. The `slope` reading also states its own limit honestly: in 14 dimensions with ~49
+candidates a point is almost always a vertex, so `in-hull = 0` there is a fact about dimensionality and not about
+headroom. The theorem earns its place in the frozen-support space, where it *decides* 131 cases.
+
+### The positive result: one vector transfers
+
+`heldOutFit` fits a ranking perceptron on the alternating even cases, reads it on the odd ones, and swaps — three seeds
+by two orientations, because one fit is an anecdote.
+
+| Fit | recorded | start | fitted | vs recorded |
+|---|---:|---:|---:|---:|
+| train (711) | 542 | 518 | 605 | **+63** |
+| held (711) | 531 | 513 | 580 | **+49** |
+| held, five more fits | 531 / 542 | 513 / 518 | 576–594 | **+45, +51, +52, +38, +49** |
+
+**Six of six held-out halves improve, `+38` to `+52`, mean `+47.3` (`+6.7 pp`), with no engine change, no new term and
+no model call.** The training half rises further (`85.1 %` against the held half's `81.6 %`), and the 25-case gap
+between them is the overfit the design exists to expose rather than to hide.
+
+### And it does not ship, because the family gate refuses it
+
+Net `+112` (`1 185` against `1 073`), gross `+131`, and `+84` of the gross sits in two `HTTP…Replace…` families —
+while **three families above the 20-case floor lose cases**: `HTTPRequestAbort −3`, `HTTPRequestReplacePath −4`,
+`NetworkDelay −6`. The pre-registered rule *no family with `n ≥ 20` may lose a case the shipped run answered* rejects
+it. Same bar that killed `prism 0.02` at 274, applied to a result twenty times larger; a gate applied only to small
+numbers is not a gate. The next subject is the **constrained** fit — maximise the count subject to the family floor,
+which is LP-shaped rather than perceptron-shaped.
+
+### The defect found on the way: the shipped run is not one weight vector
+
+The fit starts where the dump says the formula started, and there it scores `518` of the training half against the
+`542` the dump RECORDED. A 24-case gap at `Δw = 0` is not a fitting artefact. The census names the term:
+
+| `failedEdge` weight in the dump | Cases |
+|---|---:|
+| `0` | 1 114 |
+| absent (never fired) | 200 |
+| `3` | 108 |
+
+One corpus, one dispatch family, **two different values for the same weight**. "The shipped configuration" — the
+baseline every ablation in this repository subtracts from — is a mixture of two configurations, and no single vector
+reproduces it. Recorded as an open defect with its measurement; the repair changes every published baseline and needs
+the two batches traced first.
+
+### What this changes
+
+The next step is no longer "a term with a different shape". It is (1) the constrained fit, which the unconstrained one
+already proves is worth most of `+6.7 pp`, and (2) the per-case **selection**, because the per-case ceiling is `100 %`
+and one vector reaches `81.6 %` — that distance is the agent layer's quantified target, with the parameter switch the
+project requires. The 131 frozen-support cases are a separate line: they need a term TURNED ON, and six terms ship at
+zero on this corpus.

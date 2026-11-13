@@ -2337,3 +2337,45 @@ exactly one thing we do not have: the 27 ids and their windows. Reconstructing t
 *descriptions* would be a re-implementation of the sample and is refused as evidence.
 
 Full protocol, tables and the entry checklist: **`docs/rcatlas-crosswalk.md`**.
+
+> - **v3.5 (2026-11-13, iteration 275) — competitor re-verification, and the first time the RCABench column can be
+>   read against named systems.** Three sources checked this iteration, and one of them re-shapes the ranking claim
+>   rather than confirming it.
+>
+>   **RCABench, read against arXiv:2608.21310 Table 2** (ten framework–backbone configurations, `Acc@1` on the same
+>   benchmark family this project reports 75.46 % on, 1 073/1 422):
+>
+>   | Configuration | `Acc@1` |
+>   |---|---:|
+>   | Sonnet · ThinkDepth.ai | **90.0** |
+>   | ClaudeCode | 79.6 |
+>   | ThinkDepth.ai | 79.2 |
+>   | AIQ | 77.6 |
+>   | **this engine (deterministic, no model call)** | **75.46** |
+>   | TaskWeaver | 65.2 |
+>   | RCLAgent V2 | 53.4 |
+>   | GoS | 48.2 |
+>   | OpenRCA | 46.6 |
+>   | OpsAgent | 45.8 |
+>   | Qwen · mABC | 42.6 |
+>
+>   So the engine ranks **fifth of eleven** on the column, **first among methods that issue no model call**, and
+>   **14.5 pp behind the best agent**. That is the honest reading and it is not the one this document carried before:
+>   the RCABench column was reported as an absolute, and the field has a 90 % entry on it.
+>
+>   **RCAtlas-Core, arXiv:2610.35767 Table 3** (90 cases, `PR@1`, mean over three mid-tier models for the LLM rows):
+>   Codex 77.2 · SQL agent 72.8 · one-shot 65.3 · FoA 53.3 · RCAgent 49.3 · RCA-Agent 43.3 · **NSigma 38.9** ·
+>   SimpleRCA 33.3 · TORAI 33.3 · DecompRCA 28.5 · BARO 22.2 · FaultInsight 18.9 · CIRCA 17.8 · mABC 15.6 · RCD 5.9
+>   · **random 5.5**. The best **non-LLM** method is `NSigma` at 38.9 %, which is where a deterministic engine is
+>   compared. This engine has **no RCAtlas number**: §*The corpus, and why it is not on this page* above still holds —
+>   the 90-case list ships as one `ufile.io` package behind an ad-gate and the converted data is unreleased. The paper
+>   confirms the release plan (~11 GB) and adds `cases/core90_cases.csv` + `cases/core90_labels.json` to the package,
+>   which is the fetch this project still owes.
+>
+>   **arXiv:2609.36686 (NeurIPS 2026, Evaluations & Datasets)** decomposes `Top@k` into retrieval and reranking and
+>   reports that on complex faults statistical baselines mis-rank the true cause 79–100 % of the time while retrieval
+>   is *nearly solved* (98–100 %) where the fault shows at its origin. Two consequences for this project, both already
+>   visible in its own numbers: the two-stage retrieve-then-rerank shape it has is the one that paper finds winning
+>   (up to `+12 pp` over the best baseline), and its own `undecided` verdict — a case whose answer the ranking never
+>   listed — is that paper's *retrieval* failure, which no re-weighting reaches. v275's reachability module counts
+>   exactly one such case in 1 422.
