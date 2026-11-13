@@ -222,10 +222,7 @@ export function prepareCases(cases: readonly ParsedTermCase[]): PreparedCorpus {
  * @param weights - The moves, by name.
  * @returns The candidates in the moved order (score descending, the dump's index breaking ties), and the verdict.
  */
-function scoreCase(
-  kase: PreparedCase,
-  weights: ReadonlyMap<string, number>,
-): CaseOutcome {
+function scoreCase(kase: PreparedCase, weights: ReadonlyMap<string, number>): CaseOutcome {
   const scores: number[] = [];
   for (const candidate of kase.candidates) {
     let score = candidate.base;
@@ -318,7 +315,10 @@ export function shippedWeightsOf(cases: readonly ParsedTermCase[]): WeightMove[]
   }
   return [...seen.entries()]
     .map(([name, weight]) => ({ name, weight }))
-    .sort((left, right) => Math.abs(right.weight) - Math.abs(left.weight) || byId(left.name, right.name));
+    .sort(
+      (left, right) =>
+        Math.abs(right.weight) - Math.abs(left.weight) || byId(left.name, right.name),
+    );
 }
 
 /** A move list as a row label: the moves in the order the point states them. */
@@ -351,19 +351,25 @@ export const DEFAULT_GRID: readonly GridPoint[] = [
   ...STABILITY_SWEEP.map((weight) => point([{ name: 'stability', weight }])),
   ...LAT_SWEEP.map((weight) => point([{ name: 'lat', weight }])),
   ...LOG_SWEEP.map((weight) => point([{ name: 'log', weight }])),
-  ...STABILITY_PAIRING.map((weight) => point([
-    { name: 'stability', weight },
-    { name: 'log', weight: 1.2 },
-  ])),
-  ...STABILITY_PAIRING.slice(0, 3).map((weight) => point([
-    { name: 'stability', weight },
-    { name: 'lat', weight: 0.4 },
-  ])),
-  ...STABILITY_TRIPLING.map((weight) => point([
-    { name: 'stability', weight },
-    { name: 'lat', weight: 0.4 },
-    { name: 'log', weight: 1.2 },
-  ])),
+  ...STABILITY_PAIRING.map((weight) =>
+    point([
+      { name: 'stability', weight },
+      { name: 'log', weight: 1.2 },
+    ]),
+  ),
+  ...STABILITY_PAIRING.slice(0, 3).map((weight) =>
+    point([
+      { name: 'stability', weight },
+      { name: 'lat', weight: 0.4 },
+    ]),
+  ),
+  ...STABILITY_TRIPLING.map((weight) =>
+    point([
+      { name: 'stability', weight },
+      { name: 'lat', weight: 0.4 },
+      { name: 'log', weight: 1.2 },
+    ]),
+  ),
 ];
 
 /** Compare two ids the way the corpus does, so two runs' loss lists are the same list. */
@@ -382,12 +388,13 @@ function byId(left: string, right: string): number {
  * @param points - The grid. An empty grid returns no rows.
  * @returns The report: the population, the baseline and one row per point, in the grid's order.
  */
-export function screenPrepared(
-  corpus: PreparedCorpus,
-  points: readonly GridPoint[],
-): ScreenReport {
+export function screenPrepared(corpus: PreparedCorpus, points: readonly GridPoint[]): ScreenReport {
   const baseline = evaluatePrepared(corpus, []);
-  const population = { cases: corpus.cases.length, refused: corpus.refused, baseline: baseline.hits };
+  const population = {
+    cases: corpus.cases.length,
+    refused: corpus.refused,
+    baseline: baseline.hits,
+  };
   if (points.length === 0) return { ...population, rows: [] };
   const byFamily = new Map<string, { total: number; hits: number }>();
   for (const outcome of baseline.outcomes) {
@@ -519,14 +526,20 @@ export function formatScreenReport(
       '  families that lose / verdict',
   );
   for (const row of report.rows) {
+    // The losses below the floor are named as a remainder rather than dropped, so the row's own arithmetic adds up
+    // on its face: `sum(listed) + remainder = lost`. Without it a row can read "no family above the floor lost a
+    // case" while the `gain/loss` column says it lost one, and a reader has no way to see where the case went.
+    const listed = row.losses.reduce((sum, loss) => sum + loss.lost.length, 0);
+    const remainder = row.lost.length - listed;
+    const below = remainder === 0 ? '' : ` (+${remainder} below the floor)`;
     const cost =
       row.losses.length === 0
         ? row.delta > 0
-          ? 'no family above the floor lost a case  ADMISSIBLE'
+          ? `no family above the floor lost a case${below}  ADMISSIBLE`
           : 'nothing moved in either direction  NO-OP'
         : row.losses
             .map((loss) => `${loss.faultType} -${loss.lost.length} (n=${loss.cases})`)
-            .join(', ');
+            .join(', ') + below;
     lines.push(
       `  ${row.label.padEnd(32)}${String(row.after).padStart(7)}${signed(row.delta).padStart(5)}` +
         `${`${row.gained.length}/${row.lost.length}`.padStart(11)}  ${cost}`,
@@ -593,7 +606,8 @@ export function parseGridFile(text: string): GridPoint[] {
       moves.push({ name, weight: value });
     }
     if (moves.length === 0) throw new Error(`grid point ${index} moves nothing`);
-    const label = typeof record.label === 'string' && record.label !== '' ? record.label : labelOf(moves);
+    const label =
+      typeof record.label === 'string' && record.label !== '' ? record.label : labelOf(moves);
     points.push({ label, moves });
   }
   return points;

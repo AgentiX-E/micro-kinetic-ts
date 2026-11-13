@@ -59,34 +59,34 @@ two-dimensional moves, which is a selection whose rule was whoever wrote the scr
 
 | move | Top@1 | Δ | gained/lost | families above the floor that lose |
 | ---- | ----: | -: | ----------: | ---------------------------------- |
-| `stability 0` | 1 073 | 0 | 0/0 | nothing moved in either direction — **NO-OP** |
-| `stability 0.02` | 1 073 | 0 | 0/0 | nothing moved in either direction — **NO-OP** |
+| `stability 0` | 1 073 | 0 | 0/0 | nothing moved in either direction **NO-OP** |
+| `stability 0.02` | 1 073 | 0 | 0/0 | nothing moved in either direction **NO-OP** |
 | `stability 0.05` | 1 074 | +1 | 2/1 | HTTPRequestDelay −1 (n=88) |
 | `stability 0.1` | 1 075 | +2 | 6/4 | HTTPRequestDelay −2 (n=88), HTTPResponseReplaceCode −1 (n=231), NetworkPartition −1 (n=97) |
-| `stability 0.2` | 1 077 | +4 | 14/10 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseReplaceCode −2 (n=231), JVMException −2 (n=43), NetworkPartition −1 (n=97) |
-| `stability 0.3` | 1 079 | +6 | 23/17 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPRequestReplacePath −3 (n=39), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −3 (n=231), JVMException −2 (n=43), JVMReturn −1 (n=21), NetworkPartition −1 (n=97) |
-| `stability 0.4` | 1 074 | +1 | 29/28 | HTTPRequestAbort −1 (n=60), HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPRequestReplacePath −3 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −5 (n=231), JVMException −4 (n=43), JVMReturn −1 (n=21), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) |
-| `stability 0.8` | 1 046 | -27 | 36/63 | HTTPRequestAbort −2 (n=60), HTTPRequestDelay −8 (n=88), HTTPRequestReplaceMethod −8 (n=190), HTTPRequestReplacePath −5 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceBody −2 (n=51), HTTPResponseReplaceCode −14 (n=231), JVMException −5 (n=43), JVMReturn −3 (n=21), NetworkCorrupt −4 (n=46), NetworkDelay −1 (n=21), NetworkLoss −2 (n=48), NetworkPartition −3 (n=97) |
-| `stability 1.6` | 934 | -139 | 43/182 | HTTPRequestAbort −11 (n=60), HTTPRequestDelay −12 (n=88), HTTPRequestReplaceMethod −32 (n=190), HTTPRequestReplacePath −13 (n=39), HTTPResponseAbort −7 (n=44), HTTPResponseDelay −5 (n=89), HTTPResponseReplaceBody −6 (n=51), HTTPResponseReplaceCode −46 (n=231), JVMException −8 (n=43), JVMReturn −5 (n=21), NetworkBandwidth −2 (n=42), NetworkCorrupt −11 (n=46), NetworkDelay −5 (n=21), NetworkLoss −7 (n=48), NetworkPartition −6 (n=97) |
-| `lat 0` | 1 015 | -58 | 4/62 | HTTPRequestDelay −12 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPResponseDelay −13 (n=89), NetworkBandwidth −3 (n=42), NetworkCorrupt −8 (n=46), NetworkDelay −9 (n=21), NetworkLoss −6 (n=48), NetworkPartition −6 (n=97) |
-| `lat 0.2` | 1 050 | -23 | 4/27 | HTTPRequestDelay −7 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPResponseDelay −7 (n=89), NetworkBandwidth −1 (n=42), NetworkCorrupt −4 (n=46), NetworkDelay −4 (n=21), NetworkLoss −2 (n=48) |
+| `stability 0.2` | 1 077 | +4 | 14/10 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseReplaceCode −2 (n=231), JVMException −2 (n=43), NetworkPartition −1 (n=97) (+1 below the floor) |
+| `stability 0.3` | 1 079 | +6 | 23/17 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPRequestReplacePath −3 (n=39), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −3 (n=231), JVMException −2 (n=43), JVMReturn −1 (n=21), NetworkPartition −1 (n=97) (+2 below the floor) |
+| `stability 0.4` | 1 074 | +1 | 29/28 | HTTPRequestAbort −1 (n=60), HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPRequestReplacePath −3 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −5 (n=231), JVMException −4 (n=43), JVMReturn −1 (n=21), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) (+2 below the floor) |
+| `stability 0.8` | 1 046 | -27 | 36/63 | HTTPRequestAbort −2 (n=60), HTTPRequestDelay −8 (n=88), HTTPRequestReplaceMethod −8 (n=190), HTTPRequestReplacePath −5 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceBody −2 (n=51), HTTPResponseReplaceCode −14 (n=231), JVMException −5 (n=43), JVMReturn −3 (n=21), NetworkCorrupt −4 (n=46), NetworkDelay −1 (n=21), NetworkLoss −2 (n=48), NetworkPartition −3 (n=97) (+3 below the floor) |
+| `stability 1.6` | 934 | -139 | 43/182 | HTTPRequestAbort −11 (n=60), HTTPRequestDelay −12 (n=88), HTTPRequestReplaceMethod −32 (n=190), HTTPRequestReplacePath −13 (n=39), HTTPResponseAbort −7 (n=44), HTTPResponseDelay −5 (n=89), HTTPResponseReplaceBody −6 (n=51), HTTPResponseReplaceCode −46 (n=231), JVMException −8 (n=43), JVMReturn −5 (n=21), NetworkBandwidth −2 (n=42), NetworkCorrupt −11 (n=46), NetworkDelay −5 (n=21), NetworkLoss −7 (n=48), NetworkPartition −6 (n=97) (+6 below the floor) |
+| `lat 0` | 1 015 | -58 | 4/62 | HTTPRequestDelay −12 (n=88), HTTPRequestReplaceMethod −2 (n=190), HTTPResponseDelay −13 (n=89), NetworkBandwidth −3 (n=42), NetworkCorrupt −8 (n=46), NetworkDelay −9 (n=21), NetworkLoss −6 (n=48), NetworkPartition −6 (n=97) (+3 below the floor) |
+| `lat 0.2` | 1 050 | -23 | 4/27 | HTTPRequestDelay −7 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPResponseDelay −7 (n=89), NetworkBandwidth −1 (n=42), NetworkCorrupt −4 (n=46), NetworkDelay −4 (n=21), NetworkLoss −2 (n=48) (+1 below the floor) |
 | `lat 0.4` | 1 067 | -6 | 2/8 | HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPResponseDelay −1 (n=89), NetworkCorrupt −1 (n=46), NetworkLoss −1 (n=48) |
-| `lat 0.8` | 1 041 | -32 | 2/34 | HTTPRequestAbort −3 (n=60), HTTPRequestReplaceMethod −10 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseAbort −2 (n=44), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceBody −2 (n=51), HTTPResponseReplaceCode −13 (n=231), JVMException −1 (n=43) |
-| `lat 1.2` | 896 | -177 | 10/187 | HTTPRequestAbort −15 (n=60), HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −45 (n=190), HTTPRequestReplacePath −14 (n=39), HTTPResponseAbort −14 (n=44), HTTPResponseDelay −5 (n=89), HTTPResponseReplaceBody −14 (n=51), HTTPResponseReplaceCode −60 (n=231), JVMException −11 (n=43), JVMReturn −6 (n=21) |
+| `lat 0.8` | 1 041 | -32 | 2/34 | HTTPRequestAbort −3 (n=60), HTTPRequestReplaceMethod −10 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseAbort −2 (n=44), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceBody −2 (n=51), HTTPResponseReplaceCode −13 (n=231), JVMException −1 (n=43) (+1 below the floor) |
+| `lat 1.2` | 896 | -177 | 10/187 | HTTPRequestAbort −15 (n=60), HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −45 (n=190), HTTPRequestReplacePath −14 (n=39), HTTPResponseAbort −14 (n=44), HTTPResponseDelay −5 (n=89), HTTPResponseReplaceBody −14 (n=51), HTTPResponseReplaceCode −60 (n=231), JVMException −11 (n=43), JVMReturn −6 (n=21) (+1 below the floor) |
 | `log 0.3` | 848 | -225 | 29/254 | HTTPRequestAbort −21 (n=60), HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −58 (n=190), HTTPRequestReplacePath −18 (n=39), HTTPResponseAbort −18 (n=44), HTTPResponseDelay −5 (n=89), HTTPResponseReplaceBody −26 (n=51), HTTPResponseReplaceCode −85 (n=231), JVMException −12 (n=43), JVMReturn −7 (n=21) |
 | `log 0.5` | 920 | -153 | 13/166 | HTTPRequestAbort −15 (n=60), HTTPRequestDelay −3 (n=88), HTTPRequestReplaceMethod −39 (n=190), HTTPRequestReplacePath −12 (n=39), HTTPResponseAbort −13 (n=44), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceBody −13 (n=51), HTTPResponseReplaceCode −57 (n=231), JVMException −6 (n=43), JVMReturn −5 (n=21) |
 | `log 0.8` | 1 044 | -29 | 4/33 | HTTPRequestAbort −2 (n=60), HTTPRequestReplaceMethod −10 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseAbort −1 (n=44), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceBody −2 (n=51), HTTPResponseReplaceCode −15 (n=231), JVMException −1 (n=43) |
-| `log 1.2` | 1 073 | 0 | 6/6 | HTTPRequestDelay −4 (n=88), HTTPResponseDelay −1 (n=89) |
-| `log 1.6` | 1 066 | -7 | 11/18 | HTTPRequestDelay −6 (n=88), HTTPResponseDelay −2 (n=89), NetworkBandwidth −1 (n=42), NetworkCorrupt −2 (n=46), NetworkLoss −2 (n=48), NetworkPartition −4 (n=97) |
-| `stability 0.1 + log 1.2` | 1 077 | +4 | 11/7 | HTTPRequestDelay −3 (n=88), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −1 (n=231), NetworkPartition −1 (n=97) |
-| `stability 0.2 + log 1.2` | 1 079 | +6 | 17/11 | HTTPRequestDelay −3 (n=88), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −2 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) |
-| `stability 0.3 + log 1.2` | 1 086 | +13 | 27/14 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkPartition −1 (n=97) |
-| `stability 0.4 + log 1.2` | 1 085 | +12 | 33/21 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −3 (n=43), JVMReturn −1 (n=21), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) |
+| `log 1.2` | 1 073 | 0 | 6/6 | HTTPRequestDelay −4 (n=88), HTTPResponseDelay −1 (n=89) (+1 below the floor) |
+| `log 1.6` | 1 066 | -7 | 11/18 | HTTPRequestDelay −6 (n=88), HTTPResponseDelay −2 (n=89), NetworkBandwidth −1 (n=42), NetworkCorrupt −2 (n=46), NetworkLoss −2 (n=48), NetworkPartition −4 (n=97) (+1 below the floor) |
+| `stability 0.1 + log 1.2` | 1 077 | +4 | 11/7 | HTTPRequestDelay −3 (n=88), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −1 (n=231), NetworkPartition −1 (n=97) (+1 below the floor) |
+| `stability 0.2 + log 1.2` | 1 079 | +6 | 17/11 | HTTPRequestDelay −3 (n=88), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −2 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) (+2 below the floor) |
+| `stability 0.3 + log 1.2` | 1 086 | +13 | 27/14 | HTTPRequestDelay −2 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkPartition −1 (n=97) (+2 below the floor) |
+| `stability 0.4 + log 1.2` | 1 085 | +12 | 33/21 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −3 (n=43), JVMReturn −1 (n=21), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) (+2 below the floor) |
 | `stability 0.1 + lat 0.4` | 1 071 | -2 | 7/9 | HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −1 (n=231), NetworkCorrupt −1 (n=46), NetworkPartition −1 (n=97) |
-| `stability 0.2 + lat 0.4` | 1 075 | +2 | 13/11 | HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) |
-| `stability 0.3 + lat 0.4` | 1 076 | +3 | 23/20 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −2 (n=89), HTTPResponseReplaceCode −2 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkCorrupt −1 (n=46), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) |
-| `stability 0.2 + lat 0.4 + log 1.2` | 1 076 | +3 | 17/14 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) |
-| `stability 0.3 + lat 0.4 + log 1.2` | 1 078 | +5 | 25/20 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkCorrupt −1 (n=46), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) |
+| `stability 0.2 + lat 0.4` | 1 075 | +2 | 13/11 | HTTPRequestDelay −4 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −1 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) (+1 below the floor) |
+| `stability 0.3 + lat 0.4` | 1 076 | +3 | 23/20 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −2 (n=89), HTTPResponseReplaceCode −2 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkCorrupt −1 (n=46), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) (+2 below the floor) |
+| `stability 0.2 + lat 0.4 + log 1.2` | 1 076 | +3 | 17/14 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −1 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), NetworkPartition −1 (n=97) (+1 below the floor) |
+| `stability 0.3 + lat 0.4 + log 1.2` | 1 078 | +5 | 25/20 | HTTPRequestDelay −5 (n=88), HTTPRequestReplaceMethod −1 (n=190), HTTPRequestReplacePath −2 (n=39), HTTPResponseDelay −3 (n=89), HTTPResponseReplaceCode −1 (n=231), JVMException −1 (n=43), JVMReturn −1 (n=21), NetworkCorrupt −1 (n=46), NetworkDelay −1 (n=21), NetworkLoss −1 (n=48), NetworkPartition −1 (n=97) (+2 below the floor) |
 
 ## 3. Three things the screen changed when it became code
 
@@ -136,18 +136,23 @@ rate of roughly 4 to 1, and the residual is what a corpus-level rate calls a res
 
 The iteration-271 table listed **two** families losing under `stability 0.3 + log 1.2` (`HTTPRequestDelay −1`,
 `HTTPResponseReplacePath −2`) and concluded the point "fails the gate by three cases across two families". The
-screen says **eight** families lose **14** cases:
+screen says **eight families above the floor lose 12 cases**, plus 2 more in families below it — 14 lost against 27
+gained:
 
 ```
 HTTPRequestDelay −2, HTTPRequestReplaceMethod −1, HTTPRequestReplacePath −2, HTTPResponseDelay −3,
-HTTPResponseReplaceCode −1, JVMException −1, JVMReturn −1, NetworkPartition −1
+HTTPResponseReplaceCode −1, JVMException −1, JVMReturn −1, NetworkPartition −1   (+2 below the floor)
 ```
 
-The old column was produced by a script that printed the losses it happened to collect first, and three cases
-against two families and fourteen against eight are different refusals: the first reads as a near miss worth
-arguing about, the second as a point that moves two thirds of the corpus's fault families in the wrong direction.
-The same defect runs through the whole column — `stability → 0.2` was published as three families and is six,
-`stability → 0.4` as "five families, −8 in total" and is eleven families and −26, `lat → 0.4` as four and is five.
+Three cases against two families and fourteen against eight are different refusals: the first reads as a near miss
+worth arguing about, the second as a point that moves eight of the corpus's fault families in the wrong direction.
+The same defect runs through the whole column — `stability → 0.2` was published as three families and is six (9 of
+its 10 lost cases are above the floor), `stability → 0.4` as "five families, −8 in total" and is eleven families and
+26 (28 lost in total), `lat → 0.4` as four and is five.
+
+The `(+N below the floor)` remainder is printed for the same reason: without it a row can say "no family above the
+floor lost a case" while its own `gain/loss` column says it lost one, and the reader has no way to see where the case
+went. With it, `sum(listed) + remainder = lost` on every row of the table above — check any of them.
 
 The mechanism is worth naming because it is the argument for putting a screen in the tree rather than beside it: a
 script that aggregates into a printed string can only print what it was written to collect, and nothing about the

@@ -44,5 +44,7 @@ if (report.cases === 0) {
   // Every case was refused, which means the dump's terms are not the terms its scores were built from — a report
   // over zero cases is not a landscape, and printing it without a failure is how an artifact defect reads as an
   // empty result.
-  throw new Error('no case in the dump rebuilds its own score, so no row of this screen is about it');
+  throw new Error(
+    'no case in the dump rebuilds its own score, so no row of this screen is about it',
+  );
 }

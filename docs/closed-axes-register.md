@@ -2507,9 +2507,10 @@ looking at and worth its weight on the cases one is not; the decomposition descr
 Recorded, not shipped, and **not** a proposal: `stability 0.3 + log 1.2` is worth **+13 cases (76.37 %)** and fails
 the gate by three cases across two families.
 
-> **Corrected at iteration 272: eight families and fourteen cases**, `+27` gained against `−14` lost. Three cases
-> against two families reads as a near miss worth arguing about; fourteen against eight is a point that moves two
-> thirds of the corpus's fault families the wrong way. `docs/term-weight-landscape.md` §3.3.
+> **Corrected at iteration 272: eight families above the floor and 12 cases — 14 lost in total, the other two in
+> families below the floor — against `+27` gained.** Three cases against two families reads as a near miss worth
+> arguing about; fourteen against eight is a point that moves eight of the corpus's fault families the wrong way.
+> `docs/term-weight-landscape.md` §3.3.
 
 **What that leaves.** The admissible set is empty because the same 237 misses want opposite things — raising
 `stability` recovers `HTTPResponseReplaceCode` and `NetworkBandwidth` while costing `HTTPRequestDelay` and
@@ -2547,12 +2548,14 @@ one question. The third zero-net row is the reason the no-op test is the gross c
 `log → 1.2` is 6 gained against 6 lost — a wash that still takes four cases from `HTTPRequestDelay`.
 
 **Correction 2 — the published "families that lose" column understated every refusal.** `stability 0.3 + log 1.2`
-was published as failing in two families by three cases; the screen says **eight families and fourteen cases**
-(`HTTPRequestDelay −2`, `HTTPRequestReplaceMethod −1`, `HTTPRequestReplacePath −2`, `HTTPResponseDelay −3`,
-`HTTPResponseReplaceCode −1`, `JVMException −1`, `JVMReturn −1`, `NetworkPartition −1`). `stability → 0.2` was
-three families and is six; `stability → 0.4` was "five families, −8 in total" and is eleven families and −26;
-`lat → 0.4` was four and is five. The formatter cannot print a family it was not given, so the column cannot
-understate a row without the row being wrong.
+was published as failing in two families by three cases; the screen says **eight families above the floor and 12
+cases**, 14 lost in total (`HTTPRequestDelay −2`, `HTTPRequestReplaceMethod −1`, `HTTPRequestReplacePath −2`,
+`HTTPResponseDelay −3`, `HTTPResponseReplaceCode −1`, `JVMException −1`, `JVMReturn −1`, `NetworkPartition −1`, and
+`+2` in families below the floor). `stability → 0.2` was three families and is six; `stability → 0.4` was "five
+families, −8 in total" and is eleven families and 26 (28 lost in total); `lat → 0.4` was four and is five. The
+formatter cannot print a family it was not given, so the column cannot understate a row without the row being wrong
+— and the losses it does not list are now printed as a `(+N below the floor)` remainder, so every row's arithmetic
+adds up on its face.
 
 **New, and it is the strongest form of the negative result this register has.** The `gained/lost` column makes the
 shape of the landscape quantitative: **13 of the 28 grid points gain at least one case, and every one of the 13 loses

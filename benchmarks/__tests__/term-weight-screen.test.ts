@@ -20,6 +20,7 @@
  */
 
 import { MIN_FAMILY_CASES, RESIDUAL_TOLERANCE } from '../src/term-decomposition.js';
+import type { GridPoint, WeightMove } from '../src/term-weight-screen.js';
 import {
   DEFAULT_GRID,
   evaluateWeights,
@@ -29,7 +30,6 @@ import {
   screenGrid,
   shippedWeightsOf,
 } from '../src/term-weight-screen.js';
-import type { GridPoint, WeightMove } from '../src/term-weight-screen.js';
 import type { ParsedTermCandidate, ParsedTermCase, TermDumpTriple } from '../src/terms-dump.js';
 
 /**
@@ -179,7 +179,15 @@ describe('re-scoring a case set', () => {
       faultType: 'HTTPRequestDelay',
       accepted: ['root'],
       candidates: [
-        { id: 'root', score: 1, terms: [['source', 1, 1], ['lat', null, 4], ['pool', 2, null]] },
+        {
+          id: 'root',
+          score: 1,
+          terms: [
+            ['source', 1, 1],
+            ['lat', null, 4],
+            ['pool', 2, null],
+          ],
+        },
       ],
     };
     const evaluated = evaluateWeights([half], [{ name: 'lat', weight: 9 }]);
@@ -269,7 +277,16 @@ describe('the shipped weights read off a dump', () => {
         datapack: 'a',
         faultType: 'HTTPRequestDelay',
         accepted: ['root'],
-        candidates: [{ id: 'root', score: 0, terms: [['lat', null, 4], ['source', 1, 0]] }],
+        candidates: [
+          {
+            id: 'root',
+            score: 0,
+            terms: [
+              ['lat', null, 4],
+              ['source', 1, 0],
+            ],
+          },
+        ],
       },
     ]);
     expect(weights).toEqual([{ name: 'source', weight: 1 }]);
@@ -302,6 +319,11 @@ describe('the grid', () => {
     expect(row!.lost).toEqual(['d0']);
     expect(row!.losses).toEqual([]);
     expect(row!.admissible).toBe(true);
+    // And the loss is not dropped from the report: it is named as a remainder, so the row's own arithmetic
+    // `sum(listed) + remainder = lost` adds up without the reader going back to the dump.
+    expect(formatScreenReport(screenGrid(cases, grid(RAISE_STABILITY)))).toContain(
+      'no family above the floor lost a case (+1 below the floor)',
+    );
   });
 
   it('refuses a move that only loses, because no gain is not a licence to lose a case', () => {
@@ -408,9 +430,9 @@ describe('the report', () => {
   it('prints a dash rather than NaN when the screen refused every case', () => {
     // A denominator of zero is a real state: every case refused for not rebuilding its own score. `0/0` is NaN,
     // and a NaN in a rate column is a number a reader would try to interpret.
-    expect(
-      formatScreenReport({ cases: 0, refused: 4, baseline: 0, rows: [] }),
-    ).toContain('0 / 0 = -');
+    expect(formatScreenReport({ cases: 0, refused: 4, baseline: 0, rows: [] })).toContain(
+      '0 / 0 = -',
+    );
   });
 
   it('names the shipped weights it read off the dump', () => {
@@ -507,7 +529,9 @@ describe('a grid file', () => {
   });
 
   it('names the point it refused, so a grid of thirty is a location rather than a file', () => {
-    expect(() => parseGridFile('[{"weights":{"log":1}},3]')).toThrow('grid point 1 is not an object');
+    expect(() => parseGridFile('[{"weights":{"log":1}},3]')).toThrow(
+      'grid point 1 is not an object',
+    );
   });
 });
 
@@ -520,9 +544,7 @@ describe('the residual the screen refuses on', () => {
       datapack: 'edge',
       faultType: 'HTTPRequestDelay',
       accepted: ['root'],
-      candidates: [
-        { id: 'root', score: 1 + RESIDUAL_TOLERANCE / 2, terms: [['source', 1, 1]] },
-      ],
+      candidates: [{ id: 'root', score: 1 + RESIDUAL_TOLERANCE / 2, terms: [['source', 1, 1]] }],
     };
     expect(evaluateWeights([edge], []).refused).toBe(0);
   });
