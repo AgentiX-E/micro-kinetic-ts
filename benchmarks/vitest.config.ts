@@ -106,6 +106,12 @@ export default defineConfig({
         // `Avg@5 = 3/S` here" — so its whole value is arithmetic a reader must be able to recompute by hand.
         // Every branch is measured rather than trusted: the two cutoff regimes, the empty census, the
         // single-candidate degeneration, the support tie-break, and the case-weighted pool.
+        // Added with the module: weight reachability is the first instrument in this package that decides a case
+        // rather than sampling one, and its whole value is that BOTH verdicts carry a certificate the reader can
+        // substitute back — a witness that re-ranks the case, or a combination that rebuilds the answer. Every
+        // branch is measured rather than trusted: the four verdicts, the two bases, the tie that is not a
+        // separation, the answer the ranking never listed, and the held-out fit's two orientations.
+        'src/weight-reachability.ts',
         'src/prior-floor.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
