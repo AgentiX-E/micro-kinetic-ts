@@ -189,6 +189,9 @@ measured against, not the current number. Both are still reachable as ablations 
 
 | **the weight vector as a DIRECTION** — every term moved at once, which no screen here had ever done: 28 single-term points, 84 revival points and a resolution floor are points on the AXES of a 14-dimensional space | `weight-reachability.md` | **REOPENED, and then constrained.** The hull theorem decides every case exactly: with the formula's support frozen, **131 of 349 misses are provably unreachable** by any re-weighting; with the support open, **all 349** are reachable, each by a vector of its own. A single vector fitted on half the corpus and read on the other half gains **+38 to +52 (mean +47.3, +6.7 pp)** in **six of six** fits — so 274's *"not reachable by re-weighting"* was a statement about the axes it swept. It does not ship YET: the family gate (`n ≥ 20` may not lose a case) rejects it on `HTTPRequestAbort −3`, `HTTPRequestReplacePath −4`, `NetworkDelay −6`, and the constrained fit is the next subject |
 | **the formula's SUPPORT** — WHICH terms carry weight at all, as opposed to how much, since six of the fourteen ship at zero on this corpus | `weight-reachability.md` | **measured as the difference between two ceilings, not as a sweep.** Freezing the support costs `131` cases and opening it costs none, so the support is the binding constraint of the weight dimension and the values are not — which is the reverse of how this register has read the weight axis since 272 |
+| **the family gate as a constraint** — whether a vector can gain while costing no family above the 20-case floor a case | `gate-fit.md` | **measured, and it costs 89 % of the gain.** A gate-clean vector exists (nine families gain, nine unchanged, none loses, `+16/+17/+19` on three seeds) and is worth `+17.3` where the unconstrained fit is worth `+154`: **the gate's price is 137 cases**. Held out, the gain transfers (`+7` to `+22`) and the gate does not (`3` to `9` protected cases lost), because a floor stated on one corpus is not a property a parameter fit can carry |
+| **the count as a linear program over the artifact** — whether `Top@1` can be maximised as an LP | `gate-fit.md` §1, §7 | **closed twice.** The zero vector answers the published run — `1 073` of `1 422`, every case by tie — so the count has a spurious optimum at the origin; and with a mandatory subsystem the problem is Max FLS, NP-hard for homogeneous bipolar systems (Amaldi & Kann, TCS 147, 1995), with no constant-factor guarantee surviving the subsystem |
+| **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4 | **a DEFECT in the artefact, open.** One corpus, one dispatch family, two values for one weight: `0` on 1 114 cases, absent on 200, `3` on 108. No single vector reproduces the recorded run, and the gap at `Δw = 0` is **24 cases** on a 711-case half — enough to flip the sign of a small effect. Not repaired here: the repair moves every published baseline |
 
 ## What this register holds besides its axes
@@ -2770,3 +2773,60 @@ already proves is worth most of `+6.7 pp`, and (2) the per-case **selection**, b
 and one vector reaches `81.6 %` — that distance is the agent layer's quantified target, with the parameter switch the
 project requires. The 131 frozen-support cases are a separate line: they need a term TURNED ON, and six terms ship at
 zero on this corpus.
+
+---
+
+## Iteration 276 — the gate, priced at 137 cases
+
+### The zero vector scores the published run
+
+The count every screen in this repository reports is `Top@1`, and on a dump `Top@1` has two readings. The engine sorts
+by score, stably, so a candidate **level** with the answer keeps its earlier position — and the dump's position is the
+recorded order. So:
+
+| Vector | strict | optimistic |
+|---|---:|---:|
+| the shipped weights | **1 031** | 1 031 |
+| the zero vector | **0** | **1 073** |
+
+**The empty vector answers the published run, all of it, by tie.** That is a spurious global optimum of the count
+function, and it has been inside every ascent and every linear program this register has run since 272: iteration
+275's constrained probe returned `w = 0` reporting "count 1 073" as an *improvement* over the 1 031 baseline. Ties are
+otherwise absent — one case in 1 422 carries one anywhere in its ranking under the shipped weights — so the two
+readings agree wherever the weights are real, and the module now reports both (`readAt` strict, `optimistic`) and
+credits only the strict one.
+
+### The solver returned an unfinished tableau as an optimum
+
+`maximise` carried a silent pivot budget. A 592-row program came back with `‖w‖₁ = 10.9` against a box that said `1`
+and an objective of `0`, and that number was read as **"the gate cannot be cleared"**. It now throws
+(`the pivot budget was exhausted`), the budget is a parameter, and the contract is asserted in the test file. This is
+the second instrument defect this register has recorded in two iterations, and both were found by *disbelieving a
+number*, not by reading the code.
+
+### The gate's price
+
+| Reading | Cases | Share |
+|---|---:|---:|
+| The unconstrained fit (275) | +154 | +10.83 pp |
+| The best gate-clean fit (3 seeds: +16 / +17 / +19) | **+17.3** | **+1.22 pp** |
+| **What "no family may lose a case" costs** | **−137** | **−9.61 pp** |
+
+The gate removes 89 % of the reachable gain. A gate-clean vector does exist — nine families gain, nine are unchanged,
+none loses, and the fit is the first admissible weight change since 272 — but it is worth 1.2 pp, not 10.8. Held out,
+the gain transfers (+7 to +22 on the unseen half in four fits of four) and the GATE does not (3 to 9 protected cases
+lost on that half): the gate is a property of the corpus that states it, and a parameter fit cannot transfer it.
+
+### Axes this closes
+
+| Axis | Verdict |
+|---|---|
+| "A penalty on the gate will find the trade" | **closed** — gate weights 1…256 buy +52…+145 at 21…116 lost gate cases; the exchange rate is the weight's, not the corpus's |
+| "The count is a linear program over the artifact" | **closed** — the count is Max FLS (Amaldi & Kann, TCS 147, 1995), NP-hard for homogeneous bipolar systems; with a mandatory subsystem no constant-factor guarantee survives |
+| "One vector clears the gate AND gains double digits" | **closed** — 137 of the 154 cases the gate refuses are exactly what it will not allow |
+
+### What this changes
+
+The next subject is **per-case selection**, and its target is now quantitative rather than aspirational: one vector
+inside the gate is worth `+17`, one vector outside it `+154`, and a per-case choice `+349`. The gate is a fence
+around the middle of those three numbers, and the two outer ones are only reachable by a decision made per case.
