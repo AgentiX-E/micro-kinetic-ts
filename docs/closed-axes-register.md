@@ -2487,13 +2487,93 @@ are right are priced too low to matter" — which is a **global** question, and 
 machinery for (`latent-term-census.ts` computes the weight at which each term wins a case back, and
 `docs/base-term-price.md` holds the base term's sweep).
 
-**Opened, with its gate written first:** price a global `Δw` on `{stability, lat}` — and, in the other direction, a
-**reduction** of `logWeight`, which is the only term whose sign is *against* the truth on a majority of misses at
-`p < 1e-4` — against the corpus gate `docs/depth-reranking-preregistration.md` §3 already fixes: `Top@1` must not
-fall on either half of `hashId % 2`, and no family with n ≥ 20 may lose a case the shipped run answered. The
-counterfactual is read from the same dump, so the screen is arithmetic over one artifact; the confirmation is one
-dispatch, not one per weight.
+**Priced the same day, and CLOSED: the global weight axis.** The counterfactual is arithmetic over the same dump —
+`score′(v) = score(v) + Σ Δw·slope(v)` — so the landscape costs no dispatch. It reproduces the published
+**1 073 / 1 422 = 75.46 %** exactly at `Δw = 0`, which is what entitles it to be read at all, and then it returns an
+**empty admissible set**: every point in a 30-point grid that gains a case takes one from a family with n ≥ 20, and
+the shipped `stability = 0.007352`, `lat = 0.561495`, `log = 1.0` is the only measured point that loses nothing.
+`stability → 0.2` is `+4` with three families down; `lat → 0.4` is `−6`; `log → 0.8` is `−29`.
+
+> **Corrected at iteration 272, on the screen's own output.** The set is empty only among points that **gain**;
+> `stability → 0` and `stability → 0.02` also lose nothing, because they change nothing (0 gained, 0 lost), and a
+> gate written as "`Top@1` must not fall" always admits the identity. The per-family counts above were also
+> incomplete: `stability → 0.2` costs **six** families (not three) and `lat → 0.4` costs **five** (not four).
+> `docs/term-weight-landscape.md` §3.1 and §3.3.
+
+**And it falsifies the reading above, in the direction that matters.** `log` pays the *symptom* more on 89.5 % of
+the misses where it is measurable — `p < 1e-4`, the largest weight in the sum leaning that way — and cutting its
+weight is still the most destructive move on the board (`−225` at 0.3). A term can be wrong about the cases one is
+looking at and worth its weight on the cases one is not; the decomposition describes the 237, it is not a gradient.
+Recorded, not shipped, and **not** a proposal: `stability 0.3 + log 1.2` is worth **+13 cases (76.37 %)** and fails
+the gate by three cases across two families.
+
+> **Corrected at iteration 272: eight families and fourteen cases**, `+27` gained against `−14` lost. Three cases
+> against two families reads as a near miss worth arguing about; fourteen against eight is a point that moves two
+> thirds of the corpus's fault families the wrong way. `docs/term-weight-landscape.md` §3.3.
+
+**What that leaves.** The admissible set is empty because the same 237 misses want opposite things — raising
+`stability` recovers `HTTPResponseReplaceCode` and `NetworkBandwidth` while costing `HTTPRequestDelay` and
+`NetworkPartition`. No single weight vector can have both, and the only conditional rules this register admits are
+ones with a mechanism rather than a fitted per-family constant. So the remaining headroom is **not reachable by
+re-weighting the terms the formula already has**; what is left is a term that does not exist yet, or a reader that
+sees more than a weighted sum of the live ones — which is the model arm, and why the depth window matters.
+Full landscape, grid and reproduction: `docs/term-weight-landscape.md`.
+
 
 **Also read this iteration, and it moves the standings page rather than this register:** `docs/rcatlas-crosswalk.md`
 — the field's first unified 90-case benchmark (`arXiv:2610.35767`) read down to its per-source cell, including the
 27-case RCAEval column this engine can already be placed in.
+
+## Iteration 272 — the landscape promoted from a script to a module, and the three things that changed when it could be run
+
+`docs/term-weight-landscape.md` published the weight landscape at 271 from a 60-line script that lived outside the
+tree, and its own §4 said the next iteration would promote it. That is what happened:
+`benchmarks/src/term-weight-screen.ts` (module: `prepareCases` / `evaluatePrepared` / `screenPrepared` / `screenGrid`
+/ `formatScreenReport` / `parseGridFile` / `parseScreenArgs`), `benchmarks/src/run-term-weight-screen.ts` (console),
+and 47 tests. The screen reads the same 40 MB dump of run `43334354978` and reproduces **1 073 / 1 422 = 75.46 %**
+at `Δw = 0` with **0 of 1 422 cases refused** — the reconstruction identity `Σ (w × slope) = finalScore` holds on
+every candidate of every case, worst residual `0.0`.
+
+**What the promotion bought is not the code, it is three corrections the script could not make.** They are the
+reason a screen belongs in the tree: a script that aggregates into a printed string can only print what it was
+written to collect, and nothing about the printed string says what it left out.
+
+**Correction 1 — the admissible set was not empty.** `stability → 0` and `stability → 0.02` lose nothing because
+they change nothing: 0 gained, 0 lost, the same 1 073 cases in the same order. "`Top@1` must not fall" is satisfied
+by the identity, so the set of points that pass it always contains the identity's neighbourhood, and "the admissible
+set is empty" was true only among points that gain. The module therefore reports ADMISSIBLE and **NO-OP**
+separately and names the no-ops under the verdict, because "worth 0 cases" and "worth 13" are not two answers to
+one question. The third zero-net row is the reason the no-op test is the gross counts and not the net:
+`log → 1.2` is 6 gained against 6 lost — a wash that still takes four cases from `HTTPRequestDelay`.
+
+**Correction 2 — the published "families that lose" column understated every refusal.** `stability 0.3 + log 1.2`
+was published as failing in two families by three cases; the screen says **eight families and fourteen cases**
+(`HTTPRequestDelay −2`, `HTTPRequestReplaceMethod −1`, `HTTPRequestReplacePath −2`, `HTTPResponseDelay −3`,
+`HTTPResponseReplaceCode −1`, `JVMException −1`, `JVMReturn −1`, `NetworkPartition −1`). `stability → 0.2` was
+three families and is six; `stability → 0.4` was "five families, −8 in total" and is eleven families and −26;
+`lat → 0.4` was four and is five. The formatter cannot print a family it was not given, so the column cannot
+understate a row without the row being wrong.
+
+**New, and it is the strongest form of the negative result this register has.** The `gained/lost` column makes the
+shape of the landscape quantitative: **13 of the 28 grid points gain at least one case, and every one of the 13 loses
+at least one.** There is no strict improvement anywhere on the grid — not one case gained for free. The best net,
+`+13`, is 27 gained against 14 lost: **41 cases change hands to move the total by 13**. Across the 13 gaining
+points the ratio of gross exchange to net gain runs from **3.0** to **57**, with a median of exactly **6.0**. So the
+population does not contain a direction of improvement with a slope; it contains a near-cancellation, which is why
+searching the weights harder cannot find one — every step trades cases at roughly 4–6 to 1.
+
+**Closed, and closed more firmly than at 271: the global weight axis.** No point on the 28-point grid gains a case
+without losing one, and the points that lose nothing are the points that do nothing. Under the pre-registered gate
+(`Top@1` must not fall; no family with `n ≥ 20` may lose a case the shipped run answered) the admitted set is
+**empty**. The three live weights are confirmed as the measured zero-regression point for the second time, now from
+the repository's own code rather than from a script beside it.
+
+**Also settled here, and it is a fact about the formula rather than about the landscape:** twelve of the nineteen
+terms carry weight 0 in the shipped configuration — seven recorded as `0` (`collision`, `failedEdge`, `prism`,
+`rise`, `source`, `temporal`, `topo`) and five absent from the dump entirely (`trace`, `faultFree`, `selfTime`,
+`emission`, `victim`). The shipped ranking is a sum of **seven** weighted terms, and the grid moves three of them.
+
+**What that leaves, unchanged in direction and now measured in size.** The remaining 237 misses are not reachable by
+re-weighting the terms the formula already has: what is left is a term that does not exist yet (a new observable) or
+a reader that sees more than a weighted sum of the seven — which is the model arm, and why the depth window matters.
+Full grid, all 28 points with gross counts: `docs/term-weight-landscape.md` §2–§3.
