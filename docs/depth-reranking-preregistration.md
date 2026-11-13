@@ -38,13 +38,13 @@ null of no signal that fraction is 0.5.
 
 ## 3. Thresholds, fixed now
 
-| quantity                    | value                                                              |
-| --------------------------- | ------------------------------------------------------------------ |
-| significance                | exact binomial, two-sided, **Bonferroni over the 18 terms → α = 0.0028** |
-| minimum effect to act on a term | `Δt > 0` in **≥ 65 %** of a family's deep cases, with n ≥ 20        |
-| held-out rule               | the family is split by `hashId(case) % 2`; the sign is fitted on `in` and read on `out` |
-| corpus-level gate           | Top@1 must not fall on either half, and no fault family with n ≥ 20 may lose a case that the shipped run answered |
-| cost                        | one dispatch, `--depth-out` + `--terms-dump` on the full corpus      |
+| quantity                        | value                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| significance                    | exact binomial, two-sided, **Bonferroni over the 18 terms → α = 0.0028**                                          |
+| minimum effect to act on a term | `Δt > 0` in **≥ 65 %** of a family's deep cases, with n ≥ 20                                                      |
+| held-out rule                   | the family is split by `hashId(case) % 2`; the sign is fitted on `in` and read on `out`                           |
+| corpus-level gate               | Top@1 must not fall on either half, and no fault family with n ≥ 20 may lose a case that the shipped run answered |
+| cost                            | one dispatch, `--depth-out` + `--terms-dump` on the full corpus                                                   |
 
 The corpus-level gate is the one every accepted change in this repository has had to clear; the family-level
 non-regression is the one that refused the fitted weight vector in iteration 262 (+114 held out, three shapes
@@ -69,3 +69,37 @@ so, and its cost is the families it cannot speak about.
    `hashId(case) % 2` and is stated with every number.
 3. It does not permit a term whose sign is fitted per CASE (the LP bound's 99.30 % is an upper bound over
    per-case vectors and is not achievable by any fixed rule — `PROGRESS_2026-11-12.md` §4).
+
+## 6. Result — added after the data, and marked as such
+
+Everything above this line was written before any measurement of the axis, and is left byte-unchanged so that the
+difference between a prediction and a reading stays visible. This section is the reading.
+
+**Cost as budgeted:** one dispatch (`43334354978`), `--terms-dump` over all 1 422 cases, the report printed in the
+same job from the dump that job wrote.
+
+**The population was 237, not the 241 the first run reported**, and the difference is a defect this document
+inherits rather than one it found: `depth ≤ 20` admitted the twenty-first candidate while `recall@20` counts
+`depth < 20`. Corrected, `1 073` correct + `237` re-rankable + `112` past the window = `1 422`, which is the ladder
+`docs/agentic-headroom.md` §10.6 published before this measurement existed.
+
+**The denominator was 18 and the formula has 19.** The report's own fence refused the first dispatch by name
+(`victim`), and the correction is applied in the stricter direction — `α = 0.05/19` — because growing the test
+count while holding `α` can only make a cell harder to clear.
+
+**§2's statistic, on the 237:** `stability` favours the truth in 147/216 (68.1 %, p < 1e-4) and `lat` in 72/104
+(69.2 %, p = 0.0001); `selfAnomalyLog1p` in 60/235 (25.5 %), `log` in 14/133 (10.5 %) and `dualFamily` in 23/73
+(31.5 %) favour the winner, all at p ≤ 0.0021. Every one of the five replicates in both halves of the
+`hashId % 2` split. So H1's *statistic* holds at the corpus level: the lead a symptom holds is not spread evenly —
+the base term carries it, and two tuned priors are already on the right side of it and priced too low to matter.
+
+**§3's action bar, which is the family unit, names one cell and it does not survive the grid.**
+`stability @ HTTPResponseReplaceCode` clears in-sample (13/14 = 92.9 %, p = 0.0018) and keeps its sign held out
+(5/7 = 71.4 %); over the 114 cells the table scans, `α' = 0.05/114 = 4.4e-4` and it fails. **So the kill criterion
+in §4 is not triggered in its letter and its action clause is not satisfied in its spirit**, and the honest verdict
+is: *no per-family correction is admitted, and the term axis is not closed.*
+
+**What the document got wrong, said plainly.** §3 corrected for the number of TERMS and not for the number of
+FAMILIES, so its bar permits roughly `114 × 0.002632 ≈ 0.30` false positives by construction. A pre-registration
+that scans a grid has to divide by the grid. The next axis (`docs/closed-axes-register.md`, iteration 271) is
+registered with that correction already in its bar.

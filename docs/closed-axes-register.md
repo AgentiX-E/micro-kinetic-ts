@@ -2417,3 +2417,83 @@ more"). The bucket keeps its count and loses its inference.
 **Opened, with a kill criterion written before the data:** `docs/depth-reranking-preregistration.md`. If no term in
 the engine's own sum favours the truth in ≥ 65 % of a family's deep cases (n ≥ 20, Bonferroni over 18 terms), the
 term axis closes and the depth headroom belongs to a model arm over a twenty-wide presentation.
+
+## Iteration 271 — the term axis, measured against a bar written before the data; and the denominator was short by one
+
+`docs/depth-reranking-preregistration.md` was executed as one dispatch (`43334354978`, `--terms-dump` over all
+1 422 cases, the report printed in the same job). The measurement found **two defects in the instrument and none in
+the engine**, and both were the kind that produce a plausible table rather than an error.
+
+**Defect 1 — the formula has nineteen terms and the pre-registration counted eighteen.** The report's own fence
+refused the first dispatch by name: `the dump carries terms the pre-registration does not count: victim`. `victim`
+is PRISM's symmetry mask — subtracted, not added, and written across four lines of `buildTerm(`, so the single-line
+scan that produced `DECLARED_TERMS` could not see it, and the guard test asserted the list against *the same scan*,
+which is a fence that agrees with its object. The correction is applied in the stricter direction: `α = 0.05/19 =
+0.002632`, because a denominator that grew while `α` stood still only makes every cell harder to clear, and
+re-basing `α` to keep an eighteen-term reading alive would be the post-hoc adjustment the document forbids.
+
+**Defect 2 — the population boundary was off by one.** `depth ≤ 20` admitted the twenty-first candidate while
+`recall@20` counts `depth < 20`; the first reading therefore reported **241** misses against a ladder whose `@20`
+rung implies **237**. Corrected, the population reconciles exactly: `1 073` correct at one, `237` re-rankable
+misses, `112` past the window, `1 422` cases. The instrument that caught the first defect could not catch this one
+— it was caught by comparing the report against a table published before it — which is why the population
+statement is printed above the tables rather than inferred from them.
+
+**What the population is, once both are fixed.** 237 misses at depth 1–20 of 1 422 cases, and **all 237 reconstruct
+their `finalScore` from their terms exactly** (worst residual `0.0`), so the dump is lossless and no share below is a
+description of a truncated sum. The depth derived from the term dump of *this* run agrees with the depth artifact of
+the *agentic* run (`43276123043`) on **1 422 of 1 422 cases, zero disagreements** — two dispatches, one order.
+
+**The §2 statistic, pooled over the 237 (this is the fraction of misses on which the term pays the truth more):**
+
+| term                | measurable | favours truth |     share | exact two-sided p | in-half | out-half |
+| ------------------- | ---------: | ------------: | --------: | ----------------: | ------: | -------: |
+| `stability`         |        216 |           147 | **68.1 %** |          `< 1e-4` |  75.0 % |   61.1 % |
+| `lat`               |        104 |            72 | **69.2 %** |         `0.0001`  |  61.2 % |   76.4 % |
+| `selfAnomalyLog1p`  |        235 |            60 |   25.5 %  |          `< 1e-4` |  21.1 % |   29.8 % |
+| `log`               |        133 |            14 |   10.5 %  |          `< 1e-4` |  13.6 % |    8.1 % |
+| `dualFamily`        |         73 |            23 |   31.5 %  |         `0.0021`  |  22.6 % |   38.1 % |
+| `pool`              |         18 |             6 |   33.3 %  |         `0.2379`  |  50.0 % |   12.5 % |
+| `failedEdge`        |          8 |             4 |   50.0 %  |         `1.0000`  |  33.3 % |   60.0 % |
+
+**Twelve of the nineteen terms are not live on this population at all** — `source`, `temporal`, `collision`,
+`topo`, `rise`, `trace`, `prism`, `faultFree`, `selfTime`, `emission`, `victim` and `podState` were measurable on
+zero misses — which is itself a reading: the ranking that loses these 237 cases is decided by **seven terms**, and
+by **four** of them on more than sixty cases each.
+
+The structure is not a fishing expedition: five readings clear `α = 0.002632` on a population of 237, they point in
+two opposite directions (*the two tuned priors favour the truth; the base term, the log term and the dual-family
+indicator favour the symptom*), and every one of them replicates in both halves of the pre-registered split.
+
+**The §3 action bar — the pre-registered unit — names exactly one cell, and it does not survive the grid.**
+`stability @ HTTPResponseReplaceCode` clears in-sample (13/14 = 92.9 %, p = 0.0018) and keeps its sign held out
+(5/7 = 71.4 %). But the table scans **114 cells** (six families at n ≥ 20 × nineteen terms), and `0.05/114 =
+4.4e-4`; at that level the cell fails, and the expected number of false positives over the grid at the
+pre-registered per-family `α` is `114 × 0.002632 ≈ 0.30`. So the honest statement is that **one cell cleared a bar
+that did not account for how many cells were scanned**, and the document's own kill criterion does not reach it.
+
+**Closed: the per-family term correction.** The pre-registration's partial-result clause licenses "a per-family
+term correction … measured as one". It is refused here, on its own terms, because the cell that would license it
+does not clear the correction over the number of cells the measurement actually scanned. A correction fitted to
+one family of 23 cases at `p = 0.0018` in a 114-cell grid is the fitted artifact the document's §5.3 exists to
+prevent.
+
+**NOT closed: the term axis itself, and the reason is the pooled table.** H1 said the lead a symptom holds is
+concentrated in a small set of terms with a stable sign. On the pre-registered *family* unit that is not
+established. On the pre-registered *statistic* (§2, pooled) it is: two tuned priors favour the truth in ~68–69 %
+of misses while the base term favours the winner in 74.5 %, and the log term favours the winner in 89.5 %. The
+mechanism this describes is not "a term is mispaid on one family" but "the base term decides, and the priors that
+are right are priced too low to matter" — which is a **global** question, and one the repository already has
+machinery for (`latent-term-census.ts` computes the weight at which each term wins a case back, and
+`docs/base-term-price.md` holds the base term's sweep).
+
+**Opened, with its gate written first:** price a global `Δw` on `{stability, lat}` — and, in the other direction, a
+**reduction** of `logWeight`, which is the only term whose sign is *against* the truth on a majority of misses at
+`p < 1e-4` — against the corpus gate `docs/depth-reranking-preregistration.md` §3 already fixes: `Top@1` must not
+fall on either half of `hashId % 2`, and no family with n ≥ 20 may lose a case the shipped run answered. The
+counterfactual is read from the same dump, so the screen is arithmetic over one artifact; the confirmation is one
+dispatch, not one per weight.
+
+**Also read this iteration, and it moves the standings page rather than this register:** `docs/rcatlas-crosswalk.md`
+— the field's first unified 90-case benchmark (`arXiv:2610.35767`) read down to its per-source cell, including the
+27-case RCAEval column this engine can already be placed in.

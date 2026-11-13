@@ -2288,3 +2288,52 @@ which is the same lesson as the row above from a different paper.
 **One sweep addition, and it is not a competitor.** `arXiv:2611.03223` (ARCBench) benchmarks whether an agent's
 operating rules survive context compaction; it is about agent harness hygiene, not root-cause localisation, and
 putting it on this table would be the category error §0q exists to avoid.
+
+## 2026-11-13 — RCAtlas read down to the per-source cell, and the one column we can already be placed in
+
+The two entries above carried RCAtlas's *family* bands (6–39 / 16–53 / 65–77 %). This iteration read the paper's
+**Table 7**, which breaks every method down by source dataset, and that table contains a column this repository can
+be placed in *today*: **RCAEval (27 cases)**, one of the eight sources RCAtlas draws from, and a suite we hold in
+full.
+
+| method, on RCAtlas's RCAEval column (27 cases, PR@1) | reading | note                                            |
+| ---------------------------------------------------- | ------: | ----------------------------------------------- |
+| SQL agent / Codex / one-shot                          | 94.2 / 90.1 / 79.8 | LLM harnesses, ≤1 h per case, tokens per case |
+| **this engine (735-case RCAEval suite, run `40792623427`)** | **85.44** | **zero tokens, milliseconds per case**   |
+| FoA / RCAgent / DecompRCA                             | 66.7 / 59.3 / 55.6 | published LLM agents                    |
+| **TORAI / NSigma / SimpleRCA**                        | **63.0 / 59.3 / 55.6** | the strongest non-LLM methods on this column |
+| BARO / CIRCA / FaultInsight / RCD / random            | 44.4 / 29.6 / 28.4 / 0.0 / 7.1 |                              |
+
+**The 27-versus-735 caveat is the whole of the claim's honesty and is stated before the number.** RCAtlas's column
+is 27 cases it *selected* under eight exclusion rules; ours is the 735-case suite, which includes 69 cases their
+rules reject as having an unclean before-period and 38 with incomplete data. So this is a **population inequality,
+not a head-to-head**, and the direction of the bias is not known — their sample deliberately covers the hard
+scenarios, which if anything makes their 27 harder than a uniform draw. What the reading does support is narrow and
+worth writing down: **on the suite that supplies 30 % of RCAtlas's cases, a deterministic engine's published number
+sits above every non-LLM method in RCAtlas's table and above every published LLM agent's RCAEval cell, and below two
+LLM harnesses that spend a model call and up to an hour per case.**
+
+Three facts from Table 7 that change the plan rather than decorate it:
+
+1. **RCAtlas scores only the FIRST of at most five answers (PR@1).** Width buys nothing there; ordering buys
+   everything. That is the same conclusion `docs/agentic-headroom.md` §10 reached from the depth ladder, arrived at
+   independently by the field's first unified benchmark — so the depth/ordering axis is now externally motivated
+   rather than internally convenient.
+2. **The 33-case group is the non-LLM class's common blind spot and it is legible here.** On errors, outages,
+   configuration faults and network breaks NSigma reaches **15 %** and BARO **6 %** against **67 %** for the SQL
+   agent and Codex, because those methods score *signed* maximum deviation and a service whose traffic **fell**
+   ranks last. RCABench's own `NetworkPartition` and `HTTPResponseReplaceCode` families are the same shape, and
+   §10.6 already measures a +26 pp 5→20 window gain on the former.
+3. **Per-level columns are not ours to average.** RCAtlas reports service 59 / pod 20 / node 11, and its upward
+   mapping credits a pod answer with its service but cannot credit a service answer with a pod. On the 31
+   pod/node-annotated cases a service-granularity engine is scored on a question it does not answer, so an entry
+   must report those cells separately — a rule this page now carries rather than rediscovers.
+
+**What is blocked, and by an artefact rather than by work.** RCAtlas releases the 90-case **list** and its code, and
+has **not** released the converted data ("we plan to release", ~11 GB). The list is a single `ufile.io` package with
+no repository, no digest and no per-file access, which this environment's network path cannot fetch without driving
+that host's ad-gate. The faithful path — rebuild the 27 RCAEval cases from the source suite we already hold — needs
+exactly one thing we do not have: the 27 ids and their windows. Reconstructing the sample from the paper's
+*descriptions* would be a re-implementation of the sample and is refused as evidence.
+
+Full protocol, tables and the entry checklist: **`docs/rcatlas-crosswalk.md`**.
