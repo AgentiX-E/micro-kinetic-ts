@@ -1,4 +1,3 @@
-import type { ReachCase } from '../src/gate-fit.js';
 import {
   DEFAULT_GATE_FIT,
   countUnder,
@@ -13,6 +12,7 @@ import {
   parseGateArgs,
   readUnder,
 } from '../src/gate-fit.js';
+import type { ReachCase } from '../src/weight-reachability.js';
 
 const NAMES = ['p', 'q', 'r'] as const;
 
@@ -33,7 +33,7 @@ function kase(
   };
 }
 
-const direction = (p: number, q: number, r: number): Float64Array => Float64Array.from([p, q, r]);
+const direction = (p: number, q: number, r = 0): Float64Array => Float64Array.from([p, q, r]);
 
 /** The shipped weights of every fixture: `p` pays 1, `q` pays 0.5, `r` pays nothing. */
 const START = { p: 1, q: 0.5, r: 0 } as const;
