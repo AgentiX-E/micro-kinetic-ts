@@ -2999,3 +2999,32 @@ gate change would actually ship to.
 with the ladder printed by the command that prints the frontier. No engine default moves: the shipped mode is still
 `absolute`, and the ladder is a reading rather than a selection. The condition stays the register's to relax, and it
 now has a price list instead of a veto.
+
+### The four checks
+
+**Competitors.** RCAtlas-Core (Bi, Zhang, Li, Wang and Ma, Peking University and BUPT, arXiv 26 October 2026) pools
+eight public RCA datasets into 90 validated cases over 23 scenarios and three label levels (service 59, pod 20,
+node 11), with injection-tool traces removed. Its headline result reorganises the field: **simple harnesses beat
+hand-crafted agents on every model tested** — Codex 77.2 % PR@1, SQL-agent 72.8 %, one-shot 65.3 % on three mid-tier
+models, against the best published agent at 53.3 %, the best non-LLM method at 38.9 % and random at 5.5 %; the best
+single run reaches 88.9 % at about 26¢ per case. Two of their ablations bear directly on this register: a stronger
+model buys **reliability** (solved-only-sometimes falls 32–36 % → 7–8 %) while a multi-turn harness buys **ceiling**,
+and raising reasoning effort adds 2–4 points at 1.5–4× the wall time. The measurement consequence for us is blunt:
+**80.52 % on RCABench is not comparable with PR@1 on RCAtlas-Core**, and no SOTA claim survives without a run on that
+set. Their prescribed-call statistic (0.10–1.00 for the hand-crafted agents, 0.00 for the free harnesses) is also the
+right instrument for our own agentic arm: it prices exactly the thing III.2 built.
+
+**Evaluation sets.** RCAtlas-Core (`core90_cases.csv`) and LEMMA-RCA (CIKM '26, public via `lemmarca.info`, Zenodo
+DOI 10.5281/zenodo.20516735) are both still outside our corpus. Neither is a gap in our numbers; both are a gap in
+what our numbers can be compared to.
+
+**Mathematics.** The budget axis is measured and **not guaranteed**. Conformal risk control (Angelopoulos, Bates,
+Fisch, Lei and Schuster, ICLR 2024) chooses `λ̂ = inf{λ : n/(n+1)·R̂_n(λ) + B/(n+1) ≤ α}` and gives a finite-sample,
+distribution-free bound on the expected loss; the multi-`λ` extension (arXiv 2406.18777) covers per-coordinate losses,
+which is exactly a per-family budget; and learn-then-test (Angelopoulos et al., 2025) drops the monotonicity
+requirement and, through fixed-sequence testing, exploits an ordered grid — which our bound ladder is. So the honest
+statement about the ladder above is: it prices the condition **on this corpus**, and it carries no guarantee off it.
+That is the next mathematical step, not a caveat to file.
+
+**CI.** Green at `60139d0f` and at `81495a0b`, with Dependabot and code-scanning alerts at zero.
+
