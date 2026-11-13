@@ -124,15 +124,46 @@ What the mode gives up by not being the default is 72 cases (**75.46 % → 80.52
 is nine families losing between 1 and 9 cases each. That trade is a decision about the condition, not about the
 statistic, and it is the register's to make rather than this module's.
 
-## 7. What is next
+## 7. The condition as a budget, measured
 
-1. **Price the condition.** "No family may lose a case" is applied to a *term's* admission and inherited by a *gate's*
-   bound, where it binds for the first time: the term's own admission was measured at +42 with no family loss, and
-   every bound above it loses one. The next measurement is the condition as a constraint with a budget — e.g. "no
-   family loses more than `k` cases" — swept, with `k = 0` reproducing the veto and `k = 9` reproducing the peak.
-2. **Measure the mode on the golden cells.** The margin bar reads no latency and no metric name, so unlike the
+"No regressed fault type" is a budget of zero. `budgetScanOf` reads the same frontier at every budget, so the
+condition stops being a veto and becomes a price list: what each rung buys, and which families pay for it. The same
+command prints it after the frontier, and `--budget 0 --budget 4 …` replaces the ladder.
+
+| budget | reach | cases | delta | helps | hurts | loss | cases bought per case lost | families that pay |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 0 | — | — | — | — | — | — | — | nothing is that cheap |
+| 1 | — | — | — | — | — | — | — | nothing is that cheap |
+| 2 | 0.02 | 1 123 | +50 | 58 | 8 | 4 | **12.5** | `HTTPRequestDelay` −2, `HTTPRequestReplacePath` −1, `PodKill` −1 |
+| 3 | 0.02 | 1 123 | +50 | 58 | 8 | 4 | 12.5 | same |
+| 4–6 | 0.05 | 1 131 | +58 | 72 | 14 | 8 | 7.3 | five families, worst −4 |
+| 7–10 | 0.10 | **1 145** | **+72** | 95 | 23 | 15 | 4.8 | six families, worst −7 |
+
+Three readings, and the first two correct guesses made before the scan ran:
+
+1. **The cheapest rung is 2, not 1.** Every point of the frontier loses at least two cases in one family — the bound
+   whose worst family is smallest is 0.02, and there `HTTPRequestDelay` loses 2. So the condition cannot be bought
+   for one case anywhere on this grid, and a ladder printed only at 0 and 1 would have read as "no trade exists".
+2. **The peak costs 7, not 9.** The best total sits at 0.10, where the deepest family loses 7; the earlier guess of 9
+   was read off the *summed* loss at 0.35 (24) rather than the deepest family, and the sum cannot answer a per-family
+   question. The rung that reaches 1 145 is therefore 7, and a reader who priced the sum would have overpaid.
+3. **The trade diminishes steeply.** 12.5 cases bought per case sacrificed at the cheapest rung, 4.8 at the peak. The
+   cheapest compliant number is also the most efficient one, and the peak costs 2.6× as much per case: the frontier
+   is not a straight line, so "buy as many cases as possible" and "buy cases efficiently" are different rungs.
+
+The ladder's own weakness, stated rather than hidden: every rung above 7 answers 0.10, because the bound that reaches
+1 145 earliest is also the one that stays inside every budget from 7 up. A ladder that reported a *different* bound
+per rung would be reporting noise: the frontier is flat between 0.10 and 0.35, so the tie-break on cases resolves to
+the earliest bound at every rung that reaches the peak.
+
+## 8. What is next
+
+1. **Measure the mode on the golden cells.** The margin bar reads no latency and no metric name, so unlike the
    shipped bar it is expressible on the five RCAEval cells whose `edgeLatency` is empty. That is a dispatch, not an
    argument.
+2. **The out-of-fold ladder.** The per-fold losses at rate 1 are `2, 6, 2, 9, 7`, so the cheapest *generalising* rung
+   is not the in-sample 2. The scan exists; spending it per fold is the next reading, and it is the one that decides
+   whether the budget is a property of the corpus or of a fold.
 3. **The same statistic on the other conditional names.** `collision` records a zero on all 1 422 cases and `lat` is
    absent on 662; both are decisions the dump already carries, and the reach is a property of the ranking rather than
    of the term.

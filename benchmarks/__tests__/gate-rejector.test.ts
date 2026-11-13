@@ -31,13 +31,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { RejectorCase } from '../src/gate-rejector.js';
+import type { FrontierPoint, RejectorCase } from '../src/gate-rejector.js';
 import {
+  DEFAULT_LOSS_BUDGETS,
   DEFAULT_REACH_BOUNDS,
   boundOf,
+  budgetScanOf,
   calibrationOf,
+  cheapestOf,
   chowReport,
   constrainedOf,
+  formatBudgets,
   formatChow,
   formatFrontier,
   frontierOf,
@@ -407,6 +411,169 @@ describe('constrainedOf', () => {
   });
 });
 
+describe('the acceptance condition as a budget', () => {
+  // "No regressed fault type" is the condition at budget zero. Every rung above it states a trade in the corpus's
+  // own unit — cases — so a reader can price the condition instead of reading a veto as a fact about the statistic.
+  const frontier = frontierOf(ROWS, [0.05, 0.3]);
+
+  it('reproduces the veto at zero and the peak at one, on the same frontier', () => {
+    const [vetoed, one] = budgetScanOf(frontier, [0, 1]);
+    expect(vetoed!.budget).toBe(0);
+    expect(vetoed!.point?.bound).toBeCloseTo(0.05, 12);
+    expect(vetoed!.point?.cases).toBe(8);
+    expect(vetoed!.point?.regressed).toEqual([]);
+    // The rung that costs exactly one case buys the whole peak: nine cases, alpha one short of the run.
+    expect(one!.point?.bound).toBeCloseTo(0.3, 12);
+    expect(one!.point?.cases).toBe(9);
+    expect(one!.point?.regressed).toEqual([{ faultType: 'alpha', delta: -1 }]);
+  });
+
+  it('agrees with the veto at zero, so the two are one rule rather than two', () => {
+    // `constrainedOf` is budget zero with a name. If these could disagree, a caller would have to know which of the
+    // two spellings of the standing condition a report was written against.
+    expect(budgetScanOf(frontier, [0])[0]!.point).toEqual(constrainedOf(frontier).allowed);
+  });
+
+  it('reports an unsatisfiable budget as null, not as an empty list', () => {
+    // A budget no point meets is a MEASUREMENT of the frontier — the condition cannot be bought that cheaply — and
+    // the distinction from "the grid was empty" is the whole reason the field is nullable.
+    const point: FrontierPoint = {
+      bound: 0.1,
+      cases: 9,
+      delta: 4,
+      admitted: 6,
+      helps: 5,
+      hurts: 1,
+      regressed: [{ faultType: 'zeta', delta: -2 }],
+      loss: 2,
+    };
+    expect(budgetScanOf([point], [0, 1, 2]).map((rung) => rung.point)).toEqual([null, null, point]);
+  });
+
+  it('reads the deepest SINGLE family loss, not the summed one', () => {
+    // The condition is per family: three families one case short each is a different failure from one family three
+    // short, and the summed loss cannot tell them apart.
+    const point: FrontierPoint = {
+      bound: 0.2,
+      cases: 9,
+      delta: 3,
+      admitted: 7,
+      helps: 6,
+      hurts: 3,
+      regressed: [
+        { faultType: 'a', delta: -1 },
+        { faultType: 'b', delta: -1 },
+        { faultType: 'c', delta: -1 },
+      ],
+      loss: 3,
+    };
+    expect(budgetScanOf([point], [0, 1, 2]).map((rung) => rung.point === null)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  it('breaks a tie on cases toward the earliest rung of the ladder', () => {
+    const early = { ...frontierOf(ROWS, [0.3])[0]!, loss: 1 };
+    const late = { ...frontierOf(ROWS, [0.5])[0]!, loss: 1 };
+    const scan = budgetScanOf([early, late], [1]);
+    expect(scan[0]!.point?.bound).toBeCloseTo(0.3, 12);
+  });
+
+  it('reads a budget the arithmetic cannot place as the strictest rung', () => {
+    // A negative budget is unsatisfiable and a NaN compares false against everything, so reading either as "no
+    // limit" would turn a typo into the widest condition the module can state. The rung is normalised instead, and
+    // the echo says which rung was actually read.
+    for (const budget of [Number.NaN, -1, Number.NEGATIVE_INFINITY]) {
+      const [rung] = budgetScanOf(frontier, [budget]);
+      expect(rung!.budget).toBe(0);
+      expect(rung!.point).toEqual(constrainedOf(frontier).allowed);
+    }
+    // A fractional budget is legal and means what it says: no family may lose more than 0.5 cases, i.e. none.
+    expect(budgetScanOf(frontier, [0.5])[0]!.point?.cases).toBe(8);
+  });
+
+  it('reads no rung at all from an empty ladder', () => {
+    expect(budgetScanOf(frontier, [])).toEqual([]);
+  });
+});
+
+describe('cheapestOf', () => {
+  it('finds a free point when the frontier has one', () => {
+    // The fixture's bound 0.05 loses no family, so the standing condition IS met somewhere and the cheapest rung is
+    // zero — the number that says the condition costs nothing on this corpus, which is what the real archive denies.
+    const cheapest = cheapestOf(frontierOf(ROWS));
+    expect(cheapest?.budget).toBe(0);
+    expect(cheapest?.point.regressed).toEqual([]);
+  });
+
+  it('names the smallest budget when every cheap rung is empty', () => {
+    // The archive's shape: no point is free, so the question is not "which rung" but "how cheap can compliance get".
+    const cheapest = cheapestOf(frontierOf(ROWS, [0.3]));
+    expect(cheapest?.budget).toBe(1);
+    expect(cheapest?.point.bound).toBeCloseTo(0.3, 12);
+    expect(cheapest?.point.regressed).toEqual([{ faultType: 'alpha', delta: -1 }]);
+  });
+
+  it('keeps the earliest point when two are equally cheap, and takes a later cheaper one', () => {
+    const [near, far] = frontierOf(ROWS, [0.05, 0.3]);
+    const deep = { ...near!, regressed: [{ faultType: 'x', delta: -2 }] };
+    const alsoDeep = { ...far!, regressed: [{ faultType: 'y', delta: -2 }] };
+    expect(cheapestOf([deep, alsoDeep])?.budget).toBe(2);
+    expect(cheapestOf([deep, alsoDeep])?.point.bound).toBeCloseTo(0.05, 12);
+    // A later point can be the cheaper one: the scan must not stop at the first point it can price.
+    const shallow = { ...far!, regressed: [{ faultType: 'y', delta: -1 }] };
+    expect(cheapestOf([deep, shallow])?.budget).toBe(1);
+    expect(cheapestOf([deep, shallow])?.point.bound).toBeCloseTo(0.3, 12);
+  });
+
+  it('reports nothing for an empty frontier', () => {
+    expect(cheapestOf([])).toBeNull();
+  });
+});
+
+describe('formatBudgets', () => {
+  it('prints the price of each rung and the families that pay it', () => {
+    const text = formatBudgets(
+      budgetScanOf(frontierOf(ROWS, [0.05, 0.3]), [0, 1]),
+      runTotalOf(ROWS),
+    );
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('run 5   budgets 0, 1');
+    expect(lines[2]).toContain('budget');
+    expect(lines[2]).toContain('buy/loss');
+    expect(lines[3]).toContain('0.05');
+    expect(lines[3]).toContain('8');
+    expect(lines[4]).toContain('0.30');
+    expect(lines[4]).toContain('alpha -1');
+  });
+
+  it('says so when the corpus buys nothing per case lost', () => {
+    // A rung whose delta is zero or negative buys nothing, and a ratio printed as `0.0` would read as "cheap".
+    const point = { ...frontierOf(ROWS, [0.3])[0]!, cases: 5, delta: 0 };
+    const text = formatBudgets([{ budget: 1, point }], 5);
+    expect(text.split('\n')[3]).toContain('—');
+  });
+
+  it('names an unsatisfiable rung rather than printing a blank row', () => {
+    const text = formatBudgets(budgetScanOf(frontierOf(ROWS, [0.3]), [0]), runTotalOf(ROWS));
+    expect(text.split('\n')[3]).toContain('no bound');
+  });
+
+  it('adds the cheapest rung the frontier offers when the caller read one', () => {
+    // Without this line a ladder whose bottom two rungs are empty says nothing about how cheap compliance can get,
+    // and "no bound" then reads as "impossible" rather than "not at this budget".
+    const frontier = frontierOf(ROWS, [0.05, 0.3]);
+    const text = formatBudgets(budgetScanOf(frontier, [0]), runTotalOf(ROWS), cheapestOf(frontier));
+    expect(text.split('\n').at(-1)).toBe('cheapest rung: 0 — reach < 0.05 answers 8 (+3), price 0');
+  });
+
+  it('prints a header for an empty ladder', () => {
+    expect(formatBudgets([], 5).split('\n')[0]).toBe('run 5   budgets none');
+  });
+});
+
 describe('calibrationOf', () => {
   it('reads the two reaches the corpus carries and nothing else', () => {
     const blocks = calibrationOf(ROWS);
@@ -628,22 +795,48 @@ describe('the formatters', () => {
 describe('parseRejectorArgs', () => {
   it('reads every flag', () => {
     expect(
-      parseRejectorArgs(['--terms', 'd.ndjson', '--term', 'x', '--folds', '3', '--rate', '0.25']),
+      parseRejectorArgs([
+        '--terms',
+        'd.ndjson',
+        '--term',
+        'x',
+        '--folds',
+        '3',
+        '--rate',
+        '0.25',
+        '--budget',
+        '2',
+      ]),
     ).toEqual({
       terms: 'd.ndjson',
       term: 'x',
       folds: 3,
       rate: 0.25,
+      budgets: [2],
     });
   });
 
-  it('defaults to the shipped term, five folds and the symmetric verdict', () => {
+  it('defaults to the shipped term, five folds, the symmetric verdict and the whole ladder', () => {
     expect(parseRejectorArgs(['--terms', 'd.ndjson'])).toEqual({
       terms: 'd.ndjson',
       term: 'failedEdge',
       folds: 5,
       rate: 1,
+      budgets: DEFAULT_LOSS_BUDGETS,
     });
+  });
+
+  it('accumulates a repeated budget flag in the order given', () => {
+    // One rung per flag rather than a comma list: a comma list has to state what an empty field means, and this
+    // command already carries three single-valued flags.
+    expect(parseRejectorArgs(['--terms', 'd', '--budget', '3', '--budget', '0']).budgets).toEqual([
+      3, 0,
+    ]);
+    expect(() => parseRejectorArgs(['--terms', 'd', '--budget'])).toThrow(
+      /--budget needs a number/,
+    );
+    expect(() => parseRejectorArgs(['--terms', 'd', '--budget', '-1'])).toThrow(/non-negative/);
+    expect(() => parseRejectorArgs(['--terms', 'd', '--budget', 'x'])).toThrow(/non-negative/);
   });
 
   it('refuses a missing path, an unknown flag and a malformed number', () => {

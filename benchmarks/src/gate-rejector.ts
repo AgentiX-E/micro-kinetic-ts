@@ -52,6 +52,14 @@
  * fault type), so adopting one is a decision about the condition, not about the statistic. {@link constrainedOf}
  * prices that condition instead of hiding it.
  *
+ * ## The condition, priced
+ *
+ * "No regressed fault type" is a budget of zero: no family may lose a case. {@link budgetScanOf} reads the same
+ * frontier at every budget, so the condition becomes a price list rather than a veto — the cases each rung buys and
+ * the families that pay for them. It is the difference between *no operating point is admissible* and *the cheapest
+ * admissible operating point costs four cases*, and the second is a fact a reader can decide about. The ladder is not
+ * a proposal to relax the condition: nothing here selects a rung, and the default mode stays `absolute`.
+ *
  * @module benchmarks/gate-rejector
  */
 
@@ -122,6 +130,23 @@ export interface FrontierPoint {
   /** `Σ |delta|` over {@link regressed}: the price of the standing acceptance condition at this bound. */
   readonly loss: number;
 }
+
+/** One rung of the loss ladder: a budget, and the best point that stays inside it. */
+export interface BudgetPoint {
+  /** Cases one family may lose. `0` is the standing acceptance condition; larger rungs buy cases with cases. */
+  readonly budget: number;
+  /** The best point that loses no family more than {@link budget} cases, or `null` when none does. */
+  readonly point: FrontierPoint | null;
+}
+
+/**
+ * The loss ladder {@link budgetScanOf} reads when a caller names none.
+ *
+ * Zero to ten because that is the span the corpus prices: the standing condition is `0`, the frontier's own peak
+ * costs nine cases in its worst family, and `10` is the first rung that buys nothing more — so the ladder ends where
+ * the trade stops paying. A caller with a different question passes its own rungs.
+ */
+export const DEFAULT_LOSS_BUDGETS: readonly number[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 /** One block of the isotonic fit: a plateau of constant `p` over a reach interval. */
 export interface CalibrationBlock {
@@ -379,6 +404,78 @@ export function frontierOf(
 }
 
 /**
+ * The best point whose deepest SINGLE-family loss stays inside a budget.
+ *
+ * The condition is per family, and the summed {@link FrontierPoint.loss} cannot express it: three families one case
+ * short each and one family three short have the same sum and are different failures. A point with no regression is
+ * inside every budget, including zero.
+ *
+ * @param frontier - The points.
+ * @param budget - The cases one family may lose.
+ * @returns The point answering the most cases, earliest on a tie; `null` when no point is inside the budget.
+ */
+function bestUnder(frontier: readonly FrontierPoint[], budget: number): FrontierPoint | null {
+  let best: FrontierPoint | null = null;
+  for (const point of frontier) {
+    if (!point.regressed.every((loss) => -loss.delta <= budget)) continue;
+    if (best === null || point.cases > best.cases) best = point;
+  }
+  return best;
+}
+
+/**
+ * The acceptance condition, priced: one rung per budget, each carrying the best point that stays inside it.
+ *
+ * "No regressed fault type" is this scan at budget `0`, so the scan does not replace that condition — it states
+ * what every weakening of it buys. A rung whose answer is `null` is a measurement of the frontier (nothing is that
+ * cheap), not an empty grid, and the two render differently.
+ *
+ * A budget the arithmetic cannot place — negative, infinite, not a number — is read as `0`, the strictest rung.
+ * Folding it into "no limit" would let a typo in a workflow file state the widest condition the module can express.
+ *
+ * @param frontier - The points, from {@link frontierOf}.
+ * @param budgets - The rungs to read; {@link DEFAULT_LOSS_BUDGETS} when omitted.
+ * @returns One rung per budget, in the order given, echoing the budget that was actually read.
+ */
+export function budgetScanOf(
+  frontier: readonly FrontierPoint[],
+  budgets: readonly number[] = DEFAULT_LOSS_BUDGETS,
+): BudgetPoint[] {
+  return budgets.map((budget) => {
+    const rung = Number.isFinite(budget) && budget > 0 ? budget : 0;
+    return { budget: rung, point: bestUnder(frontier, rung) };
+  });
+}
+
+/** The cheapest rung the frontier offers: a budget that some point meets, and that point. */
+export interface CheapestPoint {
+  readonly budget: number;
+  readonly point: FrontierPoint;
+}
+
+/**
+ * The cheapest rung any point of the frontier can offer.
+ *
+ * The ladder answers "what does budget `k` buy"; this answers "what is the smallest `k` that buys anything", which is
+ * the number a reader needs when every low rung comes back empty. It is a property of the FRONTIER rather than of a
+ * ladder, which is why it is its own function and not a row.
+ *
+ * A point with no regression costs `0`, so on a frontier that has one this returns budget `0` — the standing
+ * condition met, at whatever that point answers.
+ *
+ * @param frontier - The points.
+ * @returns The point whose deepest family loss is smallest, earliest on a tie; `null` for an empty frontier.
+ */
+export function cheapestOf(frontier: readonly FrontierPoint[]): CheapestPoint | null {
+  let cheapest: CheapestPoint | null = null;
+  for (const point of frontier) {
+    const worst = point.regressed.reduce((deepest, loss) => Math.max(deepest, -loss.delta), 0);
+    if (cheapest === null || worst < cheapest.budget) cheapest = { budget: worst, point };
+  }
+  return cheapest;
+}
+
+/**
  * The best point the standing acceptance condition allows, and the best point outright.
  *
  * "No regressed fault type" is the condition every term in this repository was admitted under, so a point that
@@ -393,14 +490,13 @@ export function constrainedOf(frontier: readonly FrontierPoint[]): {
   allowed: FrontierPoint | null;
   best: FrontierPoint | null;
 } {
-  let allowed: FrontierPoint | null = null;
   let best: FrontierPoint | null = null;
   for (const point of frontier) {
     if (best === null || point.cases > best.cases) best = point;
-    if (point.regressed.length > 0) continue;
-    if (allowed === null || point.cases > allowed.cases) allowed = point;
   }
-  return { allowed, best };
+  // Budget zero, read through the scan's own predicate rather than through a second copy of "no regression": the
+  // standing condition and the ladder's first rung are one rule.
+  return { allowed: bestUnder(frontier, 0), best };
 }
 
 /**
@@ -575,6 +671,59 @@ export function formatFrontier(frontier: readonly FrontierPoint[], runTotal: num
 }
 
 /**
+ * Render the loss ladder.
+ *
+ * `buy/loss` is the only column that prices anything: cases bought per case sacrificed. A rung that buys nothing is
+ * printed as `—` rather than `0.0`, because a zero ratio reads as "cheap" while the rung is simply not worth taking.
+ *
+ * @param scan - The rungs, from {@link budgetScanOf}.
+ * @param runTotal - The run's own total, for the header that says what every delta is against.
+ * @param cheapest - The smallest rung the frontier offers, from {@link cheapestOf}; omitted means the caller did not
+ *   read it, and the line is left out rather than guessed at.
+ * @returns The report text.
+ */
+export function formatBudgets(
+  scan: readonly BudgetPoint[],
+  runTotal: number,
+  cheapest: CheapestPoint | null = null,
+): string {
+  const ladder = scan.map((rung) => String(rung.budget));
+  const lines = [
+    `run ${runTotal}   budgets ${ladder.length === 0 ? 'none' : ladder.join(', ')}`,
+    '',
+    '  budget  reach  cases   delta  helps  hurts  loss  buy/loss  regressed',
+  ];
+  for (const rung of scan) {
+    const point = rung.point;
+    if (point === null) {
+      lines.push(
+        `  ${String(rung.budget).padStart(6)}  no bound costs ≤ ${rung.budget} per family`,
+      );
+      continue;
+    }
+    const families = point.regressed.map((loss) => `${loss.faultType} ${loss.delta}`).join(', ');
+    const bought =
+      point.loss === 0 || point.delta <= 0 ? '—' : (point.delta / point.loss).toFixed(1);
+    lines.push(
+      `  ${String(rung.budget).padStart(6)}  ${point.bound.toFixed(2).padStart(5)}  ` +
+        `${String(point.cases).padStart(5)}  ${signed(point.delta).padStart(6)}  ` +
+        `${String(point.helps).padStart(5)}  ${String(point.hurts).padStart(5)}  ` +
+        `${String(point.loss).padStart(4)}  ${bought.padStart(8)}  ${families || '—'}`,
+    );
+  }
+  if (cheapest !== null) {
+    // The line that answers the question the empty rungs raise: if `0` and `1` both came back empty, how cheap can
+    // compliance get at all? Printed after the ladder so it reads as a property of the frontier, not of the rungs.
+    lines.push('');
+    lines.push(
+      `cheapest rung: ${cheapest.budget} — reach < ${cheapest.point.bound} answers ` +
+        `${cheapest.point.cases} (${signed(cheapest.point.delta)}), price ${cheapest.point.loss}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
  * Render the out-of-fold reading.
  *
  * @param report - The report.
@@ -605,6 +754,7 @@ interface RejectorArgs {
   readonly term: string;
   readonly folds: number;
   readonly rate: number;
+  readonly budgets: readonly number[];
 }
 
 /**
@@ -619,6 +769,7 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
   let term = 'failedEdge';
   let folds = 5;
   let rate = 1;
+  const budgets: number[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]!;
     const value = argv[index + 1];
@@ -649,10 +800,25 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
         index += 1;
         break;
       }
+      case '--budget': {
+        if (value === undefined) throw new Error('--budget needs a number');
+        const budget = Number.parseFloat(value);
+        if (!Number.isFinite(budget) || budget < 0)
+          throw new Error('--budget must be a non-negative number');
+        budgets.push(budget);
+        index += 1;
+        break;
+      }
       default:
         throw new Error(`unknown argument ${flag}`);
     }
   }
   if (terms === '') throw new Error('--terms is required');
-  return { terms, term, folds, rate };
+  return {
+    terms,
+    term,
+    folds,
+    rate,
+    budgets: budgets.length === 0 ? DEFAULT_LOSS_BUDGETS : budgets,
+  };
 }

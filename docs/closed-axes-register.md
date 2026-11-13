@@ -2950,3 +2950,52 @@ the mode is an arm a run selects, and what the record holds is the frontier rath
 The frontier's own record is `docs/gate-rejector.md`: the statistic's arithmetic, Chow's rule and the isotonic fit,
 the two tables above as the module prints them, and the four axes the readback settles. This section is the verdict;
 that document is the instrument.
+
+## Iteration 279 — the condition has a price, and the cheapest rung is two
+
+278 ended with the condition binding: no bound of the reach statistic meets "no regressed fault type", and the
+cheapest violation costs 4 loss units. That is a statement about a veto, and a veto is not a decision — the next
+measurement is the condition as a **budget**: no family may lose more than `k` cases. `budgetScanOf` reads the same
+frontier at every `k`, `cheapestOf` prices the frontier itself, and `pnpm tsx benchmarks/src/run-gate-rejector.ts
+--terms <dump>` prints both. `docs/gate-rejector.md` §7 is the instrument's record.
+
+### The ladder
+
+The run is 1 073. Every rung keeps the run's own admissions as a floor, so the deltas are against the configuration a
+gate change would actually ship to.
+
+| `k` | reach | cases | delta | loss | cases bought per case lost | families that pay |
+|---:|---:|---:|---:|---:|---:|---|
+| 0 | — | — | — | — | — | the standing condition: no bound meets it |
+| 1 | — | — | — | — | — | nothing on the grid is that cheap |
+| **2** | 0.02 | **1 123** | **+50** | 4 | **12.5** | `HTTPRequestDelay` −2, `HTTPRequestReplacePath` −1, `PodKill` −1 |
+| 4–6 | 0.05 | 1 131 | +58 | 8 | 7.3 | five families, worst −4 |
+| 7–10 | 0.10 | **1 145** | **+72** | 15 | 4.8 | six families, worst −7 |
+
+### Three readings
+
+- **The cheapest rung is 2, not 1.** Every point of the frontier loses at least two cases in one family: the bound
+  whose deepest family loss is smallest is 0.02, and there `HTTPRequestDelay` loses 2. A ladder printed only at 0 and 1
+  would have read as "no trade exists", which is why the ladder prints a cheapest-rung line as well as its rungs.
+- **The peak costs 7, not the 9 guessed in 278.** The guess was read off the SUMMED loss at 0.35 (24 units), and a sum
+  cannot answer a per-family question: the total is best at 0.10, where the deepest family loses 7. The sum overstates
+  the price by two rungs, and a reader who priced the sum would have overpaid for the same 1 145.
+- **The trade diminishes steeply.** 12.5 cases bought per case sacrificed at the cheapest rung, 4.8 at the peak. The
+  cheapest compliant number is therefore also the most efficient one, and the peak costs 2.6× as much per case — so
+  "answer as many cases as possible" and "buy cases efficiently" are different rungs of the same frontier.
+
+### Axes this closes
+
+| Axis | Verdict |
+|---|---|
+| "The condition can be bought for one case per family" | **closed** — no point of the grid loses fewer than 2 in one family; the floor is `HTTPRequestDelay` at 0.02 |
+| "`k = 9` reproduces the peak" | **corrected before it was claimed** — the peak's rung is 7, because the peak sits at 0.10 and the deepest family there loses 7; the 9 came from 0.35's summed loss |
+| "The summed loss prices the condition" | **closed** — a per-family condition cannot be priced by a sum: 0.10 and 0.35 differ by 9 loss units and answer the same total |
+| "The cheapest rung is the peak's rung" | **closed** — 2 versus 7; efficiency and total are different orderings of the same frontier |
+
+### What ships
+
+`budgetScanOf`, `cheapestOf`, `DEFAULT_LOSS_BUDGETS` and `formatBudgets` are in `benchmarks/src/gate-rejector.ts`,
+with the ladder printed by the command that prints the frontier. No engine default moves: the shipped mode is still
+`absolute`, and the ladder is a reading rather than a selection. The condition stays the register's to relax, and it
+now has a price list instead of a veto.
