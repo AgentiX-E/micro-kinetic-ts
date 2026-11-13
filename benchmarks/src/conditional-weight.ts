@@ -252,20 +252,29 @@ export function weightCensusOf(cases: readonly ParsedTermCase[]): WeightCensus {
  * term had been weighted here. Under `recorded` the coefficient is the one the dump wrote, so a case that did not
  * measure the term adds nothing.
  *
+ * Exported because it is the ONE definition of what an arm scores, and a reader that needs the vector rather than the
+ * verdict — the rejector, which reads the baseline's LEAD and therefore its ordering — must not write a second copy.
+ * Iteration 277 found two readers of one artifact disagreeing by 42 cases; this is the seam where that happens.
+ *
  * @param kase - One case.
- * @param row - The name being moved.
+ * @param name - The name being moved.
  * @param arm - Which coefficient the name gets.
- * @returns The reading.
+ * @param configured - The coefficient `on` applies; {@link RecordedStates.configured} for a census reader.
+ * @returns One score per candidate, in the dump's order.
  */
-function readArm(kase: ParsedTermCase, row: RecordedStates, arm: TermArm): StrictReading {
-  const ids = kase.candidates.map((candidate) => candidate.id);
+export function scoresUnder(
+  kase: ParsedTermCase,
+  name: string,
+  arm: TermArm,
+  configured: number,
+): Float64Array {
   const scores = new Float64Array(kase.candidates.length);
   for (let index = 0; index < kase.candidates.length; index += 1) {
     const candidate = kase.candidates[index]!;
     let score = 0;
-    for (const [name, weight, slope] of candidate.terms) {
+    for (const [term, weight, slope] of candidate.terms) {
       if (slope === null) continue;
-      if (name !== row.name) {
+      if (term !== name) {
         if (weight === null) continue;
         score += weight * slope;
         continue;
@@ -274,12 +283,28 @@ function readArm(kase: ParsedTermCase, row: RecordedStates, arm: TermArm): Stric
         if (weight === null) continue;
         score += weight * slope;
       } else {
-        score += (arm === 'on' ? row.configured : 0) * slope;
+        score += (arm === 'on' ? configured : 0) * slope;
       }
     }
     scores[index] = score;
   }
-  return readScores(ids, new Set(kase.accepted), scores);
+  return scores;
+}
+
+/**
+ * Read one case under one arm.
+ *
+ * @param kase - One case.
+ * @param row - The name being moved.
+ * @param arm - Which coefficient the name gets.
+ * @returns The reading.
+ */
+function readArm(kase: ParsedTermCase, row: RecordedStates, arm: TermArm): StrictReading {
+  return readScores(
+    kase.candidates.map((candidate) => candidate.id),
+    new Set(kase.accepted),
+    scoresUnder(kase, row.name, arm, row.configured),
+  );
 }
 
 /** Nothing answered yet. */

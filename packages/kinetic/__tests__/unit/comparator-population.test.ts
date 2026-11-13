@@ -125,6 +125,16 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`families.entries()`, a Map keyed by fault type',
     },
   ],
+  'benchmarks/src/gate-rejector.ts': [
+    // The rejector's frontier table: the families that lose a case, worst loss first, then by name. The names are
+    // `Map` keys (fault types), so they are distinct and the tie-break never claims an order between equals —
+    // recorded rather than exempted, because the rule this census enforces is that every `? -1 : 1` site states the
+    // list it sorts, and this one sorts a table two runs must print identically.
+    {
+      signature: 'a.faultType < b.faultType',
+      population: '`families`, a Map keyed by fault type, reduced to its losses',
+    },
+  ],
   'benchmarks/src/fault-census.ts': [
     // The fault-type ordering on the line. Its keys are `Map` keys (fault labels), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded for the reason the censuses beside it are.

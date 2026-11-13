@@ -1734,27 +1734,35 @@ export const FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU = { lo: 240, hi: 360 } as con
 export const FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300;
 
 /**
- * Which BAR the failed-edge direction term's rise is read against.
+ * Which BAR the failed-edge direction term is read against.
  *
  * - `absolute` — {@link FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR}, the constant fitted on FSE'26's injection
  *   scale. The SHIPPED value, so a run that names no mode is the published run.
  * - `fleet` — `share ×` the case's own largest measured inbound rise. Dimensionless, and therefore the
  *   same statement about a 14-service graph and a 69-service one.
+ * - `evidence` — the failed-call channel's own failure fraction on the strongest failing callee. Reads
+ *   neither the metric name nor any latency, so it is expressible on a corpus whose dominant metrics are
+ *   `cpu_usage` and `memory`.
+ * - `margin` — the baseline's own LEAD: how far its first candidate is ahead of its second, in units of
+ *   what the term could ever move. It is the calibrated rejector of `benchmarks/src/gate-rejector.ts`,
+ *   where the lead's posterior is measured rather than assumed, and it is the only one of the four that
+ *   asks about the ranking the gate is about to overrule rather than about the case's shape.
  *
- * The mode exists because the absolute bar is not a property of the statistic: it is a property of the
- * corpus the statistic was measured on. See {@link FailedEdgeGate} and the docblock on
- * `failedEdgeRiseBar` for the two artifacts that make that a measurement rather than an argument.
+ * The modes exist because a bar is not a property of a statistic: it is a property of the corpus the
+ * statistic was measured on, OR of the physics of the term. See {@link FailedEdgeGate} and the docblock
+ * on `failedEdgeRiseBar` for the two artifacts that make that a measurement rather than an argument.
  */
-export type FailedEdgeGateMode = 'absolute' | 'fleet' | 'evidence';
+export type FailedEdgeGateMode = 'absolute' | 'fleet' | 'evidence' | 'margin';
 
 /**
  * The mode vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree
- * about which two words the engine accepts.
+ * about which words the engine accepts.
  */
 export const FAILED_EDGE_GATE_MODES: Readonly<Record<FailedEdgeGateMode, true>> = {
   absolute: true,
   fleet: true,
   evidence: true,
+  margin: true,
 };
 
 /** The shipped gate mode: the absolute bar, which is what every published cell ran. */
@@ -1770,6 +1778,31 @@ export const DEFAULT_FAILED_EDGE_GATE_MODE: FailedEdgeGateMode = 'absolute';
 export const DEFAULT_FAILED_EDGE_GATE_SHARE = 0.5;
 
 /**
+ * The shipped share at the `margin` bar, which is a different MAXIMUM from the fleet one.
+ *
+ * `share` names a fraction of a maximum, and the mode names the maximum: at `fleet` it is the case's own
+ * largest measured inbound rise, and at `margin` it is the term's own span — `weight ×` the largest slope
+ * any candidate measured, which is the most the term can ever add to one candidate. A lead of one whole
+ * span therefore means "the term cannot change this answer at all", and `0.3` says the term may act only
+ * when the baseline's lead is under three tenths of that.
+ *
+ * ## Why 0.3, and why it is not a fitted point
+ *
+ * Measured on the 1 422-case archive with `benchmarks/src/run-gate-rejector.ts` (the frontier is printed
+ * by that command and the numbers below are its output): the total answers 1 145 at reaches 0.10, 0.20,
+ * 0.30 and 0.35, against 1 073 for the shipped run — a plateau four deep in the bound, so the corpus
+ * offers an INTERVAL and `0.3` is a point inside it rather than the argmax of a curve. `0.5`, the fleet
+ * default, answers 1 136 on the same corpus: still +63, and the reason the two modes do not share a
+ * number is that they are fractions of two different quantities.
+ *
+ * **This bar does not satisfy the engine's standing acceptance condition**, and the constant does not
+ * claim it does: at every bound the frontier loses cases in nine fault families (worst −9 of 88). The
+ * shipped mode stays `absolute`; `margin` is an arm a run selects, and the frontier — not this number —
+ * is what the record holds.
+ */
+export const DEFAULT_FAILED_EDGE_MARGIN_SHARE = 0.3;
+
+/**
  * Whether a string names a gate mode.
  *
  * @param value - The candidate word, as a CLI or a workflow handed it over.
@@ -1777,6 +1810,34 @@ export const DEFAULT_FAILED_EDGE_GATE_SHARE = 0.5;
  */
 export function isFailedEdgeGateMode(value: string): value is FailedEdgeGateMode {
   return Object.prototype.hasOwnProperty.call(FAILED_EDGE_GATE_MODES, value);
+}
+
+/**
+ * The baseline's lead as a share of the term's own span, which is the `margin` bar's statistic.
+ *
+ * `Infinity` in three cases, and all three mean the same thing to the predicate — refuse: a ranking with no second
+ * candidate cannot be reordered; a term that measured no slope anywhere cannot move anything, so its span is zero
+ * and the lead is not a fraction of it; and a case whose ranks carry no `finalScore` was never scored by this
+ * producer, so its margin is not a measurement.
+ *
+ * @param ranking - The baseline ranking, best first.
+ * @param weight - The configured coefficient of the term being gated.
+ * @param scores - The term's own per-service scores, as the graph produced them.
+ * @returns The lead over the span, or `Infinity` when no share exists.
+ */
+function baselineReachOf(
+  ranking: readonly RootCauseResult[],
+  weight: number,
+  scores: ReadonlyMap<ServiceId, number> | undefined,
+): number {
+  const top = ranking[0]?.finalScore;
+  const second = ranking[1]?.finalScore;
+  if (top === undefined || second === undefined) return Infinity;
+  let span = 0;
+  for (const score of scores?.values() ?? []) if (score > span) span = score;
+  const reach = weight * span;
+  if (!(reach > 0)) return Infinity;
+  return (top - second) / reach;
 }
 
 /**
@@ -1796,6 +1857,14 @@ export interface FailedEdgeGate {
   readonly share: number;
   /** The case's largest measured inbound rise, or absent when none was measured. Read only at `fleet`. */
   readonly fleetMax?: number | undefined;
+  /**
+   * The baseline's lead in units of the term's own span. Read only at `margin`.
+   *
+   * Supplied by the caller for the same reason `fleetMax` is: the predicate is a function of scalars, and a
+   * caller that passed the ranking would be free to pass one the gate did not decide about. Absent at the
+   * three other modes, which is what makes carrying it free.
+   */
+  readonly reach?: number | undefined;
   /**
    * The failed-call channel's own strength. Read only at `evidence`.
    *
@@ -1849,9 +1918,9 @@ export function admitsFailedEdgeTerm(
   // below — which is the whole point, since the name half refuses 1 030 of 1 422 archive cases before any bar is
   // consulted. The dispatch is here rather than at the call sites so that every caller — the engine, the census,
   // the arms — asks the same function and cannot implement one mode's rule for another's.
-  if ((gate?.mode ?? DEFAULT_FAILED_EDGE_GATE_MODE) === 'evidence') {
-    return admitsFailedEdgeEvidence(gate?.evidence, gate?.share);
-  }
+  const mode = gate?.mode ?? DEFAULT_FAILED_EDGE_GATE_MODE;
+  if (mode === 'margin') return admitsFailedEdgeReach(gate?.reach, gate?.share);
+  if (mode === 'evidence') return admitsFailedEdgeEvidence(gate?.evidence, gate?.share);
   if (!namesDurationChannel(dominantMetric)) return false;
   // A missing measurement is REFUSED before the bar is computed, and that ordering is the whole of the
   // rule: folding an absent rise into `0` and then comparing it would admit the case at a share of 0,
@@ -1893,6 +1962,37 @@ function admitsFailedEdgeEvidence(
   if (fraction === undefined || !Number.isFinite(fraction)) return false;
   const bar = Number.isFinite(share) ? Math.max(0, share as number) : 1;
   return fraction >= bar;
+}
+
+/**
+ * The margin bar: is the baseline's lead inside the distance the term could ever close?
+ *
+ * A candidate's term contribution is `weight × slope` with every slope max-normalised, so the largest move the term
+ * can make on one case is `weight`. The caller divides the ranking's top-1 lead by that span and passes the
+ * quotient, which makes the bar a SHARE of the term's reach and the whole predicate dimensionless: nothing here
+ * knows a corpus's score scale, its latency units, or its fault vocabulary.
+ *
+ * Three readings of a share, and they are three different statements. An ABSENT share is a caller that named the
+ * mode and no number, so {@link DEFAULT_FAILED_EDGE_MARGIN_SHARE} applies. A share that is not a number cannot be
+ * placed by the arithmetic and is read as `0`, the strictest bar — the same clamp `failedEdgeRiseBar` applies, and
+ * for the same reason: a value the code cannot interpret must not become the loosest bar by accident. A negative
+ * share is likewise `0`. Only an absent reach is refused outright, and that is an absence rather than a value: a
+ * ranking that was never scored cannot be judged by a bar on its own margin, and folding it into `0` would admit it
+ * at every share — the loosest answer for the least information.
+ *
+ * @param reach - The baseline's lead over the term's span, or `undefined` when it was not computed.
+ * @param share - The fraction of the span the lead may occupy.
+ * @returns True only when a measured reach is inside the share.
+ */
+function admitsFailedEdgeReach(reach: number | undefined, share: number | undefined): boolean {
+  if (reach === undefined || !Number.isFinite(reach)) return false;
+  const bar =
+    share === undefined
+      ? DEFAULT_FAILED_EDGE_MARGIN_SHARE
+      : Number.isFinite(share)
+        ? Math.max(0, share)
+        : 0;
+  return reach <= bar;
 }
 
 /**
@@ -2590,8 +2690,18 @@ export class TreePruner {
     const gateMode = this.options.failedEdgeGateMode ?? DEFAULT_FAILED_EDGE_GATE_MODE;
     const failedEdgeGate: FailedEdgeGate = {
       mode: gateMode,
-      share: this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_GATE_SHARE,
+      // Two defaults, because `share` is a fraction of two different MAXIMA: the case champion's rise at `fleet`, and
+      // the term's own span at `margin`. Naming one number for both would make a run that selected `margin` and set
+      // nothing read as a fleet bar.
+      share:
+        gateMode === 'margin'
+          ? (this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_MARGIN_SHARE)
+          : (this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_GATE_SHARE),
       fleetMax: gateMode === 'fleet' ? maxInboundRise(graph.edgeLatencyByCallee) : undefined,
+      reach:
+        gateMode === 'margin'
+          ? baselineReachOf(baseline, directionWeight, graph.failedEdgeScores)
+          : undefined,
       evidence: gateMode === 'evidence' ? graph.failedEdgeEvidence : undefined,
     };
     if (

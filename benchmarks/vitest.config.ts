@@ -125,6 +125,12 @@ export default defineConfig({
         // measured: the name only ever recorded at zero, the case whose candidates disagree, the residual that does
         // not rebuild, and the arm that weights a slope the dump never weighted.
         'src/conditional-weight.ts',
+        // Added with the module: the gate's decision as a calibrated rejector, where the statistic is the baseline's
+        // own lead rather than the fault type or the metric name. Its whole value is four readings — the frontier's
+        // per-family loss, the isotonic calibration's pooling, the Chow bound at its exchange rate, and the same bound
+        // spent on a fold that did not choose it — so every branch is measured: the reach of a case with no rival, a
+        // case whose term was never measured, the block exactly at the bar, and the calibration with nothing in it.
+        'src/gate-rejector.ts',
         'src/prior-floor.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.

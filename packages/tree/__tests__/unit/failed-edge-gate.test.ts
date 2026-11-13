@@ -29,6 +29,7 @@ import {
   admitsFailedEdgeTerm,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
+  DEFAULT_FAILED_EDGE_MARGIN_SHARE,
   DEFAULT_LAT_MIN_RISE,
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
@@ -244,6 +245,54 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     expect(termOf(admitted, CALLEE)!.cause).toBeUndefined();
   });
 
+  it('admits at the margin bar what the duration test refuses, and refuses what a wide bar admits', () => {
+    // THE ENGINE-LEVEL FENCE for the fourth bar. The case is the resource-dominant one the duration test refuses
+    // before it reads any rise, so the two modes disagree on it for a reason that is visible on the artifact: the
+    // margin bar asks about the baseline's LEAD, and this ranking has a small one (`CALLER` is 1 point ahead).
+    const withBar = (options: Partial<TreePrunerOptions>) => {
+      const pruner = new TreePruner({ failedEdgeWeight: 3, ...options });
+      const [callGraph, metrics] = caseOf(RESOURCE);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: failures,
+        edgeLatency: inbound,
+      });
+      return pruner.analyze(graph, 3);
+    };
+    const termOf = (results: ReturnType<typeof withBar>, id: string) =>
+      results.find((r) => r.serviceId === id)?.terms?.find((entry) => entry.name === 'failedEdge');
+
+    const byName = withBar({ failedEdgeGateMode: 'absolute' });
+    const wideOpen = withBar({ failedEdgeGateMode: 'margin', failedEdgeGateShare: 100 });
+    // A share of zero is the bar that admits nothing whose lead is positive, which is every case with a rival.
+    const shut = withBar({ failedEdgeGateMode: 'margin', failedEdgeGateShare: 0 });
+
+    expect(termOf(byName, CALLEE)!.cause).toBe('WEIGHT_ZERO');
+    expect(termOf(wideOpen, CALLEE)!.cause).toBeUndefined();
+    expect(termOf(wideOpen, CALLEE)!.contribution).toBeCloseTo(3, 12);
+    expect(termOf(shut, CALLEE)!.cause).toBe('WEIGHT_ZERO');
+  });
+
+  it('refuses the margin bar on a ranking with no rival, where no share is small enough', () => {
+    // One anomalous service means the baseline has one candidate and the term cannot reorder anything. The reach is
+    // infinite, so even a share larger than any the corpus can produce refuses — the strict direction.
+    const pruner = new TreePruner({
+      failedEdgeWeight: 3,
+      failedEdgeGateMode: 'margin',
+      failedEdgeGateShare: 1e9,
+    });
+    const callGraph = makeCallGraph([[CALLER, CALLEE]]);
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [CALLER, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 9, 9, 9, 9])]],
+    ]);
+    const graph = pruner.buildFaultGraph(callGraph, metrics, {
+      failedTraceEdges: failures,
+      edgeLatency: inbound,
+    });
+    const results = pruner.analyze(graph, 3);
+    const term = results[0]?.terms?.find((entry) => entry.name === 'failedEdge');
+    expect(term?.cause).toBe('WEIGHT_ZERO');
+  });
+
   it('reads neither the share nor the champion at `absolute`, so the shipped path is byte-identical', () => {
     // The option being INERT is the property that makes the default safe, and it is asserted on the ranking rather
     // than argued from the source: two shares that would be markedly different bars must produce the same results,
@@ -389,12 +438,12 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
  *    unrelated predicates.
  */
 describe('the gate bar — absolute versus fleet-relative', () => {
-  it('names exactly three modes, and the shipped one is the absolute bar', () => {
-    // Three, and the third is not a third BAR on the same quantity: `absolute` and `fleet` are two ways to read
-    // one rise, `evidence` reads a different observable entirely (the failed-call channel's own failure rate).
-    // The vocabulary is closed so a parser, a workflow input and a dispatch cannot disagree about which words are
-    // legal — the reason this list is asserted at all rather than discovered from the type.
-    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'evidence', 'fleet']);
+  it('names exactly four modes, and the shipped one is the absolute bar', () => {
+    // Four, and the extra three are not three BARS on one quantity: `absolute` and `fleet` are two ways to read one
+    // rise, `evidence` reads the failed-call channel's own failure rate, and `margin` reads the baseline ranking's
+    // lead. The vocabulary is closed so a parser, a workflow input and a dispatch cannot disagree about which words
+    // are legal — the reason this list is asserted at all rather than discovered from the type.
+    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'evidence', 'fleet', 'margin']);
     expect(DEFAULT_FAILED_EDGE_GATE_MODE).toBe('absolute');
     for (const mode of Object.keys(FAILED_EDGE_GATE_MODES)) {
       expect(isFailedEdgeGateMode(mode)).toBe(true);
@@ -498,6 +547,45 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     }
     expect(admittedAt(0)).toBe(rises.length);
     expect(admittedAt(1)).toBe(1);
+  });
+
+  it('reads the margin bar as a SHARE of the term\'s reach, at equality', () => {
+    // The predicate compares a lead against a fraction of the span, so the boundary is the assertion: a reach of
+    // exactly the share is admitted and one floating-point step beyond it is refused.
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.3 })).toBe(true);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.5 })).toBe(false);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0 })).toBe(true);
+  });
+
+  it('consults NEITHER the metric name NOR the rise at the margin bar', () => {
+    // The two latency bars refuse a resource-dominant case before any reach is read. This one is the opposite: the
+    // name and the rise are inert, so a corpus whose dominant metrics are cpu and memory is judged on its ranking.
+    expect(
+      admitsFailedEdgeTerm(RESOURCE, undefined, { mode: 'margin', share: 0.3, reach: 0.1 }),
+    ).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(DURATION, FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR, { mode: 'margin', share: 0.3, reach: 0.9 }),
+    ).toBe(false);
+  });
+
+  it('falls back to the margin default when the caller names the mode and no share', () => {
+    expect(DEFAULT_FAILED_EDGE_MARGIN_SHARE).toBeCloseTo(0.3, 12);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', reach: 0.25 })).toBe(true);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', reach: 0.35 })).toBe(false);
+  });
+
+  it('fails CLOSED on an absent, infinite or malformed reach', () => {
+    // A ranking that was never scored, a case with no rival and a term that measured no slope all produce a reach
+    // that is not a number: each is refused rather than read as the smallest possible lead.
+    for (const reach of [undefined, Number.POSITIVE_INFINITY, Number.NaN]) {
+      expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 1, reach })).toBe(false);
+    }
+  });
+
+  it('reads a share it cannot place as the strictest bar rather than the loosest', () => {
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: Number.NaN, reach: 0 })).toBe(true);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: Number.NaN, reach: 0.01 })).toBe(false);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: -1, reach: 0.01 })).toBe(false);
   });
 
   it('keeps the DURATION test in force at both LATENCY bars, including at share 0', () => {
