@@ -331,6 +331,12 @@ export default defineConfig({
         // grid-shaped. It is a bound on what a term can PAY and not on what it can COST, and the tests hold that
         // asymmetry — a module whose floor were read as "safe when small" would license every weight it rejects.
         'src/weight-resolution.ts',
+        // Added with the module: the certified budget is the first statistic here whose claim is about the corpus
+        // rather than about itself, and its whole value is four exact readings — the Clopper–Pearson end, the level
+        // split across families, the budget a point needs, and the floor no amount of data moves — so every branch is
+        // measured: a corpus with no families (vacuous certification), zero losses (the rule of three), a level at
+        // either end of the interval, and a family that loses every case.
+        'src/risk-control.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

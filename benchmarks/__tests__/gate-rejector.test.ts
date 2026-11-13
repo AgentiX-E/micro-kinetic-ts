@@ -813,6 +813,8 @@ describe('parseRejectorArgs', () => {
       folds: 3,
       rate: 0.25,
       budgets: [2],
+      // The level the certified ladder is read at: a flag of the same command, so it is parsed here and nowhere else.
+      delta: 0.05,
     });
   });
 
@@ -823,6 +825,7 @@ describe('parseRejectorArgs', () => {
       folds: 5,
       rate: 1,
       budgets: DEFAULT_LOSS_BUDGETS,
+      delta: 0.05,
     });
   });
 

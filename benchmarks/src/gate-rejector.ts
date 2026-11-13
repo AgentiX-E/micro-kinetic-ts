@@ -67,6 +67,7 @@ import { scoresUnder, weightCensusOf } from './conditional-weight.js';
 import { foldOf } from './fse26-discriminator.js';
 import type { StrictReading } from './gate-fit.js';
 import { readScores } from './gate-fit.js';
+import { DEFAULT_DELTA } from './risk-control.js';
 import type { ParsedTermCase } from './terms-dump.js';
 
 /** One case, as the rejector reads it: what the baseline held, and what the term did. */
@@ -290,11 +291,15 @@ export function rejectorCasesOf(cases: readonly ParsedTermCase[], term: string):
  * outright — a case with no rival, or one whose term was never measured, is not a case a reach bound has an opinion
  * about, and `Infinity <= Infinity` would otherwise admit it.
  *
+ * Exported because the risk-control module prices the same admissions: a second copy of this rule is a second
+ * definition of what a bound does, and two definitions of admission is how a certification row starts describing a
+ * different gate from the frontier above it.
+ *
  * @param row - One case.
  * @param bound - The largest reach the term may act on.
  * @returns Whether the term acts here.
  */
-function admitsAt(row: RejectorCase, bound: number): boolean {
+export function admitsAt(row: RejectorCase, bound: number): boolean {
   return row.shipped || (Number.isFinite(row.reach) && row.reach <= bound);
 }
 
@@ -755,6 +760,13 @@ interface RejectorArgs {
   readonly folds: number;
   readonly rate: number;
   readonly budgets: readonly number[];
+  /**
+   * The level the budget is certified at, or {@link DEFAULT_DELTA} when the caller names none.
+   *
+   * Parsed here and read in `risk-control.ts`, because it is a flag of the same command: two parsers for one command
+   * line is how a flag gets accepted by one entry point and rejected by the other.
+   */
+  readonly delta: number;
 }
 
 /**
@@ -769,6 +781,7 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
   let term = 'failedEdge';
   let folds = 5;
   let rate = 1;
+  let delta = DEFAULT_DELTA;
   const budgets: number[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]!;
@@ -800,6 +813,16 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
         index += 1;
         break;
       }
+      case '--delta': {
+        if (value === undefined) throw new Error('--delta needs a number');
+        delta = Number.parseFloat(value);
+        // A level has to lie strictly inside the unit interval: zero would demand certainty and one would demand
+        // nothing, and either one silently certifies or refuses every bound the module can express.
+        if (!Number.isFinite(delta) || delta <= 0 || delta >= 1)
+          throw new Error('--delta must be a number between 0 and 1');
+        index += 1;
+        break;
+      }
       case '--budget': {
         if (value === undefined) throw new Error('--budget needs a number');
         const budget = Number.parseFloat(value);
@@ -820,5 +843,6 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
     folds,
     rate,
     budgets: budgets.length === 0 ? DEFAULT_LOSS_BUDGETS : budgets,
+    delta,
   };
 }

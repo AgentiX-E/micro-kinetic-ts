@@ -6,7 +6,7 @@
  * the tests are.
  *
  * Usage: `tsx benchmarks/src/run-gate-rejector.ts --terms <dump.ndjson> [--term failedEdge] [--folds 5] [--rate 1]
- * [--budget 0 --budget 4 …]`
+ * [--budget 0 --budget 4 …] [--delta 0.05]`
  */
 
 import {
@@ -21,6 +21,7 @@ import {
   rejectorCasesOf,
   runTotalOf,
 } from './gate-rejector.js';
+import { certifyOf, floorOf, formatCertified, populationOf, thresholdOf } from './risk-control.js';
 import { readTermsDump } from './terms-dump.js';
 
 function main(): void {
@@ -31,6 +32,7 @@ function main(): void {
   // report starts disagreeing with itself.
   const frontier = frontierOf(rows);
   const runTotal = runTotalOf(rows);
+  const population = populationOf(rows);
   process.stdout.write(
     `THE REACH FRONTIER (term ${args.term})\n${formatFrontier(frontier, runTotal)}\n`,
   );
@@ -40,6 +42,29 @@ function main(): void {
       runTotal,
       cheapestOf(frontier),
     )}\n`,
+  );
+  process.stdout.write(
+    `\nTHE SAME LADDER, CERTIFIED (level ${args.delta})\n${formatCertified(
+      certifyOf(population, frontier, args.budgets, args.delta),
+      population.n,
+      args.delta,
+      population.families.length,
+      thresholdOf(population, frontier, args.delta),
+    )}\n`,
+  );
+  // The floor is a property of the COUNT rather than of this corpus, so it is printed once per loss depth the frontier
+  // reaches: it is the answer to "would more cases make this cheaper", and the answer is no.
+  const depths = [
+    ...new Set(
+      frontier.map((point) =>
+        point.regressed.reduce((deep, loss) => Math.max(deep, -loss.delta), 0),
+      ),
+    ),
+  ].sort((a, b) => a - b);
+  process.stdout.write(
+    `floors at ${args.delta} (any corpus size): ${depths
+      .map((lost) => `${lost} cases -> k ${floorOf(lost, args.delta)}`)
+      .join(', ')}\n`,
   );
   process.stdout.write(
     `\nTHE OUT-OF-FOLD CHOW BOUND\n${formatChow(chowReport(rows, args.folds, args.rate))}\n`,
