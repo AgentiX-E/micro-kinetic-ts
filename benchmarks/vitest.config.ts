@@ -295,6 +295,12 @@ export default defineConfig({
         // bar, the split and the exact-binomial correction are all asserted rather than trusted, and the
         // denominator itself is checked against the file that produces the term names.
         'src/term-decomposition.ts',
+        // Added with the module: the weight screen, promoted from the 60-line script that published
+        // `docs/term-weight-landscape.md` into the repository. It is measured because the promotion is where its
+        // three corrections came from — the admissible set that was not empty, the understated loss column, and
+        // the gross-against-net column that makes "no direction of improvement" a number rather than a sentence.
+        // A screen whose arithmetic is taken on trust is a script again, with a test file in front of it.
+        'src/term-weight-screen.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
