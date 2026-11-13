@@ -2946,3 +2946,7 @@ seventh and eighth brackets, i.e. at a lead of about one unit — a third of the
 `failedEdgeGateMode: 'margin'` is now a member of the closed vocabulary, with `share` a fraction of the term's own
 span (`DEFAULT_FAILED_EDGE_MARGIN_SHARE = 0.3`). The default stays `absolute`, so every published cell is unchanged;
 the mode is an arm a run selects, and what the record holds is the frontier rather than the constant.
+
+The frontier's own record is `docs/gate-rejector.md`: the statistic's arithmetic, Chow's rule and the isotonic fit,
+the two tables above as the module prints them, and the four axes the readback settles. This section is the verdict;
+that document is the instrument.
