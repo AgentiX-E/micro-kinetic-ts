@@ -118,9 +118,13 @@ describe('the constants the pre-registration fixes', () => {
       fileURLToPath(new URL('../../packages/tree/src/pruning/pruner.ts', import.meta.url)),
       'utf8',
     );
-    const built = [...source.matchAll(/buildTerm\('([^']+)'/g)].map((match) => match[1]);
+    // `\s*` after the paren, because `victim` is written across four lines and the scan that produced this list
+    // the first time was single-line: it missed `victim`, and the test — built from the same scan — reported
+    // agreement. A fence that reads its subject through the same lens that produced it guards nothing.
+    const built = [...source.matchAll(/buildTerm\(\s*'([^']+)'/g)].map((match) => match[1]);
     expect(built).toEqual([...DECLARED_TERMS]);
     expect(BONFERRONI_ALPHA).toBeCloseTo(0.05 / DECLARED_TERMS.length, 12);
+    expect(DECLARED_TERMS).toHaveLength(19);
     expect(MIN_FAMILY_CASES).toBe(20);
   });
 });
@@ -185,13 +189,17 @@ describe('one case, decomposed', () => {
     expect(decomposeCase(absent)).toEqual({ kind: 'absent' });
   });
 
-  it('refuses a miss deeper than the widest rung a presentation can carry', () => {
+  it('refuses a miss past the twentieth candidate, and carries the twentieth', () => {
+    // `recall@20` counts `depth < 20`, so the deepest MISS a twenty-wide window can show sits at index 19 while
+    // index 20 is the twenty-first candidate. Both sides of the boundary are asserted, because an off-by-one here
+    // moves cases between the population and the excluded tail while every share in the table stays plausible —
+    // and the ladder it is reported beside would disagree with the population statement by exactly that count.
     const ranking = Array.from({ length: 22 }, (_unused, index) =>
       candidate(`c${index}`, [['log', 1]]),
     );
     expect(decomposeCase(kase('c1', 'Kill', ['c21'], ranking))).toEqual({ kind: 'tooDeep' });
-    // …and the rung itself is inside the population, because the ladder's last rung is inclusive.
-    expect(decomposeCase(kase('c1', 'Kill', ['c20'], ranking.slice(0, 21))).kind).toBe('miss');
+    expect(decomposeCase(kase('c1', 'Kill', ['c20'], ranking))).toEqual({ kind: 'tooDeep' });
+    expect(decomposeCase(kase('c1', 'Kill', ['c19'], ranking)).kind).toBe('miss');
   });
 
   it('subtracts the two sides over the union, so a term paid to the winner alone is the largest gap', () => {
@@ -316,7 +324,7 @@ describe('the report', () => {
     const cases = [
       kase('c1', 'Kill', ['winner'], [candidate('winner', [['log', 1]])]),
       kase('c2', 'Kill', ['mysql'], [candidate('winner', [['log', 1]])]),
-      kase('c3', 'Kill', ['s21'], ranking),
+      kase('c3', 'Kill', ['s20'], ranking),
       ...Array.from({ length: 4 }, (_unused, index) => twoWayMiss(`m${index}`, 'log', 1)),
     ];
     const report = summariseTerms(cases);
@@ -448,7 +456,7 @@ describe('the report', () => {
     const lines = text.split('\n');
     expect(lines[0]).toBe('Term decomposition of the re-rankable misses');
     expect(text).toContain('population: 24 misses at depth 1..20 of 24 cases');
-    expect(text).toContain('alpha = 0.002778 over 18 terms, n >= 20');
+    expect(text).toContain('alpha = 0.002632 over 19 terms, n >= 20');
     expect(text).toContain('Kill (n=24, in=12, out=12)');
     const row = lines.find((line) => line.trimStart().startsWith('log '));
     expect(row).toBeDefined();

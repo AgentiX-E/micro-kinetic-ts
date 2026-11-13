@@ -45,10 +45,22 @@ import type { ParsedTermCandidate, ParsedTermCase } from './terms-dump.js';
 /**
  * The terms the ranking formula builds, in the order it states them.
  *
- * A literal, and it is the Bonferroni denominator: `α = 0.05 / 18`. It is also a fence — a dump carrying a name
- * not in this list means the formula grew a term after the pre-registration was written, and the correction a
- * reader applies would then be understated for every cell. {@link assertDeclaredTerms} refuses that rather than
- * reporting a table whose `p` values are described by a denominator that no longer holds.
+ * A literal, and it is the Bonferroni denominator: `α = 0.05 / 19`. It is also a fence — a dump carrying a name not
+ * in this list means the formula grew a term after the pre-registration was written, and the correction a reader
+ * applies would then be understated for every cell, which is why the CLI refuses such a dump by name rather than
+ * printing a table whose `p` values are described by a denominator that no longer holds.
+ *
+ * **The list is nineteen, and the pre-registration said eighteen.** Run `43334354978`'s dump carried a term called
+ * `victim` that this array did not have, and the fence built for exactly that failure refused the report on its
+ * first dispatch. The cause was the way the first version of this list was produced: a regex over
+ * `buildTerm('<name>'` on one line, while `victim` — PRISM's symmetry MASK, subtracted rather than added — is
+ * written across four lines and was invisible to it. So the list had been copied from a scan that could not see
+ * its own blind spot, and the guard test asserted the array against the SAME scan, which is a fence that agrees
+ * with what it guards.
+ *
+ * The correction is applied in the STRICTER direction — nineteen tests rather than eighteen — because a
+ * denominator that grew while `α` stands still only makes every cell harder to clear, and re-basing `α` to keep an
+ * eighteen-term reading alive would be the post-hoc adjustment the pre-registration forbids by name.
  */
 export const DECLARED_TERMS = [
   'selfAnomalyLog1p',
@@ -67,6 +79,7 @@ export const DECLARED_TERMS = [
   'faultFree',
   'selfTime',
   'emission',
+  'victim',
   'dualFamily',
   'podState',
 ] as const;
@@ -83,8 +96,16 @@ export const MIN_TERM_SHARE = 0.65;
 /** The smallest family the bar is applied to, so a family of four cannot sentence a term. */
 export const MIN_FAMILY_CASES = 20;
 
-/** The deepest rung a bounded presentation can carry — `DEPTH_TOP_LIMIT` of the depth ladder. */
-export const MAX_RERANKABLE_DEPTH = 20;
+/**
+ * The deepest ZERO-BASED index a twenty-wide presentation carries.
+ *
+ * Nineteen, not twenty: `recall@20` counts a hit when `depth < 20`, i.e. when the answer is among the first
+ * TWENTY candidates, and the twentieth of those sits at index 19. A miss at index 20 is the twenty-first
+ * candidate and is outside every bounded window the ladder prices — so admitting it here would put a case in the
+ * population that no presentation can show, and the `misses` count would disagree with the `@20` rung it is
+ * compared against by exactly that number of cases.
+ */
+export const MAX_RERANKABLE_DEPTH = 19;
 
 /** The largest residual a case may carry and still be called exactly decomposed. */
 export const RESIDUAL_TOLERANCE = 1e-9;
@@ -586,8 +607,9 @@ export function formatTermReport(report: TermDecompositionReport, verdict: TermV
   lines.push('Term decomposition of the re-rankable misses');
   lines.push('='.repeat(78));
   lines.push(
-    `  population: ${report.misses} misses at depth 1..${MAX_RERANKABLE_DEPTH} of ${report.cases} cases` +
-      ` (${report.correctAt1} correct at 1, ${report.absent} absent, ${report.tooDeep} deeper than ${MAX_RERANKABLE_DEPTH})`,
+    `  population: ${report.misses} misses at depth 1..${MAX_RERANKABLE_DEPTH + 1} of ${report.cases} cases` +
+      ` (${report.correctAt1} correct at 1, ${report.absent} absent, ` +
+      `${report.tooDeep} past the ${MAX_RERANKABLE_DEPTH + 1}-wide window)`,
   );
   lines.push(
     `  exact:      ${report.exactMisses}/${report.misses} misses reconstruct their scores` +
