@@ -2369,8 +2369,8 @@ Full protocol, tables and the entry checklist: **`docs/rcatlas-crosswalk.md`**.
 >   · **random 5.5**. The best **non-LLM** method is `NSigma` at 38.9 %, which is where a deterministic engine is
 >   compared. This engine has **no RCAtlas number**: §*The corpus, and why it is not on this page* above still holds —
 >   the 90-case list ships as one `ufile.io` package behind an ad-gate and the converted data is unreleased. The paper
->   confirms the release plan (~11 GB) and adds `cases/core90_cases.csv` + `cases/core90_labels.json` to the package,
->   which is the fetch this project still owes.
+>   confirms the release plan (~11 GB) and adds a case list (`core90_cases.csv`) and a label file
+>   (`core90_labels.json`) to the package, which is the fetch this project still owes.
 >
 >   **arXiv:2609.36686 (NeurIPS 2026, Evaluations & Datasets)** decomposes `Top@k` into retrieval and reranking and
 >   reports that on complex faults statistical baselines mis-rank the true cause 79–100 % of the time while retrieval
