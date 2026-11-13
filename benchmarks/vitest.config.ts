@@ -301,6 +301,11 @@ export default defineConfig({
         // the gross-against-net column that makes "no direction of improvement" a number rather than a sentence.
         // A screen whose arithmetic is taken on trust is a script again, with a test file in front of it.
         'src/term-weight-screen.ts',
+        // The floor under every weight sweep this project has published: below a term's resolution floor no case
+        // can be recovered at any weight, which is what entitles a sweep to be called complete rather than
+        // grid-shaped. It is a bound on what a term can PAY and not on what it can COST, and the tests hold that
+        // asymmetry — a module whose floor were read as "safe when small" would license every weight it rejects.
+        'src/weight-resolution.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
