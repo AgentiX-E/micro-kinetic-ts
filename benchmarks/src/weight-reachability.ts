@@ -116,6 +116,16 @@ export interface FamilyReach {
   readonly ceiling: number;
 }
 
+/** What one linear program returns. A solve that did not finish throws rather than returning one of these. */
+export interface MaximiseResult {
+  /** The objective at the optimum. */
+  readonly value: number;
+  /** The primal solution, one entry per structural column. */
+  readonly solution: Float64Array;
+  /** The dual price on each row, which is a certificate BECAUSE the optimum was reached. */
+  readonly duals: Float64Array;
+}
+
 /** The linear program's own answer, before any verification. */
 interface MarginSolve {
   /** The optimal margin; `0` when no separator exists. */
@@ -143,22 +153,36 @@ const PIVOT_TOLERANCE = 1e-12;
  * makes the largest-coefficient rule cycle, and a solver that can cycle is a solver whose verdict depends on how
  * long it was allowed to run.
  *
- * @param objective - `c`, the coefficients being maximised.
- * @param rows - `A`, one constraint per row.
+ * ## Why an unfinished solve throws
+ *
+ * Bland's rule is safe but slow: it removes one negative reduced cost per pivot and prefers the lowest index, so a
+ * program whose right-hand sides are zero crawls through degenerate vertices. This function therefore carries a
+ * pivot budget, and a program large enough can exhaust it. When that happens the tableau is still FEASIBLE but no
+ * longer provably optimal, and a caller that reads the value as an optimum — or the duals as a certificate — is
+ * reading an unfinished computation. Until iteration 276 the budget was silent, and that is exactly how a measurer
+ * lies: a 592-row program returned a point whose `‖w‖₁` was 10.9 against a box that said 1, with no signal that
+ * anything had gone wrong, and the number was read as "the gate cannot be cleared". It now throws, so a verdict
+ * that depends on an optimum cannot be published from a solve that never reached one.
+ *
  * Exported because the solver's contract is worth pinning on its own: the reachability verdicts are only as good
  * as this tableau, and a caller that reads the duals has to know what they are the duals OF.
  *
  * @param objective - `c`, the coefficients being maximised.
  * @param rows - `A`, one constraint per row.
  * @param rhs - `b`, one right-hand side per row; each must be non-negative for the slack basis to be feasible.
- * @returns The optimum, the primal solution and the dual prices on the rows.
+ * @param budget - The largest number of pivots to take; the default is computed from the program's size. A finite
+ * value exists so a test can pin the exhaustion path deterministically.
+ * @returns The value, the primal solution and the dual prices on the rows.
  * @throws When the program is unbounded, which no caller in this file can construct — the margin is boxed.
+ * @throws When the pivot budget is exhausted before an optimum is reached, because a partial tableau is not an
+ * answer and returning one is how a solver lies.
  */
 export function maximise(
   objective: readonly number[],
   rows: readonly (readonly number[])[],
   rhs: readonly number[],
-): { value: number; solution: Float64Array; duals: Float64Array } {
+  budget?: number,
+): MaximiseResult {
   const width = objective.length;
   const height = rows.length;
   // One slack per row plus the right-hand side: the tableau is small enough that the dense form is the clear one.
@@ -178,8 +202,10 @@ export function maximise(
   for (let row = 0; row < height; row += 1) basis.push(width + row);
 
   // Every pivot removes one negative reduced cost and Bland's rule bounds how often that can happen; the cap is a
-  // guard against a numerical tie the rule cannot see, not a budget the method is expected to reach.
-  const limit = 200 * (height + width) + 1000;
+  // guard against a numerical tie the rule cannot see, not a budget the method is expected to reach at the sizes
+  // this file solves. A caller that hands in a bigger program can raise it.
+  const limit = budget ?? 200 * (height + width) + 1000;
+  let converged = false;
   for (let step = 0; step < limit; step += 1) {
     let entering = -1;
     for (let column = 0; column < width + height; column += 1) {
@@ -188,7 +214,10 @@ export function maximise(
         break;
       }
     }
-    if (entering < 0) break;
+    if (entering < 0) {
+      converged = true;
+      break;
+    }
     let bestRatio = Infinity;
     for (let row = 0; row < height; row += 1) {
       const coefficient = table[row]![entering]!;
@@ -227,6 +256,7 @@ export function maximise(
   }
   // The objective row's entry under a slack is that row's dual price: it starts at zero, and every pivot subtracts
   // a multiple of the pivot row from it, which is exactly the elimination that builds `c_B B⁻¹`.
+  if (!converged) throw new Error('the pivot budget was exhausted');
   const duals = new Float64Array(height);
   for (let row = 0; row < height; row += 1) duals[row] = table[height]![width + row]!;
   return { value: table[height]![columns - 1]!, solution, duals };
@@ -694,12 +724,15 @@ export const DEFAULT_FIT: FitOptions = {
 };
 
 /**
- * A deterministic generator, because the fit has to be reproducible by a reader who runs the same command.
+ * A deterministic generator, because a fit has to be reproducible by a reader who runs the same command.
  *
- * @param seed - The state.
+ * Exported rather than duplicated: two modules that fit a vector must shuffle the same way, or a report that says
+ * "seed 0" names two different orders in two files and neither is reproducible.
+ *
+ * @param state - The state.
  * @returns The next state and a value in `[0, 1)`.
  */
-function nextRandom(state: number): { state: number; value: number } {
+export function nextRandom(state: number): { state: number; value: number } {
   // Numerical Recipes' linear congruential pair: 32-bit state, no dependency, and identical on every platform.
   const advanced = (Math.imul(state, 1664525) + 1013904223) >>> 0;
   return { state: advanced, value: advanced / 0x1_0000_0000 };

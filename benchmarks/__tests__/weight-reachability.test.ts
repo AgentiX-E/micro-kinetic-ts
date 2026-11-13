@@ -734,6 +734,23 @@ describe('the solver, pinned on its own contract', () => {
     expect(() => maximise([1, 0], [[0, 1]], [1])).toThrow('the program is unbounded');
   });
 
+  it('throws rather than answering when the pivot budget runs out, which is how a partial tableau was published as an optimum', () => {
+    // Iteration 276's probe handed a 592-row program to a solver that stopped after its budget and returned a point
+    // whose `‖w‖₁` was 10.9 against a box that said 1. The number was read as "the gate cannot be cleared". A
+    // solver cannot distinguish "finished" from "ran out" for its caller, so it must not pretend to.
+    expect(() =>
+      maximise(
+        [1, 1],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+        [1, 2],
+        0,
+      ),
+    ).toThrow('the pivot budget was exhausted');
+  });
+
   it('breaks a degenerate ratio tie on the smallest basis index, which is what forbids a cycle', () => {
     // Two identical rows: the ratio tie is exact, and Bland's rule has to pick one deterministically.
     const solved = maximise(

@@ -112,6 +112,12 @@ export default defineConfig({
         // branch is measured rather than trusted: the four verdicts, the two bases, the tie that is not a
         // separation, the answer the ranking never listed, and the held-out fit's two orientations.
         'src/weight-reachability.ts',
+        // Added with the module: the gate, as an object rather than a sentence. Its whole value is two distinctions
+        // the repository has been reading past — a tie is not a win (the zero vector scores the published run, all
+        // of it by tie, because the artifact's order IS the recorded order), and a promotion that costs a protected
+        // case is not a promotion. Every branch is measured rather than trusted: both readings of one case, the
+        // family below the floor, the gap that cannot close inside one step, and the move that is rolled back.
+        'src/gate-fit.ts',
         'src/prior-floor.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.
