@@ -332,6 +332,18 @@ describe('admitsFailedEdgeTerm — the evidence bar', () => {
     expect(at(Number.NaN, 1)).toBe(true);
   });
 
+  it('reads an ABSENT share as the strictest bar, not as the one that admits everything', () => {
+    // The same reading the malformed share gets, and for the same reason: at `evidence` the number is the
+    // caller's own parameter, so a gate that names the mode and no number has not stated how much failure it
+    // wants. A bar of 0 would admit every case whose interface failed once, which is the widest possible
+    // reading of the least information.
+    const bare = (fraction: number) =>
+      admitsFailedEdgeTerm(RESOURCE, undefined, { mode: 'evidence', evidence: evidence(fraction) });
+    expect(bare(1)).toBe(true);
+    expect(bare(0.999)).toBe(false);
+    expect(bare(0)).toBe(false);
+  });
+
   it('leaves the two latency bars untouched, so the shipped predicate is unchanged', () => {
     // The evidence object is INERT at the other two modes — the property that makes it safe to carry on every
     // graph, and the reason the shipped cells cannot move.

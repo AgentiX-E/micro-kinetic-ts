@@ -520,6 +520,21 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     );
   });
 
+  it('reads an ABSENT fleet share as the champion alone, never as the loosest bar', () => {
+    // `share` is optional because three modes read it against three maxima and `absolute` never reads it. At
+    // `fleet` the number is the CALLER's parameter, so a gate that names the mode and no number is a malformed
+    // call, and the two available readings are "every measured rise" (0) and "the champion alone" (1). Reading it
+    // as 0 would make the least-specified spelling of the gate the widest one — a bar that stops barring.
+    expect(admitsFailedEdgeTerm(DURATION, 8, { mode: 'fleet', fleetMax: 8 })).toBe(true);
+    expect(admitsFailedEdgeTerm(DURATION, 7.999, { mode: 'fleet', fleetMax: 8 })).toBe(false);
+    expect(admitsFailedEdgeTerm(DURATION, 0.001, { mode: 'fleet', fleetMax: 8 })).toBe(false);
+    // `margin` answers the same absence with the ENGINE's default instead, because there the mode itself was
+    // selected: reading it as 1 would let every run that named the mode do nothing at all. The asymmetry is
+    // deliberate and is what the interface's docblock states.
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', reach: 0.25 })).toBe(true);
+    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', reach: 0.35 })).toBe(false);
+  });
+
   it('reads a share it cannot use at the END of the interval rather than at a torn bar', () => {
     // Both wrong answers here are silent and both look like a narrow gate: a NaN bar makes every comparison
     // false, and an infinity bar refuses everything too — so a caller passing `NaN` would be told the case has

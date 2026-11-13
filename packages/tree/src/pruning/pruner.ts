@@ -1853,8 +1853,24 @@ function baselineReachOf(
  */
 export interface FailedEdgeGate {
   readonly mode: FailedEdgeGateMode;
-  /** The share of the champion the rise must clear. Read only at `fleet`. */
-  readonly share: number;
+  /**
+   * The bar's share, in whatever maximum the MODE names — and therefore optional, because three modes
+   * read it against three different maxima and one reads it not at all.
+   *
+   * `fleet` reads it against the case's champion rise, `evidence` against a failure fraction, `margin`
+   * against the term's own span; `absolute` never looks at it. A required field would force a caller
+   * that selected `absolute` to name a number no predicate reads, and would make the documented
+   * "absent share" readings unreachable from typed code while the predicates still implement them.
+   *
+   * Absence means two different things, and the predicates answer them differently on purpose:
+   *
+   * - at `fleet` and `evidence` the share is the caller's own parameter, so absence is a malformed call
+   *   and is read as `1` — the strictest bar, never the loosest;
+   * - at `margin` the mode itself was selected, so the number is the ENGINE's and absence takes
+   *   {@link DEFAULT_FAILED_EDGE_MARGIN_SHARE}. Reading it as `1` instead would let a run that named
+   *   the mode get no term ever, which is a silent disable rather than a bar.
+   */
+  readonly share?: number | undefined;
   /** The case's largest measured inbound rise, or absent when none was measured. Read only at `fleet`. */
   readonly fleetMax?: number | undefined;
   /**
@@ -1960,7 +1976,7 @@ function admitsFailedEdgeEvidence(
   if (evidence === undefined) return false;
   const fraction = evidence.fraction;
   if (fraction === undefined || !Number.isFinite(fraction)) return false;
-  const bar = Number.isFinite(share) ? Math.max(0, share as number) : 1;
+  const bar = share !== undefined && Number.isFinite(share) ? Math.max(0, share) : 1;
   return fraction >= bar;
 }
 
@@ -2073,8 +2089,10 @@ function failedEdgeRiseBar(gate: FailedEdgeGate | undefined): number {
   }
   // A share outside the unit interval is not a share. `0` is legal and means "every measured rise";
   // anything negative would compute a bar below zero and admit a case the observable never measured,
-  // so it is clamped to the end of the interval that keeps the predicate total.
-  const share = Number.isFinite(gate.share) ? Math.max(0, gate.share) : 1;
+  // so it is clamped to the end of the interval that keeps the predicate total. An ABSENT share is the
+  // caller naming the fleet mode and no number, which is read as the strictest bar the mode admits.
+  const declared = gate.share;
+  const share = declared !== undefined && Number.isFinite(declared) ? Math.max(0, declared) : 1;
   return share * champion;
 }
 
