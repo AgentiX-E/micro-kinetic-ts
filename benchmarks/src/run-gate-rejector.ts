@@ -22,7 +22,9 @@ function main(): void {
   const args = parseRejectorArgs(process.argv.slice(2));
   const cases = readTermsDump(args.terms);
   const rows = rejectorCasesOf(cases, args.term);
-  process.stdout.write(`THE REACH FRONTIER (term ${args.term})\n${formatFrontier(frontierOf(rows), runTotalOf(rows))}\n`);
+  process.stdout.write(
+    `THE REACH FRONTIER (term ${args.term})\n${formatFrontier(frontierOf(rows), runTotalOf(rows))}\n`,
+  );
   process.stdout.write(
     `\nTHE OUT-OF-FOLD CHOW BOUND\n${formatChow(chowReport(rows, args.folds, args.rate))}\n`,
   );

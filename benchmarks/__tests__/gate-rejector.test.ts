@@ -45,7 +45,7 @@ import {
   rejectorCasesOf,
   runTotalOf,
 } from '../src/gate-rejector.js';
-import type { ParsedTermCase, ParsedTermCandidate, TermDumpTriple } from '../src/terms-dump.js';
+import type { ParsedTermCandidate, ParsedTermCase, TermDumpTriple } from '../src/terms-dump.js';
 
 /** The gated term. */
 const TERM = 'dir';
@@ -96,7 +96,10 @@ function kase(
  * @returns The case, refused by the run.
  */
 function near(datapack: string, faultType: string, accepted: readonly string[]): ParsedTermCase {
-  return kase(datapack, faultType, accepted, [candidate('x', 0.5, 0, 0), candidate('y', 0.4, 1, 0)]);
+  return kase(datapack, faultType, accepted, [
+    candidate('x', 0.5, 0, 0),
+    candidate('y', 0.4, 1, 0),
+  ]);
 }
 
 /**
@@ -108,7 +111,10 @@ function near(datapack: string, faultType: string, accepted: readonly string[]):
  * @returns The case, refused by the run.
  */
 function far(datapack: string, faultType: string, accepted: readonly string[]): ParsedTermCase {
-  return kase(datapack, faultType, accepted, [candidate('x', 0.9, 0, 0), candidate('y', 0.1, 1, 0)]);
+  return kase(datapack, faultType, accepted, [
+    candidate('x', 0.9, 0, 0),
+    candidate('y', 0.1, 1, 0),
+  ]);
 }
 
 const CORPUS: readonly ParsedTermCase[] = [
@@ -130,7 +136,13 @@ const CORPUS: readonly ParsedTermCase[] = [
 const ROWS = rejectorCasesOf(CORPUS, TERM);
 
 /** One rejector row, built directly for the tests that are about the tally rather than about reading a dump. */
-function row(datapack: string, faultType: string, off: boolean, on: boolean, reach = 1 / 30): RejectorCase {
+function row(
+  datapack: string,
+  faultType: string,
+  off: boolean,
+  on: boolean,
+  reach = 1 / 30,
+): RejectorCase {
   return { datapack, faultType, lead: 0, reach, shipped: false, off, on };
 }
 
@@ -174,9 +186,12 @@ describe('rejectorCasesOf', () => {
     expect(neutral.on).toBe(true);
   });
 
-  it('divides by the term\'s own span, so a term that moves at most half a point is reached twice as fast', () => {
+  it("divides by the term's own span, so a term that moves at most half a point is reached twice as fast", () => {
     const rows = rejectorCasesOf(
-      [...CORPUS, kase('x/half', 'alpha', ['x'], [candidate('x', 0.5, 0, 0), candidate('y', 0.4, 0.5, 0)])],
+      [
+        ...CORPUS,
+        kase('x/half', 'alpha', ['x'], [candidate('x', 0.5, 0, 0), candidate('y', 0.4, 0.5, 0)]),
+      ],
       TERM,
     );
     // Read against the same configured weight of 3, the half-span term needs only `lead / 1.5` reaches to overturn.
@@ -212,11 +227,40 @@ describe('rejectorCasesOf', () => {
     // scan: the lead is a property of the pool, and a reader that stopped at two would miss the second maximum
     // whenever the dump's order is not the score order.
     const three = rejectorCasesOf(
-      [...CORPUS, kase('n/three', 'alpha', ['x'], [
-        { id: 'x', score: 0, terms: [[BASE, 1, 0.5], [TERM, 0, 0]] },
-        { id: 'y', score: 0, terms: [[BASE, 1, 0.4], [TERM, 0, 1]] },
-        { id: 'z', score: 0, terms: [[BASE, 1, 0.1], [TERM, 0, 0.2]] },
-      ])],
+      [
+        ...CORPUS,
+        kase(
+          'n/three',
+          'alpha',
+          ['x'],
+          [
+            {
+              id: 'x',
+              score: 0,
+              terms: [
+                [BASE, 1, 0.5],
+                [TERM, 0, 0],
+              ],
+            },
+            {
+              id: 'y',
+              score: 0,
+              terms: [
+                [BASE, 1, 0.4],
+                [TERM, 0, 1],
+              ],
+            },
+            {
+              id: 'z',
+              score: 0,
+              terms: [
+                [BASE, 1, 0.1],
+                [TERM, 0, 0.2],
+              ],
+            },
+          ],
+        ),
+      ],
       TERM,
     );
     const parsed = three[three.length - 1]!;
@@ -225,17 +269,17 @@ describe('rejectorCasesOf', () => {
   });
 
   it('reads a case with no candidate at all as having no lead to overturn', () => {
-    const empty = rejectorCasesOf(
-      [...CORPUS, kase('o/empty', 'alpha', [], [])],
-      TERM,
-    );
+    const empty = rejectorCasesOf([...CORPUS, kase('o/empty', 'alpha', [], [])], TERM);
     expect(empty[empty.length - 1]!.lead).toBe(Infinity);
     expect(empty[empty.length - 1]!.reach).toBe(Infinity);
   });
 
   it('reads an arm strictly, so a level case is not an answer', () => {
     const level = rejectorCasesOf(
-      [...CORPUS, kase('l/level', 'alpha', ['y'], [candidate('x', 0.5, 0, 0), candidate('y', 0.5, 1, 0)])],
+      [
+        ...CORPUS,
+        kase('l/level', 'alpha', ['y'], [candidate('x', 0.5, 0, 0), candidate('y', 0.5, 1, 0)]),
+      ],
       TERM,
     );
     // Read against the corpus's configuration of 3: `y` moves to 3.5 while `x` stays at 0.5.
@@ -250,7 +294,7 @@ describe('rejectorCasesOf', () => {
 describe('frontierOf', () => {
   const frontier = frontierOf(ROWS, [0.05, 0.3]);
 
-  it('keeps the run\'s own admissions at every bound, so a gate change is read on the deployed population', () => {
+  it("keeps the run's own admissions at every bound, so a gate change is read on the deployed population", () => {
     expect(frontier.map((point) => point.admitted)).toEqual([5, 12]);
     expect(ROWS[4]!.shipped).toBe(true);
   });
@@ -264,10 +308,15 @@ describe('frontierOf', () => {
 
   it('answers eight cases at the near bound and nine at the far one, which costs alpha a case', () => {
     expect(frontier[0]).toMatchObject({ cases: 8, delta: 3, regressed: [], loss: 0 });
-    expect(frontier[1]).toMatchObject({ cases: 9, delta: 4, regressed: [{ faultType: 'alpha', delta: -1 }], loss: 1 });
+    expect(frontier[1]).toMatchObject({
+      cases: 9,
+      delta: 4,
+      regressed: [{ faultType: 'alpha', delta: -1 }],
+      loss: 1,
+    });
   });
 
-  it('reads the run\'s total off the shipped coefficients rather than off the term held off', () => {
+  it("reads the run's total off the shipped coefficients rather than off the term held off", () => {
     // `j` shipped and broke a case, so the run answers five where the term held off answers six. A reader that used
     // the off arm as the baseline would print every delta one case low and call a 9 a 8.
     expect(runTotalOf(ROWS)).toBe(5);
@@ -295,14 +344,20 @@ describe('frontierOf', () => {
     ]);
     // Inserted in the other order, the tie is still resolved by name: the comparator's second arm is what a reader
     // of the table never sees and could not otherwise check.
-    const reversed: RejectorCase[] = [row('b1', 'gamma', true, false), row('c1', 'beta', true, false)];
+    const reversed: RejectorCase[] = [
+      row('b1', 'gamma', true, false),
+      row('c1', 'beta', true, false),
+    ];
     expect(frontierOf(reversed, [0.05])[0]!.regressed).toEqual([
       { faultType: 'beta', delta: -1 },
       { faultType: 'gamma', delta: -1 },
     ]);
     // And a name that sorts AFTER the one it is compared against reaches the comparator's other arm, which no table
     // printed in name order would ever exercise.
-    const descending: RejectorCase[] = [row('d1', 'delta', true, false), row('e1', 'gamma', true, false)];
+    const descending: RejectorCase[] = [
+      row('d1', 'delta', true, false),
+      row('e1', 'gamma', true, false),
+    ];
     expect(frontierOf(descending, [0.05])[0]!.regressed).toEqual([
       { faultType: 'delta', delta: -1 },
       { faultType: 'gamma', delta: -1 },
@@ -407,7 +462,10 @@ describe('calibrationOf', () => {
   });
 
   it('pools a violation in the first block without stepping back off the start of the list', () => {
-    const blocks = calibrationOf([row('a', 'f', true, false, 0.1), row('b', 'f', false, true, 0.2)]);
+    const blocks = calibrationOf([
+      row('a', 'f', true, false, 0.1),
+      row('b', 'f', false, true, 0.2),
+    ]);
     expect(blocks).toEqual([{ lo: 0.1, hi: 0.2, p: 0.5, cases: 2 }]);
   });
 
@@ -459,7 +517,7 @@ describe('boundOf', () => {
 });
 
 describe('chowReport', () => {
-  it('spends the calibration\'s own bound on the corpus it was fitted on, as the frontier\'s peak', () => {
+  it("spends the calibration's own bound on the corpus it was fitted on, as the frontier's peak", () => {
     // The near block is perfect and the far block is 4/8, which clears Chow's symmetric bar of 1/2 — so the calibrated
     // bound is the far reach, and the corpus answers nine against the run's five.
     const bound = boundOf(calibrationOf(ROWS), 1);
@@ -569,7 +627,9 @@ describe('the formatters', () => {
 
 describe('parseRejectorArgs', () => {
   it('reads every flag', () => {
-    expect(parseRejectorArgs(['--terms', 'd.ndjson', '--term', 'x', '--folds', '3', '--rate', '0.25'])).toEqual({
+    expect(
+      parseRejectorArgs(['--terms', 'd.ndjson', '--term', 'x', '--folds', '3', '--rate', '0.25']),
+    ).toEqual({
       terms: 'd.ndjson',
       term: 'x',
       folds: 3,

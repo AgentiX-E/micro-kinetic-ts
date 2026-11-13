@@ -55,11 +55,11 @@
  * @module benchmarks/gate-rejector
  */
 
+import { scoresUnder, weightCensusOf } from './conditional-weight.js';
+import { foldOf } from './fse26-discriminator.js';
 import type { StrictReading } from './gate-fit.js';
 import { readScores } from './gate-fit.js';
-import { foldOf } from './fse26-discriminator.js';
 import type { ParsedTermCase } from './terms-dump.js';
-import { scoresUnder, weightCensusOf } from './conditional-weight.js';
 
 /** One case, as the rejector reads it: what the baseline held, and what the term did. */
 export interface RejectorCase {
@@ -239,7 +239,8 @@ export function rejectorCasesOf(cases: readonly ParsedTermCase[], term: string):
     const reach = span > 0 ? lead / span : Infinity;
     let shipped = false;
     for (const candidate of kase.candidates) {
-      for (const [name, weight] of candidate.terms) if (name === term && weight === configured) shipped = true;
+      for (const [name, weight] of candidate.terms)
+        if (name === term && weight === configured) shipped = true;
     }
     return {
       datapack: kase.datapack,
@@ -364,7 +365,16 @@ export function frontierOf(
       if (row.on && !row.off) helps += 1;
       else if (row.off && !row.on) hurts += 1;
     }
-    return { bound, cases: total, delta: total - runTotal, admitted, helps, hurts, regressed, loss };
+    return {
+      bound,
+      cases: total,
+      delta: total - runTotal,
+      admitted,
+      helps,
+      hurts,
+      regressed,
+      loss,
+    };
   });
 }
 
@@ -439,7 +449,12 @@ export function calibrationOf(rows: readonly RejectorCase[]): CalibrationBlock[]
     points.splice(index + 1, 1);
     if (index > 0) index -= 1;
   }
-  return points.map((block) => ({ lo: block.lo, hi: block.hi, p: block.fixes / block.cases, cases: block.cases }));
+  return points.map((block) => ({
+    lo: block.lo,
+    hi: block.hi,
+    p: block.fixes / block.cases,
+    cases: block.cases,
+  }));
 }
 
 /**
@@ -488,7 +503,15 @@ export function chowReport(rows: readonly RejectorCase[], folds = 5, rate = 1): 
     // a different loop computed.
     let baseline = 0;
     for (const entry of families.values()) baseline += entry.run;
-    verdicts.push({ fold, bound, heldOut: total, baseline, delta: total - baseline, regressed, loss });
+    verdicts.push({
+      fold,
+      bound,
+      heldOut: total,
+      baseline,
+      delta: total - baseline,
+      regressed,
+      loss,
+    });
   }
   return {
     folds: verdicts,
@@ -518,7 +541,11 @@ function signed(value: number): string {
  * @returns The report.
  */
 export function formatFrontier(frontier: readonly FrontierPoint[], runTotal: number): string {
-  const lines = [`run ${runTotal}   bounds ${frontier.length}`, '', '  reach  cases   delta  admitted  helps  hurts  loss  regressed'];
+  const lines = [
+    `run ${runTotal}   bounds ${frontier.length}`,
+    '',
+    '  reach  cases   delta  admitted  helps  hurts  loss  regressed',
+  ];
   for (const point of frontier) {
     const families = point.regressed.map((loss) => `${loss.faultType} ${loss.delta}`).join(', ');
     lines.push(
@@ -609,14 +636,16 @@ export function parseRejectorArgs(argv: readonly string[]): RejectorArgs {
       case '--folds': {
         if (value === undefined) throw new Error('--folds needs a number');
         folds = Number.parseInt(value, 10);
-        if (!Number.isInteger(folds) || folds < 1) throw new Error('--folds must be a positive integer');
+        if (!Number.isInteger(folds) || folds < 1)
+          throw new Error('--folds must be a positive integer');
         index += 1;
         break;
       }
       case '--rate': {
         if (value === undefined) throw new Error('--rate needs a number');
         rate = Number.parseFloat(value);
-        if (!Number.isFinite(rate) || rate < 0) throw new Error('--rate must be a non-negative number');
+        if (!Number.isFinite(rate) || rate < 0)
+          throw new Error('--rate must be a non-negative number');
         index += 1;
         break;
       }

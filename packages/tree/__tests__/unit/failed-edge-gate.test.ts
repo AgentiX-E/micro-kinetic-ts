@@ -443,7 +443,12 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     // rise, `evidence` reads the failed-call channel's own failure rate, and `margin` reads the baseline ranking's
     // lead. The vocabulary is closed so a parser, a workflow input and a dispatch cannot disagree about which words
     // are legal — the reason this list is asserted at all rather than discovered from the type.
-    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual(['absolute', 'evidence', 'fleet', 'margin']);
+    expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual([
+      'absolute',
+      'evidence',
+      'fleet',
+      'margin',
+    ]);
     expect(DEFAULT_FAILED_EDGE_GATE_MODE).toBe('absolute');
     for (const mode of Object.keys(FAILED_EDGE_GATE_MODES)) {
       expect(isFailedEdgeGateMode(mode)).toBe(true);
@@ -549,12 +554,18 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     expect(admittedAt(1)).toBe(1);
   });
 
-  it('reads the margin bar as a SHARE of the term\'s reach, at equality', () => {
+  it("reads the margin bar as a SHARE of the term's reach, at equality", () => {
     // The predicate compares a lead against a fraction of the span, so the boundary is the assertion: a reach of
     // exactly the share is admitted and one floating-point step beyond it is refused.
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.3 })).toBe(true);
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.5 })).toBe(false);
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0 })).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.3 }),
+    ).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0.5 }),
+    ).toBe(false);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 0.3, reach: 0 }),
+    ).toBe(true);
   });
 
   it('consults NEITHER the metric name NOR the rise at the margin bar', () => {
@@ -564,7 +575,11 @@ describe('the gate bar — absolute versus fleet-relative', () => {
       admitsFailedEdgeTerm(RESOURCE, undefined, { mode: 'margin', share: 0.3, reach: 0.1 }),
     ).toBe(true);
     expect(
-      admitsFailedEdgeTerm(DURATION, FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR, { mode: 'margin', share: 0.3, reach: 0.9 }),
+      admitsFailedEdgeTerm(DURATION, FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR, {
+        mode: 'margin',
+        share: 0.3,
+        reach: 0.9,
+      }),
     ).toBe(false);
   });
 
@@ -578,14 +593,26 @@ describe('the gate bar — absolute versus fleet-relative', () => {
     // A ranking that was never scored, a case with no rival and a term that measured no slope all produce a reach
     // that is not a number: each is refused rather than read as the smallest possible lead.
     for (const reach of [undefined, Number.POSITIVE_INFINITY, Number.NaN]) {
-      expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 1, reach })).toBe(false);
+      expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: 1, reach })).toBe(
+        false,
+      );
     }
   });
 
   it('reads a share it cannot place as the strictest bar rather than the loosest', () => {
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: Number.NaN, reach: 0 })).toBe(true);
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: Number.NaN, reach: 0.01 })).toBe(false);
-    expect(admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: -1, reach: 0.01 })).toBe(false);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: Number.NaN, reach: 0 }),
+    ).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, {
+        mode: 'margin',
+        share: Number.NaN,
+        reach: 0.01,
+      }),
+    ).toBe(false);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, { mode: 'margin', share: -1, reach: 0.01 }),
+    ).toBe(false);
   });
 
   it('keeps the DURATION test in force at both LATENCY bars, including at share 0', () => {
