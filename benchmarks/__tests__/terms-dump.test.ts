@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { RootCauseResult } from '../../packages/core/src/index.js';
-import { TermDump } from '../src/terms-dump.js';
+import { TermDump, parseTermsDump, readTermsDump } from '../src/terms-dump.js';
 
 /**
  * A `RootCauseResult` carrying only the fields the dump reads.
@@ -151,5 +151,150 @@ describe('the term dump', () => {
     const dump = new TermDump(path);
     expect(readFileSync(path, 'utf8')).toBe('');
     expect(dump.summary().cases).toBe(0);
+  });
+});
+
+/**
+ * The reader, which is the other half of the format's one owner.
+ *
+ * Two Python screens already read this file, so the shapes refused here are the shapes that would give them a
+ * `weight` or a `slope` they treat as a measurement. A reader that coerced instead of refusing would let a screen
+ * claim a promotion the engine never recorded.
+ */
+describe('reading a term dump back', () => {
+  it('round-trips what the writer wrote, whole ranking and null factors included', () => {
+    const path = freshPath();
+    new TermDump(path).record({
+      datapack: 'c1',
+      faultType: 'Kill',
+      accepted: ['a', 'b'],
+      ranking: [
+        result('w', 2.5, [
+          { name: 'log', weight: 1, slope: 2 },
+          { name: 'lat', weight: null as never, slope: null as never },
+        ]),
+        result('a', 1.5, [{ name: 'log', weight: 1, slope: 1 }]),
+      ],
+    });
+    const cases = readTermsDump(path);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.accepted).toEqual(['a', 'b']);
+    expect(cases[0]!.candidates.map((candidate) => candidate.id)).toEqual(['w', 'a']);
+    expect(cases[0]!.candidates[0]!.score).toBe(2.5);
+    expect(cases[0]!.candidates[0]!.terms).toEqual([
+      ['log', 1, 2],
+      ['lat', null, null],
+    ]);
+  });
+
+  it('keeps a producer that recorded no score or no terms readable', () => {
+    const path = freshPath();
+    new TermDump(path).record({
+      datapack: 'c1',
+      faultType: 'Delay',
+      accepted: ['a'],
+      ranking: [result('a')],
+    });
+    const [candidate] = readTermsDump(path)[0]!.candidates;
+    expect(candidate!.score).toBeNull();
+    expect(candidate!.terms).toEqual([]);
+  });
+
+  it('skips blank lines, so a file with a trailing newline is not an error', () => {
+    expect(parseTermsDump('\n\n')).toEqual([]);
+    const line = JSON.stringify({
+      datapack: 'c1',
+      faultType: 'Kill',
+      accepted: ['a'],
+      candidates: [],
+    });
+    expect(parseTermsDump(`${line}\n\n`)).toHaveLength(1);
+  });
+
+  it.each([
+    ['not JSON', 'oops', 'line 1 is not JSON'],
+    ['a non-object line', '[]', 'line 1 is not an object'],
+    [
+      'an empty datapack',
+      JSON.stringify({ datapack: '', faultType: 'Kill', accepted: [], candidates: [] }),
+      'datapack on line 1 is not a non-empty string',
+    ],
+    [
+      'a non-string faultType',
+      JSON.stringify({ datapack: 'c', faultType: 1, accepted: [], candidates: [] }),
+      'faultType on line 1 is not a string',
+    ],
+    [
+      'an empty answer',
+      JSON.stringify({ datapack: 'c', faultType: 'K', accepted: [''], candidates: [] }),
+      'accepted on line 1 is not an array of non-empty strings',
+    ],
+    [
+      'a missing candidate list',
+      JSON.stringify({ datapack: 'c', faultType: 'K', accepted: [] }),
+      'candidates on line 1 is not an array',
+    ],
+    [
+      'a candidate that is not an object',
+      JSON.stringify({ datapack: 'c', faultType: 'K', accepted: [], candidates: [3] }),
+      'a candidate on line 1 is not an object',
+    ],
+    [
+      'a candidate with no id',
+      JSON.stringify({
+        datapack: 'c',
+        faultType: 'K',
+        accepted: [],
+        candidates: [{ id: '', terms: [] }],
+      }),
+      'a candidate id on line 1 is not a non-empty string',
+    ],
+    [
+      'a candidate with no term list',
+      JSON.stringify({ datapack: 'c', faultType: 'K', accepted: [], candidates: [{ id: 'a' }] }),
+      'terms on candidate a of line 1 is not an array',
+    ],
+    [
+      'a term list with a non-triple',
+      JSON.stringify({
+        datapack: 'c',
+        faultType: 'K',
+        accepted: [],
+        candidates: [{ id: 'a', terms: [['log', 1]] }],
+      }),
+      'a term on line 1 is not a [name, weight, slope] triple',
+    ],
+    [
+      'a term with no name',
+      JSON.stringify({
+        datapack: 'c',
+        faultType: 'K',
+        accepted: [],
+        candidates: [{ id: 'a', terms: [['', 1, 1]] }],
+      }),
+      'a term name on line 1 is not a non-empty string',
+    ],
+    [
+      'a weight that is neither null nor finite',
+      JSON.stringify({
+        datapack: 'c',
+        faultType: 'K',
+        accepted: [],
+        candidates: [{ id: 'a', terms: [['log', 'x', 1]] }],
+      }),
+      'weight on line 1 is neither null nor a finite number',
+    ],
+    [
+      'a score that is neither null nor finite',
+      JSON.stringify({
+        datapack: 'c',
+        faultType: 'K',
+        accepted: [],
+        candidates: [{ id: 'a', score: 'NaN', terms: [] }],
+      }),
+      'score on candidate a on line 1 is neither null nor a finite number',
+    ],
+  ])('refuses %s, by line', (_label, text, message) => {
+    expect(() => parseTermsDump(text)).toThrow(message);
   });
 });

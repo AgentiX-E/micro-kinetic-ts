@@ -289,6 +289,12 @@ export default defineConfig({
         // plausible share in a table, which is the failure mode this repository refuses by name.
         'src/ranking-depth.ts',
         'src/depth-report.ts',
+        // Added with the module: the decomposition of a miss into the terms that separate its truth from its
+        // winner, which is `docs/depth-reranking-preregistration.md` as arithmetic. Its whole value is that every
+        // constant in it is quoted from a document written BEFORE the data — so the population statement, the
+        // bar, the split and the exact-binomial correction are all asserted rather than trusted, and the
+        // denominator itself is checked against the file that produces the term names.
+        'src/term-decomposition.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -328,3 +328,48 @@ describe('the depth split is measured, uploaded, and printed by the side that ha
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-depth-report.ts'))).toBe(true);
   });
 });
+
+/**
+ * The decomposition's wiring: it runs where the dump is written, and only when the dump exists.
+ *
+ * The measurement is `docs/depth-reranking-preregistration.md`'s, and its value is that the population it reports
+ * is the one the dispatch that produced the dump ran. Two ways to lose that and both are line-level:
+ *
+ * 1. **The step reads a file the run did not write.** `--terms-dump` is expanded from the dispatch input to
+ *    `fse26-terms.ndjson` by the workflow's own array, so the report's `--terms` has to name that path and not a
+ *    second one.
+ * 2. **The step runs unconditionally.** A report over a missing dump is an error rather than a reading, and an
+ *    `if: always()` here would turn every dispatch without the flag into a red job whose failure says nothing
+ *    about the engine.
+ *
+ * The third assertion is non-vacuity: a workflow naming a script that does not exist satisfies anything.
+ */
+describe('the term decomposition’s wiring', () => {
+  it('runs in the job that writes the dump, over that dump', () => {
+    const run = jobs(FSE26).get('build-benchmark') ?? jobs(FSE26).get('benchmark');
+    const text = run ?? FSE26;
+    expect(text).toContain('benchmarks/src/run-term-decomposition.ts');
+    expect(text).toContain('--terms fse26-terms.ndjson');
+    // The dump is the workflow's own expansion of the input, so a report reading anything else would be reading
+    // an artifact no dispatch of this file can produce.
+    expect(text).toContain('TERMS_ARG=(--terms-dump fse26-terms.ndjson)');
+  });
+
+  it('is gated on the dump being asked for, so a run without it stays green', () => {
+    const step = FSE26.slice(FSE26.indexOf('Decompose the miss by term'));
+    const gate = step.slice(0, step.indexOf('run:'));
+    expect(gate).toContain("if: ${{ inputs.terms_dump != '' }}");
+  });
+
+  it('uploads the report beside the dump it was read from', () => {
+    const upload = FSE26.slice(FSE26.indexOf('name: fse26-results'));
+    expect(upload).toContain('fse26-terms-report.txt');
+    // Both paths under one artifact, because a report that travels without its dump cannot be re-derived.
+    expect(upload).toContain('fse26-terms.ndjson');
+  });
+
+  it('keeps the tools the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-term-decomposition.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/term-decomposition.ts'))).toBe(true);
+  });
+});

@@ -500,6 +500,22 @@ jobs:
             --per-case-out fse26-per-case.ndjson \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
 
+      # The pre-registered measurement of `docs/depth-reranking-preregistration.md` §2–§3, taken over the dump the
+      # step above just wrote. It runs HERE rather than in a separate dispatch because the two artifacts it joins
+      # — the term dump and the ranking it produced — are one run's, and a second dispatch would pair a dump with
+      # a population from a different configuration.
+      #
+      #   It reads files and prints, so it cannot move a score: what it decides is whether the DEPTH headroom is a
+      #   term-sign question (H1) or a model question (H1′), and the kill criterion is written into the report.
+      #   The step is gated on the dump existing, because a report over a missing file would be an error rather
+      #   than a reading — and `Upload results` is `if: always()`, so a refused report still travels with its dump.
+      - name: Decompose the miss by term
+        if: ${{ inputs.terms_dump != '' }}
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-term-decomposition.ts \
+            --terms fse26-terms.ndjson 2>&1 | tee fse26-terms-report.txt
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -510,5 +526,6 @@ jobs:
             fse26-results.json
             fse26-per-case.ndjson
             fse26-terms.ndjson
+            fse26-terms-report.txt
             manifest.json
           if-no-files-found: warn
