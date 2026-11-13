@@ -43,15 +43,19 @@ function main(): void {
       cheapestOf(frontier),
     )}\n`,
   );
-  process.stdout.write(
-    `\nTHE SAME LADDER, CERTIFIED (level ${args.delta})\n${formatCertified(
-      certifyOf(population, frontier, args.budgets, args.delta),
-      population.n,
-      args.delta,
-      population.families.length,
-      thresholdOf(population, frontier, args.delta),
-    )}\n`,
-  );
+  // Two rules, both exact, printed because the difference between them is the price of a loose bound and is the
+  // finding: Holm's step-down dominates the union bound and here it costs nothing at all.
+  for (const correction of ['holm', 'union'] as const) {
+    process.stdout.write(
+      `\nTHE SAME LADDER, CERTIFIED (level ${args.delta}, ${correction})\n${formatCertified(
+        certifyOf(population, frontier, args.budgets, args.delta, correction),
+        population,
+        args.delta,
+        correction,
+        thresholdOf(population, frontier, args.delta, correction),
+      )}\n`,
+    );
+  }
   // The floor is a property of the COUNT rather than of this corpus, so it is printed once per loss depth the frontier
   // reaches: it is the answer to "would more cases make this cheaper", and the answer is no.
   const depths = [
@@ -62,7 +66,7 @@ function main(): void {
     ),
   ].sort((a, b) => a - b);
   process.stdout.write(
-    `floors at ${args.delta} (any corpus size): ${depths
+    `\nfloors at ${args.delta} (any corpus size): ${depths
       .map((lost) => `${lost} cases -> k ${floorOf(lost, args.delta)}`)
       .join(', ')}\n`,
   );

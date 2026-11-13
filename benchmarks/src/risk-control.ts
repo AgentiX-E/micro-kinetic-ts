@@ -195,8 +195,15 @@ export function risksAt(
   });
 }
 
+/** The rule that decides whether a vector of family readings supports the claim. */
+export type Correction = 'union' | 'holm';
+
 /**
  * Every point of the grid, with its families priced and its binding family named.
+ *
+ * The level each family is held to depends on the correction: a union bound holds every family to `δ/F`, while Holm's
+ * step-down lets the least extreme family be read at `δ` itself. The priced interval follows the rule rather than the
+ * other way round, so the number printed next to a rung is the number that rung had to clear.
  *
  * The binding family is the one with the largest upper end, which is the number a budget has to clear; a tie goes to
  * the family that lost more cases, so the table names the family that is actually in trouble rather than the first one
@@ -205,18 +212,20 @@ export function risksAt(
  * @param population - The corpus the points were measured on.
  * @param frontier - The points.
  * @param delta - The family-wise level.
+ * @param correction - The rule the level is split by.
  * @returns One entry per point, in the grid's order.
  */
 function pricedOf(
   population: RiskPopulation,
   frontier: readonly FrontierPoint[],
   delta: number,
+  correction: Correction,
 ): { point: FrontierPoint; risks: FamilyRisk[]; worst: FamilyRisk }[] {
   const level = levelOf(delta);
   const families = population.families.length;
-  // Simultaneity is bought with the level: F families each held to δ is not a claim at δ, so each is held to δ/F. With
-  // no families there is no claim to split and the level stands.
-  const perFamily = families > 0 ? level / families : level;
+  // Simultaneity is bought with the level, and how much it costs depends on the rule: a union bound holds every family
+  // to δ/F, Holm holds the least extreme one to δ. With no families there is no claim to split and the level stands.
+  const perFamily = families > 0 && correction === 'union' ? level / families : level;
   return frontier.map((point) => {
     const risks = risksAt(point, population, perFamily);
     let worst = risks[0]!;
@@ -229,10 +238,89 @@ function pricedOf(
   });
 }
 
+/**
+ * `P(X ≤ lost)` for every family, at one candidate budget's rate.
+ *
+ * This is the tail whose inversion {@link exactUpperOf} solves, read the other way round: at a fixed rate, the tail is
+ * the p-value of "this family's loss rate is at most the budget", and it is what both corrections compare against.
+ *
+ * @param point - The frontier point being certified.
+ * @param population - The corpus it was measured on.
+ * @param alpha - The rate the budget permits.
+ * @returns One probability per family, in the population's order.
+ */
+function psOf(point: FrontierPoint, population: RiskPopulation, alpha: number): number[] {
+  return population.families.map((faultType) => {
+    const regression = point.regressed.find((loss) => loss.faultType === faultType);
+    const lost = regression === undefined ? 0 : -regression.delta;
+    return binomCdfUpTo(lost, population.n, alpha);
+  });
+}
+
+/**
+ * Whether a vector of family readings supports "every family is inside this budget".
+ *
+ * Both rules reject a family when its tail falls to the level it is read at, and both are exact at finite `n`. They
+ * differ in what "its level" means: the union bound pays `δ/F` for every family, which is valid and loose; Holm's
+ * step-down sorts the tails and pays `δ/(F−i+1)` for the `i`-th smallest, which is valid at the same level and never
+ * more expensive, because the evidence that a clean family is clean is spent on the families that are not.
+ *
+ * Holm's guarantee is a family-wise error rate, so rejecting every family at its own step is exactly the claim this
+ * module makes: if all `F` are rejected at level `δ`, then with probability at least `1 − δ` every family's rate is
+ * inside the budget. The ordering is what buys the tighter level — a step-down procedure is allowed to test the least
+ * extreme hypothesis at the full level because reaching it required rejecting every other one first.
+ *
+ * @param ps - The tails, from {@link psOf}.
+ * @param delta - The family-wise level.
+ * @param correction - The rule.
+ * @returns Whether the claim holds.
+ */
+function supports(ps: readonly number[], delta: number, correction: Correction): boolean {
+  // No families is no claim: an empty `every` would otherwise certify every bound in the grid for a corpus that is not
+  // there, which is the defect the first version of this module shipped and a test caught.
+  if (ps.length === 0) return false;
+  if (correction === 'holm') {
+    const sorted = [...ps].sort((left, right) => left - right);
+    return sorted.every((p, index) => p <= delta / (sorted.length - index));
+  }
+  const level = delta / ps.length;
+  return ps.every((p) => p <= level);
+}
+
 /** The cheapest budget that certifies anything, and the point it certifies. */
 export interface ThresholdPoint {
   readonly budget: number;
   readonly point: CertifiedPoint;
+}
+
+/**
+ * The smallest budget in `[0, n]` at which one point's claim holds.
+ *
+ * The claim only gets easier as the budget grows — a wider budget raises the permitted rate, which lowers every tail —
+ * so the smallest such budget is found by bisection rather than by scanning a corpus-sized range. `ceil(n · upper)` is
+ * the same number for the union bound and is not the same number for Holm, which is why this is computed by the rule
+ * the caller asked for rather than by one formula.
+ *
+ * @param point - The frontier point being certified.
+ * @param population - The corpus it was measured on.
+ * @param delta - The family-wise level.
+ * @param correction - The rule.
+ * @returns A budget in `[0, n]`.
+ */
+function smallestBudgetOf(
+  point: FrontierPoint,
+  population: RiskPopulation,
+  delta: number,
+  correction: Correction,
+): number {
+  let low = 0;
+  let high = population.n;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (supports(psOf(point, population, mid / population.n), delta, correction)) high = mid;
+    else low = mid + 1;
+  }
+  return low;
 }
 
 /**
@@ -241,23 +329,25 @@ export interface ThresholdPoint {
  * A caller's ladder is a set of questions, and every one of them can come back empty for a reason that has nothing to
  * do with the grid: the level may be split across so many families that no rung on it is wide enough. That is not the
  * same finding as "the statistic buys nothing", and it is not visible from the rungs, so the answer is computed
- * instead of inferred: this is `ceil(n · worst upper)` minimised over the grid, which is the budget below which no
- * point exists at all.
+ * instead of inferred.
  *
  * @param population - The corpus the points were measured on.
  * @param frontier - The points.
  * @param delta - The family-wise level.
+ * @param correction - The rule the level is read under.
  * @returns The cheapest certifiable budget and its point, earliest on a tie; `null` for a corpus with no claim.
  */
 export function thresholdOf(
   population: RiskPopulation,
   frontier: readonly FrontierPoint[],
   delta: number,
+  correction: Correction = 'union',
 ): ThresholdPoint | null {
   if (population.n <= 0 || population.families.length === 0) return null;
+  const level = levelOf(delta);
   let best: ThresholdPoint | null = null;
-  for (const entry of pricedOf(population, frontier, delta)) {
-    const budget = Math.ceil(population.n * entry.worst.upper);
+  for (const entry of pricedOf(population, frontier, delta, correction)) {
+    const budget = smallestBudgetOf(entry.point, population, level, correction);
     const point: CertifiedPoint = {
       bound: entry.point.bound,
       cases: entry.point.cases,
@@ -278,15 +368,16 @@ export function thresholdOf(
 /**
  * The best point whose every family clears the budget, with the interval that admitted it.
  *
- * "Clears" means the whole upper end sits at or below `budget / n`, not the observed count: a point is certified when
- * the data cannot rule out the budget, not when the data agrees with it. Ties go to the point answering more cases,
- * which is the rule every other reader in this repository uses, so two tables of the same corpus cannot disagree
- * about which point they describe.
+ * "Clears" means the claim holds at the whole interval, not at the observed count: a point is certified when the data
+ * cannot rule out the budget, not when the data agrees with it. Ties go to the point answering more cases, which is
+ * the rule every other reader in this repository uses, so two tables of the same corpus cannot disagree about which
+ * point they describe.
  *
  * @param population - The corpus the points were measured on.
  * @param frontier - The points.
  * @param budgets - The rungs, read at zero when malformed.
  * @param delta - The family-wise level.
+ * @param correction - The rule the level is read under; the union bound by default, which is the conservative one.
  * @returns One rung per budget, in the order given.
  */
 export function certifyOf(
@@ -294,18 +385,18 @@ export function certifyOf(
   frontier: readonly FrontierPoint[],
   budgets: readonly number[],
   delta: number,
+  correction: Correction = 'union',
 ): CertifiedRung[] {
-  const families = population.families.length;
-  const priced = pricedOf(population, frontier, delta);
-  // A claim needs something to be about. With no cases there is no corpus and with no families there is nothing to hold
-  // to the level, and an empty `every` would otherwise certify every bound in the grid for a corpus that is not there.
-  const claims = population.n > 0 && families > 0;
+  const level = levelOf(delta);
+  const priced = pricedOf(population, frontier, delta, correction);
   return budgets.map((supplied) => {
     const budget = Number.isFinite(supplied) && supplied > 0 ? supplied : 0;
-    const alpha = claims ? budget / population.n : 0;
+    // A corpus with no cases has no rate to state, and a rate of zero would refuse every point anyway; `supports` is the
+    // one place that decides a claim without families cannot be made.
+    const alpha = population.n > 0 ? budget / population.n : 0;
     let best: CertifiedPoint | null = null;
-    for (const entry of claims ? priced : []) {
-      if (!entry.risks.every((risk) => risk.upper <= alpha)) continue;
+    for (const entry of priced) {
+      if (!supports(psOf(entry.point, population, alpha), level, correction)) continue;
       const candidate: CertifiedPoint = {
         bound: entry.point.bound,
         cases: entry.point.cases,
@@ -325,6 +416,9 @@ export function certifyOf(
  * statistic: `n · upper(lost, n)` converges to a constant in `n`, so a family losing two cases is certifiable at
  * seven however many cases are collected. A larger corpus buys a smaller share of itself given away, not a smaller
  * number of cases.
+ *
+ * Read at `δ` rather than at `δ/F`, because it bounds the cost of a COUNT rather than the cost of a simultaneous claim:
+ * the multiplicity a caller pays is a property of its population, and `pricedOf` is where it is applied.
  *
  * @param lost - Cases the family lost.
  * @param delta - The level.
@@ -353,23 +447,25 @@ function describePoint(point: CertifiedPoint): string {
  * Render a certified ladder.
  *
  * @param rungs - The rungs, from {@link certifyOf}.
- * @param n - The corpus size.
+ * @param population - The corpus the rungs were certified on.
  * @param delta - The family-wise level.
- * @param families - How many families the level was split across.
+ * @param correction - The rule the level was read under, printed because a budget without its rule cannot be compared
+ * with another budget.
  * @param threshold - The cheapest certifiable budget, from {@link thresholdOf}; printed only when the ladder itself
  * certifies nothing, so a table that is empty for the size of its own rungs says so instead of reading as a refusal.
  * @returns The report text.
  */
 export function formatCertified(
   rungs: readonly CertifiedRung[],
-  n: number,
+  population: RiskPopulation,
   delta: number,
-  families: number,
+  correction: Correction = 'union',
   threshold: ThresholdPoint | null = null,
 ): string {
+  const families = population.families.length;
   const share = families > 0 ? ` (${(levelOf(delta) / families).toFixed(6)} each)` : '';
   const lines = [
-    `n ${n}   delta ${levelOf(delta)}   families ${families}${share}`,
+    `n ${population.n}   delta ${levelOf(delta)}   families ${families}${share}   correction ${correction}`,
     '',
     '  budget    alpha   bound   cases   delta  worst            lost     upper',
   ];

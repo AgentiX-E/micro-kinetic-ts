@@ -3082,3 +3082,47 @@ The rejected axis is recorded rather than pursued: a max-statistic bootstrap ove
 dependence between families instead of assuming none, and would certify 11 at something under 11. It is not
 implemented, because a bootstrap buys tightness with an asymptotic argument where the union bound buys exactness with
 none — and this register's whole complaint about 279 was that a number without a guarantee is not a claim.
+
+## Iteration 280b — the correction was loose, and the certificate costs nothing
+
+§280 was pushed with a union bound split across 25 families and a verdict of 11/14/22. Within the same iteration the
+split was measured against the alternative, and the alternative wins: **Holm's step-down certifies the same three
+numbers at 7, 10 and 14** — exactly the floors of `floorOf`, which is the proof that the 4/4/8 difference was slack
+rather than price. `Correction` is now a parameter of `certifyOf` and `thresholdOf`, the command prints both rules, and
+`docs/risk-control.md` records both.
+
+### The two readings, side by side
+
+| cases | delta |  Holm | union | floor (§4) | verdict                 |
+| ----: | ----: | ----: | ----: | ---------: | ----------------------- |
+| 1 123 |   +50 | **7** |    11 |          7 | Holm lands ON the floor |
+| 1 131 |   +58 |    10 |    14 |         10 | Holm lands ON the floor |
+| 1 145 |   +72 |    14 |    22 |         14 | Holm lands ON the floor |
+
+### Why the union bound was the loose one
+
+A union bound holds every family to `δ/F = 0.002` and pays for 25 claims whether or not any of them needs paying for.
+The corpus's 24 clean families have tails of about `1e-3` against that threshold, so they consume almost none of the
+level and the binding family is left with `δ/25` when it could be read at `δ`. A step-down procedure is entitled to
+spend the evidence in order: it rejects the most extreme family first at `δ/F`, and the least extreme one — which can
+only be reached after every other rejection — at `δ` itself. This is not a tightening of the claim; it is the same
+claim, and its family-wise error rate is exactly `δ` under arbitrary dependence.
+
+The cost of the mistake is worth naming because the loose rule is the one a careful implementer writes first: it is
+valid, it is conservative, and it is wrong by a factor of nearly two in the currency this module spends. Nothing in
+the code was broken; a theorem was left on the table.
+
+### Axes this closes
+
+| Axis                                                           | Verdict                                                                                                                                                                                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "The certified budget is 11"                                   | **superseded** — 7; §280's table is what a union bound costs, and it was in the tree for one commit                                                                                                                            |
+| "Multiplicity over 25 families costs 4/4/8 cases"              | **closed as slack** — Holm costs 0 against the floor, so the width of the claim is free here and the union bound was paying for evidence it already had                                                                        |
+| "Holm and the union bound can disagree in the other direction" | **closed by test** — Holm dominates: `certifyOf` is asserted to certify every point the union bound does, over five budgets                                                                                                    |
+| "An empty population certifies everything"                     | **closed twice** — the guard moved from the caller into `supports`, where it is the one place that decides a claim with no families cannot be made, and it is exercised by the empty-corpus test rather than being unreachable |
+
+### What ships
+
+`Correction = 'union' | 'holm'` on `certifyOf`, `thresholdOf` and `formatCertified`; the header states the rule, because
+a budget without its rule cannot be compared with another budget. 58 tests, 100 % on all four dimensions. The engine's
+defaults are untouched, as they have been for the whole of this thread: `absolute` is still the shipped gate mode.

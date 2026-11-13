@@ -364,6 +364,50 @@ describe('thresholdOf', () => {
   });
 });
 
+describe('the Holm correction', () => {
+  it('prices simultaneity at nothing here, where the union bound priced it at a case of budget', () => {
+    // Three families, two losses in one of them. The union bound holds each family to δ/3 and needs eight cases of
+    // budget; Holm reads the least extreme family at δ itself and needs seven. The difference is not a rounding: it is
+    // the claim, priced twice by two rules that are both exact.
+    expect(
+      certifyOf(POP, POINTS, [6, 7], DELTA, 'holm').map((rung) => rung.point?.bound ?? null),
+    ).toEqual([null, 0.05]);
+    expect(certifyOf(POP, POINTS, [7], DELTA)[0]?.point).toBeNull();
+  });
+
+  it('prints the interval the rule actually had to clear', () => {
+    // At level δ the same two losses of 1 052 read 0.005972 rather than 0.007350, because the dividend is the family's
+    // own share of the level and Holm's last family is read at the whole of it.
+    const [rung] = certifyOf(POP, POINTS, [7], DELTA, 'holm');
+    expect(rung?.point?.worst.upper).toBeCloseTo(0.005972, 6);
+  });
+
+  it('names the budget at the floor, which is what the count alone costs', () => {
+    expect(thresholdOf(POP, POINTS, DELTA, 'holm')?.budget).toBe(7);
+    expect(thresholdOf(POP, POINTS, DELTA, 'holm')?.budget).toBe(floorOf(2, DELTA));
+  });
+
+  it('is never more expensive than the union bound, over the whole grid', () => {
+    // Holm's step-down is valid at the same level as the union bound and strictly dominates it, so a corpus where the
+    // bound certifies and Holm does not would be a defect rather than a finding.
+    for (const budget of [0, 4, 8, 11, 20]) {
+      const holm = certifyOf(POP, POINTS, [budget], DELTA, 'holm')[0]?.point ?? null;
+      const union = certifyOf(POP, POINTS, [budget], DELTA, 'union')[0]?.point ?? null;
+      if (union !== null) expect(holm).not.toBeNull();
+    }
+  });
+
+  it('states the rule in the header, because a budget without its rule cannot be compared', () => {
+    const text = formatCertified(certifyOf(POP, POINTS, [7], DELTA, 'holm'), POP, DELTA, 'holm');
+    expect(text.split('\n')[0]).toContain('correction holm');
+  });
+
+  it('still refuses a corpus with nothing to make a claim about', () => {
+    expect(certifyOf(populationOf([]), frontierOf([]), [8], DELTA, 'holm')[0]?.point).toBeNull();
+    expect(thresholdOf(populationOf([]), frontierOf([]), DELTA, 'holm')).toBeNull();
+  });
+});
+
 describe('floorOf', () => {
   it('is the rule of three for a family that loses nothing', () => {
     // Any corpus, any size: zero observed failures certify a rate of −ln δ / n, so the budget floor is 3 at 95 % and
@@ -395,18 +439,20 @@ describe('floorOf', () => {
 describe('formatCertified', () => {
   it('states the corpus, the level and the share each family is held to', () => {
     // The share is the number a reader needs to see, because it is the whole reason a clean family still costs budget.
-    const text = formatCertified(certifyOf(POP, POINTS, [8], DELTA), 1052, DELTA, FAMILIES);
-    expect(text.split('\n')[0]).toBe('n 1052   delta 0.05   families 3 (0.016667 each)');
+    const text = formatCertified(certifyOf(POP, POINTS, [8], DELTA), POP, DELTA);
+    expect(text.split('\n')[0]).toBe(
+      'n 1052   delta 0.05   families 3 (0.016667 each)   correction union',
+    );
   });
 
   it('prints an impossible rung as an impossibility rather than a blank line', () => {
-    const text = formatCertified(certifyOf(POP, POINTS, [2], DELTA), 1052, DELTA, FAMILIES);
+    const text = formatCertified(certifyOf(POP, POINTS, [2], DELTA), POP, DELTA);
     const line = text.split('\n').find((candidate) => candidate.trimStart().startsWith('2 '));
     expect(line).toContain('no bound');
   });
 
   it('prints the certified rung with its worst family and the interval that bought it', () => {
-    const text = formatCertified(certifyOf(POP, POINTS, [8], DELTA), 1052, DELTA, FAMILIES);
+    const text = formatCertified(certifyOf(POP, POINTS, [8], DELTA), POP, DELTA);
     const line = text.split('\n').find((candidate) => candidate.trimStart().startsWith('8 '))!;
     expect(line).toContain('alpha');
     expect(line).toContain('1004');
@@ -414,7 +460,7 @@ describe('formatCertified', () => {
   });
 
   it('names the cheapest rung that certifies anything, which is the whole point of the table', () => {
-    const text = formatCertified(certifyOf(POP, POINTS, [2, 7, 8], DELTA), 1052, DELTA, FAMILIES);
+    const text = formatCertified(certifyOf(POP, POINTS, [2, 7, 8], DELTA), POP, DELTA);
     expect(text).toContain('cheapest certifiable: 8');
   });
 
@@ -423,9 +469,9 @@ describe('formatCertified', () => {
     // read as a refusal, so the footer states the budget that would have certified instead of leaving the question.
     const text = formatCertified(
       certifyOf(POP, POINTS, [2], DELTA),
-      1052,
+      POP,
       DELTA,
-      FAMILIES,
+      'union',
       thresholdOf(POP, POINTS, DELTA),
     );
     expect(text).toContain('smallest budget that does is 8');
@@ -438,36 +484,37 @@ describe('formatCertified', () => {
     const tiny = [breaker('alpha', 0.05), filler('alpha')];
     const text = formatCertified(
       certifyOf(populationOf(tiny), frontierOf(tiny, [0.05]), [2], DELTA),
-      2,
+      populationOf(tiny),
       DELTA,
-      1,
     );
     expect(text).toContain('(-1)');
   });
 
   it('names the cheapest rung even when the ladder is given widest first', () => {
-    const text = formatCertified(certifyOf(POP, POINTS, [11, 8], DELTA), 1052, DELTA, FAMILIES);
+    const text = formatCertified(certifyOf(POP, POINTS, [11, 8], DELTA), POP, DELTA);
     expect(text).toContain('cheapest certifiable: 8');
     // And the other order, where the cheaper rung is seen first and the later one is not cheaper: the footer must keep
     // the first rather than the last.
-    expect(
-      formatCertified(certifyOf(POP, POINTS, [8, 11], DELTA), 1052, DELTA, FAMILIES),
-    ).toContain('cheapest certifiable: 8');
+    expect(formatCertified(certifyOf(POP, POINTS, [8, 11], DELTA), POP, DELTA)).toContain(
+      'cheapest certifiable: 8',
+    );
   });
 
   it('says there is nothing to name when no rung certifies', () => {
-    const text = formatCertified(certifyOf(POP, POINTS, [0], DELTA), 1052, DELTA, FAMILIES);
+    const text = formatCertified(certifyOf(POP, POINTS, [0], DELTA), POP, DELTA);
     expect(text).toContain('cheapest certifiable: none');
   });
 
   it('prints a header alone for an empty ladder', () => {
-    expect(formatCertified([], 1052, DELTA, FAMILIES).split('\n')[0]).toBe(
-      'n 1052   delta 0.05   families 3 (0.016667 each)',
+    expect(formatCertified([], POP, DELTA).split('\n')[0]).toBe(
+      'n 1052   delta 0.05   families 3 (0.016667 each)   correction union',
     );
   });
 
   it('does not divide by no families in its own header', () => {
-    expect(formatCertified([], 0, DELTA, 0).split('\n')[0]).toBe('n 0   delta 0.05   families 0');
+    expect(formatCertified([], { n: 0, families: [] }, DELTA).split('\n')[0]).toBe(
+      'n 0   delta 0.05   families 0   correction union',
+    );
   });
 });
 
