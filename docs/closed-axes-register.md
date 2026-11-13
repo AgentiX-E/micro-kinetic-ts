@@ -2887,3 +2887,62 @@ is searching inside a fence whose reference point was wrong. The next subject is
 half admits 765 cases and the rise bar cuts them to 108, on a corpus where the term's own oracle is +113 over the run.
 The question is no longer whether a per-case switch is worth building; it is which observable separates the 111 from
 the 88.
+
+## Iteration 278 — the 111 and the 88 are separated by the baseline's own lead, and the condition is what binds
+
+277 ended with a question: the gate admits 108 cases (44 fixed, 2 broken) and refuses 1 114 (111 fixable, 88 would
+have broken), so *which observable separates the 111 from the 88?* Not the fault type, not the metric name, not the
+rise, and **not the failed-call channel**: its score is max-normalised, so its maximum is 1.000 on every case in the
+corpus and its top slope carries no information at all (the maximum sits at 1.000 at every decile of every outcome).
+It is the **lead** — the baseline ranking's first candidate minus its second, in units of what the term could ever
+move.
+
+### The frontier
+
+`benchmarks/src/gate-rejector.ts` reads a dump as (lead, reach, run coefficient) and prices every bound; the run's
+own admissions stay a floor, so a gate change is measured on the population it ships to.
+
+| reach | cases | delta | helps | hurts | loss | families that lose a case |
+|---:|---:|---:|---:|---:|---:|---|
+| 0.02 | 1 123 | +50 | 58 | 8 | 4 | 3 families, worst −2 |
+| 0.10 | **1 145** | **+72** | 95 | 23 | 15 | 6 families, worst −7 |
+| 0.20 | **1 145** | **+72** | 104 | 32 | 19 | 7 families, worst −8 |
+| 0.30 | **1 145** | **+72** | 110 | 38 | 23 | 8 families, worst −8 |
+| 0.35 | **1 145** | **+72** | 111 | 39 | 24 | 8 families, worst −9 |
+| 1.00 | 1 096 | +23 | 111 | 88 | 70 | 11 families, worst −18 |
+
+Three readings:
+
+- **the total is flat over a factor of three in the bound** (0.10 to 0.35 all answer 1 145), so the corpus offers an
+  interval rather than a point;
+- **no bound satisfies the standing condition** — the cheapest violation is 4 loss units at 0.02 — so the condition,
+  not the statistic, is now what binds;
+- **reach 1.00 reproduces 277's always-on arm exactly** (1 096, +23), which is the check on the reader: the frontier
+  degenerates to the constant arm when the bound stops excluding anything, because the 180 cases with a reach in
+  `[1, 2]` are all neutral.
+
+### Out of fold
+
+| rate | held out | run | delta | loss | bounds chosen |
+|---:|---:|---:|---:|---:|---|
+| 1 | **1 142** | 1 073 | **+69** | 26 | 0.310, 0.310, 0.222, 0.292, 0.310 |
+| 3 | 1 131 | 1 073 | +58 | 17 | 0.025, 0.101, 0.190, 0.079, 0.086 |
+
+The bound reproduces itself on every fold at rate 1 and the out-of-fold total is **three cases below the in-sample
+one**. The Chow bound is derived rather than scanned: the isotonic fit of `p(fixes | reach)` crosses `1/2` between the
+seventh and eighth brackets, i.e. at a lead of about one unit — a third of the span.
+
+### Axes this closes
+
+| Axis | Verdict |
+|---|---|
+| "The 111 are a class, not a margin" | **closed** — `p(fix)` is 0.75–0.90 below one span and 0.09 then 0.00 above it, monotone in a quantity computed before the gate decides |
+| "The gate's predicate is the lever" | **half closed** — the predicate is worth +72, and the condition that refused the earlier arms refuses this one by 15 to 24 units |
+| "The failed-call channel's own score can be read on this corpus" | **closed** — max-normalised to 1.000 everywhere; a saturated quantity cannot rank |
+| "A lead above one span cannot be flipped" | **corrected before it was claimed** — 11 cases above one span still flip (the promoted candidate need not be the runner-up), and the term is right once |
+
+### What ships
+
+`failedEdgeGateMode: 'margin'` is now a member of the closed vocabulary, with `share` a fraction of the term's own
+span (`DEFAULT_FAILED_EDGE_MARGIN_SHARE = 0.3`). The default stays `absolute`, so every published cell is unchanged;
+the mode is an arm a run selects, and what the record holds is the frontier rather than the constant.
