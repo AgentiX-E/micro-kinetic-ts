@@ -292,13 +292,17 @@ export function evaluateWeights(
 }
 
 /**
- * The weight each term was shipped with, as the dump recorded it.
+ * The weight each term was CONFIGURED with, as the dump recorded it — the largest coefficient it recorded per name.
  *
- * First appearance wins rather than last: a name carried by several triples carries one weight, and a reader that
- * took the last would report whichever triple the writer happened to emit between them.
+ * Not the first appearance, which is what this function did until iteration 277 and what made every screen in this
+ * repository understate the run it was measuring. A gated term records `configured × admitted(case)`, so a case the
+ * gate REFUSED records 0: the first appearance of `failedEdge` in the archive dump is a refusal, and reading it as a
+ * configuration fabricated a vector that answered 1031 of 1422 where the run answered 1073. The theorem and its two
+ * caveats (`S = {0}` is ambiguous; `|S| > 1` proves the name is a decision, not a weight) live in
+ * `conditional-weight.ts`, which is where the census that reports them is.
  *
  * Sorted by descending magnitude, because the header's job is to say which terms were LIVE — a formula of
- * nineteen terms where thirteen are zero is a fact about the run that a first-appearance listing buries.
+ * nineteen terms where thirteen are zero is a fact about the run that an alphabetical listing buries.
  *
  * @param cases - The dump's cases.
  * @returns One move per name, heaviest first.
@@ -309,7 +313,8 @@ export function shippedWeightsOf(cases: readonly ParsedTermCase[]): WeightMove[]
     for (const candidate of kase.candidates) {
       for (const [name, weight] of candidate.terms) {
         if (weight === null) continue;
-        if (!seen.has(name)) seen.set(name, weight);
+        const running = seen.get(name);
+        if (running === undefined || weight > running) seen.set(name, weight);
       }
     }
   }

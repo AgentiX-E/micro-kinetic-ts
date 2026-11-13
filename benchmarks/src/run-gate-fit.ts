@@ -31,10 +31,21 @@ function main(): void {
 
   const baseline = reach.map((kase) => readUnder(kase, start));
   const now = gateReading(reach, baseline, start, args.familyFloor);
-  process.stdout.write(`THE SHIPPED WEIGHTS\n${formatGateReading(now)}\n`);
+  process.stdout.write(`THE CONFIGURATION, READ AS ONE VECTOR\n${formatGateReading(now)}\n`);
+  // The dump's own top-1 is the run's own answer, and no vector reproduces it when a name in the fusion is a
+  // DECISION: a gated term records 0 on every case it was refused, so `max` (the configuration) applies it
+  // everywhere and `first` applies it nowhere, and the run is neither. Printing the three numbers together is the
+  // only way a reader can see which of them a `Δw = 0` row is really against.
+  const recorded = cases.filter((kase) => {
+    const winner = kase.candidates[0];
+    return winner !== undefined && kase.accepted.includes(winner.id);
+  }).length;
   const zero = countUnder(reach, new Float64Array(names.length));
   process.stdout.write(
-    `\nthe zero vector answers ${zero.answers} strictly and ${zero.optimistic} optimistically — the second number is the recorded run, won entirely by tie\n`,
+    `\nthe dump's own top-1 answers ${recorded} of ${cases.length} — that is the run, and no vector equals it while a gated name is in the fusion\n`,
+  );
+  process.stdout.write(
+    `the zero vector answers ${zero.answers} strictly and ${zero.optimistic} optimistically: with every score level the stable sort keeps the dump's order, so it reproduces the run's answers by ranking nothing\n`,
   );
   if (!args.fit) return;
   const fit = fitUnderGate(reach, shipped, names, {

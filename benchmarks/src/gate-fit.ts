@@ -138,19 +138,25 @@ function scoresOf(kase: ReachCase, direction: Float64Array): Float64Array {
 }
 
 /**
- * Read one case under one direction in both senses of "answered".
+ * Read one candidate grid in both senses of "answered".
  *
- * The scores are computed once and read twice, so the two verdicts cannot disagree about a case the way two
- * separate passes would: `optimistic` is the first maximum in the dump's order, `answers` needs the best accepted
- * candidate to beat the best rejected one outright.
+ * The single owner of the tie rule: `optimistic` is the first maximum in the dump's order, `answers` needs the best
+ * accepted candidate to beat the best rejected one outright. Every reader in this repository that has scores in hand
+ * — a direction over term values, the artifact's own per-candidate coefficients, an arm that switches one term — goes
+ * through here, because a second copy of this loop is a second definition of what the artifact scored, and iteration
+ * 277 found two of them disagreeing by 42 cases.
  *
- * @param kase - The case, vectors on a shared name order.
- * @param direction - The weight vector.
+ * @param ids - Candidate ids in the dump's order, which is the engine's tie-break.
+ * @param accepted - The case's accepted answers.
+ * @param scores - One score per candidate, aligned with `ids`.
  * @returns The reading.
  */
-export function readUnder(kase: ReachCase, direction: Float64Array): StrictReading {
-  const scores = scoresOf(kase, direction);
-  let accepted = -1;
+export function readScores(
+  ids: readonly string[],
+  accepted: ReadonlySet<string>,
+  scores: Float64Array,
+): StrictReading {
+  let acceptedIndex = -1;
   let competitor = -1;
   let bestAccepted = -Infinity;
   let bestCompetitor = -Infinity;
@@ -162,24 +168,36 @@ export function readUnder(kase: ReachCase, direction: Float64Array): StrictReadi
       top = score;
       first = index;
     }
-    if (kase.accepted.has(kase.ids[index]!)) {
+    if (accepted.has(ids[index]!)) {
       if (score > bestAccepted) {
         bestAccepted = score;
-        accepted = index;
+        acceptedIndex = index;
       }
     } else if (score > bestCompetitor) {
       bestCompetitor = score;
       competitor = index;
     }
   }
-  const gap = accepted < 0 ? -Infinity : competitor < 0 ? Infinity : bestAccepted - bestCompetitor;
+  const gap =
+    acceptedIndex < 0 ? -Infinity : competitor < 0 ? Infinity : bestAccepted - bestCompetitor;
   return {
     answers: gap > 0,
-    optimistic: first >= 0 && kase.accepted.has(kase.ids[first]!),
-    accepted,
+    optimistic: first >= 0 && accepted.has(ids[first]!),
+    accepted: acceptedIndex,
     competitor,
     gap,
   };
+}
+
+/**
+ * Read one case under one direction.
+ *
+ * @param kase - The case, vectors on a shared name order.
+ * @param direction - The weight vector.
+ * @returns The reading.
+ */
+export function readUnder(kase: ReachCase, direction: Float64Array): StrictReading {
+  return readScores(kase.ids, kase.accepted, scoresOf(kase, direction));
 }
 
 /**

@@ -116,6 +116,15 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`census.gaps.entries()`, a Map keyed by term name',
     },
   ],
+  'benchmarks/src/conditional-weight.ts': [
+    // The ablation's per-family order: largest family first, then by name. The names are `Map` keys (fault types),
+    // so they are distinct and the tie-break never claims an order between equals — recorded rather than exempted,
+    // because the rule this census enforces is that every `? -1 : 1` site states the list it sorts.
+    {
+      signature: 'a.faultType < b.faultType',
+      population: '`families.entries()`, a Map keyed by fault type',
+    },
+  ],
   'benchmarks/src/fault-census.ts': [
     // The fault-type ordering on the line. Its keys are `Map` keys (fault labels), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded for the reason the censuses beside it are.

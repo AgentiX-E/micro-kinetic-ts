@@ -118,6 +118,13 @@ export default defineConfig({
         // case is not a promotion. Every branch is measured rather than trusted: both readings of one case, the
         // family below the floor, the gap that cannot close inside one step, and the move that is rolled back.
         'src/gate-fit.ts',
+        // Added with the module: a gated term's recorded coefficient is a DECISION (`configured × admitted`), not a
+        // configuration, and reading the first zero as the shipped weight is what made every screen here understate
+        // the run it was measuring by 42 cases. Its whole value is two recoveries — `max` over the coefficients is
+        // the configuration, and the two arms the gate chose between are a free ablation — so every branch is
+        // measured: the name only ever recorded at zero, the case whose candidates disagree, the residual that does
+        // not rebuild, and the arm that weights a slope the dump never weighted.
+        'src/conditional-weight.ts',
         'src/prior-floor.ts',
         // Added with the module: the trace vote is the only binary term in the formula, and its census is what
         // separates a wrong vote the ranking overruled from one that decided the case.

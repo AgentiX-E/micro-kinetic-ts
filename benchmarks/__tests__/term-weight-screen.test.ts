@@ -234,25 +234,44 @@ describe('re-scoring a case set', () => {
 });
 
 describe('the shipped weights read off a dump', () => {
-  it('names every term the dump carries, in first-appearance order', () => {
+  it('names every term the dump carries, heaviest first', () => {
     expect(shippedWeightsOf([promotedCase('b')])).toEqual([
       { name: 'source', weight: 1 },
       { name: 'stability', weight: 0.1 },
     ]);
   });
 
-  it('reports the first weight it sees for a repeated name rather than the last', () => {
+  it('reads a name the dump recorded at two coefficients as its LARGEST, because a refusal records 0', () => {
+    // The regression this pins is iteration 277's: `failedEdge` ships at 3 and the engine records 0 on every case its
+    // gate refuses, so "first appearance" read a refusal as the configuration and every screen in the repository
+    // measured a vector that never ran — 1031 of 1422 against a run that answered 1073.
     const weights = shippedWeightsOf([
       kase('a', 'HTTPRequestDelay', 'root', [
         candidate('root', [
           ['source', 1, 1],
-          ['stability', 0.1, 1],
-          ['stability', 0.1, 1],
+          ['failedEdge', 0, 0.4],
+        ]),
+      ]),
+      kase('b', 'HTTPRequestDelay', 'root', [
+        candidate('root', [
+          ['source', 1, 1],
+          ['failedEdge', 3, 0.9],
         ]),
       ]),
     ]);
-    expect(weights.filter((move) => move.name === 'stability')).toEqual([
-      { name: 'stability', weight: 0.1 },
+    expect(weights.filter((move) => move.name === 'failedEdge')).toEqual([
+      { name: 'failedEdge', weight: 3 },
+    ]);
+  });
+
+  it('does not let a refusal become the configuration when every case was refused', () => {
+    // The other side of the same rule: with nothing but zeros recorded there is no evidence of what the configured
+    // weight was, and reporting 0 is the only claim the dump supports.
+    const weights = shippedWeightsOf([
+      kase('a', 'HTTPRequestDelay', 'root', [candidate('root', [['failedEdge', 0, 0.4]])]),
+    ]);
+    expect(weights.filter((move) => move.name === 'failedEdge')).toEqual([
+      { name: 'failedEdge', weight: 0 },
     ]);
   });
 

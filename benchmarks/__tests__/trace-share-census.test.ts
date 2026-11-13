@@ -99,6 +99,18 @@ describe('the share census', () => {
     }
   });
 
+  it('counts a vote above every floor that MISSES as a vote and not as a hit', () => {
+    const census = createTraceShareCensus();
+    // 1.52 / 0.08 = 19, so every policy keeps this vote — and it is wrong. A census that only counted hits could
+    // not tell a policy that votes often and well from one that votes often, and the floor's whole trade is between
+    // the misses it removes and the hits it loses.
+    accumulateTraceShare(census, prediction(1.52, 0.08, { truth: 'ts-other', top1: 'ts-other' }));
+
+    for (const policy of census.policies) {
+      expect(policy).toEqual({ votes: 1, hits: 0, withdrawn: 0, surrendered: 0 });
+    }
+  });
+
   it('withdraws a vote below every floor and charges nothing to surrender', () => {
     const census = createTraceShareCensus();
     // A miss at share 1.26 — the shape of the five TrainTicket route votes.
