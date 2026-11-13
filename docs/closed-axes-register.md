@@ -189,10 +189,12 @@ measured against, not the current number. Both are still reachable as ablations 
 
 | **the weight vector as a DIRECTION** — every term moved at once, which no screen here had ever done: 28 single-term points, 84 revival points and a resolution floor are points on the AXES of a 14-dimensional space | `weight-reachability.md` | **REOPENED, and then constrained.** The hull theorem decides every case exactly: with the formula's support frozen, **131 of 349 misses are provably unreachable** by any re-weighting; with the support open, **all 349** are reachable, each by a vector of its own. A single vector fitted on half the corpus and read on the other half gains **+38 to +52 (mean +47.3, +6.7 pp)** in **six of six** fits — so 274's *"not reachable by re-weighting"* was a statement about the axes it swept. It does not ship YET: the family gate (`n ≥ 20` may not lose a case) rejects it on `HTTPRequestAbort −3`, `HTTPRequestReplacePath −4`, `NetworkDelay −6`, and the constrained fit is the next subject |
 | **the formula's SUPPORT** — WHICH terms carry weight at all, as opposed to how much, since six of the fourteen ship at zero on this corpus | `weight-reachability.md` | **measured as the difference between two ceilings, not as a sweep.** Freezing the support costs `131` cases and opening it costs none, so the support is the binding constraint of the weight dimension and the values are not — which is the reverse of how this register has read the weight axis since 272 |
+| **the term's per-case decision** — whether the gate that switches one term on and off is worth what it costs | `recorded-configuration.md` §3, §4 | **measured, and it is the largest single lever in the register.** The dump carries both arms, so the ablation needs no engine run: `off` 1 031, **as shipped 1 073**, `on` 1 096, and the per-case oracle **1 186 (83.40 %)**. The gate admits 108 cases (44 fixed, 2 broken) and refuses 1 114 (**111 it would have fixed, 88 it would have broken**) — the `+23` between `on` and the run is that trade, and the 111 it refuses include every one of the 231 `ReplaceCode` cases, whose rank-1 inbound rise is ~0.98 because a status-code fault fails calls rather than slowing them |
+| **the zero vector as the published run** — whether `1 073` was won by tie | `recorded-configuration.md` §5 | **corrected.** The zero vector reproduces the run because with every score level the stable sort keeps the dump's order, and the dump's first candidate IS the run's answer. `Top@1` over this artifact is "the top-1 the run emitted"; ties are real and decide nothing (one case in 1 422 carries one under the shipped weights) |
 | **the family gate as a constraint** — whether a vector can gain while costing no family above the 20-case floor a case | `gate-fit.md` | **measured, and it costs 89 % of the gain.** A gate-clean vector exists (nine families gain, nine unchanged, none loses, `+16/+17/+19` on three seeds) and is worth `+17.3` where the unconstrained fit is worth `+154`: **the gate's price is 137 cases**. Held out, the gain transfers (`+7` to `+22`) and the gate does not (`3` to `9` protected cases lost), because a floor stated on one corpus is not a property a parameter fit can carry |
 | **the count as a linear program over the artifact** — whether `Top@1` can be maximised as an LP | `gate-fit.md` §1, §7 | **closed twice.** The zero vector answers the published run — `1 073` of `1 422`, every case by tie — so the count has a spurious optimum at the origin; and with a mandatory subsystem the problem is Max FLS, NP-hard for homogeneous bipolar systems (Amaldi & Kann, TCS 147, 1995), with no constant-factor guarantee surviving the subsystem |
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
-| the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4 | **a DEFECT in the artefact, open.** One corpus, one dispatch family, two values for one weight: `0` on 1 114 cases, absent on 200, `3` on 108. No single vector reproduces the recorded run, and the gap at `Δw = 0` is **24 cases** on a 711-case half — enough to flip the sign of a small effect. Not repaired here: the repair moves every published baseline |
+| the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 
 ## What this register holds besides its axes
 
@@ -2585,6 +2587,12 @@ terms carry weight 0 in the shipped configuration — seven recorded as `0` (`co
 `rise`, `source`, `temporal`, `topo`) and five absent from the dump entirely (`trace`, `faultFree`, `selfTime`,
 `emission`, `victim`). The shipped ranking is a sum of **seven** weighted terms, and the grid moves three of them.
 
+> **Corrected at iteration 277.** `failedEdge` is not a zero. It ships at **3** and records `0` on the 1 114 cases
+> its gate refused, so the shipped ranking is a sum of seven weighted terms on those cases and of **eight** on the
+> 108 the gate admitted — and the two arms it implies are worth 1 031 and 1 096 against a run that scores 1 073.
+> `recorded-configuration.md` §2 gives the theorem (`w = max S`) and §4 the per-family ablation. The paragraph's
+> count of zero-weight terms is therefore fourteen minus one, not fourteen.
+
 **What that leaves, unchanged in direction and now measured in size.** The remaining 237 misses are not reachable by
 re-weighting the terms the formula already has: what is left is a term that does not exist yet (a new observable) or
 a reader that sees more than a weighted sum of the seven — which is the model arm, and why the depth window matters.
@@ -2830,3 +2838,52 @@ lost on that half): the gate is a property of the corpus that states it, and a p
 The next subject is **per-case selection**, and its target is now quantitative rather than aspirational: one vector
 inside the gate is worth `+17`, one vector outside it `+154`, and a per-case choice `+349`. The gate is a fence
 around the middle of those three numbers, and the two outer ones are only reachable by a decision made per case.
+
+---
+
+## Iteration 277 — the recorded coefficient is a decision, and the baseline was never deployed
+
+### The 42 cases
+
+Every screen in this repository read a dump's coefficients out with "first appearance wins" and called the result the
+shipped configuration. For `failedEdge` the first appearance is a **refusal**: the engine ranks once with the term
+weighted out, asks a gate about its own rank-1, and returns the baseline when the gate says no — writing `0` into that
+case's row. So the coefficient is `configured × admitted(case)`, the configured weight is `max` over what a dump
+records, and the vector at `Δw = 0` (1 031) is the term **forced off everywhere**: a configuration nobody deployed.
+
+| Reading | Cases | Share |
+|---|---:|---:|
+| the configuration as one vector, term forced off | 1 031 | 72.50 % |
+| **the run, rebuilt from its own coefficients** | **1 073** | **75.46 %** |
+| the configuration as one vector, term forced on | 1 096 | 77.07 % |
+| the per-case oracle over the two arms | 1 186 | 83.40 % |
+
+1 073 is 75.46 % of 1 422: the published RCABench cell. The artifact reproduces the run; the screens did not.
+
+### The gate's ledger, for free
+
+| | cases | fixed | broken | neutral |
+|---|---:|---:|---:|---:|
+| admitted | 108 | 44 | 2 | 62 |
+| refused | 1 114 | 111 would have | 88 would have | 915 |
+
+Admission is precise (44:2). Refusal is the cost centre: it gives up 111 to avoid 88, and the 111 are concentrated
+where the term is strongest — 58 of them in `HTTPResponseReplaceCode` alone, a family the gate refuses wholesale
+because a status-code fault fails calls instead of slowing them, so the rise bar that guards the term never sees it.
+
+### Axes this closes
+
+| Axis | Verdict |
+|---|---|
+| "The `failedEdge` zero is a configuration" | **closed** — it is the gate's refusal; `w = max S`, and `|S| > 1` proves a name is a decision |
+| "1 073 was the published run won by tie" | **corrected** — it is the run's own top-1, which a level vector reproduces by keeping the dump's order |
+| "A vector at `Δw = 0` reads the run" | **closed** — it cannot, while a conditional name is in the fusion; 1 031 and 1 096 are both real vectors and neither is the run |
+| "The term's per-case decision is unmeasurable without a dispatch" | **closed** — the dump carries both arms, so the ablation is arithmetic: 1 186 oracle, `+23` for deleting the gate, `−23` for the gate-clean fit of 276 read against the run |
+
+### What this changes
+
+Iteration 276's `+19` is `−23` against the run, and the vector it fitted is not an improvement — the gate-clean search
+is searching inside a fence whose reference point was wrong. The next subject is the **gate's predicate**: the name
+half admits 765 cases and the rise bar cuts them to 108, on a corpus where the term's own oracle is +113 over the run.
+The question is no longer whether a per-case switch is worth building; it is which observable separates the 111 from
+the 88.

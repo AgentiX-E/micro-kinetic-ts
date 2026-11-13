@@ -20,6 +20,17 @@ Doing that required two repairs to the instrument first, and both of them were b
 | The same vector's held half | 711 | +14.75 mean | +2.07 pp |
 | The unconstrained fit it refuses (275) | 1 422 | +154 | +10.83 pp |
 
+> **Corrected at iteration 277.** The row "under the shipped weights, strictly: 1 031" is not the shipped weights.
+> `failedEdge` ships at 3 and the engine records `0` on every case its gate refuses, so `shippedWeightsOf` — which
+> took the first coefficient it saw — fabricated a vector that **never ran**. The run scores **1 073**, and the
+> coefficients the dump records reproduce exactly that; 1 031 is the same formula with the term forced off
+> everywhere, and 1 096 is it forced on everywhere. Every `Δw = 0` and every delta below is stated against 1 031, so
+> the gate-clean vector that is `+19` here is **−23 against the run**, and the gate's price of `−137` is a difference
+> of two vectors (`1 185 − 1 048`) that happens to survive the correction while the claim that either of them improves
+> on the run does not. The zero vector's 1 073 is not "the published run won by tie" either: it is the run's own
+> top-1, which the zero vector reproduces because with every score level the stable sort keeps the dump's order. See
+> `recorded-configuration.md`.
+
 ---
 
 ## 1. The zero vector scores the published run
@@ -191,8 +202,9 @@ cd benchmarks && npx vitest run __tests__/gate-fit.test.ts
   reachable at all. So the fit is a greedy ascent under a hard constraint, its answer is a point the corpus was read
   at, and **no exact ceiling for the gate-constrained count is claimed** — the 100 % per-case ceiling of iteration
   275 is a ceiling on selection, not on a single vector inside the gate.
-- **Not an engine measurement.** Every number here is arithmetic over a dump. The shipped 75.46 % is an engine
-  reading, and the artifact's own reading of the same weights is 72.50 % — the 42-case gap is the `failedEdge`
-  mixture iteration 275 found, and it is why the fitted vector is compared against 1 031 and not against 1 073. The
-  confirmation is one dispatch, which needs the corpus and does not run here.
+- **Not an engine measurement.** Every number here is arithmetic over a dump, and the 42-case gap between 1 031 and
+  1 073 is not a mixture of runs but a gate — corrected in place at iteration 277, where the ablation that reads the
+  gate's decision off the coefficients it wrote puts the term's own ceiling at 1 186 and the gate's price at 23. The
+  confirmation that a narrower predicate reaches any of that needs the corpus and one dispatch, neither of which runs
+  here.
 - **Not a term change.** Nothing in the formula moved. Fourteen weights moved, `podState` not among them.
