@@ -3573,11 +3573,32 @@ independently on a different corpus.
 
 ### The toolchain defect this iteration had to fix first
 
-`pnpm.overrides` carried `minimatch@10: 11.0.1`, which widened a major across `nx`'s exact `10.2.5` pin. `nx` then
-died with `minimatch_1.minimatch.makeRe is not a function`, so **`pnpm coverage` could not run at all** — the local
-acceptance chain was broken while CI's per-package gates stayed green. Narrowed to `10.2.6` (same major, newest
-patch). `pnpm coverage` now completes end to end: 14 packages, every one of the four dimensions ≥ 95 %, lowest
-branch **95.69 %**.
+`pnpm coverage` could not run at all. `nx` 22.7.12's `run-many` calls `minimatch.makeRe`, and the repository
+overrides `minimatch@10` to **11.0.1** — which is required rather than incidental: GHSA-g3hv-75wg-m249 covers
+`>= 7.0.0, < 11.0.1` and its first patched version is 11.0.1, so no 10.x release clears it. Under 11.x the CJS
+namespace nx reaches for carries no `makeRe`, and `run-many` dies with
+`minimatch_1.minimatch.makeRe is not a function`.
+
+**CI stayed green through all of it.** The per-project jobs call `nx run <project>:test:coverage`, which never touches
+that path; the only `run-many` in the repository was the root `coverage` script. The one command that measures the
+whole tree was therefore the one command nothing ran automatically, and the acceptance chain a session is told to use
+first had been broken for as long as the override had been in place.
+
+**The correction, and a correction to the first reading of it.** The first attempt narrowed the override to 10.2.6,
+which makes `run-many` work again and reopens the advisory — trading a security gate for a build gate. The second
+reading is the right one: the dependency must stay patched, so **the gate stops routing through `run-many`**. The root
+`coverage` script is now
+
+```
+pnpm -r --filter "!@agentix-e/micro-kinetic-integration-tests" --workspace-concurrency=1 run test:coverage
+```
+
+which runs the same per-project target CI runs, in dependency order, with no cache to skip — and in **35 s** against
+`run-many`'s four minutes. `coverage-population.test.ts` still holds both directions of the exclusion, reading the
+excluded set from a negated workspace filter instead of `--exclude=`; the cache assertion became "the cacheable path
+is not used at all", which is weaker in form and stronger in fact, because there is no flag left to forget.
+
+Result: **14 projects, every dimension ≥ 95 %, lowest branch 95.69 %**, and the advisory stays closed.
 
 ### Axes this closes
 
@@ -3599,7 +3620,8 @@ branch **95.69 %**.
   1 000 and 774.
 - `benchmarks/src/agentic-citation-census.ts` and `benchmarks/src/agentic-preference-census.ts` — what the arm read,
   and whether its preference depends on the case.
-- `package.json` — `minimatch@10` narrowed to `10.2.6`; `pnpm coverage` runs again.
+- `package.json` — the coverage gate runs the per-project target through `pnpm -r` instead of `nx run-many`, so the
+  patched `minimatch` 11.0.1 stays and the gate runs again.
 - `docs/agentic-preference.md` — the instrument record: what each census asks, the reading on 1 422 cases, and the
   boundary between what it says and what it does not.
 

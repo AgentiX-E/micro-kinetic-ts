@@ -155,9 +155,11 @@ describe('a coverage config states its population and its bar', () => {
   it('leaves a project with no bar OUT of the coverage command, and a project with one IN it', async () => {
     const { scripts } = rootScripts();
     const script = scripts['coverage'] ?? '';
-    const excluded = (/-{1,2}exclude=([^ ]+)/.exec(script)?.[1] ?? '')
-      .split(',')
-      .filter((one) => one !== '')
+    //   The excluded set is read from the negated workspace filter (`--filter "!<name>"`), which is how the command
+    //   names a project it will not run now that it is a recursive `pnpm run` rather than `nx run-many --exclude=`.
+    //   The syntax changed with the tool in iteration 284; the property asserted did not.
+    const excluded = [...script.matchAll(/--filter\s+"?!([^"\s]+)"/g)]
+      .map((match) => match[1]!)
       .sort();
 
     const found = await projects();
@@ -183,10 +185,12 @@ describe('the coverage command runs the gates, not one merged report', () => {
   it('delegates to the per-project coverage target', () => {
     const { scripts } = rootScripts();
     const script = scripts['coverage'] ?? '';
-    // The property that matters: the numbers come from a command CI runs too, so a local run and
-    // the gate cannot disagree. `--target=test` would match a prefix of `--target=test:coverage`, so
-    // the assertion is anchored on the whole target name followed by whitespace.
-    expect(script).toMatch(/nx\s+run-many\s+--target=test:coverage\s+--all/);
+    // The property that matters: the numbers come from the SAME per-project target CI runs, so a local run and the
+    // gate cannot disagree. CI calls `nx run <project>:test:coverage` and this command calls `pnpm -r run
+    // test:coverage`; both execute the manifest script that holds `--coverage` and the thresholds, which is what
+    // makes them one gate rather than two. `run test` would match a prefix of `run test:coverage`, so the assertion
+    // is anchored on the whole target name.
+    expect(script).toMatch(/run\s+test:coverage(\s|$)/);
     expect(script).not.toMatch(/^\s*vitest\b/);
   });
 
@@ -242,13 +246,17 @@ describe('the coverage command runs the gates, not one merged report', () => {
     );
   });
 
-  it('skips the cache, because a cached verdict belongs to another tree', () => {
+  it('cannot consult a cache, because a cached verdict belongs to another tree', () => {
     const { scripts } = rootScripts();
-    // `nx.json`'s `test` target is cacheable and its `inputs` are `{projectRoot}/src/**` and
-    // `{projectRoot}/__tests__/**` — which do NOT include a `vitest.config.ts`. A threshold raised
-    // from 95 to 100 in a config would therefore leave the hash unchanged, and a cached run would
-    // replay the old numbers as if they were measured on this tree.
-    expect(scripts['coverage'] ?? '').toContain('--skip-nx-cache');
+    //   `nx.json`'s `test` target is cacheable and its `inputs` are `{projectRoot}/src/**` and
+    //   `{projectRoot}/__tests__/**` — which do NOT include a `vitest.config.ts`. A threshold raised from 95 to 100 in
+    //   a config would therefore leave the hash unchanged, and a cached run would replay the old numbers as if they
+    //   were measured on this tree. The gate used to carry `--skip-nx-cache` for that reason; it now runs the target
+    //   through `pnpm -r`, which has no cache to skip, so the assertion is that the cacheable path is not used at
+    //   all. Weaker in form, stronger in fact: there is no flag to forget.
+    const script = scripts['coverage'] ?? '';
+    expect(script).not.toMatch(/run-many/);
+    expect(script).toMatch(/--filter/);
   });
 
   it('has ONE owner for the coverage gate, so no second command can claim it', () => {
