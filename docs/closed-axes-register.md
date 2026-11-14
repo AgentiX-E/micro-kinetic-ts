@@ -3600,6 +3600,8 @@ branch **95.69 %**.
 - `benchmarks/src/agentic-citation-census.ts` and `benchmarks/src/agentic-preference-census.ts` — what the arm read,
   and whether its preference depends on the case.
 - `package.json` — `minimatch@10` narrowed to `10.2.6`; `pnpm coverage` runs again.
+- `docs/agentic-preference.md` — the instrument record: what each census asks, the reading on 1 422 cases, and the
+  boundary between what it says and what it does not.
 
 ### The next arm, stated before it runs
 
