@@ -5,10 +5,8 @@ import {
   ELIMINATOR_PROTOCOL,
   PROMPTABLE_STATISTICS,
   buildEliminatorPrompt,
-  departureOf,
   digestOf,
   parseEliminatorReply,
-  shownChannels,
 } from '../../src/agent/eliminator.js';
 import type { CandidateFingerprint, ChannelFingerprint } from '../../src/agent/hypothesis-space.js';
 import { verifyClaim } from '../../src/agent/hypothesis-space.js';
@@ -41,118 +39,6 @@ const order: CandidateFingerprint = {
   score: 0.8,
   channels: [fired('latency_p99', 40, LATENCY, 9000), fired('cpu', 0.9, [0.1, 0.3])],
 };
-
-describe('departureOf', () => {
-  it('is zero inside the band and measured in band widths outside it', () => {
-    expect(departureOf(quiet('cpu', 0.2, [0.1, 0.3]))).toBe(0);
-    // 0.3 is the top of the band, width 0.2, and 0.9 is 0.6 above it: three widths.
-    expect(departureOf(fired('cpu', 0.9, [0.1, 0.3]))).toBeCloseTo(3, 12);
-    expect(departureOf(fired('cpu', -0.1, [0.1, 0.3]))).toBeCloseTo(1, 12);
-  });
-
-  it('reads a move off a zero-width band as unbounded, not as a made-up scale', () => {
-    // `error` sits at exactly zero in a fault-free window, so its band is the single point [0, 0]. A channel that
-    // reports 0.5 there has moved by an unbounded number of widths, and a finite number would be a scale nobody
-    // chose — so the departure is infinite, which also makes it sort as the strongest evidence there is.
-    expect(departureOf(fired('error', 0.5, [0, 0]))).toBe(Number.POSITIVE_INFINITY);
-    expect(departureOf({ label: 'error', pre: 0, post: 0, band: [0, 0], rate: 0 })).toBe(0);
-    // An inverted band is a malformed fingerprint rather than a narrow one; it is read the same way.
-    expect(departureOf(fired('cpu', 0.9, [0.3, 0.1]))).toBe(Number.POSITIVE_INFINITY);
-  });
-
-  it('reads an unmeasurable value as an infinite departure rather than as no evidence', () => {
-    expect(departureOf({ label: 'cpu', pre: 0, post: NaN, band: [0, 1], rate: 0 })).toBe(
-      Number.POSITIVE_INFINITY,
-    );
-    expect(
-      departureOf({ label: 'cpu', pre: 0, post: 2, band: [0, Number.POSITIVE_INFINITY], rate: 0 }),
-    ).toBe(Number.POSITIVE_INFINITY);
-  });
-});
-
-describe('shownChannels', () => {
-  it('puts out-of-band channels first, then earliest onset, then widest departure', () => {
-    const channels = [
-      quiet('zeta', 0.2, [0.1, 0.3]),
-      fired('late', 0.9, [0.1, 0.3], 9000),
-      fired('early', 0.9, [0.1, 0.3], 4200),
-      fired('widest', 3.9, [0.1, 0.3], 5000),
-      quiet('alpha', 0.2, [0.1, 0.3]),
-    ];
-    expect(shownChannels(channels, 5).map((channel) => channel.label)).toEqual([
-      'early',
-      'widest',
-      'late',
-      'alpha',
-      'zeta',
-    ]);
-  });
-
-  it('orders a pair whose onset ties by departure, in both directions of the comparator', () => {
-    // The comparator has to be a total order for the digest to be stable, so every arm of it needs a pair that
-    // reaches it: same band, same onset, different departure — handed over twice, in opposite orders.
-    const wide = fired('wide', 3.9, [0.1, 0.3], 100);
-    const near = fired('near', 0.5, [0.1, 0.3], 100);
-    const later = fired('later', 3.9, [0.1, 0.3], 200);
-    expect(shownChannels([near, wide, later], 3).map((c) => c.label)).toEqual([
-      'wide',
-      'near',
-      'later',
-    ]);
-    expect(shownChannels([later, wide, near], 3).map((c) => c.label)).toEqual([
-      'wide',
-      'near',
-      'later',
-    ]);
-    // The pair as a pair: the widest first when it arrives first, and still first when it arrives second.
-    expect(shownChannels([wide, near], 2).map((c) => c.label)).toEqual(['wide', 'near']);
-    expect(shownChannels([near, wide], 2).map((c) => c.label)).toEqual(['wide', 'near']);
-    // And a pair whose onsets are both absent, which is the arm a corpus of channels that never fired takes.
-    const quietLeft = quiet('quiet-left', 0.2, [0.1, 0.3]);
-    const quietRight = quiet('quiet-right', 0.2, [0.1, 0.3]);
-    expect(shownChannels([quietRight, quietLeft], 2).map((c) => c.label)).toEqual([
-      'quiet-left',
-      'quiet-right',
-    ]);
-  });
-
-  it('treats two channels that are identical in every key as equal rather than as ordered', () => {
-    // A duplicate label on one candidate is a malformed fingerprint, and the comparator still has to answer: it
-    // answers zero, which is the only answer that does not invent a difference the data does not state.
-    const twice = [quiet('cpu', 0.2, [0.1, 0.3]), quiet('cpu', 0.2, [0.1, 0.3])];
-    expect(shownChannels(twice, 2)).toHaveLength(2);
-    expect(shownChannels(twice, 2).map((channel) => channel.label)).toEqual(['cpu', 'cpu']);
-  });
-
-  it('prints an unmeasurable value as a name rather than as a broken number', () => {
-    // A fingerprint can carry NaN — a channel with no post-injection sample — and `String(NaN)` is `NaN`, which a
-    // model reads as a value. The table says `nan` so the row is visibly unquotable.
-    const broken: CandidateFingerprint = {
-      service: 'ts-x',
-      rank: 0,
-      score: NaN,
-      channels: [{ label: 'cpu', pre: 0, post: NaN, band: [0, 1], rate: NaN }],
-    };
-    const table = buildEliminatorPrompt('NetworkLoss', [broken]).user;
-    expect(table).toContain('score nan');
-    expect(table).toContain('| cpu | 0 | nan | [0, 1] | nan | - |');
-    expect(table).not.toContain('NaN');
-  });
-
-  it('keeps at most the limit, and nothing at all at zero', () => {
-    expect(shownChannels(auth.channels, 1).map((channel) => channel.label)).toEqual([
-      'latency_p99',
-    ]);
-    expect(shownChannels(auth.channels, 0)).toEqual([]);
-  });
-
-  it('orders two channels that agree on every key by label, so the digest cannot depend on array order', () => {
-    const left = quiet('beta', 0.2, [0.1, 0.3]);
-    const right = quiet('alpha', 0.2, [0.1, 0.3]);
-    expect(shownChannels([left, right], 2).map((c) => c.label)).toEqual(['alpha', 'beta']);
-    expect(shownChannels([right, left], 2).map((c) => c.label)).toEqual(['alpha', 'beta']);
-  });
-});
 
 describe('digestOf', () => {
   it('is 16 hex characters and separates two texts that differ in one character', () => {
@@ -235,8 +121,22 @@ describe('buildEliminatorPrompt', () => {
   });
 
   it('names the protocol version, which a cached reply is only valid under', () => {
-    expect(ELIMINATOR_PROTOCOL).toBe(1);
+    expect(ELIMINATOR_PROTOCOL).toBe(2);
     expect(DEFAULT_ELIMINATOR_OPTIONS).toEqual({ maxCandidates: 5, maxChannels: 6, maxClaims: 4 });
+  });
+
+  it('states the rule the verifier enforces, so a compliant claim can be written from the table', () => {
+    // Protocol 1 asked for "one channel that the candidate you eliminate left" and the verifier additionally
+    // required that channel on the KEPT candidate. On the 1 422-case corpus 774 of 5 335 claims died on a rule the
+    // prompt never stated, and 1 000 more named a label no eliminated row carried. A prompt that omits a refusal
+    // rule is measuring its own omission.
+    expect(prompt.system).toContain('BOTH rows carry');
+    expect(prompt.system).toContain('refused');
+    expect(prompt.user).toContain('| channel | pre | post | band | rate | onset |');
+  });
+
+  it('says the rows are ordered, so a truncated table is not read as a complete one', () => {
+    expect(prompt.system).toContain('most informative first');
   });
 });
 

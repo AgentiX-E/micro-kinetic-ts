@@ -3464,3 +3464,147 @@ with its per-claim expectation, its Bernoulli variance and its case-clustered co
 and the count of claims that ask for the truth to be deleted), and two lines on the study's
 output that print both nulls beside the arm they judge. The engine's defaults are untouched; no published number
 moves, because the change is an instrument and a refusal.
+
+---
+
+## §284 — The table was showing the wrong channels, and the model was answering from a name prior
+
+**Verdict: the arm's failure had two causes, and neither is the one the last two iterations were treating.** One was
+ours: the rows the model read were ordered by the wrong quantity, and 62.7 % of the channels it cited were channels
+that leave their band in half of the *fault-free* windows. The other is not fixable by any protocol change: the
+service the arm names most often is named **5.0 %** of the time when it is the source and **38.1 %** of the time when
+it is not. That is not a reader misjudging a row. That is a prior about the service.
+
+### What the artifact says, claim by claim
+
+A census of all 5 335 claims against the table they were shown (`agentic-citation-census.ts`):
+
+| Reading | Claims | Share |
+| --- | ---: | ---: |
+| cite a channel **both** rows carry, so the verifier could judge them | 3 561 | 66.7 % |
+| cite a channel **only the eliminated row** carries | 774 | 14.5 % |
+| name a label **that row never printed** at all | 1 000 | 18.7 % |
+
+Two things follow, and both are defects.
+
+- **The verifier enforced a rule the prompt never stated.** `verifyClaim` requires the cited channel on the removed
+  candidate *and* on the kept one, and it reported both failures as `unknown-channel`: 1 774 refusals, one number,
+  two different mistakes. `channel-not-observed-on-both` had been declared in `CLAIM_REJECTIONS` since the first
+  commit and **no input could produce it** — a rejection family that was a comment. The prompt now states the rule
+  (protocol **2**), and the census splits it.
+- **The table led with the row that could not be evidence.** Mean fault-free rate of a cited channel: **0.90**. Claims
+  citing a channel that swings in at least half of clean windows: **3 344 (62.7 %)**. Two channels —
+  `container.filesystem.available` and `k8s.pod.filesystem.available` — take **2 559 citations, 48 % of the output**,
+  and both carry a rate of 0.99.
+
+### Why the table led with it: three definitions of one word
+
+`departure` existed three times, and the fingerprint builder's copy was in **absolute units**:
+
+- `agentic-fingerprint.ts` ordered a candidate's channels by `post` minus the nearest band edge, in the channel's own
+  units, and the `maxChannels` cap truncated that order;
+- `eliminator.ts` ordered the same channels by the same distance **divided by the band's width**;
+- `agentic-headroom.ts` picked the "loudest shared channel" again in absolute units.
+
+Absolute units compare a channel measured in **bytes** with one measured as an **error rate**. The first has a band a
+hundred million wide, so a gigabyte of drift is twenty band widths and an error rate collapsing from 0 to 0.4 is
+infinite; the second is a hundredth wide and invisible. Ranked by absolute distance the byte channel wins every
+candidate's table, and the model quoted it back.
+
+`packages/ai/src/agent/evidence.ts` is now the single owner: out of its band first, then the **rarest** excursion by
+the profile's own measured rate, then the earliest onset, then the widest departure **in band widths**, then the
+label. It is the order the fingerprint's cap applies and the order the prompt truncates — one function, so the six
+rows a model sees are the head of the order the cap kept and not a second ranking of them.
+
+### The reading accuracy cannot give: does the preference depend on the case?
+
+`agentic-preference-census.ts` splits, for one service, the cases it was **presented** in by whether it is the source,
+and counts how often the arm named it in each half. On the 1 422-case corpus, for the four most-presented services:
+
+| Service | named when it IS the source | named when it is not |
+| --- | ---: | ---: |
+| `ts-travel-plan-service` | **4 / 80 (5.0 %)** | 251 / 658 (38.1 %) |
+| `ts-route-plan-service` | 48 / 134 (35.8 %) | 171 / 571 (29.9 %) |
+| `ts-travel-service` | **9 / 98 (9.2 %)** | 170 / 430 (39.5 %) |
+| `ts-travel2-service` | **10 / 75 (13.3 %)** | 142 / 367 (38.7 %) |
+
+Three of the four are **inverted**, and the largest is inverted 7.6-fold. `ts-travel-plan-service` is the twelfth most
+common answer in the corpus and the first most common answer from the model: 647 of 5 335 claims keep it, of which
+1.9 % are cases where it is the source. The arm is not reading the row and getting it wrong; it is naming the
+front-of-house service that looks busiest, which is the symptom-versus-source confusion the prompt warns about, and
+it prefers it *more* when it is innocent.
+
+### Did verification rescue it? No — and the size of the no is the finding
+
+Re-scoring the recorded artifact with every claim the verifier refuses dropped first (`fuseClaims` on the 3 321
+accepted of 5 335, 62.2 %), over three operators and three weights:
+
+| Operator | weight | all claims | verified only |
+| --- | ---: | ---: | ---: |
+| `rrf` / `borda` | 0.25 | 75.5 % (moved 0) | 75.5 % (moved 0) |
+| `rrf` / `borda` | 0.5 | 62.1 % | **66.7 %** |
+| `rrf` / `borda` | 1.0 | 62.0 % | 64.6 % |
+| `veto` | 1.0 | 10.3 % | 33.3 % |
+
+Filtering recovers **+4.6 points** and still loses **8.8** to the engine at 75.5 %. The fabrication was part of the
+loss; the judgement is the loss. And the arm the protocol never allowed — rank the services by how many claims *keep*
+them, a nomination read out of the same answers — scores **27.5 %** (verified) and **10.3 %** (all), which is below
+the engine's order and below the five-way chance of 20 %. The positive preference is worse than the negative one.
+
+### What the literature says this shape is
+
+*Free to Look, Free to Reason* (arXiv, 26 October 2026) pools eight public RCA datasets into **RCAtlas** — 542 cases
+screened, 348 through eight exclusion rules, **90 sampled** across 23 scenarios, injection-tool traces removed — and
+runs three harnesses that leave every step to the model against five published root-cause agents and the non-LLM
+methods, on six models, with repeat passes:
+
+| Configuration | Top-1 |
+| --- | ---: |
+| simple harnesses (one call over an evidence package; a SQL agent over raw telemetry; Codex) on mid-tier models | **65 – 77 %** |
+| the same, on the strongest models tested | 84 – 89 % |
+| five published, hand-crafted RCA agents, same mid-tier models | **16 – 53 %** |
+| best non-LLM method (NSigma), the usability threshold | 38.9 % |
+
+The paper's own attribution is mechanical: the published agents fix between **0.10 and 1.00** of their model calls in
+code and the simple harnesses fix none; a case study shows one agent's matched procedure never reading the logs that
+held the answer. **Our elimination protocol is a hand-crafted procedure with a prescribed-call ratio of 1.00**, and
+its 33.1 % sits in the published band's lower half. This iteration's numbers are that table's row, measured
+independently on a different corpus.
+
+### The toolchain defect this iteration had to fix first
+
+`pnpm.overrides` carried `minimatch@10: 11.0.1`, which widened a major across `nx`'s exact `10.2.5` pin. `nx` then
+died with `minimatch_1.minimatch.makeRe is not a function`, so **`pnpm coverage` could not run at all** — the local
+acceptance chain was broken while CI's per-package gates stayed green. Narrowed to `10.2.6` (same major, newest
+patch). `pnpm coverage` now completes end to end: 14 packages, every one of the four dimensions ≥ 95 %, lowest
+branch **95.69 %**.
+
+### Axes this closes
+
+| Axis | Verdict |
+| --- | --- |
+| "A third of the output is fabrication, and repairing it fixes the arm" | **closed as insufficient** — the split is 774 unstated rule / 1 000 fabrication, and repairing both leaves the judgement where it was |
+| "The table already shows the decisive channel" | **closed as refuted** — 62.7 % of citations were channels that swing in half of clean windows, 48 % of them two filesystem channels at a rate of 0.99 |
+| "Verifying before fusing rescues the arm" | **closed as refuted with numbers** — +4.6 pp over the unverified reading, −8.8 pp against the engine |
+| "The model prefers the source and the operator discards it" | **closed as refuted and inverted** — 5.0 % against 38.1 % on the service it names most |
+| "The category is a tuning gap" | **closed twice** — 45.8 % catalogued for no-query agents on RCABench, 16–53 % for hand-crafted procedures on RCAtlas, and our own 33.1 % |
+| "`channel-not-observed-on-both` distinguishes a rule from a fabrication" | **closed as a defect** — the family was declared and unreachable; the two mistakes shared one counter for three iterations |
+
+### What ships
+
+- `packages/ai/src/agent/evidence.ts` — one definition of a channel's departure, in band widths, and the one order
+  the builder and the prompt share.
+- `packages/ai/src/agent/eliminator.ts` — protocol **2**: the both-rows rule stated, the row order described.
+- `packages/ai/src/agent/hypothesis-space.ts` — `channel-not-observed-on-both` reachable, so 1 774 refusals become
+  1 000 and 774.
+- `benchmarks/src/agentic-citation-census.ts` and `benchmarks/src/agentic-preference-census.ts` — what the arm read,
+  and whether its preference depends on the case.
+- `package.json` — `minimatch@10` narrowed to `10.2.6`; `pnpm coverage` runs again.
+
+### The next arm, stated before it runs
+
+The literature's answer is not a better protocol: it is **no protocol** — one call over an evidence package, the
+model free to read and to rank. The pre-registered prediction is that a nomination harness on this corpus lands in
+the **65 – 77 %** band that paper reports for simple harnesses, i.e. at or above the engine's 75.5 %, and the kill
+criterion is the same shape as this iteration's: **if it does not clear the engine on the same 1 422 cases, the
+agentic line retires and the deterministic engine is the product.** That is the next iteration's whole content.

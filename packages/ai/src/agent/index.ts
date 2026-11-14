@@ -39,11 +39,13 @@ export {
   ELIMINATOR_PROTOCOL,
   PROMPTABLE_STATISTICS,
   buildEliminatorPrompt,
-  departureOf,
   digestOf,
   parseEliminatorReply,
-  shownChannels,
 } from './eliminator.js';
+
+export { channelsByEvidence, compareChannelEvidence, departureOf, evidenceOf } from './evidence.js';
+
+export type { ChannelEvidence } from './evidence.js';
 
 export type { EliminatorOptions, EliminatorPrompt, ParsedReply } from './eliminator.js';
 

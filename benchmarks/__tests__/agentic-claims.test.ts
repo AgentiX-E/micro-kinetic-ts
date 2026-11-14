@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ELIMINATOR_PROTOCOL } from '../../packages/ai/src/agent/index.js';
 import {
   formatClaimRecord,
   parseClaimRecords,
@@ -24,7 +25,7 @@ function record(overrides: Partial<ClaimRecord> = {}): ClaimRecord {
   return {
     datapack: 'ts0-logistics-1',
     model: 'deepseek-chat',
-    protocol: 1,
+    protocol: ELIMINATOR_PROTOCOL,
     digest: 'a1b2c3d4e5f60708',
     claims: [CLAIM],
     ms: 812,
@@ -41,7 +42,7 @@ describe('formatClaimRecord', () => {
     expect(JSON.parse(line)).toEqual({
       datapack: 'ts0-logistics-1',
       model: 'deepseek-chat',
-      protocol: 1,
+      protocol: ELIMINATOR_PROTOCOL,
       digest: 'a1b2c3d4e5f60708',
       claims: [
         {
@@ -171,7 +172,7 @@ describe('parseClaimRecords', () => {
     const base = {
       datapack: 'x',
       model: 'm',
-      protocol: 1,
+      protocol: ELIMINATOR_PROTOCOL,
       digest: 'd',
       ms: 8,
       promptTokens: 9,

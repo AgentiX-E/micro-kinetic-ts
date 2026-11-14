@@ -25,6 +25,7 @@
  * its band — belongs to {@link verifyClaim}. Two refusals in two places means a refusal names which one fired.
  */
 
+import { channelsByEvidence } from './evidence.js';
 import type {
   CandidateFingerprint,
   ChannelFingerprint,
@@ -37,8 +38,13 @@ import type {
  *
  * Bumped whenever either changes, and carried in every cached reply: a cache hit is only an answer to the
  * question that was asked, and the version is what lets a reader tell a stale answer from a wrong one.
+ *
+ * `1` is the first publication. `2` states the rule the verifier had always enforced and the prompt had never
+ * mentioned — a cited channel must be printed on BOTH rows — which 1 774 of 5 335 claims (33.2 %) violated on the
+ * 1 422-case corpus, of which 774 named a channel the eliminated row carried and the kept row did not. The
+ * prompt was asking a question the table could answer and not telling the model which table to read.
  */
-export const ELIMINATOR_PROTOCOL = 1;
+export const ELIMINATOR_PROTOCOL = 2;
 
 /**
  * The statistics a prompt may ask about.
@@ -96,10 +102,13 @@ const SYSTEM_PROMPT = [
   'stays inside when nothing is wrong, and `rate` is the fraction of fault-free windows in which it left that band',
   'anyway, so a channel with a high rate is one that always swings. `onset` is the time in milliseconds after the',
   'injection at which the channel first left its band; `-` means it never left, and a channel that never left',
-  'cannot be cited as evidence.',
+  'cannot be cited as evidence. Channels are listed most informative first: those that left their band come before',
+  'those that stayed inside it, and among them the ones whose band is rarest crossed come first.',
   '',
-  'You may only ELIMINATE candidates, and only by citing one channel that the candidate you eliminate left:',
-  'a claim that removes a candidate whose cited channel is inside its own band is refused, and so is a claim whose',
+  'You may only ELIMINATE candidates, and only by citing one channel that BOTH rows carry — a channel printed in',
+  "the eliminated candidate's own row AND in the kept candidate's row. A label that either row does not print is",
+  'refused: a comparison needs two readings, and a label taken from a third row is evidence about neither.',
+  'A claim that removes a candidate whose cited channel is inside its own band is refused, and so is a claim whose',
   'quoted numbers disagree with the table.',
   '',
   'To promote the candidate at rank r, emit one elimination for each candidate ranked above it, all citing the',
@@ -115,72 +124,6 @@ const SYSTEM_PROMPT = [
 /** `String(v)` for a finite number, `nan` otherwise, so a printed value round-trips to the same double. */
 function num(value: number): string {
   return Number.isFinite(value) ? String(value) : 'nan';
-}
-
-/**
- * How far outside its band a channel sits, in units of the band's own width.
- *
- * Zero means inside. A zero-width band — the shape a channel takes when it is exactly one value in every fault-free
- * window, e.g. `error` at 0 — has no width to measure in, and any move off it is unbounded in those units: the
- * result is a positive infinity rather than a division by a made-up floor, because a finite number there would be
- * a scale nobody chose.
- *
- * @param channel - The channel to measure.
- * @returns Zero inside the band, a positive distance outside it, and infinity when there is no scale to state.
- */
-export function departureOf(channel: ChannelFingerprint): number {
-  const [low, high] = channel.band;
-  const value = channel.post;
-  if (!Number.isFinite(value) || !Number.isFinite(low) || !Number.isFinite(high)) {
-    return Number.POSITIVE_INFINITY;
-  }
-  if (value >= low && value <= high) return 0;
-  const width = high - low;
-  if (width <= 0) return Number.POSITIVE_INFINITY;
-  const distance = value > high ? value - high : low - value;
-  return distance / width;
-}
-
-/**
- * The channels worth showing, most informative first.
- *
- * Out-of-band channels before in-band ones, then earliest onset, then widest departure, then label — a total order
- * with no dependence on the array the fingerprint happened to arrive in, which is what keeps the prompt digest
- * stable across two runs of one artifact.
- *
- * @param channels - A candidate's channels.
- * @param limit - How many to keep.
- * @returns At most `limit` channels.
- */
-export function shownChannels(
-  channels: readonly ChannelFingerprint[],
-  limit: number,
-): readonly ChannelFingerprint[] {
-  // Decorated before it is sorted, for two reasons that point the same way: `departureOf` is the expensive arm
-  // (a square root per channel) and the comparator was reaching it up to three times per comparison, and the
-  // repository's comparator census derives a site's signature from the comparison a tie-break applies — which it
-  // can only read when that comparison is written on the sort's own two arguments. A site it cannot read is a
-  // comparator nobody measures.
-  const ranked = channels
-    .map((channel) => {
-      const departs = departureOf(channel);
-      return {
-        channel,
-        // Out of band first: `0` sorts before `1`, so a channel the fault-free profile did not expect leads.
-        outside: departs > 0 ? 0 : 1,
-        onset: channel.onset ?? Number.POSITIVE_INFINITY,
-        departs,
-        label: channel.label,
-      };
-    })
-    .sort((a, b) => {
-      if (a.outside !== b.outside) return a.outside - b.outside;
-      if (a.onset !== b.onset) return a.onset < b.onset ? -1 : 1;
-      if (a.departs !== b.departs) return b.departs > a.departs ? 1 : -1;
-      return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
-    })
-    .map((row) => row.channel);
-  return ranked.slice(0, Math.max(0, limit));
 }
 
 /** One candidate as the table renders it. */
@@ -242,7 +185,7 @@ export function buildEliminatorPrompt(
 ): EliminatorPrompt {
   const window = candidates.slice(0, Math.max(0, options.maxCandidates));
   const blocks = window.map((candidate) =>
-    candidateBlock(candidate, shownChannels(candidate.channels, options.maxChannels)),
+    candidateBlock(candidate, channelsByEvidence(candidate.channels, options.maxChannels)),
   );
   const user = [
     `FAULT TYPE: ${faultType}`,

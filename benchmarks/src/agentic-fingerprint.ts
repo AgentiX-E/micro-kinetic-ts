@@ -49,6 +49,7 @@ import type {
   CandidateFingerprint,
   ChannelFingerprint,
 } from '../../packages/ai/src/agent/index.js';
+import { channelsByEvidence } from '../../packages/ai/src/agent/index.js';
 import {
   DEFAULT_FAULT_FREE_SIGMA,
   injectionSplitIndex,
@@ -134,19 +135,6 @@ export interface FingerprintInput {
 }
 
 /**
- * How far a value sits outside a band, zero when inside.
- *
- * Total over the values this module can produce: every sample is checked finite before a median is taken, and the
- * band's two bounds are finite because the profile's centre and scale are. The finiteness guard that used to
- * stand here could not fire, which this repository counts as dead rather than defensive.
- */
-function departureFromBand(post: number, band: readonly [number, number]): number {
-  if (post < band[0]) return band[0] - post;
-  if (post > band[1]) return post - band[1];
-  return 0;
-}
-
-/**
  * Summarise one channel of one candidate, or say why it cannot be summarised.
  *
  * @returns The channel fingerprint, or the census bucket it belongs in.
@@ -183,7 +171,10 @@ function summariseChannel(
   // much stronger statement than "never left it".
   let onset: number | undefined;
   for (let i = split; i < sampleCount; i++) {
-    if (departureFromBand(values[i]!, band) > 0) {
+    // Written as the band membership test rather than as a departure greater than zero: this asks whether a single
+    // SAMPLE left the band, while `departureOf` measures how far the post-injection MEDIAN sits outside it, and
+    // expressing one through the other would put a width-normalised distance where a yes-or-no answer belongs.
+    if (values[i]! < band[0] || values[i]! > band[1]) {
       const elapsed = timestamps[i]! - injectTimeMs;
       // A non-finite timestamp is not an instant, so it cannot date an onset. Skipped rather than written,
       // because `JSON` renders `NaN` as `null` and a dump that silently carries `null` where a number belongs
@@ -208,10 +199,16 @@ function summariseChannel(
  * layer's claim is about the ranking that was published, and a fingerprint carrying a re-sorted list would let
  * an elimination be credited for a reordering the engine never made.
  *
- * Within a candidate the channels are ordered by how far `post` sits outside its band, largest first, ties broken
- * by label. The order is deterministic because it is what the `maxChannels` cap truncates — a cap applied to an
- * order the filesystem or a `Map`'s insertion produced would make the fingerprint a property of the case
- * directory rather than of the case.
+ * Within a candidate the channels are ordered by {@link channelsByEvidence} — out of band first, then rarest
+ * excursion, then earliest onset, then widest departure in band widths, then label. The order is a pure function of
+ * the channels, because it is what the `maxChannels` cap truncates: an order the filesystem or a `Map`'s insertion
+ * produced would make the fingerprint a property of the case directory rather than of the case.
+ *
+ * That order used to be "largest absolute departure first", and iteration 284 measured what it cost. Absolute units
+ * compare bytes with error rates, so a channel whose band is a hundred million wide led every candidate's table
+ * whatever it read, and the two `filesystem.available` channels took 2 569 of 5 335 model citations while being out
+ * of band in 99 % of fault-free windows. The band width is the channel's own scale, and `rate` is the only quantity
+ * in the fingerprint calibrated against the case being healthy; both now decide the order.
  *
  * @param input - The case's channels, the engine's ranking, its injection time and the corpus profile.
  * @returns At most `maxCandidates` fingerprints and the census of what was left out.
@@ -241,10 +238,7 @@ export function buildCandidateFingerprints(input: FingerprintInput): Fingerprint
   const cappedAt = Math.max(0, Math.min(maxCandidates, input.ranking.length));
   for (let rank = 0; rank < cappedAt; rank++) {
     const result = input.ranking[rank]!;
-    const measurements: Array<{
-      readonly channel: ChannelFingerprint;
-      readonly departure: number;
-    }> = [];
+    const measurements: ChannelFingerprint[] = [];
     const labels = new Set<string>();
 
     for (const series of input.metrics.get(result.serviceId) ?? []) {
@@ -268,23 +262,13 @@ export function buildCandidateFingerprints(input: FingerprintInput): Fingerprint
         else unprofiled += 1;
         continue;
       }
-      measurements.push({
-        channel: summarised.channel,
-        departure: departureFromBand(summarised.channel.post, summarised.channel.band),
-      });
+      measurements.push(summarised.channel);
     }
 
-    // Every departure here is finite (see `departureFromBand`), so the comparison is a total order and the label
-    // breaks the ties — the property that makes the `maxChannels` cap a property of the case rather than of the
-    // order the channels happened to arrive in.
-    measurements.sort((a, b) => {
-      if (a.departure !== b.departure) return b.departure - a.departure;
-      // Labels are unique within a candidate by construction — a repeat is refused above as `shadowed` — so
-      // there is no equality arm to write.
-      return a.channel.label < b.channel.label ? -1 : 1;
-    });
-
-    const kept = measurements.slice(0, maxChannels);
+    // One order, owned by `channelsByEvidence`: out-of-band first, then rarest excursion, then earliest onset, then
+    // widest departure in band widths, then label. It is the same function the prompt truncates, so the six rows a
+    // model is shown are the first six of the order the cap below applied, not a second ranking of them.
+    const kept = channelsByEvidence(measurements, maxChannels);
     capped += measurements.length - kept.length;
     offered += kept.length;
 
@@ -292,7 +276,7 @@ export function buildCandidateFingerprints(input: FingerprintInput): Fingerprint
       service: result.serviceId,
       rank: result.rank - 1,
       score: result.finalScore ?? result.confidence,
-      channels: kept.map((entry) => entry.channel),
+      channels: [...kept],
     });
   }
 

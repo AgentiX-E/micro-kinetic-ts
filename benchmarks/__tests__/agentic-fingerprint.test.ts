@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { MetricMap, RootCauseResult, TimeSeries } from '../../packages/core/src/index.js';
 import type { FaultFreeProfile } from '../../packages/tree/src/index.js';
 
+import { buildEliminatorPrompt } from '../../packages/ai/src/agent/index.js';
+
 import {
   DEFAULT_FINGERPRINT_OPTIONS,
   buildCandidateFingerprints,
@@ -256,6 +258,66 @@ describe('buildCandidateFingerprints', () => {
       'b_channel',
       'c_channel',
     ]);
+  });
+
+  it('lets the fault-free rate decide the cap, not the size of the number', () => {
+    // The 1 422-case defect, at the builder: `bytes` is sixteen band widths outside a band it leaves in 99 clean
+    // windows out of a hundred, and `error` is a fraction of a width outside a band it has never left. Ranked by
+    // distance the byte channel wins and the table leads with a row that says nothing; ranked by the profile's own
+    // measured rate it loses, which is what iteration 284 changed.
+    const built = buildCandidateFingerprints({
+      metrics: metricsOf('svc', [
+        series('bytes', [1.6e10, 1.6e10, 1.6e10], [1.55e10, 1.55e10, 1.55e10]),
+        series('error', [0, 0, 0], [0.4, 0.4, 0.4]),
+      ]),
+      ranking: [result('svc', 1, 1)],
+      injectTimeMs: T0,
+      profile: profileOf({
+        bytes: { centre: 1.6e10, scale: 1e8, rate: 0.99 },
+        error: { centre: 0, scale: 0.1, rate: 0.02 },
+      }),
+      options: { maxChannels: 1 },
+    });
+    expect(built.candidates[0]!.channels.map((channel) => channel.label)).toEqual(['error']);
+    expect(built.census).toMatchObject({ offered: 1, capped: 1 });
+  });
+
+  it('cuts the table it shows from the order the cap applied, so the model sees the first rows and not a second ranking', () => {
+    // Two orders would make the prompt's six a truncation of something the builder never promised. The property
+    // asserted here is the one that failed: the six rows a model is shown are the head of the order the fingerprint
+    // kept.
+    const built = buildCandidateFingerprints({
+      metrics: metricsOf('svc', [
+        series('noisy', [1, 1, 1], [9, 9, 9]),
+        // 1.6 is half a band width past the top of [0.7, 1.3]: outside, and nowhere near `noisy`'s twelve widths.
+        series('rare', [1, 1, 1], [1.6, 1.6, 1.6]),
+        series('quiet', [1, 1, 1], [1, 1, 1]),
+      ]),
+      ranking: [result('svc', 1, 1)],
+      injectTimeMs: T0,
+      profile: profileOf({
+        noisy: { centre: 1, scale: 0.1, rate: 0.97 },
+        rare: { centre: 1, scale: 0.1, rate: 0.01 },
+        quiet: { centre: 1, scale: 0.1, rate: 0.5 },
+      }),
+    });
+    const kept = built.candidates[0]!.channels.map((channel) => channel.label);
+    // The one that is barely outside wins on the profile's own rate over the one nineteen times further out, and
+    // `quiet`, which stays inside its band, follows both whatever its rate says.
+    expect(kept).toEqual(['rare', 'noisy', 'quiet']);
+    const table = buildEliminatorPrompt('CPUStress', built.candidates, {
+      maxCandidates: 5,
+      maxChannels: 2,
+      maxClaims: 4,
+    }).user;
+    const shown = table
+      .split('\n')
+      .filter(
+        (line) =>
+          line.startsWith('| ') && !line.startsWith('| channel') && !line.startsWith('| ---'),
+      )
+      .map((line) => line.split('|')[1]!.trim());
+    expect(shown).toEqual(kept.slice(0, 2));
   });
 
   it('carries only the first `maxCandidates` of the posterior, keeping the engine order and 0-based ranks', () => {

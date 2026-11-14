@@ -293,16 +293,6 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`stratum.members`, whose case ids are asserted unique on entry',
     },
   ],
-  'benchmarks/src/agentic-fingerprint.ts': [
-    // The channel ordering inside one candidate. The population is `measurements`, whose labels the loop above
-    // has already deduplicated (`shadowed` counts the repeats), so no two entries share a label and the two-arm
-    // form never claims an order between equals. That is also why the `maxChannels` cap can be a property of the
-    // case: a cap applied to an order with ties would depend on the order the series arrived in.
-    {
-      signature: 'a.channel.label < b.channel.label',
-      population: '`measurements`, whose labels the shadow check has already made unique',
-    },
-  ],
   'benchmarks/src/agentic-eliminator-study.ts': [
     // The scope's canonical order, used only when `--limit` narrows the population. Its keys are datapacks, which
     // `joinHeadroom` makes unique — it consumes each verdict it pairs and reports the second fingerprint of a
@@ -314,15 +304,28 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`cases`, whose datapacks the headroom join has already made unique',
     },
   ],
-  'packages/ai/src/agent/eliminator.ts': [
-    // The channel order the prompt renders, and the only comparator in `packages/ai`. Each arm is reached only
-    // after the arm above it has established an INEQUALITY (`a.outside !== b.outside`, then `a.onset !== b.onset`),
-    // and the last arm returns 0 for two identical labels rather than the two-arm `1` — so the site never claims
-    // an order between equals. Its own reason for existing is the digest: a total order that does not depend on
-    // the array's arrival order is what makes two runs over one artifact ask the same question.
+  'packages/ai/src/agent/evidence.ts': [
+    // The channel order that three modules used to answer three different ways. Every arm is reached only after the
+    // arm above it has established an INEQUALITY, so none of them claims an order between values it cannot separate:
+    // the first is the band's own membership, the second the profile's measured fault-free rate, the third the onset
+    // and the fourth the departure in band widths. The last arm returns 0 for two identical labels rather than the
+    // two-arm `1`, because a duplicate label is a malformed fingerprint and inventing a direction for it is the one
+    // answer that would be wrong. The list it sorts is a candidate's channels, whose labels the builder has already
+    // made unique by refusing a repeat as `shadowed` — so the zero arm is reached only by a caller's defect.
+    {
+      signature: 'a.channel.rate < b.channel.rate',
+      population:
+        "`channels`, one candidate's own, whose labels are unique by the builder's shadow check",
+    },
     {
       signature: 'a.onset < b.onset',
-      population: '`channels`, whose labels the fingerprint builder has already deduplicated',
+      population:
+        "`channels`, one candidate's own, whose labels are unique by the builder's shadow check",
+    },
+    {
+      signature: 'a.departure > b.departure',
+      population:
+        "`channels`, one candidate's own, whose labels are unique by the builder's shadow check",
     },
   ],
 };

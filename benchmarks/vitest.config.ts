@@ -364,6 +364,16 @@ export default defineConfig({
         // is measured — including the two that keep an unreadable record in the denominator instead of dropping
         // it, because a replay that shrinks its own population improves by forgetting.
         'src/agentic-null-model.ts',
+        // Added with the module: what the claims CITED, read against the table they were shown. It exists because
+        // the refusal ledger could not separate two failures a reader has to tell apart — a channel the eliminated
+        // row never printed at all, and one it printed and the kept row did not — so every branch of that split is
+        // measured, together with the ordinary-channel bucket and the empty-census path a first run takes.
+        'src/agentic-citation-census.ts',
+        // Added with the module: whether the model's preference depends on the case, which accuracy cannot say. Its
+        // whole value is the contingency inside the cases a service was PRESENTED in, so every branch is measured —
+        // including the empty half that must print as `-` rather than as the strongest rate there is, and the verdict
+        // that is undecidable rather than false when one half has no denominator.
+        'src/agentic-preference-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -76,15 +76,17 @@ describe('verifyClaim', () => {
     expect(verifyClaim(claim, posterior)).toMatchObject({ ok: false, reason: 'same-candidate' });
   });
 
-  it('refuses a claim citing a channel absent from either candidate', () => {
-    // The channel exists on the removed candidate but not on the kept one: without both readings there is no
-    // comparison, so the claim is not weak evidence, it is not evidence.
+  it('refuses a claim citing a channel absent from either candidate, and says which one', () => {
+    // Two different mistakes, two different numbers. A label no eliminated row carries is a fabrication; a label the
+    // eliminated row carries but the kept row does not is an answer to a narrower question than the one asked. Both
+    // were reported as `unknown-channel` until iteration 284, which is why the published census could not say that
+    // 774 of 1 774 refusals were the second kind.
     expect(
       verifyClaim(
         { ...grounded, because: { ...grounded.because, channel: 'cpu', observed: 0.9 } },
         posterior,
       ),
-    ).toMatchObject({ ok: false, reason: 'unknown-channel' });
+    ).toMatchObject({ ok: false, reason: 'channel-not-observed-on-both' });
     expect(
       verifyClaim(
         { ...grounded, because: { ...grounded.because, channel: 'nobody-measured' } },

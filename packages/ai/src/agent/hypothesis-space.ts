@@ -172,8 +172,17 @@ export function verifyClaim(
 
   const onRemoved = findChannel(removed, claim.because.channel);
   const onKept = findChannel(kept, claim.because.channel);
-  if (onRemoved === undefined || onKept === undefined) {
+  // Two refusals, not one branch. They were one branch until iteration 284 and the corpus showed what that cost:
+  // 1 774 of 5 335 claims were refused as `unknown-channel`, and the published census could not say that 774 of
+  // them named a channel the ELIMINATED row carried and the kept row did not — a rule the protocol enforced and
+  // never stated. `channel-not-observed-on-both` was declared in `CLAIM_REJECTIONS` from the first commit and no
+  // input could produce it, so the one number a reader needed to tell fabrication from an unstated rule was the one
+  // number the table did not have.
+  if (onRemoved === undefined) {
     return { ok: false, reason: 'unknown-channel', claim };
+  }
+  if (onKept === undefined) {
+    return { ok: false, reason: 'channel-not-observed-on-both', claim };
   }
 
   const observedOnRemoved = statisticOf(onRemoved, claim.because.statistic);

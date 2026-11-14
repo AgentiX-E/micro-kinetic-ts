@@ -29,6 +29,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
 import { DEFAULT_ELIMINATOR_OPTIONS } from '../../packages/ai/src/agent/index.js';
+import { citationCensusOf, formatCitationCensus } from './agentic-citation-census.js';
 import {
   formatClaimRecord,
   parseClaimRecords,
@@ -45,6 +46,7 @@ import {
   type HeadroomCase,
 } from './agentic-headroom.js';
 import { nullReadingOf, swapTopTwo } from './agentic-null-model.js';
+import { formatPreferenceCensus, preferenceCensusOf } from './agentic-preference-census.js';
 import { digestsOf, proposeClaims } from './agentic-proposer.js';
 import { createChatClientFromEnv, type ChatClient } from './chat-completions.js';
 import { readPerCaseVerdicts } from './fse26-per-case.js';
@@ -284,6 +286,16 @@ export async function runStudy(
     for (const one of replay.stale.slice(0, 3)) out(`  STALE ${one}`);
     for (const one of replay.foreignProtocol.slice(0, 3)) out(`  PROTOCOL ${one}`);
     for (const one of replay.unknown.slice(0, 3)) out(`  UNKNOWN ${one}`);
+    // The refusals above say what the verifier did with the claims. This says what the model was LOOKING at, which
+    // the refusal counts cannot: a claim refused for citing a label the eliminated row never printed and a claim
+    // refused for citing one only that row printed are both "unverifiable", and only the second is a rule the
+    // prompt could have stated. §284 found 1 774 such claims, 774 of them the second kind.
+    for (const line of formatCitationCensus(citationCensusOf(population, replay.byCase))) out(line);
+    // And this says whether the model's preference depends on the case at all. The accuracy above cannot tell a
+    // reader that misjudges a row from one that never read it, and on this corpus the second is what happened: the
+    // service the arm names most often is named less often when it is the source than when it is not.
+    for (const line of formatPreferenceCensus(preferenceCensusOf(population, replay.byCase)))
+      out(line);
   }
 
   const outcomes: ArmOutcome[] = [
