@@ -3210,3 +3210,84 @@ tests, `certifyLosses` / `risksOf` / `worstOf` / `lossesOf` exported from `risk-
 the screen, and `--delta` / `--correction` on the screen's command line so the level and the rule can be ablated without
 editing the tree. The screen still selects nothing and the engine's defaults are untouched: `absolute` is the shipped
 gate mode.
+
+## Iteration 282 — the ceiling had no method under it, and the method now has an artifact
+
+`scoreArm` has carried four arms since iteration 267: `engine`, `oracle`, `evidence` and `recorded`. Three of them
+could be produced by the repository. The fourth — the one whose own docblock says *"replays claims somebody else
+proposed, which is how a model's answers are scored without calling it again"* — had **no producer anywhere in the
+tree**. So the elimination line could price a bound and a deterministic rule, and could not answer the question the
+bound exists to ask, which is whether a model collects any of it. Fifteen iterations of instruments, and the arm
+that costs money was the one with nothing behind it.
+
+**This iteration is the producer and nothing else.** It ships five modules and a command; it moves no published
+number, because no dispatch has run the paid arm. That state is recorded here rather than discovered later.
+
+### What the model is allowed to say, and what it is not offered
+
+| decision                                        | why                                                                                                              |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| the reply is JSON, one object, one array          | a prose answer and a wrong answer are the same object until scored — the reason `0d6ae609` retired the first layer |
+| an **empty array is a legitimate answer**        | "the ranking is right" is an outcome; pooling it with "no answer" would make a silent model look confident        |
+| `delta` is **not offerable**                     | it is the one statistic the table does not print, so quoting it means computing it, and a rounding error reads as fabrication |
+| every number is printed as `String(v)`           | the verifier compares with `===`, so a faithful copy must round-trip exactly                                      |
+| a malformed element refuses the **whole reply**  | a truncated answer's surviving claims are an accident of generation order, and admitting them makes accuracy a function of `max_tokens` |
+
+### Three refusals on the way back, kept apart
+
+`replayOf` refuses a recorded answer whose `digest` disagrees with the prompt this build produces (`stale`), whose
+`protocol` is another version (`foreignProtocol`), or whose case is not in the population (`unknown`). One combined
+count would let a single number stand for three different mistakes: a changed prompt, a changed parser, and a
+claims file scored against the wrong corpus.
+
+**A failed call is an abstention, not a dropped case.** A transport failure is recorded with its reason and the
+digest of the question that was asked, so the case stays in the denominator and a resumed run does not pay for it
+twice. The alternative — dropping the case — would let an outage improve the accuracy by shrinking the population.
+
+### Three defects the work found
+
+- **A resumed run appended every reused line a second time.** `proposeClaims` called `onRecord` for records it had
+  just *reused*, so the claim file grew by one line per resumed case and a run that asked nothing reported a file
+  twice its size. The resume test failed on the line count; the fix is to count a reuse and not emit it.
+- **`createChatClientFromEnv` returned two different shapes.** The key-present branch had no `reason` and the
+  key-absent one did, which the compiler only reported when the study needed to print the reason from either. Both
+  branch to `{ client, reason }` now, with `''` for "there was nothing to report".
+- **`populationOf`'s comparator had an equality arm no corpus can reach.** `joinHeadroom` consumes a verdict as it
+  pairs it and reports the second fingerprint of a duplicate as unpaired, so two cases cannot share a datapack. The
+  third arm was deleted rather than covered — the same rule §267 applied to two guards in the fingerprint builder.
+
+### What the first reading will be judged on, stated before it exists
+
+1. **ceiling gap** — `recorded` against `oracle` on the same population: how much of the verifiable headroom a cheap
+   model collects. §267 measured that ceiling at **+16.63 pp** over 711 cases with 3 rounds covering 95 % of them.
+2. **refusal rate** — `value-disagrees-with-fingerprint` against the claim count. This is the one number that
+   separates "the model reasons badly" from "the model cannot copy a table", and they call for different fixes.
+3. **the price** — the certified budget of the arm's delta at `δ`, computed by §280's function with the level split
+   over **every family in the population**. A gain quoted without it is the reading §276 refused for the weight
+   vector, one axis over.
+
+### Axes this closes
+
+| Axis                                                          | Verdict                                                                                                                                                    |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The recorded arm can be scored"                               | **closed** — `run-agentic-eliminator.ts --propose` produces the claims, verifies them through the same `verifyClaim` every other arm uses, and scores all four |
+| "A cached answer is only valid for the question that elicited it" | **closed** — the prompt digest and the protocol version are recorded per line, and a replay refuses a mismatch by name                                    |
+| "An ablation of the model arm needs a second dispatch"          | **closed** — `--weight`, `--max-candidates` and `--skip-rule` are re-reads of the claims file; `--weight 0` is the control by construction                  |
+| "A failed call may be dropped from the population"              | **closed** — it is recorded as an abstention with its reason, so an outage cannot improve the score                                                         |
+| "The prompt may ask for a statistic the model must compute"      | **closed** — `delta` is excluded from the protocol; the two quotable statistics are the two the table prints                                                |
+| "The paid arm can be measured without a key"                    | **closed as measured** — the study prints `MODEL ARM NOT MEASURED: <reason>` and exits non-zero; the workflow warns by name, so a green job cannot imply a row that was never produced |
+
+### What ships
+
+`docs/agentic-eliminator.md` is the instrument's record; this section is the verdict.
+`packages/ai/src/agent/eliminator.ts` (**100/100/100/100**, 26 tests), `benchmarks/src/agentic-claims.ts`
+(**100/100/100/100**, 15 tests), `benchmarks/src/chat-completions.ts` (**100/100/100/100**, 15 tests, against a real
+loopback socket), `benchmarks/src/agentic-proposer.ts` (**100/100/100**, 13 tests),
+`benchmarks/src/agentic-eliminator-study.ts` (**100/100/100**, 16 tests, driving the whole study over real
+artifacts), `certifiedBudgetOf` on the arm module, `byFamily` on `ArmOutcome` — the per-family view of the same
+increment the `top1` column is printed from, so a table and a ledger cannot describe two runs — and a `model` input
+plus a proposal step on `benchmark-agentic.yml`, gated on the key's presence through a materialised flag because the
+`secrets` context is not readable from a step's `if`.
+
+The engine's defaults are untouched. `absolute` is still the shipped gate mode, and the model arm changes no ranking
+until a weight is passed and a claim is verified.
