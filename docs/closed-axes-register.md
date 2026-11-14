@@ -3373,14 +3373,15 @@ not the whole defect.**
 | quantity | reading |
 | --- | --- |
 | claims scored | 5 335 across 1 422 cases |
-| **uniform null** (keep drawn from the same pool) | **519 hits (9.73 %) against 891 expected (16.70 %) — z = −14.41** |
+| **uniform null** (keep drawn from the same pool) | **519 hits (9.73 %) against 891 expected (16.70 %) — z = −14.41 iid, −9.26 with the case as the cluster** |
 | surviving `verifyClaim` | 3 321 of 5 335 (62.2 %) |
 | uniform null, survivors only | 310 (9.33 %) against 529 expected — z = −11.00 |
 | **constant swap** (promote rank 1 everywhere) | **1 073 → 112 of 1 422 (75.46 % → 7.88 %), delta −961** |
 | claims promoting rank 1 | 4 113 (77.09 %) |
 | claims exactly "remove rank 0, keep rank 1" | 1 318 |
+| **claims whose removed service is the answer** | **1 129 (21.16 %); 1 038 of 1 421 cases in their first claim (73.05 %)** |
 
-`z = −14.41` is not a weak signal: it is a signal pointing the wrong way. The model's choice is **significantly
+`z = −9.26` is not a weak signal: it is a signal pointing the wrong way. The model's choice is **significantly
 worse than a draw from the same pool**, and the mechanism is in the same table — 77.09 % of claims promote rank 1,
 which is the truth in 112 of 1 422 cases. The arm's −602 is the constant rule applied to 925 cases; the corpus
 scores the same rule applied to all 1 422 at −961.
@@ -3398,6 +3399,24 @@ scores the same rule applied to all 1 422 at −961.
 claims are almost all one claim; `veto` at full weight recovers the constant-swap null from the claim set alone. The
 best an operator can do here is **0**, by moving nothing. And the shipped displacement arm is *better* than full
 `veto` only because it moves fewer cases — a weakness that reads as an advantage.
+
+### The instrument was wrong twice, and the second time it was wrong about itself
+
+The first draft of this section quoted `z = −14.41` and stopped. Sampling the same artifact differently — one claim
+per case instead of all of them — produced `+14.53`, and two opposite readings of one artifact is a defect in the
+instrument rather than a fact about the model.
+
+- **The variance assumed independence.** Claims from one case are not independent: a model that decides "promote
+  rank 1" decides it once and applies it three times, so the iid standard error is too small. Squaring the **case**
+  deviation takes `z` to **−9.26**. `nullReadingOf` returns both and the study prints the clustered one by name.
+- **The one-claim-per-case null did not model the action.** Restricting to the first claim concentrates the sample
+  on claims whose removed service is rank 0, and in 73.05 % of those that service *is* the answer — so the null's
+  pool is empty and its expectation is zero, and a case where the model deleted the truth scores `0 − 0`: "no
+  evidence" in the arithmetic, catastrophic in fact. The `+14.53` was that artefact.
+
+Recorded as a rule: **a null must model the action, not only the pool.** The count that needs no null at all —
+claims whose removed service is the answer, 1 129 of 5 335 — is now the study's second line, because it is the one
+number here that cannot be argued with by choosing a sampling.
 
 ### Three defects the tests found, all in the new module
 
@@ -3440,7 +3459,8 @@ checkable** (a cited channel is genuinely outside its band 98.6 % of the time) a
 
 `docs/agentic-fusion.md` is the instrument record; this section is the verdict.
 `packages/ai/src/agent/fusion.ts` (**100/100/100/100**, 29 tests — `rrf`, `borda`, `veto`, the implied order, and
-the zero-weight control), `benchmarks/src/agentic-null-model.ts` (**100/100/100/100**, 12 tests — the uniform null
-with its per-claim expectation and Bernoulli variance, and the constant-swap null), and two lines on the study's
+the zero-weight control), `benchmarks/src/agentic-null-model.ts` (**100/100/100/100**, 15 tests — the uniform null
+with its per-claim expectation, its Bernoulli variance and its case-clustered counterpart, the constant-swap null,
+and the count of claims that ask for the truth to be deleted), and two lines on the study's
 output that print both nulls beside the arm they judge. The engine's defaults are untouched; no published number
 moves, because the change is an instrument and a refusal.
