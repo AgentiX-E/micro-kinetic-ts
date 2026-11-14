@@ -134,20 +134,38 @@ Two arms are not priced, for opposite reasons:
 
 ---
 
-## 5. What this iteration does *not* claim
+## 5. What this iteration does *not* claim, and what the first dispatch said anyway
 
-No dispatch has run the paid arm yet: the machinery ships, the reading does not. `docs/closed-axes-register.md`
-§282 records that as the state, and the study prints `MODEL ARM NOT MEASURED: <reason>` when the key is absent
-rather than a row a reader would take for a refusal.
+The machinery ships in the same iteration that dispatches it, so the reading below was produced **after** the
+machinery and **by** it. Run `43548386087`, 1 422 cases, model asked `deepseek-chat` and served `deepseek-flash`:
 
-The three properties a first reading will be judged on, stated before it exists:
+| arm        | top1       | moves | claims | silent | delta              |
+| ---------- | ---------: | ----: | -----: | -----: | ------------------ |
+| `engine`   | **75.5 %** |     0 |      0 |      0 | control            |
+| `oracle`   | 87.7 %     |   174 |    269 |  1 248 | +174 (ceiling)     |
+| `evidence` | 44.2 %     |   695 |    695 |    727 | −444               |
+| `recorded` | 33.1 %     |   925 |  5 335 |    348 | **−602**           |
 
-1. **ceiling gap** — `recorded` against `oracle` on the same population, i.e. how much of the verifiable headroom a
-   cheap model actually collects;
-2. **refusal rate** — `value-disagrees-with-fingerprint` against the claim count, which measures whether the model
-   copies the table faithfully rather than whether it reasons well;
-3. **the price** — the certified budget of the arm's delta, which is the only number that separates "gained 40
-   cases" from "gained 40 cases and lost no family more than the corpus forbids".
+The three properties the reading was to be judged on, read in order:
+
+1. **ceiling gap** — there is none to close: the arm is 602 cases *below* the control and the whole verifiable
+   headroom is 174 cases above it.
+2. **refusal rate** — 2 014 of 5 335 claims (37.8 %), of which **1 774 are `unknown-channel`** and exactly **one**
+   is `value-disagrees-with-fingerprint`. The model copies numbers essentially perfectly and fails on a rule the
+   prompt never states: `verifyClaim` needs the cited channel on *both* candidates, while the table prints each
+   candidate's channels independently and the five presented candidates share only 2.2 labels on average.
+   Acceptance among claims that clear the channel rule is **93.3 %**, so the contract, not the reasoning, is what
+   the refusals are measuring.
+3. **the price** — printed as 105 and meaningless at a delta of −602; a budget cannot permit a loss.
+
+Two facts live in the artifact and not in the table: 1 253 replies used the full four-claim bound and exactly one
+was an empty array, so the model never concluded that the ranking was right, on a corpus where it is right 75.5 % of
+the time; and `evidence` at the same weight reads 44.2 %, so eliminating on departure is not a signal either. A
+repaired channel contract is therefore **necessary and not sufficient**.
+
+Both documents record the state rather than a promise: `docs/closed-axes-register.md` §282 carries the verdict row
+for this arm, and the study prints `MODEL ARM NOT MEASURED: <reason>` when the key is absent rather than a row a
+reader would take for a refusal.
 
 ---
 

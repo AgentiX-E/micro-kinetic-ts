@@ -3278,6 +3278,55 @@ exemption, is the rule; the entry states why the two-arm form is safe (the headr
    over **every family in the population**. A gain quoted without it is the reading §276 refused for the weight
    vector, one axis over.
 
+### The first reading, dispatched before this section was written
+
+Run `43548386087` on `7e17d26`, corpus `corpus-release-282`, model asked `deepseek-chat`, model **served
+`deepseek-flash`** — recorded from the endpoint's own reply rather than from the request, which is the one place a
+reader can tell a router from a model.
+
+| arm        | top1      | moves | claims | silent | delta                |
+| ---------- | --------: | ----: | -----: | -----: | -------------------- |
+| `engine`   | **75.5 %** |     0 |      0 |      0 | control              |
+| `oracle`   | 87.7 %    |   174 |    269 |  1 248 | **+174** (ceiling)   |
+| `evidence` | 44.2 %    |   695 |    695 |    727 | **−444**             |
+| `recorded` | 33.1 %    |   925 |  5 335 |    348 | **−602**, worst family −88 |
+
+Proposal: 1 422 asked, 1 421 answered, **0 declined**, 1 unreadable (`the reply is not JSON`), 5 335 claims,
+3 244 994 prompt + 354 585 completion tokens, 421 s, p50 1 798 ms per call.
+
+**The three pre-registered criteria, read in order.**
+
+1. **ceiling gap: −602 of +174.** The model does not collect a fraction of the ceiling; it destroys 602 cases the
+   engine already had, and the ceiling itself is +174 above the engine. There is no gap to close — the arm is
+   below the control by 8× the headroom that exists.
+2. **refusal rate: 2 014 of 5 335 (37.8 %)**, and the decomposition is the whole finding:
+
+   | refusal                              | count | share of claims |
+   | ------------------------------------ | ----: | --------------: |
+   | `unknown-channel`                    | 1 774 |          33.2 % |
+   | `band-disagrees-with-fingerprint`    |   207 |           3.9 % |
+   | `removed-candidate-is-inside-its-band` |    28 |           0.5 % |
+   | `rate-disagrees-with-fingerprint`    |     4 |           0.1 % |
+   | `value-disagrees-with-fingerprint`   |     1 |           0.0 % |
+
+   **Arithmetic is not the problem — the contract is.** `value-disagrees` fires once in 5 335 claims, so copying a
+   printed number is something this model does essentially perfectly. `unknown-channel` fires 1 774 times because
+   `verifyClaim` requires the cited channel to exist on **both** the removed and the kept candidate, and the prompt
+   states only the first half ("one channel that the candidate you eliminate left") while the table prints each
+   candidate's channels independently. Measured on the same artifact: the five presented candidates share **2.2
+   labels on average (median 2), and 56 of 1 422 cases share none**; of the 5 335 claims, 3 561 (66.7 %) cite a
+   label present on both, 774 only on the removed candidate, 742 only on the kept one, and 258 on neither. All 240
+   non-channel refusals fall inside the 3 561, so **acceptance among claims that clear the channel rule is 93.3 %**.
+3. **price: not computed.** `certifiedBudgetOf` prints 105 for the arm and the number is meaningless on a delta of
+   −602 — a budget is the corpus's permission for a gain, and there is no gain to permit. The row is printed so a
+   reader sees the function agree rather than the study hide it.
+
+**Two behavioural facts the artifact holds that no table prints.** 1 253 of 1 422 replies used the full four-claim
+bound and exactly **one** was an empty array, so the model never once said "the ranking is right" — on a corpus
+where the engine is right 75.5 % of the time. And the `evidence` arm at the same weight collapses to 44.2 %
+(−444): mechanical elimination on departure is not a signal either, so a repaired channel contract is **necessary
+and not sufficient**, and the next arm has to change what is asked, not only how it is spelled.
+
 ### Axes this closes
 
 | Axis                                                          | Verdict                                                                                                                                                    |
@@ -3288,6 +3337,8 @@ exemption, is the rule; the entry states why the two-arm form is safe (the headr
 | "A failed call may be dropped from the population"              | **closed** — it is recorded as an abstention with its reason, so an outage cannot improve the score                                                         |
 | "The prompt may ask for a statistic the model must compute"      | **closed** — `delta` is excluded from the protocol; the two quotable statistics are the two the table prints                                                |
 | "The paid arm can be measured without a key"                    | **closed as measured** — the study prints `MODEL ARM NOT MEASURED: <reason>` and exits non-zero; the workflow warns by name, so a green job cannot imply a row that was never produced |
+| "Replaying a claim is a method"                                 | **closed as REFUTED on its first reading** — 33.1 % against a 75.5 % control, −602 cases, measured on 1 422 cases with 5 335 claims; the arm is an ablation that costs money and loses to doing nothing |
+| "A prompt may name a comparison the table cannot express"       | **closed** — the verifier requires the cited channel on both candidates and the prompt asked for one on the removed one; 33.2 % of claims died there. The protocol must print which presented ranks share a label, or not ask for a shared one |
 
 ### What ships
 
