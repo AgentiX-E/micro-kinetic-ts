@@ -3354,3 +3354,93 @@ plus a proposal step on `benchmark-agentic.yml`, gated on the key's presence thr
 
 The engine's defaults are untouched. `absolute` is still the shipped gate mode, and the model arm changes no ranking
 until a weight is passed and a claim is verified.
+
+---
+
+## 283. The operator was never the problem
+
+§282 measured the model arm at 33.1 % against a 75.5 % control and named the failure as a **contract** defect: the
+verifier wanted the cited channel on both candidates, the prompt asked for one on the removed candidate, and 33.2 %
+of claims died there. The obvious repair was a better operator — the shipped arm *displaces* (a unary score
+multiplier, so `weight = 1` erases rank 0), while a rank-fusion operator is pairwise and can express a tie.
+
+This iteration implements the pairwise operators, implements the two nulls that say whether there is anything to
+fuse, and reads both from the artifact §282 already paid for. **The operator is not the repair, and the contract was
+not the whole defect.**
+
+### The measurement that decides it
+
+| quantity | reading |
+| --- | --- |
+| claims scored | 5 335 across 1 422 cases |
+| **uniform null** (keep drawn from the same pool) | **519 hits (9.73 %) against 891 expected (16.70 %) — z = −14.41** |
+| surviving `verifyClaim` | 3 321 of 5 335 (62.2 %) |
+| uniform null, survivors only | 310 (9.33 %) against 529 expected — z = −11.00 |
+| **constant swap** (promote rank 1 everywhere) | **1 073 → 112 of 1 422 (75.46 % → 7.88 %), delta −961** |
+| claims promoting rank 1 | 4 113 (77.09 %) |
+| claims exactly "remove rank 0, keep rank 1" | 1 318 |
+
+`z = −14.41` is not a weak signal: it is a signal pointing the wrong way. The model's choice is **significantly
+worse than a draw from the same pool**, and the mechanism is in the same table — 77.09 % of claims promote rank 1,
+which is the truth in 112 of 1 422 cases. The arm's −602 is the constant rule applied to 925 cases; the corpus
+scores the same rule applied to all 1 422 at −961.
+
+| strategy | weight | correct | delta | moved | delta over survivors |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| control | 0 | 1 073 | — | 0 | — |
+| `rrf` / `borda` | 0.2 | 1 073 | 0 | 0 | 0 |
+| `rrf` / `borda` | 0.5 | 883 | −190 | 284 | −125 |
+| `rrf` / `borda` | 1.0 | 882 | −191 | 287 | −155 |
+| `veto` | 0.5 | 1 073 | 0 | 0 | 0 |
+| `veto` | 1.0 | 147 | −926 | 1 381 | −600 |
+
+**No positive region, at any weight, under any operator.** `rrf` and `borda` agree to the last digit because the
+claims are almost all one claim; `veto` at full weight recovers the constant-swap null from the claim set alone. The
+best an operator can do here is **0**, by moving nothing. And the shipped displacement arm is *better* than full
+`veto` only because it moves fewer cases — a weakness that reads as an advantage.
+
+### Three defects the tests found, all in the new module
+
+- **Absence scored as "second".** `fuseRanks` ranked a service the second order omitted just after that order's last
+  entry, so a second order naming one service out of five ranked the other four as second — a nearly empty opinion
+  converted into a nearly full one. Absence now scores on the engine's order alone.
+- **A removal outranked silence.** `impliedOrder` counted `keeps − removes`, and two services the model never
+  mentioned outranked one it named as the thing to remove: "never mentioned" beat "mentioned as wrong". Counting
+  promotions only is what a claim actually states.
+- **An arm the comparator cannot reach.** A ternary in the tie-break had a branch that only fires when a ranked
+  service is seated after an unranked one, which the row order makes impossible. Replaced by subtraction, because an
+  arm nobody can reach is a branch nobody measures.
+
+### What the literature says this failure is
+
+arXiv:2608.21310 (October 2026) evaluates ten framework–backbone configurations on RCABench. **OpsAgent reads
+45.8 %** with the note "issues no telemetry queries of its own, instead reasoning over a pre-extracted feature set"
+— which is this project's model arm, catalogued before it was built. The best configuration reads **90.0 %**
+(ThinkDepth.ai on Claude Sonnet 4.6), and every framework above 70 % runs
+`while not committed: query = select_next_query(); result = telemetry.query(query)`. The paper's own intervention,
+DiagGuard, adds **+9.0 pp** on a held-out model, dataset and topology with a Grounder (force systematic survey
+before localising) and a Verifier (audit against evidence before committing), near-additively (+4.5 / +4.1).
+
+Our artifact already shows the split the paper describes: the model is accurate where the task is **local and
+checkable** (a cited channel is genuinely outside its band 98.6 % of the time) and at chance where the task is
+**global** (pick the source among five). So the next arm asks for the local task and leaves ranking to the engine.
+
+### Axes this closes
+
+| Axis | Verdict |
+| --- | --- |
+| "A better fusion operator recovers the arm" | **closed as REFUTED with numbers** — three operators × five weights × two populations, no positive delta; the proposal set is 14.4 σ on the wrong side of chance |
+| "`weight = 0` means the model agrees" | **closed** — it is the engine's order returned unchanged before any arithmetic, for every strategy, so a delta at zero weight is a delta against the engine |
+| "A veto can be dialled" | **closed** — a veto fires at `weight >= 1` or not at all; a half-veto has no definition and would be a scale nobody wrote down |
+| "The failure is arithmetic" | **closed as refuted** — one `value-disagrees-with-fingerprint` in 5 335 claims; the failure is choice, not copying |
+| "The failure is the channel contract" | **closed as insufficient** — repairing the contract admits 1 774 more claims whose truth rate is 9.6 %, so the repair changes nothing |
+| "A model without query access is a competitive arm" | **closed by the literature and by our own reading** — the category is catalogued at 45.8 % on RCABench and ours reads 33.1 %; the ceiling for this shape is not a tuning gap |
+
+### What ships
+
+`docs/agentic-fusion.md` is the instrument record; this section is the verdict.
+`packages/ai/src/agent/fusion.ts` (**100/100/100/100**, 29 tests — `rrf`, `borda`, `veto`, the implied order, and
+the zero-weight control), `benchmarks/src/agentic-null-model.ts` (**100/100/100/100**, 12 tests — the uniform null
+with its per-claim expectation and Bernoulli variance, and the constant-swap null), and two lines on the study's
+output that print both nulls beside the arm they judge. The engine's defaults are untouched; no published number
+moves, because the change is an instrument and a refusal.
