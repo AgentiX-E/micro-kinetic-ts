@@ -3244,7 +3244,7 @@ claims file scored against the wrong corpus.
 digest of the question that was asked, so the case stays in the denominator and a resumed run does not pay for it
 twice. The alternative — dropping the case — would let an outage improve the accuracy by shrinking the population.
 
-### Three defects the work found
+### Three defects the work found, and one the census found in itself
 
 - **A resumed run appended every reused line a second time.** `proposeClaims` called `onRecord` for records it had
   just *reused*, so the claim file grew by one line per resumed case and a run that asked nothing reported a file
@@ -3255,6 +3255,18 @@ twice. The alternative — dropping the case — would let an outage improve the
 - **`populationOf`'s comparator had an equality arm no corpus can reach.** `joinHeadroom` consumes a verdict as it
   pairs it and reports the second fingerprint of a duplicate as unpaired, so two cases cannot share a datapack. The
   third arm was deleted rather than covered — the same rule §267 applied to two guards in the fingerprint builder.
+- **The comparator census could not READ the eliminator's channel order.** `signatureOf` derives a site's signature
+  from the comparison a tie-break applies, and its operand is written on the sort's own two arguments — so a
+  comparator written on `left`/`right` derives as the window's tail, which is not a signature and cannot be
+  enrolled. The site was therefore invisible to an instrument that claims its population is derived. The fix is
+  the one the census asks for and the code wanted anyway: decorate each channel once (`departureOf` ran up to three
+  times per comparison before) and write every arm as `a.<field>` against `b.<field>`. `packages/ai/src` joins the
+  census's roots in the same commit, because a comparator outside the population is a comparator nobody measures —
+  and the first site in `packages/ai` is this one.
+
+The census is the only one of the four that failed on the *first* push and was right to: it refused a tree in which
+`benchmarks/src/agentic-eliminator-study.ts` sorted by datapack without stating its population. Enrollment, not
+exemption, is the rule; the entry states why the two-arm form is safe (the headroom join makes datapacks unique).
 
 ### What the first reading will be judged on, stated before it exists
 
