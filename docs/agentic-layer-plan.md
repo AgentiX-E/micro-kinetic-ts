@@ -261,3 +261,53 @@ Three consequences, and they reorder the arms rather than cancelling them:
    piece of evidence this project has that its graph layer carries the answers and its losses are ordering. The
    full-corpus number lands with the first `benchmark-agentic` dispatch that runs with `--depth-out`, and §11
    records it there.
+
+## 11. Retired in iteration 285: the layer lost to its own control, and the control is what ships
+
+The pre-registration in §285 of the register was explicit: *"if nomination on 1 422 cases does not clear 75.5 %, the
+agentic line retires for good."* It scored 74.6 %. This section records the retirement so that the next reader does
+not rebuild it.
+
+### What was measured, on one dispatch, both protocols, one table
+
+| Arm | Top@1 | Perfect-gate ceiling | LLM calls |
+| --- | ---: | ---: | --- |
+| engine (control) | **75.5 %** | — | 0 |
+| elimination, best operator (`rrf` `w=0.3`) | 73.6 % | 79.4 % | 1 422 |
+| elimination + best gate | 75.7 % | — | 1 422 |
+| nomination (`rrf` `w=0.3`) | 74.6 % | **76.2 %** | 1 422 |
+
+The nomination arm's own answers explain the result: its first service **is** the engine's first service in **87.1 %**
+of cases, its first service is the truth in 74.3 % — less often than the engine's — and the truth appears *anywhere*
+in its ranking in 84.7 %, below the 87.8 % the posterior already held. The layer is asked to improve a ranking and
+answers by repeating it while discarding true answers that were on the page.
+
+### Why one run cannot be an ablation of this layer
+
+The elimination arm was re-measured in the same dispatch as the previous iteration, under a prompt that replays
+1 422 / 1 422 with zero stale digest, against a fingerprint artifact whose md5 is identical:
+
+| Reading | iteration 284 | iteration 285 |
+| --- | ---: | ---: |
+| elimination arm, damping `w=1` | 60.7 % | **45.6 %** |
+| preference, `ts-travel-plan-service` source vs innocent | 76.3 % / 16.4 % | **46.3 % / 28.1 %** |
+
+A 15.1-point swing on an unchanged question makes every single-run LLM delta in this repository's history
+uninterpretable, including the ones this plan's §2–§5 were calibrated on. The lesson is not "the layer is bad"; it is
+that **a component whose contribution is smaller than its own variance cannot be measured by one run**, and at ±3
+points of contribution against 15 points of variance it cannot be shipped either.
+
+### What is kept, and what the next iteration attacks
+
+Kept, because they are free and they bound every future attempt: `agentic-protocol-ceiling.ts` (the reader bound, the
+union bound, the recall curve), `run-agentic-ceiling.ts` (offline, one second), and the nomination module as a
+*measured negative* with its ceiling recorded.
+
+`AgentOptions` still has **no model-facing switch**. That is the correct state for a layer that lost to its control:
+the product has no path that reads either protocol, and a future attempt starts from this section rather than from a
+blank page.
+
+The next iteration attacks **ordering**, not the layer. The depth report's `absent` column is **0 of 1 422** — the
+engine's complete order holds an accepted answer in every case — so all 24.5 points between 75.5 % and a perfect
+Top@1 are position, and 173 of them are cases where the engine ranked the right service too low. That is a scoring
+change with an ablation in `docs/`, which is the shape this repository has always measured best.

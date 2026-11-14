@@ -3697,10 +3697,13 @@ Three counts decide every arm on this population, and all three are arithmetic o
 | --- | ---: | ---: |
 | the engine's top-1 is accepted | 1 073 / 1 422 | 75.5 % |
 | an accepted answer appears anywhere in the width-5 posterior | 1 249 / 1 422 | **87.8 %** |
-| the posterior holds no accepted answer at all | 173 / 1 422 | 12.2 % |
+| not in the width-5 posterior | 173 / 1 422 | 12.2 % |
+| **not anywhere in the engine's order** | **0 / 1 422** | **0.0 %** |
 
-The second row bounds **every** reader, whatever it is asked. The third is not a hard case: it is a case whose
-answer was never generated, and no protocol repairs candidate generation.
+The second row bounds **every** reader, whatever it is asked. The third is not a hard case: it is a case the
+published five-wide presentation does not show. The fourth is the one that would be fatal — and it is empty. The
+ranking-depth report reads `absent 0`, `beyond@20 112`: the engine's complete order holds the answer in **all
+1 422 cases**, and every one of the 173 misses is a question of position rather than of generation.
 
 The gate's own bound is a fourth count — `engine correct OR arm correct`, per case:
 
@@ -3778,9 +3781,9 @@ how far the engine's own margin already was.
 | recall | 75.5 % | 83.3 % | 86.3 % | 87.8 % | 88.8 % | **89.9 %** | **91.0 %** | **92.1 %** |
 
 The published five is a **presentation** decision, not a property of the engine: the truth sits at rank 5–19 in a
-further 61 cases (4.3 points) whose answer the engine already computed and the layer was never shown. The 12.2 %
-where the truth is absent is the floor, and it is a fault in graph construction that no reader and no width
-repairs.
+further 61 cases (4.3 points) and at rank ≥ 20 in another 112 (7.9 points), and the ranking-depth report's `absent`
+column is **0**. There is no case on this corpus whose answer the engine failed to generate: every miss is a
+position, so the ladder's far end is not a floor but a width.
 
 ### What ships, and what it is for
 
@@ -3827,3 +3830,130 @@ Protocol 3 has been dispatched for the same 1 422 cases, same model, same table.
 The kill criterion is stated in advance and is the same shape as §284's: **if nomination on 1 422 cases does not
 clear 75.5 %, the agentic line retires for good** — the layer would then have failed under both protocols, and the
 next axis is the posterior's width (5 → 10, worth +2.1 points of reader) rather than another way of asking.
+
+---
+
+## §285b — The readback: the protocol was not the problem either, and the measurement itself is not stable
+
+Run `43582526212`, commit `b7b91c87`, `deepseek-chat`, 1 422 cases, both protocols on the same table in one
+dispatch. §285's pre-registered prediction was that nomination clears 75.5 % and that a result below 80 % would mean
+the reading rather than the protocol was binding. Both halves of that prediction were wrong, and the way they were
+wrong is the finding.
+
+### The engine is bit-reproducible; the model is not
+
+The three artifacts `measure` writes were compared by digest against the previous run's:
+
+| Artifact | md5 (both runs) |
+| --- | --- |
+| `fingerprints.ndjson` | `1bda8c2d7a953fa000d33b7ea6588175` |
+| `per-case.ndjson` | `78279a2168d62340fc7db72768309b62` |
+| `depth.ndjson` | `656c3d0162c3a3c0a751d6730e363441` |
+
+**Identical, byte for byte, across a commit that changed `pruner.ts`.** Everything below is therefore a property of
+the model, not of the engine.
+
+### Nomination: the model restates the engine
+
+| Arm | `rrf` `w=0.1` | `w=0.3` | `w=0.5` | `w=1.0` |
+| --- | ---: | ---: | ---: | ---: |
+| nominate (arm alone) | 74.6 % | 74.6 % | 74.5 % | 74.5 % |
+| **union (engine or arm)** | 75.8 % | 75.9 % | 76.0 % | **76.2 %** |
+| arm-only | 5 | 6 | 8 | **10** |
+| engine-only | 17 | 18 | 21 | 24 |
+
+3 941 891 prompt tokens and 24 105 completion tokens bought **ten** cases the engine did not have, and lost
+seventeen. The reason is visible in the answers themselves:
+
+| Reading | Cases | Share |
+| --- | ---: | ---: |
+| the model's first service is the engine's first service | 1 238 / 1 422 | **87.1 %** |
+| the model's first service is the truth | 1 056 / 1 422 | 74.3 % |
+| the truth appears anywhere in the model's ranking | 1 204 / 1 422 | 84.7 % |
+| mean ranking length | 2.25 services | — |
+
+The layer is being asked to improve a ranking and answers by repeating it: 87.1 % of the time its first choice is
+the choice it was shown first, and its first choice is the truth *less* often than the engine's is. Its recall,
+84.7 %, is **below the 87.8 % the posterior already contained** — the model discards true answers that were on the
+page. Nomination's union ceiling, 76.2 %, is below the elimination protocol's 80.7 % on the same cases, so the
+8.4-point expressiveness gap §285 measured is real but is not where the loss is: the loss is that there is nothing
+to express.
+
+### The same prompt, the same model, a different answer
+
+This run's elimination arm was measured beside the previous one. The prompt digest replays 1 422 / 1 422 with zero
+stale, so the question was identical; the engine artifact is identical by md5; the model name is identical.
+
+| Reading | §284b | §285b | Δ |
+| --- | ---: | ---: | ---: |
+| `recorded` arm, damping `w=1` | 60.7 % | **45.6 %** | −15.1 |
+| claims emitted | 5 188 | 5 093 | −95 |
+| verified claims | 3 632 (70.0 %) | **3 633 (71.3 %)** | +1.3 |
+| union (engine or arm) | 79.4 % | 80.7 % | +1.3 |
+| arm-only / engine-only | 56 / 266 | 75 / 499 | — |
+| `ts-travel-plan-service`, named when it IS the source / when it is not | 76.3 % / 16.4 % | **46.3 % / 28.1 %** | inversion returns |
+
+The preference census — the instrument §284 used to prove the arm had stopped reading a name prior — has **fallen
+back to 1.65×**, from 4.7×. The claims are, if anything, more often true (73.0 % verified against 70.0 %) and less
+often useful (45.6 % against 60.7 %): the model is citing real evidence and reaching worse conclusions from it.
+
+**This is not a defect in this iteration's code.** It is the same prompt, the same table, the same endpoint name,
+and a materially different answer — which makes the arm's contribution, at ±3 points, *smaller than its own
+run-to-run variance at 15 points*. A component whose signal is under its noise cannot be shipped in a decision path
+and cannot be measured into one either: every ablation of it would be an ablation of the day it ran.
+
+### The verdict the pre-registration requires
+
+§285 stated: *"if nomination on 1 422 cases does not clear 75.5 %, the agentic line retires for good."* It scored
+74.5–74.6 % against 75.5 %, with a union ceiling of 76.2 % that no gate could exceed. **The line retires.** Not
+because a protocol was badly chosen — three protocols were measured, two of them this month — but because on this
+corpus, with this presentation, the model's reading carries no information the engine does not already have, and its
+variance exceeds its value.
+
+Retirement is specific and does not generalise to "models cannot do RCA". `arXiv:2608.21310v2` reports 90.0 % for
+Sonnet + ThinkDepth.ai on the same benchmark, with **open-ended telemetry requerying** as the mechanism. What retires
+here is the *read-one-page-and-answer* shape — a single call over a pre-extracted feature table — which the same
+paper measures at 45.8 % for OpsAgent, the framework it describes as issuing no telemetry queries of its own. Two
+measurements, three orders of magnitude apart in cost, agreeing that the shape is the limit.
+
+### What this redirects the effort to
+
+The two obstacles that remain are both deterministic and both arithmetic:
+
+1. **Position, not generation.** The depth report's `absent` column is **0 of 1 422**: the engine's complete order
+   contains an accepted answer in every case. The 173 misses at width five are 61 at rank 5–19 and 112 at rank ≥ 20.
+   There is no case whose answer was never generated, so the ceiling is a function of how deep a reader may look and
+   nothing else.
+2. **The presentation width.** `run-fse26.ts:270` calls `pruner.analyze(faultGraph, 5)`. The reader bound rises from
+   87.8 % (width 5) to 89.9 % (10) to 92.1 % (20) at no cost in Acc@1, because top-1 is a prefix of the same total
+   order. **No model is involved** — and since §285b retires the model, width does not help either: it raises what a
+   reader *could* reach, and the shipped engine already reads the whole order. What the ladder measures is therefore
+   the engine's **ordering** error, which is where all 24.5 points of Top@1 headroom sit.
+
+Against the published table (`arXiv:2608.21310v2`, Table 2), the shipped deterministic engine at **75.5 %** is above
+six of the ten reported configurations — TaskWeaver 65.2, RCLAgent V2 53.4, GoS 48.2, OpenRCA 46.6, OpsAgent 45.8,
+Qwen mABC 42.6 — and below AIQ 77.6, ThinkDepth.ai 79.2, ClaudeCode 79.6 and Sonnet+ThinkDepth.ai 90.0. A ranker with
+zero model calls is inside the band only three LLM frameworks occupy.
+
+### Axes this closes
+
+- **"The expression protocol was the binding constraint."** False, measured: nomination removes the expressive cost
+  entirely and scores 0.9 points *below* the engine, with a union ceiling 4.5 points below the elimination protocol's.
+- **"A stronger harness on the same table would clear the engine."** False for the read-one-page shape, at 1 422
+  cases, with a pre-registered kill criterion that fired.
+- **"An LLM arm's delta can be measured by one run."** False, and this is the iteration's most transferable result:
+  the same prompt produced a 15.1-point swing. Every LLM ablation in this repository's history was a single run.
+- **"The engine's contribution is reproducible."** True, and now proven by digest rather than asserted: three
+  artifacts, identical md5 across a commit that edited the pruner.
+
+### What ships
+
+The instrumentation is kept, because the next iteration needs it: `agentic-protocol-ceiling.ts` prints the reader
+bound, the union bound and the recall curve for any protocol, and `run-agentic-ceiling.ts` does it offline in under
+a second. The nomination module stays as a measured negative — a second protocol that was built, dispatched, scored
+and retired, with its ceiling recorded so nobody has to build it again. No decision path in the product reads either
+of them: `AgentOptions` still has no model-facing switch, which is the correct state for a layer that lost to its own
+control.
+
+The agentic plan document is amended rather than deleted: `docs/agentic-layer-plan.md` §9 records the retirement, the
+three ceilings that bound it, and the two deterministic obstacles that replace it.
