@@ -38,14 +38,26 @@ export interface NullReading {
   readonly hits: number;
   /** Expected hits under "the kept service is drawn uniformly from the other presented candidates". */
   readonly expected: number;
-  /** Sum of the per-claim Bernoulli variances, i.e. the null's own variance. */
+  /** Sum of the per-claim Bernoulli variances: the null's own variance ASSUMING claims are independent. */
   readonly variance: number;
-  /** `(hits − expected) / sqrt(variance)`; `0` when the variance is zero. */
+  /** `(hits − expected) / sqrt(variance)`; `0` when the variance is zero. **Overstates significance.** */
   readonly z: number;
+  /**
+   * Sum over CASES of `(hits − expected)²` — the variance a reader should quote.
+   *
+   * Claims from one case are not independent: a model that decides "promote rank 1" decides it once and applies it
+   * three times, so the iid variance divides by a standard error it does not have. Measured on the first artifact,
+   * the two differ by a factor that takes `z` from −14.41 to −9.26 — same direction, very different confidence.
+   */
+  readonly clusteredVariance: number;
+  /** `(hits − expected) / sqrt(clusteredVariance)`, the case-clustered reading. */
+  readonly clusteredZ: number;
   /** Claims whose kept service is the engine's rank 1 — the constant, content-free choice. */
   readonly promotingRank1: number;
   /** Claims that are exactly "remove rank 0, keep rank 1". */
   readonly swappingTopTwo: number;
+  /** Claims whose REMOVED service is in the truth set — the model asking for the answer to be deleted. */
+  readonly removedTruth: number;
   /** Claims whose kept service the engine did not present, so the null has no pool to draw from. */
   readonly outside: number;
 }
@@ -71,8 +83,10 @@ export function nullReadingOf(
   let hits = 0;
   let expected = 0;
   let variance = 0;
+  let clusteredVariance = 0;
   let promotingRank1 = 0;
   let swappingTopTwo = 0;
+  let removedTruth = 0;
   let outside = 0;
   for (const record of claims) {
     const entry = byPack.get(record.datapack);
@@ -82,6 +96,9 @@ export function nullReadingOf(
     }
     const order = entry.candidates.map((candidate) => candidate.service);
     const truth = new Set(entry.accepted);
+    // The case's own deviation, accumulated so the clustered variance can square the CASE rather than the claim.
+    let caseHits = 0;
+    let caseExpected = 0;
     for (const claim of record.claims) {
       const keptAt = order.indexOf(claim.keep);
       if (keptAt < 0) {
@@ -94,18 +111,38 @@ export function nullReadingOf(
         continue;
       }
       total += 1;
-      if (truth.has(claim.keep)) hits += 1;
+      if (truth.has(claim.remove)) removedTruth += 1;
       let share = 0;
       for (const service of others) if (truth.has(service)) share += 1;
       const probability = share / others.length;
+      if (truth.has(claim.keep)) {
+        hits += 1;
+        caseHits += 1;
+      }
       expected += probability;
+      caseExpected += probability;
       variance += probability * (1 - probability);
       if (keptAt === 1) promotingRank1 += 1;
       if (keptAt === 1 && order[0] === claim.remove) swappingTopTwo += 1;
     }
+    clusteredVariance += (caseHits - caseExpected) ** 2;
   }
-  const z = variance > 0 ? (hits - expected) / Math.sqrt(variance) : 0;
-  return { claims: total, hits, expected, variance, z, promotingRank1, swappingTopTwo, outside };
+  const shortfall = hits - expected;
+  const z = variance > 0 ? shortfall / Math.sqrt(variance) : 0;
+  const clusteredZ = clusteredVariance > 0 ? shortfall / Math.sqrt(clusteredVariance) : 0;
+  return {
+    claims: total,
+    hits,
+    expected,
+    variance,
+    z,
+    clusteredVariance,
+    clusteredZ,
+    promotingRank1,
+    swappingTopTwo,
+    removedTruth,
+    outside,
+  };
 }
 
 /**

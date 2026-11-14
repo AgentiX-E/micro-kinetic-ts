@@ -351,7 +351,12 @@ export async function runStudy(
       out(
         `  uniform   ${reading.hits} of ${reading.claims} claims keep a true service ` +
           `(${percent(reading.hits, reading.claims)}) against ${reading.expected.toFixed(0)} expected ` +
-          `(${percent(reading.expected, reading.claims)}) · z ${reading.z.toFixed(1)}`,
+          `(${percent(reading.expected, reading.claims)}) · z ${reading.z.toFixed(1)} ` +
+          `(clustered ${reading.clusteredZ.toFixed(1)}, because claims from one case are not independent)`,
+      );
+      out(
+        `  removed   ${reading.removedTruth} of ${reading.claims} claims ask for the truth itself to be deleted ` +
+          `(${percent(reading.removedTruth, reading.claims)})`,
       );
       out(
         `  constant  promoting rank 1 on every case scores ${swapped.swapped} of ${swapped.cases} ` +

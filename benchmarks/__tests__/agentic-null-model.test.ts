@@ -37,8 +37,11 @@ describe('nullReadingOf', () => {
       expected: 0,
       variance: 0,
       z: 0,
+      clusteredVariance: 0,
+      clusteredZ: 0,
       promotingRank1: 0,
       swappingTopTwo: 0,
+      removedTruth: 0,
       outside: 0,
     });
     const empty = study(['a', 'b', 'c', 'd', 'e'], []);
@@ -120,6 +123,46 @@ describe('nullReadingOf', () => {
       [{ datapack: 'dp-1', claims: [claim('a', 'a')] }],
     );
     expect(self).toMatchObject({ claims: 0, outside: 1 });
+  });
+
+  it('reads a claim that asks for the truth itself to be deleted', () => {
+    // The single most explanatory number in the reading: a claim whose REMOVED service is the answer is not a wrong
+    // guess, it is a request to delete the right answer, and no fusion operator can be asked to survive those.
+    const cases = [study(['a', 'b', 'c'], ['a'])];
+    const reading = nullReadingOf(cases, [{ datapack: 'dp-1', claims: [claim('a', 'b')] }]);
+    expect(reading.removedTruth).toBe(1);
+    expect(reading.hits).toBe(0);
+  });
+
+  it('squares the CASE, not the claim, when it reports the clustered variance', () => {
+    // Three claims from one case all carrying the same wrong choice: the iid variance treats them as three
+    // independent pieces of evidence and divides by sqrt(3) too much. Measured on the first artifact this took z
+    // from −14.41 to −9.26, which is the same direction with a very different confidence.
+    const cases = [study(['a', 'b', 'c', 'd', 'e'], ['c'])];
+    const reading = nullReadingOf(cases, [
+      { datapack: 'dp-1', claims: [claim('a', 'b'), claim('a', 'b'), claim('a', 'b')] },
+    ]);
+    expect(reading.variance).toBeCloseTo(3 * 0.1875, 12);
+    // One case, so one squared deviation: (0 − 0.75)².
+    expect(reading.clusteredVariance).toBeCloseTo(0.5625, 12);
+    expect(reading.z).toBeCloseTo(-0.75 / Math.sqrt(0.5625), 12);
+    expect(reading.clusteredZ).toBeCloseTo(-1, 12);
+  });
+
+  it('counts each case once in the clustered variance, however many claims it carries', () => {
+    // Two cases, one claim each, both wrong with the same probability: the clustered variance equals the iid one,
+    // which is the property that makes the clustered reading a generalisation rather than a different statistic.
+    const first = study(['a', 'b', 'c', 'd', 'e'], ['c']);
+    const second: HeadroomCase = { ...first, datapack: 'dp-2' };
+    const reading = nullReadingOf(
+      [first, second],
+      [
+        { datapack: 'dp-1', claims: [claim('a', 'b')] },
+        { datapack: 'dp-2', claims: [claim('a', 'b')] },
+      ],
+    );
+    expect(reading.clusteredVariance).toBeCloseTo(2 * 0.0625, 12);
+    expect(reading.clusteredZ).toBeCloseTo(-0.5 / Math.sqrt(2 * 0.0625), 12);
   });
 
   it('sums per-claim variances rather than averaging percentages', () => {
