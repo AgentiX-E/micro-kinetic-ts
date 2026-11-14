@@ -84,10 +84,12 @@ async function main(): Promise<void> {
       : join.cases;
   if (args.limit > 0) console.log(`SCOPE: first ${population.length} cases by id — not a sample`);
 
-  const existing: { ok: true; records: Map<string, NominationRecord> } | { ok: false; why: string } =
-    existsSync(args.nominations)
-      ? parseNominationRecords(readFileSync(args.nominations, 'utf8'))
-      : { ok: true, records: new Map() };
+  const existing:
+    { ok: true; records: Map<string, NominationRecord> } | { ok: false; why: string } = existsSync(
+    args.nominations,
+  )
+    ? parseNominationRecords(readFileSync(args.nominations, 'utf8'))
+    : { ok: true, records: new Map() };
   if (!existing.ok) {
     console.log(`REFUSING: ${args.nominations} is not a nominations artifact — ${existing.why}`);
     process.exitCode = 1;

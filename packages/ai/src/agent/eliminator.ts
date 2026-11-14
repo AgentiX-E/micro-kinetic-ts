@@ -26,11 +26,7 @@
  */
 
 import { channelsByEvidence } from './evidence.js';
-import type {
-  CandidateFingerprint,
-  ClaimStatistic,
-  EliminationClaim,
-} from './hypothesis-space.js';
+import type { CandidateFingerprint, ClaimStatistic, EliminationClaim } from './hypothesis-space.js';
 import { renderCandidateTable } from './table.js';
 
 /**
