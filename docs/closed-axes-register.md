@@ -3632,3 +3632,51 @@ model free to read and to rank. The pre-registered prediction is that a nominati
 the **65 – 77 %** band that paper reports for simple harnesses, i.e. at or above the engine's 75.5 %, and the kill
 criterion is the same shape as this iteration's: **if it does not clear the engine on the same 1 422 cases, the
 agentic line retires and the deterministic engine is the product.** That is the next iteration's whole content.
+
+---
+
+## §284b — The readback: the table was the arm
+
+Run `43570841404`, commit `9eb573ff`, `deepseek-chat`, 1 422 cases, protocol 2. Same corpus, same model, same
+protocol shape. What changed is which channels the table showed and one sentence of instruction.
+
+| Reading | §283 | §284b |
+| --- | ---: | ---: |
+| `recorded` arm, damping, `weight = 1` | 33.1 % | **60.7 %** |
+| best fusion operator (`rrf`/`borda`, `w = 0.3`, verified claims) | 62.1 % (`w = 0.5`) | **73.6 %** |
+| engine (control) | 75.5 % | 75.5 % |
+| oracle ceiling | 87.7 % | 87.1 % |
+| claims emitted | 5 335 | 5 188 |
+| claims the verifier accepts | 3 321 (62.2 %) | **3 632 (70.0 %)** |
+| mean fault-free rate of a cited channel | 0.90 | **0.37** |
+| citations of a channel that swings in ≥ half of clean windows | 3 344 (62.7 %) | **740 (14.3 %)** |
+| `unknown-channel` / `channel-not-observed-on-both` | 1 774 / **unreachable** | 1 036 / **281** |
+| uniform null, clustered `z` | **−9.26** | **+25.0** |
+| claims that keep a true service | 77.1 % against a mis-modelled expectation | 3 111 / 5 188 (60.0 %) against 1 033 expected |
+| `ts-travel-plan-service`, named when it IS the source / when it is not | 5.0 % / 38.1 % | **76.3 % / 16.4 %** |
+
+**The arm reads the case now.** The clustered null went from 9.3 σ on the wrong side of chance to **+25.0 σ** on the
+right side, and the preference census — the instrument that found the inversion — now reports the correct direction
+on all five most-presented services, by a factor of 4.7 on the largest. Both were computed from the same artifact
+by the same code; only the input changed.
+
+**The most-cited channels are the fault channels.** `k8s.pod.network.io` (919), `http.response.error_rate` (859),
+`hubble_http_requests_total` (524), `k8s.pod.filesystem.usage` (308). The two `filesystem.available` channels that
+took 48 % of the previous run's citations are gone from the list.
+
+**And the arm still does not beat the engine.** 73.6 % against 75.5 % — a loss of 1.9 points, down from 13.4. A
+sweep of `rrf` and `borda` at ten weights on the verified claims has **no positive region**: weights at or below 0.2
+move nothing and score the engine, and every weight above that loses between 1.9 and 3.4 points. So this iteration
+does not close the gap; it removes the two defects that were making the gap unreadable, and the residue is now a
+1.9-point question rather than a 42-point one.
+
+**What §283's verdict has to be corrected to.** Its central sentence — "the operator was never the problem"
+— was measured on claims of which 62.7 % cited a channel the profile itself calls noise. On the repaired artifact the
+operator is worth **+11.4 points**: the same claims score 60.7 % under the shipped damping rule and 72.1 % under `rrf`
+at weight 0.5. The operator was not the problem *then* because the input could not have supported any operator; it is
+a problem now, and it is the next one to measure.
+
+**What this retires, and what it does not.** The nomination harness pre-registered above is **not** next: it was
+predicated on the model being unable to read the row, and the readback says it can. The residue is narrow — 1.9
+points, with an 11.6-point ceiling — and the next iteration's question is therefore not "a better task" but "which of
+the 451 moved cases were moved for a reason", i.e. a gate over claims rather than a different claim.
