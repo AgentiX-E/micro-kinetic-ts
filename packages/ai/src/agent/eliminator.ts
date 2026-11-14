@@ -28,10 +28,10 @@
 import { channelsByEvidence } from './evidence.js';
 import type {
   CandidateFingerprint,
-  ChannelFingerprint,
   ClaimStatistic,
   EliminationClaim,
 } from './hypothesis-space.js';
+import { renderCandidateTable } from './table.js';
 
 /**
  * Version of the prompt text and the reply contract.
@@ -121,31 +121,6 @@ const SYSTEM_PROMPT = [
   "`statistic` is `post` or `onset`. `band` and `rate` are the removed candidate's, copied from its row.",
 ].join('\n');
 
-/** `String(v)` for a finite number, `nan` otherwise, so a printed value round-trips to the same double. */
-function num(value: number): string {
-  return Number.isFinite(value) ? String(value) : 'nan';
-}
-
-/** One candidate as the table renders it. */
-function candidateBlock(
-  candidate: CandidateFingerprint,
-  channels: readonly ChannelFingerprint[],
-): string {
-  const lines = [
-    `### rank ${candidate.rank} — ${candidate.service} — score ${num(candidate.score)}`,
-    '| channel | pre | post | band | rate | onset |',
-    '| --- | ---: | ---: | --- | ---: | ---: |',
-  ];
-  for (const channel of channels) {
-    lines.push(
-      `| ${channel.label} | ${num(channel.pre)} | ${num(channel.post)} | ` +
-        `[${num(channel.band[0])}, ${num(channel.band[1])}] | ${num(channel.rate)} | ` +
-        `${channel.onset === undefined ? '-' : num(channel.onset)} |`,
-    );
-  }
-  return lines.join('\n');
-}
-
 /**
  * Two independent FNV-1a passes over the text, as 16 hex characters.
  *
@@ -185,7 +160,7 @@ export function buildEliminatorPrompt(
 ): EliminatorPrompt {
   const window = candidates.slice(0, Math.max(0, options.maxCandidates));
   const blocks = window.map((candidate) =>
-    candidateBlock(candidate, channelsByEvidence(candidate.channels, options.maxChannels)),
+    renderCandidateTable(candidate, channelsByEvidence(candidate.channels, options.maxChannels)),
   );
   const user = [
     `FAULT TYPE: ${faultType}`,

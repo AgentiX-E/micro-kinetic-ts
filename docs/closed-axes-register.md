@@ -3680,3 +3680,150 @@ a problem now, and it is the next one to measure.
 predicated on the model being unable to read the row, and the readback says it can. The residue is narrow — 1.9
 points, with an 11.6-point ceiling — and the next iteration's question is therefore not "a better task" but "which of
 the 451 moved cases were moved for a reason", i.e. a gate over claims rather than a different claim.
+
+---
+
+## §285 — The gate was bounded before it was built, and the bound was the finding
+
+The previous section's residue was 1.9 points and its next question was a gate over claims. This iteration built the
+gate, and the first thing it did was compute what a **perfect** gate could reach. That number, not the arm's score,
+is what this section records.
+
+### The ceiling, computed from the artifacts before anything was written
+
+Three counts decide every arm on this population, and all three are arithmetic over the dump:
+
+| Reading | Cases | Share |
+| --- | ---: | ---: |
+| the engine's top-1 is accepted | 1 073 / 1 422 | 75.5 % |
+| an accepted answer appears anywhere in the width-5 posterior | 1 249 / 1 422 | **87.8 %** |
+| the posterior holds no accepted answer at all | 173 / 1 422 | 12.2 % |
+
+The second row bounds **every** reader, whatever it is asked. The third is not a hard case: it is a case whose
+answer was never generated, and no protocol repairs candidate generation.
+
+The gate's own bound is a fourth count — `engine correct OR arm correct`, per case:
+
+| Arm under the claim protocol | arm alone | arm-only | engine-only | **union** |
+| --- | ---: | ---: | ---: | ---: |
+| damping, `w = 1.0` | 60.7 % | 56 | 266 | **79.4 %** |
+| damping, `w = 0.5` | 69.1 % | 56 | 147 | **79.4 %** |
+| damping, `w = 0.3` | 72.0 % | 44 | 93 | **78.6 %** |
+| `rrf`, `w = 0.3` | 73.6 % | 10 | 36 | 76.2 % |
+
+**79.4 % is the most a gate can ever reach here**, because it assumes the gate knows the label — it keeps every case
+the arm got right and every case the engine got right, and discards the 266 the arm lost. A real gate is a
+classifier over features that do not contain the label, so it lands between 75.5 % and 79.4 %. The 3.9 points above
+the engine are the entire prize, and they require separating 56 wins from 266 losses perfectly.
+
+The gap between 87.8 % and 79.4 % — **8.4 points** — is the elimination protocol's price for saying an answer. It is
+not a modelling error and no model can recover it: expressing "promote rank 3 to rank 0" costs three eliminations,
+each citing a channel printed on both rows and outside the removed row's band, and a case with one discriminating
+channel but not three cannot say what it knows.
+
+### The gate, measured, on a split
+
+Nine gate rules over the recorded claims, each scored on a hash split of the corpus so an in-sample winner cannot be
+reported as a method. Verified claims: **3 632** over **1 201** cases (the other 221 cases produced no admissible
+claim at all).
+
+| Gate | Operator | all | in-sample | out-of-sample | Δ vs engine |
+| --- | --- | ---: | ---: | ---: | ---: |
+| none | damping `w=1` | 60.7 % | 62.6 % | 58.8 % | −14.8 |
+| separation `< 0` | damping `w=1` | 68.6 % | 69.4 % | 67.7 % | −6.9 |
+| `margin < 0.05` | damping `w=1` | 75.7 % | 76.4 % | 74.9 % | **+0.2** |
+| **`margin < 0.05` ∧ separation `< 0`** | damping `w=1` | **75.7 %** | 76.2 % | 75.3 % | **+0.3** |
+| `margin < 0.05` ∧ separation `< 0` | `rrf` `w=0.3` | 75.5 % | 75.9 % | 75.0 % | +0.0 |
+| `n ≤ 2` ∧ separation `< 0` | damping `w=1` | 73.6 % | 74.1 % | 73.2 % | −1.8 |
+
+The best gate is worth **+0.3 points** and it agrees with the shipped skip rule almost exactly: `margin < 0.05` alone
+is +0.2. The two-column split is what makes this readable — every rule that loses in sample also loses out of
+sample, and the one that wins in sample wins by the same margin out of sample, so the +0.3 is a measurement rather
+than a maximum over nine tries.
+
+**Why no gate does better is a fact about the claims, not about the rules.** Taking each verified claim alone, at
+full damping: **66 helped, 280 hurt, 3 286 changed nothing.** Two thirds of the admissible claims are not about the
+top of the ranking at all — they eliminate a candidate that was not standing between the engine and the truth — and
+the ones that are split 66/280 in favour of harm. There is no threshold on any of these features that separates a
+population whose base rate is 19 % correct without also discarding most of the 66.
+
+### One measurement that inverted an assumption
+
+The separation feature was added on the theory that a claim cites a channel which is *more* anomalous on the removed
+candidate than on the kept one, and that a claim with the opposite sign is asserting a preference rather than
+comparing evidence. The corpus says otherwise:
+
+| `departure(removed) − departure(kept)` in band widths | claims | the kept service IS the truth |
+| --- | ---: | ---: |
+| `< −1.0` (kept far more anomalous) | 915 | **71.0 %** |
+| `−1.0 … −0.25` | 343 | 70.6 % |
+| `−0.25 … 0` | 695 | 46.5 % |
+| `0 … 0.25` | 936 | 48.1 % |
+| `≥ 4.0` | 274 | 58.8 % |
+
+When the kept service is **further** outside the cited band than the removed one, it is the truth 71 % of the time —
+14 points above the corpus's own 60 % rate for "the kept service is true". The direction is right and the reason is
+the one §284 found: the injected source is usually the most anomalous service in the window, so the candidate whose
+evidence is **louder** is the better answer, and a claim that removes the louder one is citing evidence that points
+the other way. The feature is real, it is worth +0.3 points in combination with the margin rule, and it is worth
+almost nothing alone — which is what a signal about 40 % of the cases looks like when the other 60 % are decided by
+how far the engine's own margin already was.
+
+### The posterior's width is a choice, and the dump says what it costs
+
+`depth.ndjson` records the engine's full order, so the recall curve is free:
+
+| depth | 1 | 2 | 3 | 5 | 8 | 10 | 15 | 20 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| recall | 75.5 % | 83.3 % | 86.3 % | 87.8 % | 88.8 % | **89.9 %** | **91.0 %** | **92.1 %** |
+
+The published five is a **presentation** decision, not a property of the engine: the truth sits at rank 5–19 in a
+further 61 cases (4.3 points) whose answer the engine already computed and the layer was never shown. The 12.2 %
+where the truth is absent is the floor, and it is a fault in graph construction that no reader and no width
+repairs.
+
+### What ships, and what it is for
+
+The gate does not ship as a decision path — it is worth +0.3 points and the skip rule already captures +0.2 of them.
+What ships is the **second expression protocol** and the instruments that made the 8.4-point gap visible:
+
+- `packages/ai/src/agent/table.ts` — one renderer for the evidence table, so two protocols cannot ask about two
+  different tables. The elimination builder now calls it, byte for byte, which is why every digest from §284b still
+  replays.
+- `packages/ai/src/agent/nomination.ts` — protocol 3: a ranking, partial and possibly empty, verified for existence
+  and repetition only. Its refusal families are two, both about the answer rather than the case, because whether a
+  ranking is *right* is what the accuracy measures.
+- `benchmarks/src/agentic-protocol-ceiling.ts` — the reader bound, the union bound, and the recall curve, from one
+  loop that takes `orderOf(case)` so a claim arm and a nomination arm are scored by the same arithmetic.
+- `benchmarks/src/run-agentic-ceiling.ts` — the offline entry point; `benchmark-agentic.yml` runs it after the
+  proposal step, because `--claims` is the artifact that step writes.
+- `benchmarks/src/agentic-nomination.ts`, `agentic-nomination-study.ts`, `run-agentic-nomination.ts` — the record
+  format, the refusal census, the proposal loop, and the grid.
+
+A property found while testing, and kept in the tests as a stated fact: **`borda` degenerates on a partial ranking.**
+A first place scores `n − 1` whether it is the engine's or the model's, so nominating the engine's last candidate
+adds exactly what the engine's leader already holds and the move vanishes into a tie. `rrf` has no such problem
+because its contribution is `1/(k + rank)`, which is strictly greater for a better rank. An operator and a protocol
+are chosen together; a sweep that reports both without this sentence is reporting one operator twice.
+
+### Axes this closes
+
+- **"A per-claim gate can recover the residue."** Measured. Ceiling 79.4 %, best rule +0.3 points, and the base rate
+  of an admissible claim that helps is 19 %.
+- **"The engine's posterior is the limit."** False, and measured: the limit at width 5 is 87.8 % and the engine
+  reports 75.5 %, so 12.3 points are inside the posterior the engine already built. Of those, the protocol can
+  express 3.9.
+- **"`borda` and `rrf` are interchangeable on claims."** False on partial evidence, with the mechanism recorded.
+
+### The next arm, stated before it runs
+
+Protocol 3 has been dispatched for the same 1 422 cases, same model, same table. The pre-registered prediction:
+
+- a nomination arm at `rrf` clears the engine's **75.5 %** on the same cases — the claim protocol's loss was
+  expressiveness, and nomination removes that constraint;
+- the residual gap to 87.8 % is the model's reading error, and a nomination arm below **80 %** means the reading, not
+  the protocol, was the binding constraint all along.
+
+The kill criterion is stated in advance and is the same shape as §284's: **if nomination on 1 422 cases does not
+clear 75.5 %, the agentic line retires for good** — the layer would then have failed under both protocols, and the
+next axis is the posterior's width (5 → 10, worth +2.1 points of reader) rather than another way of asking.

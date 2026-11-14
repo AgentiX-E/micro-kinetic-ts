@@ -374,6 +374,20 @@ export default defineConfig({
         // including the empty half that must print as `-` rather than as the strongest rate there is, and the verdict
         // that is undecidable rather than false when one half has no denominator.
         'src/agentic-preference-census.ts',
+        // Added with the second expression protocol: the record format, the refusal census and the scored arm of a
+        // ranking answer. Its whole value is the accounting a reader cannot redo by hand — a refused nomination is
+        // not an abstention, a case with no record keeps its engine answer and stays in the denominator, and an
+        // unreadable reply is recorded rather than dropped — so every branch of that accounting is measured.
+        'src/agentic-nomination.ts',
+        // Added with the module: the proposal loop and the sweep. The loop's value is what it does with a call that
+        // never returned, so the failure paths (a typed endpoint error, a wiring fault, a reply that is not JSON)
+        // and the reuse path are measured rather than trusted.
+        'src/agentic-nomination-study.ts',
+        // Added with the module: the two ceilings that bound any arm — the reader (truth in the posterior, which no
+        // protocol can exceed) and the union (engine or arm, which no model can exceed under that protocol) — plus
+        // the recall curve that says which of the two a gap belongs to. Every branch of the accounting is measured,
+        // including the empty posterior and the clamp on a depth.
+        'src/agentic-protocol-ceiling.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

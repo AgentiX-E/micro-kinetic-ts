@@ -59,3 +59,23 @@ export {
 } from './fusion.js';
 
 export type { FusionOptions, FusionStrategy, RankFusionOptions, RankStrategy } from './fusion.js';
+
+export {
+  DEFAULT_NOMINATION_OPTIONS,
+  NOMINATION_PROTOCOL,
+  NOMINATION_REJECTIONS,
+  buildNominationPrompt,
+  fuseNomination,
+  parseNominationReply,
+  verifyNomination,
+} from './nomination.js';
+
+export type {
+  NominationOptions,
+  NominationPrompt,
+  NominationRejection,
+  NominationVerdict,
+  ParsedNomination,
+} from './nomination.js';
+
+export { CHANNEL_TABLE_HEADER, CHANNEL_TABLE_RULE, num, renderCandidateTable } from './table.js';

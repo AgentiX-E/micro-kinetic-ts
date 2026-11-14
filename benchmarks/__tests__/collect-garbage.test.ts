@@ -34,7 +34,7 @@ describe('collectGarbage — a release is not a reclamation', () => {
     const before = process.memoryUsage().heapUsed;
 
     let held: number[][] | undefined = Array.from({ length: 64 }, () =>
-      new Array<number>(128 * 1024).fill(1),
+      Array.from<number>({ length: 128 * 1024 }).fill(1),
     );
     const whileHeld = process.memoryUsage().heapUsed;
     expect(whileHeld).toBeGreaterThan(before);

@@ -328,6 +328,38 @@ jobs:
             --model "${{ inputs.model }}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/eliminator.txt
 
+      # ── The second expression protocol ───────────────────────────────────────────────────────────────────────
+      #
+      #   The elimination study above measures what a MOVE costs to express: a promotion must be spelled as one
+      #   elimination per candidate above it, each citing a channel printed on both rows and outside the removed
+      #   row's band. The `union` column of the ceiling report is that cost, in points. This step asks the same
+      #   table the same question and lets the answer be a ranking, which is the only difference between the two
+      #   protocols — the table itself is rendered by one function, so a difference between the arms is a
+      #   difference in what was asked and not in what was shown.
+      #
+      #   A nomination is verified, not trusted: a service the posterior does not carry is refused by name, a repeat
+      #   is refused, and a refused case keeps its engine answer so the denominator stays the corpus.
+      - name: Ask the model to rank, then score the nomination arm
+        if: env.HAS_MODEL_KEY == 'true'
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-agentic-nomination.ts \
+            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            --nominations artifacts/agentic/nominations.ndjson \
+            --propose \
+            --model "${{ inputs.model }}" \
+            --concurrency 6 2>&1 | tee artifacts/agentic/nomination.txt
+
+      - name: Say why the nomination arm did not run
+        if: env.HAS_MODEL_KEY != 'true'
+        run: |
+          echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the nomination arm was NOT MEASURED"
+          echo "NOMINATION ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
+            | tee artifacts/agentic/nomination.txt
+
       #   Without a key the model arm is NOT MEASURED, and the difference between that and a bad score has to be
       #   visible: the offline arms still run, and the reason the fourth one did not is printed by name rather than
       #   left as a missing row a reader would take for a refusal.
@@ -346,6 +378,25 @@ jobs:
             --fingerprints artifacts/agentic/fingerprints.ndjson \
             --verdicts artifacts/agentic/per-case.ndjson 2>&1 | tee -a artifacts/agentic/eliminator.txt
 
+      # The two numbers that bound every arm, and the curve that says which of them a gap belongs to.
+      #
+      #   Placed AFTER the proposal step on purpose: `--claims` is the artifact that step writes, and a ceiling
+      #   read from a file that does not exist yet would print the engine row and call the protocol free.
+      #
+      #   `union` is the accuracy of "the engine, or the arm" — the ceiling of the elimination protocol on this
+      #   population, which no model can exceed however well it reads. `reader` is the truth-in-posterior share,
+      #   which no protocol can exceed. When the two differ, the difference is what the protocol costs to SAY an
+      #   answer, and that is a property of the question rather than of the model. Both are free: they are computed
+      #   from the same artifacts the steps above already read.
+      - name: Report the protocol ceilings and the recall curve
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-agentic-ceiling.ts \
+            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            --claims artifacts/agentic/claims.ndjson \
+            --depth artifacts/agentic/depth.ndjson 2>&1 | tee artifacts/agentic/ceiling.txt
+
       - name: Upload the study
         if: always()
         uses: actions/upload-artifact@v4
@@ -356,4 +407,7 @@ jobs:
             artifacts/agentic/depth.txt
             artifacts/agentic/eliminator.txt
             artifacts/agentic/claims.ndjson
+            artifacts/agentic/ceiling.txt
+            artifacts/agentic/nomination.txt
+            artifacts/agentic/nominations.ndjson
           if-no-files-found: warn

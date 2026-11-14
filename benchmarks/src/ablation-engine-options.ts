@@ -450,7 +450,7 @@ export type AblationSuite = 're1' | 're2' | 're3';
  * @param suite - The suite whose published configuration is wanted.
  * @returns The flags the published run for that suite is taken with.
  */
-export function productionFlags(suite: AblationSuite): AblationFeatureFlags {
+export function productionFlags(_suite: AblationSuite): AblationFeatureFlags {
   return {
     collisionAggregation: false,
     extraTraceValidation: false,

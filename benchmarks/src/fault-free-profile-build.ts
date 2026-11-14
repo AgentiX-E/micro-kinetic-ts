@@ -111,7 +111,6 @@ export function runBuildProfile(
   loader: FSE26Loader = new FSE26Loader(),
 ): BuildProfileSummary {
   const dirs = discoverCaseDirs(args.dataDir);
-  const cases = args.maxCases > 0 ? Math.min(args.maxCases, dirs.length) : dirs.length;
   let observations = 0;
   const profile = buildFaultFreeProfile(
     (function* (): Generator<FaultFreeObservation> {

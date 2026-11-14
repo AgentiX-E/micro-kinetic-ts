@@ -2440,7 +2440,6 @@ export class TreePruner {
             this.options.faultFreeProfile,
             this.options.faultFreeSelection,
           );
-    const faultFreeWeight = this.options.faultFreeWeight;
     const deepestExceptions = computeDeepestExceptions(
       options?.logs,
       new Set(callGraph.nodes.keys()),
