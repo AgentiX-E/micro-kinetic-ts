@@ -1,0 +1,925 @@
+/**
+ * The ablation runner's engine arguments, and the configuration line its artifact carries.
+ *
+ * ## Why this exists
+ *
+ * This is the repository's THIRD engine construction site — `run-fse26.ts`, `run-rcaeval.ts` and this one
+ * — and the first two were each extracted for the same reason, recorded in
+ * `fse26-engine-options.ts` and `rcaeval-engine-options.ts`: a runner that calls `main()` at import time
+ * cannot be imported, so neither its option assembly nor the line that records it can be called by a test.
+ * Here the cost was visible in the ARTIFACT rather than in the code: `ablation-re1-results` printed
+ * `Running: BASELINE (all OFF)` and a JSON record of twelve BOOLEANS, and **not one weight**.
+ *
+ * That artifact is the register's ablation reference, and a reader could not reconstruct a single run from
+ * it:
+ *
+ * - the flags are the ablation's INPUTS; the run is decided by the numbers they map to
+ *   (`flags.logSignal ? 1.0 : 0.0`), and that mapping lived only in the runner's source;
+ * - six weights were not named by the flags OR the artifact, because the construction site simply did not
+ *   pass them — `latWeight`, `latMinRise`, `poolMetricPenaltyWeight`, `stabilityWeight`, `temporalWeight`
+ *   and `onsetShape` fell through to `DEFAULT_TREE_PRUNER_OPTIONS`;
+ * - so the row labelled **`BASELINE (all OFF)`** ran with the four terms that dominate the shipped ranking
+ *   ON. The label asserted a configuration the run did not have.
+ *
+ * ## What the repair does, and does not, change
+ *
+ * The six inherited terms are now passed EXPLICITLY, read from the engine's own constants. Their values are
+ * byte-identical to the defaults they were already receiving, so no number in the artifact may move — the
+ * change is that the artifact can now SAY them. The flags keep their meaning, the base row keeps its
+ * measurements, and the label is corrected because a label is a claim.
+ *
+ * The line is rendered with the same `signals: name=value …` shape the golden half's artifact carries, so
+ * one reader covers both artifacts: the ablation's reference and the configuration it was measured against
+ * are then comparable by eye, which they were not.
+ *
+ * @module benchmarks/ablation-engine-options
+ */
+
+import type {
+  BaselineAnchor,
+  DualFamilyGateMode,
+  FailedEdgeGateMode,
+  LogNormalisation,
+  LogSignalMode,
+  OnsetShape,
+  PrismPooling,
+  TransientGuardTest,
+} from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_ANOMALY_CV_WEIGHT,
+  DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_BASELINE_ANCHOR,
+  DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_EMISSION_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_SHARE,
+  DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_NORMALISATION,
+  DEFAULT_LOG_SIGNAL_MODE,
+  DEFAULT_METRIC_RISE_CEILING,
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRANSIENT_GUARD_TEST,
+  DEFAULT_VICTIM_WEIGHT,
+  type DropDeviationMode,
+} from '../../packages/tree/src/index.js';
+
+/**
+ * The features this study switches, one boolean each.
+ *
+ * These are the ablation's INPUTS and they are recorded as such: the `Flags:` line the artifact carries
+ * keeps naming them, because the study's design is the flags. What was missing is the CONFIGURATION they
+ * produce, which is what {@link formatAblationConfigLine} now states.
+ */
+export interface AblationFeatureFlags {
+  /** Collision tree aggregator with Boltzmann Q(f,f). */
+  collisionAggregation: boolean;
+  /**
+   * A SECOND, stricter trace-topology validation pass, applied by the runner on top of the corpus.
+   *
+   * This is **not** the shipped augmentation. The shipped corpus augments every trace-bearing case from its
+   * own spans (`rcaeval-corpus.ts`, `{ minCallFrequency: 1 }`, always on), and its arm here was a DIFFERENT
+   * option set (`{ minCallFrequency: 0, discoverNewEdges: false, pruneUnobserved: true }`). It was named
+   * `traceAugmentation` until iteration 72, and that name is why the corpus difference went unnoticed: the
+   * flag advertised the shipped step while being a separate one, so a run that "had trace augmentation ON"
+   * and a run that "had it OFF" could both be missing the shipped step entirely. It measures `+0.0` on RE2
+   * and RE3 — the only two suites that have traces — which is the signature of a mechanism that never
+   * reaches the ranking.
+   */
+  extraTraceValidation: boolean;
+  /** Online weight calibration (self-evolving). */
+  selfLearning: boolean;
+  /** Log signal: reward post-injection ERROR/FATAL volume (logWeight). */
+  logSignal: boolean;
+  /** Topological-source signal: reward no-anomalous-parent nodes (topoWeight). */
+  topoSignal: boolean;
+  /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
+  collisionSignal: boolean;
+  /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
+  collapseDiscount: boolean;
+  /** Metric-direction signal: reward source RISE, penalise symptom COLLAPSE (riseWeight). */
+  riseSignal: boolean;
+  /** Trace span-activity rise signal: reward the service whose spans rise post-injection. */
+  traceSignal: boolean;
+  /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
+  rankNormalization: boolean;
+  /** Extend the transient guard to idle-start transients (near-zero-baseline latency spike). */
+  suppressIdleTransients: boolean;
+  /** Demand metrics are not fault evidence. Held at the shipped pole by every row of this study. */
+  suppressDemandMetrics: boolean;
+  /** PRISM graph-free signal: reward the node anomalous in BOTH internal and external channels. */
+  prismSignal: boolean;
+}
+
+/**
+ * The first constructor argument: `Partial<TreePrunerOptions>`.
+ *
+ * The seven fields the study VARIES come first, then the seven it holds at the shipped value. The second
+ * group exists because leaving them out is what made the artifact unreadable: an option that is not passed
+ * is not absent from the run, it is INHERITED, and the artifact had no way to say either.
+ */
+export interface AblationSignalOptions {
+  readonly enableCollisionAggregation: boolean;
+  readonly collisionWeight: number;
+  readonly topoWeight: number;
+  readonly logWeight: number;
+  readonly riseWeight: number;
+  readonly traceWeight: number;
+  /**
+   * The trace vote's leader mask, held at the shipped `false` by every row.
+   *
+   * Named on the constant rule: the reported-field partition requires every field the artifact can omit to be
+   * printed or exempted, and `false` is a fact about the configuration rather than an omission. No row VARIES it —
+   * the study's subject is Deng Yu's terms, and this is a precondition on one of them.
+   */
+  readonly traceSkipsLeader: boolean;
+  readonly prismWeight: number;
+  readonly logSignalMode: LogSignalMode;
+  /** The scale the log signal's counts are measured on — see `LogNormalisation` in `packages/tree`. */
+  readonly logNormalisation: LogNormalisation;
+  readonly latWeight: number;
+  readonly latMinRise: number;
+  /**
+   * The failed-edge direction term's weight.
+   *
+   * Present here for the reason every field above is: the artifact must be able to state the configuration the
+   * row ran, and the register's standard requires the field on EVERY engine runner's artifact. It was exempt
+   * until iteration 124, when the golden half began forwarding it — an exemption is a statement about all the
+   * runners that share this record, so it cannot survive one of them adopting the field.
+   */
+  readonly failedEdgeWeight: number;
+  /**
+   * Which bar that weight's rise is read against.
+   *
+   * Held at the shipped `absolute` by every row, on the rule `selfTimeWeight` above is held at its own shipped
+   * value: no row of the battery varies the gate, and a configuration the artifact cannot state is one a reader
+   * has to guess. The field matters because the golden half can move it — on that corpus the absolute bar refuses
+   * every case — so an artifact that can only read `absolute` must say so rather than leave it to the default.
+   */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
+  /** The share that mode reads, held at the shipped value by every row. */
+  readonly failedEdgeGateShare: number;
+  readonly poolMetricPenaltyWeight: number;
+  readonly stabilityWeight: number;
+  /**
+   * The self-time prior. Held at the shipped value by every row — the study's flags are binary and this
+   * term's shipped weight is 0, so no row of the cube can express it. Named here anyway, on the rule the
+   * six inherited terms above were added for: a configuration the artifact cannot state is a configuration
+   * a reader has to guess, and 0 is a fact rather than an omission.
+   */
+  readonly selfTimeWeight: number;
+  /**
+   * The internal/external symmetry mask. Held at the shipped value by every row, on the rule the six
+   * inherited terms above follow: the study's flags are binary and this term's shipped weight is 0, so no
+   * row of the cube can express it — but a configuration the artifact cannot state is one a reader has to
+   * guess at.
+   */
+  readonly victimWeight: number;
+  /** The dual-family presence bonus, held at the shipped 0 by every row. */
+  readonly dualFamilyWeight: number;
+  /** The BASE term's coefficient; `1` is the shipped configuration. */
+  readonly selfAnomalyWeight: number;
+  /**
+   * The collision source's own emission, `Δλ` in errors per request.
+   *
+   * The second of the two members this artifact could not state until the shipped vector was priced: it ships at
+   * **0.5**, which is neither 0 nor 1, so no flag of the cube can express it and every row of the battery ran it
+   * at full strength while varying nothing about it. It is a real channel on this corpus (the emission map is
+   * computed from the metrics the cases carry), which is what separates it from {@link podStateWeight}.
+   */
+  readonly emissionWeight: number;
+  /**
+   * The dual-family membership's population, held at the shipped 0.25 by every row.
+   *
+   * Named for the reason the ceiling and the drop mode are: the reported-field partition requires every field
+   * the artifact can omit to be printed or exempted, and 0 is a fact about the configuration rather than an
+   * omission. No row VARIES it — the study's subject is Deng Yu's terms, and this knob selects WHO is paid a
+   * 0/1 bonus that is itself 0 in every row.
+   */
+  readonly dualFamilyGate: number;
+  /**
+   * Which fleet-relative comparison the gate applies, held at the shipped `channel` by every row.
+   *
+   * Named on the constant rule: the reported-field partition requires every field the artifact can omit to be
+   * printed or exempted. No row VARIES it — the gate itself is 0 in every row, so its comparison cannot act.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
+  readonly temporalWeight: number;
+  readonly onsetShape: OnsetShape;
+  readonly prismPooling: PrismPooling;
+}
+
+/** The second constructor argument: `Partial<TopologyFaultGraphConfig>`. */
+export interface AblationTopologyOptions {
+  readonly collapseDiscount: number;
+  readonly rankNormalization: boolean;
+  readonly suppressIdleTransients: boolean;
+  /**
+   * The demand guard, held at the shipped value by every row.
+   *
+   * It is a field rather than an omission because the artifact must state the configuration it ran: a row
+   * that left it out would describe an engine whose default nobody wrote down, which is the class of defect
+   * `docs/ablation-config-audit.md` exists for. No row VARIES it — the study's subject is Deng Yu's terms —
+   * so it appears here as a constant and on the line below as a stated one.
+   */
+  readonly suppressDemandMetrics: boolean;
+  /**
+   * The largest ratio one metric's deviation may reflect, held at the shipped 0.
+   *
+   * Named here for the reason every constant of this object is: the reported-field partition requires every
+   * field the artifact can omit to be either printed or exempted, and this one stopped being exempt when the
+   * golden runner began forwarding it. No row VARIES it — the study's subject is Deng Yu's terms.
+   */
+  readonly metricRiseCeiling: number;
+  /** How a metric's DROP becomes a deviation, held at the shipped `bounded`. */
+  readonly dropDeviationMode: DropDeviationMode;
+  /**
+   * Which SEGMENT of the series a metric's deviation is measured against, held at the shipped `whole-file`.
+   *
+   * Named on the constant rule every field of this object follows: the reported-field partition requires a
+   * field the artifact can omit to be either printed or exempted, and this one cannot be exempted while its
+   * two siblings (`metricRiseCeiling`, `dropDeviationMode`) are printed — all three describe one object.
+   *
+   * Unlike its siblings it is not merely a constant: the arm it enables re-anchors EVERY metric on EVERY
+   * case, so a row of this battery can vary it and a reader of the artifact has to be able to tell that row
+   * from the shipped one.
+   */
+  readonly baselineAnchor: BaselineAnchor;
+  /**
+   * Which STATISTIC decides a channel moved for good, held at the shipped `endpoint`.
+   *
+   * Named on the constant rule every field of this object follows, and it is the field for which that rule
+   * is least decorative: the two statistics are byte-identical on every case whose injection boundary
+   * cannot be placed, so a row that varied this one on such a corpus would produce an artifact
+   * indistinguishable from the row it is read against. No row VARIES it — the study's subject is Deng Yu's
+   * terms — so it appears here as a constant and on the line as a stated one.
+   */
+  readonly transientGuardTest: TransientGuardTest;
+  /**
+   * The anomaly composition's three weights — trend, dispersion and breadth.
+   *
+   * These are not ranking addends: they build the `anomaly` the BASE term then takes `log1p` of, so removing one
+   * changes every candidate's score rather than adding or subtracting a term. That is exactly why they belong in
+   * this study: on `RE1` the ranking addends are all zero and the published `92.0` is `deviation + 0.15*trend +
+   * 0.05*cv` plus the stability tie-break, so the composition is the ONE set of numbers that decides that suite.
+   * Printed on the line from their owner constants for the reason every field here is: a configuration the
+   * artifact cannot state is one a reader has to guess.
+   */
+  readonly anomalyTrendWeight: number;
+  /** See {@link AblationTopologyOptions.anomalyTrendWeight}. */
+  readonly anomalyCvWeight: number;
+  /** See {@link AblationTopologyOptions.anomalyTrendWeight}. */
+  readonly anomalyBreadthWeight: number;
+}
+
+/** The engine's two constructor arguments, named so a test can assert both. */
+export interface AblationEngineOptions {
+  readonly signals: AblationSignalOptions;
+  readonly topology: AblationTopologyOptions;
+}
+
+/**
+ * The engine arguments this study OVERRIDES directly, rather than deriving from a boolean flag.
+ *
+ * ## Why the study needs this at all
+ *
+ * Every row of the battery was, until this, a point in a binary cube: twelve flags, each mapping to a
+ * weight of `1.0` or `0.0`. That design cannot express a question about a term whose SHIPPED weight is
+ * neither — and the three terms that dominate the shipped ranking are exactly those: `latWeight`
+ * **0.561495**, `poolMetricPenaltyWeight` **0.0679**, `stabilityWeight` **0.007352**. They ran in every
+ * configuration of the battery at full shipped strength, varying with none of it, so **their contribution
+ * was not a zero — it was unmeasured**. `ABLATION_FINDINGS.md` v2 records that as the first of its two
+ * gaps.
+ *
+ * ## `??`, not `||`, and that is the whole subtlety
+ *
+ * The value an override most needs to express is **zero** — "turn this term off" — and `||` cannot: `0` is
+ * falsy, so `override || default` silently returns the shipped weight and the row labelled OFF measures ON.
+ * An `undefined` field means "not overridden"; a `0` means "overridden to zero". Only `??` tells them apart.
+ *
+ * ## Why the name is not `...WeightOverrides`, and why that is not a rename for its own sake
+ *
+ * It was, and the battery's SECOND gap closes with a field that is not a weight. `prismPooling` selects
+ * WHICH OF PRISM'S TWO COMBINATION FUNCTIONS the fused signal is built with, and the two are not close
+ * variants: the controlled head-to-head (`docs/prism-head-to-head.md`, the identical 735 cases) reads
+ * `additive` at **78.9% overall** while `conjunctive` resolves the code-level block at **RE3 TrainTicket
+ * 76.7% against `additive`'s 33.3%** — the largest single-cell margin in the record, on the weakest cell of
+ * the published nine. A record whose name promised numbers would have to lie about its member or keep the
+ * axis out of the study, and keeping it out is precisely what the engine did: `combinePrismScore` takes the
+ * pooling, the standalone evaluator dispatches it (`run-prism.ts --pooling conjunctive`), and **no engine
+ * run, battery row or dispatch could select it** — the call site omitted the argument, so every one of them
+ * combined additively whatever it asked for. The name now states what the record holds: an override of an
+ * engine argument, keyed by that argument's own name — the vocabulary both artifacts are read in.
+ *
+ * @see ABLATION_FINDINGS.md in the docs repository
+ */
+export interface AblationEngineOverrides {
+  /** Overrides `prismWeight` (the PRISM sweep's continuum). */
+  readonly prismWeight?: number;
+  /** Overrides `latWeight` — the per-edge-latency prior's strength. */
+  readonly latWeight?: number;
+  /** Overrides `latMinRise` — the floor below which a rise is masked out of that prior. */
+  readonly latMinRise?: number;
+  /**
+   * Overrides `failedEdgeWeight` — the failed-edge direction term.
+   *
+   * The arm's engine-side gate (`admitsFailedEdgeTerm`) reads the corpus, so a row that varies this weight is only
+   * interpretable beside the view that supplied `edgeLatency`: on the shipped view the array is empty and the term
+   * cannot fire at any weight. That is a property of this battery's rows too, and the golden half prints the
+   * verdict line (`direction-gate[...]`) that names it.
+   */
+  readonly failedEdgeWeight?: number;
+  /**
+   * Overrides `poolMetricPenaltyWeight` — the pool-dominance penalty.
+   *
+   * The two priors below were, until iteration 73, **the only shipped terms the battery had never varied**,
+   * which the register recorded as its own residue: *the ledger's rows do not sum to the golden's, and the
+   * never-ablated numeric terms are the candidates.* They are also the ONLY knobs that can move RE1, whose
+   * channels are both starved — that suite has no `logs.csv` and no `traces.csv` at all, so every boolean
+   * signal there has no input to act on and reads a zero that says nothing about the term's worth.
+   */
+  readonly poolMetricPenaltyWeight?: number;
+  /** Overrides `stabilityWeight` — the decisive-stability prior. See above. */
+  readonly stabilityWeight?: number;
+  /** Overrides `selfTimeWeight` — the self-time prior. See the field on the signals object. */
+  readonly selfTimeWeight?: number;
+  /** Overrides `victimWeight` — the internal/external symmetry mask. */
+  readonly victimWeight?: number;
+  /** Overrides `selfAnomalyWeight` — the base term's coefficient. */
+  readonly selfAnomalyWeight?: number;
+  /** Overrides `dualFamilyWeight` — the dual-family presence bonus. */
+  readonly dualFamilyWeight?: number;
+  /** Overrides `metricRiseCeiling` — the ratio ceiling. */
+  readonly metricRiseCeiling?: number;
+  /** Overrides `dropDeviationMode` — how a drop becomes a deviation. */
+  readonly dropDeviationMode?: DropDeviationMode;
+  /**
+   * Overrides `baselineAnchor` — which segment of the series the deviation is measured against.
+   *
+   * The second non-numeric override here, and non-numeric for the same reason as `prismPooling`: the axis is
+   * a WINDOW rather than a magnitude. It is inert on a series with no warm-up (every sample then lies inside
+   * one segment, so both anchors find the same `max`/`min`/baseline), which is why a row that varies it must
+   * be read per case rather than as a cell-level delta alone.
+   */
+  readonly baselineAnchor?: BaselineAnchor;
+  /**
+   * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
+   *
+   * The one override here that is not a number, and the reason the record is not called
+   * `...WeightOverrides`. Its effect is inert while `prismWeight` is 0, which is the shipped value, so the
+   * rows that vary it also carry the flag that turns the signal on — otherwise the row would move nothing
+   * and read as a measurement that the pooling does not matter.
+   */
+  readonly prismPooling?: PrismPooling;
+  /**
+   * Overrides `emissionWeight` — the collision source's own `Δλ`.
+   *
+   * Ships at 0.5, so `0` is its ablation and the arm is exact: at 0 the engine does not compute the emission map
+   * at all (`pruner.ts`, the `emissionWeight !== 0` guard), which is what makes the row a removal rather than a
+   * re-weighting.
+   */
+  readonly emissionWeight?: number;
+  /**
+   * Overrides `temporalWeight` — the injection-anchored temporal prior.
+   *
+   * Ships at 0, so unlike the others this override ENROLS a term rather than removing one. It is here because the
+   * golden half has carried the knob all along (`--temporal-weight`) and the battery had no way to state it: a
+   * term one instrument can measure and the other cannot describe is the seam `docs/dispatch-forwarding.md` was
+   * written about.
+   */
+  readonly temporalWeight?: number;
+  /** Overrides `anomalyTrendWeight` — the monotone-drift share of a channel's anomaly. */
+  readonly anomalyTrendWeight?: number;
+  /** Overrides `anomalyCvWeight` — the dispersion share of a channel's anomaly. */
+  readonly anomalyCvWeight?: number;
+  /** Overrides `anomalyBreadthWeight` — the channels-moved share of a channel's anomaly. */
+  readonly anomalyBreadthWeight?: number;
+}
+
+/**
+ * The three published RCAEval suites, spelled as the artifact's own `suite=` filter spells them.
+ *
+ * A suite is an INPUT to the published configuration rather than a label on it — see
+ * {@link productionFlags} — so the vocabulary has to live beside the flags, not in the runner that
+ * happens to filter by it.
+ */
+export type AblationSuite = 're1' | 're2' | 're3';
+
+/**
+ * The configuration the PUBLISHED nine cells are taken with.
+ *
+ * ## Why this function has to exist, and what it refuted
+ *
+ * A reader of `ablation-*-results` had exactly one row that could be mistaken for the production
+ * configuration — `FULL STACK (all ON)` — and it is not production and is not all on: it turns on the
+ * three LEGACY flags (`collisionAggregation`, `extraTraceValidation`, `selfLearning`) and leaves all
+ * six ranking signals off, so it is **value-identical to `BASELINE (flags OFF)` in every fault-type
+ * column of every system** — measured, not argued: the eight-row legacy cluster that contains it is one
+ * distinct value-string across all three systems of both `ablation-re1-results` and
+ * `ablation-re3-results`, i.e. 224 printed cells that carry one configuration twice.
+ * A row that cannot move is not a measurement of the stack; it is the stripped baseline under a second
+ * name, and every delta the artifact printed was measured from that stripped point rather than from
+ * what this project ships.
+ *
+ * ## The configuration, stated
+ *
+ * Production is `logWeight = 1`, `traceWeight = 1`, `rankNormalization = true`, `prismWeight = 0`, and every
+ * collision / topology / shape switch at its shipped pole. That is **one vector for all three suites**, and it
+ * became one when the trace pin moved out of the dispatch and into `DEFAULT_TRACE_WEIGHT`; before that the
+ * published configuration was a per-suite pin that no flat grid could express, which is why the row that
+ * reproduced the published `RE3` numbers was labelled after its three flags instead.
+ *
+ * `RE1` and both SockShop packs carry no `traces.csv`, so the term is unobservable there and the vector is the
+ * same vector either way; the cells that DO carry spans are where the term is a measurement rather than a
+ * label, and on all of them but one the two arms rank every case identically (the A/B table is on
+ * `DEFAULT_TRACE_WEIGHT`). The suite argument survives because the published per-suite configuration is what
+ * callers ask for by name, not because the answer depends on it.
+ *
+ * @param suite - The suite whose published configuration is wanted.
+ * @returns The flags the published run for that suite is taken with.
+ */
+export function productionFlags(_suite: AblationSuite): AblationFeatureFlags {
+  return {
+    collisionAggregation: false,
+    extraTraceValidation: false,
+    selfLearning: false,
+    logSignal: true,
+    topoSignal: false,
+    collisionSignal: false,
+    collapseDiscount: false,
+    riseSignal: false,
+    // The pin is GONE. `traceWeight` is `DEFAULT_TRACE_WEIGHT` = 1 on every suite, so the published
+    // configuration is one vector instead of three; a corpus with no spans makes the term unobservable, and
+    // `RE1` (and both SockShop packs) are that corpus. The nine-cell A/B that moved the default out of the
+    // dispatch and into the engine is on the constant's own docblock.
+    traceSignal: true,
+    rankNormalization: true,
+    suppressIdleTransients: false,
+    suppressDemandMetrics: true,
+    prismSignal: false,
+  };
+}
+
+/**
+ * Whether a flag vector is the published configuration for a suite.
+ *
+ * Compares every member rather than a subset: a row that differed in the one switch nobody watches would
+ * be reported as production while measuring something else, which is the defect {@link productionFlags}
+ * documents in the row it replaced.
+ *
+ * @param flags - The row's flags.
+ * @param suite - The suite being measured, as the artifact spells it. An unknown suite answers `false`
+ *   rather than throwing: the caller is a `find` over the battery, and "no row is production here" is a
+ *   fact it has to be able to hold.
+ * @returns `true` when every member matches.
+ */
+export function isProductionFlags(
+  flags: AblationFeatureFlags,
+  suite: AblationSuite | string,
+): boolean {
+  if (suite !== 're1' && suite !== 're2' && suite !== 're3') return false;
+  const want = productionFlags(suite);
+  return (Object.keys(want) as Array<keyof AblationFeatureFlags>).every(
+    (key) => flags[key] === want[key],
+  );
+}
+
+/**
+ * The battery rows that ARE the published configuration, plus one single-flag counterfactual per term the
+ * nine cells depend on, owned here so a test can hold them to {@link productionFlags} without importing the
+ * runner (which executes at import time).
+ *
+ * One production row, and three counterfactuals that each remove exactly one member of it. The trace arm was
+ * the first because the nine cells needed it; `LESS LOG` and `LESS RANK` followed because the report of the
+ * 254th iteration could price only the trace term and had to say so, and a term with no counterfactual is a
+ * term whose contribution the battery cannot state. All three claim no suite — none of them is the published
+ * configuration of anything, they exist to price a member — and marking them that way is what keeps
+ * `isProductionFlags` from ever calling one of them production.
+ *
+ * Growing this list is the ONLY way to add an arm: the runner takes its production rows from here
+ * (`...PRODUCTION_ROWS.map`), so a second hand-written copy of the vector cannot drift from this one. A flag
+ * that is a suppression rather than a signal (`suppressIdleTransients`, `suppressDemandMetrics`) is
+ * deliberately absent: removing one of those changes which cases enter the corpus, not how a case is scored,
+ * and a row that changed both would not isolate either.
+ */
+export interface AblationProductionRow {
+  /** The label the artifact prints. */
+  readonly label: string;
+  /** The suites this row is the published configuration OF. */
+  readonly suites: readonly AblationSuite[];
+  /** The flags, exactly {@link productionFlags} of those suites. */
+  readonly flags: AblationFeatureFlags;
+  /**
+   * The engine arguments this row overrides, if it is distinguished by a NUMBER rather than by a flag.
+   *
+   * A row of {@link PRODUCTION_ROWS} is a point in the flag cube; a row of {@link PRODUCTION_WEIGHT_ROWS} is the
+   * shipped vector with one coefficient removed. The two live in one record because they are read against ONE
+   * baseline — the configuration that produced the published nine cells — and a second row type would be a second
+   * answer to "what is production", which is the defect that made the label `BASELINE (all OFF)` false.
+   */
+  readonly overrides?: AblationEngineOverrides;
+}
+
+/** The production row and its single-flag counterfactuals, in the order the battery states them. */
+export const PRODUCTION_ROWS: readonly AblationProductionRow[] = [
+  {
+    label: 'PRODUCTION (log + trace + rank)',
+    suites: ['re1', 're2', 're3'],
+    flags: productionFlags('re3'),
+  },
+  {
+    label: 'PRODUCTION LESS TRACE (log + rank)',
+    // No suite is this configuration: it exists to price the trace term, which is the one member the two rows
+    // differ in.
+    suites: [],
+    flags: { ...productionFlags('re3'), traceSignal: false },
+  },
+  {
+    label: 'PRODUCTION LESS LOG (trace + rank)',
+    // The log term is the one member that ships ON for every suite, so this is the arm that says what the
+    // shipped ranking would be with no metric-anomaly channel at all.
+    suites: [],
+    flags: { ...productionFlags('re3'), logSignal: false },
+  },
+  {
+    label: 'PRODUCTION LESS RANK (log + trace)',
+    // Rank normalisation changes the ORDER of the terms rather than the weight of one, so it needs its own arm
+    // for the same reason the others do: without it, the artifact prices three of production's four members.
+    suites: [],
+    flags: { ...productionFlags('re3'), rankNormalization: false },
+  },
+];
+
+/**
+ * One member of the shipped vector, and the constant that decides its size.
+ *
+ * @see PRODUCTION_WEIGHT_ROWS — the arms built from this table.
+ */
+export interface ProductionWeightField {
+  /** The engine argument's own name, which is also the token the artifact's line carries. */
+  readonly field: keyof AblationEngineOverrides & string;
+  /** The name the arm's label uses for it — a word, not a camel-cased identifier. */
+  readonly name: string;
+  /** The value the SHIPPED run passes, read from the engine's constant rather than restated. */
+  readonly shipped: number;
+}
+
+/**
+ * The numbers the published configuration spends, one row each.
+ *
+ * ## What makes a member eligible
+ *
+ * It must be **non-zero in the shipped vector** (an arm over a zero removes nothing) and **fed on this corpus**
+ * (an arm over a channel no case carries would print a `0.0` that is a statement about the corpus, wearing the
+ * label of a statement about the term). `podStateWeight` is the one member that fails the second test, and
+ * {@link PRODUCTION_UNPRICED_WEIGHTS} says so rather than leaving it out.
+ *
+ * ## Why these ten and not "the eight"
+ *
+ * `docs/production-leave-one-out.md` counted eight defaults by reading the ablation's own construction site, and
+ * that site is exactly what omitted two of them: `emissionWeight` (**0.5**) and `failedEdgeWeight` (**3**) were
+ * absent from the arguments the battery passed, so a count taken from that file could not see them. The table is
+ * read from the SHIPPED LINE instead (`formatAblationConfigLine(productionFlags('re3'))`), which is the artifact a
+ * reader has, and the fence in `production-weight-rows.test.ts` re-derives the partition from that line every run.
+ */
+export const PRODUCTION_WEIGHT_FIELDS: readonly ProductionWeightField[] = [
+  { field: 'selfAnomalyWeight', name: 'SELF-ANOMALY', shipped: DEFAULT_SELF_ANOMALY_WEIGHT },
+  { field: 'dualFamilyWeight', name: 'DUAL-FAMILY', shipped: DEFAULT_DUAL_FAMILY_WEIGHT },
+  { field: 'latWeight', name: 'LAT', shipped: DEFAULT_LAT_WEIGHT },
+  { field: 'emissionWeight', name: 'EMISSION', shipped: DEFAULT_EMISSION_WEIGHT },
+  {
+    field: 'poolMetricPenaltyWeight',
+    name: 'POOL PENALTY',
+    shipped: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  },
+  { field: 'stabilityWeight', name: 'STABILITY', shipped: DEFAULT_STABILITY_WEIGHT },
+  { field: 'failedEdgeWeight', name: 'FAILED EDGE', shipped: DEFAULT_FAILED_EDGE_WEIGHT },
+  { field: 'anomalyTrendWeight', name: 'TREND', shipped: DEFAULT_ANOMALY_TREND_WEIGHT },
+  { field: 'anomalyCvWeight', name: 'CV', shipped: DEFAULT_ANOMALY_CV_WEIGHT },
+  { field: 'anomalyBreadthWeight', name: 'BREADTH', shipped: DEFAULT_ANOMALY_BREADTH_WEIGHT },
+];
+
+/**
+ * The non-zero members of the shipped vector that this study CANNOT price, each with the reason.
+ *
+ * The record exists so the partition is total: a new weight that ships non-zero and has no arm fails the fence
+ * instead of quietly widening the unmeasured column. The distinction it draws is the one
+ * `docs/ablation-input-census.md` draws — **an arm that reads `0.0` because its input is absent is not a
+ * measurement of the term** — and it is why `failedEdgeWeight` (whose gate refuses almost every case here) is
+ * priced with that caveat stated beside its row, while `podStateWeight` is not priced at all.
+ */
+export const PRODUCTION_UNPRICED_WEIGHTS: Readonly<Record<string, string>> = {
+  podStateWeight:
+    'the RCAEval corpora carry no pod-lifecycle channel: there is no restart counter, readiness probe or ' +
+    'phase transition in any of the 735 cases, so the map the term reads is empty by construction and an arm ' +
+    'would measure the corpus rather than the term. It is priced on the half that has the channel ' +
+    '(`docs/pod-state-term.md`, the archive sweep 31.7 / 99.3 / 100.0 / 100.0 at 0 / 4 / 8 / 16)',
+};
+
+/**
+ * The shipped vector with exactly ONE coefficient removed, per {@link PRODUCTION_WEIGHT_FIELDS}.
+ *
+ * The value is always the number `0`, which is what the cast states: every field of
+ * {@link AblationEngineOverrides} that this table can name is a number, and `0` is the value at which each of
+ * them is absent (`emissionWeight` is not even computed at 0, `latWeight` reads nothing, the anomaly shares fall
+ * back to the deviation alone). Writing ten literal rows instead would put ten chances for a label to name a
+ * weight its row does not carry — the defect `docs/ablation-config-audit.md` records.
+ */
+export const PRODUCTION_WEIGHT_ROWS: readonly AblationProductionRow[] =
+  PRODUCTION_WEIGHT_FIELDS.map((entry) => ({
+    label: `PRODUCTION LESS ${entry.name} (${entry.field}=0)`,
+    // No suite is published with a member removed: these rows are counterfactuals on the one vector that is.
+    suites: [],
+    flags: productionFlags('re3'),
+    overrides: { [entry.field]: 0 } as AblationEngineOverrides,
+  }));
+
+/**
+ * One member of {@link PRODUCTION_WEIGHT_FIELDS}, looked up by the word its arm's label uses.
+ *
+ * A name rather than a field key, because the joint arms below are declared in the table's own vocabulary: a
+ * pair is "the TREND arm and the CV arm together", and writing `anomalyTrendWeight` there instead would let the
+ * pair outlive a rename of the word the artifact prints.
+ *
+ * @param name - The `name` of a member of {@link PRODUCTION_WEIGHT_FIELDS}.
+ * @returns That member.
+ * @throws Error if no member carries the name. This runs at module load, which is the point: a joint arm that
+ * named a member with no single arm is a row whose two removals cannot be read against anything, and the
+ * failure belongs at import rather than in an artifact nobody re-reads.
+ */
+function weightFieldOf(name: string): ProductionWeightField {
+  const entry = PRODUCTION_WEIGHT_FIELDS.find((candidate) => candidate.name === name);
+  if (!entry) {
+    throw new Error(
+      `PRODUCTION_JOINT_ARMS names '${name}', which is not a member of PRODUCTION_WEIGHT_FIELDS — a joint arm ` +
+        'must be the two single arms it combines, not a third configuration',
+    );
+  }
+  return entry;
+}
+
+/**
+ * A pre-registered pair of members, removed together.
+ *
+ * ## Why a joint arm is not a second sweep
+ *
+ * Leave-one-out is a FIRST-ORDER marginal: it prices one member with the rest of the vector held at the shipped
+ * value, and it says nothing about what two removals do together. Most pairs do not need to be asked — their
+ * single arms move different cases, so the pair is the sum. The arms below are the ones where the single arms
+ * landed on the SAME CASE with OPPOSITE SIGNS, which is exactly the situation in which the sum and the joint
+ * reading can disagree:
+ *
+ * - if the case is one case and the two shares cancel, the pair is worth `0` and the two single arms have each
+ *   been reporting the same case twice;
+ * - if they are two independent cases, the pair is worth both and the two shares are additive.
+ *
+ * `docs/production-weight-leave-one-out.md` records `TREND` at `−1` (`RE1` and `RE2` down one) and `CV` at `+2`
+ * (`RE2` and `RE3` up one), with both arms landing on `RE3:TrainTicket`. The pair therefore separates the two
+ * readings: `667` means the `RE2` gain and the `RE2` loss are the same case, `668` means they are not.
+ *
+ * ## Why exactly this pair, and nothing else
+ *
+ * It was named in the register BEFORE the arms were run, in the document that reports the single arms. The rule
+ * the register has held three times is that a pair chosen after seeing which pairs would help is a search
+ * dressed as an ablation, and the reason this pair is admissible is that it was chosen for a MECHANISM question
+ * (are these two shares one case?) rather than for a score.
+ */
+export interface ProductionJointArm {
+  /** The `name`s of the two members, in the order the label prints them. */
+  readonly members: readonly [string, string];
+  /** What the pair separates, in the register's words — the question the row exists to answer. */
+  readonly why: string;
+}
+
+/** The pre-registered joint arms. See {@link ProductionJointArm} for the admission rule. */
+export const PRODUCTION_JOINT_ARMS: readonly ProductionJointArm[] = [
+  {
+    members: ['TREND', 'CV'],
+    why:
+      'both single arms land on RE3:TrainTicket with opposite signs, so the pair decides whether the RE2 gain ' +
+      'and the RE2 loss are one case (667) or two (668)',
+  },
+];
+
+/**
+ * The joint arms as rows, built from {@link PRODUCTION_JOINT_ARMS} the way the singles are built from their table.
+ *
+ * The label carries BOTH field tokens, so a reader of the artifact can check the row without the source: the
+ * defect this avoids is a row labelled `LESS TREND + CV` whose overrides carry one of them.
+ */
+export const PRODUCTION_JOINT_ROWS: readonly AblationProductionRow[] = PRODUCTION_JOINT_ARMS.map(
+  (arm) => {
+    const left = weightFieldOf(arm.members[0]);
+    const right = weightFieldOf(arm.members[1]);
+    return {
+      label: `PRODUCTION LESS ${left.name} + ${right.name} (${left.field}=0,${right.field}=0)`,
+      // Same rule as the singles: no suite is published with a member removed, let alone two.
+      suites: [],
+      flags: productionFlags('re3'),
+      overrides: { [left.field]: 0, [right.field]: 0 } as AblationEngineOverrides,
+    };
+  },
+);
+
+/**
+ * One row of the battery, as the runner consumes it: flags, an optional weight override, and a label.
+ *
+ * The runner's own array carries a `latencyView` as well; this shape is the subset the weight study uses, so a
+ * row that varies a CORPUS cannot be mistaken for one that varies a coefficient.
+ */
+export interface AblationRowConfig {
+  readonly flags: AblationFeatureFlags;
+  readonly label: string;
+  readonly overrides?: AblationEngineOverrides;
+}
+
+/**
+ * The weight study, WITH its control row first.
+ *
+ * The control is not decoration. `run-ablation.ts` takes `allRuns[0]` as the baseline every Δ is measured from,
+ * so a selection that began at `PRODUCTION LESS SELF-ANOMALY` would have reported every arm against an ARM —
+ * eleven rows, eleven numbers, and not one of them the published configuration. That defect was found by running
+ * the selection before it was trusted: the verdict block printed `varies=selfAnomalyWeight,<own field>` for every
+ * row, which is the arithmetic of a diff against the first row rather than against production.
+ *
+ * Including it also buys the control this kind of study needs anyway: production is re-measured on the same cases
+ * in the same job, so the arms are read against a number produced beside them rather than against `666/735`
+ * recorded on another run.
+ */
+export const PRODUCTION_WEIGHT_CONFIGS: readonly AblationRowConfig[] = [
+  {
+    flags: PRODUCTION_ROWS[0]!.flags,
+    label: PRODUCTION_ROWS[0]!.label,
+    overrides: PRODUCTION_ROWS[0]!.overrides,
+  },
+  ...PRODUCTION_WEIGHT_ROWS.map((row) => ({
+    flags: row.flags,
+    label: row.label,
+    overrides: row.overrides,
+  })),
+  // Last, and after every single arm, because a joint arm is read AGAINST its two parents: the runner prints the
+  // table in this order, so the pair appears beneath the two rows whose cases it is comparing.
+  ...PRODUCTION_JOINT_ROWS.map((row) => ({
+    flags: row.flags,
+    label: row.label,
+    overrides: row.overrides,
+  })),
+];
+
+/**
+ * Build BOTH of the engine's constructor arguments for one ablation configuration.
+ *
+ * @param flags - The configuration's feature flags.
+ * @param overrides - The engine arguments the study varies directly, if this configuration varies any.
+ * @returns `signals` and `topology`.
+ */
+export function buildAblationEngineOptions(
+  flags: AblationFeatureFlags,
+  overrides: AblationEngineOverrides = {},
+): AblationEngineOptions {
+  return {
+    signals: {
+      enableCollisionAggregation: flags.collisionAggregation,
+      collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
+      topoWeight: flags.topoSignal ? 1.0 : 0.0,
+      logWeight: flags.logSignal ? 1.0 : 0.0,
+      riseWeight: flags.riseSignal ? 1.0 : 0.0,
+      traceWeight: flags.traceSignal ? 1.0 : 0.0,
+      traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
+      prismWeight: overrides.prismWeight ?? (flags.prismSignal ? 1.0 : 0.0),
+      // The terms the study holds at the shipped value unless a row overrides them, named from their owners
+      // so the artifact can state them. Passing them is value-identical to inheriting them, and that is the
+      // point: an inherited option is a configuration the artifact used to be unable to describe. Every
+      // overridable one reads its override through `??`, so an explicit `0` is honoured.
+      logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
+      logNormalisation: DEFAULT_LOG_NORMALISATION,
+      latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
+      failedEdgeWeight: overrides.failedEdgeWeight ?? DEFAULT_FAILED_EDGE_WEIGHT,
+      failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+      failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
+      latMinRise: overrides.latMinRise ?? DEFAULT_LAT_MIN_RISE,
+      poolMetricPenaltyWeight:
+        overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
+      selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
+      victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
+      selfAnomalyWeight: overrides.selfAnomalyWeight ?? DEFAULT_SELF_ANOMALY_WEIGHT,
+      emissionWeight: overrides.emissionWeight ?? DEFAULT_EMISSION_WEIGHT,
+      dualFamilyWeight: overrides.dualFamilyWeight ?? DEFAULT_DUAL_FAMILY_WEIGHT,
+      dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+      dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+      temporalWeight: overrides.temporalWeight ?? DEFAULT_TEMPORAL_WEIGHT,
+      onsetShape: DEFAULT_ONSET_SHAPE,
+      // The one override that is not a number. Read through `??` for the same reason the weights are: the
+      // shipped pooling is a non-empty STRING, so `||` would silently discard an override the moment a
+      // future pooling were spelled `''` — and, more to the point, one reading of the record for every
+      // field beats two.
+      prismPooling: overrides.prismPooling ?? DEFAULT_PRISM_POOLING,
+    },
+    topology: {
+      collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
+      rankNormalization: flags.rankNormalization,
+      suppressIdleTransients: flags.suppressIdleTransients,
+      suppressDemandMetrics: flags.suppressDemandMetrics,
+      metricRiseCeiling: overrides.metricRiseCeiling ?? DEFAULT_METRIC_RISE_CEILING,
+      dropDeviationMode: overrides.dropDeviationMode ?? DEFAULT_DROP_DEVIATION_MODE,
+      baselineAnchor: overrides.baselineAnchor ?? DEFAULT_BASELINE_ANCHOR,
+      transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
+      anomalyTrendWeight: overrides.anomalyTrendWeight ?? DEFAULT_ANOMALY_TREND_WEIGHT,
+      anomalyCvWeight: overrides.anomalyCvWeight ?? DEFAULT_ANOMALY_CV_WEIGHT,
+      anomalyBreadthWeight: overrides.anomalyBreadthWeight ?? DEFAULT_ANOMALY_BREADTH_WEIGHT,
+    },
+  };
+}
+
+/**
+ * The configuration, as one line, in the shape the golden half's artifact uses.
+ *
+ * @param flags - The configuration's feature flags.
+ * @param overrides - The engine arguments the study varies directly, if this configuration varies any.
+ * @returns One line naming every field of both constructor arguments.
+ */
+export function formatAblationConfigLine(
+  flags: AblationFeatureFlags,
+  overrides: AblationEngineOverrides = {},
+): string {
+  const { signals, topology } = buildAblationEngineOptions(flags, overrides);
+  // Every name here is the ENGINE's option name, not the study's flag name: the artifact has to be
+  // joinable against the source it describes, and the fence holds it to exactly that. `collisionAggregation`
+  // is the flag; `enableCollisionAggregation` is the option it sets.
+  return (
+    `signals: enableCollisionAggregation=${signals.enableCollisionAggregation} ` +
+    `collisionWeight=${signals.collisionWeight} topoWeight=${signals.topoWeight} ` +
+    `logWeight=${signals.logWeight} logSignalMode=${signals.logSignalMode} ` +
+    `logNormalisation=${signals.logNormalisation} ` +
+    `riseWeight=${signals.riseWeight} traceWeight=${signals.traceWeight} ` +
+    `traceSkipsLeader=${signals.traceSkipsLeader} ` +
+    `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
+    `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
+    `failedEdgeWeight=${signals.failedEdgeWeight} ` +
+    // Named on the failed-edge rule: `absolute` is inert, so a field omitted at its default would render a fleet
+    // row and the shipped configuration identically — and the two artifacts are read against each other.
+    `failedEdgeGateMode=${signals.failedEdgeGateMode} failedEdgeGateShare=${signals.failedEdgeGateShare} ` +
+    `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
+    `selfAnomalyWeight=${signals.selfAnomalyWeight} emissionWeight=${signals.emissionWeight} ` +
+    `victimWeight=${signals.victimWeight} ` +
+    `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +
+    `dualFamilyGateMode=${signals.dualFamilyGateMode} ` +
+    `collapseDiscount=${topology.collapseDiscount} ` +
+    `metricRiseCeiling=${topology.metricRiseCeiling} ` +
+    `dropDeviationMode=${topology.dropDeviationMode} ` +
+    `baselineAnchor=${topology.baselineAnchor} ` +
+    // The guard's statistic, named on the anchor's rule: the two statistics are byte-identical on every
+    // case whose injection boundary cannot be placed, so a battery row that switched it would otherwise
+    // render an artifact indistinguishable from the row it is compared against.
+    `transientGuardTest=${topology.transientGuardTest} ` +
+    `rankNormalization=${topology.rankNormalization} ` +
+    `suppressIdleTransients=${topology.suppressIdleTransients} ` +
+    `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +
+    `anomalyTrendWeight=${topology.anomalyTrendWeight} anomalyCvWeight=${topology.anomalyCvWeight} ` +
+    `anomalyBreadthWeight=${topology.anomalyBreadthWeight} ` +
+    `temporalWeight=${signals.temporalWeight} onsetShape=${signals.onsetShape}`
+  );
+}
+
+/**
+ * Which fields a row's configuration differs from the baseline's in.
+ *
+ * A row's label names the flag it turns on, and a flag is not a term: `logSignal: true` is `logWeight = 1`, and
+ * `LAT OFF` is an override of a weight whose shipped value is neither 0 nor 1. Reading a `+0.0` therefore needs
+ * the TERM, not the label — and the terms are already on both lines, so the difference between them is the
+ * answer rather than a second copy of the mapping.
+ *
+ * @param baselineLine - `formatAblationConfigLine` of the baseline configuration.
+ * @param rowLine - The same for the row.
+ * @returns The field names whose values differ, in the order the baseline line states them.
+ */
+export function configDiff(baselineLine: string, rowLine: string): string[] {
+  const values = (line: string): Map<string, string> => {
+    const out = new Map<string, string>();
+    for (const token of line.split(/\s+/)) {
+      const eq = token.indexOf('=');
+      if (eq > 0) out.set(token.slice(0, eq), token.slice(eq + 1));
+    }
+    return out;
+  };
+  const base = values(baselineLine);
+  const row = values(rowLine);
+  const changed: string[] = [];
+  for (const [name, value] of base) {
+    if (row.has(name) && row.get(name) !== value) changed.push(name);
+  }
+  return changed;
+}

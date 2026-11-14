@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "targetDefaults": {
+    "build": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": [
+        "{projectRoot}/src/**/*",
+        "{projectRoot}/__tests__/**/*",
+        "{projectRoot}/*.ts",
+        "{projectRoot}/tsconfig.json",
+        "{workspaceRoot}/tsconfig.base.json",
+        "{workspaceRoot}/tsconfig.workspace.json"
+      ]
+    },
+    "test": {
+      "cache": true,
+      "dependsOn": ["build"],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/__tests__/**/*"]
+    },
+    "clean": {
+      "outputs": ["{projectRoot}/dist", "{projectRoot}/coverage", "{projectRoot}/.tsup"]
+    }
+  }
+}

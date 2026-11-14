@@ -1,0 +1,17 @@
+{
+ "battery": "43215496103",
+ "revision": "9f9d3d81",
+ "configuration": "1fa9e7bca975",
+ "cells": {
+  "RE1:OnlineBoutique": 113,
+  "RE1:SockShop": 119,
+  "RE1:TrainTicket": 113,
+  "RE2:OnlineBoutique": 84,
+  "RE2:SockShop": 89,
+  "RE2:TrainTicket": 76,
+  "RE3:OnlineBoutique": 26,
+  "RE3:SockShop": 24,
+  "RE3:TrainTicket": 22
+ },
+ "total": 666
+}

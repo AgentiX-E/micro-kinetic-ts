@@ -1,0 +1,1940 @@
+/**
+ * RCAEval benchmark loader.
+ *
+ * RCAEval is the primary AIOps benchmark dataset with 735 cases across
+ * 3 suites (RE1: metrics-only, RE2: metrics+logs+traces, RE3: full multimodal).
+ *
+ * Dataset format per case directory:
+ *   {benchmark}_{service}_{fault}_{instance}/
+ *     ├── metrics.json    — [{timestamp, value, metric_name}] per service
+ *     ├── inject_time.txt — single Unix timestamp (seconds)
+ *     ├── logs.csv        — timestamp,service,message (RE2/RE3 only; no level
+ *     │                      column — severity is derived from the message)
+ *     ├── traces.csv      — trace_id,service,duration,status,parent_span (RE2/RE3 only)
+ *     └── ground_truth.json — {root_cause_service, root_cause_metric}
+ *
+ * @module benchmarks/loaders/rcaeval-loader
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { createInterface } from 'node:readline';
+
+// The order convention, from its one owner in this package: `loadSuite` sorts a suite's case directories, and
+// that order decides which cases a capped run ranks.
+import { compareCasePaths } from '../case-order.js';
+import { readCsvRecords } from './csv-records.js';
+
+import type {
+  CallEdge,
+  FaultEdgeLatency,
+  FaultFailedEdge,
+  MetricMap,
+  ServiceCallGraph,
+  ServiceNode,
+  TimeSeries,
+  TraceActivityCounts,
+} from '@agentix-e/micro-kinetic-core';
+
+import type {
+  BenchmarkCase,
+  BenchmarkGroundTruth,
+  BenchmarkLogEntry,
+  BenchmarkSuite,
+  BenchmarkTraceSpan,
+  RCAEvalCase,
+  RCAEvalSuite,
+} from './types.js';
+
+// ── Injection anchor ──────────────────────────────────────
+
+/**
+ * How a case's injection boundary was obtained.
+ *
+ * The boundary is not a convenience: it is the axis every pre/post split in this repository is taken on — the
+ * failed-edge baseline, the latency views' cap sides, the trace-activity rise, and the engine's own
+ * injection-anchored onset detection. A case whose anchor is ZERO therefore does not lose one signal, it loses
+ * the split itself: every observation falls on the post side, the pre side is empty, and every channel that
+ * needs a baseline reports a starved input as a measured zero. That is why the provenance is a field rather than
+ * a comment.
+ *
+ * - `declared` — `inject_time.txt` parsed and falls inside the case's own telemetry span. Unchanged behaviour.
+ * - `rescaled` — it parsed but fell outside, and exactly ONE decimal slip (a value written in milliseconds, in
+ *   units of 10 ms, or truncated to 10-second resolution) places it inside. Repaired, and labelled, because a
+ *   silent repair would move a cell without saying so.
+ * - `centred` — the corpus declared NOTHING (absent, zero or unparsable) and the span is a full corpus window:
+ *   the anchor is the span's MIDPOINT, which is the corpus's own convention (see the invariant below).
+ * - `unusable` — no boundary can be established without inventing one (no span, or a declared value that
+ *   disagrees with its telemetry by something that is not a decimal slip). The declared value is left exactly as
+ *   it was and the case is COUNTED as unusable rather than silently treated as anchored.
+ */
+export type InjectionAnchorProvenance = 'declared' | 'rescaled' | 'centred' | 'unusable';
+
+/** A case's injection boundary, in Unix seconds, and how it was obtained. */
+export interface InjectionAnchor {
+  /** The boundary the case is split on, in Unix seconds. */
+  readonly seconds: number;
+  /** Where that number came from. */
+  readonly provenance: InjectionAnchorProvenance;
+}
+
+/**
+ * The shortest span this corpus uses for a COMPLETE window, in seconds.
+ *
+ * Measured, not chosen: over the 735-case RCAEval corpus, the full windows are 720 s (RE1 OnlineBoutique and
+ * SockShop), 960 s (RE1 TrainTicket), 1 440 s (RE2 and RE3 OnlineBoutique/SockShop) and 1 800 s (RE3
+ * TrainTicket), and the anchor sits at the window's MIDPOINT in **701 of 701** cases whose `inject_time.txt` is
+ * readable — the offset is exactly half the span in every one of them, with no exception in either of RE1's two
+ * OnlineBoutique window lengths (720 s and 4 200 s). A span below half the smallest full window is therefore not
+ * a full window at all (one case carries a 62 s file), and the midpoint of such a span is not the corpus's
+ * convention — it is an interpolation across a window that was truncated. Those cases are refused instead.
+ */
+export const RCAEVAL_MIN_FULL_WINDOW_SECONDS = 720;
+
+/**
+ * The decimal slips a hand-written or re-exported timestamp actually makes.
+ *
+ * Each is a factor that maps a mis-scaled value back onto Unix seconds: `1e-3` for milliseconds, `1e-6` for
+ * microseconds, `1e-9` for nanoseconds, `1e-1`/`1e-2` for a value saved with one or two digits too many, and the
+ * reciprocals for the opposite error. The list is a MAPPING, not a search: a repair is accepted only when
+ * exactly one of these lands inside the span, so an ambiguous case falls through to the midpoint rule instead of
+ * picking the first that fits.
+ */
+const DECIMAL_SLIPS: readonly number[] = [1e-9, 1e-6, 1e-3, 1e-1, 1e1, 1e2, 1e3, 1e6, 1e9];
+
+/**
+ * Resolve a case's injection boundary against the case's own telemetry.
+ *
+ * @param declaredSeconds - The `inject_time.txt` value in Unix seconds, or 0 when it is absent or unparsable.
+ * @param span - The case's telemetry span in Unix seconds, or undefined when it carries no timestamped point.
+ * @returns The boundary to split on, with the provenance of that choice.
+ */
+export function resolveInjectionAnchor(
+  declaredSeconds: number,
+  span: { readonly lo: number; readonly hi: number } | undefined,
+): InjectionAnchor {
+  if (span === undefined) {
+    // No telemetry to check against, so there is nothing to repair and nothing to derive: a declared value is
+    // believed as-is (the pre-existing behaviour), and a missing one stays missing and is COUNTED as such.
+    return {
+      seconds: declaredSeconds,
+      provenance: declaredSeconds > 0 ? 'declared' : 'unusable',
+    };
+  }
+
+  const { lo, hi } = span;
+  if (declaredSeconds > 0 && declaredSeconds >= lo && declaredSeconds <= hi) {
+    return { seconds: declaredSeconds, provenance: 'declared' };
+  }
+
+  if (declaredSeconds > 0) {
+    const fits = DECIMAL_SLIPS.map((factor) => declaredSeconds * factor).filter(
+      (candidate) => candidate >= lo && candidate <= hi,
+    );
+    if (fits.length === 1) return { seconds: fits[0]!, provenance: 'rescaled' };
+    // A boundary that is declared but disagrees with its own telemetry is a claim about the case, and this
+    // function is not entitled to overrule it by guessing a different one: the report is `unusable`, and the
+    // declared number is left exactly where it was. Only an ABSENT boundary is derived (below).
+    return { seconds: declaredSeconds, provenance: 'unusable' };
+  }
+
+  if (hi - lo >= RCAEVAL_MIN_FULL_WINDOW_SECONDS) {
+    // Rounded to whole seconds: the corpus's anchors are integers, and this path exists to reproduce the value
+    // the corpus would have written, not to add a fractional one.
+    return { seconds: Math.round(lo + (hi - lo) / 2), provenance: 'centred' };
+  }
+
+  return { seconds: declaredSeconds, provenance: 'unusable' };
+}
+
+/**
+ * The telemetry span of a case's metrics, in Unix seconds.
+ *
+ * Read from the metric points rather than from a window declared anywhere, because the window is not declared:
+ * it is the file's own extent, and that extent is what a boundary has to be checked against.
+ *
+ * @param metrics - A case's raw metric payload, keyed by service.
+ * @returns The first and last timestamp, or undefined when no point carries a finite one.
+ */
+export function metricTimeSpan(
+  metrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>,
+): { readonly lo: number; readonly hi: number } | undefined {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+
+  for (const points of Object.values(metrics)) {
+    for (const point of points) {
+      const timestamp = point.timestamp;
+      if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) continue;
+      if (timestamp < lo) lo = timestamp;
+      if (timestamp > hi) hi = timestamp;
+    }
+  }
+
+  return lo <= hi ? { lo, hi } : undefined;
+}
+
+// ── RCAEval Loader ────────────────────────────────────────
+
+/**
+ * Loader for RCAEval benchmark datasets.
+ *
+ * Parses the RCAEval directory structure and converts raw data
+ * into the unified BenchmarkCase format understood by the runner.
+ */
+
+/**
+ * Matches the LEVEL token inside a Spring Boot full-log-line preamble, e.g.
+ *
+ *   2024-12-07 17:19:30.573  INFO 1 --- [Thread-5] o.s.i.endpoint... : msg
+ *
+ * TrainTicket's logs.csv `message` field is the COMPLETE logback line (date,
+ * time, level, pid, thread, logger, message), not just the message body. The
+ * actual severity is this level token; keyword matching on the whole line is
+ * fooled by benign words in the body such as `errorLogger` / `errorChannel`.
+ *
+ * Only the five levels representable as a `BenchmarkLogEntry` level are
+ * matched; `TRACE` (below DEBUG) is intentionally NOT captured here and falls
+ * through to the keyword derivation, since TRACE lines are noise regardless.
+ */
+const SPRING_BOOT_LEVEL_RE =
+  /^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?\s+(DEBUG|INFO|WARN|ERROR|FATAL)\b/;
+
+/**
+ * Extract the explicit level from a Spring Boot full-log-line preamble, or
+ * undefined when the message does not begin with the logback timestamp pattern.
+ *
+ * @param message - The raw log message text.
+ * @returns The level token (DEBUG/INFO/WARN/ERROR/FATAL), or undefined.
+ */
+export function extractSpringBootLevel(message: string): BenchmarkLogEntry['level'] | undefined {
+  const match = SPRING_BOOT_LEVEL_RE.exec(message);
+  return match ? (match[1] as BenchmarkLogEntry['level']) : undefined;
+}
+
+/**
+ * Normalise a raw log line into a `BenchmarkLogEntry` severity level.
+ *
+ * RCAEval's logs.csv has NO level/severity column — each row is just
+ * `timestamp, service, message` (paper §3.4), and the root cause of a
+ * code-level fault (RE3) is diagnosed from the STACK TRACES / error text in
+ * the message. When an explicit level column IS present it takes precedence;
+ * otherwise the severity is derived from message keywords (case-insensitive).
+ *
+ * ## Spring Boot preamble (TrainTicket)
+ *
+ * TrainTicket's `message` is the full logback line, so the actual level lives
+ * in the preamble (`2024-12-07 17:19:30.573  INFO 1 --- [...]`). Keyword
+ * matching on the whole line would mislabel an INFO line mentioning
+ * `errorChannel` / `errorLogger` as ERROR (benchmark #226). The preamble level
+ * therefore takes precedence over keyword derivation when present.
+ *
+ * @param explicitLevel - Uppercased explicit level from a level/severity
+ *   column, or '' when the column is absent.
+ * @param message - The raw log message text.
+ * @returns A normalised `BenchmarkLogEntry` level.
+ */
+export function classifyLogLevel(
+  explicitLevel: string,
+  message: string,
+): BenchmarkLogEntry['level'] {
+  if (explicitLevel === 'ERROR' || explicitLevel === 'FATAL') return explicitLevel;
+  if (explicitLevel === 'WARN' || explicitLevel === 'DEBUG' || explicitLevel === 'INFO') {
+    return explicitLevel;
+  }
+
+  // Spring Boot full-log-line: trust the preamble's explicit level, not the
+  // message body (which may mention "error" in a benign word).
+  const springLevel = extractSpringBootLevel(message);
+  if (springLevel) return springLevel;
+
+  // No (or unrecognised) explicit level → derive from the message text.
+  const lower = message.toLowerCase();
+  if (/(fatal|panic|traceback|stack ?trace)/.test(lower)) return 'FATAL';
+  if (/(error|exception|failed|failure)/.test(lower)) return 'ERROR';
+  if (/(warn|warning)/.test(lower)) return 'WARN';
+  return 'INFO';
+}
+
+/**
+ * Header aliases for the trace span's SERVICE column. RCAEval stores the
+ * service under `container_name` (the log header is `timestamp, container_name,
+ * message`) or Jaeger `serviceName`, NOT the snake_case `service` the original
+ * parser assumed. The alias set is the SAME comprehensive list tryLoadLogs uses
+ * so logs and traces resolve the service identically.
+ */
+const SERVICE_COLUMN_ALIASES = new Set([
+  'service',
+  'servicename',
+  'service_name',
+  'service_id',
+  'serviceid',
+  'svc',
+  'svcname',
+  'svc_name',
+  'app',
+  'application',
+  'app_name',
+  'pod',
+  'pod_name',
+  'container',
+  'container_name',
+  'instance',
+  'component',
+  'source',
+  'source_service',
+  'name',
+]);
+
+/**
+ * Header aliases for the LOG timestamp column.
+ *
+ * Separate from {@link BARE_TIMESTAMP_HEADERS} only in also accepting the
+ * single-letter `t`, which a Parquet-derived log export may carry — a logs.csv
+ * whose clock column is not found silently stamps every entry `0`, which reads
+ * downstream as "all logs are pre-injection".
+ */
+const LOG_TIMESTAMP_COLUMNS = new Set(['timestamp', 'time', 'ts', 't']);
+
+/** Header aliases for the log MESSAGE column. */
+const LOG_MESSAGE_COLUMNS = new Set(['message', 'msg', 'content', 'log', 'text', 'line']);
+
+/** Header aliases for an explicit log LEVEL column, when a corpus ships one. */
+const LOG_LEVEL_COLUMNS = new Set(['level', 'severity', 'log_level', 'loglevel']);
+
+/** Header aliases for the trace ID column (Jaeger `traceID`, snake_case `trace_id`). */
+const TRACE_ID_COLUMNS = new Set(['trace_id', 'traceid']);
+
+/** Header aliases for the span's OPERATION column (Jaeger `operationName`). */
+const OPERATION_COLUMNS = new Set(['operation', 'operationname', 'operation_name']);
+
+/**
+ * The index of the first header cell that names one of `aliases`, or -1.
+ *
+ * The match is on the LOWERCASED header, and the winner is the column that comes
+ * FIRST IN THE FILE — not the first alias in the set. That is the rule the
+ * streaming readers already apply (`header.findIndex`), and the two paths have
+ * to agree: they read the same file, and a disagreement would mean a span is
+ * attributed to a service in one place and to `unknown` in the other.
+ *
+ * @param header - The parsed header cells.
+ * @param aliases - Accepted names, lowercased.
+ * @returns The column index, or -1 when the file carries none of them.
+ */
+function columnIndex(header: readonly string[], aliases: ReadonlySet<string>): number {
+  for (let i = 0; i < header.length; i++) {
+    if (aliases.has(header[i]!.toLowerCase())) return i;
+  }
+  return -1;
+}
+
+/**
+ * The header names a span's start time may arrive under when it is not one of the
+ * two typed columns.
+ *
+ * `ts` is the one that mattered: a converted corpus (RCABench, see
+ * `docs/rcabench-first-reading.md`) exports `ts`, and before this list existed the
+ * column was read by NONE of the branches, so every span normalised to start time
+ * `0` — no error, no warning, and every span counted as pre-injection. The trace
+ * channels then reported `post=0` on 60 of 60 cases while the spans sat in the file.
+ */
+const BARE_TIMESTAMP_HEADERS = ['timestamp', 'ts', 'time'] as const;
+
+/**
+ * The index of the first bare-timestamp column present in a header, in
+ * {@link BARE_TIMESTAMP_HEADERS} order, or -1.
+ *
+ * Every reader of traces.csv indexes cells by position, so this index (and the
+ * header list above) is the ONE place a span's clock column is decided — unlike
+ * the alias sets, which resolve to the first MATCHING COLUMN in the file because
+ * they name alternatives for a column the corpus does spell.
+ *
+ * @param header - The parsed header names.
+ * @returns The column index, or -1.
+ */
+function bareTimestampIndex(header: readonly string[]): number {
+  for (const name of BARE_TIMESTAMP_HEADERS) {
+    const idx = header.indexOf(name);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+/**
+ * Shared start-time normalisation core — the single place a span's clock columns
+ * are interpreted (see the readers in `tryLoadTraces` and `countTraceActivityByService`).
+ *
+ * @param startTimeMillis - `startTimeMillis` cell (already milliseconds).
+ * @param startTime - `startTime` cell (microseconds).
+ * @param startTimeSnake - `start_time` cell (microseconds).
+ * @param timestamp - bare timestamp cell (magnitude-inferred).
+ */
+export function normalizeTraceStartTime(
+  startTimeMillis: string | undefined,
+  startTime: string | undefined,
+  startTimeSnake: string | undefined,
+  timestamp: string | undefined,
+): number {
+  if (startTimeMillis !== undefined && startTimeMillis !== '') {
+    return parseInt(startTimeMillis, 10);
+  }
+  if (startTime !== undefined && startTime !== '') {
+    return Math.floor(parseInt(startTime, 10) / 1000);
+  }
+  if (startTimeSnake !== undefined && startTimeSnake !== '') {
+    return Math.floor(parseInt(startTimeSnake, 10) / 1000);
+  }
+  if (timestamp !== undefined && timestamp !== '') {
+    const ts = parseInt(timestamp, 10);
+    if (!Number.isFinite(ts) || ts <= 0) return 0;
+    // A four-rung ladder rather than two: the old code answered `ns` and `ms` and
+    // silently mis-scaled the other two, so a SECONDS column landed 1000x in the
+    // future (every span post-injection, every window empty) and a MICROSECONDS
+    // column 1000x in the past. Both are silent, and both change every downstream
+    // channel that filters on the injection time.
+    if (ts >= 1e17) return Math.floor(ts / 1e6); // ns → ms
+    if (ts >= 1e14) return Math.floor(ts / 1e3); // µs → ms
+    if (ts >= 1e11) return ts; // already ms
+    return ts * 1000; // seconds → ms
+  }
+  return 0;
+}
+
+/**
+ * Header aliases for the trace span's ERROR-INDICATOR column. RCAEval stores
+ * the failure signal as a RESPONSE CODE (`response_code`/`status_code`/HTTP
+ * status), not an explicit `status` flag.
+ */
+const STATUS_COLUMN_ALIASES = new Set([
+  'status',
+  'statuscode',
+  'status_code',
+  'httpstatus',
+  'http_status',
+  'http_status_code',
+  'httpstatuscode',
+  'responsecode',
+  'response_code',
+  'code',
+]);
+
+/**
+ * Normalise a trace span's status/response-code value to `'OK' | 'ERROR'`.
+ *
+ * Treats explicit error markers (`error`/`failed`/`true`/`1`) and HTTP 4xx/5xx
+ * response codes as ERROR; anything else (absent, `ok`, 2xx/3xx) is OK.
+ *
+ * @param value - Raw status/response-code cell value, or undefined.
+ * @returns The normalised span status.
+ */
+export function normalizeSpanStatus(value: string | undefined): 'OK' | 'ERROR' {
+  if (value === undefined || value === '') return 'OK';
+  const v = value.trim().toLowerCase();
+  if (v === 'error' || v === 'failed' || v === 'failure' || v === 'true' || v === '1') {
+    return 'ERROR';
+  }
+  // HTTP status code: 4xx (client error) and 5xx (server error) are failures.
+  if (/^[45]\d\d$/.test(v)) return 'ERROR';
+  return 'OK';
+}
+
+/**
+ * Detect whether a log message carries a stack-trace / exception signature —
+ * the marker of a code-level fault (RCAEval RE3), as opposed to a plain
+ * resource/network cascade (RE2) whose errors are "connection refused" /
+ * "timeout" lines with no exception identity.
+ *
+ * The signature is BROAD: an exception class name (`\w+Exception`), a Java
+ * stack frame (`at com.foo.Bar.baz(Bar.java:42)`), a `Caused by:` chain, or a
+ * Python traceback. This is deliberately broad because benchmark #218 proved
+ * that RE3 code-level faults log exception NAMES — not structural frames — in
+ * their logs (RE3 SS/TT carried 0 `at …(file:line)` frames, yet their
+ * exception names drove the TT RE3 +16.7 lift). A structural-frames-only
+ * detector therefore erased the entire RE3 gain.
+ *
+ * KNOWN LIMITATION (the next discriminator must fix this): the broad
+ * `\w+Exception` also matches CONNECTIVITY exception names (Spring's
+ * `ConnectionException` / `SocketTimeoutException`) that resource-fault
+ * CASCADES (RE2) log in the SYMPTOM services, which regresses SockShop RE2
+ * (−10). The correct axis is exception SEMANTICS (logic vs connectivity), not
+ * message shape — see `extractExceptionNames` for the sampling hook.
+ *
+ * This is independent of `classifyLogLevel`: a message can be ERROR without
+ * being a stack trace (e.g. "connection refused"), and vice versa.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message carries a stack-trace / exception signature.
+ */
+export function isStackTraceMessage(message: string): boolean {
+  return (
+    /traceback|stack ?trace/i.test(message) ||
+    /Caused by:/.test(message) ||
+    /\w+Exception\b/.test(message) ||
+    /at\s+\S+\s*\([^)]*:\d+\)/.test(message) ||
+    /File\s+"[^"]+",\s*line\s+\d+/i.test(message)
+  );
+}
+
+/**
+ * A log line's exception names, as THROWN exceptions rather than serialized values.
+ *
+ * ## The distinction this exists for
+ *
+ * SockShop's `front-end` logs the response body it received from `orders`:
+ *
+ * ```
+ * Order response: {"statusCode":500,"body":{"exception":"java.lang.IllegalStateException",
+ *                                         "message":"Unable to create order ..."}}
+ * ```
+ *
+ * The class name in that line is `orders`'s, quoted as a FIELD of a JSON document. It is a relayed
+ * payload, not a frame of front-end's own stack — and `front-end` logs one of these PER FAILED CALL,
+ * 290 to 746 of them in a single case. Counting them attributed an upstream's exception to the service
+ * that merely printed it: measured on RE3:SockShop, `front-end` collected 290 self-caused logic
+ * exceptions in `carts_f1_3` and took the log score of the whole cell, and the cell fell 11.1 points
+ * once the messages stopped being truncated at their first comma (see
+ * `docs/rcaeval-log-fidelity.md`).
+ *
+ * ## The discriminator
+ *
+ * The character AFTER the class name. A serializer must put a quote there (`"IllegalStateException"`,
+ * `'ValueError'`); a `toString()` cannot — it writes `IllegalStateException: boom`, a stack frame writes
+ * `Class.method(`, and prose writes a space. So a match immediately followed by a quote is a value in a
+ * document, and every other match is an occurrence in the text.
+ *
+ * Narrow on purpose: it says nothing about WHICH exceptions a service may be blamed for — that is
+ * `LOGIC_EXCEPTION_PATTERN`'s question and `PROPAGATED_EXCEPTION_PATTERN`'s counter-question. This rule
+ * only refuses to read a document's field as the emitter's own stack.
+ *
+ * @param text - The log message.
+ * @param pattern - The classifier to run. The `g` flag is added if absent; the caller's regex is not mutated.
+ * @returns True when at least one match is NOT a serialized value.
+ */
+export function hasThrownExceptionMatch(text: string, pattern: RegExp): boolean {
+  return thrownMatches(text, pattern).next().done === false;
+}
+
+/**
+ * Every match of `pattern` in `text` that is an OCCURRENCE rather than a serialized value.
+ *
+ * Shared by {@link hasThrownExceptionMatch} and the extractors so one rule decides for all of them:
+ * a predicate that skipped quoted occurrences while {@link extractExceptionNames} counted them would make
+ * the run's own census disagree with the score it explains.
+ *
+ * @param text - The log message.
+ * @param pattern - The classifier to run.
+ * @yields Each accepted match, in order.
+ */
+function* thrownMatches(
+  text: string,
+  pattern: RegExp,
+): Generator<RegExpExecArray, void, undefined> {
+  const global = globalCopyOf(pattern);
+  global.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = global.exec(text)) !== null) {
+    if (match[0].length === 0) {
+      global.lastIndex += 1;
+      continue;
+    }
+    // The classifiers match a FRAGMENT of a class name (`IllegalState` for
+    // `IllegalStateException`), so the quote that decides the question sits after the END OF THE TOKEN, not
+    // after the match. Walk the rest of the token before asking.
+    let end = match.index + match[0].length;
+    while (end < text.length && isClassNameChar(text[end]!)) end += 1;
+    const next = text[end];
+    if (next !== '"' && next !== "'") yield match;
+  }
+}
+
+/**
+ * True for the characters a class-name token may continue with.
+ *
+ * @param char - One character of the message.
+ * @returns True for a word character or the package separator.
+ */
+function isClassNameChar(char: string): boolean {
+  return /[\w.]/.test(char);
+}
+
+/**
+ * One compiled global regex per (source, flags), so the per-message predicates do not recompile.
+ *
+ * Keyed by the pattern's own text: the classifiers are module constants, so the cache converges on a
+ * handful of entries and never grows with the corpus.
+ */
+const GLOBAL_PATTERNS = new Map<string, RegExp>();
+
+/**
+ * A `g`-flagged copy of `pattern`, cached.
+ *
+ * @param pattern - The pattern to copy.
+ * @returns A global regex whose `lastIndex` the caller owns.
+ */
+function globalCopyOf(pattern: RegExp): RegExp {
+  const key = `${pattern.flags.includes('g') ? '' : 'g'}${pattern.flags}/${pattern.source}`;
+  let global = GLOBAL_PATTERNS.get(key);
+  if (global === undefined) {
+    global = new RegExp(
+      pattern.source,
+      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+    );
+    GLOBAL_PATTERNS.set(key, global);
+  }
+  return global;
+}
+
+/**
+ * Extract the distinct exception/error TYPE names from a log message, in order
+ * of first appearance. This is a DIAGNOSTIC hook for the log-signal gate: it
+ * surfaces which exception classes actually appear in each system's error logs,
+ * to discriminate LOGIC exceptions (a code-level fault's NullPointerException /
+ * IllegalArgumentException / ArrayIndexOutOfBounds) from CONNECTIVITY
+ * exceptions (a resource cascade's ConnectionException / SocketTimeoutException).
+ *
+ * Only the simple class name is returned — a qualified name such as
+ * `java.lang.NullPointerException` or
+ * `org.springframework.dao.QueryTimeoutException` yields
+ * `NullPointerException` / `QueryTimeoutException` (the token ending in
+ * `Exception` / `Error` / `Timeout` / `Failure`).
+ *
+ * Serialized values are skipped (see {@link hasThrownExceptionMatch}): a class
+ * name that a service only PRINTED, as a field of a response body it relayed,
+ * is not a name this service raised, and a census that counted it would report
+ * a symptom as an emitter.
+ *
+ * @param message - The raw log message text.
+ * @returns Distinct exception/error type names in order of first appearance.
+ */
+export function extractExceptionNames(message: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const match of thrownMatches(message, EXCEPTION_NAME_RE)) {
+    const name = match[0];
+    if (!seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Every `\w+Exception`-shaped token — the name sampler's classifier. */
+const EXCEPTION_NAME_RE = /\b[A-Za-z][\w]*(?:Exception|Error|Timeout|Failure)\b/;
+
+/**
+ * Matches a (possibly fully-qualified) Java/Python exception class name such as
+ * `java.lang.IllegalArgumentException`, `org.foo.MyError`, or `TypeError`.
+ */
+const EXCEPTION_CLASS_RE = /\b[A-Za-z_][\w.]*(?:Exception|Error|Throwable)\b/;
+
+/**
+ * Strip a qualified class name down to its simple name.
+ *
+ * `java.lang.IllegalArgumentException` → `IllegalArgumentException`; an
+ * already-simple name such as `TypeError` is returned unchanged.
+ */
+function simpleClassName(qualified: string): string {
+  const idx = qualified.lastIndexOf('.');
+  return idx >= 0 ? qualified.slice(idx + 1) : qualified;
+}
+
+/**
+ * Extract the simple class name of the DEEPEST exception in a log message's
+ * `Caused by:` chain — the root cause that actually triggered the cascade.
+ *
+ * The head of a Java exception message is often a non-discriminative wrapper:
+ * Spring's `HttpServerErrorException` is thrown by a CLIENT whenever an
+ * upstream 5xx is received, so every downstream symptom logs it, while the
+ * actual fault signature (e.g. `IllegalArgumentException`) lives in the LAST
+ * `Caused by:` clause. Ranking on the deepest exception therefore separates the
+ * source (rare, specific root cause) from the symptoms (shared wrapper).
+ *
+ * When there is no `Caused by:` chain, the leading exception of the message is
+ * used — which degrades gracefully to the same value the count-mode whitelist
+ * inspects.
+ *
+ * @param message - The raw log message text.
+ * @returns The simple class name of the deepest exception, or undefined when
+ *   the message carries no recognisable exception class.
+ */
+export function extractDeepestExceptionClass(message: string): string | undefined {
+  const causedByIdx = message.lastIndexOf('Caused by:');
+  const source = causedByIdx >= 0 ? message.slice(causedByIdx + 'Caused by:'.length) : message;
+  const match = thrownMatches(source, EXCEPTION_CLASS_RE).next();
+  return match.done === false ? simpleClassName(match.value[0]) : undefined;
+}
+
+/**
+ * Names of SELF-CAUSED logic exceptions — the programming-error signatures of
+ * a code-level fault (RCAEval RE3). These arise from an internal bug (a null
+ * dereference, a bad argument, an invalid state, a malformed payload) and
+ * therefore identify the SOURCE service, not a downstream symptom.
+ *
+ * TOKEN-VALIDATION exceptions (`MalformedJwtException`, `TokenException`) are
+ * deliberately EXCLUDED: they are thrown by a DOWNSTREAM consumer that fails
+ * to validate a token an upstream auth service produced, so they name the
+ * SYMPTOM, not the source. In TrainTicket RE3 the auth source returns a wrong
+ * token while staying silent, and the first downstream wrapper throws
+ * `MalformedJwtException`/`TokenException` — rewarding that wrapper would
+ * invert the ranking exactly like an empty-value parse failure (see
+ * PROPAGATED_EXCEPTION_PATTERN).
+ */
+const LOGIC_EXCEPTION_PATTERN =
+  /(?:NullPointer|IllegalArgument|IllegalState|ArrayIndex|IndexOutOfBounds|ClassCast|ConcurrentModification|NumberFormat|Arithmetic|NoSuchElement|UnsupportedOperation|ClassNotFound|NoSuchMethod|NoSuchField|JsonMapping|JsonParse|JsonProcessing|HttpMessageNotReadable|AttributeError|TypeError|NameError|IndexError|ValueError|KeyError|ZeroDivisionError)/i;
+
+/**
+ * Signatures of PROPAGATED parse failures — exceptions a DOWNSTREAM wrapper
+ * throws when it consumes an EMPTY value that a silent upstream source emitted.
+ *
+ * A wrong-value fault (RCAEval RE3 "error value") makes the SOURCE service
+ * return an empty UUID / blank string WITHOUT logging any error itself (its log
+ * stays all-INFO). The first downstream wrapper that parses that empty value
+ * then throws `IllegalArgumentException: Invalid UUID string: ` (Java
+ * `UUID.fromString("")`) or `NumberFormatException: For input string: ""`
+ * (Java `Long.valueOf("")`). Naming the exception class alone (see
+ * LOGIC_EXCEPTION_PATTERN) would wrongly reward that wrapper — the SYMPTOM —
+ * instead of the silent source. The discriminator is therefore the EMPTY-PAYLOAD
+ * marker after the parse verb: the value being parsed is missing/blank.
+ *
+ * The EMPTY-PAYLOAD marker is what follows the parse verb, NOT end-of-string:
+ * real logs append either a Java stack trace (`\n\tat …`), Spring's
+ * `] with root cause` wrapper, an empty quote pair (`""`), or nothing at all.
+ * Each clause therefore matches a value that is BLANK — either an empty quote
+ * pair, or a position whose next character is a newline / a closing delimiter
+ * (`]` `)` `}`) / end-of-input — while a NON-empty parse failure (e.g.
+ * `For input string: "42a"` or `Invalid UUID string: abc-123`, a genuine
+ * bad-argument bug) has an alphanumeric value and is NOT flagged.
+ *
+ * ## The Node dialect, which is the same rule and not a second one
+ *
+ * Not every service in the corpus is a JVM: SockShop's `front-end` is Node, and it reports the SAME event —
+ * "the payload I was handed was absent" — through its own vocabulary: `TypeError [ERR_INVALID_ARG_TYPE]`
+ * with `Received undefined`. Measured in the corpus, that clause is the whole difference between the entry
+ * point collecting a full log unit on three `orders_f4_*` cases and collecting none: `front-end` was the
+ * ONLY service in those cases emitting a whitelisted exception (7 rows each), every one of them this
+ * class, while the truth emitted only business text. A vocabulary that names the Java spelling of an empty
+ * payload and not the JavaScript one asks the same question of two services and answers it differently
+ * because of the language they are written in.
+ *
+ * The discriminator is unchanged, which is why the clause is narrow rather than a class exclusion: the
+ * payload must be ABSENT (`Received undefined` / `Received null`). `Received a number` is a value that was
+ * present and wrong, and a property read off `undefined` is the service asking the wrong question about a
+ * record it did receive — both stay self-caused, and the tests pin both directions.
+ */
+const PROPAGATED_EXCEPTION_PATTERN =
+  /(?:Invalid UUID string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|For input string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|Cannot parse\s+empty|ERR_INVALID_ARG_TYPE[^\n]*Received\s+(?:undefined|null)\b)/i;
+
+/**
+ * An exception whose OWN message blames an I/O or connectivity cause.
+ *
+ * The second shape of propagation, and the one that decides the SockShop cells. `orders` answers every
+ * failed call to `user` / `payment` with the framework's dispatcher wrapper:
+ *
+ * ```
+ * Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception
+ *   [Request processing failed; nested exception is java.lang.IllegalStateException:
+ *    Unable to create order due to unspecified IO error.] with root cause
+ * ```
+ *
+ * `IllegalStateException` is on the logic whitelist, so this counted as a SELF-CAUSED programming error
+ * — 5 times in `user_loss_1`, 373 in `payment_loss_1`, 145 in `carts_f1_3` — and `orders`, a victim,
+ * took the log score of the cell while the truth emitted no exception at all. The message says what it
+ * is: the service failed to reach something. An exception that names an I/O cause is an environmental
+ * condition by its own account, which is the category `LOGIC_EXCEPTION_PATTERN`'s docblock already
+ * excludes — this is the clause that recognises it by cause rather than by class.
+ *
+ * Narrow deliberately: the CAUSE must be stated as the cause (`due to`, `because of`, `caused by`) and must
+ * name an ENVIRONMENTAL condition. `IllegalStateException: null` stays self-caused,
+ * `IllegalArgumentException: Invalid UUID string: ` stays propagated by the empty-payload clause above, and
+ * `NullPointerException: null` inside the same dispatcher wrapper stays self-caused — the wrapper is not
+ * the discriminator, and a clause that matched `nested exception is` would suppress every genuine RE3
+ * source exception, all of which arrive through that same wrapper.
+ *
+ * The condition list is the corpus's own vocabulary, counted rather than guessed: `due to unspecified IO
+ * error` (373 rows in `payment_loss_1`) and `due to timeout from one of the services` (the 4 rows in
+ * `user_loss_2` and the ONE row that decided `payment_loss_1`). `timeout` is in the list WITHOUT a
+ * trailing `error`/`failure` noun because that is how the file phrases it — and because a single missed
+ * row is not a rounding error under `logNormalisation=max`: one logic entry where every other service has
+ * none takes the whole log score.
+ */
+const ENVIRONMENTAL_CAUSE_PATTERN =
+  /(?:due to|because of|caused by)[^.]{0,40}\b(?:I\/O|IO|input\/output|network|socket|connection|connect|timeout|timed out|unreachable|unavailable|refused|reset)\b/i;
+
+/**
+ * Determine whether a log message is a PROPAGATED failure — a wrapper failing
+ * to parse an EMPTY value produced by a silent upstream source, OR an exception
+ * that names an I/O/connectivity cause.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message carries a wrong-value symptom signature or an
+ *   environmental cause (neither is a self-caused programming error).
+ */
+export function isPropagatedExceptionMessage(message: string): boolean {
+  return PROPAGATED_EXCEPTION_PATTERN.test(message) || ENVIRONMENTAL_CAUSE_PATTERN.test(message);
+}
+
+/**
+ * Determine whether a log message is a SELF-CAUSED logic exception — the
+ * signature of a code-level fault — as opposed to a PROPAGATED exception
+ * (a resource/network cascade, an empty-value parse failure, OR a
+ * token-validation failure) or a non-error line.
+ *
+ * This is the causal discriminator behind the log signal (benchmark #219):
+ *
+ * - RE3 code-level faults flood LOGIC exceptions (NullPointerException,
+ *   ConcurrentModificationException, JsonMappingException, AttributeError,
+ *   TypeError, …) in the SOURCE service.
+ * - RE2 resource faults flood CONNECTIVITY exceptions (ConnectionException,
+ *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
+ *   in the SYMPTOM services — these are PROPAGATED, not self-caused.
+ * - RE3 wrong-value faults leave the SOURCE silent and make a downstream
+ *   WRAPPER throw an empty-value parse failure (see
+ *   PROPAGATED_EXCEPTION_PATTERN) or a token-validation failure
+ *   (`MalformedJwtException` / `TokenException`) — both PROPAGATED, not
+ *   self-caused.
+ *
+ * Counting only self-caused logic exceptions therefore points at the source for
+ * code-level faults, stays neutral for resource cascades, and does NOT reward
+ * the wrapper symptom of a wrong-value fault. A logic exception is a
+ * programming error (null dereference / bad argument / invalid state /
+ * malformed payload); a propagated exception is an environmental condition
+ * (unreachable dependency / timeout), an empty-value parse failure, or a
+ * token-validation failure.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message names a self-caused logic exception.
+ */
+export function isLogicExceptionMessage(message: string): boolean {
+  return (
+    !isPropagatedExceptionMessage(message) &&
+    hasThrownExceptionMatch(message, LOGIC_EXCEPTION_PATTERN)
+  );
+}
+
+/**
+ * Names of FRAMEWORK HTTP exceptions — Spring Web's `RestTemplate`/`WebClient`
+ * client-side exceptions thrown when a service receives a 4xx/5xx from a
+ * downstream dependency (or fails to reach it).
+ *
+ * These are NOT self-caused programming errors ({@link LOGIC_EXCEPTION_PATTERN})
+ * and NOT propagated connectivity errors (`ConnectionException`,
+ * `SocketTimeoutException`) — they are a THIRD category: the emitting service
+ * observed an HTTP status it did not cause. On FSE'26 fault-injection (e.g.
+ * `HTTPResponseReplaceCode`) this storms the SOURCE service (whose downstream
+ * calls now fail) at 10–16× the victim rate, so it is a source signal there;
+ * the victim's own flood is business/AMQP text (`Order Create Fail`,
+ * `auto-delete queue`) with no exception class at all.
+ *
+ * `ResourceAccessException` is included deliberately: it is the I/O/timeout
+ * wrapper `RestTemplate` raises for a failed connection, and on the delay fault
+ * types it is the SOURCE's only signature (the source's own downstream calls
+ * time out). It is kept here rather than in the connectivity bucket because the
+ * diagnostic evidence shows the source — not a victim — emits it in the delay
+ * cases the engine currently misses.
+ */
+const HTTP_EXCEPTION_PATTERN =
+  /(?:HttpClientErrorException|HttpServerErrorException|ResourceAccessException|RestClientException|RestClientResponseException|HttpStatusCodeException|UnknownHttpStatusCodeException|UnknownContentTypeException)/;
+
+/**
+ * Determine whether a log message names a FRAMEWORK HTTP exception — a
+ * Spring Web client exception that indicates the emitting service observed an
+ * HTTP status (or failed connection) from a downstream dependency.
+ *
+ * This is the discriminator behind the log signal's `logicHttp` mode, which
+ * counts logic exceptions PLUS framework HTTP exceptions (both source
+ * signatures) while still excluding the business/AMQP text and connectivity
+ * exceptions that victims flood. It is distinct from {@link isLogicExceptionMessage}
+ * (a programming error) and from `isPropagatedExceptionMessage` (an
+ * empty-value parse failure), and does not overlap {@link LOGIC_EXCEPTION_PATTERN}.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message names a framework HTTP exception.
+ */
+export function isHttpExceptionMessage(message: string): boolean {
+  return hasThrownExceptionMatch(message, HTTP_EXCEPTION_PATTERN);
+}
+
+/**
+ * The exception-semantics taxonomy of a raw log message, as seen by the log
+ * signal's causal discriminator.
+ *
+ * - `logic` — a self-caused programming error (matches {@link LOGIC_EXCEPTION_PATTERN}
+ *   and is not an empty-payload parse failure). The SOURCE signature.
+ * - `propagated` — an empty-payload parse failure (matches
+ *   {@link PROPAGATED_EXCEPTION_PATTERN}): a wrong-value SYMPTOM wrapper.
+ * - `unclassified` — the message names an exception/error class that matches
+ *   NEITHER the logic whitelist NOR the propagated pattern. This is the
+ *   semantic GAP the whitelist deliberately leaves open: connectivity /
+ *   token-validation exceptions (correctly ignored by the count/novelty
+ *   signals) and any GENUINELY-MISSED logic exception (a potential
+ *   LLM-recoverable source signal) both land here. Inspecting the raw class
+ *   names in this bucket is what settles whether an LLM classifier has
+ *   headroom over the deterministic whitelist.
+ * - `none` — no exception/error class name in the message.
+ */
+export type ExceptionKind = 'logic' | 'propagated' | 'unclassified' | 'none';
+
+/**
+ * Classify a raw log message into the four-way exception-semantics taxonomy.
+ *
+ * This is the reusable, testable discriminator behind the diagnostic dump that
+ * measures whether a semantic (LLM) classifier could recover failing code-level
+ * faults the deterministic whitelist currently misses. It is a pure projection
+ * of {@link isPropagatedExceptionMessage}, {@link LOGIC_EXCEPTION_PATTERN}, and
+ * the exception-class detector, so its verdict is consistent with the existing
+ * `isLogicException` flag carried on {@link BenchmarkLogEntry}.
+ *
+ * Precedence: `propagated` (empty-payload parse failure) beats `logic`, because
+ * a wrapper's `NumberFormatException: For input string: ""` names a logic class
+ * but is a silent-source SYMPTOM, not the source. Then a whitelist hit is
+ * `logic`; then any other exception/error class is `unclassified`; otherwise
+ * `none`.
+ *
+ * @param message - The raw log message text.
+ * @returns The exception kind of the message.
+ */
+export function classifyExceptionKind(message: string): ExceptionKind {
+  if (isPropagatedExceptionMessage(message)) return 'propagated';
+  if (hasThrownExceptionMatch(message, LOGIC_EXCEPTION_PATTERN)) return 'logic';
+  if (EXCEPTION_CLASS_RE.test(message)) return 'unclassified';
+  return 'none';
+}
+
+export class RCAEvalLoader {
+  /**
+   * Raw header of the last logs.csv parsed (comma-joined column names).
+   * Exposed for benchmark diagnostics — it reveals the ACTUAL column names of
+   * the RCAEval log data, which is essential for correctly attributing log
+   * lines to services (the `service` column has proven not to be the obvious
+   * name).
+   */
+  lastLogHeader = '';
+
+  /**
+   * Raw header of the last traces.csv parsed (comma-joined column names).
+   * Exposed for benchmark diagnostics — it reveals the ACTUAL column names of
+   * the RCAEval trace data, which is essential for correctly attributing spans
+   * to services (the trace columns are Jaeger camelCase, NOT the snake_case
+   * `service`/`status` the original parser assumed).
+   */
+  lastTraceHeader = '';
+
+  /**
+   * Load a single RCAEval case from a directory.
+   *
+   * Uses defensive loading: if optional files are missing or malformed,
+   * the case is still loaded with degraded data. Only fails if both
+   * metrics.json and parseDirectoryName are unavailable (bare minimum).
+   *
+   * @param casePath - Path to the case directory.
+   * @returns Parsed RCAEvalCase structure.
+   */
+  loadCase(casePath: string): RCAEvalCase {
+    const dirName = path.basename(casePath);
+    const parsed = this.parseDirectoryName(dirName);
+
+    // Load metrics JSON (required)
+    const metricsPath = path.join(casePath, 'metrics.json');
+    const metrics = this.loadMetricsJson(metricsPath);
+
+    // Load inject time, resolved against the case's OWN telemetry span. A lenient read alone is not enough: an
+    // absent, truncated or mis-scaled anchor parses cleanly and then silently empties one side of every split,
+    // which reads downstream as a starved channel rather than as a defect (see `resolveInjectionAnchor`).
+    const anchor = resolveInjectionAnchor(
+      this.tryLoadInjectTime(casePath),
+      metricTimeSpan(metrics),
+    );
+    const injectTime = anchor.seconds;
+
+    // Load ground truth
+    const groundTruth = this.getGroundTruth(casePath, parsed);
+
+    // Load optional multimodal data (defensive — returns undefined on failure)
+    const logs = this.tryLoadLogs(casePath);
+    const traces = this.tryLoadTraces(casePath);
+
+    return {
+      casePath,
+      benchmark: parsed.benchmark,
+      service: parsed.service,
+      fault: parsed.fault,
+      instance: parsed.instance,
+      metrics,
+      injectTime,
+      injectTimeProvenance: anchor.provenance,
+      groundTruth,
+      logs,
+      traces,
+    };
+  }
+
+  /**
+   * Load a complete RCAEval suite (RE1, RE2, or RE3).
+   *
+   * @param suitePath - Path to the suite directory.
+   * @param suiteName - Suite identifier.
+   * @returns Parsed suite.
+   */
+  loadSuite(suitePath: string, suiteName: 'RE1' | 'RE2' | 'RE3'): RCAEvalSuite {
+    const entries = fs.readdirSync(suitePath, { withFileTypes: true });
+    const caseDirs = entries
+      .filter((e) => e.isDirectory())
+      // The ONE order convention (code units), not `localeCompare`: a suite's case order decides which
+      // cases a capped run ranks, and `localeCompare` answers from ICU and the active locale, which are
+      // properties of the MACHINE. This file already hand-rolls a code-unit comparator for its edge list,
+      // with that reason written beside it — this is the same convention, named once.
+      .sort((a, b) => compareCasePaths(a.name, b.name));
+
+    const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
+
+    return {
+      suiteName,
+      cases,
+      totalCases: cases.length,
+    };
+  }
+
+  /**
+   * Extract ground truth from a case directory.
+   * Falls back to extracting from the directory name if no ground_truth.json exists.
+   *
+   * @param casePath - Path to the case directory.
+   * @returns Ground truth information.
+   */
+  getGroundTruth(casePath: string): BenchmarkGroundTruth;
+  getGroundTruth(casePath: string, parsed?: ParsedDirName): BenchmarkGroundTruth;
+  getGroundTruth(casePath: string, parsed?: ParsedDirName): BenchmarkGroundTruth {
+    const gtPath = path.join(casePath, 'ground_truth.json');
+
+    if (fs.existsSync(gtPath)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(gtPath, 'utf-8'));
+        const serviceId = raw.root_cause_service ?? raw.rootCauseService ?? raw.service;
+        // The DECLARED accepted set, when the corpus states one.
+        //
+        // `root_cause_service` is a single name, and a corpus that injects a fault on an EDGE cannot express
+        // its ground truth in one name: the fault is between two services, so either endpoint is a correct
+        // answer. RCABench says so explicitly — 1,053 of its 1,422 packs declare a two-element `service`, and
+        // the earlier form of this loader read one of them and scored the other as a miss. The bridge that
+        // writes these directories declares the set as `root_cause_services`, the plural of the field this
+        // loader already reads; it is passed through unchanged, in the corpus's own order, because
+        // `serviceId` is documented to be its first member.
+        //
+        // Absent (every RCAEval directory, which declares one root cause), `serviceIds` stays `undefined` and
+        // the accepted set is `{serviceId}` — see `acceptedTruthServiceIds`. So this branch cannot move a
+        // published RCAEval cell.
+        const declared =
+          raw.root_cause_services ?? raw.rootCauseServices ?? raw.ground_truth_services;
+        const declaredIds: string[] = Array.isArray(declared)
+          ? declared.filter((id: unknown): id is string => typeof id === 'string' && id !== '')
+          : [];
+        return {
+          serviceId,
+          // Only a MULTI-member set is recorded. A one-member list says nothing `serviceId` does not, and
+          // recording it would put `serviceIds` on directories that never declared a set — which is the
+          // distinction `acceptedTruthServiceIds` uses to keep single-label corpora byte-identical.
+          ...(declaredIds.length > 1 ? { serviceIds: declaredIds } : {}),
+          faultType:
+            raw.root_cause_metric ??
+            raw.rootCauseMetric ??
+            raw.faultType ??
+            parsed?.fault ??
+            'unknown',
+          metric: raw.root_cause_metric ?? raw.rootCauseMetric,
+        };
+      } catch {
+        // Fall through to directory name extraction
+      }
+    }
+
+    // Extract from directory name: {benchmark}_{service}_{fault}_{instance}
+    const info = parsed ?? this.parseDirectoryName(path.basename(casePath));
+    return {
+      serviceId: info.service,
+      faultType: info.fault,
+    };
+  }
+
+  /**
+   * Convert a raw RCAEvalCase into the unified BenchmarkCase format.
+   *
+   * @param rawCase - Raw RCAEval case.
+   * @param callGraph - Service call graph for this benchmark system.
+   * @returns Unified BenchmarkCase.
+   */
+  toBenchmarkCase(
+    rawCase: RCAEvalCase,
+    callGraph: ServiceCallGraph,
+    suiteName: 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3',
+  ): BenchmarkCase {
+    const metricMap = this.buildMetricMap(rawCase.metrics);
+
+    return {
+      id: `${suiteName}_${rawCase.benchmark}_${rawCase.service}_${rawCase.fault}_${rawCase.instance}`,
+      datasetName: suiteName,
+      callGraph,
+      metrics: metricMap,
+      injectTime: rawCase.injectTime * 1000, // Convert seconds to ms
+      groundTruth: rawCase.groundTruth,
+      logs: rawCase.logs,
+      // Traces are consumed during topology augmentation (prior to this call);
+      // storing them in BenchmarkCase wastes memory — RE2 has 270+ cases × 100K+
+      // spans each.  Set to undefined so GC can reclaim after augmentation.
+      traces: undefined,
+    };
+  }
+
+  /**
+   * Convert an entire RCAEval suite into unified BenchmarkSuite format.
+   *
+   * @param suite - Raw RCAEval suite.
+   * @param callGraphs - Service call graphs for each benchmark system.
+   * @returns Unified BenchmarkSuite.
+   */
+  toBenchmarkSuite(
+    suite: RCAEvalSuite,
+    callGraphs: Record<string, ServiceCallGraph>,
+  ): BenchmarkSuite {
+    // Keyed by the closed union rather than `string`, so the lookup below is
+    // proven total by the type system. Typing it as `Record<string, ...>` would
+    // admit a missing key and force a `?? 'rcaeval-re1'` default that no input
+    // can ever reach — a branch that could never be tested, papering over a
+    // mapping the compiler can already verify.
+    const suiteNameMap: Record<
+      RCAEvalSuite['suiteName'],
+      'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3'
+    > = {
+      RE1: 'rcaeval-re1',
+      RE2: 'rcaeval-re2',
+      RE3: 'rcaeval-re3',
+    };
+
+    const datasetName = suiteNameMap[suite.suiteName];
+    const cases = suite.cases.map((c) => {
+      const graph = callGraphs[c.benchmark] ?? this.buildFallbackCallGraph(c);
+      return this.toBenchmarkCase(c, graph, datasetName);
+    });
+
+    return {
+      name: datasetName,
+      cases,
+      totalCases: cases.length,
+    };
+  }
+
+  // ── Private Helpers ─────────────────────────────────────
+
+  private parseDirectoryName(dirName: string): ParsedDirName {
+    // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
+    // Fault types include named (cpu, mem, disk, delay, loss, socket, network, error)
+    // and RE3 generic labels (f1, f2, f3, f4, f5).
+    const regexMatch = dirName.match(/^(re[123][a-z]{2})_(.+?)_([a-z][a-z0-9]+)_(\d+)$/i);
+    if (regexMatch) {
+      return {
+        benchmark: regexMatch[1]!,
+        service: regexMatch[2]!,
+        fault: regexMatch[3]!.toLowerCase(),
+        instance: parseInt(regexMatch[4]!, 10),
+      };
+    }
+
+    // Fallback: simple underscore splitting for standard naming
+    // Format: {benchmark}_{service}_{fault}_{instance}
+    // where benchmark may contain underscores (e.g. re1ob, re2_ss_re)
+    const parts = dirName.split('_');
+    if (parts.length < 4) {
+      throw new Error(
+        `Invalid RCAEval directory name: ${dirName}. Expected {benchmark}_{service}_{fault}_{instance}`,
+      );
+    }
+    const instance = parseInt(parts[parts.length - 1]!, 10);
+    if (isNaN(instance)) {
+      throw new Error(
+        `Invalid RCAEval directory name: ${dirName}. Instance is not a number: ${parts[parts.length - 1]}`,
+      );
+    }
+    const fault = parts[parts.length - 2]!;
+    const service = parts[parts.length - 3]!;
+    const benchmark = parts.slice(0, parts.length - 3).join('_');
+
+    return { benchmark, service, fault, instance };
+  }
+
+  private loadMetricsJson(metricsPath: string): Record<string, ReadonlyArray<RCAEvalMetricPoint>> {
+    if (!fs.existsSync(metricsPath)) {
+      throw new Error(`Metrics file not found: ${metricsPath}`);
+    }
+    try {
+      const raw: Record<string, ReadonlyArray<RCAEvalMetricPoint>> = JSON.parse(
+        fs.readFileSync(metricsPath, 'utf-8'),
+      );
+      // Validate that the JSON has the expected structure (object with service keys)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length === 0) {
+        throw new Error(`Metrics file ${metricsPath} is empty or has unexpected format`);
+      }
+      // Validate at least one service has metric points
+      const validServiceCount = Object.values(raw).filter(
+        (v) => Array.isArray(v) && v.length > 0,
+      ).length;
+      if (validServiceCount === 0) {
+        throw new Error(`Metrics file ${metricsPath} has no valid service entries`);
+      }
+      return raw;
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(`Metrics file ${metricsPath} is not valid JSON: ${err.message}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Read `inject_time.txt` if present, returning 0 when it is absent or
+   * unparseable.
+   *
+   * Deliberately lenient, unlike the equivalent strict reader that used to sit
+   * beside it and was never called: a case with a missing or corrupt inject time
+   * is still worth loading (several signals do not need the injection boundary),
+   * so this degrades to 0 rather than throwing.
+   */
+  private tryLoadInjectTime(casePath: string): number {
+    const injectTimePath = path.join(casePath, 'inject_time.txt');
+    if (!fs.existsSync(injectTimePath)) return 0;
+
+    try {
+      const raw = fs.readFileSync(injectTimePath, 'utf-8').trim();
+      const time = parseInt(raw, 10);
+      if (isNaN(time)) return 0;
+      return time;
+    } catch {
+      return 0;
+    }
+  }
+
+  private tryLoadLogs(casePath: string): ReadonlyArray<BenchmarkLogEntry> | undefined {
+    const logsPath = path.join(casePath, 'logs.csv');
+    if (!fs.existsSync(logsPath)) return undefined;
+
+    try {
+      // BYTES, not a decoded document. `csv-records.ts` owns the reasoning: a
+      // whole-file decode makes every cell a slice of one string the size of the
+      // file, so the dozen exception names the run keeps per case would pin the
+      // entire logs.csv (up to 181 MB) for the rest of the process — measured at
+      // 1395 MB retained across one 90-case cell after the cases were dropped.
+      // It is also the reader that keeps quoted commas and newlines in cells:
+      // RCAEval's SockShop/OnlineBoutique messages are JSON documents.
+      const records = readCsvRecords(fs.readFileSync(logsPath));
+      const headerRecord = records.next();
+      if (headerRecord.done) return undefined;
+
+      // RCAEval's logs.csv carries `timestamp, service, message` (paper §3.4)
+      // with NO level/severity column — severity must be derived from the log
+      // MESSAGE text (stack traces / error keywords). Detect columns flexibly
+      // so both the original CSV layout and any Parquet-derived variant work.
+      const header = headerRecord.value;
+      this.lastLogHeader = header.join(',');
+      const tsIdx = columnIndex(header, LOG_TIMESTAMP_COLUMNS);
+      const svcIdx = columnIndex(header, SERVICE_COLUMN_ALIASES);
+      const msgIdx = columnIndex(header, LOG_MESSAGE_COLUMNS);
+      const lvlIdx = columnIndex(header, LOG_LEVEL_COLUMNS);
+
+      const entries: BenchmarkLogEntry[] = [];
+      for (const cells of records) {
+        const message = cell(cells, msgIdx) ?? '';
+        const explicitLevel = (cell(cells, lvlIdx) ?? '').toUpperCase();
+        const level = classifyLogLevel(explicitLevel, message);
+        // RCAEval logs.csv timestamps are Unix SECONDS (same domain as
+        // inject_time) but some cases carry NANOSECONDS (~1.7e18). The unified
+        // BenchmarkCase carries time in MILLISECONDS, so magnitude-detect:
+        // |ts| > 1e15 is nanoseconds → divide by 1e6 (ns→ms); otherwise treat
+        // as seconds → multiply by 1000. This keeps the post-injection filter
+        // (`timestamp >= injectTimeMs`) comparing like-for-like.
+        const rawTs = parseInt(cell(cells, tsIdx) ?? '0', 10);
+        const timestampMs = Math.abs(rawTs) > 1e15 ? Math.floor(rawTs / 1e6) : rawTs * 1000;
+        entries.push({
+          timestamp: timestampMs,
+          service: cell(cells, svcIdx) ?? 'unknown',
+          message,
+          level,
+          isStackTrace: isStackTraceMessage(message),
+          isLogicException: isLogicExceptionMessage(message),
+          // Only error/fatal lines carry a root-cause exception worth ranking
+          // on; INFO/WARN/DEBUG lines are skipped to avoid a regex pass over
+          // the (dominant) non-error volume of large RE2/RE3 log files.
+          deepestExceptionClass:
+            level === 'ERROR' || level === 'FATAL'
+              ? extractDeepestExceptionClass(message)
+              : undefined,
+          isHttpException:
+            (level === 'ERROR' || level === 'FATAL') && isHttpExceptionMessage(message),
+        });
+      }
+
+      return entries.length === 0 ? undefined : entries;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private tryLoadTraces(
+    casePath: string,
+    maxSpans = 10_000,
+  ): ReadonlyArray<BenchmarkTraceSpan> | undefined {
+    const tracesPath = path.join(casePath, 'traces.csv');
+    if (!fs.existsSync(tracesPath)) return undefined;
+
+    try {
+      // Read only the prefix needed for `maxSpans` data rows (plus the
+      // header). Each CSV line is ~150–200 bytes; capping the read keeps a
+      // multi-megabyte traces.csv from ever being fully loaded into memory.
+      // The cells are then decoded one by one by `readCsvRecords`, so a span
+      // field kept alive after the case is dropped cannot pin the prefix.
+      const maxBytes = (maxSpans + 1) * 256;
+      const records = readCsvRecords(readFilePrefix(tracesPath, maxBytes), {
+        maxRecords: maxSpans,
+      });
+      const headerRecord = records.next();
+      if (headerRecord.done) return undefined;
+
+      // RCAEval traces.csv uses Jaeger CAMELCASE columns (traceId, spanId,
+      // parentSpanId, serviceName, operationName, startTime, duration) — NOT
+      // the snake_case `service`/`status`/`trace_id` the original parser
+      // assumed. Detect the service and status columns by header alias (as
+      // tryLoadLogs does), so spans are attributed to the right service and
+      // the error response code is actually read.
+      const header = headerRecord.value;
+      this.lastTraceHeader = header.join(',');
+      const svcIdx = columnIndex(header, SERVICE_COLUMN_ALIASES);
+      const statusIdx = columnIndex(header, STATUS_COLUMN_ALIASES);
+      const traceIdIdx = columnIndex(header, TRACE_ID_COLUMNS);
+      const spanIdIdx = columnIndex(header, SPAN_ID_COLUMNS);
+      const parentIdx = columnIndex(header, PARENT_SPAN_ID_COLUMNS);
+      const opIdx = columnIndex(header, OPERATION_COLUMNS);
+      const durationIdx = columnIndex(header, DURATION_COLUMNS);
+      const startMillisIdx = header.indexOf('startTimeMillis');
+      const startIdx = header.indexOf('startTime');
+      const startSnakeIdx = header.indexOf('start_time');
+      const timestampIdx = bareTimestampIndex(header);
+
+      const spans: BenchmarkTraceSpan[] = [];
+      for (const cells of records) {
+        const service = cell(cells, svcIdx) ?? 'unknown';
+        spans.push({
+          traceId: cell(cells, traceIdIdx) ?? 'unknown',
+          spanId: cell(cells, spanIdIdx) ?? `${cell(cells, traceIdIdx) ?? 'unknown'}_${service}`,
+          parentSpanId: cell(cells, parentIdx),
+          service,
+          operationName: cell(cells, opIdx) ?? 'unknown',
+          startTime: normalizeTraceStartTime(
+            cell(cells, startMillisIdx),
+            cell(cells, startIdx),
+            cell(cells, startSnakeIdx),
+            cell(cells, timestampIdx),
+          ),
+          duration: parseInt(cell(cells, durationIdx) ?? '0', 10),
+          status: normalizeSpanStatus(cell(cells, statusIdx)),
+        });
+      }
+
+      return spans.length === 0 ? undefined : spans;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Load trace spans for a single case directory without re-reading metrics.
+   *
+   * RE2/RE3 traces.csv files are large (100K+ spans per case; TrainTicket
+   * can exceed a million), so callers that need per-case traces for trace
+   * topology augmentation should load them lazily (one case at a time) and
+   * release them after use. `maxSpans` bounds the number of parsed spans so
+   * a single case cannot OOM the heap — topology validation only needs
+   * enough spans to confirm parent→child edges, not the full trace history.
+   *
+   * @param casePath - Path to the case directory.
+   * @param maxSpans - Maximum spans to load (default 10000).
+   * @returns Parsed trace spans, or undefined if traces.csv is absent.
+   */
+  loadTraces(casePath: string, maxSpans = 10_000): ReadonlyArray<BenchmarkTraceSpan> | undefined {
+    return this.tryLoadTraces(casePath, maxSpans);
+  }
+
+  private buildMetricMap(rawMetrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>): MetricMap {
+    const map = new Map<string, readonly TimeSeries[]>();
+
+    for (const [serviceName, points] of Object.entries(rawMetrics)) {
+      // Group points by metric_name
+      const byMetric = new Map<string, { timestamps: number[]; values: number[] }>();
+      for (const p of points) {
+        let entry = byMetric.get(p.metric_name);
+        if (!entry) {
+          entry = { timestamps: [], values: [] };
+          byMetric.set(p.metric_name, entry);
+        }
+        entry.timestamps.push(p.timestamp * 1000); // Convert to ms
+        entry.values.push(p.value);
+      }
+
+      const timeSeries: TimeSeries[] = [];
+      for (const [metricName, data] of byMetric) {
+        // Sort by timestamp
+        const sorted = data.timestamps.map((t, i) => ({ t, v: data.values[i]! }));
+        sorted.sort((a, b) => a.t - b.t);
+
+        timeSeries.push({
+          label: metricName,
+          timestamps: sorted.map((s) => s.t),
+          values: new Float64Array(sorted.map((s) => s.v!)),
+          unit: this.inferUnit(metricName),
+        });
+      }
+
+      map.set(serviceName, timeSeries);
+    }
+
+    return map;
+  }
+
+  private inferUnit(metricName: string): string {
+    const lower = metricName.toLowerCase();
+    if (lower.includes('cpu')) return 'percent';
+    if (lower.includes('mem') || lower.includes('memory')) return 'bytes';
+    if (lower.includes('disk')) return 'iops';
+    if (lower.includes('latency') || lower.includes('delay')) return 'ms';
+    if (lower.includes('loss') || lower.includes('error')) return 'rate';
+    return 'count';
+  }
+
+  private buildFallbackCallGraph(rawCase: RCAEvalCase): ServiceCallGraph {
+    const serviceIds = Object.keys(rawCase.metrics);
+    const nodes = new Map<string, ServiceNode>();
+    for (const id of serviceIds) {
+      nodes.set(id, {
+        id,
+        name: id,
+        namespace: rawCase.benchmark,
+        labels: {},
+      });
+    }
+
+    const edges: CallEdge[] = [];
+    if (serviceIds.length > 1) {
+      // Create a simple chain: svc[0] -> svc[1] -> ... -> svc[N-1]
+      for (let i = 1; i < serviceIds.length; i++) {
+        edges.push({
+          from: serviceIds[i - 1]!,
+          to: serviceIds[i]!,
+          type: 'REST',
+          callRate: 100,
+          p99Latency: 50,
+          errorRate: 0.01,
+        });
+      }
+    }
+
+    return {
+      nodes,
+      edges,
+      systemLoad: 0.5,
+    };
+  }
+}
+
+// ── Internal Types ────────────────────────────────────────
+
+interface ParsedDirName {
+  benchmark: string;
+  service: string;
+  fault: string;
+  instance: number;
+}
+
+/** One metric observation, in the shape `metrics.json` stores it. */
+export interface RCAEvalMetricPoint {
+  timestamp: number;
+  value: number;
+  metric_name: string;
+}
+
+/**
+ * Stream-scan the ENTIRE traces.csv and return per-service pre/post span
+ * counts without retaining raw spans.
+ *
+ * Unlike tryLoadTraces (which uses readFilePrefix + maxSpans and therefore
+ * truncates before the post-injection window), this reads the WHOLE file so
+ * the trace-activity rise signal sees the full post-injection window. Each
+ * span is reduced to its service id + start time and discarded, collapsing
+ * hundreds of thousands of spans to a handful of {pre, post} pairs.
+ *
+ * Streaming is load-bearing: RCAEval TrainTicket traces.csv files can exceed
+ * a million spans (~150 MB+). Materialising the whole file (readFile →
+ * split('\n') → per-line arrays) spikes the heap past the runner's budget
+ * and OOMs during ablation; reading line-by-line keeps peak memory at O(line)
+ * instead of O(file).
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @param resolve - Optional reconciliation of a span's service name to the case's own id; a name it refuses
+ *   is dropped rather than counted under the raw name, because a service the case has no metrics for cannot
+ *   be ranked and its raw spelling is a key no consumer can join on.
+ * @returns A map from service id to {pre, post} span counts (empty on error).
+ */
+export async function countTraceActivityByService(
+  tracesPath: string,
+  injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
+): Promise<ReadonlyMap<string, TraceActivityCounts>> {
+  const counts = new Map<string, { pre: number; post: number }>();
+
+  // Fast path: `createReadStream` opens lazily and reports a missing file as
+  // an async 'error' event (not a sync throw), so short-circuit on absence.
+  if (!fs.existsSync(tracesPath)) return counts;
+
+  const lines = createInterface({
+    input: fs.createReadStream(tracesPath, { encoding: 'utf-8' }),
+    crlfDelay: Infinity,
+  });
+
+  // Same service-column extraction as tryLoadTraces: header alias detection,
+  // falling back to 'unknown' when the column is absent or empty. Column
+  // indexes for the four start-time candidates are resolved once from the
+  // header so each row needs only two cells extracted, never a full object.
+  let svcIdx = -1;
+  let startMillisIdx = -1;
+  let startIdx = -1;
+  let startSnakeIdx = -1;
+  let timestampIdx = -1;
+  let isHeader = true;
+
+  try {
+    for await (const rawLine of lines) {
+      if (isHeader) {
+        const header = rawLine.split(',').map((h) => h.trim());
+        svcIdx = header.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+        startMillisIdx = header.indexOf('startTimeMillis');
+        startIdx = header.indexOf('startTime');
+        startSnakeIdx = header.indexOf('start_time');
+        timestampIdx = bareTimestampIndex(header);
+        isHeader = false;
+        continue;
+      }
+
+      if (rawLine.trim() === '') continue;
+      const cells = rawLine.split(',');
+      const raw = svcIdx >= 0 ? (cells[svcIdx] ?? '').trim() || 'unknown' : 'unknown';
+      const service = resolve === undefined ? raw : resolve(raw);
+      if (service === undefined) continue;
+      const startTimeMs = normalizeTraceStartTime(
+        cell(cells, startMillisIdx),
+        cell(cells, startIdx),
+        cell(cells, startSnakeIdx),
+        cell(cells, timestampIdx),
+      );
+
+      const entry = counts.get(service) ?? { pre: 0, post: 0 };
+      if (startTimeMs < injectTimeMs) entry.pre += 1;
+      else entry.post += 1;
+      counts.set(service, entry);
+    }
+  } catch {
+    // A mid-stream read error surfaces as an async iterator rejection; return
+    // whatever counts were accumulated before the failure (empty for a file
+    // that vanished between the existsSync check and the first read).
+  }
+
+  return counts;
+}
+
+/** Header aliases for the SPAN ID column. */
+const SPAN_ID_COLUMNS = new Set(['spanid', 'span_id', 'span']);
+
+/**
+ * Header aliases for the DURATION column.
+ *
+ * `duration` is what RCAEval writes (Jaeger camelCase, alongside `spanId`/`parentSpanId`); the snake and
+ * suffix spellings are here because the same loader already tolerates them elsewhere, and a column this
+ * function cannot find is not an error it reports — it is a channel that silently reports nothing.
+ *
+ * The value's UNIT is deliberately not normalised. The only consumer reads the RATIO of a post-injection
+ * mean to a pre-injection mean on the same edge, so a uniform scale cancels — unlike `startTime`, whose
+ * unit is compared against `injectTimeMs` and therefore does have to be normalised above.
+ */
+const DURATION_COLUMNS = new Set([
+  'duration',
+  'duration_ms',
+  'durationms',
+  'elapsed_ms',
+  'latency_ms',
+]);
+
+/** Header aliases for the PARENT SPAN ID column, which is what makes a call an edge. */
+const PARENT_SPAN_ID_COLUMNS = new Set([
+  'parentspanid',
+  'parent_span_id',
+  'parentspan',
+  'parent_span',
+  'parentid',
+  'parent_id',
+]);
+
+/**
+ * Derive the failed-edge-DIRECTION rows from a case's `traces.csv`.
+ *
+ * ## Why this exists, and why it is not the log signal
+ *
+ * A fault's interface evidence is emitted by its VICTIMS: they are the ones whose calls fail, so
+ * "who emitted the errors" cannot say who is causal. What can is *whom* those failing calls were
+ * against — every outgoing span carries both the calling service and the HTTP response status of
+ * the call. `FaultFailedEdge` is therefore the only case input that carries the DIRECTION of a
+ * fault (see its docblock), and the engine charges each failed call to its CALLEE.
+ *
+ * ## The channel was DEAD on this path until this function existed
+ *
+ * `fse26-loader.ts` derives these rows for the FSE'26 benchmark (from `scripts/fse26_convert.py`)
+ * and `toFaultGraphOptions` forwards them for every caller — but nothing on the RCAEval path ever
+ * produced them, so **every RCAEval artifact rendered `failedEdge=0.000 failedEdgeRecords=0` for
+ * all 41,426 services**. That is the register's own first invariant inverted: a signal that
+ * received nothing reports the same headline as a signal with no effect. It is also why the
+ * separator census' STRONGEST surviving cell (`edgeRecords`, AUC 0.908 on FSE'26) had no
+ * counterpart on the criterion's other half — the evidence did not exist there, so no golden run
+ * could ever confirm or refute it.
+ *
+ * ## This is now a VIEW of the shared derivation
+ *
+ * The derivation itself — the single streaming pass, the parent join, the injection split, the both-sides
+ * rule for a latency rise — lives in {@link countDirectionalInputs}, because the OTHER direction-carrying
+ * input (`FaultEdgeLatency`, read by the shipped `latWeight` term) is a function of the same relation and
+ * reading every file twice would cost more I/O than the whole golden run. This function returns that
+ * derivation's `failedTraceEdges` array, unchanged: same rows, same `(caller, callee)` order, same
+ * `failed > 0` selection.
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @returns `{caller, callee, failed, baseline}` rows, only for edges that failed AFTER injection,
+ *   sorted by `(caller, callee)`; empty when the file is absent, carries no status column, or
+ *   holds no failing call whose caller is in the file.
+ */
+export async function countFailedTraceEdges(
+  tracesPath: string,
+  injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
+): Promise<FaultFailedEdge[]> {
+  return (await countDirectionalInputs(tracesPath, injectTimeMs, resolve)).failedTraceEdges;
+}
+
+/**
+ * The two DIRECTION-carrying inputs, derived from a case's `traces.csv` in ONE streaming pass.
+ *
+ * ## Why one function and not two
+ *
+ * Both observables are functions of the same relation — `caller ──call──▶ callee`, split at the injection —
+ * and differ only in what they measure on it: how many calls FAILED against the callee, and how much
+ * LONGER the callee's calls took. Deriving them separately would read every file twice, and this module's
+ * own doc records the price of that: RCAEval TrainTicket traces exceed a million spans per case, so a second
+ * read costs more I/O than the whole golden run. It would also put two copies of the edge relation in the
+ * file, free to drift — which is the defect class this repository keeps finding one layer down.
+ *
+ * ## Why the latency half had to exist at all
+ *
+ * `latWeight` is **0.561495** in the shipped configuration — one of the three terms that dominate the
+ * ranking — and it reads `FaultEdgeLatency`, which until now **only** `fse26-loader.ts` produced. So the
+ * term has been structurally absent on every RCAEval path: the published cells were measured with it
+ * receiving nothing, and no ablation could measure it because an ablated weight multiplies an empty map.
+ * `benchmarks/src/directional-evidence.ts` derives the same two arrays from in-memory spans for the runners
+ * that still hold them; this is the streaming counterpart for the ones that do not.
+ *
+ * ## The relation, and the one rule that matters
+ *
+ * An edge is a span WITH a parent, so its endpoints are the parent's service (the CALLER) and its own
+ * service (the CALLEE). The duration attributed to the edge is the CHILD span's, which is the callee's own
+ * work. The split is the injection: `failed`/`baseline` count failing calls after/before it, and the
+ * durations are averaged separately on each side.
+ *
+ * A latency rise needs **both** sides. An edge that exists only after the injection has no baseline, and
+ * reporting one as `preMeanMs: 0` would invite the ranking to read an infinite rise where there is only an
+ * absent measurement — so such an edge is OMITTED rather than reported with a zero. A failing call is
+ * likewise retained in the accumulation but does not by itself create a `failedTraceEdges` row when it
+ * failed only before the injection: that is a property of the deployment, not evidence about the fault.
+ *
+ * A SELF-EDGE (caller === callee) is kept here and filtered by the consumers that need to
+ * (`computeEdgeLatencyScores` skips them); dropping it at this layer would hide a real span.
+ *
+ * ## Memory
+ *
+ * The parent join cannot assume the parent precedes the child — an implementation that resolved each child
+ * against the parents already seen silently under-counts on any file that is not parent-first. So
+ * `spanId -> service` is already held for the whole file, and the per-edge accumulator below is keyed on
+ * the same order of magnitude. Sums and counts are kept rather than the durations themselves, so a callee
+ * with a million spans costs one accumulator, not a million numbers.
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @returns The two arrays, each sorted by `(caller, callee)`; both empty when the file is absent. The
+ *   latency array is empty when the file carries no duration column, and the failed-edge array when it
+ *   carries no status column.
+ */
+export async function countDirectionalInputs(
+  tracesPath: string,
+  injectTimeMs: number,
+  resolve?: (name: string) => string | undefined,
+): Promise<DirectionalInputs> {
+  if (!fs.existsSync(tracesPath)) {
+    return { failedTraceEdges: [], edgeLatency: [], calleeCalls: new Map<string, number>() };
+  }
+
+  /** `spanId -> service`, for the whole file: the join is done after the read, not during it. */
+  const serviceOfSpan = new Map<string, string>();
+  /**
+   * Per `(parent span, callee)` accumulators, keyed before the caller is known.
+   *
+   * The parent's SERVICE is what an edge needs, and the parent's row may arrive after its child's, so the
+   * edge cannot be keyed on a service here. Keying on the parent's span id and joining afterwards is what
+   * makes the single pass correct for any row order.
+   */
+  const pending = new Map<
+    string,
+    {
+      readonly parent: string;
+      readonly callee: string;
+      readonly sums: { pre: number; nPre: number; post: number; nPost: number };
+      failed: number;
+      baseline: number;
+      /** Calls this edge carried after the injection — counted for every row, not only the failing ones. */
+      callsPost: number;
+    }
+  >();
+
+  let svcIdx = -1;
+  let statusIdx = -1;
+  let spanIdx = -1;
+  let parentIdx = -1;
+  let durationIdx = -1;
+  let startMillisIdx = -1;
+  let startIdx = -1;
+  let startSnakeIdx = -1;
+  let timestampIdx = -1;
+  let isHeader = true;
+
+  const lines = createInterface({
+    input: fs.createReadStream(tracesPath, { encoding: 'utf-8' }),
+    crlfDelay: Infinity,
+  });
+
+  try {
+    for await (const rawLine of lines) {
+      if (isHeader) {
+        const header = rawLine.split(',').map((h) => h.trim());
+        svcIdx = header.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+        statusIdx = header.findIndex((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
+        spanIdx = header.findIndex((h) => SPAN_ID_COLUMNS.has(h.toLowerCase()));
+        parentIdx = header.findIndex((h) => PARENT_SPAN_ID_COLUMNS.has(h.toLowerCase()));
+        durationIdx = header.findIndex((h) => DURATION_COLUMNS.has(h.toLowerCase()));
+        startMillisIdx = header.indexOf('startTimeMillis');
+        startIdx = header.indexOf('startTime');
+        startSnakeIdx = header.indexOf('start_time');
+        timestampIdx = bareTimestampIndex(header);
+        isHeader = false;
+        continue;
+      }
+
+      if (rawLine.trim() === '') continue;
+      const cells = rawLine.split(',');
+      const raw = svcIdx >= 0 ? (cell(cells, svcIdx) ?? '').trim() || 'unknown' : 'unknown';
+      const service = resolve === undefined ? raw : resolve(raw);
+      // A span whose service is not one of the case's own is dropped ENTIRELY — its own row and its
+      // parent's edge. Keeping it would key an edge on a name no consumer can join, and the join below
+      // would then drop the edge anyway; dropping it here also keeps it out of `calleeCalls`, whose
+      // divisor is traffic an interface served and not traffic a phantom carried.
+      if (service === undefined) continue;
+      const spanId = (cell(cells, spanIdx) ?? '').trim();
+      const parent = (cell(cells, parentIdx) ?? '').trim();
+      if (spanId !== '') serviceOfSpan.set(spanId, service);
+      // A span with no parent is not an edge: it is a service's own entry point, so it establishes no
+      // direction and is only useful through `serviceOfSpan` above.
+      if (parent === '' || spanId === '') continue;
+
+      const atMs = normalizeTraceStartTime(
+        cell(cells, startMillisIdx),
+        cell(cells, startIdx),
+        cell(cells, startSnakeIdx),
+        cell(cells, timestampIdx),
+      );
+      const key = `${parent}\u0000${service}`;
+      const entry = pending.get(key) ?? {
+        parent,
+        callee: service,
+        sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
+        failed: 0,
+        baseline: 0,
+        callsPost: 0,
+      };
+      // Counted for EVERY spanned call, before any filter on duration or status: the divisor is the traffic the
+      // callee served, and a call that carried no duration and no error is still a call it served.
+      if (!(atMs < injectTimeMs)) entry.callsPost += 1;
+      if (normalizeSpanStatus(statusIdx >= 0 ? cell(cells, statusIdx) : undefined) === 'ERROR') {
+        if (atMs < injectTimeMs) entry.baseline += 1;
+        else entry.failed += 1;
+      }
+      // The duration is read independently of the status: a SUCCESSFUL call that got slower is exactly the
+      // evidence the latency term exists for, and it is the one the failed-call counts cannot see.
+      const duration =
+        durationIdx >= 0 ? Number.parseFloat(cell(cells, durationIdx) ?? '') : Number.NaN;
+      if (Number.isFinite(duration) && duration >= 0) {
+        if (atMs < injectTimeMs) {
+          entry.sums.pre += duration;
+          entry.sums.nPre += 1;
+        } else {
+          entry.sums.post += duration;
+          entry.sums.nPost += 1;
+        }
+      }
+      pending.set(key, entry);
+    }
+  } catch {
+    // A mid-stream read error returns what was accumulated, like `countTraceActivityByService`.
+  }
+
+  // The join, after the read. An edge whose caller is not in the file is DROPPED rather than guessed: the
+  // caller is genuinely unknown on a truncated trace, and a guess would put a direction into the ranking
+  // that no datum states.
+  const byEdge = new Map<
+    string,
+    {
+      caller: string;
+      callee: string;
+      failed: number;
+      baseline: number;
+      callsPost: number;
+      sums: { pre: number; nPre: number; post: number; nPost: number };
+    }
+  >();
+  for (const entry of pending.values()) {
+    const caller = serviceOfSpan.get(entry.parent);
+    if (caller === undefined) continue;
+    const key = `${caller}\u0000${entry.callee}`;
+    const merged = byEdge.get(key) ?? {
+      caller,
+      callee: entry.callee,
+      failed: 0,
+      baseline: 0,
+      callsPost: 0,
+      sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
+    };
+    merged.failed += entry.failed;
+    merged.baseline += entry.baseline;
+    merged.callsPost += entry.callsPost;
+    merged.sums.pre += entry.sums.pre;
+    merged.sums.nPre += entry.sums.nPre;
+    merged.sums.post += entry.sums.post;
+    merged.sums.nPost += entry.sums.nPost;
+    byEdge.set(key, merged);
+  }
+
+  // One order for both arrays, so a reader diffing them is comparing the same edges in the same sequence.
+  //
+  // The hand-rolled three-arm comparator is KEPT, tie-break and all, after being measured against the
+  // alternative. Its `? -1 : 1` callee arm cannot answer `0`, which is a defect wherever two entries can be
+  // equal — and here they cannot: `byEdge` is keyed on `caller\u0000callee`, so no pair is ever equal and the
+  // arm is unreachable rather than merely untaken. That condition is the census's own argument, and this site
+  // is its exemplar: `__tests__/unit/comparator-population.test.ts` records this very signature as the one
+  // occurrence a per-line reading cannot see (the formatter wraps `? -1` and `: 1` onto different lines while
+  // the census's `\s` matches the newline), which is what its control asserts a reading can find. Replacing
+  // the comparator with `localeCompare` would silence an unreachable arm and blind that control, so it stays.
+  const ordered = [...byEdge.values()].sort((a, b) =>
+    a.caller !== b.caller
+      ? a.caller < b.caller
+        ? -1
+        : 1
+      : a.callee < b.callee
+        ? -1
+        : a.callee > b.callee
+          ? 1
+          : 0,
+  );
+
+  // The divisor, summed per CALLEE across callers: the evidence bar asks what fraction of the traffic an interface
+  // served failed, and one caller's share of that traffic is not the interface. Accumulated over every edge with a
+  // resolvable caller — an edge whose caller is unknown was dropped above, and a count it contributed would be
+  // traffic against a callee that no direction explains.
+  const calleeCalls = new Map<string, number>();
+  for (const edge of byEdge.values()) {
+    // A SELF-CALL is excluded, because the numerator excludes it: `computeFailedEdgeScores` drops `caller ===
+    // callee` ("a self-call carries no direction"), and a denominator that kept them would divide external
+    // failures by internal traffic. The ratio has to be two counts on the SAME population or it is not a rate.
+    if (edge.caller === edge.callee) continue;
+    if (edge.callsPost === 0) continue;
+    calleeCalls.set(edge.callee, (calleeCalls.get(edge.callee) ?? 0) + edge.callsPost);
+  }
+
+  return {
+    calleeCalls,
+    // The baseline is counted, never dropped: `computeFailedEdgeScores` reads the DIFFERENCE, and an edge
+    // that was already failing before the injection is a property of the deployment rather than evidence
+    // about the fault — so it must not itself create a row.
+    failedTraceEdges: ordered
+      .filter((edge) => edge.failed > 0)
+      .map((edge) => ({
+        caller: edge.caller,
+        callee: edge.callee,
+        failed: edge.failed,
+        baseline: edge.baseline,
+      })),
+    // Both sides, or no row at all. `preMeanMs <= 0` cannot arise from a mean of non-negative durations,
+    // and `computeEdgeLatencyScores` rejects it anyway; it is filtered here so the array states only what a
+    // consumer can use.
+    edgeLatency: ordered
+      .filter((edge) => edge.sums.nPre > 0 && edge.sums.nPost > 0)
+      .map((edge) => ({
+        caller: edge.caller,
+        callee: edge.callee,
+        preMeanMs: edge.sums.pre / edge.sums.nPre,
+        postMeanMs: edge.sums.post / edge.sums.nPost,
+      }))
+      .filter((edge) => edge.preMeanMs > 0),
+  };
+}
+
+/** What {@link countDirectionalInputs} returns: the two arrays a case's direction is carried by. */
+export interface DirectionalInputs {
+  readonly failedTraceEdges: FaultFailedEdge[];
+  readonly edgeLatency: FaultEdgeLatency[];
+  /**
+   * Calls that reached each service at or after the injection — the DIVISOR of the failure rate the failed-edge
+   * evidence bar reads.
+   *
+   * Counted here rather than derived from `failedTraceEdges` because that array carries only edges that failed:
+   * a callee whose traffic is nine hundred healthy calls and ten failures has a 1% failure rate, and a divisor
+   * built from the failing edges alone would report 100%. Entry-point spans (no parent) are not calls and are not
+   * counted — a service is not its own caller.
+   */
+  readonly calleeCalls: Map<string, number>;
+}
+
+/** Read a trimmed cell by index, or undefined when the column is absent. */
+function cell(cells: readonly string[], idx: number): string | undefined {
+  return idx >= 0 ? (cells[idx] ?? '').trim() : undefined;
+}
+
+/**
+ * Read the first `maxBytes` bytes of a file, as bytes.
+ *
+ * Used to load a bounded prefix of traces.csv so a multi-megabyte file is
+ * never fully read into memory — the caller only needs enough rows for
+ * topology validation, not the entire trace history.
+ *
+ * Returns a `Buffer` rather than a decoded string so `readCsvRecords` can decode
+ * each CELL on its own: a single decoded prefix would make every span field a
+ * slice of it, and one retained field would then hold the whole prefix.
+ */
+function readFilePrefix(filePath: string, maxBytes: number): Buffer {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    fs.closeSync(fd);
+  }
+}

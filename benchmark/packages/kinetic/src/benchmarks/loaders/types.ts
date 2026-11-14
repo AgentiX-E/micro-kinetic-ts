@@ -1,0 +1,360 @@
+/**
+ * Common benchmark interfaces for RCAEval, AIOps2025, and RCA100 datasets.
+ *
+ * These interfaces unify the three benchmark formats into a common
+ * representation that the BenchmarkRunner can process uniformly.
+ *
+ * @module benchmarks/loaders/types
+ */
+
+import type {
+  FaultEdgeLatency,
+  FaultFailedEdge,
+  MetricMap,
+  ServiceCallGraph,
+  TraceActivityCounts,
+} from '@agentix-e/micro-kinetic-core';
+
+// ── Common Benchmark Types ────────────────────────────────
+
+/** Ground truth for a single benchmark case. */
+export interface BenchmarkGroundTruth {
+  /** The service ID that is the actual root cause. */
+  readonly serviceId: string;
+  /**
+   * The full set of accepted root-cause service IDs (multi-label).
+   *
+   * Some benchmarks mark MULTIPLE services as correct for a single case. FSE'26
+   * network faults (`NetworkDelay`, `NetworkLoss`, …) are injected on an EDGE,
+   * so both the `source_service` and `target_service` of the injection point are
+   * valid answers (see the benchmark's dual-label convention). When present,
+   * `serviceIds` is the complete accepted set and `serviceId` is its first
+   * member; when absent, `{serviceId}` is the accepted set. Ranking is scored
+   * against the accepted set, not against `serviceId` alone.
+   */
+  readonly serviceIds?: readonly string[];
+  /** The fault type that was injected. */
+  readonly faultType: string;
+  /** The metric that indicates the fault (if known). */
+  readonly metric?: string;
+  /** Optional 4-layer ground truth for RCA100 format. */
+  readonly rca100Layers?: RCA100GroundTruthLayers;
+}
+
+/**
+ * The set of service IDs that count as a correct answer for one case.
+ *
+ * ## Why this is a function and not an `??`
+ *
+ * The docblock on {@link BenchmarkGroundTruth.serviceIds} has said since it was written that
+ * "ranking is scored against the accepted set, not against `serviceId` alone". Two runners read
+ * this type and only ONE of them obeyed: `run-fse26.ts` scores `accepted.includes(rank[0])`, while
+ * `benchmark-runner.ts` — the runner behind every RCAEval cell and every loss-census row — scored
+ * `rank[0] === serviceId`. One shared type, two scoring rules, and the divergence was invisible
+ * because it is a difference between *files* rather than between branches of one expression.
+ *
+ * That divergence was not cosmetic. On the 1,422-pack RCABench corpus, **1,053 packs (74%)** declare
+ * a TWO-element ground truth (an edge-injected fault is neither endpoint alone), and the RCAEval
+ * path read **32.28% (459/1422)** where the same rankings scored against the declared set read
+ * **42.69% (607/1422)** — 148 cases, 10.4 pp, attributable to the rule and to nothing about the
+ * engine. See `docs/rcabench-first-reading.md`.
+ *
+ * The returned array is `serviceIds` when it is non-empty, `[serviceId]` otherwise. It is NOT
+ * deduplicated or sorted: the declared order is the corpus's, and `serviceId` is documented to be its
+ * first member, so re-ordering here would break that invariant for every reader downstream.
+ *
+ * A case whose `serviceId` is empty (a corpora quirk, not a valid label) yields `['']`, which no
+ * ranking can contain — the same verdict the single-label rule gave it, deliberately.
+ *
+ * @param groundTruth - The case's ground truth record.
+ * @returns The accepted service IDs, in the corpus's own order.
+ */
+export function acceptedTruthServiceIds(groundTruth: BenchmarkGroundTruth): readonly string[] {
+  const declared = groundTruth.serviceIds;
+  return declared !== undefined && declared.length > 0 ? declared : [groundTruth.serviceId];
+}
+
+/**
+ * Rank of the best accepted answer in a ranking, 1-based; `0` when no accepted ID is ranked.
+ *
+ * The single owner of "how far down did the truth sit", so that the rank a failure diagnostic
+ * reports and the verdict the accuracy counters take cannot be two readings of two different rules.
+ *
+ * @param ranking - The engine's ranking, best first.
+ * @param accepted - The accepted service IDs.
+ * @returns 1-based rank of the first ranked accepted ID, or 0.
+ */
+export function bestAcceptedRank(
+  ranking: readonly { readonly serviceId: string }[],
+  accepted: readonly string[],
+): number {
+  const index = ranking.findIndex((entry) => accepted.includes(entry.serviceId));
+  return index < 0 ? 0 : index + 1;
+}
+
+/** 4-layer ground truth for RCA100. */
+export interface RCA100GroundTruthLayers {
+  /** Layer 1: Fault type category. */
+  readonly faultType: string;
+  /** Layer 2: Target entity (service/node). */
+  readonly targetEntity: string;
+  /** Layer 3: Causal chain of propagation. */
+  readonly causalChain: readonly string[];
+  /** Layer 4: Observability checkpoints. */
+  readonly observabilityCheckpoints: readonly string[];
+}
+
+/** A single unified benchmark case. */
+export interface BenchmarkCase {
+  /** Unique case identifier within the dataset. */
+  readonly id: string;
+  /** Which benchmark dataset this belongs to. */
+  readonly datasetName:
+    'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100' | 'fse26';
+  /** The service call graph for this case. */
+  readonly callGraph: ServiceCallGraph;
+  /** Time-series metrics, keyed by service ID. */
+  readonly metrics: MetricMap;
+  /** Fault injection time as Unix timestamp (milliseconds). */
+  readonly injectTime: number;
+  /** Ground truth information. */
+  readonly groundTruth: BenchmarkGroundTruth;
+  /** Optional log entries (RE2, RE3, AIOps2025). */
+  readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
+  /**
+   * Rows this case's log artefact yielded **before** the assembly's retention filter.
+   *
+   * Carried because the assembly measured it and then discarded it, and it is the ONLY evidence separating
+   * "the file held nothing" from "the file held rows and none survived": `logs: []` alone reads the same for
+   * both, which is why the input census printed `UNREPORTED` over 69 of RE2-OnlineBoutique's 90 cases while
+   * its own reader had the answer in hand.
+   *
+   * Absent when the loader produced no log payload at all — a third statement, whose REASON (absent file or a
+   * parse that failed) nothing records, so the census may not guess it.
+   */
+  readonly logsReadRows?: number;
+  /** Optional trace spans (RE2, RE3, AIOps2025). */
+  readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
+  /** Optional per-service pre/post span counts (trace-activity rise signal). */
+  readonly traceActivity?: ReadonlyMap<string, TraceActivityCounts>;
+  /**
+   * Optional per-edge failed-call counts — the callee each failed call was made
+   * against, with the same edge's pre-injection baseline.
+   *
+   * This is the only case input that carries the DIRECTION of a fault: the log
+   * signal credits whoever emits an error (the caller, usually a victim), while
+   * this names the service the error was emitted ABOUT (the callee, the source).
+   */
+  readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
+  /**
+   * Calls that reached each service at or after the injection — the divisor of the failure RATE.
+   *
+   * `failedTraceEdges` is max-normalised downstream, so it reports the strongest callee at `1.0` on every case
+   * with any failure at all; the gate that asks "is this interface actually failing" needs the traffic beside the
+   * count. Absent means the producer did not count calls, and the evidence bar then refuses rather than assuming
+   * a zero denominator.
+   */
+  readonly failedEdgeCalls?: ReadonlyMap<string, number>;
+  /**
+   * Per-edge latency either side of the injection, as the caller measured it.
+   *
+   * Absent means "not recorded", never "nothing got slower": the reader writes the key
+   * only when at least one edge has a measurement on both sides.
+   */
+  readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency>;
+  /** Optional structured event records (RCA100). */
+  readonly events?: ReadonlyArray<BenchmarkEvent>;
+  /** Optional alert data (RCA100). */
+  readonly alerts?: ReadonlyArray<BenchmarkAlert>;
+  /** Optional topology graph in adjacency format (RCA100). */
+  readonly topologyGraph?: Record<string, readonly string[]>;
+}
+
+/** Log entry within a benchmark case. */
+export interface BenchmarkLogEntry {
+  readonly timestamp: number;
+  readonly service: string;
+  readonly message: string;
+  readonly level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+  /** Whether the message carries a stack-trace signature (code-level fault). */
+  readonly isStackTrace?: boolean;
+  /** Whether the message is a self-caused logic exception (source signal). */
+  readonly isLogicException?: boolean;
+  /** Whether the message names a framework HTTP exception (source signal). */
+  readonly isHttpException?: boolean;
+  /** Simple class name of the deepest `Caused by:` exception (root cause). */
+  readonly deepestExceptionClass?: string;
+}
+
+/** Trace span within a benchmark case. */
+export interface BenchmarkTraceSpan {
+  readonly traceId: string;
+  readonly spanId: string;
+  readonly parentSpanId?: string;
+  readonly service: string;
+  readonly operationName: string;
+  readonly startTime: number; // Unix milliseconds
+  readonly duration: number;
+  readonly status: 'OK' | 'ERROR';
+}
+
+/** Structured alert event (RCA100 format). */
+export interface BenchmarkEvent {
+  readonly eventId: string;
+  readonly timestamp: number;
+  readonly service: string;
+  readonly eventType: string;
+  readonly severity: 'critical' | 'major' | 'minor' | 'warning' | 'info';
+  readonly description: string;
+  readonly tags: Readonly<Record<string, string>>;
+}
+
+/** Alert record for RCA100. */
+export interface BenchmarkAlert {
+  readonly alertId: string;
+  readonly timestamp: number;
+  readonly service: string;
+  readonly alertName: string;
+  readonly severity: 'critical' | 'major' | 'minor' | 'warning' | 'info';
+  readonly value: number;
+  readonly threshold: number;
+}
+
+// ── Suite Types ───────────────────────────────────────────
+
+/** A collection of benchmark cases forming a suite. */
+export interface BenchmarkSuite {
+  /** Suite name (e.g., "rcaeval-re1", "aiops2025"). */
+  readonly name: string;
+  /** Individual benchmark cases. */
+  readonly cases: readonly BenchmarkCase[];
+  /** Total number of cases in the suite. */
+  readonly totalCases: number;
+}
+
+// ── Dataset-Specific Raw Types ────────────────────────────
+
+/** Raw RCAEval case directory structure. */
+export interface RCAEvalCase {
+  /** Case path on filesystem. */
+  readonly casePath: string;
+  /** Benchmark name (e.g., "OnlineBoutique"). */
+  readonly benchmark: string;
+  /** Service name. */
+  readonly service: string;
+  /** Fault type string (e.g., "CPU_HIGH"). */
+  readonly fault: string;
+  /** Instance number. */
+  readonly instance: number;
+  /** Metrics data: service_name → [{timestamp, value, metric_name}]. */
+  readonly metrics: Record<
+    string,
+    ReadonlyArray<{
+      readonly timestamp: number;
+      readonly value: number;
+      readonly metric_name: string;
+    }>
+  >;
+  /** Fault injection time as Unix timestamp (seconds). */
+  readonly injectTime: number;
+  /**
+   * How that boundary was obtained — declared by the corpus, repaired from a decimal slip, derived from the
+   * span's midpoint, or none of these.
+   *
+   * Carried on the case because it is a property of the INPUT, and because a case whose boundary is `unusable`
+   * splits every channel at zero: its pre side is empty by construction, so what a reader sees downstream is a
+   * starved channel, not a broken anchor. Absent when a loader does not resolve one.
+   */
+  readonly injectTimeProvenance?: 'declared' | 'rescaled' | 'centred' | 'unusable';
+  /** Log entries (RE2/RE3 only). */
+  readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
+  /**
+   * Trace spans (RE2/RE3 only).
+   *
+   * Deliberately NOT readonly: after the topology has been augmented, the
+   * benchmark harness drops this reference to bound peak memory. RE2 alone
+   * carries 270+ cases at 100K+ spans each, which is enough to exhaust the
+   * heap, so the consumer needs to be able to release it in place.
+   */
+  traces?: ReadonlyArray<BenchmarkTraceSpan>;
+  /** Ground truth: root cause service and metric. */
+  readonly groundTruth: BenchmarkGroundTruth;
+}
+
+/** Raw AIOps2025 case structure. */
+export interface AIOps2025Case {
+  /** Case path on filesystem. */
+  readonly casePath: string;
+  /** Case identifier from directory name or metadata. */
+  readonly caseId: string;
+  /** Metrics data (from Prometheus). */
+  readonly metrics: MetricMap;
+  /** Log entries (from Filebeat). */
+  readonly logs: ReadonlyArray<BenchmarkLogEntry>;
+  /** Trace spans (from Jaeger). */
+  readonly traces: ReadonlyArray<BenchmarkTraceSpan>;
+  /** Service call graph. */
+  readonly callGraph: ServiceCallGraph;
+  /** Fault injection time. */
+  readonly injectTime: number;
+  /** Ground truth. */
+  readonly groundTruth: BenchmarkGroundTruth;
+  /** AIOps2025-specific label scores. */
+  readonly labelScores?: AIOps2025LabelScores;
+}
+
+/** AIOps2025 competition label scores per case. */
+export interface AIOps2025LabelScores {
+  readonly locationAccuracy: number;
+  readonly typeAccuracy: number;
+  readonly explainability: number;
+  readonly efficiency: number;
+}
+
+/** Raw RCA100 case structure. */
+export interface RCA100Case {
+  /** Case path on filesystem. */
+  readonly casePath: string;
+  /** Case identifier. */
+  readonly caseId: string;
+  /** Metrics data. */
+  readonly metrics: MetricMap;
+  /** Log entries. */
+  readonly logs: ReadonlyArray<BenchmarkLogEntry>;
+  /** Trace spans. */
+  readonly traces: ReadonlyArray<BenchmarkTraceSpan>;
+  /** Structured events. */
+  readonly events: ReadonlyArray<BenchmarkEvent>;
+  /** Alerts. */
+  readonly alerts: ReadonlyArray<BenchmarkAlert>;
+  /** Topology graph (service → downstream services). */
+  readonly topology: Record<string, readonly string[]>;
+  /** Service call graph. */
+  readonly callGraph: ServiceCallGraph;
+  /** Fault injection time. */
+  readonly injectTime: number;
+  /** 4-layer ground truth. */
+  readonly groundTruth: BenchmarkGroundTruth;
+}
+
+/** RCAEval suite (RE1, RE2, or RE3). */
+export interface RCAEvalSuite {
+  /** Suite name. */
+  readonly suiteName: 'RE1' | 'RE2' | 'RE3';
+  /** All cases in this suite. */
+  readonly cases: readonly RCAEvalCase[];
+  /** Total cases. */
+  readonly totalCases: number;
+}
+
+/** AIOps2025 suite. */
+export interface AIOps2025Suite {
+  readonly cases: readonly AIOps2025Case[];
+  readonly totalCases: number;
+}
+
+/** RCA100 suite. */
+export interface RCA100Suite {
+  readonly cases: readonly RCA100Case[];
+  readonly totalCases: number;
+}

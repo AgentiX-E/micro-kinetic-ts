@@ -1,0 +1,360 @@
+/**
+ * The standing document states ONE reading, and this fence holds its tables to the battery that produced it.
+ *
+ * ## The defect that produced this file
+ *
+ * `docs/sota-comparison.md` carried the reading of the run BEFORE the boundary gate was enrolled, in the table a
+ * reader meets first, while recording the enrolment and its certified number eight hundred lines below in the same
+ * file. Four claims were one enrolment behind, and the fourth ran AGAINST us: it read RE2-TrainTicket as
+ * `71.1% (64/90)` — which is `64/90`, the RE3 SUITE average before the gate, and not an RE2 cell at all — and
+ * declared a two-case deficit to a published ASE'26 method where the current cell is a nine-case LEAD. That
+ * sentence carried a roadmap item: a candidate said to close the deficit "exactly", which on the corrected cell is
+ * a nine-case regression.
+ *
+ * ## Why the document needs an anchor rather than a proofreader
+ *
+ * The same three-cell reading is written in four places (\u00a70's standing table, \u00a71's per-system table, \u00a72a's
+ * leaderboard row and \u00a72b's ours row), and three of the four went stale together because nothing joined them. The
+ * anchor block in \u00a70p is that join: one fenced block, one line per population, and the assertions below read the
+ * TABLES against it.
+ *
+ * ## What is deliberately not asserted
+ *
+ * Prose. Claim 4 above was a paragraph rather than a table, and no table fence can see a paragraph that names the
+ * wrong population. What replaces it is stated in \u00a70p as a reading rule — cite the run, and cite the fraction as
+ * well as the percentage, because `71.1%` is a number three populations share and `64/90` is not — and this file
+ * asserts the part a test can hold: the tables, the arithmetic, and the absence of the readings the correction
+ * retired.
+ */
+
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+const DOC = readFileSync(resolve(REPO_ROOT, 'docs/sota-comparison.md'), 'utf8');
+
+/** One population's reading: `correct` of `total`, keyed by the name the anchor block uses. */
+interface Reading {
+  readonly key: string;
+  readonly correct: number;
+  readonly total: number;
+}
+
+/**
+ * The anchor block, parsed.
+ *
+ * @returns One reading per line of the fenced block that follows the `standing-anchor` marker.
+ */
+function anchor(): Reading[] {
+  const marker = DOC.indexOf('<!-- standing-anchor:');
+  expect(marker, 'the document carries an anchor marker').toBeGreaterThanOrEqual(0);
+  const open = DOC.indexOf('```text', marker);
+  const close = DOC.indexOf('```', open + 7);
+  expect(open, 'the anchor block is fenced').toBeGreaterThan(marker);
+  expect(close, 'the anchor block is closed').toBeGreaterThan(open);
+  return DOC.slice(open + 7, close)
+    .trim()
+    .split('\n')
+    .map((line) => {
+      const parts = line.trim().split(/\s+/);
+      expect(parts.length, `anchor line '${line}' is \`key correct total\``).toBe(3);
+      return { key: parts[0]!, correct: Number(parts[1]), total: Number(parts[2]) };
+    });
+}
+
+/** A section of the document, by its opening heading and the heading that ends it. */
+function section(from: string, to: string): string {
+  const start = DOC.indexOf(from);
+  const end = DOC.indexOf(to, start + from.length);
+  expect(start, `${from} is in the document`).toBeGreaterThanOrEqual(0);
+  expect(end, `${to} follows ${from}`).toBeGreaterThan(start);
+  return DOC.slice(start, end);
+}
+
+const readings = anchor();
+const byKey = (key: string): Reading => {
+  const found = readings.find((r) => r.key === key);
+  expect(found, `the anchor carries ${key}`).toBeDefined();
+  return found!;
+};
+
+/**
+ * The readings the correction retired, in BOTH forms the document prints them — the fraction and the percentage.
+ *
+ * Both, because this record quotes each reading twice and a correction that retires only one form is a correction a
+ * later edit can undo by writing the other. The set is one list rather than an inline array so that the assertion
+ * below can join it to \u00a70p's correction table in the other direction: a reading named there and absent here is a
+ * retirement that was announced and not enforced.
+ */
+const RETIRED = [
+  // ── Retired by the transient-guard POLICY (`1c18c76` onward): the nine cells and FSE'26 as they read under the
+  // two-sample `endpoint` statistic, in both forms the document prints them.
+  // Fractions and two-decimal percentages only. A bare `92.2` or `85.6` is refused as a retirement token on
+  // purpose: those strings occur inside counts and other populations throughout the document, and a fence that
+  // fires on `92.2%` inside a competitor's row would forbid a correct table rather than a stale one.
+  '641/735',
+  '87.21',
+  '330/375',
+  '88.00',
+  '83/90',
+  '246/270',
+  '65/90',
+  '18/30',
+  '860/1422',
+  '60.50',
+  // ── Retired by the boundary-gate enrolment: the readings one enrolment behind it.
+  // The overall total, both forms.
+  '631/735',
+  '85.85',
+  // RE1 and its two cells, both forms.
+  '327/375',
+  '87.20',
+  // RE2: the OnlineBoutique cell, the SockShop cell and the suite total it summed to.
+  '80/90',
+  '88.9',
+  '85/90',
+  '240/270',
+  // RE1-SockShop, count and percentage.
+  '116',
+  '92.8',
+  // FSE'26, both forms.
+  '798/1422',
+  '56.12',
+  // The cell that was read as a deficit rather than a lead, both forms.
+  '64/90',
+  '71.1',
+  // ── Retired by the guard-policy enrolment (`hump`, iteration 240) and by the one unenrolled case `§0p-ii`
+  // found while re-anchoring it. The two are recorded together because a reader cannot tell them apart from the
+  // block — which is the point: the block is a transcript, and both moved inside it.
+  //
+  // The totals, the two cells the enrolment moved, the cell the unenrolled fix moved, and the second
+  // convention's corpus figure.
+  '656/735',
+  '89.25',
+  '247/270',
+  '88/90',
+  '112/125',
+  '86.48',
+  // FSE'26 both forms.
+  '869/1422',
+  '61.10',
+  // And the two readings that identify a cell by their FRACTION rather than by their percentage, because their
+  // percentages are still correct on another cell: `75/90` is RE2:TrainTicket, whose new reading is `76/90`, while
+  // `83.3%` is ALSO RE3:OnlineBoutique (`25/30`), which did not move and which this document prints. A retirement
+  // token has to be the form that is unique to the reading being retired, and for these two that is the fraction.
+  '343/375',
+  '75/90',
+  // ── Retired by iteration 250's log-fidelity repair, which is §0p-iii. The cell moved UP and the baseline gate
+  // refused the silence: `RE3:OnlineBoutique 25 -> 26` and `TOTAL 659 -> 660`, at an UNCHANGED configuration digest
+  // (`1a67d9681c45`), so the movement is an input repair rather than an arm. The percentages are not retired as
+  // tokens: `83.3%` is `25/30` on this cell and `75/90` on another, and the fraction is the form that is unique to
+  // the reading being retired.
+  '659/735',
+  '25/30',
+  // ── Retired by iteration 254's ENROLMENT of the emission term under its jurisdiction (§0p-iv). The
+  // configuration digest moved with it (`1a67d9681c45` → `a0ed4a8a906e`), so this is the first retirement in the
+  // list that is an arm rather than a repair: every reading below was correct for the configuration that
+  // produced it, and what moved is what ships.
+  '660/735',
+  '89.80',
+  '344/375',
+  '67/90',
+  '19/30',
+] as const;
+
+describe('the standing document is anchored to one battery', () => {
+  it('carries nine cells, three suites and a total, and the arithmetic closes', () => {
+    // Non-vacuity first: a block that parsed to nothing would satisfy every sum below.
+    expect(readings.filter((r) => r.key.includes(':'))).toHaveLength(9);
+    expect(readings.filter((r) => /^RE\d$/.test(r.key))).toHaveLength(3);
+    expect(readings.filter((r) => r.key === 'TOTAL')).toHaveLength(1);
+    for (const suite of ['RE1', 'RE2', 'RE3']) {
+      const cells = readings.filter((r) => r.key.startsWith(`${suite}:`));
+      const sum = cells.reduce((acc, r) => acc + r.correct, 0);
+      expect(sum, `${suite}'s cells sum to its suite reading`).toBe(byKey(suite).correct);
+      // …and the denominator is the cells' own, so a cell recorded against the wrong case count cannot hide
+      // behind a suite that was computed some other way.
+      expect(cells.reduce((acc, r) => acc + r.total, 0)).toBe(byKey(suite).total);
+    }
+    const total = readings.find((r) => r.key === 'TOTAL')!;
+    expect(['RE1', 'RE2', 'RE3'].reduce((acc, k) => acc + byKey(k).correct, 0)).toBe(total.correct);
+    expect(['RE1', 'RE2', 'RE3'].reduce((acc, k) => acc + byKey(k).total, 0)).toBe(total.total);
+  });
+
+  it('prints the anchor\u2019s total in the standing table, the leaderboard and the verdict', () => {
+    const fraction = `${byKey('TOTAL').correct}/${byKey('TOTAL').total}`;
+    const standing = section('## 0. STANDING', '### 0p.');
+    const leaderboard = section('### 2a. Full-benchmark', '### 2b.');
+    expect(standing, 'the standing table quotes the anchored total').toContain(`(${fraction})`);
+    expect(leaderboard, 'the leaderboard quotes the anchored total').toContain(`(${fraction})`);
+    // And §1's own table, whose overall row is the one a reader checks against the table above it. The percentage is
+    // COMPUTED from the anchor instead of being repeated here: a literal is a second copy of the same fact, and the
+    // movement that produced §0p-iii had to edit this line, which is the definition of a fence that goes stale with
+    // the thing it fences.
+    const totalPercent = ((byKey('TOTAL').correct / byKey('TOTAL').total) * 100).toFixed(2);
+    expect(section('## 1. Our result', '## 2.')).toContain(
+      `**${totalPercent}%** (${byKey('TOTAL').correct})`,
+    );
+  });
+
+  it('prints the anchor\u2019s three suite readings and all nine cells in §1', () => {
+    const perSystem = section('## 1. Our result', '## 2.');
+    for (const suite of ['RE1', 'RE2', 'RE3']) {
+      const r = byKey(suite);
+      expect(
+        perSystem,
+        `${suite} is printed as a fraction of the anchor's own denominator`,
+      ).toContain(`(${r.correct}/${r.total})`);
+    }
+    for (const r of readings.filter((one) => one.key.includes(':'))) {
+      expect(perSystem, `${r.key}'s correctness is printed`).toContain(`(${r.correct})`);
+    }
+  });
+
+  it('does not print any of the readings the correction retired', () => {
+    // The regions are TABLES, and only tables: \u00a70p, \u00a71's explanation and \u00a72b-ii's retraction box NAME the
+    // retired numbers on purpose \u2014 a correction that cannot name what it corrected is not one. What a table
+    // prints as a reading is the thing that has to be current, and an explanatory COLUMN is not an exemption:
+    // a basis cell saying "\u006071.1\u0060 before iteration 129" is a table printing 71.1, and a reader skimming the row
+    // sees the number without the clause. That is how this defect survived four earlier readings.
+    const current = [
+      section('| evaluation                              | metric', '**Ranking: FIRST ON'),
+      section('| suite                         | OnlineBoutique', '**Every number above'),
+      section('| method                     | Top-1', '> Two traps avoided here'),
+      section(
+        '| method                       | AC@1 / R@1',
+        '> **The rows above whose populations',
+      ),
+      section('| population                     | GALA+ AC@1', '> **This table was wrong'),
+    ].join('\n');
+    // Non-vacuity: five tables, and each one carries at least one of our own readings.
+    const totalFraction = `${byKey('TOTAL').correct}/${byKey('TOTAL').total}`;
+    expect(current).toContain(totalFraction);
+    expect(current).toContain('345/375');
+    expect(current).toContain('76/90');
+    // The two directions of the same fact. Above: no table prints a retired reading. Below: \u00a70p names every
+    // reading it retires, so the list cannot grow past the correction or the correction past the list.
+    const correction = section('### 0p. THE ANCHOR', '### 0a.');
+    for (const retired of RETIRED) {
+      expect(current, `${retired} is retired and may not appear in a table`).not.toContain(retired);
+      expect(correction, `${retired} is retired, and \u00a70p does not say so`).toContain(retired);
+    }
+  });
+
+  it('prints the anchor\u2019s own fraction on every table row that names a cell', () => {
+    // DENY BY DEFAULT, because the allow-list in the test above is precisely what let \u00a731.1 stand two enrolments
+    // stale: five named regions were fenced and every other table in the file was not, so a per-cell table could print
+    // `19/30` — a reading \u00a70p had already retired in the same file — for as long as nobody added its heading to a
+    // list. The rule here needs no list. A table row keyed by a cell that prints a fraction over that cell's OWN
+    // denominator is a statement about the cell's correctness, and it must be the anchor's numerator. A row that
+    // prints no such fraction is not a reading of this engine at all: the constant-answer table prints truth SPLITS
+    // (`15 / 15`), whose denominator is a truth multiplicity rather than a case count, and the filter below drops it
+    // for a reason rather than by exemption.
+    const rows = DOC.split('\n').filter((line) =>
+      /^\|\s*RE[123]:(OnlineBoutique|SockShop|TrainTicket)\b/.test(line),
+    );
+    expect(rows.length, 'the document prints per-cell table rows').toBeGreaterThanOrEqual(12);
+    let checked = 0;
+    for (const line of rows) {
+      const key = /^\|\s*(RE[123]:[A-Za-z]+)/.exec(line)?.[1];
+      expect(key, `a cell row names a cell: ${line}`).toBeDefined();
+      const expected = byKey(key!);
+      const fractions = [...line.matchAll(/(\d+)\s*\/\s*(\d+)/g)]
+        .map((m) => ({ correct: Number(m[1]), total: Number(m[2]) }))
+        .filter((f) => f.total === expected.total);
+      for (const fraction of fractions) {
+        checked += 1;
+        expect(
+          fraction.correct,
+          `${key} prints ${fraction.correct}/${fraction.total}; the anchor is ${expected.correct}/${expected.total}`,
+        ).toBe(expected.correct);
+      }
+    }
+    // Non-vacuity: a filter that dropped every row would make the loop above assert nothing.
+    expect(checked, 'the nine-cell table carries a fraction per cell').toBeGreaterThanOrEqual(9);
+  });
+
+  it('sums \u00a731.1\u2019s per-cell table to the total it prints beside it, and to that table\u2019s own means', () => {
+    // The second half of the same defect, and the half a fraction-per-row check cannot see: the footer of that table
+    // had been re-anchored to `666/735` while its nine rows still summed to `660`, and the `Avg@5` mean printed beside
+    // them (`93.4`) was the CASE-WEIGHTED convention in a row labelled *unweighted mean of the nine rows*. Both are
+    // arithmetic over strings the table itself carries, so both are decidable here: the rows must sum to the total,
+    // and the two printed means must be the means of the two columns above them.
+    const region = section('### 31.1', '### 31.2');
+    const rows = region.split('\n').filter((line) => /^\|\s*RE[123]:/.test(line));
+    expect(rows.length, 'the table carries nine cell rows').toBe(9);
+    const parsed = rows.map((line) => {
+      const cells = line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter((cell) => cell !== '');
+      const fraction = /(\d+)\/(\d+)/.exec(cells[3] ?? '');
+      expect(fraction, `the row carries a case fraction: ${line}`).not.toBeNull();
+      return {
+        ac1: Number((cells[1] ?? '').replace('%', '')),
+        avg5: Number((cells[2] ?? '').replace('%', '')),
+        correct: Number(fraction![1]),
+        total: Number(fraction![2]),
+      };
+    });
+    const total = byKey('TOTAL');
+    expect(
+      parsed.reduce((acc, row) => acc + row.correct, 0),
+      'the nine rows sum to the total printed below them',
+    ).toBe(total.correct);
+    expect(parsed.reduce((acc, row) => acc + row.total, 0)).toBe(total.total);
+    const footer = region
+      .split('\n')
+      .filter((line) => line.includes('nine cells (unweighted mean of the nine rows)'))[0];
+    expect(footer, 'the table prints a nine-cell footer row').toBeDefined();
+    const meanAc1 = (parsed.reduce((acc, row) => acc + row.ac1, 0) / 9).toFixed(1);
+    const meanAvg5 = (parsed.reduce((acc, row) => acc + row.avg5, 0) / 9).toFixed(1);
+    expect(footer, 'the footer prints the mean of the AC@1 column beside it').toContain(
+      `${meanAc1}%`,
+    );
+    expect(footer, 'the footer prints the mean of the Avg@5 column beside it').toContain(
+      `${meanAvg5}%`,
+    );
+    expect(footer, 'the footer prints the anchor\u2019s own case-level total').toContain(
+      `${((total.correct / total.total) * 100).toFixed(2)}%`,
+    );
+    // And the RE1 row is the mean of the three cells above it, for the same reason: it is a claim about THIS table.
+    const re1 = region
+      .split('\n')
+      .filter((line) => line.includes('RE1 (three systems, unweighted mean)'))[0];
+    expect(re1, 'the table prints an RE1 mean row').toBeDefined();
+    const re1Mean = (parsed.slice(0, 3).reduce((acc, row) => acc + row.ac1, 0) / 3).toFixed(1);
+    expect(re1, 'the RE1 row prints the mean of its own three cells').toContain(`${re1Mean}%`);
+  });
+
+  it('does not claim first place on the 735 without the vendor gap beside it', () => {
+    // The ranking sentence said "first on RCAEval's 735 overall" while \u00a70a entry 1 and two rows of \u00a73 said
+    // SECOND to a vendor's self-reported 89 % — three statements, one fact, two answers. The defect is not that
+    // the vendor figure is weak (it is: no per-case results, and its own page says to rerun it) but that the
+    // ranking sentence dropped the qualifier while the tables kept it, so the sentence a reader meets first was
+    // the only one that flattered us. A ranking may not be simpler than its own evidence.
+    const ranking = section('**Ranking:', 'That last clause');
+    expect(ranking).toMatch(/first on RCAEval's 735 among every method with per-case results/i);
+    expect(ranking, 'the ranking names the number above us').toMatch(/89/);
+    // The gap is derived from the anchor and the vendor figure the sentence names, for the same reason the §1
+    // percentage is: a hard-coded margin is a second copy of a number the anchor already decides.
+    const vendor = 89;
+    const gap = ((byKey('TOTAL').correct / byKey('TOTAL').total) * 100 - vendor).toFixed(2);
+    expect(ranking, 'the ranking names the gap').toContain(`${gap} pp ABOVE`);
+    expect(ranking).not.toMatch(/first on RCAEval's 735 overall/i);
+  });
+
+  it('reports the GALA+ cell as a lead with our own fraction beside it', () => {
+    // The specific sentence the correction exists for. Asserted on the FRACTION because `73.3%` and `71.1%` are
+    // numbers this document uses for three different populations; `76/90` is not.
+    const gala = section('### 2b-ii. GALA+', '**What is NOT claimed');
+    expect(gala).toContain('84.4%');
+    expect(gala).toContain('+11.1pp');
+    expect(gala, 'the retraction of the "exact closure" is stated rather than deleted').toMatch(
+      /RETRACTED/,
+    );
+  });
+});
