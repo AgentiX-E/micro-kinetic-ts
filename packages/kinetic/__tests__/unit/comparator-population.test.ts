@@ -49,12 +49,21 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
 
 /**
- * The three projects whose sources hold this shape — the same three the audit's suite population covers.
+ * The projects whose sources hold this shape — the three the audit's suite population covers, plus `packages/ai`.
  *
  * Named rather than discovered, because "every `.ts` in the repository" is a population that would silently
  * change with a new workspace, and the audit's suite run is scoped to exactly these three.
+ *
+ * `packages/ai` is the fourth because it acquired the shape: iteration 282 gave the eliminator a channel order to
+ * make the prompt digest stable, and a comparator that is not in the population is a comparator nobody measures.
+ * Adding the root rather than exempting the site is the same rule the census applies everywhere else.
  */
-const ROOTS: readonly string[] = ['packages/tree/src', 'packages/kinetic/src', 'benchmarks/src'];
+const ROOTS: readonly string[] = [
+  'packages/tree/src',
+  'packages/kinetic/src',
+  'packages/ai/src',
+  'benchmarks/src',
+];
 
 /** The tie-break shape, written as the census writes it — with `\s`, which matches a newline. */
 const TIE_BREAK = /\?\s*-1\s*:\s*1/g;
@@ -303,6 +312,17 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     {
       signature: 'a.datapack < b.datapack',
       population: '`cases`, whose datapacks the headroom join has already made unique',
+    },
+  ],
+  'packages/ai/src/agent/eliminator.ts': [
+    // The channel order the prompt renders, and the only comparator in `packages/ai`. Each arm is reached only
+    // after the arm above it has established an INEQUALITY (`a.outside !== b.outside`, then `a.onset !== b.onset`),
+    // and the last arm returns 0 for two identical labels rather than the two-arm `1` — so the site never claims
+    // an order between equals. Its own reason for existing is the digest: a total order that does not depend on
+    // the array's arrival order is what makes two runs over one artifact ask the same question.
+    {
+      signature: 'a.onset < b.onset',
+      population: '`channels`, whose labels the fingerprint builder has already deduplicated',
     },
   ],
 };

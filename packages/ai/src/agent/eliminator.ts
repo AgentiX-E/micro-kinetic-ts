@@ -156,18 +156,30 @@ export function shownChannels(
   channels: readonly ChannelFingerprint[],
   limit: number,
 ): readonly ChannelFingerprint[] {
-  const ranked = [...channels].sort((left, right) => {
-    const leftOutside = departureOf(left) > 0 ? 0 : 1;
-    const rightOutside = departureOf(right) > 0 ? 0 : 1;
-    if (leftOutside !== rightOutside) return leftOutside - rightOutside;
-    const leftOnset = left.onset ?? Number.POSITIVE_INFINITY;
-    const rightOnset = right.onset ?? Number.POSITIVE_INFINITY;
-    if (leftOnset !== rightOnset) return leftOnset < rightOnset ? -1 : 1;
-    const leftDeparts = departureOf(left);
-    const rightDeparts = departureOf(right);
-    if (leftDeparts !== rightDeparts) return rightDeparts > leftDeparts ? 1 : -1;
-    return left.label < right.label ? -1 : left.label > right.label ? 1 : 0;
-  });
+  // Decorated before it is sorted, for two reasons that point the same way: `departureOf` is the expensive arm
+  // (a square root per channel) and the comparator was reaching it up to three times per comparison, and the
+  // repository's comparator census derives a site's signature from the comparison a tie-break applies — which it
+  // can only read when that comparison is written on the sort's own two arguments. A site it cannot read is a
+  // comparator nobody measures.
+  const ranked = channels
+    .map((channel) => {
+      const departs = departureOf(channel);
+      return {
+        channel,
+        // Out of band first: `0` sorts before `1`, so a channel the fault-free profile did not expect leads.
+        outside: departs > 0 ? 0 : 1,
+        onset: channel.onset ?? Number.POSITIVE_INFINITY,
+        departs,
+        label: channel.label,
+      };
+    })
+    .sort((a, b) => {
+      if (a.outside !== b.outside) return a.outside - b.outside;
+      if (a.onset !== b.onset) return a.onset < b.onset ? -1 : 1;
+      if (a.departs !== b.departs) return b.departs > a.departs ? 1 : -1;
+      return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+    })
+    .map((row) => row.channel);
   return ranked.slice(0, Math.max(0, limit));
 }
 
