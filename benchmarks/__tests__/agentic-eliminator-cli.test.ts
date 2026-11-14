@@ -289,6 +289,59 @@ describe('runStudy', () => {
     expect(text).toContain('recorded');
     // Removing the leader promotes the truth on the only case the engine had wrong.
     expect(text).toMatch(/recorded\s+\+\s+1 cases/);
+    // The nulls read the same artifact the arm was scored from, and they say the claims were not guessing:
+    // `svc-a` is the kept service and it is the truth, against one truth in two candidates for the null.
+    expect(text).toContain(
+      'Was it reading the case? Two nulls, both computed from the same artifact:',
+    );
+    expect(text).toMatch(
+      /uniform\s+1 of 1 claims keep a true service \(100\.0 %\) against 1 expected/,
+    );
+    expect(text).toMatch(/constant\s+promoting rank 1 on every case scores 1 of 3/);
+    expect(text).toMatch(/and 1 are exactly remove rank 0 \/ keep rank 1/);
+  });
+
+  it('reports a claim naming a service the engine never presented, whether or not any claim scores', async () => {
+    // The one shape where the nulls have nothing to say and the reason is the finding: a file whose every claim
+    // names a stranger. Dropping it quietly would let a replay report perfect precision over zero claims.
+    const files = artifacts(ROWS);
+    const claimsPath = join(files.dir, 'claims.ndjson');
+    const first = casesOf(ROWS)[0]!;
+    const digest = buildEliminatorPrompt('NetworkLoss', first.candidates).digest;
+    writeFileSync(
+      claimsPath,
+      `${formatClaimRecord({
+        datapack: 'a',
+        model: 'deepseek-chat',
+        protocol: ELIMINATOR_PROTOCOL,
+        digest,
+        claims: [
+          {
+            remove: 'svc-a',
+            keep: 'ghost',
+            because: {
+              channel: 'latency_p99',
+              statistic: 'post',
+              observed: 90,
+              band: [11, 14.2],
+              rate: 0,
+            },
+          },
+        ],
+        ms: 700,
+        promptTokens: 900,
+        completionTokens: 40,
+      })}\n`,
+    );
+
+    const lines: string[] = [];
+    await runStudy(
+      ['--fingerprints', files.fingerprints, '--verdicts', files.verdicts, '--claims', claimsPath],
+      (line) => lines.push(line),
+    );
+    const text = lines.join('\n');
+    expect(text).toContain('outside   1 claims named a service the engine did not present');
+    expect(text).not.toContain('uniform');
   });
 
   it('refuses to score two artifacts that disagree about a case ordering', async () => {

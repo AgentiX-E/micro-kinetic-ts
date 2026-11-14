@@ -44,6 +44,7 @@ import {
   type ArmOutcome,
   type HeadroomCase,
 } from './agentic-headroom.js';
+import { nullReadingOf, swapTopTwo } from './agentic-null-model.js';
 import { digestsOf, proposeClaims } from './agentic-proposer.js';
 import { createChatClientFromEnv, type ChatClient } from './chat-completions.js';
 import { readPerCaseVerdicts } from './fse26-per-case.js';
@@ -333,4 +334,41 @@ export async function runStudy(
   if (replay.reused === 0) {
     out('  recorded  not scored — no answer in the claims file belongs to this prompt');
   }
+
+  // The nulls come last because they are the reading of last resort: an arm's delta says whether it won, and these
+  // two say whether the thing that produced the delta was reading the case. They are printed even when the arm is
+  // absent, from whatever records the file holds, because a refused replay still contains the claims.
+  const replayable = [...replay.byCase.entries()].map(([datapack, claims]) => ({
+    datapack,
+    claims,
+  }));
+  const reading = nullReadingOf(population, replayable);
+  const swapped = swapTopTwo(population);
+  if (reading.claims > 0 || reading.outside > 0) {
+    out('');
+    out('Was it reading the case? Two nulls, both computed from the same artifact:');
+    if (reading.claims > 0) {
+      out(
+        `  uniform   ${reading.hits} of ${reading.claims} claims keep a true service ` +
+          `(${percent(reading.hits, reading.claims)}) against ${reading.expected.toFixed(0)} expected ` +
+          `(${percent(reading.expected, reading.claims)}) · z ${reading.z.toFixed(1)}`,
+      );
+      out(
+        `  constant  promoting rank 1 on every case scores ${swapped.swapped} of ${swapped.cases} ` +
+          `against the engine's ${swapped.engine} · the claims promote it ` +
+          `${percent(reading.promotingRank1, reading.claims)}, and ${reading.swappingTopTwo} are exactly ` +
+          'remove rank 0 / keep rank 1',
+      );
+    }
+    // Printed whether or not any claim was scoreable: a file whose every claim names a service the engine never
+    // presented is the one case where the nulls have nothing to say and the reason is the finding.
+    if (reading.outside > 0) {
+      out(`  outside   ${reading.outside} claims named a service the engine did not present`);
+    }
+  }
+}
+
+/** A share of a total, as a one-decimal percentage. Always called with a positive total, so it has no `n/a` arm. */
+function percent(part: number, whole: number): string {
+  return `${((100 * part) / whole).toFixed(1)} %`;
 }

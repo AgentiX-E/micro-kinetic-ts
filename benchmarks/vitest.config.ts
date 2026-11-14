@@ -359,6 +359,11 @@ export default defineConfig({
         // (`run-agentic-eliminator.ts`) is deliberately not here: a guard that only fires when the file IS the
         // process's script cannot be measured by a test that imports it, so the file is split rather than exempted.
         'src/agentic-eliminator-study.ts',
+        // Added with the module: the two nulls that decide whether a paid arm contains information at all. Its
+        // whole value is that both are computable from one artifact with no model and no network, so every branch
+        // is measured — including the two that keep an unreadable record in the denominator instead of dropping
+        // it, because a replay that shrinks its own population improves by forgetting.
+        'src/agentic-null-model.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

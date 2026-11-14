@@ -46,3 +46,14 @@ export {
 } from './eliminator.js';
 
 export type { EliminatorOptions, EliminatorPrompt, ParsedReply } from './eliminator.js';
+
+export {
+  DEFAULT_FUSION_OPTIONS,
+  FUSION_STRATEGIES,
+  RANK_STRATEGIES,
+  fuseClaims,
+  fuseRanks,
+  impliedOrder,
+} from './fusion.js';
+
+export type { FusionOptions, FusionStrategy, RankFusionOptions, RankStrategy } from './fusion.js';
