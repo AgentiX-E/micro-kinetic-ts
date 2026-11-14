@@ -3126,3 +3126,87 @@ the code was broken; a theorem was left on the table.
 `Correction = 'union' | 'holm'` on `certifyOf`, `thresholdOf` and `formatCertified`; the header states the rule, because
 a budget without its rule cannot be compared with another budget. 58 tests, 100 % on all four dimensions. The engine's
 defaults are untouched, as they have been for the whole of this thread: `absolute` is still the shipped gate mode.
+
+## Iteration 281 — the certificate has to pay for the selection
+
+The weight screen prints 28 rows and names none of them; the reader ships one. Every budget in §280 priced that row as
+though it had been formulated in advance, and no row of a ranking table is. **A claim about the best of `M` candidates
+has to pay for the `M` looks**, and paying with the level (`δ/M`) is Bonferroni's adjustment — the same correction
+Benjamini & Yekutieli apply to intervals around selected parameters, exact rather than asymptotic.
+
+The price is measured, on the 1 422-case dump, for the row the point estimate prefers (`stability 0.3 + log 1.2`, +13):
+
+| reading                          | corpus | budget | rate      |
+| -------------------------------- | -----: | -----: | --------- |
+| single — named in advance        |  1 422 |  **8** | **0.56 %** |
+| joint — best of 28 on this corpus |  1 422 | **13** | **0.91 %** |
+| split, 2 folds                   |    711 |    7.5 | 1.05 %    |
+| split, 5 folds                   |    284 |    7.0 | 2.46 %    |
+| split, 10 folds                  |    142 |    7.0 | 4.92 %    |
+
+The naive reading is 1.6× optimistic, which is the winner's curse in this repository's own currency. A 2-fold split
+prices the same row at 1.05 %, so **28 looks cost about what half the corpus costs** — and the deeper splits show the
+floor again: the budget stays at 7 whatever the fold size, so a split can only pay for itself in corpus, never in
+count.
+
+### The selection on the real corpus
+
+`pnpm tsx benchmarks/src/run-term-weight-screen.ts --terms <dump>`, `δ = 0.05`, Holm, 28 looks, 29 readings:
+
+| candidate                          | cases | delta | budget | worst family        | lost | price | verdict         |
+| ---------------------------------- | ----: | ----: | -----: | ------------------- | ---: | ----: | --------------- |
+| shipped                            | 1 073 |     0 |     10 | `ContainerKill`     |    0 |     — | unchanged       |
+| stability 0.05                     | 1 074 |    +1 | **10** | `HTTPRequestDelay`  |    1 |     — | **improvement** |
+| stability 0.1                      | 1 075 |    +2 |     11 | `HTTPRequestDelay`  |    2 | 2.000 | concession      |
+| log 1.2                            | 1 073 |     0 |     14 | `HTTPRequestDelay`  |    4 |     — | **flat**        |
+| stability 0.3 + log 1.2            | 1 086 |   +13 |     13 | `HTTPResponseDelay` |    3 | 4.333 | concession      |
+| stability 0.3 + lat 0.4 + log 1.2  | 1 078 |    +5 |     16 | `HTTPRequestDelay`  |    5 | 0.833 | concession      |
+
+29 readings resolve as **1 improvement, 12 concessions, 12 regressions, 1 flat, 3 unchanged**. The single improvement
+is worth one case — and it is the one row the standing acceptance condition already rejects (it costs
+`HTTPRequestDelay` a case), so the two instruments say different things about it and both are right: a family above the
+floor did lose a case, and no family lost more than the shipped run's certified claim of ten.
+
+### The two rules, priced
+
+|              | shipped | `stability 0.05`       | `stability 0.3 + log 1.2` | best price | certified improvements |
+| ------------ | ------: | ---------------------- | ------------------------: | ---------: | ---------------------- |
+| **union**    |      10 | 13 — concession, 0.333 |                        20 |  **1.857** | none                   |
+| **holm**     |      10 | **10 — improvement**   |                    **13** |  **4.333** | `stability 0.05`       |
+
+Holm is worth more here than it was on the ladder: under the union bound **no row can be certified to improve on what
+ships**, and the best price is less than half. At `δ = 0.01` both budgets rise by two (10 → 12, 13 → 15) and the price
+stays **4.333**: a claim's cost in cases per unit conceded is a property of the corpus, its level is a property of the
+reader's appetite for being wrong.
+
+### Two defects the work found
+
+- **`thresholdOf` returned the corpus's own size when nothing certified.** The bisection's upper end is a number
+  whatever the claim at that end says, so a one-case corpus reported "cheapest certifiable: 1" — the vacuity the
+  empty-family guard already refuses one level up, and a test had been written to call that ceiling honest. It now
+  checks the ceiling and returns `null`; the test asserts the refusal beside the count that explains it
+  (`floorOf(1, 0.05) = 5 > n = 1`) and the same count certifying on a corpus large enough to price it.
+- **The screen's loss list is floor-filtered, and a certificate read off it would be narrower than the corpus.** A
+  family of three losing three cases vanishes from `losses` because a family of four cannot sentence a move — but a
+  claim is about every family. Rows now carry `ledger` (whole) beside `losses` (filtered) and the report carries
+  `families`, so both readings come from one measurement rather than two.
+
+### Axes this closes
+
+| Axis                                                       | Verdict                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "A screen row's budget is the certificate's budget"         | **closed** — the row was named after looking at 28 rows; pricing it as a hypothesis named in advance is 1.6× optimistic (0.56 % against 0.91 %)                                           |
+| "Multiplicity over candidates is prohibitively expensive"   | **closed as measured** — 28 looks cost about half the corpus (0.91 % against 1.05 % at 2 folds), and the count floor means deeper splits can only lose                                   |
+| "Splitting the corpus removes the need for the correction"  | **half-closed** — it removes the multiplicity and pays 2.8× the rate at 5 folds; the 2-fold split is the near-equivalent, not the free one                                                 |
+| "The best row is the best buy"                              | **closed** — `stability 0.1` buys 2 cases per budget unit and `stability 0.3 + log 1.2` buys 4.333, but `stability 0.05` buys one for nothing, and `log 1.2` buys nothing for four          |
+| "A row that ties on cases is a tie"                         | **closed** — `log 1.2` answers the shipped 1 073 at a budget of 14 instead of 10, which is a concession of four units for nothing                                                          |
+
+### What ships
+
+`docs/certified-selection.md` is the instrument's record; this section is the verdict.
+`benchmarks/src/certified-selection.ts` (`selectCertified`, `formatSelection`) at 100 % on all four dimensions over 31
+tests, `certifyLosses` / `risksOf` / `worstOf` / `lossesOf` exported from `risk-control.ts`, an `examined` parameter on
+`certifyOf` / `thresholdOf` (one by default, so §280's tables stand as the marginal reading), `ledger` and `families` on
+the screen, and `--delta` / `--correction` on the screen's command line so the level and the rule can be ablated without
+editing the tree. The screen still selects nothing and the engine's defaults are untouched: `absolute` is the shipped
+gate mode.
