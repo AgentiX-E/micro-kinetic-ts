@@ -344,6 +344,21 @@ export default defineConfig({
         // up budget for nothing, a population too small to state a claim, a malformed count of looks, and the
         // selection of nothing at all.
         'src/certified-selection.ts',
+        // Added with the modules: the model arm's three IO-free halves — the reply cache with its provenance
+        // (`agentic-claims.ts`), the proposer that drives a client under a concurrency bound
+        // (`agentic-proposer.ts`), and the client itself (`chat-completions.ts`). All three are measured because
+        // every one of them can fail silently in the flattering direction: a cache that accepts a stale answer, a
+        // proposer that drops a failed case out of the denominator, and a client that counts a retry as an answer.
+        // The client is measured against a real loopback socket, because its failure modes ARE the transport.
+        'src/agentic-claims.ts',
+        'src/agentic-proposer.ts',
+        'src/chat-completions.ts',
+        // Added with the module: the study that turns an artifact into a scored model arm. Its `runStudy` takes its
+        // output sink as a parameter, which is what lets a test read the table rather than spy on a global — every
+        // number it prints is a line somebody will quote. The two-line entry point that calls it
+        // (`run-agentic-eliminator.ts`) is deliberately not here: a guard that only fires when the file IS the
+        // process's script cannot be measured by a test that imports it, so the file is split rather than exempted.
+        'src/agentic-eliminator-study.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

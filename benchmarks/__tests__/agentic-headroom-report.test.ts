@@ -43,6 +43,7 @@ function outcome(overrides: Partial<ArmOutcome> = {}): ArmOutcome {
     skipped,
     truthAbsent: 0,
     reachable: 0,
+    byFamily: {},
     gateTrips,
     ...overrides,
   };

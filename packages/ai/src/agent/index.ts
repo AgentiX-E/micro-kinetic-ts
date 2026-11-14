@@ -33,3 +33,16 @@ export {
 } from './budget.js';
 
 export type { BudgetLimits, BudgetSpend, GateTrip, ModelPrice, RoundCost } from './budget.js';
+
+export {
+  DEFAULT_ELIMINATOR_OPTIONS,
+  ELIMINATOR_PROTOCOL,
+  PROMPTABLE_STATISTICS,
+  buildEliminatorPrompt,
+  departureOf,
+  digestOf,
+  parseEliminatorReply,
+  shownChannels,
+} from './eliminator.js';
+
+export type { EliminatorOptions, EliminatorPrompt, ParsedReply } from './eliminator.js';

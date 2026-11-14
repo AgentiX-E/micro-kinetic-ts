@@ -81,6 +81,10 @@ on:
         description: 'Elimination weight the study applies to a recorded claim (empty = the study''s own default, which is 1). It is a POST-processing parameter: the same fingerprints re-scored at 0 are the control arm, so a weight sweep costs no run and no tokens'
         required: false
         default: ''
+      model:
+        description: 'Model the eliminator is asked as. It is an input rather than a constant because the published 2026 tables separate models by more than they separate frameworks, so the arm has to be measurable per model'
+        required: false
+        default: 'deepseek-chat'
 
 permissions:
   contents: read
@@ -238,7 +242,16 @@ jobs:
     name: study (offline re-scoring)
     needs: measure
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    #   A 1 422-case proposal at four calls in flight is about twenty-five minutes of wall clock on top of the
+    #   re-scoring, and the two are one job because the scoring refuses to run on a claims file it did not just
+    #   write. The bound is set where a job that hangs is still a failure rather than a bill.
+    timeout-minutes: 120
+    env:
+      #   The key is put in the job's environment, never on a command line, and a step reads its PRESENCE through
+      #   `HAS_MODEL_KEY` rather than the key itself: the `secrets` context is not available in a step's `if`, so
+      #   the presence has to be materialised once and compared after.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -291,6 +304,48 @@ jobs:
             --verdicts artifacts/agentic/per-case.ndjson \
             "${WEIGHT_ARG[@]}" 2>&1 | tee artifacts/agentic/headroom.txt
 
+      # ── The model arm ────────────────────────────────────────────────────────────────────────────────────────
+      #
+      #   What this step adds to the two above is the one thing they cannot produce: an ANSWER. `--propose` builds a
+      #   prompt per case from the fingerprint, asks the endpoint, reads the reply through the protocol parser,
+      #   records it with the prompt digest it belongs to, and then scores four arms — control, ceiling, evidence and
+      #   the model's own verified claims. The other readings of that answer (a weight sweep, a skip-rule sweep, a
+      #   wider presentation) are re-reads of the claims file and cost nothing.
+      #
+      #   The corpus is not here and cannot be: this job reads artifacts only. That is the property that keeps a
+      #   number from being an accident of the data a machine happened to hold.
+      - name: Ask the model to eliminate, then score every arm
+        if: env.HAS_MODEL_KEY == 'true'
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-agentic-eliminator.ts \
+            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            --claims artifacts/agentic/claims.ndjson \
+            --propose \
+            --model "${{ inputs.model }}" \
+            --concurrency 6 2>&1 | tee artifacts/agentic/eliminator.txt
+
+      #   Without a key the model arm is NOT MEASURED, and the difference between that and a bad score has to be
+      #   visible: the offline arms still run, and the reason the fourth one did not is printed by name rather than
+      #   left as a missing row a reader would take for a refusal.
+      - name: Say why the model arm did not run
+        if: env.HAS_MODEL_KEY != 'true'
+        run: |
+          echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the model arm was NOT MEASURED"
+          echo "MODEL ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
+            | tee artifacts/agentic/eliminator.txt
+
+      - name: Score the offline arms beside it
+        if: env.HAS_MODEL_KEY != 'true'
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-agentic-eliminator.ts \
+            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --verdicts artifacts/agentic/per-case.ndjson 2>&1 | tee -a artifacts/agentic/eliminator.txt
+
       - name: Upload the study
         if: always()
         uses: actions/upload-artifact@v4
@@ -299,4 +354,6 @@ jobs:
           path: |
             artifacts/agentic/headroom.txt
             artifacts/agentic/depth.txt
+            artifacts/agentic/eliminator.txt
+            artifacts/agentic/claims.ndjson
           if-no-files-found: warn

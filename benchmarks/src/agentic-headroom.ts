@@ -56,6 +56,7 @@ import {
 import type { FingerprintRecord } from './agentic-fingerprint-file.js';
 import { hashId } from './agentic-sampling.js';
 import type { PerCaseVerdict } from './fse26-per-case.js';
+import { certifyLosses, type LossCount } from './risk-control.js';
 
 /** One case, joined: the fingerprint a layer would have seen and the labels the run scored against. */
 export interface HeadroomCase {
@@ -313,6 +314,14 @@ export interface ArmOutcome {
   readonly reachable: number;
   /** Cases that crossed a budget gate before the arm could act. Never non-zero for a one-round arm. */
   readonly gateTrips: Readonly<Record<string, number>>;
+  /**
+   * Cases answered correctly, per fault family.
+   *
+   * The per-family view of {@link correct}, produced by the same increment, so a certified budget computed from it
+   * cannot disagree with the `top1` printed beside it. Kept on the outcome rather than recomputed by a caller:
+   * two implementations of "was this case answered" is how a table and a ledger end up describing two runs.
+   */
+  readonly byFamily: Readonly<Record<string, number>>;
 }
 
 /** How an arm is asked to behave on one case. */
@@ -364,6 +373,7 @@ export function scoreArm(cases: readonly HeadroomCase[], spec: ArmSpec): ArmOutc
   const skipped = emptySkips();
   const gateTrips: Record<string, number> = Object.fromEntries(GATE_TRIPS.map((gate) => [gate, 0]));
 
+  const byFamily: Record<string, number> = {};
   let correct = 0;
   let moved = 0;
   let claims = 0;
@@ -377,7 +387,10 @@ export function scoreArm(cases: readonly HeadroomCase[], spec: ArmSpec): ArmOutc
     skipped[decision.reason] += 1;
 
     const engineTop = candidates[0]?.service;
-    if (accepts(oneCase.accepted, engineTop)) correct += 1;
+    if (accepts(oneCase.accepted, engineTop)) {
+      correct += 1;
+      byFamily[oneCase.faultType] = (byFamily[oneCase.faultType] ?? 0) + 1;
+    }
 
     if (spec.arm === 'engine') continue;
     if (truthRankOf(candidates, oneCase.accepted) < 0) truthAbsent += 1;
@@ -417,8 +430,14 @@ export function scoreArm(cases: readonly HeadroomCase[], spec: ArmSpec): ArmOutc
     if (order[0]?.service !== engineTop) {
       moved += 1;
       // The engine's answer was already counted above; a move replaces it rather than adding to it.
-      if (accepts(oneCase.accepted, engineTop)) correct -= 1;
-      if (accepts(oneCase.accepted, order[0]?.service)) correct += 1;
+      if (accepts(oneCase.accepted, engineTop)) {
+        correct -= 1;
+        byFamily[oneCase.faultType] = (byFamily[oneCase.faultType] ?? 0) - 1;
+      }
+      if (accepts(oneCase.accepted, order[0]?.service)) {
+        correct += 1;
+        byFamily[oneCase.faultType] = (byFamily[oneCase.faultType] ?? 0) + 1;
+      }
     }
   }
 
@@ -436,6 +455,7 @@ export function scoreArm(cases: readonly HeadroomCase[], spec: ArmSpec): ArmOutc
     truthAbsent,
     reachable,
     gateTrips,
+    byFamily,
   };
 }
 
@@ -588,4 +608,33 @@ export function bestSweepPoint(points: readonly SweepPoint[]): SweepPoint | unde
     if (best === undefined || point.outcome.top1 > best.outcome.top1) best = point;
   }
   return best;
+}
+
+/**
+ * The smallest budget the corpus permits for an arm's per-family regression against the control.
+ *
+ * `lost` is `control − arm` per family: a family the arm answers fewer cases for is a family the claim has to cover.
+ * The level is split across every family in the population, not only the ones that lost — a claim covers the corpus
+ * it is about, and narrowing it to the families that happened to move would buy a smaller number by saying less.
+ *
+ * @param cases - The population.
+ * @param control - Correct answers per family for the engine's own ranking.
+ * @param arm - Correct answers per family for the arm.
+ * @param delta - The family-wise level.
+ * @returns The certified budget and the family that binds it, or `null` when no budget certifies.
+ */
+export function certifiedBudgetOf(
+  cases: readonly HeadroomCase[],
+  control: Readonly<Record<string, number>>,
+  arm: Readonly<Record<string, number>>,
+  delta: number,
+): { budget: number | null; worst: string } {
+  const families = [...new Set(cases.map((oneCase) => oneCase.faultType))].sort();
+  const ledger: LossCount[] = families.map((faultType) => ({
+    faultType,
+    lost: (control[faultType] ?? 0) - (arm[faultType] ?? 0),
+  }));
+  const claim = certifyLosses(ledger, { n: cases.length, families }, delta, 'holm');
+  if (claim === null) return { budget: null, worst: 'unprovable' };
+  return { budget: claim.budget, worst: `${claim.worst.faultType} −${claim.worst.lost}` };
 }

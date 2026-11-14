@@ -294,6 +294,17 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`measurements`, whose labels the shadow check has already made unique',
     },
   ],
+  'benchmarks/src/agentic-eliminator-study.ts': [
+    // The scope's canonical order, used only when `--limit` narrows the population. Its keys are datapacks, which
+    // `joinHeadroom` makes unique — it consumes each verdict it pairs and reports the second fingerprint of a
+    // duplicate as unpaired — so the two-arm form never claims an order between equals. Recorded rather than
+    // exempted, because the census's rule is that every `? -1 : 1` site states the list it sorts, and this one is
+    // the reason a `--limit` run and a full run score the SAME cases rather than the first ones in the file.
+    {
+      signature: 'a.datapack < b.datapack',
+      population: '`cases`, whose datapacks the headroom join has already made unique',
+    },
+  ],
 };
 
 /** Every `.ts` under a root, relative to the repository, sorted so two runs agree. */

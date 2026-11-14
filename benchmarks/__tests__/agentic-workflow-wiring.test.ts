@@ -373,3 +373,96 @@ describe('the term decomposition’s wiring', () => {
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/term-decomposition.ts'))).toBe(true);
   });
 });
+
+/**
+ * The model arm's wiring: where the key lives, what it is allowed to touch, and how an unmeasured arm is reported.
+ *
+ * Iterations 267–281 could price a ceiling and a deterministic rule and could replay somebody else's claims, but
+ * nothing in the workflow ever produced a claim. That gap was invisible in every table because a study with no
+ * recorded answers still prints the control, the ceiling and the evidence arm — a page of numbers with the one arm
+ * that costs money missing from the middle. Three line-level properties are what close it:
+ *
+ * 1. **The key is in the environment, never on a command line.** A `run:` line is echoed into the job log on a
+ *    failure (`set -x` is one typo away), copied into an issue by whoever reads it, and stored in the run's
+ *    transcript for ninety days.
+ * 2. **The arm's absence is REPORTED, not inferred.** A step that skips silently leaves a table a reader takes for
+ *    a refusal; the warning and the printed reason are the difference between "not measured" and "measured zero".
+ * 3. **A dispatch without the key still scores the arms it can.** The offline arms are the ones the ceiling lives
+ *    in, and a job that fails because a secret is missing throws away a measurement it already had.
+ */
+describe('the model arm’s wiring', () => {
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('proposes from the study job, over the artifacts that job already has', () => {
+    expect(study).toContain('benchmarks/src/run-agentic-eliminator.ts');
+    expect(study).toContain('--fingerprints artifacts/agentic/fingerprints.ndjson');
+    expect(study).toContain('--verdicts artifacts/agentic/per-case.ndjson');
+    expect(study).toContain('--claims artifacts/agentic/claims.ndjson');
+    expect(study).toContain('--propose');
+    // The corpus is still absent from this job: a model arm measured where the data is would make the score a
+    // property of the machine as well as of the method.
+    expect(study).not.toContain('--data-dir');
+    expect(study).not.toContain('rcabench');
+  });
+
+  it('never puts the key on a command line, only in the job environment', () => {
+    // The secret CONTEXT is read exactly twice, and both reads are `env:` assignments: the key itself and the
+    // boolean the paid step gates on. A third read would be the secret reaching a place a log can see — a `run:`
+    // line is echoed on failure, copied into an issue by whoever reads it, and kept in the transcript for months.
+    const reads = [...WORKFLOW.matchAll(/secrets\.DEEPSEEK_API_KEY/g)].map(
+      (match) => match.index ?? 0,
+    );
+    expect(reads).toHaveLength(2);
+    const lines = WORKFLOW.split('\n').filter((line) => line.includes('secrets.DEEPSEEK_API_KEY'));
+    expect(lines.map((line) => line.trim())).toEqual([
+      'DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}',
+      "HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}",
+    ]);
+    // And no step passes a key as an argument, which is the shape that ends up in a log.
+    expect(WORKFLOW_CODE).not.toMatch(/--api-key/);
+    expect(WORKFLOW_CODE).not.toMatch(/\bsk-[a-z0-9]/i);
+    // Naming the VARIABLE in a message is the one mention that is required: a job that skipped the arm has to say
+    // which variable was missing, and a variable name is not a secret.
+    expect(WORKFLOW).toContain('echo "::warning::DEEPSEEK_API_KEY is not available to this job');
+  });
+
+  it('gates the paid arm on the key being present, through a materialised flag', () => {
+    // The `secrets` context cannot be read from a step's `if`, so the presence is computed once at job level and
+    // compared after. Comparing the KEY would be the other version of this: a condition that evaluates a secret.
+    expect(WORKFLOW).toContain("HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}");
+    const step = WORKFLOW.slice(WORKFLOW.indexOf('Ask the model to eliminate'));
+    const gate = step.slice(0, step.indexOf('run:'));
+    expect(gate).toContain("if: env.HAS_MODEL_KEY == 'true'");
+  });
+
+  it('reports an unmeasured arm rather than letting the table imply a refusal', () => {
+    const absent = WORKFLOW.slice(WORKFLOW.indexOf('Say why the model arm did not run'));
+    expect(absent.slice(0, absent.indexOf('- name:', 10))).toContain(
+      "if: env.HAS_MODEL_KEY != 'true'",
+    );
+    expect(absent).toContain('::warning::');
+    expect(absent).toContain('MODEL ARM NOT MEASURED');
+    // And the arms that need no key are still scored, so a dispatch without the secret is not a wasted run.
+    expect(WORKFLOW).toContain('name: Score the offline arms beside it');
+  });
+
+  it('uploads the claims beside the table they were scored into, under the same root', () => {
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('Upload the study'));
+    expect(upload).toContain('artifacts/agentic/eliminator.txt');
+    expect(upload).toContain('artifacts/agentic/claims.ndjson');
+    const listed = [...upload.matchAll(/^\s+(artifacts\/[^\s]+)$/gm)].map((match) => match[1]!);
+    expect(listed.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+  });
+
+  it('names the model as an input, because the tables separate models more than frameworks', () => {
+    expect(inputNames(WORKFLOW)).toContain('model');
+    expect(study).toContain('--model "${{ inputs.model }}"');
+  });
+
+  it('keeps the tools the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-agentic-eliminator.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-claims.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-proposer.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/chat-completions.ts'))).toBe(true);
+  });
+});
