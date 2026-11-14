@@ -19,6 +19,7 @@
  * cause.
  */
 
+import { DEFAULT_DELTA } from '../src/risk-control.js';
 import { MIN_FAMILY_CASES, RESIDUAL_TOLERANCE } from '../src/term-decomposition.js';
 import type { GridPoint, WeightMove } from '../src/term-weight-screen.js';
 import {
@@ -449,9 +450,9 @@ describe('the report', () => {
   it('prints a dash rather than NaN when the screen refused every case', () => {
     // A denominator of zero is a real state: every case refused for not rebuilding its own score. `0/0` is NaN,
     // and a NaN in a rate column is a number a reader would try to interpret.
-    expect(formatScreenReport({ cases: 0, refused: 4, baseline: 0, rows: [] })).toContain(
-      '0 / 0 = -',
-    );
+    expect(
+      formatScreenReport({ cases: 0, refused: 4, baseline: 0, families: [], rows: [] }),
+    ).toContain('0 / 0 = -');
   });
 
   it('names the shipped weights it read off the dump', () => {
@@ -489,18 +490,82 @@ describe('the arguments', () => {
   });
 
   it('reads both flags in either order', () => {
+    const both = { delta: DEFAULT_DELTA, correction: 'holm' };
     expect(parseScreenArgs(['--grid', 'g.json', '--terms', 't.ndjson'])).toEqual({
       terms: 't.ndjson',
       grid: 'g.json',
+      ...both,
     });
     expect(parseScreenArgs(['--terms', 't.ndjson', '--grid', 'g.json'])).toEqual({
       terms: 't.ndjson',
       grid: 'g.json',
+      ...both,
     });
   });
 
   it('leaves the grid empty when the caller wants the default', () => {
-    expect(parseScreenArgs(['--terms', 't.ndjson'])).toEqual({ terms: 't.ndjson', grid: '' });
+    expect(parseScreenArgs(['--terms', 't.ndjson'])).toEqual({
+      terms: 't.ndjson',
+      grid: '',
+      delta: DEFAULT_DELTA,
+      correction: 'holm',
+    });
+  });
+
+  it('reads a level and refuses one that is not a level', () => {
+    // The certificate's header prints the level it was built at, so a level read at a default after a typo would be a
+    // table whose header names a claim nobody made.
+    expect(parseScreenArgs(['--terms', 't.ndjson', '--delta', '0.01']).delta).toBe(0.01);
+    for (const bad of ['0', '1', '-0.05', '2', 'nan']) {
+      expect(() => parseScreenArgs(['--terms', 't.ndjson', '--delta', bad])).toThrow(
+        '--delta must be',
+      );
+    }
+    expect(() => parseScreenArgs(['--terms', 't.ndjson', '--delta'])).toThrow('--delta needs');
+  });
+
+  it('reads either correction and refuses a third', () => {
+    expect(parseScreenArgs(['--terms', 't.ndjson', '--correction', 'union']).correction).toBe(
+      'union',
+    );
+    expect(parseScreenArgs(['--terms', 't.ndjson', '--correction', 'holm']).correction).toBe(
+      'holm',
+    );
+    expect(() =>
+      parseScreenArgs(['--terms', 't.ndjson', '--correction', 'holm-bonferroni']),
+    ).toThrow('--correction must be union or holm');
+  });
+});
+
+describe('the ledger the certificate reads', () => {
+  /** One family above the floor and one below it, both of them cost by the same move. */
+  const MIXED = [
+    ...family(demotedCase, 'big', 'HTTPRequestDelay'),
+    ...Array.from({ length: 3 }, (_, index) => demotedCase(`small${index}`, 'JVMReturn')),
+  ];
+
+  it('keeps the losses a verdict drops', () => {
+    // The gate reports families above the floor only, because a family of three cannot sentence a move. A claim is
+    // about every family, so the same measurement is kept twice: filtered for the verdict, whole for the certificate.
+    const report = screenGrid(MIXED, grid(RAISE_STABILITY));
+    const [row] = report.rows;
+    expect(row!.losses.map((loss) => loss.faultType)).toEqual(['HTTPRequestDelay']);
+    expect(row!.ledger).toEqual([
+      { faultType: 'HTTPRequestDelay', lost: MIN_FAMILY_CASES },
+      { faultType: 'JVMReturn', lost: 3 },
+    ]);
+  });
+
+  it('states every family the corpus holds, which is the width of any claim about it', () => {
+    const report = screenGrid(MIXED, grid(RAISE_STABILITY));
+    expect(report.families).toEqual(['HTTPRequestDelay', 'JVMReturn']);
+    expect(report.cases).toBe(MIN_FAMILY_CASES + 3);
+  });
+
+  it('carries no family when the screen was asked nothing', () => {
+    const report = screenGrid(MIXED, []);
+    expect(report.families).toEqual([]);
+    expect(report.rows).toEqual([]);
   });
 });
 

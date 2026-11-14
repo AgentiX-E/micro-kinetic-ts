@@ -356,11 +356,21 @@ describe('thresholdOf', () => {
     expect(thresholdOf(POP, [], DELTA)).toBeNull();
   });
 
-  it('reports the corpus as its own ceiling when every case is lost', () => {
-    // A family that loses every case has an upper end of one, so the budget it demands is the whole corpus — the
-    // honest statement, and the reason the arithmetic ceilings rather than truncating.
+  it('states no claim when the corpus is smaller than the count it would have to certify', () => {
+    // A family that loses its only case demands a budget of five — `floorOf(1, 0.05)` — from a corpus of one, so no
+    // budget this corpus can express certifies it. The first version of this function returned the corpus's own size
+    // here, because the bisection's upper end is a number whatever the claim at that end says. That is the vacuity the
+    // empty-family guard already refuses one level up: at a rate of one every observation is certain, so a budget equal
+    // to `n` is not a claim the data supports, it is a claim no data could contradict. The refusal is the finding.
     const all = [breaker('alpha', 0.05)];
-    expect(thresholdOf(populationOf(all), frontierOf(all, [0.05]), DELTA)?.budget).toBe(1);
+    expect(floorOf(1, DELTA)).toBe(5);
+    expect(thresholdOf(populationOf(all), frontierOf(all, [0.05]), DELTA)).toBeNull();
+    // The same count in a corpus large enough to price it does certify, so the refusal above is about the corpus and
+    // not about the statistic.
+    const roomy = [...Array.from({ length: 999 }, () => filler('alpha')), breaker('alpha', 0.05)];
+    expect(thresholdOf(populationOf(roomy), frontierOf(roomy, [0.05]), DELTA)?.budget).toBe(
+      floorOf(1, DELTA),
+    );
   });
 });
 

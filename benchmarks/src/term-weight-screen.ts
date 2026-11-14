@@ -41,6 +41,8 @@
 import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import { MIN_FAMILY_CASES, RESIDUAL_TOLERANCE } from './term-decomposition.js';
 
+import type { Correction, LossCount } from './risk-control.js';
+import { DEFAULT_DELTA } from './risk-control.js';
 import type { ParsedTermCase } from './terms-dump.js';
 
 /** One term's weight, set to an absolute value rather than a delta. */
@@ -109,6 +111,16 @@ export interface ScreenRow {
    * loss is therefore reported in {@link lost} without being a verdict here.
    */
   readonly losses: readonly FamilyLoss[];
+  /**
+   * Every family the move costs, floor included.
+   *
+   * {@link losses} is the verdict's view: it lists only families above `MIN_FAMILY_CASES`, because a family of four
+   * cannot sentence a move. A certificate is not a verdict — it is a claim about every family in the corpus — so it
+   * has to be read off a ledger that keeps the small ones, or the claim would be narrower than the corpus it is about.
+   * That is the whole difference between the two fields, and the reason both exist: filtering is a decision about
+   * sentencing, not about counting.
+   */
+  readonly ledger: readonly LossCount[];
   /** `delta ≥ 0` and no family above the floor lost a case. */
   readonly admissible: boolean;
 }
@@ -154,6 +166,13 @@ export interface ScreenReport {
   readonly refused: number;
   /** `Top@1` at `Δw = 0`, which is what every row's `delta` is against. */
   readonly baseline: number;
+  /**
+   * Every fault family the corpus holds.
+   *
+   * The width of any certificate read off these rows: a claim covers every family there is, so the multiplicity it pays
+   * is a property of the corpus rather than of the families a move happened to break.
+   */
+  readonly families: readonly string[];
   /** One row per grid point, in the grid's order. */
   readonly rows: readonly ScreenRow[];
 }
@@ -400,7 +419,7 @@ export function screenPrepared(corpus: PreparedCorpus, points: readonly GridPoin
     refused: corpus.refused,
     baseline: baseline.hits,
   };
-  if (points.length === 0) return { ...population, rows: [] };
+  if (points.length === 0) return { ...population, families: [], rows: [] };
   const byFamily = new Map<string, { total: number; hits: number }>();
   for (const outcome of baseline.outcomes) {
     const bucket = byFamily.get(outcome.faultType) ?? { total: 0, hits: 0 };
@@ -409,6 +428,7 @@ export function screenPrepared(corpus: PreparedCorpus, points: readonly GridPoin
     byFamily.set(outcome.faultType, bucket);
   }
 
+  const families = [...byFamily.keys()].sort(byId);
   const rows = points.map((gridPoint): ScreenRow => {
     const evaluated = evaluatePrepared(corpus, gridPoint.moves);
     const gained: string[] = [];
@@ -453,6 +473,13 @@ export function screenPrepared(corpus: PreparedCorpus, points: readonly GridPoin
         gained: [...(familyGained.get(faultType) ?? [])].sort(byId),
       }));
 
+    // The same map `losses` was filtered from, read without the filter: one measurement, two views, and no second pass
+    // over the corpus that could disagree with the first.
+    const ledger: LossCount[] = [...familyLost.keys()].sort(byId).map((faultType) => ({
+      faultType,
+      lost: familyLost.get(faultType)!.length,
+    }));
+
     const delta = evaluated.hits - baseline.hits;
     return {
       label: gridPoint.label === '' ? labelOf(gridPoint.moves) : gridPoint.label,
@@ -463,10 +490,11 @@ export function screenPrepared(corpus: PreparedCorpus, points: readonly GridPoin
       gained,
       lost,
       losses,
+      ledger,
       admissible: delta >= 0 && losses.length === 0,
     };
   });
-  return { ...population, rows };
+  return { ...population, families, rows };
 }
 
 /**
@@ -625,18 +653,43 @@ export function parseGridFile(text: string): GridPoint[] {
  * @returns The terms path and the grid path, the latter empty for {@link DEFAULT_GRID}.
  * @throws Error on an unknown flag or a missing value, so a typo cannot screen the wrong artifact.
  */
-export function parseScreenArgs(argv: readonly string[]): { terms: string; grid: string } {
+export function parseScreenArgs(argv: readonly string[]): {
+  terms: string;
+  grid: string;
+  delta: number;
+  correction: Correction;
+} {
   let terms = '';
   let grid = '';
+  let delta = DEFAULT_DELTA;
+  let correction: Correction = 'holm';
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
-    if (arg !== '--terms' && arg !== '--grid') throw new Error(`unrecognised argument ${arg}`);
+    if (arg !== '--terms' && arg !== '--grid' && arg !== '--delta' && arg !== '--correction') {
+      throw new Error(`unrecognised argument ${arg}`);
+    }
     const value = argv[index + 1];
     if (value === undefined) throw new Error(`${arg} needs a value`);
     if (arg === '--terms') terms = value;
-    else grid = value;
+    else if (arg === '--grid') grid = value;
+    else if (arg === '--correction') {
+      // Two rules, both exact, and the pair is what the ablation reads: a level split over every family against a
+      // step-down that spends a clean family's evidence on the ones that are not.
+      if (value !== 'union' && value !== 'holm') {
+        throw new Error(`--correction must be union or holm, not ${value}`);
+      }
+      correction = value;
+    } else {
+      const level = Number(value);
+      // A level is strictly inside (0, 1): zero would demand certainty and one would demand nothing, and a malformed
+      // level read at the default would print a table whose header names a level it was not built at.
+      if (!Number.isFinite(level) || level <= 0 || level >= 1) {
+        throw new Error(`--delta must be strictly inside (0, 1), not ${value}`);
+      }
+      delta = level;
+    }
     index += 1;
   }
   if (terms === '') throw new Error('--terms is required');
-  return { terms, grid };
+  return { terms, grid, delta, correction };
 }

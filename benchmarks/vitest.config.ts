@@ -337,6 +337,13 @@ export default defineConfig({
         // measured: a corpus with no families (vacuous certification), zero losses (the rule of three), a level at
         // either end of the interval, and a family that loses every case.
         'src/risk-control.ts',
+        // Added with the module: the certificate a SELECTION can carry, which is the one reading the two modules
+        // above cannot produce — a row named after looking at the data is not a hypothesis anybody formulated, so its
+        // claim pays for the looks that named it. Its whole value is four verdicts and three winners, and every branch
+        // is measured: an improvement that concedes nothing, a concession priced per budget unit, a flat row that gives
+        // up budget for nothing, a population too small to state a claim, a malformed count of looks, and the
+        // selection of nothing at all.
+        'src/certified-selection.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

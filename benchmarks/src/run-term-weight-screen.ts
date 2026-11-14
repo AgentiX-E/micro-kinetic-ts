@@ -6,17 +6,25 @@
  * `Δw = 0` is computed by the screen itself rather than trusted from a caller, so a row's `delta` is always
  * against the run it came from.
  *
+ * The second table is the **selective certificate**: the same rows, priced in the one currency the screen's own gate
+ * does not have. The gate is a veto (no family above the floor may lose a case) and it returns "the admissible set is
+ * empty" for this corpus; the certificate says what each row's claim would cost, and what the best of them is worth
+ * per unit conceded. `--delta` sets the level and `--correction` the rule the level is split by, so the pair can be
+ * ablated without editing the tree.
+ *
  * It reads files and writes to the console: no corpus, no engine, so a table cannot be an accident of the data a
  * run happened to load.
  *
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-term-weight-screen.ts --terms fse26-terms.ndjson [--grid grid.json]
+ *     [--delta 0.05] [--correction holm]
  *
  * @module benchmarks/run-term-weight-screen
  */
 
 import { readFileSync } from 'node:fs';
 
+import { formatSelection, selectCertified } from './certified-selection.js';
 import {
   DEFAULT_GRID,
   formatScreenReport,
@@ -48,3 +56,15 @@ if (report.cases === 0) {
     'no case in the dump rebuilds its own score, so no row of this screen is about it',
   );
 }
+
+// The shipped row is the screen's own baseline, so its ledger is empty by construction: it loses nothing against
+// itself. Taking it from the report rather than from the shipped weights is the same measurement every row's `before`
+// came from, and a second reading of one corpus is the defect the screen's own docstring refuses.
+const selection = selectCertified(
+  { n: report.cases, families: report.families },
+  { label: 'shipped', cases: report.baseline, losses: [] },
+  report.rows.map((row) => ({ label: row.label, cases: row.after, losses: row.ledger })),
+  { delta: args.delta, correction: args.correction },
+);
+console.log('');
+console.log(formatSelection(selection));
