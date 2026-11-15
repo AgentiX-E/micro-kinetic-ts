@@ -3957,3 +3957,162 @@ control.
 
 The agentic plan document is amended rather than deleted: `docs/agentic-layer-plan.md` §9 records the retirement, the
 three ceilings that bound it, and the two deterministic obstacles that replace it.
+
+## §286 — The caller wins 100 of the 111 one-step cases, and four terms that cannot move a rank
+
+Iteration 285b left one sentence to test: *every remaining point is the engine's ordering error*. This iteration
+asked the corpus where that error lives, and the answer is specific enough to name a mechanism — but the three
+levers the engine already has for that mechanism are **inert on this corpus**, which is the finding that matters
+more than the numbers.
+
+### 1. The pairing adds three quantities the collector's dump does not carry
+
+The raw parquet corpus carries client and server spans, so every RPC can be paired on `(trace_id, parent_span_id)`.
+From that pairing, per service, over the abnormal window against the same service's normal window:
+
+| quantity | definition | what it separates |
+| --- | --- | --- |
+| `own` | median server duration minus the slowest callee's median | time the service spent itself |
+| `tIn` | median transport ratio on the edges that point at it | link latency into the service |
+| `tOut` | median transport ratio on the edges it originates | link latency out of it |
+| `egress` | `tOut / tIn` | whether the delay is on its own egress |
+
+All four are post/pre ratios of medians, computed for **1 248 of 1 422** cases (one case's parquet the reader
+cannot open; the scope is exactly the cases whose truth is one of the five presented, baseline `1 072 = 85.90 %`).
+
+### 2. Every fusion of them loses, and the loss is not marginal
+
+Plain argmax over the five candidates, on the same scope:
+
+| rule | correct | % |
+| --- | --- | --- |
+| engine (shipped) | 1 072 | **85.90** |
+| `srv` ratio | 572 | 45.83 |
+| `own` | 573 | 45.91 |
+| `tOut` | 550 | 44.07 |
+| `tIn` | 456 | 36.54 |
+| `egress` | 306 | 24.52 |
+
+Three fusion families were tried, all pre-registered before the numbers were read:
+
+- **gated swap** — replace the engine's first choice only when a candidate's `own` beats it by more than `θ`:
+  net **−65 to −73** at every `θ` from 0 to 3 (gain 25 / loss 98 at `θ = 0`). `tIn` is far worse (−137 to −230).
+- **multiplicative** — `score × exp(α · log own)`: −51 at `α = 0.05`, −345 at `α = 1`.
+- **rank fusion** — `rrf(engine, own)` and `rrf(engine, tIn)`: −188 to −307 at every `k`.
+
+A bucket census by `max(own)` over the five explains why: `own`'s hit rate does **not** rise with its magnitude
+(46.7 % below 1.0, 51.7 % above 20, 26.7 % in the 5–20 band). There is no threshold at which the quantity becomes
+the better reader, so no gate can be built on it.
+
+**This corrects the previous iteration's reading.** A three-case sample showed `own` ranking the truth first in two
+of three; at n = 1 248 the same statistic is 45.9 %, thirty points *below* the engine. The sample was the
+instrument's noise floor, not a signal.
+
+### 3. What the decomposition did find: the weakness is a fault family, not a rule
+
+Top@1 by fault family on the full 1 422, with the rank of the first accepted answer:
+
+| family | n | Top@1 | rank-2 | rank-3 | outside 5 |
+| --- | --- | --- | --- | --- | --- |
+| JVMMemoryStress | 171 | **100.0** | 0 | 0 | 0 |
+| ContainerKill | 89 | **100.0** | 0 | 0 | 0 |
+| PodFailure / PodKill | 34 | **100.0** | 0 | 0 | 0 |
+| HTTPRequestReplacePath | 39 | 97.4 | 1 | 0 | 0 |
+| NetworkDelay | 21 | 95.2 | 1 | 0 | 0 |
+| HTTPResponseReplaceBody | 51 | 88.2 | 4 | 2 | 0 |
+| HTTPResponseReplaceCode | 231 | 70.1 | 11 | 2 | 55 |
+| HTTPRequestReplaceMethod | 190 | 65.8 | 18 | 4 | 38 |
+| NetworkPartition | 97 | 66.0 | 10 | 7 | 15 |
+| HTTPRequestDelay | 88 | 64.8 | 13 | 5 | 11 |
+| HTTPResponseDelay | 89 | 62.9 | 17 | 5 | 7 |
+| NetworkLoss | 48 | 60.4 | 8 | 3 | 7 |
+| **NetworkBandwidth** | 42 | **47.6** | 3 | 9 | 6 |
+
+The engine is exact on resource faults (208/208 on memory, container and pod kills) and weak on the two families
+that carry no resource signal: **content substitution** (`ReplaceCode` / `ReplaceMethod`: 421 cases, 68.2 %) and
+**link faults** (network family: 208 cases, 66.3 %). Any lever worth dispatching has to act on those 629 cases.
+
+### 4. The 111 one-step cases are one mechanism, and it is inheritance
+
+Of the 176 in-scope misses, **111 put the truth at rank 2** — one step, 7.8 points of the corpus. Pairing the
+spans gives the relation between the rank-1 candidate and the truth for each of them:
+
+| rank-1 candidate's relation to the truth | rank-2 cases | rank-3 cases (control) |
+| --- | --- | --- |
+| **caller** (the truth calls it) | **100** | 3 |
+| callee | **0** | 21 |
+| no direct edge | 11 | 19 |
+
+A caller's response time *contains* its callees', so on any anomaly that propagates along the call graph the
+caller's deviation is the larger of the two by construction. 90 % of the one-step misses are exactly that, and
+the channel evidence says so directly: on those 100 cases the truth's
+`http.server.request.duration` departure exceeds the winner's by a factor of 5 to 20 (e.g. 187.8 against
+2 210.1), while the winner leads on `http.response.error_rate` (31 cases against 6) — the victim's signature.
+
+### 5. The three terms that exist for this mechanism are inert on this corpus
+
+Four arms on the shipped configuration (FSE'26, 1 422 cases, run ids in the table):
+
+| knob | value | Top@1 | Δ |
+| --- | --- | --- | --- |
+| shipped | `selfTimeWeight=0` | **75.457 %** | — |
+| `self_time_weight` | 0.25 | 75.457 % | **0** |
+| `self_time_weight` | 0.5 | 75.457 % | **0** |
+| `self_time_weight` | 1.0 | 75.457 % | **0** |
+| `self_time_weight` | 2.0 | 75.457 % | **0** |
+| `topo_discount=0.25, gate=0` | | 75.457 % | **0** |
+| `topo_discount=1, gate=0.5` | | 75.457 % | **0** |
+| `victim_weight` | 0.5 | 74.402 % | −1.06 |
+| `victim_weight` | 1.0 | 71.590 % | −3.87 |
+| `victim_weight` | 2.0 | 62.030 % | −13.43 |
+
+Byte-identical rankings at four different self-time weights and at a fully open topological gate are not a
+measurement of "the term does not help". They are the signature of a term that **contributes zero to every
+candidate**, and the code says which one:
+
+- `computeSelfTimeScores` marks a candidate `undecided` — and drops it entirely — as soon as **any** of its
+  callees lacks a latency level (`ranking-signals.ts:834-848`). On a 41-service graph that condition holds for
+  nearly every candidate, so the map is empty and `presenceOf` reports `ABSENT` for all five. The guard is
+  deliberate (reading an unmeasured callee as 0 would make the caller look self-created, i.e. vote for the exact
+  wrong service), which means the term as written can only speak on a graph where every callee is measurable —
+  not this one.
+- The topological deduction is gated at `topoDiscountGate = 1`, which charges a node only where its callees
+  account for **all** of its anomaly (`pruner.ts:1597-1616`). Opening the gate to 0 and 0.5 moved nothing, which
+  says the deduction's extensive space is degenerate here — the same rank-normalisation the constant's docblock
+  already records for TrainTicket.
+
+`victimWeight` is the control that proves the wiring is fine: the same dispatch mechanism moved it by −1.06 and
+−13.43 points. The difference is that its input map is dense.
+
+### 6. The caliber of the 90.0 % the campaign is chasing
+
+`arXiv:2608.21310v2` reports Sonnet + ThinkDepth.ai at 90.0 Acc@1 on **a 500-case simple random sample** of
+RCABench's 1 430. This corpus is the same family at 1 422 cases. Resampling 500 cases from the shipped per-case
+outcomes 20 000 times gives Top@1 **75.46 % mean, 95 % interval [72.40, 78.60]**, with `P(sample ≥ 90.0) = 0`.
+The gap to the published leader is therefore not a sampling artefact and not a different corpus: it is 15 points
+of ranking, and the family table in §3 says where.
+
+### Axes this closes
+
+- **"The client/server pairing carries a ranking signal the dumps lack."** False at n = 1 248, in three fusion
+  families, with the small-sample reading that suggested otherwise recorded as an illusion.
+- **"PRISM's internal/external symmetry mask helps."** False and monotone: −1.06 / −3.87 / −13.43 at weights
+  0.5 / 1 / 2. The axiom's *direction* is right (the winner is external-only in the rank-2 cases) but its
+  *magnitude* cannot be separated from self-anomaly without also discounting true external faults, which are 53 %
+  of the corpus.
+- **"Weights nobody swept are the remaining lever."** False for the three mechanism terms: two are inert by
+  construction on this graph and the third degrades monotonically. A weight sweep is only a measurement where
+  the term's input map is dense.
+
+### What is dispatched next, and why it is not another weight
+
+`--terms-dump` (workflow input `terms_dump`, artifact `fse26-terms.ndjson`) emits the engine's own per-term
+`(weight, slope)` for every candidate, so **any** weight vector is `score + Σ (w' − w)·slope` — a local
+computation over one run rather than one dispatch per arm. The dump is in flight; the next iteration reads it to
+answer the two questions this one could only pose:
+
+1. Which terms actually carry the ranking on the 421 content-substitution and 208 link cases, and what fraction of
+   the score gap in the 100 caller-inheritance cases each one contributes?
+2. Whether the self-time term can be repaired rather than swept — the dense observable already exists
+   (`edgeLatency`, span-derived), and the choice between "repair the map" and "accept the term is silent" is a
+   code decision this register can now state with numbers instead of a sweep.
