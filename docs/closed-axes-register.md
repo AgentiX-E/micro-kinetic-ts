@@ -4465,3 +4465,23 @@ comment at `failedEdgeGate` warns about. The four-arm table above is measured at
 - **"The passed five is the same population as the full order."** True but not sufficient — the five-set is
   identical between the arms (1 422 of 1 422), so the difference between a screen and the engine is the quantity,
   not the window.
+
+### Prior art, checked 2026-11-15, for the discriminator §287b names
+
+The source-versus-victim question is **not** unclaimed, and the register must say so before the next iteration
+proposes a form for it:
+
+- **TopoEvo** (2026, arXiv `2605.15611`) discretises node representations into VQ symptom tokens whose evidence
+  signature includes "trace-derived interaction patterns indicating **incoming (victim-like) versus outgoing
+  (source-like)** anomaly directionality", then reasons over them with a hypothesis/evidence/judge multi-agent
+  loop. That is the same discrimination as a learned token inside an LLM framework.
+- **Beyond Fault Localization** (arXiv `2608.21310`) shows the failure this register keeps measuring from the
+  evaluation side: agents "rank services by error count → **affected service ranks first**", with answer
+  correctness and diagnostic quality coming apart, and `Acc@1 43.5 % → 52.5 %` from a grounding/verification
+  stage.
+- **TD-RCA** (IWQoS 2026) remains the named precedent for the containment mechanism itself (§8 of
+  `docs/containment-order.md`).
+
+What is left to claim here is therefore narrow and unchanged in kind from §287: a **deterministic, zero-training**
+discriminator whose refusals are enumerable — not the question itself. Any future draft that presents
+"source vs victim" as the contribution is contradicted by the first bullet.
