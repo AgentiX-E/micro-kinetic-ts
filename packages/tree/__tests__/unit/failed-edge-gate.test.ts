@@ -300,12 +300,14 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
         ?.terms?.find((entry) => entry.name === 'failedEdge');
     };
 
-    expect(termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_GATE_SHARE }).cause).toBeUndefined();
-    expect(termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_MARGIN_SHARE }).cause).toBe(
+    expect(
+      termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_GATE_SHARE })?.cause,
+    ).toBeUndefined();
+    expect(termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_MARGIN_SHARE })?.cause).toBe(
       'WEIGHT_ZERO',
     );
     // …and the run that names the mode and no share is the margin one, which is the whole of the claim.
-    expect(termAt({}).cause).toBe('WEIGHT_ZERO');
+    expect(termAt({})?.cause).toBe('WEIGHT_ZERO');
   });
 
   it('refuses the margin bar on a ranking with no rival, where no share is small enough', () => {
