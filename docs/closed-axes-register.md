@@ -4213,3 +4213,56 @@ populated term with no weight. Three arms (`prism_weight` 0.1 / 0.25 / 0.5) are 
 once on RCAEval's nine cells as an additive term, and this corpus is the one where its shape (`min(Sⁱ, Sᵉ)`) is
 already enrolled at 0.25 through `dualFamilyWeight`. What the sweep asks is whether the *score* form is refused
 there too, on a population whose two weak families are exactly the ones PRISM's axiom describes.
+
+## §286c — The readback: podState saturates at four, and PRISM's score form is refused a third time
+
+Six arms closed the two axes §286b opened.
+
+### `prism_weight` on this corpus: refused, and monotonically
+
+| weight | Top@1 | Δ |
+| --- | ---: | ---: |
+| 0 (shipped) | **75.457 %** | — |
+| 0.1 | 75.530 % | +0.07 (+1 case) |
+| 0.25 | 74.610 % | −0.85 |
+| 0.5 | 72.640 % | −2.82 |
+
+One case is not a signal, and the monotone decay on either side of it says the same thing the RCAEval nine
+cells said in iteration 140: PRISM's `min(Sⁱ, Sᵉ)` works as a **shape indicator** (`dualFamilyWeight` 0.25,
+enrolled) and not as a **score**. Third refusal, now on the population whose weak families it was designed for.
+
+### `pod_state_weight`: a plateau at four, and what the plateau means
+
+| weight | Top@1 | Δ |
+| --- | ---: | ---: |
+| **8 (shipped)** | **75.457 %** | — |
+| 4 | 75.392 % | −0.07 |
+| 2 | 71.800 % | −3.66 |
+| 1 | 65.050 % | −10.41 |
+| 0 (reconstruction) | ≈62.6 % | −12.9 |
+
+The shipped value sits **on a plateau**: halving it costs one case. Below four the curve is steep. That is not a
+tuning opportunity — it is the scale statement this register could not make before the dump existed.
+
+### The scale imbalance, stated as arithmetic
+
+Every prior in the sum is a share on `[0, 1]`. The weights are not on a common scale: `podState` 8,
+`failedEdge` 3, `selfAnomalyLog1p` 1, `dualFamily` 0.25, `pool` 0.0679. At `podState` 8 a candidate whose pod
+state share is 0.75 contributes **6.0**, while the base term — `log1p(anomaly)` at weight 1 — contributes
+**0.34** on the same candidate. The extensive anomaly that the collision picture is built to rank is therefore
+0.6 % of the score it is supposed to determine, and the sweep in §286 is the arithmetic consequence: no
+self-time or topological weight can move a ranking whose first six points come from a term that is a pod
+lifecycle indicator.
+
+This is not a defect introduced by any single change; it is the accumulated result of eight knobs each
+measured on the corpus that made it look good. What §286b's ablation establishes is that the corpus this
+campaign must win is being ranked by the one term that is exact on resource faults (208/208) and silent on the
+629 content and link cases — which is precisely the family table in §286.
+
+### What this licenses for the next iteration
+
+`pod_state_weight=4` is **free** (−0.07, one case). That is the only configuration change in this register
+that costs nothing, and it is worth one arm only as the *floor* of a scale experiment: 4 is where the balance
+between the pod indicator and the anomaly can be redressed without paying for it. The experiment is
+`pod_state_weight=4 × self_anomaly_weight ∈ {2, 4} × topo_discount` measured against the shipped ranking on the
+629 weak cases, not on the corpus total — a lever that only buys resource-fault cases has no headroom left.
