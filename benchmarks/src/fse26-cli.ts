@@ -56,6 +56,8 @@ import {
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_CONTAINMENT_MARGIN,
+  DEFAULT_CONTAINMENT_ORDER,
   DEFAULT_DROP_DEVIATION_MODE,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -473,6 +475,22 @@ export interface Fse26CliOptions {
    */
   readonly traceSkipsLeader: boolean;
   /**
+   * Whether a caller may be ranked above a callee whose own latency excursion is larger — the containment pass.
+   *
+   * Ships ON (`DEFAULT_CONTAINMENT_ORDER`) and is inert without `--fault-free-profile`, because the excursion is
+   * measured against the band the service occupied while nothing was wrong. Travels in the packed `ranking_knobs`
+   * block as `containment_order=1|0`; `0` is the ablation, and it is exact because the excursion map is not built
+   * at all.
+   */
+  readonly containmentOrder: boolean;
+  /**
+   * How much larger the callee's excursion must be before the pass inverts the pair, in band widths.
+   *
+   * Ships at `DEFAULT_CONTAINMENT_MARGIN` = 0 — a strict comparison rather than a tuned threshold, because both
+   * excursions are measured on one case in one unit.
+   */
+  readonly containmentMargin: number;
+  /**
    * Weight on the trace-topology signal. `0` = off, the shipped value.
    *
    * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
@@ -734,6 +752,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     // are two answers to one question, and only a census over BOTH sites can see them disagree.
     traceWeight: DEFAULT_TRACE_WEIGHT,
     traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
+    containmentOrder: DEFAULT_CONTAINMENT_ORDER,
+    containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -986,7 +1006,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.suppressZeroBaselineLatency = false;
     else if (arg === '--trace-skips-leader') opts.traceSkipsLeader = true;
     else if (arg === '--no-trace-skips-leader') opts.traceSkipsLeader = false;
-    else if (arg === '--cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = true;
+    else if (arg === '--containment-order') opts.containmentOrder = true;
+    else if (arg === '--no-containment-order') opts.containmentOrder = false;
+    else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
+      // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
+      // reproduces a published configuration rather than inventing one.
+      const parsed = Number.parseFloat(argv[++i]!);
+      opts.containmentMargin = Number.isFinite(parsed) ? parsed : DEFAULT_CONTAINMENT_MARGIN;
+    } else if (arg === '--cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = true;
     else if (arg === '--no-cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = false;
     else {
       throw new Error(

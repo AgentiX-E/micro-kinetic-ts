@@ -897,6 +897,22 @@ const KNOBS: Readonly<
     fse26: null,
     rcaeval: null,
   },
+  containmentOrder: {
+    // The containment pass. Unreachable from BOTH benchmark workflows for the reason the profile it reads is:
+    // the excursion is measured against the fault-free band, so the switch without the band is a no-op and a
+    // dispatch that could set it could believe it had measured something. The arm is stated on the elimination
+    // study's workflow, which builds the profile itself, and the corpus measurement is docs/containment-order.md.
+    flag: '--containment-order',
+    owner: 'containment-order.md',
+    fse26: null,
+    rcaeval: null,
+  },
+  containmentMargin: {
+    flag: '--containment-margin',
+    owner: 'containment-order.md',
+    fse26: null,
+    rcaeval: null,
+  },
   fusionCeiling: {
     flag: '--fusion-ceiling',
     owner: NOT_A_RANKING_KNOB,

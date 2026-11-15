@@ -4266,3 +4266,132 @@ that costs nothing, and it is worth one arm only as the *floor* of a scale exper
 between the pod indicator and the anomaly can be redressed without paying for it. The experiment is
 `pod_state_weight=4 × self_anomaly_weight ∈ {2, 4} × topo_discount` measured against the shipped ranking on the
 629 weak cases, not on the corpus total — a lever that only buys resource-fault cases has no headroom left.
+
+## §287 — The containment order: 41 wins, 0 losses, and the instrument that finally reconciles
+
+Iteration 286 ended with a family table, a mechanism (inheritance) and a puzzle: three terms aimed at that
+mechanism, four weight sweeps and seven gate settings, and a **byte-identical** ranking. This iteration answers the
+puzzle three ways — by repairing the instrument that produced it, by closing the data path that would not have
+helped, and by stating the mechanism as an **order constraint** instead of a weight, which is the only form it has.
+
+### 1. Correction: the term dump reconstructs exactly, and §286b's residual was a reading error
+
+§286b reconstructed `score = Σ weight × slope` with the CONFIG weights and recorded a residual of `3.0` on 1 114
+cases, then qualified every number by it. The dump does not carry the config weight — it carries **the weight the
+engine actually used per term per candidate**, and on this corpus `failedEdge` is recorded at `3` on 394 candidates,
+at `0` on 3 522 (the gate refused it) and `None` elsewhere. Using the dump's own weight:
+
+```
+max |Σ w_dump·slope − recorded score| = 8.882e-16      over 1 422 cases
+Top@1                                 = 1 073/1 422 = 75.4571 %
+```
+
+So the reconstruction is **exact**, the shipped number is reproduced, and every offline screen in this register is
+a local computation over one run with no residual to qualify. §286b's ablation *ordering* was right; its stated
+error bar was not, and this supersedes it.
+
+### 2. The `trace` data path is repairable and not worth repairing
+
+§286b found `trace` at weight **1** with zero coverage on 1 422 cases and called it a data-path defect. It is one:
+the bridge pre-aggregates spans into distinct caller→callee edges and drops the per-service counts the term reads.
+The parquet has them, so the observable was measured before a line of loader code was written — 1 249 cases, span
+counts per service over both windows, the engine's own rule applied to them (pre ≥ 500, growth ≥ 1.15, growth ≥ 2×
+the fleet's median drift, **unique** riser):
+
+| quantity | value |
+| --- | ---: |
+| cases with a unique qualifying riser | **91 / 1 249 = 7.3 %** |
+| of those, the riser is the truth | **51 = 56.0 %** |
+
+Seven per cent coverage at 56 % precision against an engine that reads 85.9 % on the same scope. The axis is
+**closed by measurement rather than by absence of data**: the data path could be built, and it would not pay.
+
+### 3. Every populated-but-unweighted term was swept, and none of them pays
+
+Six terms carry data on this corpus and a weight of zero — `collision` (31 190 candidates), `temporal` (64 237),
+`source`, `topo`, `rise`, `prism`. Each was swept alone over
+`w ∈ {±0.05, ±0.1, ±0.2, ±0.5, ±1, ±2}`, then a greedy forward pass combined the winners:
+
+| term | best single weight | Δ Top@1 | halves |
+| --- | ---: | ---: | --- |
+| `temporal` | +0.05 | +4 | −1 / +5 |
+| `collision` | −0.05 | +3 | +2 / +1 |
+| `rise` | −0.2 | +3 | −2 / +5 |
+| `source` | −0.05 | +2 | −1 / +3 |
+| `prism` | +0.05 | +2 | +1 / +1 |
+| `topo` | +0.1 | 0 | −2 / +2 |
+| greedy stack of three | | **+6 = +0.42 pp** | |
+
+Four cases out of 1 422 is the noise floor, and the halves disagree in sign on three of the six. **`collision` —
+the Deng Yu collision source — is populated on 45 % of candidates and worth nothing as an additive weight on this
+corpus.** That is the third independent statement of the same fact (§286's weight sweeps, §286b's ablation, this
+sweep), and it is the reason the next section changes the FORM rather than the coefficient.
+
+### 4. The mechanism as an order constraint
+
+A caller's response time contains its callee's, so the pair is inverted by construction. The statement that repairs
+it is relational, and no additive term can express a relational statement. `pruning/containment-order.ts` applies
+it directly:
+
+```
+band(v, label) = [centre − σ·scale, centre + σ·scale]        (the corpus fault-free profile, σ = 3)
+excursion(v)   = max over latency labels of (0 if post ∈ band else distance / band width)
+invert rank(i), rank(i+1)  when  rank(i) calls rank(i+1)  and  excursion(rank(i+1)) > excursion(rank(i)) + margin
+```
+
+Measured on all 1 422 cases, one pass over the top five:
+
+| | cases | Top@1 |
+| --- | ---: | ---: |
+| shipped | 1 073 | 75.457 % |
+| shipped + containment | **1 114** | **78.34 %** |
+| Δ | **+41** | **+2.88 pp** |
+
+Gains **41**, losses **0**, halves **+25 / +16**. The families that gain are the ones that PROPAGATE
+(HTTPRequestDelay +8, HTTPResponseDelay +7, NetworkPartition +5, NetworkCorrupt +4, NetworkLoss +3,
+NetworkBandwidth +3, HTTPRequestReplaceMethod +2); resource faults are unchanged at 12/12.
+
+The rule without the band — a plain ratio comparison — reads 24 gains and 0 losses. **The band is worth 17 cases**,
+which is why the pass reads the corpus profile and not a ratio: a service whose latency is naturally wide is not a
+service that moved.
+
+Three fusion forms were measured first and all failed, which is why the shipped form is an order constraint:
+
+- `tOut(callee) > tOut(caller)` (the transport reading): 61 gains, **5 losses**;
+- `own` gated swap (§286): 25 gains, 98 losses;
+- `rrf(engine, own)`: −188 to −307.
+
+### 5. Prior art, and the precise size of the claim
+
+**TD-RCA** (IWQoS 2026, `10.1109/IWQoS70441.2026.11661074`) names this mechanism *Cascade Confusion* — "synchronous
+blocking RPC can amplify upstream anomaly signals and cause victim services to exhibit stronger symptoms than the
+true root cause" — and decouples it with a Dual-Perspective module inside a VAE-GNN, reporting HR@1 93.9 % on
+TrainTicket and 94.3 % on SocialNetwork. The mechanism is therefore established prior art and is not claimed here.
+What is claimed is narrower: a deterministic band test needs no training, costs **zero** losses on this corpus (a
+learned module cannot state that about itself), and reads one number per arm instead of one model per corpus.
+
+TD-RCA's dual perspective is the transport reading measured above at 61 gains and 5 losses, so the two are the
+same family with a different observable — and this corpus prefers the band.
+
+### 6. Shipped off, and the exact reason
+
+`DEFAULT_CONTAINMENT_ORDER = false`. The pass needs `faultFreeProfile`, and **no benchmark dispatch supplies one**:
+`--fault-free-profile` sits on the dispatch-surface census' unreachable list, because "a dispatch that could name a
+path could name one fitted on another corpus". That rule is right — and it makes a `true` default a switch whose
+input is empty in every production run, which is the defect §286b recorded for `traceWeight = 1` over zero
+coverage. The arm is stated on `.github/workflows/benchmark-agentic.yml` (input `containment_order`), the only
+workflow that builds the profile it ranks against.
+
+Promotion is three steps, all named in `docs/containment-order.md` §7: derive the profile inside the benchmark
+workflow (a derived path, never a dispatch input), revise the census entry so the check matches its rationale, and
+flip the default to `true` with all four cells re-read.
+
+### Axes this closes
+
+- **"The term weights are the remaining lever."** False for the sixth time: every populated-but-unweighted term is
+  worth ≤ 4 cases with halves that disagree in sign, and the greedy stack of three is +6.
+- **"`trace` is a data-path bug worth fixing."** False by measurement: the data exists, would cover 7.3 % of cases,
+  and would be right 56 % of the time.
+- **"Inheritance is a weighting problem."** False, and this is the finding that matters: the same mechanism worth
+  **+2.88 pp** as an order constraint is worth **0.000 pp** as any coefficient of the fusion, because a
+  candidate-local sum cannot express a relation between two candidates.

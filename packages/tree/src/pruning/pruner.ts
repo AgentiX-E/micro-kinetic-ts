@@ -79,6 +79,7 @@ import {
   resolveEventFamily,
 } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
+import { applyContainmentOrder, latencyExcursions } from './containment-order.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
 import {
@@ -1046,6 +1047,30 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * choose between them.
    */
   readonly faultFreeSelection?: FaultFreeSelection | undefined;
+  /**
+   * Whether a caller may be ranked above a callee whose OWN latency excursion is larger.
+   *
+   *   if rank(i) calls rank(i+1) and excursion(rank(i+1)) > excursion(rank(i)) + margin  →  invert
+   *
+   * A caller's response time contains its callee's, so on any fault that propagates along the call graph the
+   * caller's deviation is the larger one by construction — the single mechanism behind 100 of the 111 one-step
+   * misses on FSE'26 (register §286 §4). No additive term can repair it, because every term scores one candidate
+   * at a time and the statement that has to be made is RELATIONAL. See `pruning/containment-order.ts`.
+   *
+   * Needs a fault-free profile (`faultFreeProfile`): the excursion is measured against the band the service
+   * occupied while nothing was wrong. Without one the pass is a no-op, so a run that sets this switch and passes
+   * no profile ranks exactly as the engine that had no such pass. Ships at
+   * {@link DEFAULT_CONTAINMENT_ORDER} = `false`, for the reason that constant records: no benchmark dispatch
+   * supplies a profile yet.
+   */
+  readonly containmentOrder: boolean;
+  /**
+   * How much larger the callee's excursion must be before the pair is inverted, in band widths.
+   *
+   * Ships at {@link DEFAULT_CONTAINMENT_MARGIN} = 0 — a strict comparison, which is exact rather than tuned
+   * because both numbers are measured on one case in one unit.
+   */
+  readonly containmentMargin: number;
 }
 
 /**
@@ -1355,6 +1380,33 @@ export const DEFAULT_POD_STATE_WEIGHT = 8;
  * has to beat is the one the shipped vector already reads on the same corpus with the same folds.
  */
 export const DEFAULT_FAULT_FREE_WEIGHT = 0;
+
+/**
+ * Whether the containment order is applied — the pass that refuses to rank a caller above a callee whose own
+ * latency left its fault-free band.
+ *
+ * Ships DISABLED, and the reason is the one `traceWeight: 1` taught this register the hard way: a switch whose
+ * input map is empty in every production run is indistinguishable from a feature that does not exist, whatever
+ * its default says (§286b). The pass needs a fault-free profile, and **no benchmark dispatch supplies one** —
+ * `--fault-free-profile` is deliberately unreachable from a workflow dispatch (see the dispatch-surface census'
+ * `OPERATIONAL_FLAGS_UNREACHABLE`: a dispatch that could name a path could name one fitted on another corpus),
+ * so the only runs that can exercise the pass are the ones that build the profile themselves. Until that wiring
+ * lands, `false` is the honest default: the shipped ranking is exactly the one every published cell was measured
+ * on, and the arm is one flag away.
+ *
+ * The measurement that motivates the wiring is in `docs/containment-order.md`: on the FSE'26 corpus, with the
+ * profile present, the pass fires 41 times with **41 gains and 0 losses** (75.457 % → 78.34 % Top@1).
+ */
+export const DEFAULT_CONTAINMENT_ORDER = false;
+
+/**
+ * How much further outside its band a callee's latency must sit before the pass inverts the pair, in band widths.
+ *
+ * `0` is a strict comparison rather than a tuned threshold: both excursions are measured on the same case, in
+ * the same units, against the same band, so equality is a real equality and any positive margin would be a
+ * number with no derivation behind it. The sweep is in `docs/containment-order.md`.
+ */
+export const DEFAULT_CONTAINMENT_MARGIN = 0;
 
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
@@ -2158,6 +2210,8 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
   podStateWeight: DEFAULT_POD_STATE_WEIGHT,
   faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+  containmentOrder: DEFAULT_CONTAINMENT_ORDER,
+  containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
 };
 
 /**
@@ -2526,6 +2580,20 @@ export class TreePruner {
     // deliberately wider than the term's population.
     const edgeLatencyByCallee = computeEdgeLatencyByCallee(options?.edgeLatency);
 
+    // The CONTAINMENT excursions: how far each service's post-injection latency median sits outside the band it
+    // occupied while nothing was wrong. Not a term — the pass that reads them is relational — so the map is
+    // built only when that pass can run: switched on, and given the corpus profile it measures against. A run
+    // without a profile therefore does not allocate a map it can never read, which is what makes the switch's
+    // cost zero rather than negligible.
+    const containmentExcursions =
+      this.options.containmentOrder && this.options.faultFreeProfile !== undefined
+        ? latencyExcursions({
+            metrics,
+            profile: this.options.faultFreeProfile,
+            injectTimeMs,
+          })
+        : undefined;
+
     // The SELF-TIME share: the fraction of a service's own latency rise that no callee can explain.
     // Computed from the RAW metric series rather than from the anomaly features, because the guards
     // delete exactly the propagation channels this term has to compare — see the function's docblock.
@@ -2602,6 +2670,7 @@ export class TreePruner {
       emissionScores,
       channelSymmetry,
       dualFamilyServices,
+      containmentExcursions,
     };
   }
 
@@ -2697,9 +2766,9 @@ export class TreePruner {
     // would decide about a service the engine does not answer with. The cost is a second ranking
     // ONLY on the cases the gate admits; a refused case returns the baseline it already has.
     const directionWeight = this.options.failedEdgeWeight;
-    if (directionWeight === 0) return withFaultHypotheses(graph, baseline);
+    if (directionWeight === 0) return this.contained(graph, withFaultHypotheses(graph, baseline));
     const rankOne = baseline[0];
-    if (rankOne === undefined) return withFaultHypotheses(graph, baseline);
+    if (rankOne === undefined) return this.contained(graph, withFaultHypotheses(graph, baseline));
     // The champion is read ONLY when the fleet bar is in force, so the shipped path does not compute a
     // quantity it would never compare against — the same rule the self-time, symmetry and dual-family
     // maps follow. It is the max over the map the decision already reads, so the number the gate judges
@@ -2728,40 +2797,88 @@ export class TreePruner {
         failedEdgeGate,
       )
     ) {
-      return withFaultHypotheses(graph, baseline);
+      return this.contained(graph, withFaultHypotheses(graph, baseline));
     }
 
-    return withFaultHypotheses(
+    return this.contained(
       graph,
-      performTreeRCA(
-        prunedTree,
-        anomalyScores,
-        graph.anomalyOnsetTimes,
-        graph.postInjectOnsetDelays,
-        graph.injectTimeMs ?? 0,
-        graph.callGraph.nodes,
-        graph.propagationWeights,
-        k,
-        this.options,
-        graph.collisionEnergy,
-        graph.collisionShapes,
-        graph.logScores,
-        graph.topoScores,
-        graph.riseScores,
-        graph.traceActivityScores,
-        graph.prismScores,
-        graph.failedEdgeScores,
-        graph.edgeLatencyScores,
-        graph.poolMetricScores,
-        graph.stabilityScores,
-        graph.faultFreeScores,
-        graph.selfTimeScores,
-        graph.emissionScores,
-        graph.channelSymmetry,
-        graph.dualFamilyServices,
-        graph.podStateScores,
-        deduction.audit,
+      withFaultHypotheses(
+        graph,
+        performTreeRCA(
+          prunedTree,
+          anomalyScores,
+          graph.anomalyOnsetTimes,
+          graph.postInjectOnsetDelays,
+          graph.injectTimeMs ?? 0,
+          graph.callGraph.nodes,
+          graph.propagationWeights,
+          k,
+          this.options,
+          graph.collisionEnergy,
+          graph.collisionShapes,
+          graph.logScores,
+          graph.topoScores,
+          graph.riseScores,
+          graph.traceActivityScores,
+          graph.prismScores,
+          graph.failedEdgeScores,
+          graph.edgeLatencyScores,
+          graph.poolMetricScores,
+          graph.stabilityScores,
+          graph.faultFreeScores,
+          graph.selfTimeScores,
+          graph.emissionScores,
+          graph.channelSymmetry,
+          graph.dualFamilyServices,
+          graph.podStateScores,
+          deduction.audit,
+        ),
       ),
+    );
+  }
+
+  /**
+   * Apply the containment order to a finished ranking.
+   *
+   * The pass is relational — "rank `i` calls rank `i+1`, and the CALLEE's own latency left its band while the
+   * caller's did not" — so it cannot live inside a term and it cannot be expressed by any weight. What it can do
+   * is read the two things the engine already has by this point: the ordered candidates, and the per-service
+   * excursion map the graph builder measured against the fault-free profile.
+   *
+   * Two refusal rules, both of which are about presence rather than magnitude:
+   *
+   * - No map, or an empty one, means the run has no profile or no latency channel — the ranking is returned as
+   *   the fusion left it, the SAME array rather than a copy, so a disabled pass is bit-identical by identity.
+   * - A pair whose candidates were not both measured is left alone: an unmeasured candidate read as a measured
+   *   zero would invert on evidence nobody collected.
+   *
+   * `rank` is renumbered where a pair moved, because `rank` is part of the published answer and a list whose
+   * positions and whose `rank` field disagreed would be two answers in one object.
+   *
+   * @param graph - The graph whose excursions and edges the pass reads.
+   * @param results - The ranking the fusion produced, best first.
+   * @returns `results` itself when nothing moved, otherwise the reordered and renumbered list.
+   */
+  private contained(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
+    const excursions = graph.containmentExcursions;
+    if (excursions === undefined || excursions.size === 0) return results;
+    const ranked = results.map((result) => ({ service: result.serviceId, result }));
+    const ordered = applyContainmentOrder({
+      ranking: ranked,
+      edges: graph.callGraph.edges,
+      excursions,
+      margin: this.options.containmentMargin,
+    });
+    let moved = false;
+    for (let i = 0; i < ordered.length; i++) {
+      if (ordered[i] !== ranked[i]) {
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) return results;
+    return ordered.map((entry, index) =>
+      entry.result.rank === index + 1 ? entry.result : { ...entry.result, rank: index + 1 },
     );
   }
 

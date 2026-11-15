@@ -37,6 +37,8 @@ import type {
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
+  DEFAULT_CONTAINMENT_MARGIN,
+  DEFAULT_CONTAINMENT_ORDER,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
@@ -199,6 +201,17 @@ export interface FSE26RunConfig {
   readonly traceWeight: number;
   /** Whether the trace vote is withheld from the anomaly leader; `false` = the shipped configuration. */
   readonly traceSkipsLeader: boolean;
+  /**
+   * Whether the containment pass runs. Its shipped value is TRUE, so this field may not follow the `omit when
+   * default` rule the eight knobs above use: an omitted field would then read as the ablation and an arm that
+   * switched the pass off would be byte-identical to the shipped run. Printed unconditionally.
+   */
+  readonly containmentOrder?: boolean;
+  /**
+   * Margin of the containment pass, in band widths. Ships at 0, so the omission rule IS sound here — an
+   * omitted field reads as a strict comparison both before and after any change to the constant.
+   */
+  readonly containmentMargin?: number;
   readonly topoWeight: number;
   /**
    * Topological deduction strength. Printed only when non-zero, and its scope nested under it: the deduction
@@ -582,6 +595,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // masked arm from the shipped run — the rule the ceiling and the drop mode established.
   if (config.traceSkipsLeader) {
     line += ` traceSkipsLeader=${config.traceSkipsLeader}`;
+  }
+  // Unconditional, and for the reason stated on the field: this pass ships ON, so an omission would have to be
+  // read as the ablation. `false` and `true` are then two configurations on every artifact.
+  line += ` containmentOrder=${config.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER}`;
+  if ((config.containmentMargin ?? DEFAULT_CONTAINMENT_MARGIN) !== 0) {
+    line += ` containmentMargin=${config.containmentMargin}`;
   }
   if (config.topoWeight !== 0) {
     line += ` topoWeight=${config.topoWeight}`;

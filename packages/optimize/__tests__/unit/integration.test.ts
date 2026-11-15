@@ -220,6 +220,8 @@ describe('the optimizer mapping states what it does NOT set', () => {
       expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
     }
     expect(Object.keys(HELD_AT_ENGINE_DEFAULT).sort()).toEqual([
+      'containmentMargin',
+      'containmentOrder',
       'decayBeta',
       'defaultTopK',
       'dualFamilyGate',

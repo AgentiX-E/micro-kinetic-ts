@@ -121,6 +121,8 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     // reader of the JSON must not have to know that an absent key means the shipped value.
     traceWeight: opts.traceWeight,
     traceSkipsLeader: opts.traceSkipsLeader,
+    containmentOrder: opts.containmentOrder,
+    containmentMargin: opts.containmentMargin,
     topoWeight: opts.topoWeight,
     topoDiscount: opts.topoDiscount,
     topoDiscountScope: opts.topoDiscountScope,

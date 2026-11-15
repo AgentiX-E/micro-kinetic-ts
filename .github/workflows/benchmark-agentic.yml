@@ -77,6 +77,10 @@ on:
         description: 'Number of datapacks to evaluate (empty = the runner default, which is all downloaded). Passed only when non-empty, because the runner owns its default'
         required: false
         default: ''
+      containment_order:
+        description: 'The containment pass: a caller may not outrank a callee whose own latency excursion is larger. This is the only workflow that can state it, because the pass needs the fault-free profile and this is the only workflow that BUILDS one -- the benchmark surface refuses `--fault-free-profile` by name so a dispatch cannot name a stale band. Empty = the engine default (off); 1 = on, 0 = off. Measured on the FSE 26 corpus at 1: 41 inversions, 41 gains, 0 losses (docs/containment-order.md)'
+        required: false
+        default: ''
       weight:
         description: 'Elimination weight the study applies to a recorded claim (empty = the study''s own default, which is 1). It is a POST-processing parameter: the same fingerprints re-scored at 0 are the control arm, so a weight sweep costs no run and no tokens'
         required: false
@@ -197,6 +201,16 @@ jobs:
           #   so it supplies the bands the dump records and changes no ranking term. A run that also
           #   passed `--fault-free-weight` would be measuring a different configuration than the one the
           #   standing document quotes.
+          #   The containment pass needs the profile above and is inert without it, so this arm is the one place
+          #   the pass can be measured: the benchmark surface refuses `--fault-free-profile` by name.
+          CONTAINMENT_ARG=()
+          if [ -n "${{ inputs.containment_order }}" ]; then
+            if [ "${{ inputs.containment_order }}" = "1" ]; then
+              CONTAINMENT_ARG=(--containment-order)
+            else
+              CONTAINMENT_ARG=(--no-containment-order)
+            fi
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
@@ -204,6 +218,7 @@ jobs:
             --per-case-out artifacts/agentic/per-case.ndjson \
             --depth-out artifacts/agentic/depth.ndjson \
             --output artifacts/agentic/results.json \
+            "${CONTAINMENT_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"

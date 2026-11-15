@@ -151,6 +151,14 @@ export interface Fse26SignalOptions {
   readonly traceWeight: number;
   /** Whether the trace vote is withheld from the anomaly leader. Required for the same reason as the weight. */
   readonly traceSkipsLeader: boolean;
+  /**
+   * Whether the containment pass runs. Required for the same reason every field here is, and sharper: its
+   * shipped value is `true`, so a PARTIAL passed through would silently run the ablation while the `Config:`
+   * line reported the pass — the exact defect this module exists to prevent.
+   */
+  readonly containmentOrder: boolean;
+  /** Margin of the containment pass, in band widths. Required for the same reason as the switch. */
+  readonly containmentMargin: number;
   readonly topoWeight: number;
   /** Topological deduction strength (0 = off) — see `TreePrunerOptions.topoDiscount`. */
   readonly topoDiscount: number;
@@ -264,6 +272,8 @@ export function buildFse26EngineOptions(
       // value placed in the wrong object is a silent no-op rather than an error.
       traceWeight: opts.traceWeight,
       traceSkipsLeader: opts.traceSkipsLeader,
+      containmentOrder: opts.containmentOrder,
+      containmentMargin: opts.containmentMargin,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,

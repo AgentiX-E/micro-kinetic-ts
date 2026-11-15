@@ -109,6 +109,10 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the deduction’s relation in TIME rather than a number: `off` and `onset` are two claims about whether a call boundary can carry a movement that had not happened yet, so it belongs to the same dispatch axis as the weight, the scope, the gate and the closure above — a continuous search has nothing to interpolate between two readings, and its shipped `off` is the identity that leaves every published cell unmoved',
   poolAdmission:
     'the SET the ranking covers rather than a coefficient: `positive` and `graph` admit different candidate sets, so the two readings have different denominators and a search that interpolated between them would be reporting a rate over a population it changed — dispatched, never tuned',
+  containmentOrder:
+    'the CONTAINMENT pass, a structural rule rather than a coefficient: it inverts an adjacent caller/callee pair when the callee own latency left its fault-free band and the caller did not, so what it changes is which of two candidates is above the other and not any term magnitude — a discrete axiom belongs to a dispatch, and a search that interpolated it would be averaging two populations',
+  containmentMargin:
+    'the margin of that pass, in band widths, read only where the pass runs and shipped at 0: like the failed-edge bar it selects WHICH pairs qualify rather than how much any term weighs, so it is a dispatch axis on the same rule as the pass itself',
   podStateWeight:
     'the pod-state corroboration term, whose value is a DISPATCH question rather than a fusion coefficient: the term reads a 0/1 STATE transition per pod-lifecycle channel and pays for the share of channels that crossed the injection boundary, so what its weight buys is one number per arm (docs/pod-state-term.md records the sweep) and a continuous search over it would have no gradient to follow on corpora that carry no pod-lifecycle channel at all',
 };

@@ -15,6 +15,8 @@ import { DEFAULT_FAULT_FREE_WEIGHT } from '../../packages/tree/src/index.js';
 
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_CONTAINMENT_MARGIN,
+  DEFAULT_CONTAINMENT_ORDER,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
@@ -86,6 +88,8 @@ describe('buildFse26EngineOptions', () => {
       // Same rule as its neighbours: read from the engine's own constant, and it must land in `signals` because
       // that is the object the pruner reads it from.
       traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
+      containmentOrder: DEFAULT_CONTAINMENT_ORDER,
+      containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

@@ -184,7 +184,20 @@ export { orderWithEmissionJurisdiction } from './pruning/emission-jurisdiction.j
 export type { EmissionJurisdictionRow } from './pruning/emission-jurisdiction.js';
 
 export {
+  applyContainmentOrder,
+  isLatencyChannel,
+  latencyExcursions,
+} from './pruning/containment-order.js';
+export type {
+  ContainmentEdge,
+  ContainmentOrderInput,
+  LatencyExcursionInput,
+} from './pruning/containment-order.js';
+
+export {
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_CONTAINMENT_MARGIN,
+  DEFAULT_CONTAINMENT_ORDER,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_EMISSION_WEIGHT,

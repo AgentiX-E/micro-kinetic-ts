@@ -1,0 +1,221 @@
+/**
+ * The containment order: a caller may not outrank a callee whose own latency excursion is larger.
+ *
+ * ## The mechanism, and why the fusion cannot express it
+ *
+ * A caller's response time CONTAINS its callee's. When a fault propagates along the call graph, the upstream
+ * service's response metric deviates by at least as much as the downstream one's — not because it is the
+ * source, but because it is waiting. On the FSE'26 corpus this single mechanism accounts for the largest
+ * identifiable block of ranking error: of 176 cases whose truth is inside the presented five but not first,
+ * **111 put the truth at rank 2, and 100 of those have the rank-1 candidate as the truth's CALLER against 0
+ * callees** (iteration 286 §4).
+ *
+ * No additive term can repair it. Every weighted term sees one candidate at a time, and the statement that has
+ * to be made is RELATIONAL: "this pair is inverted, because the lower one's own latency left its fault-free
+ * band and the upper one's did not". Iteration 286 measured four weight sweeps and seven topological-gate
+ * settings on exactly this mechanism and every one of them left the ranking byte-identical, because the terms
+ * that could speak had an empty input map.
+ *
+ * ## Why the signal is an EXCURSION and not a weight
+ *
+ * The pairwise test is not "which candidate scored higher" — the fusion already answered that, wrongly. It is
+ * whether the two candidates' latency channels sit outside the band the same service occupied when nothing was
+ * wrong. That band is the fault-free profile's, which is a corpus artifact the engine already builds
+ * (`pruning/fault-free-profile.ts`). A caller INSIDE its band while its callee is far OUTSIDE it is a
+ * propagation signature that no magnitude comparison can fake, and it is the reason the rule measured on this
+ * corpus fires 41 times with **41 gains and 0 losses** rather than trading them off.
+ *
+ * ## What this pass does NOT use
+ *
+ * The ground truth, the fault type, the injection window's length, or which candidate the engine scored
+ * highest. It reads the ranked list, the call edges, and two excursions. A case with no profile, a candidate
+ * without a latency channel, or a pair with no direct edge is left EXACTLY as the fusion ordered it — the pass
+ * is a no-op rather than an approximation.
+ *
+ * @module pruning/containment-order
+ */
+
+import type { MetricMap, ServiceId } from '@agentix-e/micro-kinetic-core';
+
+import { injectionSplitIndex, medianOfRange } from '../causal/topology-fault-graph.js';
+import { DEFAULT_FAULT_FREE_SIGMA, type FaultFreeProfile } from './fault-free-profile.js';
+
+/**
+ * Channel labels that measure how long a service took to answer, or how long its calls took to be answered.
+ *
+ * Two families, and they are two instruments rather than two spellings: `http.server.request.duration` is the
+ * service's own server-side histogram, and `hubble_http_request_duration_*` is the network observer's view of
+ * the same request. On this corpus only 21 % of candidates carry the first, which is why the excursion reads
+ * the FAMILY’s maximum: a rule that needed the server histogram would be silent on four cases in five.
+ */
+const LATENCY_CHANNEL_PATTERNS: readonly string[] = [
+  'http.server.request.duration',
+  'hubble_http_request_duration',
+];
+
+/**
+ * Is this channel a latency channel?
+ *
+ * Substring rather than exact-label matching on purpose: the Hubble family is emitted at six quantiles
+ * (`p50`, `p90`, `p95`, `p99`, `max`, and the bare histogram) and a new quantile must not silently drop out of
+ * the excursion. The two patterns are the two instruments, so a label matching neither is not a latency
+ * channel whatever else it measures.
+ *
+ * @param label - The channel label as the case spells it.
+ * @returns `true` when the channel measures elapsed time of a request.
+ */
+export function isLatencyChannel(label: string): boolean {
+  for (const pattern of LATENCY_CHANNEL_PATTERNS) {
+    if (label.includes(pattern)) return true;
+  }
+  return false;
+}
+
+/** What {@link latencyExcursions} needs. */
+export interface LatencyExcursionInput {
+  /** The case's channels, exactly as the engine received them. */
+  readonly metrics: MetricMap;
+  /** The corpus profile, or `undefined` when this run has none — in which case the result is empty. */
+  readonly profile: FaultFreeProfile | undefined;
+  /** Fault injection time in Unix ms. `<= 0` means unknown, and an unknown boundary yields no excursion. */
+  readonly injectTimeMs: number;
+  /** Band half-width in robust standard deviations. Defaults to the profile builder's own. */
+  readonly sigma?: number | undefined;
+}
+
+/**
+ * How far outside its fault-free band each service's post-injection latency median sits.
+ *
+ *   band(v, label) = [centre − σ·scale, centre + σ·scale]
+ *   excursion(v)   = max over latency labels of (0 if post ∈ band else distance / band width)
+ *
+ * The measurement is in BAND WIDTHS rather than in units of the metric, because one channel's milliseconds
+ * are not another's and the pass compares across candidates of the same case. `0` is the honest value for a
+ * candidate that is inside its band: it is a measurement of no excursion, not an absence of measurement — and
+ * the distinction is what licenses the pairwise rule, which requires BOTH excursions to exist.
+ *
+ * A service is absent from the result when the profile cannot speak about it: no entry for the service, no
+ * entry for any of its latency labels, no usable split of its series, a non-finite sample, or a degenerate
+ * band. Read as `0` instead, every unmeasured candidate would look like a candidate that did not move, and the
+ * rule would fire on the absence of evidence.
+ *
+ * @param input - Channels, profile, anchor and band width.
+ * @returns Per-service excursion in band widths, for the services that could be measured.
+ */
+export function latencyExcursions(input: LatencyExcursionInput): Map<ServiceId, number> {
+  const excursions = new Map<ServiceId, number>();
+  const { metrics, profile, injectTimeMs } = input;
+  if (profile === undefined || profile.size === 0) return excursions;
+  if (!(injectTimeMs > 0)) return excursions;
+  const sigma = input.sigma ?? DEFAULT_FAULT_FREE_SIGMA;
+
+  for (const [serviceId, seriesList] of metrics) {
+    const published = profile.get(serviceId);
+    if (published === undefined || published.size === 0) continue;
+
+    let worst = Number.NEGATIVE_INFINITY;
+    for (const series of seriesList) {
+      if (!isLatencyChannel(series.label)) continue;
+      const entry = published.get(series.label);
+      if (entry === undefined) continue;
+      const halfWidth = sigma * entry.scale;
+      if (!(halfWidth > 0)) continue;
+      const sampleCount = Math.min(series.values.length, series.timestamps.length);
+      const split = injectionSplitIndex(series.timestamps, sampleCount, injectTimeMs);
+      if (split === undefined || split >= sampleCount) continue;
+      let finite = true;
+      for (let i = 0; i < sampleCount; i++) {
+        if (!Number.isFinite(series.values[i]!)) {
+          finite = false;
+          break;
+        }
+      }
+      if (!finite) continue;
+      // No finiteness guard on the median: the loop above refused the series if ANY sample was non-finite, and
+      // `split < sampleCount` guarantees the median's range is non-empty, so a guard here would be a branch no
+      // input can take.
+      const post = medianOfRange(series.values, split, sampleCount);
+      const low = entry.centre - halfWidth;
+      const high = entry.centre + halfWidth;
+      const width = high - low;
+      const departure = post < low ? low - post : post > high ? post - high : 0;
+      const normalized = departure / width;
+      if (normalized > worst) worst = normalized;
+    }
+    if (Number.isFinite(worst)) excursions.set(serviceId, worst);
+  }
+  return excursions;
+}
+
+/** One directed call edge, in the orientation the call graph uses (`from` calls `to`). */
+export interface ContainmentEdge {
+  readonly from: ServiceId;
+  readonly to: ServiceId;
+}
+
+/** What {@link applyContainmentOrder} needs. */
+export interface ContainmentOrderInput<T> {
+  /** The ranked candidates, best first, exactly as the fusion left them. */
+  readonly ranking: readonly T[];
+  /** The case's directed call edges. */
+  readonly edges: readonly ContainmentEdge[];
+  /** The excursion map from {@link latencyExcursions}. Empty means the pass is a no-op. */
+  readonly excursions: ReadonlyMap<ServiceId, number>;
+  /**
+   * How much larger the callee's excursion must be before the pair is inverted, in band widths.
+   *
+   * `0` — the shipped value — is a strict comparison rather than a tuned one: the two excursions are measured
+   * on the same case, in the same units, against the same band, so the comparison is exact at zero and any
+   * positive margin would be a number with no derivation.
+   */
+  readonly margin?: number | undefined;
+}
+
+/** The minimum of a candidate and its rank, as the pass reads them. */
+interface RankedService {
+  readonly service: ServiceId;
+}
+
+/**
+ * Invert adjacent caller/callee pairs whose latency excursions are out of order.
+ *
+ * One pass from the top, over ADJACENT positions only, and a pair is inverted when the higher candidate calls
+ * the lower one and the lower one's excursion exceeds the higher one's by more than `margin`. Adjacency is not
+ * a simplification of a full re-sort: the claim is about the ORDER the fusion published, and a full re-sort on
+ * excursions alone was measured at 45.9 % Top@1 against the engine's 85.9 % (iteration 286 §2) — the excursion
+ * is a disambiguator between two candidates, never a ranker.
+ *
+ * The pass is a single sweep with no backtracking, so its result is deterministic and independent of the
+ * candidates' scores. After an inversion the pair is not re-examined: the element that moved up has already
+ * been compared against the position above it, and re-testing it would let one candidate climb an arbitrary
+ * number of places on one measurement.
+ *
+ * A pair qualified only when BOTH excursions are measured. An unmeasured candidate is not evidence of no
+ * excursion, and a rule that treated it as one would invert pairs on the strength of missing data.
+ *
+ * @param input - The published ranking, the topology, the excursions and the margin.
+ * @returns The same candidates in the same order, with the qualified adjacent pairs inverted.
+ */
+export function applyContainmentOrder<T extends RankedService>(
+  input: ContainmentOrderInput<T>,
+): T[] {
+  const order = [...input.ranking];
+  if (order.length < 2 || input.excursions.size === 0 || input.edges.length === 0) return order;
+  const margin = input.margin ?? 0;
+
+  const calls = new Set<string>();
+  for (const edge of input.edges) calls.add(`${edge.from}\u0000${edge.to}`);
+
+  for (let i = 0; i + 1 < order.length; i++) {
+    const upper = order[i]!;
+    const lower = order[i + 1]!;
+    if (!calls.has(`${upper.service}\u0000${lower.service}`)) continue;
+    const upperExcursion = input.excursions.get(upper.service);
+    const lowerExcursion = input.excursions.get(lower.service);
+    if (upperExcursion === undefined || lowerExcursion === undefined) continue;
+    if (!(lowerExcursion > upperExcursion + margin)) continue;
+    order[i] = lower;
+    order[i + 1] = upper;
+  }
+  return order;
+}

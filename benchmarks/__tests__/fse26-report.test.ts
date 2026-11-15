@@ -277,7 +277,12 @@ describe('FSE26 report — the two renderings agree', () => {
         // The pool, printed OUTSIDE the deduction block because the filter applies at every weight: at
         // `topoDiscount = 0` this config still names the set its ranking covered, which is the whole point of
         // the field being a value rather than a property of the deduction.
-        `temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 poolAdmission=${DEFAULT_POOL_ADMISSION}`,
+        `temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 ` +
+        // The containment pass ships ON, so it is printed unconditionally: an omitted-when-default field would
+        // make an arm that switched the pass off byte-identical to the shipped run on the artifact that is
+        // supposed to attribute the difference.
+        'containmentOrder=false ' +
+        `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

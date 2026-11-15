@@ -548,6 +548,20 @@ export interface FaultPropagationGraph {
    * or no service is anomalous. Feeds the (opt-in) prismWeight signal.
    */
   readonly prismScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service LATENCY EXCURSION in band widths — how far the service's post-injection latency median sits
+   * outside the band the same service occupied while nothing was wrong.
+   *
+   * Not a term: the containment pass (`pruning/containment-order.ts`) reads it as a RELATIONAL statement about
+   * two candidates, "this caller's own latency did not move while its callee's left the band", which no
+   * candidate-local sum can express. `0` is a measured no-excursion; a service is ABSENT when the profile
+   * cannot speak about it, because an unmeasured candidate read as `0` would look like a candidate that did not
+   * move and the pass would invert a pair on missing data.
+   *
+   * ABSENT (not empty) when the pass is off or the run was given no fault-free profile, so the shipped path
+   * does not build it at all.
+   */
+  readonly containmentExcursions?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */
