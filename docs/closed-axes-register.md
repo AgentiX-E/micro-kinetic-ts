@@ -4060,8 +4060,13 @@ Four arms on the shipped configuration (FSE'26, 1 422 cases, run ids in the tabl
 | `self_time_weight` | 0.5 | 75.457 % | **0** |
 | `self_time_weight` | 1.0 | 75.457 % | **0** |
 | `self_time_weight` | 2.0 | 75.457 % | **0** |
-| `topo_discount=0.25, gate=0` | | 75.457 % | **0** |
-| `topo_discount=1, gate=0.5` | | 75.457 % | **0** |
+| `topo_discount=0.25, gate=0` | scope `external` | 75.457 % | **0** |
+| `topo_discount=0.5, gate=0` | scope `external` | 75.457 % | **0** |
+| `topo_discount=1, gate=0` | scope `external` | 75.457 % | **0** |
+| `topo_discount=1, gate=0.5` | scope `external` | 75.457 % | **0** |
+| `topo_discount=1, gate=0` | scope `caller` | 75.457 % | **0** |
+| `topo_discount=1, gate=0` | scope `all` | 72.570 % | **−2.89** |
+| `topo_discount=0.5, gate=0, closure=sum` | scope `all` | 74.890 % | −0.57 |
 | `victim_weight` | 0.5 | 74.402 % | −1.06 |
 | `victim_weight` | 1.0 | 71.590 % | −3.87 |
 | `victim_weight` | 2.0 | 62.030 % | −13.43 |
@@ -4116,3 +4121,95 @@ answer the two questions this one could only pose:
 2. Whether the self-time term can be repaired rather than swept — the dense observable already exists
    (`edgeLatency`, span-derived), and the choice between "repair the map" and "accept the term is silent" is a
    code decision this register can now state with numbers instead of a sweep.
+
+## §286b — The term dump: five terms with no coverage at all, and one term carrying fourteen points
+
+`--terms-dump` writes, per case, every candidate's 19 terms as `(name, weight, slope)`. One run over the
+FSE'26 corpus (1 422 cases, 51 candidates each, 38 MB) turns every weight question into a local computation
+instead of a dispatch — and it also answers a question no dispatch could: **which terms are populated at all**.
+
+### Coverage: five of nineteen terms appear on no candidate
+
+| term | configured weight | cases where the term is present on at least one candidate |
+| --- | ---: | ---: |
+| `selfAnomalyLog1p` | 1 | 1 422 |
+| `prism` | 0 | 1 422 |
+| `rise`, `pool`, `collision`, `temporal`, `source`, `topo`, `stability` | 0 / −0.0679 / 0 … | 1 422 |
+| `log` | 1 | 1 000 |
+| `dualFamily` | 0.25 | 1 003 |
+| `failedEdge` | 3 | 1 222 |
+| `lat` | 0.561495 | 760 |
+| `podState` | 8 | 294 |
+| **`trace`** | **1** | **0** |
+| **`selfTime`** | **0** | **0** |
+| **`emission`** | 0 | **0** |
+| **`faultFree`** | 0 | **0** |
+| **`victim`** | **0** | **0** |
+
+`trace` is the one that matters: it is configured at weight **1** — the same as `selfAnomalyLog1p` — and it is
+present on **zero of 1 422 cases**. A term at weight 1 that never fires is indistinguishable, in every published
+score, from a term that does not exist. The sweep of `selfTimeWeight` in §286 is the same fact from the other
+side: the map is empty, so four weights produce one ranking.
+
+### No single term is a ranker; the engine is a combination
+
+Sorted by each term alone over the same 51-candidate lists:
+
+| term | Top@1 as the only ranker | usable cases |
+| --- | ---: | ---: |
+| `failedEdge` | 47.89 % | 1 222 |
+| `prism` | 44.02 % | 1 422 |
+| `log` | 43.67 % | 1 000 |
+| `dualFamily` | 42.12 % | 1 003 |
+| `lat` | 25.67 % | 760 |
+| `selfAnomalyLog1p` | 24.47 % | 1 422 |
+| `podState` | 20.68 % | 294 |
+| `rise` | 14.70 % | 1 422 |
+| `pool` | 12.45 % | 1 422 |
+| `collision` | 5.63 % | 1 422 |
+| `temporal` | 4.22 % | 1 422 |
+| `stability` | 2.53 % | 1 422 |
+| `topo` | 0.70 % | 1 422 |
+| engine (all 19) | **75.46 %** | 1 422 |
+
+Every individual term is far below the combination, which is the honest statement of why the architecture is not
+replaceable by any one signal — and why "which term is the lever" has no answer at the level of a single term.
+
+### One term carries fourteen points, and it is not the anomaly
+
+Zeroing one configured term at a time, reconstructed from the dump (`Δ` from 1 096, see the residual note below):
+
+| term | weight | Δ Top@1 |
+| --- | ---: | ---: |
+| **`podState`** | **8** | **−205** |
+| `failedEdge` | 3 | −65 |
+| `dualFamily` | 0.25 | −25 |
+| `lat` | 0.561495 | −22 |
+| `pool` | −0.0679 | −1 |
+| `trace` | 1 | 0 (no coverage) |
+| `log` | 1 | **+9** |
+| `selfAnomalyLog1p` | 1 | **+14** |
+
+The shipped ranker on this corpus is, by contribution, a **pod-state ranker with a failed-edge tie-breaker**;
+the two terms that the architecture's documentation treats as the model — `selfAnomalyLog1p` and `log` — each
+cost one to two tenths of a point when zeroed, i.e. the ranking is *better* without them. That is consistent
+with the family table in §286 (208/208 on resource faults, 66 % on link and content faults): `podState` is
+exactly the term that solves resource faults, and it is doing the work.
+
+### The residual, recorded rather than hidden
+
+The reconstruction `score = Σ weight × slope` is **not exact**: the worst residual is `3.0`, and it is
+`failedEdge` on a candidate that records `weight = 3, slope = 1` in a case whose recorded score does not
+contain that 3. The dump carries no `presence` field, so an absent term (`None`) and a present term of value
+zero are indistinguishable to a reader — which is the one thing this artifact cannot answer, and the reason
+every number in the table above is stated as a reconstruction rather than as a re-run. The ablation's *ranking*
+of terms is robust to it (a 3.0 residual on one candidate cannot move a 205-case effect); the third decimal is
+not.
+
+### Dispatched on the strength of this table
+
+`prism` is present on all 1 422 cases, ranks 44.02 % alone, and is configured at weight **0** — the only
+populated term with no weight. Three arms (`prism_weight` 0.1 / 0.25 / 0.5) are in flight; the axis was refused
+once on RCAEval's nine cells as an additive term, and this corpus is the one where its shape (`min(Sⁱ, Sᵉ)`) is
+already enrolled at 0.25 through `dualFamilyWeight`. What the sweep asks is whether the *score* form is refused
+there too, on a population whose two weak families are exactly the ones PRISM's axiom describes.
