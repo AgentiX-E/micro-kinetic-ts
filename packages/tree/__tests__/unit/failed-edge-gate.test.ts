@@ -284,7 +284,11 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     // not reasoned — two harnesses driving `margin` over the same 711 cases returned 518 and 520 top-1s, and
     // the two cases they disagreed on are the ones whose reach sits here.
     const termAt = (options: Partial<TreePrunerOptions>) => {
-      const pruner = new TreePruner({ failedEdgeWeight: 2, failedEdgeGateMode: 'margin', ...options });
+      const pruner = new TreePruner({
+        failedEdgeWeight: 2,
+        failedEdgeGateMode: 'margin',
+        ...options,
+      });
       const [callGraph, metrics] = caseOf(RESOURCE);
       const graph = pruner.buildFaultGraph(callGraph, metrics, {
         failedTraceEdges: failures,

@@ -541,14 +541,18 @@ describe('the containment order in the engine', () => {
     });
     const graph = builder.buildFaultGraph(callGraph, metrics, { injectTimeMs });
     const reader = new TreePruner({ containmentOrder: true, faultFreeProfile: profileForCase() });
-    expect(reader.analyze(graph, 3).map((result) => String(result.serviceId)).slice(0, 2)).toEqual([
-      'b',
-      'a',
-    ]);
+    expect(
+      reader
+        .analyze(graph, 3)
+        .map((result) => String(result.serviceId))
+        .slice(0, 2),
+    ).toEqual(['b', 'a']);
     // …and the builder, reading the same graph, still does nothing: the map's existence cannot switch the pass on.
-    expect(builder.analyze(graph, 3).map((result) => String(result.serviceId)).slice(0, 2)).toEqual([
-      'a',
-      'b',
-    ]);
+    expect(
+      builder
+        .analyze(graph, 3)
+        .map((result) => String(result.serviceId))
+        .slice(0, 2),
+    ).toEqual(['a', 'b']);
   });
 });
