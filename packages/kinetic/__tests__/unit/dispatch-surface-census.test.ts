@@ -1256,11 +1256,24 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
   // rank. A dispatch that could name a path could name a STALE one, and a profile fitted on a different
   // corpus reads as a measurement of this one. The reproducibility rule the whole register keeps — a run is
   // recomputable from its dispatch — would then be false in the one direction nobody would think to check.
+  //
+  // Iteration 288: the reason above is about a dispatch INPUT, and the check this table feeds can only read
+  // CODE. `reaches()` asks whether a flag's token appears outside comments, which is the right question for
+  // "can this workflow pass it" and the wrong one for "did a dispatch NAME it": a workflow that DERIVES the
+  // path — the corpus digest times a digest of the builder, which is what
+  // `.github/workflows/benchmark-agentic.yml` does, correctly, and cannot name anything — reaches the flag
+  // exactly as a dispatched path would. So the reason is restated as the claim the check enforces, and the
+  // distinction is stated here rather than left to be rediscovered: what this entry forbids is a path a
+  // HUMAN types, and a derivation satisfying the table's text was the one shape the table could not see.
+  // The consequence is a maintenance rule, not a preference — see the assertion's own message.
   '--fault-free-profile':
     'the fault-free profile is built FROM the corpus by `build-fault-free-profile` and read back, so it is an ' +
-    'ARTIFACT rather than a knob or an output path: a dispatch that could name a path could name one fitted ' +
-    'on another corpus, and nothing downstream could tell that reading from this one. ' +
-    '`docs/architecture-audit-265.md` pins the file it produced',
+    'ARTIFACT rather than a knob or an output path: no benchmark dispatch ENTERS a path, because a dispatch ' +
+    'that could name one could name one fitted on another corpus, and nothing downstream could tell that ' +
+    'reading from this one. What this check enforces is the weaker, code-level claim that no scanned ' +
+    'workflow passes the flag at all — a workflow that DERIVES the path from the corpus digest satisfies the ' +
+    'reason above and would still fail this table, so that landing it means REMOVING the entry, not ' +
+    're-explaining it. `docs/architecture-audit-265.md` pins the file it produced',
   // Iteration 267: the fingerprint dump. Unreachable for the reason the profile above is, and one more: a
   // fingerprint is only interpretable next to the profile it was built against, so a dispatch that could name
   // the output path would be describing a file whose meaning depends on a second file the dispatch cannot name
@@ -1796,7 +1809,13 @@ describe('the dispatch surface has one owner per knob', () => {
     // concatenation counted it twice against a keyed table that can only name it once. The first such
     // member is `--fault-free-profile` (iteration 265), and the failure it produced was in this
     // assertion rather than in the state it describes.
-    expect(found).toEqual(Object.keys(OPERATIONAL_FLAGS_UNREACHABLE).sort());
+    expect(
+      found,
+      'a flag a runner accepts and no SCANNED workflow passes must be named here with its reason. If a ' +
+        'workflow has started passing one of these — including by DERIVING a path instead of taking it as ' +
+        'an input, which `reaches()` cannot tell apart — the entry is REMOVED rather than reworded: ' +
+        'removal is the only direction this list moves when a flag becomes reachable.',
+    ).toEqual(Object.keys(OPERATIONAL_FLAGS_UNREACHABLE).sort());
     // Non-vacuity: the check must have a population to walk on BOTH sides, or it is asserting over
     // one runner and reporting the other as clean.
     for (const [which, accepted] of [

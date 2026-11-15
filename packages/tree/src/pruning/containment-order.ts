@@ -22,8 +22,10 @@
  * whether the two candidates' latency channels sit outside the band the same service occupied when nothing was
  * wrong. That band is the fault-free profile's, which is a corpus artifact the engine already builds
  * (`pruning/fault-free-profile.ts`). A caller INSIDE its band while its callee is far OUTSIDE it is a
- * propagation signature that no magnitude comparison can fake, and it is the reason the rule measured on this
- * corpus fires 41 times with **41 gains and 0 losses** rather than trading them off.
+ * propagation signature that no magnitude comparison can fake. Measured in the engine over the full corpus, the
+ * pass changes the top-1 verdict of 52 cases and reads **47 gains against 5 losses** — not the zero the
+ * all-channel screening formula predicted, because a duration-only excursion and an any-channel one are
+ * different quantities (`docs/containment-order.md` §3, §4).
  *
  * ## What this pass does NOT use
  *

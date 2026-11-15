@@ -4395,3 +4395,73 @@ flip the default to `true` with all four cells re-read.
 - **"Inheritance is a weighting problem."** False, and this is the finding that matters: the same mechanism worth
   **+2.88 pp** as an order constraint is worth **0.000 pp** as any coefficient of the fusion, because a
   candidate-local sum cannot express a relation between two candidates.
+
+## §287b — The readback: 47 wins, 5 losses, and a second lever worth more than the first
+
+§287 registered the containment order at **41 gains / 0 losses** from a screening formula over the presented five.
+Two dispatches of `.github/workflows/benchmark-agentic.yml` — identical but for `containment_order` — replace that
+number, and the replacement is worse in one direction and larger in the other.
+
+| | cases | Top@1 | gains | losses | net |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `containment_order=0` | 1 422 | 75.457 % | — | — | — |
+| `containment_order=1` | 1 422 | **78.411 %** | **47** | **5** | **+42** |
+
+Per case, read from each run's own `per-case.ndjson`: 47 gains, 5 losses, and the five are
+`HTTPResponseReplaceCode`×2, `HTTPResponseAbort`, `HTTPResponseDelay`, `HTTPRequestReplaceMethod` — i.e. the
+response-rewrite mechanism, where the injected service's *callees* look worse on duration and the pass promotes one
+of them past it.
+
+**Why the screen said zero and the engine says five.** The screen's `maxdep` was the largest normalised departure
+over **every** channel a candidate carries; the shipped `latencyExcursions` restricts the quantity to the latency
+family, because a claim about inherited *response time* should be made on the channel that carries response time. A
+counter channel departs its band under a source fault far more sharply than any duration channel does, so the
+all-channel form inverts on the wrong instrument and, on this corpus, happens never to invert a correct pair. The
+41/0 figure is therefore a true statement about a quantity that does not ship; §287's own table is left standing as
+the record of the screen and is marked as such.
+
+**Second falsification, of §287's own margin claim.** §287 read the margin sweep as "a flat plateau in the only
+direction that matters (losses stay at zero)". Re-measured in the engine on the 711-case half (`waveB2`, profile
+built from that half), the sweep is monotone in the wrong direction: margin 0 gives 518 Top@1 (+34/0), 0.1 gives
+517, 0.25 gives 509, 0.5 gives 504. Zero is the maximum, and **no margin on this axis can be the discriminator for
+the five** — all five lie outside that half. The local harness reproduces both CI arms per case, 711 of 711, with
+zero disagreements on either verdict, which is what licenses reading it as a measurement of the shipped path.
+
+**The lever this iteration found, which is larger than the one §287 registered.** The failed-edge term — the only
+directional signal in the engine — is gated by `admitsFailedEdgeTerm`, which conditions the term on the *current
+rank-1's* dominant metric being duration-shaped. Four arms over the same 711 cases, one graph per case, only the
+gate mode changed:
+
+| gate mode | Top@1 | gains | losses | net |
+| --- | ---: | ---: | ---: | ---: |
+| `absolute` (shipped) | 484 (68.07 %) | — | — | — |
+| `evidence` | 476 (66.95 %) | 2 | 10 | −8 |
+| **`margin` (share 0.5)** | **518 (72.86 %)** | **61** | **27** | **+34** |
+| `fleet` | 458 (64.42 %) | 3 | 29 | −26 |
+
+`margin` asks the only question that matters for a ranking — *can this term overturn the leader at all* — and gains
+concentrate exactly where the shipped gate is blind: **36 of the 61 are `HTTPResponseReplaceCode`**, the family that
+owns 46 of the 112 cases whose truth is outside the presented five. Its 27 losses are the delay families, so the
+discriminator is the same one the containment pass needs, which is the useful part: **`margin` and the containment
+pass fail on one family and gain on another, and both are gated by the same question — is the failing interface the
+SOURCE or a VICTIM.**
+
+A share sweep — 0.5, 0.3, 0.2, 0.1, 0.05 — reads 61/27, 61/25, 61/25, 58/23, 45/15: the losses fall by two and then
+ride the gains down, so the bar buys a better ratio only by refusing the term altogether. Neither lever is
+shippable under the zero-regression rule as it stands.
+
+**A trap this iteration found in the plumbing, recorded because it silently mislabelled a measurement.** `margin`
+reads `failedEdgeGateShare`, and the FSE'26 CLI always populates that field with the *gate* default (0.5). So
+`--failed-edge-gate-mode margin` with no share runs the **fleet-share number**, not
+`DEFAULT_FAILED_EDGE_MARGIN_SHARE` (0.3): the two maxima share one option, which is the defect the pruner's own
+comment at `failedEdgeGate` warns about. The four-arm table above is measured at 0.5 for that reason, and says so.
+
+### Axes this closes
+
+- **"The screening formula's zero is the module's zero."** False, and it cost the iteration a claimed result: a
+  screen that re-derives a quantity is not a measurement of the module that ships it.
+- **"A threshold on the containment margin removes its losses."** False. The margin is monotone in gains and the
+  losses are not in its reach.
+- **"The passed five is the same population as the full order."** True but not sufficient — the five-set is
+  identical between the arms (1 422 of 1 422), so the difference between a screen and the engine is the quantity,
+  not the window.

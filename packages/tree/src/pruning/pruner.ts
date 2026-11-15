@@ -1385,17 +1385,19 @@ export const DEFAULT_FAULT_FREE_WEIGHT = 0;
  * Whether the containment order is applied — the pass that refuses to rank a caller above a callee whose own
  * latency left its fault-free band.
  *
- * Ships DISABLED, and the reason is the one `traceWeight: 1` taught this register the hard way: a switch whose
- * input map is empty in every production run is indistinguishable from a feature that does not exist, whatever
- * its default says (§286b). The pass needs a fault-free profile, and **no benchmark dispatch supplies one** —
- * `--fault-free-profile` is deliberately unreachable from a workflow dispatch (see the dispatch-surface census'
- * `OPERATIONAL_FLAGS_UNREACHABLE`: a dispatch that could name a path could name one fitted on another corpus),
- * so the only runs that can exercise the pass are the ones that build the profile themselves. Until that wiring
- * lands, `false` is the honest default: the shipped ranking is exactly the one every published cell was measured
- * on, and the arm is one flag away.
+ * Ships DISABLED, for two reasons that arrived in that order. The first is the one `traceWeight: 1` taught this
+ * register the hard way: a switch whose input map is empty in every production run is indistinguishable from a
+ * feature that does not exist, whatever its default says (§286b). The pass needs a fault-free profile, and **no
+ * benchmark dispatch supplies one** — `--fault-free-profile` is deliberately unreachable from a workflow dispatch
+ * (see the dispatch-surface census' `OPERATIONAL_FLAGS_UNREACHABLE`: a dispatch that could name a path could name
+ * one fitted on another corpus), so the only runs that can exercise the pass are the ones that build the profile
+ * themselves.
  *
- * The measurement that motivates the wiring is in `docs/containment-order.md`: on the FSE'26 corpus, with the
- * profile present, the pass fires 41 times with **41 gains and 0 losses** (75.457 % → 78.34 % Top@1).
+ * The second reason arrived with the measurement and outlives the wiring: the two full-corpus arms put the pass at
+ * **47 gains and 5 losses** (75.457 % → 78.411 % Top@1). A 9.4-to-1 ratio is not what this register ships on — the
+ * ungated failed-edge term was gated at +105/−2 — and the five are a single mechanism (the response-code family),
+ * so they can be refused by a discriminator rather than tolerated by a default. `docs/containment-order.md` §4 and
+ * §7 carry both numbers and the promotion path.
  */
 export const DEFAULT_CONTAINMENT_ORDER = false;
 
