@@ -119,6 +119,27 @@ rank-2 truth reaching rank 1, and 4 of the 5 losses are a rank-1 truth falling t
 3, which is that cascade and not a re-sort.
 
 
+### 4.2 A second measurement, on a fixed engine and a differently-built profile
+
+The table above was read from the agentic workflow, which builds its own profile from the full corpus. After the
+phase-coupling fix in §288b — the excursion map is a measurement of the case and is built whenever a profile is
+supplied, while the switch is read in `analyze` — the pass was measured again on the `waveB2` half (711 cases)
+with a profile fitted on that same half, under the shipped signal vector, one graph per case:
+
+| arm | Top@1 | % | gains | losses |
+| --- | ---: | ---: | ---: | ---: |
+| shipped | 484 | 68.073 | — | — |
+| **+ containment** | **518** | **72.855** | **34** | **0** |
+
+**Zero losses again, on a different corpus, a different profile and a fixed engine.** The families it repairs are
+the same ones: `HTTPResponseDelay` 11, `HTTPRequestDelay` 10, `NetworkPartition` 7, `NetworkBandwidth` 2,
+`NetworkLoss` 2. The 47/5 of §4 splits as 34/0 here and 13/5 in the other half, so **every loss the pass has on
+this corpus lives outside this half** — a distribution fact that a single-corpus claim would have hidden.
+
+The same run measured the pass beside the margin bar (§288c): the two are nearly additive on gains (36 + 34 = 70
+against a measured 66) and not at all additive on losses (containment repairs one of the margin bar's 25). They
+answer different halves of the same question and are not substitutes.
+
 ## 5. The margin, and why zero is not a tuning choice
 
 The margin is the only knob that can refuse a pair without changing what the rule is: a larger margin demands a
@@ -158,10 +179,19 @@ rather than of a re-implementation.
 
 ## 7. Wiring, and why the switch ships off
 
-The pass needs `containmentExcursions`, which needs `faultFreeProfile`. The engine builds it in
-`buildFaultGraph` only when the switch is on **and** a profile was supplied.
+The pass needs `containmentExcursions`, which needs `faultFreeProfile`. The engine builds the map in
+`buildFaultGraph` whenever a profile was supplied, and reads it in `analyze` only when the switch is on.
 
-No benchmark dispatch can supply one: `--fault-free-profile` is on the dispatch-surface census'
+**Those two conditions are deliberately in two places, and getting that wrong cost a measurement.** The map used to
+be built only when the switch was on, which made "the graph carries excursions" and "this run applies the pass" the
+same fact. `analyze` is public and takes the graph as an argument, so a graph built by a pass-off pruner carried no
+map and every pruner reading that graph ran without the pass, whatever its own option said. The seven-arm factorial
+in iteration 288 hit exactly this: it reported a corpus with **13 violating adjacent pairs** at the shipped count of
+484, because its first arm built the graph and the first arm was the pass-off control. A measurement belongs to the
+case; whether it acts belongs to the run, and the run is `analyze` — the phase `failedEdgeGateMode` already lives
+in. The map is still conditional on the profile, so the shipped configuration allocates nothing.
+
+No benchmark dispatch can supply a profile: `--fault-free-profile` is on the dispatch-surface census'
 `OPERATIONAL_FLAGS_UNREACHABLE`, with the reason "a dispatch that could name a path could name one fitted on
 another corpus". That rule is right, and it is why the arm is measured on the one workflow that **builds** the
 profile itself (`.github/workflows/benchmark-agentic.yml`, input `containment_order`).

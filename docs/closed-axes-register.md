@@ -4485,3 +4485,103 @@ proposes a form for it:
 What is left to claim here is therefore narrow and unchanged in kind from §287: a **deterministic, zero-training**
 discriminator whose refusals are enumerable — not the question itself. Any future draft that presents
 "source vs victim" as the contribution is contradicted by the first bullet.
+
+## §288 — Two phase-coupling defects, found by the same question asked twice
+
+§287b ended with one discriminator named and two levers that both carried regressions. This iteration asked a
+narrower question — *which phase does each option belong to* — and the answer produced two defects and one
+measurement that is better than either lever alone.
+
+### 288a. The margin bar read the fleet constant, and no predicate test could see it
+
+`failedEdgeGateShare` is filled at construction from `DEFAULT_FAILED_EDGE_GATE_SHARE` (0.5), so the margin branch's
+
+```ts
+share: gateMode === 'margin' ? (this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_MARGIN_SHARE) : …
+```
+
+had an **unreachable right operand**: `?? 0.3` can never run when the field is always populated. A run that
+selected `margin` and named no share therefore compared against **0.5** while the default's own docblock, the
+predicate's docblock and five predicate-level tests all said **0.3**.
+
+It survived because of where the tests were pointed. At the `admitsFailedEdgeTerm` layer the CALLER passes the
+share, so no assertion there can observe which field the engine read it from. The defect was found by two harnesses
+disagreeing on **two cases out of 711** (518 against 520) and then by a three-way probe — omit the key, spell it
+`undefined`, name 0.3 — in which *omitting* the key behaved differently from *spelling it undefined*, which is only
+possible if something fills it in between.
+
+**Fix:** a field per maximum. `failedEdgeMarginShare` (default 0.3) is what the margin bar reads;
+`failedEdgeGateShare` (0.5) serves `fleet` and `evidence`. The engine-level fence is
+`failed-edge-gate.test.ts`'s "reads the margin default from the MARGIN constant": a case whose reach is **0.3375**,
+i.e. inside the gate constant and outside the margin one, so the two readings disagree on a live term versus
+`WEIGHT_ZERO`.
+
+**The dispatch surface was built, then withdrawn, and the withdrawal is the finding.** `--failed-edge-margin-share`
+was threaded through the CLI, the engine options, the rendered configuration line and all **seven** `anomaly_knobs`
+copies of `.github/workflows/benchmark-rcaeval.yml`. It made three golden-anchor tests fail in the way that
+mechanism exists to fail: a configuration line is the digest the committed cell baseline is held to, so naming one
+more field obliges the iteration to re-anchor `benchmarks/baselines/rcaeval-nine-cells.json` against **a fresh
+735-case battery of the shipped configuration**.
+
+That is the correct price for a shippable option and the wrong price for this one. The margin bar carries 25
+regressions (§288c) and cannot ship; spending a re-anchored battery on an arm that is already refused would move a
+published number to record a measurement that changed nothing. The field therefore lives in the ENGINE with no
+dispatch surface — the same status `containmentOrder` had before its own workflow input existed — and the pipe is
+built the day a discriminator makes the bar shippable. The census keeps the distinction it exists to keep: the
+margin share is *absent from* the dispatch surface, not *unreachable from* it.
+
+**Independent verification, not a re-run of the same harness.** The seven-arm factorial reports `mar3` = **520** and
+`mar5` = **518**, the two historical readings, from the fixed engine. The numbers did not move because the fix
+restores what the documents always claimed; what moved is that the two are now *different arms* instead of the same
+arm under two names.
+
+### 288b. `containmentOrder` lived in the build phase, and `analyze` takes a graph from anywhere
+
+`containmentExcursions` was built only when the pass was switched ON, which made two facts one: *the graph carries
+the measurement* and *this run applies it*. `analyze(graph)` is public and its graph argument can come from any
+pruner, so a graph built by a pass-off pruner carried no map and **every** pruner reading it ran without the pass.
+
+The factorial hit this on its first run: `cont` reported **484**, exactly the shipped count, on a corpus with
+**13 violating adjacent pairs** (5 of them at rank-1/2). The tell was not the number but its exactness.
+
+**Fix, in two halves.** The map is now built whenever a profile is supplied — a measurement belongs to the case —
+and `contained()` reads `this.options.containmentOrder` itself instead of inferring the switch from the map's
+existence, because whether it acts belongs to the run. `failedEdgeGateMode` already lives in `analyze`; the two
+options are the same kind of choice and now live in the same phase. The fence is
+`containment-order.test.ts`'s "lets one pruner analyze a graph another pruner built, under its OWN setting": the
+builder has the pass OFF and the reader ON, and both verdicts are asserted on the same graph.
+
+### 288c. The factorial, on the shipped vector, one graph per case, 711 cases
+
+| arm | Top@1 | % | gains | losses | net |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `off` (direction term at weight 0) | 476 | 66.948 | — | — | — |
+| **`shipped`** | **484** | **68.073** | — | — | — |
+| `mar3` (margin bar, share 0.3) | 520 | 73.136 | 61 | **25** | +36 |
+| `mar5` | 518 | 72.855 | 61 | 27 | +34 |
+| **`cont`** (containment order) | **518** | **72.855** | **34** | **0** | **+34** |
+| `mar3+cont` | **550** | **77.356** | 90 | 24 | +66 |
+| `mar5+cont` | 548 | 77.075 | 90 | 26 | +64 |
+
+Three readings worth keeping:
+
+- **Containment is still zero-loss.** 34 gains, 0 losses, on a fixed engine and under the shipped signal vector.
+  The families it repairs are the propagating ones (`HTTPResponseDelay` 11, `HTTPRequestDelay` 10,
+  `NetworkPartition` 7), which is §287's own mechanism claim surviving a second, differently-built measurement.
+- **The two levers are nearly additive on gains and not on losses.** 36 + 34 = 70 against a measured 66, and the
+  losses barely move (25 → 24): containment repairs **one** of the margin bar's 25. They are not substitutes.
+- **The margin bar's losses are the delay families** (12 `HTTPRequestDelay`, 8 `HTTPResponseDelay` = 20 of 25), so
+  §287b's channel hypothesis was right about where they live and wrong about what to do: gains in the same families
+  are only 7, and refusing the whole channel would trade 20 losses for those 7 gains — a bar, not a discriminator.
+
+`mar3+cont` at **77.356 %** is the upper bound this iteration can state, and it is **not shippable**: it carries 24
+regressions. `cont` alone is the one arm here that satisfies the register's rule.
+
+### Axes this closes
+
+- **"A default that two tests agree on is a default the engine uses."** False when the agreement is at a layer the
+  engine's own field choice cannot reach. The margin default had five passing assertions and was not in force.
+- **"An option placed in `buildFaultGraph` is placed."** False — `analyze` accepts a foreign graph, so a build-phase
+  option is a per-graph option wearing a per-run name.
+- **"Containment and the margin bar are two parts of one answer."** False in the useful direction: they overlap on
+  one case out of 25, and their gains add.

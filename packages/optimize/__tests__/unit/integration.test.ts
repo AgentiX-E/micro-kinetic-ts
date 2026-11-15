@@ -241,6 +241,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'failedEdgeCredit',
       'failedEdgeGateMode',
       'failedEdgeGateShare',
+      // Iteration 288: the margin bar's OWN share. Held for the gate share's reason and separated from it
+      // because the two are fractions of two different maxima; keeping them in one field made the margin
+      // default unreachable and let a run compare against 0.5 while the file said 0.3.
+      'failedEdgeMarginShare',
       'failedEdgeMinRecords',
       'failedEdgeMode',
       // Iteration 236: the MUTUAL-PAIR rule. Held for the credit's reason — it decides whether both charges of

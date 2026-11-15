@@ -91,6 +91,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the rule a mutually failing PAIR is read under, shipped at `credit`: it decides whether both charges are kept or dropped, so it is a discrete choice about which evidence exists at all rather than a coefficient — a search interpolating between two rules would be averaging two populations',
   failedEdgeGateShare:
     'the share a fleet bar is made of, read only at `fleet` and inert at the shipped `absolute`: a population parameter like the dual-family gate, so a continuous search over it would be tuning a threshold on a term whose weight it does not move',
+  failedEdgeMarginShare:
+    'the share a MARGIN bar is made of, read only at `margin` and inert at the shipped `absolute`: the same population parameter as the share above, in a field of its own because the two are fractions of two different maxima (a fleet champion\u2019s rise there, the term\u2019s own span here) and one field cannot carry two defaults \u2014 a search over it would tune a threshold on a term whose weight it does not move',
   faultFreeWeight:
     'the outlier-baseline term, shipped OFF at 0 and not searched: it scores a service by how rarely its pre-injection windows depart from their own centre, so what its weight buys is one number per arm (docs/architecture-audit-265.md records the sweep, which found one case at 130 and a dose-response that turns over past 0.3) — a continuous search would spend its evaluations on a coefficient whose sign of benefit the record has not established',
   faultFreeSelection:

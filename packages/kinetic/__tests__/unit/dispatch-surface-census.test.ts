@@ -550,8 +550,11 @@ const KNOBS: Readonly<
     rcaeval: 'anomaly_knobs',
   },
   failedEdgeGateShare: {
-    // The share the fleet bar is made of. Read only at `fleet`, which is why it can ship at 0.5 without moving
-    // anything: the shipped bar is the constant.
+    // The share the FLEET and EVIDENCE bars are made of — a fraction of the case's champion rise at one and of
+    // a failure fraction at the other. Read only at those two, which is why it can ship at 0.5 without moving
+    // anything: the shipped bar is the constant. `margin` used to read it too, which made its own default
+    // (`DEFAULT_FAILED_EDGE_MARGIN_SHARE`, 0.3) unreachable — the field is always populated at construction —
+    // and that is why `failedEdgeMarginShare` exists as a separate option (iteration 288).
     flag: '--failed-edge-gate-share',
     owner: 'failed-edge-gate.md',
     fse26: null,

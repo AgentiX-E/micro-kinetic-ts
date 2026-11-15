@@ -766,6 +766,24 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly failedEdgeGateShare?: number;
   /**
+   * The share the MARGIN bar reads, at `failedEdgeGateMode: 'margin'` — see
+   * {@link DEFAULT_FAILED_EDGE_MARGIN_SHARE}.
+   *
+   * A separate field from {@link failedEdgeGateShare} because the two are shares of two different maxima —
+   * this one of the term's own span, that one of a fleet champion's rise — and one field cannot carry two
+   * defaults. The defect this field replaces was exactly that: `failedEdgeGateShare` is filled at
+   * construction from {@link DEFAULT_FAILED_EDGE_GATE_SHARE} (0.5), so the margin branch's
+   * `?? DEFAULT_FAILED_EDGE_MARGIN_SHARE` was an unreachable right operand, and a run that selected
+   * `margin` and named no share compared against 0.5 while this file, its docblock and the predicate's own
+   * tests all said 0.3.
+   *
+   * Measured rather than reasoned: two harnesses driving `margin` over the same 711 cases returned 518 and
+   * 520 top-1s, and the two cases they disagreed on are the ones whose reach sits between the two constants.
+   * A predicate-level test cannot see this — at that layer the caller passes the share — which is why the
+   * fence for it lives at the engine (`failed-edge-gate.test.ts`, the margin-default case).
+   */
+  readonly failedEdgeMarginShare?: number;
+  /**
    * How much of `failedEdgeWeight` the evidence buys — see {@link FailedEdgeCredit}.
    *
    * Ships at {@link DEFAULT_FAILED_EDGE_CREDIT} (`constant`), which is the behaviour every published cell was
@@ -2197,6 +2215,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
   failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
   failedEdgeGateShare: DEFAULT_FAILED_EDGE_GATE_SHARE,
+  failedEdgeMarginShare: DEFAULT_FAILED_EDGE_MARGIN_SHARE,
   failedEdgeCredit: DEFAULT_FAILED_EDGE_CREDIT,
   failedEdgeMutualRule: DEFAULT_FAILED_EDGE_MUTUAL_RULE,
   failedEdgeOverrideRule: DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
@@ -2583,12 +2602,19 @@ export class TreePruner {
     const edgeLatencyByCallee = computeEdgeLatencyByCallee(options?.edgeLatency);
 
     // The CONTAINMENT excursions: how far each service's post-injection latency median sits outside the band it
-    // occupied while nothing was wrong. Not a term — the pass that reads them is relational — so the map is
-    // built only when that pass can run: switched on, and given the corpus profile it measures against. A run
-    // without a profile therefore does not allocate a map it can never read, which is what makes the switch's
-    // cost zero rather than negligible.
+    // occupied while nothing was wrong. Not a term — the pass that reads them is relational — and a MEASUREMENT
+    // rather than a decision, which is why `containmentOrder` is not in this condition.
+    //
+    // It used to be, and the coupling was a trap rather than a saving: `analyze` is public and takes the graph as
+    // an argument, so a graph built by a pass-off pruner carried no map and every pruner that read that graph ran
+    // without the pass — whatever its own option said. The seven-arm factorial hit exactly this and reported a
+    // 13-violation corpus at the shipped count, because its first arm built the graph and that arm was the
+    // pass-off control. A measurement belongs to the CASE; whether it acts belongs to the RUN, and the run is
+    // `analyze` — the phase `failedEdgeGateMode` already lives in. What stays conditional is the PROFILE, because
+    // without one there is nothing to measure against: a run without a profile allocates no map, so the shipped
+    // cost is still zero.
     const containmentExcursions =
-      this.options.containmentOrder && this.options.faultFreeProfile !== undefined
+      this.options.faultFreeProfile !== undefined
         ? latencyExcursions({
             metrics,
             profile: this.options.faultFreeProfile,
@@ -2778,12 +2804,14 @@ export class TreePruner {
     const gateMode = this.options.failedEdgeGateMode ?? DEFAULT_FAILED_EDGE_GATE_MODE;
     const failedEdgeGate: FailedEdgeGate = {
       mode: gateMode,
-      // Two defaults, because `share` is a fraction of two different MAXIMA: the case champion's rise at `fleet`, and
-      // the term's own span at `margin`. Naming one number for both would make a run that selected `margin` and set
-      // nothing read as a fleet bar.
+      // Three defaults, because `share` is a fraction of three different MAXIMA: the case champion's rise at
+      // `fleet`, a failure fraction at `evidence`, and the term's own span at `margin`. The margin branch reads
+      // its OWN field: naming one number for two maxima made the margin reading unreachable — the gate field is
+      // always filled at construction, so `?? DEFAULT_FAILED_EDGE_MARGIN_SHARE` never ran and a run that named
+      // `margin` compared against 0.5 while every document said 0.3.
       share:
         gateMode === 'margin'
-          ? (this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_MARGIN_SHARE)
+          ? (this.options.failedEdgeMarginShare ?? DEFAULT_FAILED_EDGE_MARGIN_SHARE)
           : (this.options.failedEdgeGateShare ?? DEFAULT_FAILED_EDGE_GATE_SHARE),
       fleetMax: gateMode === 'fleet' ? maxInboundRise(graph.edgeLatencyByCallee) : undefined,
       reach:
@@ -2862,6 +2890,12 @@ export class TreePruner {
    * @returns `results` itself when nothing moved, otherwise the reordered and renumbered list.
    */
   private contained(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
+    // The SWITCH, read here rather than inferred from the map's existence. It used to be inferred — the map was
+    // built only when the pass was on — and once the map became a measurement of the case rather than a decision
+    // of the run, that inference would have switched the pass on for every pruner handed a graph that carried one.
+    // The two facts are now separate because they are separate: the map says what was measured, this says whether
+    // the run acts on it.
+    if (!this.options.containmentOrder) return results;
     const excursions = graph.containmentExcursions;
     if (excursions === undefined || excursions.size === 0) return results;
     const ranked = results.map((result) => ({ service: result.serviceId, result }));

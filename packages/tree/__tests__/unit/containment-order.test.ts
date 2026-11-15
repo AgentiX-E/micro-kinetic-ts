@@ -525,4 +525,30 @@ describe('the containment order in the engine', () => {
     expect(graph.containmentExcursions?.get('a')).toBe(0);
     expect(graph.containmentExcursions?.get('b')).toBeGreaterThan(1);
   });
+
+  it('lets one pruner analyze a graph another pruner built, under its OWN setting', () => {
+    // THE PHASE FENCE. `containmentOrder` used to decide, at BUILD time, whether the excursion map existed, so a
+    // graph built by a pruner that had the pass switched off carried no map and every other pruner reading that
+    // graph silently ran without the pass — whatever its own option said. That is not hypothetical: it is how the
+    // seven-arm factorial measured a 13-violation corpus at exactly the shipped 484, because the first arm built
+    // the graph and the first arm was the pass-off control. A measurement is a property of the CASE; whether it
+    // acts is a property of the RUN, and the run is `analyze` — the same phase `failedEdgeGateMode` already lives
+    // in. The builder here has the pass OFF and the reader has it ON, which is the shape the harnesses use.
+    const { callGraph, metrics, injectTimeMs } = propagationCase();
+    const builder = new TreePruner({
+      containmentOrder: false,
+      faultFreeProfile: profileForCase(),
+    });
+    const graph = builder.buildFaultGraph(callGraph, metrics, { injectTimeMs });
+    const reader = new TreePruner({ containmentOrder: true, faultFreeProfile: profileForCase() });
+    expect(reader.analyze(graph, 3).map((result) => String(result.serviceId)).slice(0, 2)).toEqual([
+      'b',
+      'a',
+    ]);
+    // …and the builder, reading the same graph, still does nothing: the map's existence cannot switch the pass on.
+    expect(builder.analyze(graph, 3).map((result) => String(result.serviceId)).slice(0, 2)).toEqual([
+      'a',
+      'b',
+    ]);
+  });
 });

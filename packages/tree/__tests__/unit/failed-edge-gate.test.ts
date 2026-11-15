@@ -262,14 +262,46 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
       results.find((r) => r.serviceId === id)?.terms?.find((entry) => entry.name === 'failedEdge');
 
     const byName = withBar({ failedEdgeGateMode: 'absolute' });
-    const wideOpen = withBar({ failedEdgeGateMode: 'margin', failedEdgeGateShare: 100 });
+    const wideOpen = withBar({ failedEdgeGateMode: 'margin', failedEdgeMarginShare: 100 });
     // A share of zero is the bar that admits nothing whose lead is positive, which is every case with a rival.
-    const shut = withBar({ failedEdgeGateMode: 'margin', failedEdgeGateShare: 0 });
+    const shut = withBar({ failedEdgeGateMode: 'margin', failedEdgeMarginShare: 0 });
 
     expect(termOf(byName, CALLEE)!.cause).toBe('WEIGHT_ZERO');
     expect(termOf(wideOpen, CALLEE)!.cause).toBeUndefined();
     expect(termOf(wideOpen, CALLEE)!.contribution).toBeCloseTo(3, 12);
     expect(termOf(shut, CALLEE)!.cause).toBe('WEIGHT_ZERO');
+  });
+
+  it('reads the margin default from the MARGIN constant, not from the gate constant beside it', () => {
+    // The fence for a defect no predicate-level test can see: at that layer the CALLER passes the share, so a
+    // constructor that fills `failedEdgeGateShare` from the gate constant and then reads it at `margin` is
+    // invisible. This case's reach is 0.3375 — INSIDE the gate constant (0.5) and OUTSIDE the margin constant
+    // (0.3) — so the two readings of "the default share" disagree on it, and the shape of the disagreement is
+    // the artifact's own: a live term versus `WEIGHT_ZERO`.
+    //
+    // The weight is 2 rather than the 3 the other cases use for exactly that reason: `reach = lead / (weight ×
+    // span)` and every other knob here is fixed, so the weight is what places this case in the band. Measured,
+    // not reasoned — two harnesses driving `margin` over the same 711 cases returned 518 and 520 top-1s, and
+    // the two cases they disagreed on are the ones whose reach sits here.
+    const termAt = (options: Partial<TreePrunerOptions>) => {
+      const pruner = new TreePruner({ failedEdgeWeight: 2, failedEdgeGateMode: 'margin', ...options });
+      const [callGraph, metrics] = caseOf(RESOURCE);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: failures,
+        edgeLatency: inbound,
+      });
+      return pruner
+        .analyze(graph, 3)
+        .find((result) => result.serviceId === CALLEE)
+        ?.terms?.find((entry) => entry.name === 'failedEdge');
+    };
+
+    expect(termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_GATE_SHARE }).cause).toBeUndefined();
+    expect(termAt({ failedEdgeMarginShare: DEFAULT_FAILED_EDGE_MARGIN_SHARE }).cause).toBe(
+      'WEIGHT_ZERO',
+    );
+    // …and the run that names the mode and no share is the margin one, which is the whole of the claim.
+    expect(termAt({}).cause).toBe('WEIGHT_ZERO');
   });
 
   it('refuses the margin bar on a ranking with no rival, where no share is small enough', () => {
@@ -278,7 +310,7 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     const pruner = new TreePruner({
       failedEdgeWeight: 3,
       failedEdgeGateMode: 'margin',
-      failedEdgeGateShare: 1e9,
+      failedEdgeMarginShare: 1e9,
     });
     const callGraph = makeCallGraph([[CALLER, CALLEE]]);
     const metrics = new Map<string, readonly TimeSeries[]>([
