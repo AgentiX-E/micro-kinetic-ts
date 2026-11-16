@@ -646,7 +646,7 @@ map would have been read as "no requirement", which is the arm §12.1 refuses.
 
 ## 13. The sweep's reasons, and the population ρ needs (iteration 294)
 
-H2 in `preregistration-294.md` is the factorisation residual
+H2 in the iteration-294 pre-registration (internal docs repository) is the factorisation residual
 
     ρ(a,b) = P(δa out of band ∧ δb out of band) − P(δa out of band) · P(δb out of band)
 

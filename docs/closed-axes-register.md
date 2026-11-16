@@ -5131,7 +5131,8 @@ which is the one whose cells anyone wants.
 
 ### The population ρ needs
 
-H2 (`preregistration-294.md`) is the factorisation residual on a call edge. It could not be computed from any
+H2 (the iteration-294 pre-registration, in the internal docs repository) is the factorisation residual on a
+call edge. It could not be computed from any
 artifact this repository writes: ρ is a property of an **edge**, and its population is the set of adjacent pairs
 the sweep examined with a call edge between them — a set the ranking ndjson cannot reconstruct, because a pair
 that was never inverted leaves no trace in the order.
