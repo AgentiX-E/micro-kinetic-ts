@@ -542,3 +542,29 @@ describe('the opt-in diagnose dump is listed only where it is produced', () => {
     }
   });
 });
+
+describe('one corpus walk at a time', () => {
+  // The workflow had no `concurrency:` block while every other workflow in the repository had one, and the
+  // consequence is not cosmetic: the embedding budget is shared across every run of this workflow, and two
+  // overlapping runs spend it twice for one reading. Run 43901259774 exhausted the account mid-walk and four
+  // cells published `0.0 %`; a second run dispatched on top of it would have made that more likely, not less.
+  //
+  // The second consequence is the artifact. Both runs deploy to Pages with `force_orphan: true`, so which
+  // run's nine cells a reader sees is decided by finishing order — and a degraded run and a strict run look
+  // identical in every field Pages shows.
+  const CONCURRENCY = /^concurrency:\n((?: {2}[^\n]*\n)+)/m.exec(WORKFLOW)?.[1] ?? '';
+
+  it('serialises runs rather than letting them overlap', () => {
+    expect(CONCURRENCY).not.toBe('');
+    expect(CONCURRENCY).toMatch(/^ {2}group: /m);
+  });
+
+  it('queues instead of cancelling, because a cancelled walk has already spent its budget', () => {
+    // `cancel-in-progress: true` is what `.github/workflows/ci.yml` uses and it is wrong here: cancel a run
+    // twenty minutes into a corpus walk and the reading it would have produced is gone along with the tokens
+    // it spent. Queuing costs wall-clock and nothing else, and the pending slot keeps only the newest commit,
+    // which is the one whose cells anyone wants.
+    expect(CONCURRENCY).toMatch(/^ {2}cancel-in-progress: false$/m);
+    expect(CONCURRENCY).not.toMatch(/cancel-in-progress: true/);
+  });
+});

@@ -169,6 +169,23 @@ on:
     workflows: [Cache Benchmark Datasets]
     types: [completed]
 
+# ── One corpus walk at a time ──
+# The embedding budget is shared across every run of this workflow, so two overlapping runs spend it twice for
+# one reading — which is how run 43901259774 exhausted the account mid-walk and published four `0.0 %` cells. A
+# second run started on top of it makes that more likely, not less.
+#
+# The artifact matters as much as the budget: both runs deploy to Pages with `force_orphan: true`, so which run's
+# nine cells a reader sees is decided by finishing order, and a DEGRADED run and a strict run differ in no field
+# Pages displays.
+#
+# `cancel-in-progress: false` — the opposite of what `.github/workflows/ci.yml` uses, and deliberately so. Cancel
+# a run twenty minutes into a corpus walk and the reading it would have produced is gone along with the tokens it
+# spent. Queuing costs wall-clock and nothing else, and the pending slot keeps only the newest commit, which is
+# the one whose cells anyone wants.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pages: write

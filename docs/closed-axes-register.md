@@ -5105,3 +5105,65 @@ from an API-embedded one by digest alone, so a baseline should not be recorded f
   dropping it. What was NOT checked is whether its per-cell denominator differs from its per-cell population in
   some other way — the question is cheap and it has not been asked there, which is a different statement from
   "it is clean".
+
+## §295 — Two runs of one corpus walk, and the population ρ needs
+
+§294 ended with a red workflow and a declared way out. The two commits after it close the two holes that
+remained: the workflow had no `concurrency:` block, and the containment sweep kept no record of the pairs it
+examined.
+
+### One corpus walk at a time
+
+Every other workflow in this repository declares a `concurrency:` group. `benchmark-rcaeval.yml` did not, and the
+consequences are not cosmetic:
+
+- **The budget is shared.** Two overlapping runs spend the embedding account twice for one reading. Run
+  43901259774 exhausted it mid-walk and published four `0.0 %` cells; a second run started on top of it makes
+  that more likely, not less.
+- **The artifact is decided by finishing order.** Both runs deploy to Pages with `force_orphan: true`, so which
+  run's nine cells a reader sees is whichever finished last — and a `DEGRADED` run and a strict run differ in no
+  field Pages displays.
+
+The group is declared with **`cancel-in-progress: false`**, the opposite of `ci.yml`'s setting and deliberately
+so. Cancelling a run twenty minutes into a corpus walk discards the reading it would have produced along with the
+tokens it spent; queuing costs wall-clock and nothing else, and the pending slot keeps only the newest commit,
+which is the one whose cells anyone wants.
+
+### The population ρ needs
+
+H2 (`preregistration-294.md`) is the factorisation residual on a call edge. It could not be computed from any
+artifact this repository writes: ρ is a property of an **edge**, and its population is the set of adjacent pairs
+the sweep examined with a call edge between them — a set the ranking ndjson cannot reconstruct, because a pair
+that was never inverted leaves no trace in the order.
+
+`inspectContainmentOrder` returns the order and one row per adjacent pair that carried a call edge, with four
+decisions rather than one `refused` (`inverted`, `no-failed-interface`, `unmeasured`, `not-larger`) and with the
+excursions recorded on refusals too — a refusal is a negative example, and the five losses the interface
+requirement removed were exactly refusals. `applyContainmentOrder` is now `.order` of it, so the observation
+cannot drift from the decision. `docs/containment-order.md` §13 carries the table and the two asserted
+properties (an unmeasured side is absent rather than zero; a pair with no call edge produces no row).
+
+### What the account did while this was being written
+
+The quota came back: the run on `f9546a9` reached all three suites with `semantic enhancement (API embedding,
+network)`, no `429`, no `DEGRADED`, and produced
+
+| cell | AC@1 |
+| --- | ---: |
+| RE1 OnlineBoutique | 90.4 % |
+| RE1 SockShop | 95.2 % |
+| RE1 TrainTicket | 90.4 % |
+| RE3 OnlineBoutique | 91.1 % |
+| RE3 SockShop | 79.6 % |
+| RE3 TrainTicket | 74.5 % |
+
+The preflight did not have to fire, and that is the point of having built it: the same commit would have produced
+four `0.0 %` rows a day earlier. What the restore does **not** establish is that the instrument is now
+reproducible — the dependency is still a supplier's balance, and the cached-embedding decorator §294 named
+remains unbuilt.
+
+### Axes this closes
+
+- **"Two runs cannot interfere."** They share a budget and a Pages deployment; one of them is now queued.
+- **"The sweep's decisions are only its output."** It keeps its reasons, and the refusals carry as much
+  information as the inversions.

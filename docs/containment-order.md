@@ -643,3 +643,59 @@ failed-call channel at all. Both are properties of the same rule and neither is 
 interface (in the edge's direction) is in it. `TreePruner.containmentOrdered` passes `graph.failedInterfaces`,
 and a case with no failed-call channel at all supplies an **empty** record rather than `undefined` — the absent
 map would have been read as "no requirement", which is the arm §12.1 refuses.
+
+## 13. The sweep's reasons, and the population ρ needs (iteration 294)
+
+H2 in `preregistration-294.md` is the factorisation residual
+
+    ρ(a,b) = P(δa out of band ∧ δb out of band) − P(δa out of band) · P(δb out of band)
+
+evaluated over the corpus on a call edge, and asked to do what the interface requirement does only crudely:
+separate a propagating pair from a coincidental one. The interface record answers "did anything pass between
+these two"; ρ asks "did their movements co-move more than independence allows".
+
+It could not be computed from any artifact this repository writes. ρ is a property of an **edge**, and its
+population is the set of adjacent pairs the sweep examined with a call edge between them. The ranking ndjson
+cannot reconstruct that set: a pair that was never inverted leaves no trace in the order, and a pair whose
+inversion cancelled a later one leaves a trace of the cancellation rather than of the examination.
+
+### 13.1 `inspectContainmentOrder`
+
+The same single sweep, with its reasons kept. `applyContainmentOrder` is now literally
+`inspectContainmentOrder(input).order`, so the observation cannot drift from the decision it observes.
+
+| decision | meaning | the pair's excursions |
+| --- | --- | --- |
+| `inverted` | the callee was further outside its band and every gate passed | both, measured |
+| `no-failed-interface` | the pair's own interface carried no failed call | both, measured |
+| `unmeasured` | the profile could not speak about one or both sides | only the ones measured |
+| `not-larger` | both measured, callee not further out by more than the margin | both, measured |
+
+Four refusals rather than one, because they are four different statements and only the last two are about the
+pair's own measurements. A single `refused` would make a corpus with no evidence indistinguishable from one
+whose evidence pointed the other way — the same conflation the metric rows were repaired for in the same
+iteration.
+
+Two properties are asserted rather than assumed:
+
+- **A side the profile could not measure is ABSENT, never zero.** Zeroing it is the exact substitution
+  `latencyExcursions` refuses to make; a consumer that made it would be inverting pairs on missing data. Both
+  directions of the absence are tested, because an implementation that carried the lower side unconditionally
+  would pass every other fixture.
+- **A pair with no call edge produces no row.** A residual is a statistic about an edge, and a pair the topology
+  does not join has no edge to be a property of. Recording it as a decision would put a population in the
+  denominator that no reader of ρ asked about.
+
+Observations are kept on refusals as well as on inversions, because a refusal is a negative example: every one
+of the five losses the interface requirement removed was a refusal whose excursions were the reason the older
+arm inverted it. An instrument that recorded only the gains could measure the residual's discrimination on the
+gains and nothing else.
+
+### 13.2 What it does not do
+
+It does not compute ρ. It produces the rows ρ is computed from — the per-case, per-edge out-of-band indicators —
+and the aggregation is a separate, corpus-level step. Keeping them apart matters because the two have different
+populations: the row is a fact about one case, and ρ is a statistic about an edge over many.
+
+It also does not change any default. No weight, no margin, no gate moved; `containment-order.ts` is at
+100 % statements, branches, functions and lines with the 45 pre-existing tests untouched.
