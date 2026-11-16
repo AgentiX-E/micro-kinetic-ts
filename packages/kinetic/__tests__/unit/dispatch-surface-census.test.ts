@@ -314,6 +314,10 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 249: the log signal's SCALE, packed here for the ceiling's reason above — the golden half has no
     // input left to spend, and a scale measurable on one half only has an undecidable other half.
     '--log-normalisation',
+    // Iteration 289: the SECOND relational pass. Packed for the ceiling's reason, and it is the only one of the
+    // two passes that can be dispatched at all — the containment order needs a corpus profile no dispatch may
+    // name, and this one needs nothing but the case.
+    '--failure-containment',
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
@@ -914,6 +918,16 @@ const KNOBS: Readonly<
     flag: '--containment-margin',
     owner: 'containment-order.md',
     fse26: null,
+    rcaeval: null,
+  },
+  failureContainment: {
+    // The SECOND relational pass, and unlike the containment order it needs no corpus artifact — so it is the one
+    // of the two a dispatch can state, and it travels in the packed `ranking_knobs` block on the FSE'26 half. The
+    // golden half cannot name it (no input left under GitHub's 25-input ceiling, the reason every late knob is
+    // packed rather than given an input), so the axis is FSE'26-only until that surface changes.
+    flag: '--failure-containment',
+    owner: 'containment-order.md',
+    fse26: 'ranking_knobs',
     rcaeval: null,
   },
   fusionCeiling: {

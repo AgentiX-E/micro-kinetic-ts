@@ -227,10 +227,10 @@ What this register claims is narrower and checkable:
 - its measured cost on this corpus is **five losses in 1 422**, all of them one mechanism (the response-code
   family), against a learned module whose failure set cannot be enumerated at all — which is the property that
   makes the five addressable rather than merely expensive;
-- the dual-perspective form (incoming vs outgoing) was measured here too, as transport ratios: `tOut(callee) >
-  tOut(caller)` fixes 61 and breaks 5 on the screening quantity, while the band test fixes 41 and breaks 0 **on
-  that same quantity**. Both rows are the screen, not the module (§3); the module's own readback is §4's
-  +47 / −5.
+- the dual-perspective form (incoming vs outgoing) was measured here too. On the screening quantity, as transport
+  ratios, `tOut(callee) > tOut(caller)` fixed 61 and broke 5 while the band test fixed 41 and broke 0; §10 now
+  carries the MODULE-level readback of that form — the failure-flow pass, +54/−0 on this half and +76/−0 in union
+  with the band test — which is the number the prior-art comparison should be made against.
 
 ## 9. Reproduction
 
@@ -242,3 +242,119 @@ pnpm exec tsx benchmarks/src/run-fse26.ts --data-dir <corpus> --fault-free-profi
 
 The offline measurement in §3–§5 is reproducible from one shipped run's dumps
 (`--fingerprint-out` for the bands, `--depth-out` for the full order) plus the corpus topology.
+
+## 10. The second instrument: the failure-flow order (iteration 289)
+
+Section 1 derived the delay instrument from one mechanism — a caller's response time contains its callee's. This
+section asks a narrower question about that instrument's ceiling, and answers it with a second instrument of the
+same shape.
+
+### 10.1 The ceiling, measured
+
+On the 711-case half, 82 cases publish the truth SECOND behind its own caller. Opening every one of those pairs:
+
+| why the pair is not repaired | cases |
+| --- | ---: |
+| the containment signature fires (callee outside its band, caller at or below it) | **34** |
+| BOTH candidates are inside their bands — nothing was delayed | **41** |
+| the two candidates have no direct edge | 5 |
+| the callee is not further outside its band than the caller | 2 |
+
+The 34 are the pass's own gains, exactly. The 41 are the reason a delay instrument cannot go further: the
+classic error-shaped fault — a replaced status code, an aborted request, a rewritten path — moves no latency
+percentile at all, so the excursion is `0` at both ends, and `0` is a measurement of no excursion rather than an
+absence of one. A rule that read those zeros as evidence would be inverting pairs on the strength of a channel
+that never spoke.
+
+### 10.2 The rule
+
+The failed-call channel was already in the engine as a TERM, charging each failing edge to its CALLEE. A term
+scores one candidate at a time; the question here is relational, and the channel's relational form is a flow:
+
+```
+incoming(v)    = Σ max(0, failed − baseline) over edges  c → v    (v's interface failing)
+outgoing(v)    = Σ max(0, failed − baseline) over edges  v → d    (v's own calls failing)
+unexplained(v) = max(0, incoming(v) − outgoing(v))
+```
+
+A source's incoming rise is produced by nothing it calls. A victim's is produced by the very calls it makes —
+that is what propagation is — so its outgoing rise cancels it. On `c → a → b` with the fault at `b`, `a` reports
+failures in and out in the same counts and nets zero while `b` nets its whole rise.
+
+The pass inverts an adjacent pair when all three hold: the pair is a direct call edge, that edge carried a net
+rise, and `unexplained(lower) > unexplained(upper)` — the SAME quantity read on both candidates, in the same
+unit, strictly. No margin exists to tune and none is offered.
+
+### 10.3 The measurement, through the engine
+
+One graph per case, the shipped signal vector, the pass as an engine option rather than as a replay of the dump:
+
+| arm | Top@1 | % | gains | losses |
+| --- | ---: | ---: | ---: | ---: |
+| shipped | 484 | 68.07 | — | — |
+| `containmentOrder` (§4) | 518 | 72.86 | 34 | 0 |
+| **`failureContainment`** | **538** | **75.67** | **54** | **0** |
+| both | **560** | **78.76** | **76** | **0** |
+
+Split into halves by case index, which is the only hold-out this corpus allows: `failureContainment` gains
+**31/0** on one and **23/0** on the other, the union **41/0** and **35/0**. The two instruments overlap on 12
+cases (34 + 54 − 76), which is what the 34-case census predicts: the delay pass fires where the flow is silent and
+vice versa far more often than either fires twice.
+
+### 10.4 The one regression, and the refusal that removes it
+
+Without the refusal below, the same arm reads **555 (72 gains, 1 loss)**. The loss is one case:
+
+```
+ts5-ts-food-service-request-replace-path-xcddv5
+  failures: loadgenerator → ui-dashboard 203,  ui-dashboard → food-service 203,  food-service → travel-service 203
+  truth:    ts-food-service
+```
+
+Every hop carries the same 203. `travel-service` reports 203 inbound and none outbound, so its residual is 203
+while `food-service`'s is `203 − 203 = 0`, and the rule promoted the leaf. But the three accounts are ONE account:
+a single count travelling down a chain, whose residual asymmetry is an artefact of where the chain stops. The
+refusal is therefore an equality at three sites — the callee saw that count on this one edge, the caller reported
+it on this one edge, and the caller's own inbound count is the same number — and it costs **eighteen of the
+seventy-two gains** to remove that case. It is a degeneracy test, not a threshold: nothing is compared against a
+number somebody picked.
+
+Two other guards were measured and refused for cost, both recorded here rather than dropped:
+
+| guard | gains | losses |
+| --- | ---: | ---: |
+| none | 72 | 1 |
+| self-anomaly corroboration (`selfAnomaly(v) ≥ selfAnomaly(u)`) | 22 | 0 |
+| callee has ≥ 2 failing callers | 12 | 0 |
+| **the three-site degeneracy test** | **54** | **0** |
+
+### 10.5 The third instrument, measured and refused
+
+A temporal instrument is the obvious next candidate: `postInjectOnsetDelays` says when each service's dominant
+metric first moved, which is the collision-source-at-`t₀` + propagation-`τ` model in its plainest form. It reads
+the loss case correctly — `food-service` moves 2 338 ms after injection, `travel-service` 25 768 ms — and it
+still fails as a rule:
+
+| arbiter | gains | losses |
+| --- | ---: | ---: |
+| onset only | 45 | **18** |
+| delay only | 34 | 0 |
+| flow only (unguarded) | 72 | 1 |
+| onset, then delay, then flow | 53 | **18** |
+| flow, then onset, then delay | 75 | **19** |
+
+The dominant metric an onset is measured on is often not the metric the fault drives, so the ordering is noisy in
+both directions. It is refused: an instrument that costs eighteen cases to fix one is not an instrument, and the
+fact that it is right about the one case it was consulted for is not evidence.
+
+### 10.6 Wiring
+
+`failureContainment` ships `false` in the engine, for the reason `containmentOrder` does — the full-corpus readback
+is the condition for a default, and this half is not that corpus. Unlike the containment order it needs **no
+profile**, so it is the one of the two a dispatch can state: it travels in the FSE'26 workflow's packed
+`ranking_knobs` block as `failure_containment=1|0`, and a bare dispatch is unchanged by construction. The golden
+half cannot name it — GitHub's 25-input ceiling leaves no input to spend, the reason every late knob is packed
+rather than given one — so the axis is FSE'26-only until that surface changes.
+
+Promotion to `true` requires the same four steps §7 lists for the delay pass, and one more: the 711 cases the
+other half holds have never been read by this pass.

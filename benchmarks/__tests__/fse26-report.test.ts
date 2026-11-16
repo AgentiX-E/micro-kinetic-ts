@@ -278,10 +278,11 @@ describe('FSE26 report — the two renderings agree', () => {
         // `topoDiscount = 0` this config still names the set its ranking covered, which is the whole point of
         // the field being a value rather than a property of the deduction.
         `temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 ` +
-        // The containment pass ships ON, so it is printed unconditionally: an omitted-when-default field would
-        // make an arm that switched the pass off byte-identical to the shipped run on the artifact that is
-        // supposed to attribute the difference.
-        'containmentOrder=false ' +
+        // Both relational passes are printed unconditionally — not because they ship on (neither does) but
+        // because an omitted-when-default field would make an arm that switched one ON byte-identical to the
+        // shipped run, on the artifact that is supposed to attribute the difference. Iteration 289 added the
+        // second switch here for that reason.
+        'containmentOrder=false failureContainment=false ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(

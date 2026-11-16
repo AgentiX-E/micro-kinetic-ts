@@ -65,6 +65,7 @@ import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -477,8 +478,11 @@ export interface Fse26CliOptions {
   /**
    * Whether a caller may be ranked above a callee whose own latency excursion is larger — the containment pass.
    *
-   * Ships ON (`DEFAULT_CONTAINMENT_ORDER`) and is inert without `--fault-free-profile`, because the excursion is
-   * measured against the band the service occupied while nothing was wrong. Travels in the packed `ranking_knobs`
+   * Ships OFF (`DEFAULT_CONTAINMENT_ORDER` = false) and is inert without `--fault-free-profile` anyway, because the
+   * excursion is measured against the band the service occupied while nothing was wrong. This docblock said
+   * "ships ON" until iteration 289: the constant it names has been `false` since the pass was measured at 47
+   * gains against 5 losses, and a docblock that describes the opposite of the constant it cites is the exact
+   * failure mode the failed-edge margin bar was fixed for in §288a. Travels in the packed `ranking_knobs`
    * block as `containment_order=1|0`; `0` is the ablation, and it is exact because the excursion map is not built
    * at all.
    */
@@ -490,6 +494,18 @@ export interface Fse26CliOptions {
    * excursions are measured on one case in one unit.
    */
   readonly containmentMargin: number;
+  /**
+   * Apply the FAILURE-FLOW order: a caller whose own interface failures are explained by its own calls may not
+   * outrank the callee those failures were reported against. Travels in the packed `ranking_knobs` block as
+   * `failure_containment=1|0`.
+   *
+   * Ships at `DEFAULT_FAILURE_CONTAINMENT` = false. Unlike `containmentOrder` it needs NO corpus profile — the
+   * flow is a property of the case — so the switch is live on any dispatch that can name it. What withholds it is
+   * the measurement: +72 top-1 gains against one loss in 711 cases, and that loss is a single conduit whose
+   * counts carry no direction (docs/containment-order.md §5). The flag exists so the arm is reproducible and so
+   * the day the conduit is guarded the pipe is one workflow input away.
+   */
+  readonly failureContainment: boolean;
   /**
    * Weight on the trace-topology signal. `0` = off, the shipped value.
    *
@@ -754,6 +770,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     containmentOrder: DEFAULT_CONTAINMENT_ORDER,
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
+    failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -1008,6 +1025,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--no-trace-skips-leader') opts.traceSkipsLeader = false;
     else if (arg === '--containment-order') opts.containmentOrder = true;
     else if (arg === '--no-containment-order') opts.containmentOrder = false;
+    else if (arg === '--failure-containment') opts.failureContainment = true;
+    else if (arg === '--no-failure-containment') opts.failureContainment = false;
     else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
       // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
       // reproduces a published configuration rather than inventing one.

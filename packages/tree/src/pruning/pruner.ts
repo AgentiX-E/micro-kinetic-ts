@@ -82,6 +82,7 @@ import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { applyContainmentOrder, latencyExcursions } from './containment-order.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
+import { applyFailureContainment, failureEdgeKey, failureFlows } from './failure-containment.js';
 import {
   computeFaultFreeScores,
   type FaultFreeProfile,
@@ -1089,6 +1090,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * because both numbers are measured on one case in one unit.
    */
   readonly containmentMargin: number;
+  /**
+   * Apply the FAILURE-FLOW order to the published ranking: a caller whose own interface failures are explained
+   * by the calls it makes may not outrank the callee those failures were reported against.
+   *
+   *   if rank(i) calls rank(i+1), that edge carried a net rise, and unexplained(rank(i+1)) > unexplained(rank(i))
+   *     → invert, where unexplained(v) = max(0, incoming(v) − outgoing(v))
+   *
+   * The second relational pass, and the one that speaks where the latency pass cannot: of the 82 FSE'26 cases
+   * whose truth is published second behind its own caller, only 34 carry a latency signature at all and 41 have
+   * BOTH candidates inside their bands (iteration 289). Needs no profile — the flow is a property of the case.
+   *
+   * Ships at {@link DEFAULT_FAILURE_CONTAINMENT} = `false`: the measured arm is +72 gains against **one** loss in
+   * 711 cases, and that loss is a single conduit whose counts carry no directional information. See
+   * `pruning/failure-containment.ts` and `docs/containment-order.md` §5.
+   */
+  readonly failureContainment: boolean;
 }
 
 /**
@@ -1427,6 +1444,24 @@ export const DEFAULT_CONTAINMENT_ORDER = false;
  * number with no derivation behind it. The sweep is in `docs/containment-order.md`.
  */
 export const DEFAULT_CONTAINMENT_MARGIN = 0;
+
+/**
+ * Whether the failure-flow order runs. Off in the shipped configuration.
+ *
+ * Two independent reasons, and the second is why this stays off rather than shipping at +10 pp:
+ *
+ * - **No dispatch can state it yet**, exactly as `containmentOrder` had no dispatch surface before its own
+ *   workflow input existed. The option is reachable from the engine, the runners' option objects and the
+ *   libraries; a benchmark configuration that cannot name a switch is a measurement that cannot be repeated.
+ * - **The measured arm carries one regression.** On 711 FSE'26 cases the pass turns 72 wrong top-1 answers into
+ *   right ones and one right answer into a wrong one: a chain in which a single failure count appears at every
+ *   hop, so the counts are one number replicated and cannot orient the pair. No guard found so far removes that
+ *   case without also removing 19 of the gains, and the two guards that are sound (self-anomaly corroboration,
+ *   a second failing caller) keep 22 and 12 of them. The numbers and the refusal are in
+ *   `docs/containment-order.md` §5; the option stays because a lever nothing can switch is a lever nothing can
+ *   ablate.
+ */
+export const DEFAULT_FAILURE_CONTAINMENT = false;
 
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
@@ -2233,6 +2268,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
   containmentOrder: DEFAULT_CONTAINMENT_ORDER,
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
+  failureContainment: DEFAULT_FAILURE_CONTAINMENT,
 };
 
 /**
@@ -2622,6 +2658,21 @@ export class TreePruner {
           })
         : undefined;
 
+    // The FAILURE FLOW: how many net failed calls each service's interfaces reported inbound and how many its own
+    // calls reported outbound. The second relational measurement, and a property of the CASE rather than of the
+    // run — the same phase decision the excursion map above records, for the same reason: `analyze` takes a graph
+    // from any pruner, so a measurement taken only when the pass is switched on is a per-graph option wearing a
+    // per-run name. What stays conditional is the channel, not the switch: a case with no net rise allocates
+    // nothing, so the shipped cost is still zero.
+    const failureRows = failedEdgeLedger.rows;
+    const failureFlowMap = failureRows.length === 0 ? undefined : failureFlows(failureRows);
+    const failingEdges =
+      failureRows.length === 0
+        ? undefined
+        : new Map(
+            failureRows.map((row) => [failureEdgeKey(row.caller, row.callee), row.rise] as const),
+          );
+
     // The SELF-TIME share: the fraction of a service's own latency rise that no callee can explain.
     // Computed from the RAW metric series rather than from the anomaly features, because the guards
     // delete exactly the propagation channels this term has to compare — see the function's docblock.
@@ -2699,6 +2750,8 @@ export class TreePruner {
       channelSymmetry,
       dualFamilyServices,
       containmentExcursions,
+      failureFlows: failureFlowMap,
+      failingEdges,
     };
   }
 
@@ -2868,6 +2921,64 @@ export class TreePruner {
   }
 
   /**
+   * Apply the two RELATIONAL passes to a finished ranking, in order: the latency order, then the failure flow.
+   *
+   * Both ask the same question — of two adjacent candidates joined by a call edge, which one is the source — and
+   * neither can live inside a term, because a term scores one candidate at a time. They are separate switchable
+   * passes rather than one: they read different instruments (an excursion against a fault-free band; a flow of net
+   * failed calls), one needs a corpus profile and the other does not, and the ablation has to be able to state
+   * which of the two moved a case.
+   *
+   * The composition is a sequence of single adjacent sweeps, so the result is deterministic and independent of
+   * either pass's scores. A case the first pass moved can still be moved by the second, one position at a time.
+   *
+   * @param graph - The graph whose measurements the passes read.
+   * @param results - The ranking the fusion produced, best first.
+   * @returns `results` itself when neither pass moved anything, otherwise the reordered and renumbered list.
+   */
+  private contained(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
+    return this.flowOrdered(graph, this.containmentOrdered(graph, results));
+  }
+
+  /**
+   * Apply the failure-flow order to a finished ranking.
+   *
+   * The pass is relational — "rank `i` calls rank `i+1` on an edge that FAILED, and rank `i+1`'s incoming rise is
+   * not explained by its own outgoing one while rank `i`'s is" — so it cannot live inside a term. It reads the
+   * flow map and the failing-edge keys the builder measured on the case.
+   *
+   * The switch is read here, not inferred from the map's existence, for the phase reason {@link contained}'s own
+   * history records: `analyze` takes a graph from any pruner, and a measurement is a property of the case while
+   * whether it acts is a property of the run.
+   *
+   * @param graph - The graph whose flows and failing edges the pass reads.
+   * @param results - The ranking to reorder, best first.
+   * @returns `results` itself when nothing moved, otherwise the reordered and renumbered list.
+   */
+  private flowOrdered(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
+    if (!this.options.failureContainment) return results;
+    const flows = graph.failureFlows;
+    if (flows === undefined || flows.size === 0) return results;
+    const ranked = results.map((result) => ({ service: result.serviceId, result }));
+    const ordered = applyFailureContainment({
+      ranking: ranked,
+      flows,
+      failingEdges: graph.failingEdges,
+    });
+    let moved = false;
+    for (let i = 0; i < ordered.length; i++) {
+      if (ordered[i] !== ranked[i]) {
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) return results;
+    return ordered.map((entry, index) =>
+      entry.result.rank === index + 1 ? entry.result : { ...entry.result, rank: index + 1 },
+    );
+  }
+
+  /**
    * Apply the containment order to a finished ranking.
    *
    * The pass is relational — "rank `i` calls rank `i+1`, and the CALLEE's own latency left its band while the
@@ -2889,7 +3000,10 @@ export class TreePruner {
    * @param results - The ranking the fusion produced, best first.
    * @returns `results` itself when nothing moved, otherwise the reordered and renumbered list.
    */
-  private contained(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
+  private containmentOrdered(
+    graph: FaultPropagationGraph,
+    results: RootCauseResult[],
+  ): RootCauseResult[] {
     // The SWITCH, read here rather than inferred from the map's existence. It used to be inferred — the map was
     // built only when the pass was on — and once the map became a measurement of the case rather than a decision
     // of the run, that inference would have switched the pass on for every pruner handed a graph that carried one.

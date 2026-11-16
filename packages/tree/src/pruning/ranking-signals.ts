@@ -39,6 +39,8 @@ import type {
   TraceActivityCounts,
 } from '@agentix-e/micro-kinetic-core';
 
+import type { FailedEdgeRise } from './failure-containment.js';
+
 import {
   isDemandMetric,
   isEventMetric,
@@ -1693,6 +1695,23 @@ export function isFailedEdgeOverrideRule(value: unknown): value is FailedEdgeOve
   );
 }
 
+/**
+ * The counted rows as the relational pass reads them.
+ *
+ * The ledger's own rows carry the column name `contribution` because they are fed to a sum; the pass reads the
+ * same number as `rise`, which is what the edge did. One mapping function rather than two conversions at the
+ * return sites, so the three exits cannot describe the rows differently.
+ *
+ * @param counted - The filtered rises, in edge order.
+ * @returns The same rows, in the channel's public vocabulary.
+ * @internal
+ */
+function risesOf(
+  counted: ReadonlyArray<{ caller: ServiceId; callee: ServiceId; contribution: number }>,
+): readonly FailedEdgeRise[] {
+  return counted.map((row) => ({ caller: row.caller, callee: row.callee, rise: row.contribution }));
+}
+
 /** An evidence report with nothing in it, shared so an empty case allocates nothing. */
 const EMPTY_FAILED_EDGE_EVIDENCE: FailedEdgeEvidence = {
   topService: undefined,
@@ -1712,6 +1731,17 @@ export interface FailedEdgeLedger {
   readonly scores: Map<ServiceId, number>;
   /** The channel's own strength, in failed calls and in calls. */
   readonly evidence: FailedEdgeEvidence;
+  /**
+   * The counted rises themselves — every edge that survived this function's filters, in edge order.
+   *
+   * The scores are a NORMALISED view (the winner is always `1.0`) and the evidence is a per-case summary, so
+   * neither can answer "which end of this edge is failing" for an arbitrary pair. A relational pass needs the
+   * rows, and rebuilding them from `edges` elsewhere would put the filters in two places — the class of defect
+   * this repository has paid for more than once. Taken BEFORE the `mutualRule` and `overrideRule` removals,
+   * because what the interfaces did is a property of the case while which charges to credit is a property of
+   * the term's configuration.
+   */
+  readonly rows: readonly FailedEdgeRise[];
 }
 
 /**
@@ -1751,7 +1781,7 @@ export function computeFailedEdgeLedger(
 ): FailedEdgeLedger {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) {
-    return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
+    return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE, rows: [] };
   }
 
   const net = new Map<ServiceId, number>();
@@ -1820,7 +1850,8 @@ export function computeFailedEdgeLedger(
     }
   }
 
-  if (net.size === 0) return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
+  if (net.size === 0)
+    return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE, rows: risesOf(counted) };
 
   // ── The override rule: does the channel's own evidence contradict the service it is about to name? ─────────
   //
@@ -1863,7 +1894,8 @@ export function computeFailedEdgeLedger(
       records.delete(callee);
       callers.delete(callee);
     }
-    if (net.size === 0) return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE };
+    if (net.size === 0)
+      return { scores, evidence: EMPTY_FAILED_EDGE_EVIDENCE, rows: risesOf(counted) };
   }
 
   const aggregate = new Map<ServiceId, number>();
@@ -1936,6 +1968,7 @@ export function computeFailedEdgeLedger(
       netTotal,
       callees: callees.length,
     },
+    rows: risesOf(counted),
   };
 }
 

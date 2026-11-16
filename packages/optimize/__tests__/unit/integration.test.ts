@@ -261,6 +261,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // established. The other two are held for the reasons every discrete axis here is: `rarest` and
       // `dominant` are different populations of evidence rather than two magnitudes, and the profile is a
       // corpus artifact a mapping cannot synthesise.
+      // Iteration 289: the SECOND relational pass — the failure-flow order. Held for the containment order's
+      // reason: it moves a pair rather than resizing a term, and its measured arm carries one regression, so
+      // there is no coefficient for a search to interpolate and no arm to interpolate toward.
+      'failureContainment',
       'faultFreeProfile',
       'faultFreeSelection',
       'faultFreeWeight',

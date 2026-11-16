@@ -159,6 +159,8 @@ export interface Fse26SignalOptions {
   readonly containmentOrder: boolean;
   /** Margin of the containment pass, in band widths. Required for the same reason as the switch. */
   readonly containmentMargin: number;
+  /** The SECOND relational pass: the failure-flow order. See `Fse26CliOptions.failureContainment`. */
+  readonly failureContainment: boolean;
   readonly topoWeight: number;
   /** Topological deduction strength (0 = off) — see `TreePrunerOptions.topoDiscount`. */
   readonly topoDiscount: number;
@@ -274,6 +276,7 @@ export function buildFse26EngineOptions(
       traceSkipsLeader: opts.traceSkipsLeader,
       containmentOrder: opts.containmentOrder,
       containmentMargin: opts.containmentMargin,
+      failureContainment: opts.failureContainment,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,

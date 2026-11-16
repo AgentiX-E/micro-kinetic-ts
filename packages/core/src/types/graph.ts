@@ -562,6 +562,31 @@ export interface FaultPropagationGraph {
    * does not build it at all.
    */
   readonly containmentExcursions?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service FAILURE FLOW — how many net failed calls each service's interfaces reported inbound and how many
+   * its own calls reported outbound.
+   *
+   * The second relational measurement, and the one that speaks when no channel was delayed: a source's incoming
+   * rise is produced by nothing it calls, so `incoming − outgoing` is its own, while a victim's incoming rise is
+   * produced by the very calls it makes and cancels. `pruning/failure-containment.ts` reads that difference on
+   * two candidates; no candidate-local term can express it.
+   *
+   * ABSENT (not empty) when the case carried no net rise at all, because a channel that measured nothing is not a
+   * channel that measured zero.
+   */
+  readonly failureFlows?: ReadonlyMap<
+    ServiceId,
+    { readonly incoming: number; readonly outgoing: number }
+  >;
+  /**
+   * The edges that carried a net failed-call rise, keyed by `failureEdgeKey(caller, callee)`, valued by the rise.
+   *
+   * A flow says "this service's interfaces are failing"; only the edge keys say WHICH caller reported it, and the
+   * rise is what lets the pass recognise the one configuration in which its own arithmetic carries no direction:
+   * a single count replicated at every site of a relay (see `pruning/failure-containment.ts`). ABSENT with
+   * {@link failureFlows}.
+   */
+  readonly failingEdges?: ReadonlyMap<string, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

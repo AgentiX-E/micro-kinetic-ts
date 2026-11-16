@@ -4585,3 +4585,71 @@ regressions. `cont` alone is the one arm here that satisfies the register's rule
   option is a per-graph option wearing a per-run name.
 - **"Containment and the margin bar are two parts of one answer."** False in the useful direction: they overlap on
   one case out of 25, and their gains add.
+
+## §289 — The containment pass had a ceiling, and the ceiling was a channel
+
+§288 ended with `containmentOrder` at +34/−0 on this half and a full-corpus arm at +47/−5 that could not ship. This
+iteration asked what the pass cannot do rather than how to tune it — *which of the one-step misses does it not
+repair, and why* — and the answer turned out to be a second instrument, of the same shape, that needs no profile
+at all.
+
+### 289a. The census: 34 of 82, and the 41 that no delay can reach
+
+Every one of the 82 cases that publish the truth second behind its own caller, on the 711-case half:
+
+| why the pair is not repaired | cases |
+| --- | ---: |
+| the containment signature fires | **34** |
+| BOTH candidates inside their bands | **41** |
+| no direct edge | 5 |
+| callee not further outside its band | 2 |
+
+The 34 are the pass's gains exactly. The 41 are its ceiling: a replaced status code, an aborted request or a
+rewritten path moves no latency percentile, so the excursion is `0` at both ends, and `0` is a measurement of no
+excursion. No margin, weight or profile can turn that `0` into evidence.
+
+### 289b. The second instrument is the failed-call channel read relationally
+
+The channel was already a term, charging every failing edge to its callee. A term scores one candidate at a time;
+the relation is a flow: `unexplained(v) = max(0, incoming(v) − outgoing(v))`, where incoming is what v's interface
+reported and outgoing what v's own calls reported. A source's inbound rise is its own; a victim's is produced by
+the calls it makes and cancels. The pass inverts an adjacent pair on a failing direct edge when
+`unexplained(lower) > unexplained(upper)` — the same quantity on both candidates, strictly, with no margin.
+
+| arm | Top@1 | gains | losses |
+| --- | ---: | ---: | ---: |
+| shipped | 484 | — | — |
+| `containmentOrder` | 518 | 34 | 0 |
+| **`failureContainment`** | **538** | **54** | **0** |
+| both | **560** | **76** | **0** |
+
+Halves, by case index: flow **31/0** and **23/0**, union **41/0** and **35/0**. The overlap is 12 cases, which is
+what the census predicts — the two channels are silent in almost disjoint places.
+
+### 289c. The one regression, and the degeneracy test that refuses it
+
+Unguarded the arm reads **555 (72/1)**. The loss is a relay whose every hop carries the same 203 failures, so the
+leaf's residual is the whole count and the middle's is zero: the three accounts are ONE account and the asymmetry
+is an artefact of where the chain stops. The refusal is an equality at three sites — the callee saw that count on
+this edge, the caller reported it on this edge, and the caller's inbound count is the same number — and it costs
+**18 of the 72** gains. It is not a threshold: nothing is compared against a chosen number.
+
+Two sound guards were measured and refused for cost, and recorded so the next iteration does not rediscover them:
+self-anomaly corroboration keeps **22/0**, a second failing caller keeps **12/0**.
+
+### 289d. The temporal instrument, measured and refused
+
+`postInjectOnsetDelays` is the collision-source-at-`t₀` model in its plainest form, and it is right about the loss
+case (`food-service` +2 338 ms, `travel-service` +25 768 ms). It is still refused as a rule: **45/18** alone, and
+every arbiter that consults it inherits the eighteen. The dominant metric an onset is measured on is often not the
+metric the fault drives, so the ordering is noisy in both directions. Being right about the case it was consulted
+for is not evidence about a rule.
+
+### Axes this closes
+
+- **"Tuning the containment margin is the way to repair the rest."** False — the remaining 48 have no delay
+  signature at all, so the axis has no purchase on them (§5's sweep already said this from the other side).
+- **"A second instrument must be a third threshold."** False — the flow rule compares one quantity on two
+  candidates, exactly as the excursion rule does, and its only parameter-free refinement is an equality.
+- **"A channel that is right about the case in front of you is an instrument."** False for onset: 45 gains against
+  18 losses, on the same pairs where the flow channel costs one.

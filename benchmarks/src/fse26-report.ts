@@ -39,6 +39,7 @@ import type {
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
@@ -212,6 +213,8 @@ export interface FSE26RunConfig {
    * omitted field reads as a strict comparison both before and after any change to the constant.
    */
   readonly containmentMargin?: number;
+  /** The failure-flow order's switch, rendered for the same reason the containment order's is. */
+  readonly failureContainment?: boolean;
   readonly topoWeight: number;
   /**
    * Topological deduction strength. Printed only when non-zero, and its scope nested under it: the deduction
@@ -596,9 +599,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   if (config.traceSkipsLeader) {
     line += ` traceSkipsLeader=${config.traceSkipsLeader}`;
   }
-  // Unconditional, and for the reason stated on the field: this pass ships ON, so an omission would have to be
-  // read as the ablation. `false` and `true` are then two configurations on every artifact.
+  // Unconditional, and for the reason stated on the field: a pass is a configuration on EVERY artifact, so an
+  // omission would have to be read as the ablation, and a run that switched it ON would render byte-identically
+  // to the shipped run that left it off. Both passes ship off — this comment said "ships ON" until iteration 289,
+  // when the constant was read and the comment was not.
   line += ` containmentOrder=${config.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER}`;
+  line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
   if ((config.containmentMargin ?? DEFAULT_CONTAINMENT_MARGIN) !== 0) {
     line += ` containmentMargin=${config.containmentMargin}`;
   }

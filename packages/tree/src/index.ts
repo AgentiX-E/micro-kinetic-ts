@@ -195,6 +195,18 @@ export type {
 } from './pruning/containment-order.js';
 
 export {
+  applyFailureContainment,
+  failureEdgeKey,
+  failureFlows,
+  unexplainedFailures,
+} from './pruning/failure-containment.js';
+export type {
+  FailedEdgeRise,
+  FailureContainmentInput,
+  FailureFlow,
+} from './pruning/failure-containment.js';
+
+export {
   DEFAULT_COLLISION_WEIGHT,
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
@@ -205,6 +217,7 @@ export {
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_MARGIN_SHARE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
