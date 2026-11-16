@@ -220,6 +220,13 @@ anomaly signals and cause victim services to exhibit stronger symptoms than the 
 with a Dual-Perspective Decoupling module that models incoming pressure and outgoing propagation, reporting
 HR@1 93.9 % on TrainTicket and 94.3 % on SocialNetwork under a VAE-GNN.
 
+**DynaCausal** — from the RCABench authors themselves (`arXiv:2510.04711`'s own citation trail) — states the
+problem in the same words: standard anomaly detection "lacks causality-awareness", so it proposes a ranking
+objective that "explicitly penalizes downstream services" and prefers "upstream causal ancestors" over "downstream
+victims". That is the same claim as §10's flow rule, arrived at independently and learned rather than derived.
+**LagRCA** (ACM, `10.1145/3803437.3805219`) subtracts the anomaly a node's upstream explains before ranking, which
+is again the same idea in anomaly units rather than failure counts.
+
 What this register claims is narrower and checkable:
 
 - the decomposition is **deterministic and needs no training**: a band from the corpus and one comparison;
@@ -301,6 +308,13 @@ Split into halves by case index, which is the only hold-out this corpus allows: 
 cases (34 + 54 − 76), which is what the 34-case census predicts: the delay pass fires where the flow is silent and
 vice versa far more often than either fires twice.
 
+**The full corpus, read back from the runner on the same commit** (`765b399c`, two dispatched runs, 1 422 cases
+each): control `75.457 %`, `failure_containment=1` **`80.028 %`** — **+4.57 pp**, with **67 gains and 2 losses**
+per case. So the guarded arm is zero-loss on the half it was designed on and not zero-loss on the corpus: the two
+losses the other half contributes are both `HTTPRequestReplaceMethod`, the request-corruption family whose failing
+edge is caused by the CALLER's malformed request. That is the same mechanism the degeneracy test refuses in
+§10.4, in a form the counts cannot see, and §10.6's promotion path now begins with it.
+
 ### 10.4 The one regression, and the refusal that removes it
 
 Without the refusal below, the same arm reads **555 (72 gains, 1 loss)**. The loss is one case:
@@ -356,5 +370,10 @@ profile**, so it is the one of the two a dispatch can state: it travels in the F
 half cannot name it — GitHub's 25-input ceiling leaves no input to spend, the reason every late knob is packed
 rather than given one — so the axis is FSE'26-only until that surface changes.
 
-Promotion to `true` requires the same four steps §7 lists for the delay pass, and one more: the 711 cases the
-other half holds have never been read by this pass.
+Promotion to `true` requires the same four steps §7 lists for the delay pass, and one more that the full-corpus
+readback named: **the two `HTTPRequestReplaceMethod` losses**. A request-corruption fault makes the caller send a
+request the callee rejects, so the failing edge is the caller's fault while every count says the callee's interface
+failed — the degenerate relay of §10.4 generalised to a family. The observable that separates them is the status
+the callee returned: a rejected request is a client error, a failing callee is a server error. The FSE'26 bridge
+aggregates both into "failed", so the split has to be introduced in the converter and the cache re-cut before the
+rule can read it; that is a data-pipeline change, not a threshold, and it is the first task on the path.

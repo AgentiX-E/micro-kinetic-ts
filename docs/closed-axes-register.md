@@ -4626,6 +4626,13 @@ the calls it makes and cancels. The pass inverts an adjacent pair on a failing d
 Halves, by case index: flow **31/0** and **23/0**, union **41/0** and **35/0**. The overlap is 12 cases, which is
 what the census predicts — the two channels are silent in almost disjoint places.
 
+**The full corpus disagrees with the half, and the disagreement is the finding.** Two dispatched runs on
+`765b399c`, 1 422 cases each: control **75.457 %**, `failure_containment=1` **80.028 %**, i.e. **+4.57 pp** and
+**67 gains against 2 losses**. Both losses are `HTTPRequestReplaceMethod`: a fault that corrupts the caller's
+outgoing request makes the callee reject it, so the failing edge belongs to the caller while every count says the
+callee's interface failed. It is §10.4's degenerate relay generalised to a family, and it is invisible to counts
+because the counts are correct — what is missing is the status the callee returned.
+
 ### 289c. The one regression, and the degeneracy test that refuses it
 
 Unguarded the arm reads **555 (72/1)**. The loss is a relay whose every hop carries the same 203 failures, so the
