@@ -376,4 +376,147 @@ request the callee rejects, so the failing edge is the caller's fault while ever
 failed — the degenerate relay of §10.4 generalised to a family. The observable that separates them is the status
 the callee returned: a rejected request is a client error, a failing callee is a server error. The FSE'26 bridge
 aggregates both into "failed", so the split has to be introduced in the converter and the cache re-cut before the
-rule can read it; that is a data-pipeline change, not a threshold, and it is the first task on the path.
+rule can read it; that is a data-pipeline change, not a threshold, and it is the first task on the path. **§11 is
+that task**: the status split was refuted on the datapack, the shape split was measured in its place, and the arm
+now reads +68/−0 on the same full corpus.
+
+## 11. The second instrument's missing premise: what KIND of evidence (iteration 290)
+
+Section 10 closed on the two losses the full-corpus readback found and named the observable it expected to separate
+them: the HTTP status class, 4xx for a rejected request and 5xx for a failing callee. This section opens the raw
+datapacks, shows why that split cannot work, and measures the premise that does.
+
+### 11.1 The mechanism, read off the datapack
+
+`ts0-ts-basic-service-request-replace-method-88h72r`, edge `ts-basic-service → ts-price-service`:
+
+| window | method | calls | status |
+| --- | --- | ---: | ---: |
+| pre-injection | GET | 304 | 200 |
+| pre-injection | POST | 248 | 200 |
+| post-injection | POST | **2 963** | **405** |
+
+The datapack's own `display_config` states the injection: `{"injection_point":{"app_name":"ts-basic-service",
+"method":"GET","route":"/api/v1/priceservice/prices/*/DongCheOne"},"replace_method":"POST"}`. The CALLER rewrote
+the method; the callee answered a method it does not serve that route with.
+
+**4xx does not identify the caller.** `HTTPResponseReplaceCode` injects client-error codes at the callee, and the
+same 405 then means "the callee returned the wrong code" — the opposite attribution. The status class is a fact
+about the RESPONSE; this case needs a fact about the REQUEST.
+
+That fact is in the span the callee recorded. `span_name` is
+`POST /api/v1/priceservice/prices/{routeId}/{trainType}` for all 2 963 rejected calls, and that `(route, method)`
+pair **never occurs on that edge in the pre-injection window**. So the premise is: *a failed call whose request
+shape the edge has never carried is a request the caller corrupted, and is therefore evidence about the caller.*
+
+### 11.2 The flow becomes a 2×2
+
+|  | shape the edge had carried | shape it had never carried |
+| --- | --- | --- |
+| edge `c → v` | `knownIn(v)` — v's interface failing | `novelIn(v)` — c sent a corrupted request |
+| edge `v → d` | `knownOut(v)` — v's own calls failing | `novelOut(v)` — v sent a corrupted request |
+
+```
+unexplained(v) = max(0, knownIn(v) + novelOut(v) − knownOut(v))                 ('shape', the shipped reading)
+unexplained(v) = max(0, knownIn(v) + novelIn(v) − knownOut(v) − novelOut(v))   ('counts', the §10 rule)
+```
+
+`novelIn` is measured and carried but never credited: a request a callee rejected for its shape says nothing
+about the callee. It is kept because the `'counts'` reading needs it to reconstruct the pre-290 quantity exactly —
+which is what lets the axis be ablated on ONE cache instead of requiring a second corpus.
+
+Novelty is a **set-membership test**, not a threshold: the pair is absent from the shapes the same edge carried
+before the injection. It is also scoped: an edge that appears only after the injection has an ABSENT baseline, not
+an empty one, and none of its shapes may be called novel.
+
+### 11.3 What the premise separates, on purpose and by accident
+
+Five datapacks per family, read raw with the bridge's own shape expression:
+
+| family | novel-shape failures | known-shape failures |
+| --- | ---: | ---: |
+| `request-replace-method` | 431 – 7 099 | 583 – 7 527 |
+| `request-replace-path` | 106 – 2 009 | 521 – 2 150 |
+| `response-replace-code` | **0** in 6 of 6 | 250 – 1 484 |
+| `response-replace-body` | **0** in 6 of 6 | 308 – 1 921 |
+| `response-abort` | **0** in 6 of 6 | 251 – 1 427 |
+| `exception` | 0 in 5 of 5 | 812 – 5 289 |
+| `container-kill`, `corrupt`, `partition`, `pod-failure`, `loss`, `delay`, `stress` | 0 in 30 of 30 | 1 – 316 |
+
+On the corpus itself, through the re-cut cache (1 422 cases):
+
+| | cases | novel mass | rise mass | share |
+| --- | ---: | ---: | ---: | ---: |
+| all cases | 203 of 1 422 | 210 681 | 1 013 406 | 20.8 % |
+| `HTTPRequestReplaceMethod` | 127 | 171 321 | 382 009 | 44.8 % |
+| `HTTPRequestReplacePath` | 39 | 34 895 | 76 394 | 45.7 % |
+| `HTTPResponseReplaceCode` | 10 | 758 | 56 434 | 1.3 % |
+| `JVMReturn` | 3 | 3 359 | 25 069 | 13.4 % |
+| every other family | 24 | 348 | — | — |
+
+The instrument speaks on 14.3 % of the corpus, and 98 % of what it says is about the two families whose fault IS a
+rewritten request. It is not perfectly silent outside them: `JVMReturn` shows 3 359 novel counts in three cases,
+which is the honest cost of the premise — a corrupted RETURN VALUE can reach a URL path and mint a route the edge
+never carried, and the instrument cannot tell that from a corrupted request. That is 1.6 % of the corpus's novel
+mass, and it is the reason §11.5 will not promote on this measurement alone.
+
+### 11.4 The measurement
+
+Three arms, one cache, one graph per case, the shipped signal vector. Halves are by case index — the only hold-out
+this corpus allows.
+
+| arm | Top@1 (full) | % | gains | losses | half A | half B |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| shipped | 1 073 | 75.457 | — | — | — | — |
+| `failureContainment` + `attribution=counts` (§10) | 1 138 | 80.028 | 67 | **2** | 54/0 | 13/**2** |
+| `failureContainment` + `attribution=shape` | **1 141** | **80.239** | **68** | **0** | 55/0 | 13/0 |
+
+Two checks come before the delta:
+
+1. The `counts` arm reproduces §10.3's runner readback **exactly** — 1 073 control, 1 138, 67 gains, the same two
+   losses — through a locally re-cut cache. That is the check that this cache is the corpus §10 was measured on.
+2. Top@5 is `1 249` in all three arms: the pass moves cases INTO the top slot and never out of the top five, which
+   is what a pass that only reorders adjacent pairs can do.
+
+The shape reading then repairs both losses and adds one more case:
+
+- `ts1-ts-food-service-request-replace-method-rq29d8` — the counts arm promoted `ts-station-food-service` over the
+  truth `ts-food-service`;
+- `ts1-ts-route-plan-service-request-replace-method-d7vdmg` — likewise `ts-travel-service` over
+  `ts-route-plan-service`;
+- `ts9-ts-route-plan-service-request-replace-path-9dg8qf` (half A) — the third, a path-replacement case the
+  counts arm never repaired.
+
+The gains the counts arm already had on this family survive: 12 of the 68 are `HTTPRequestReplaceMethod`, and the
+shape reading keeps every one of them, so this is not a trade between families.
+
+### 11.5 What promotion still needs
+
+`failureContainment` stays `false` and `failureAttribution` ships `'shape'`. The reading costs nothing where there
+is no evidence — on every case whose failures all arrive on shapes the baseline carried, the two readings are
+identical — but the pass itself is still a default flip, and the register's rule is that a default flip is a
+DISPATCH question, not an arithmetic one:
+
+1. the converter changed, so the released cache's digest no longer matches this checkout and **a new cache must be
+   cut** before any dispatch can resolve one (`cache-datasets.yml`);
+2. one dispatched readback on that cache has to reproduce 1 141 with `failure_containment=1`, because a local run
+   and a runner run have disagreed before;
+3. only then does `DEFAULT_FAILURE_CONTAINMENT` move, and the full corpus is re-read at the new default.
+
+Until step 3, the correct statement of this arm is: **+68 top-1 gains against zero losses on 1 422 cases, one
+cache away from shipping.**
+
+### 11.6 Wiring
+
+`failureAttribution` reaches a dispatch through the packed `ranking_knobs` block as
+`failure_attribution=shape|counts`, beside `failure_containment=1|0`; the second is a closed vocabulary that fails
+the step on any other word, because the two readings disagree on purpose and a typo must not silently pick one.
+The golden half cannot name either — GitHub's 25-input ceiling — so both axes stay FSE'26-only until that surface
+changes.
+
+### 11.7 What is not established
+
+- The `JVMReturn` leakage in §11.3 is measured, not explained. Three cases carry 3 359 novel counts, and no test
+  here distinguishes "a returned value reached a route" from "the caller corrupted the request".
+- The premise needs the platform to template `span_name` and record `attr.http.request.method`. A corpus without
+  either reports zero novelty, and the reading then IS the counts reading — a refusal, not a measurement.

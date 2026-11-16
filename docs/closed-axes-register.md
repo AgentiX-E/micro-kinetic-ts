@@ -4660,3 +4660,85 @@ for is not evidence about a rule.
   candidates, exactly as the excursion rule does, and its only parameter-free refinement is an equality.
 - **"A channel that is right about the case in front of you is an instrument."** False for onset: 45 gains against
   18 losses, on the same pairs where the flow channel costs one.
+
+## §290 — The failure-flow pass lost two cases because a count cannot name its own author
+
+§289 closed with the second relational pass at **+67/−2** on the full corpus and a promotion path whose first task
+was a data-pipeline change: split the failed calls by HTTP status, 4xx for a caller's malformed request and 5xx for
+a failing callee. This iteration opened the datapack and found the split does not encode that distinction at all —
+and then found the one that does.
+
+### 290a. 4xx is a fact about the RESPONSE, and the loss is a fact about the REQUEST
+
+`ts0-ts-basic-service-request-replace-method-88h72r`: 2 963 POSTs on `ts-basic-service → ts-price-service` answer
+405 after the injection, against a pre-injection mix of 304 GET and 248 POST, all 200. The injection config says
+why: the fault replaces GET with POST on one route of the CALLER's outbound traffic. So the failing edge is the
+caller's doing while every count lands on the callee.
+
+The proposed observable fails on both ends: `HTTPResponseReplaceCode` injects 4xx AT the callee, where the same
+status means the opposite, and `HTTPRequestReplacePath` injects no status of its own (it gets a 404 from a route
+that never existed — also 4xx). The status class cannot separate "you sent garbage" from "I answered garbage".
+
+What does separate them is on the request: `span_name` for all 2 963 rejected calls is
+`POST /api/v1/priceservice/prices/{routeId}/{trainType}`, a `(route, method)` pair that **never occurs on that edge
+before the injection**. A callee that broke fails the shapes it always served; a caller that corrupted its request
+mints one it never served.
+
+### 290b. The flow becomes a 2×2, and the new cell is measured but not credited
+
+`knownIn` / `knownOut` / `novelIn` / `novelOut`, with
+`unexplained = max(0, knownIn + novelOut − knownOut)` under the shipped `'shape'` reading and
+`max(0, knownIn + novelIn − knownOut − novelOut)` under `'counts'` — which is §289's rule exactly. The switch
+changes the READING, never the measurement, so the two arms are ablatable on one cache; that is why `novelIn` is
+carried even though nothing credits it.
+
+Novelty is set membership against the same edge's pre-injection shapes, never a threshold, and it is refused
+outright for an edge that has no pre-injection observation: an absent baseline is not an empty one.
+
+### 290c. The census: 98 % of the evidence is about the two families it was built for
+
+Five raw datapacks per family: the two request-corruption families carry 106–7 099 novel failures each, and
+`response-replace-code`, `response-replace-body`, `response-abort`, `exception`, `container-kill`, `corrupt`,
+`partition`, `pod-failure`, `loss`, `delay` and `stress` carry **zero** in 42 of 42 sampled cases. On the corpus:
+203 of 1 422 cases carry any novel rise; 206 216 of the 210 681 novel counts (98 %) are in
+`HTTPRequestReplaceMethod` and `HTTPRequestReplacePath`.
+
+The residue is the honest cost: `JVMReturn` contributes 3 359 novel counts in three cases, because a corrupted
+return value can reach a URL path and mint a route the edge never carried. 1.6 % of the novel mass, and the reason
+the default is not flipped on this measurement.
+
+### 290d. The measurement: zero losses on the full corpus
+
+| arm | Top@1 | % | gains | losses |
+| --- | ---: | ---: | ---: | ---: |
+| shipped | 1 073 | 75.457 | — | — |
+| `attribution=counts` (§289's rule) | 1 138 | 80.028 | 67 | **2** |
+| `attribution=shape` | **1 141** | **80.239** | **68** | **0** |
+
+The counts arm reproduces §289's dispatched readback exactly through a locally re-cut cache (1 073 → 1 138, 67
+gains, the same two losses), which is what makes the third row comparable rather than a second experiment. Top@5
+is 1 249 in all three arms: the pass only reorders adjacent pairs, and it never moved a case out of the top five.
+
+The two losses (`…food-service-request-replace-method-rq29d8`, `…route-plan-service-request-replace-method-d7vdmg`)
+are both repaired, and one path-replacement case is gained that the counts reading never reached
+(`ts9-ts-route-plan-service-request-replace-path-9dg8qf`). Twelve of the 68 gains are on the same family, and all
+twelve survive, so the change is not a trade between families.
+
+### 290e. The pass still ships off, for a reason that is now operational
+
+The converter changed, so no released cache matches this checkout's digest and a dispatch would be refused by its
+own provenance gate. Promotion is: cut a cache (`cache-datasets.yml`), dispatch one readback that must reproduce
+1 141 at `failure_containment=1`, then flip `DEFAULT_FAILURE_CONTAINMENT`. Until the third step the arm is
+**+68/0 on 1 422 cases with a cache rebuild between it and the default**.
+
+### Axes this closes
+
+- **"Split the failed calls by status class."** Refuted — 4xx is produced by both ends of the edge; the same 405
+  is a caller's bad request or a callee's injected response code (§290a).
+- **"A count is a complete account of a failure."** False — a count says an edge failed, not who wrote the
+  request. The 2×2 is the smallest object that keeps both facts, and the second one costs one column in the
+  converter (§290b).
+- **"The two losses need a guard on the rule."** False — they needed a missing premise in the MEASUREMENT. The
+  rule is unchanged; only which cell of the flow it credits (§290d).
+- **"A model-free engine cannot read intent."** Partly true, and enough: it does not read intent, it reads whether
+  this edge has ever carried this request before (§290c).
