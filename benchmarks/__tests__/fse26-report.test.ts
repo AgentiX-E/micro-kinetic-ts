@@ -282,7 +282,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // iteration 291 turned the flow ON) but because an omitted-when-default field would make an arm that
         // switched one OFF byte-identical to the shipped run, on the artifact that is supposed to attribute the
         // difference. Iteration 289 added the second switch here for that reason.
-        'containmentOrder=false failureContainment=true ' +
+        'containmentOrder=true failureContainment=true ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     // The attribution is printed only when it is NOT the shipped reading: 'shape' is the default, so printing it

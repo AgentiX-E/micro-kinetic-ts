@@ -4908,3 +4908,73 @@ reasoned from the source:
   **86 %** of its strongest arm's wrong answers to reading the failure direction backwards, and **42 %** to trusting
   the loudest signal (§13.6 of `docs/failed-edge-gate.md`). Those are the two mechanisms §290 and this entry measure
   as arithmetic.
+
+---
+
+## §293 — The containment order ships, because evidence is cheaper than a better rule
+
+Iteration 292 ended with the shipped default confirmed on a runner (1 141 / 1 422, 80.239 %) and the term axis
+closed by H1's refusal. The pass this register has carried as "implemented, measured, shipped OFF" was therefore
+re-read **at that default**, which §4 and §287b had never done: both arms on record were measured against the
+1 073 control, before iteration 291 promoted the failure flow.
+
+### The three arms, read locally on the released corpus
+
+All seven shards of `rcabench-shape-v1` were verified against the manifest (`converterDigest`
+`sha256:b7fca80e…`, 1 422 cases) and every arm below is a full-corpus run whose per-case verdict file is the
+reading — not a suite line.
+
+| arm | interface requirement | Top@1 | Δ | gains | losses |
+| --- | --- | ---: | ---: | ---: | ---: |
+| shipped | — | 1 141 (80.239 %) | — | — | — |
+| A | none (§4's rule) | 1 174 (82.560 %) | +33 | 38 | **5** |
+| B | ledger rows | 1 156 (81.294 %) | +15 | 15 | **0** |
+| C | raw rows (`failedInterfaces`) | 1 156 (81.294 %) | +15 | 15 | **0** |
+
+Arm A reproduces §287b's mechanism at the new default and with the same five losses, which are a single signature:
+**each one is a pair whose interface carried no failed call at all** (0 records in all five). Requiring the record
+removes all five and costs 23 of the 38 gains.
+
+### Why the requirement costs what it costs
+
+The screen that priced the requirement is a quantity over a **finished ranking** — 32 of the 38 gains sit on a pair
+that did fail. The pass is a **sequence**: one adjacent sweep, so refusing a pair changes what the next comparison
+sees, and a gain whose first inversion needed a blocked pair never happens. That is the third instance in this
+register of a screening statistic and an in-engine readback disagreeing, and the disagreement is always the same
+shape — the screen re-scores, the engine re-orders.
+
+### Why the smaller number ships
+
++33 with five losses fails the standing gate; +15 with zero clears it and gains in seven families:
+
+`NetworkPartition` +6, `NetworkLoss` +2, `NetworkBandwidth` +2, `HTTPRequestReplaceMethod` +2,
+`HTTPRequestDelay` +1, `HTTPResponseDelay` +1, `NetworkCorrupt` +1, every other family 0.
+
+`DEFAULT_CONTAINMENT_ORDER` is therefore `true`: 1 141 → 1 156, **80.239 % → 81.294 %**. The pass is inert without a
+profile (which is why no golden cell can move) and inert on a case with no failed-call channel.
+
+### Two measurement-surface defects this iteration had to fix to state any of it
+
+- **A docblock that named the opposite of its constant.** `fse26-cli.ts` said "Ships OFF … this docblock said 'ships
+  ON' until iteration 289" while the constant was `false`; the census test caught the mirror-image failure this
+  iteration, a declaration asserting a ship-ON option is off. The rule the census enforces — a docblock must read
+  the constant, not remember it — is what made the flip a two-line change instead of an argument.
+- **An anchor that would have rolled in silence.** The golden nine-cell digest moved (`b449caf9b96e` →
+  `617935621cbc`) because `signals:` names `containmentOrder` from the constant. No reading moved, and the note in
+  `sota-comparison.md` §0p says what would falsify that: a cell that moves on the push-triggered battery.
+
+### Axes this closes
+
+- **"The five losses need a discriminator, not a threshold."** They needed **evidence**: every one of them is a
+  pair nothing failed on. The discriminator was already in the case.
+- **"The pass is worth more than the gate costs."** Measured and refused: +33/−5 against +15/−0. The gate's 18 lost
+  gains are the price of a rule that can be stated in one sentence.
+- **"The ledger's rows and the case's rows are the same evidence."** No, but on this corpus they select the same
+  pairs — B and C agree case for case — because what decides is the sweep's sequence, not the map's breadth.
+
+### What is not established
+
+- **Whether a per-case requirement keeps more.** It would keep 4 of the 5 losses (those cases do carry failing
+  rows elsewhere), so it is a worse rule by the standing gate; it was not run to a full arm.
+- **Why 23 gains need an unimpeached first inversion.** The mechanism is the sweep, but no test here separates "the
+  blocked pair was the only path" from "the blocked pair changed a later comparison's winner".

@@ -171,6 +171,16 @@ export interface ContainmentOrderInput<T> {
    * positive margin would be a number with no derivation.
    */
   readonly margin?: number | undefined;
+  /**
+   * The interfaces that carried failed calls on this case, keyed by {@link failureEdgeKey}.
+   *
+   * When this is present the pass only inverts a pair whose **own interface failed**. When it is absent the
+   * pass reads the excursions alone, which is the ruled-out arm: measured on the full corpus, dropping this
+   * evidence is what produced the five losses the register refused (§4/§7 of `docs/containment-order.md`).
+   * The distinction between the two arms is a measurement, not a preference — the same adjacent pairs, the
+   * same excursions, and only the evidence requirement moved.
+   */
+  readonly failingEdges?: ReadonlyMap<string, unknown> | undefined;
 }
 
 /** The minimum of a candidate and its rank, as the pass reads them. */
@@ -195,7 +205,14 @@ interface RankedService {
  * A pair qualified only when BOTH excursions are measured. An unmeasured candidate is not evidence of no
  * excursion, and a rule that treated it as one would invert pairs on the strength of missing data.
  *
- * @param input - The published ranking, the topology, the excursions and the margin.
+ * When {@link ContainmentOrderInput.failingEdges} is supplied, a pair also has to have carried failed calls on
+ * its own interface. That is the difference between "these two services moved" and "something passed between
+ * these two services": the excursion is measured per service, so without the interface record the rule compares
+ * two independent measurements and calls the larger one a callee of the smaller. Every one of the five losses
+ * this pass took on the full corpus was a pair with no failed call at all, and 32 of its 38 gains were pairs
+ * that had one — the distinction is measured, and it is the reason the requirement ships.
+ *
+ * @param input - The published ranking, the topology, the excursions, the margin, and the failed interfaces.
  * @returns The same candidates in the same order, with the qualified adjacent pairs inverted.
  */
 export function applyContainmentOrder<T extends RankedService>(
@@ -204,6 +221,7 @@ export function applyContainmentOrder<T extends RankedService>(
   const order = [...input.ranking];
   if (order.length < 2 || input.excursions.size === 0 || input.edges.length === 0) return order;
   const margin = input.margin ?? 0;
+  const failingEdges = input.failingEdges;
 
   const calls = new Set<string>();
   for (const edge of input.edges) calls.add(`${edge.from}\u0000${edge.to}`);
@@ -211,7 +229,9 @@ export function applyContainmentOrder<T extends RankedService>(
   for (let i = 0; i + 1 < order.length; i++) {
     const upper = order[i]!;
     const lower = order[i + 1]!;
-    if (!calls.has(`${upper.service}\u0000${lower.service}`)) continue;
+    const key = `${upper.service}\u0000${lower.service}`;
+    if (!calls.has(key)) continue;
+    if (failingEdges !== undefined && !failingEdges.has(key)) continue;
     const upperExcursion = input.excursions.get(upper.service);
     const lowerExcursion = input.excursions.get(lower.service);
     if (upperExcursion === undefined || lowerExcursion === undefined) continue;

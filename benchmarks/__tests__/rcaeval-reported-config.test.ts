@@ -597,7 +597,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         // Iteration 291 flipped `failureContainment` under every cell and this line did not move a byte — the
         // artifact could not say which engine produced its nine cells. Printed unconditionally on the rule every
         // field above follows, and read from the constants so the line follows the next flip without an edit here.
-        ' containmentOrder=false failureContainment=true failureAttribution=shape',
+        ' containmentOrder=true failureContainment=true failureAttribution=shape',
     );
   });
 

@@ -601,6 +601,22 @@ export interface FaultPropagationGraph {
    */
   readonly failingEdges?: ReadonlyMap<string, { readonly rise: number; readonly novel: number }>;
   /**
+   * The interfaces that reported MORE failed calls after the injection than before it, keyed by
+   * `failureEdgeKey(caller, callee)`, with the excess as the value.
+   *
+   * This is the RAW reading of the case's failed-call rows, before any of the direction term's credit rules
+   * decided which rows to pay: `failedEdges` above is the ledger's view (net rise after the mutual rule, the
+   * override rule and the minimum-records floor), so an interface whose rise the term declined to credit is
+   * absent from it. The containment pass needs the raw fact and not the decision — "did anything fail on this
+   * interface" is a property of the case, while "is this row worth paying" is a property of the run's
+   * configuration — which is why the two are separate fields rather than one map read twice.
+   *
+   * ABSENT when the case carried no failed-call rows at all. An empty map and an absent one mean different
+   * things to a reader that needs evidence: the first is a measured "no interface failed", the second is "this
+   * case has no such channel".
+   */
+  readonly failedInterfaces?: ReadonlyMap<string, number>;
+  /**
    * The failed-call channel's own account of where the fault's boundary sits: how many interfaces it credited,
    * and whether any of their failures entered the graph from a caller with no inbound calls of its own.
    *

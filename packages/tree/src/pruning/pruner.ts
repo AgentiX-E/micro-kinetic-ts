@@ -1444,21 +1444,21 @@ export const DEFAULT_FAULT_FREE_WEIGHT = 0;
  * Whether the containment order is applied — the pass that refuses to rank a caller above a callee whose own
  * latency left its fault-free band.
  *
- * Ships DISABLED, for two reasons that arrived in that order. The first is the one `traceWeight: 1` taught this
- * register the hard way: a switch whose input map is empty in every production run is indistinguishable from a
- * feature that does not exist, whatever its default says (§286b). The pass needs a fault-free profile, and **no
- * benchmark dispatch supplies one** — `--fault-free-profile` is deliberately unreachable from a workflow dispatch
- * (see the dispatch-surface census' `OPERATIONAL_FLAGS_UNREACHABLE`: a dispatch that could name a path could name
- * one fitted on another corpus), so the only runs that can exercise the pass are the ones that build the profile
- * themselves.
+ * Ships ENABLED since iteration 293, and the two conditions that kept it off are both discharged rather than
+ * waived.
  *
- * The second reason arrived with the measurement and outlives the wiring: the two full-corpus arms put the pass at
- * **47 gains and 5 losses** (75.457 % → 78.411 % Top@1). A 9.4-to-1 ratio is not what this register ships on — the
- * ungated failed-edge term was gated at +105/−2 — and the five are a single mechanism (the response-code family),
- * so they can be refused by a discriminator rather than tolerated by a default. `docs/containment-order.md` §4 and
- * §7 carry both numbers and the promotion path.
+ * - **The input was empty in production.** The pass needs a fault-free profile, and no dispatch can name one
+ *   (`--fault-free-profile` is unreachable from a workflow dispatch, deliberately: a dispatch that could name a
+ *   path could name one fitted on another corpus). A switch over an empty map is a feature that does not exist,
+ *   whatever its default says — so the default could not move until the pass also read something every case
+ *   carries. It now does: the case's own failed-call rows, which the pass requires before it will invert a pair.
+ * - **It took losses.** Against the 1 073 control the pass read 47 gains against 5. Re-read at the shipped
+ *   default (`1 141`) it reads **38 gains against the same 5**, and all five are pairs whose interface carried no
+ *   failed call at all. Requiring the record gives **15 gains against 0** — fewer gains, and the only arm this
+ *   register can ship: no fault family regresses, which is the gate every accepted change here has had to clear.
+ *   `docs/containment-order.md` §12 carries all three arms and the reason the requirement costs 23 gains.
  */
-export const DEFAULT_CONTAINMENT_ORDER = false;
+export const DEFAULT_CONTAINMENT_ORDER = true;
 
 /**
  * How much further outside its band a callee's latency must sit before the pass inverts the pair, in band widths.
@@ -1468,6 +1468,18 @@ export const DEFAULT_CONTAINMENT_ORDER = false;
  * number with no derivation behind it. The sweep is in `docs/containment-order.md`.
  */
 export const DEFAULT_CONTAINMENT_MARGIN = 0;
+
+/**
+ * The interface record a run has when the case carried no failed call at all, so the containment pass reads
+ * ZERO evidence rather than an absent requirement.
+ *
+ * The distinction is the whole of the rule: `graph.failingEdges` is `undefined` on the 200-case block that
+ * carries no failed-call rows, and passing that absence through would let the pass invert pairs on latency
+ * alone — which is exactly the arm measured at +38 / −5 (§4 of `docs/containment-order.md`). An empty record is
+ * the same case's measurement read correctly: no interface failed, so nothing propagated between the two
+ * services, so their excursions are two independent measurements and not an inheritance.
+ */
+const NO_FAILED_INTERFACES: ReadonlyMap<string, unknown> = new Map();
 
 /**
  * Whether the failure-flow order runs. ON in the shipped configuration.
@@ -2782,6 +2794,18 @@ export class TreePruner {
     // from any pruner, so a measurement taken only when the pass is switched on is a per-graph option wearing a
     // per-run name. What stays conditional is the channel, not the switch: a case with no net rise allocates
     // nothing, so the shipped cost is still zero.
+    // The RAW interface record: which edges reported more failed calls after the injection than before it,
+    // before the direction term's own credit rules decided which of them to pay. The containment pass needs
+    // this rather than the ledger's view, because "did anything fail on this interface" is a property of the
+    // case — a row the term declined to credit is still a measurement that calls failed there.
+    const failedInterfaces =
+      options?.failedTraceEdges === undefined
+        ? undefined
+        : new Map(
+            options.failedTraceEdges
+              .filter((row) => row.failed > row.baseline)
+              .map((row) => [failureEdgeKey(row.caller, row.callee), row.failed - row.baseline]),
+          );
     const failureRows = failedEdgeLedger.rows;
     const failureFlowMap = failureRows.length === 0 ? undefined : failureFlows(failureRows);
     const failingEdges =
@@ -2876,6 +2900,7 @@ export class TreePruner {
       containmentExcursions,
       failureFlows: failureFlowMap,
       failingEdges,
+      failedInterfaces,
       failedEdgeBoundary:
         failureRows.length === 0 ? undefined : failedEdgeBoundary(failureRows, topologyGraph.edges),
     };
@@ -3150,6 +3175,11 @@ export class TreePruner {
       edges: graph.callGraph.edges,
       excursions,
       margin: this.options.containmentMargin,
+      // The interface record, and the reason the pass is allowed to speak at all: an excursion is measured per
+      // SERVICE, so without the failed-call rows the rule compares two services that merely both moved. On the
+      // full corpus every loss this pass took was a pair whose interface never failed (§4/§7 of
+      // `docs/containment-order.md`), and the requirement is what removes them.
+      failingEdges: graph.failedInterfaces ?? NO_FAILED_INTERFACES,
     });
     let moved = false;
     for (let i = 0; i < ordered.length; i++) {

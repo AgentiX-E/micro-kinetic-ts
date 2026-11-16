@@ -23,6 +23,7 @@ import {
   DEFAULT_CONTAINMENT_ORDER,
   TreePruner,
   applyContainmentOrder,
+  failureEdgeKey,
   isLatencyChannel,
   latencyExcursions,
 } from '@agentix-e/micro-kinetic-tree';
@@ -385,6 +386,69 @@ describe('applyContainmentOrder', () => {
     expect(ordered).not.toBe(ranking);
   });
 
+  // ── The interface-evidence gate ──────────────────────────
+  //
+  // The excursion is measured per SERVICE, so two candidates that both moved are two independent measurements
+  // until the case says something passed between them. These four tests pin that sentence at the pass's own
+  // boundary: the record licenses an inversion, its absence refuses one, and its DIRECTION is the direction of
+  // the edge rather than of the pair.
+
+  it('inverts the pair when its own interface failed', () => {
+    const ordered = applyContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+    });
+    expect(servicesOf(ordered)).toEqual(['b', 'a']);
+  });
+
+  it('refuses the pair when no failed call was recorded on it', () => {
+    const ordered = applyContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      failingEdges: new Map(),
+    });
+    expect(servicesOf(ordered)).toEqual(['a', 'b']);
+  });
+
+  it('refuses the pair when only the REVERSE interface failed', () => {
+    // `b` reported failed calls to `a`; `a` reported none to `b`. The pair's own interface carried nothing, so
+    // the record licenses no inversion — a key that ignored direction would invert on the wrong edge.
+    const ordered = applyContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      failingEdges: new Map([[failureEdgeKey('b', 'a'), { rise: 9, novel: 0 }]]),
+    });
+    expect(servicesOf(ordered)).toEqual(['a', 'b']);
+  });
+
+  it('cannot resurrect a pair the excursion rule rejected', () => {
+    // The record is a REQUIREMENT, not a second reason to move: an interface that failed does not license an
+    // inversion the excursions do not support.
+    const ordered = applyContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 4],
+        ['b', 1],
+      ]),
+      failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+    });
+    expect(servicesOf(ordered)).toEqual(['a', 'b']);
+  });
+
   it('carries the caller\u2019s payload through the inversion', () => {
     const ordered = applyContainmentOrder({
       ranking: [
@@ -431,10 +495,17 @@ function graphOf(
  * nothing was wrong; `b`'s cpu is flat while its latency leaves the band by a wide margin. The fusion reads
  * `a`'s rise and answers with `a` — the mechanism the pass exists for.
  */
-function propagationCase(): {
+function propagationCase(withFailedInterface = true): {
   callGraph: ServiceCallGraph;
   metrics: MetricMap;
   injectTimeMs: number;
+  failedTraceEdges: ReadonlyArray<{
+    caller: string;
+    callee: string;
+    failed: number;
+    baseline: number;
+    total: number;
+  }>;
 } {
   const callGraph = graphOf(['a', 'b'], [['a', 'b']]);
   const metrics = new Map<string, readonly TimeSeries[]>([
@@ -453,7 +524,13 @@ function propagationCase(): {
       ],
     ],
   ]);
-  return { callGraph, metrics, injectTimeMs: INJECT };
+  // The interface record. `a` calls `b` and that call FAILED twelve times post-injection with no pre-injection
+  // failures — the evidence that something passed between the two services. The gate reads it, so a case without
+  // it is a case where the two excursions are two independent measurements of two services.
+  const failedTraceEdges = withFailedInterface
+    ? [{ caller: 'a', callee: 'b', failed: 12, baseline: 0, total: 40 }]
+    : [];
+  return { callGraph, metrics, injectTimeMs: INJECT, failedTraceEdges };
 }
 
 function profileForCase(): FaultFreeProfile {
@@ -466,22 +543,34 @@ function profileForCase(): FaultFreeProfile {
 function rankWith(options: {
   readonly containmentOrder?: boolean;
   readonly profile?: FaultFreeProfile;
+  readonly withFailedInterface?: boolean;
 }): { readonly services: string[]; readonly ranks: number[] } {
-  const { callGraph, metrics, injectTimeMs } = propagationCase();
+  const { callGraph, metrics, injectTimeMs, failedTraceEdges } = propagationCase(
+    options.withFailedInterface ?? true,
+  );
+  // The two switches that would otherwise answer first are held at their OFF poles, so the fixture measures the
+  // containment pass and nothing else: `failedEdgeWeight = 0` keeps the direction term from paying the callee of
+  // the failed interface (the record is still BUILT — it is a measurement of the case), and
+  // `failureContainment = false` keeps the second relational pass out of the comparison.
   const pruner = new TreePruner({
+    failedEdgeWeight: 0,
+    failureContainment: false,
     ...(options.containmentOrder === undefined
       ? {}
       : { containmentOrder: options.containmentOrder }),
     ...(options.profile === undefined ? {} : { faultFreeProfile: options.profile }),
   });
-  const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs });
+  const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs, failedTraceEdges });
   const results = pruner.analyze(graph, 5);
   return { services: results.map((one) => one.serviceId), ranks: results.map((one) => one.rank) };
 }
 
 describe('the containment order in the engine', () => {
-  it('ships off with a strict margin, because no benchmark dispatch supplies a profile', () => {
-    expect(DEFAULT_CONTAINMENT_ORDER).toBe(false);
+  it('ships ON with a strict margin, on the interface requirement', () => {
+    // The default moved in iteration 293 for two reasons that are both asserted elsewhere: the pass now demands
+    // an interface record (the gate tests above), and with it the full corpus reads 15 gains against 0 losses
+    // (`docs/containment-order.md` §12). The margin stays 0 — a strict comparison on one case's own band.
+    expect(DEFAULT_CONTAINMENT_ORDER).toBe(true);
     expect(DEFAULT_CONTAINMENT_MARGIN).toBe(0);
   });
 
@@ -508,20 +597,45 @@ describe('the containment order in the engine', () => {
     expect(rankWith({ containmentOrder: false, profile: profileForCase() }).services[0]).toBe('a');
   });
 
-  it('is off in the shipped configuration', () => {
-    expect(rankWith({ profile: profileForCase() }).services[0]).toBe('a');
+  it('refuses the inversion when the case recorded no failed call on the pair', () => {
+    // The ruled-out arm, at the engine's own boundary: the same case, the same excursions, and only the
+    // interface record removed. Without it the pass promotes `b` past `a` on latency alone — the mechanism that
+    // cost five cases on the full corpus (docs/containment-order.md §4, §7).
+    expect(
+      rankWith({
+        containmentOrder: true,
+        profile: profileForCase(),
+        withFailedInterface: false,
+      }).services[0],
+    ).toBe('a');
+  });
+
+  it('is ON in the shipped configuration, and inert without a profile', () => {
+    // ON: the omitted option behaves as the explicit one, and the fixture's own interface record is what
+    // licenses the inversion.
+    expect(rankWith({ profile: profileForCase() }).services[0]).toBe('b');
+    // …and still inert where the profile is absent, which is every run that cannot build one.
+    expect(rankWith({}).services[0]).toBe('a');
   });
 
   it('does not build the excursion map when it cannot be read', () => {
-    const { callGraph, metrics, injectTimeMs } = propagationCase();
-    const graph = new TreePruner().buildFaultGraph(callGraph, metrics, { injectTimeMs });
+    const { callGraph, metrics, injectTimeMs, failedTraceEdges } = propagationCase();
+    const graph = new TreePruner().buildFaultGraph(callGraph, metrics, {
+      injectTimeMs,
+      failedTraceEdges,
+    });
     expect(graph.containmentExcursions).toBeUndefined();
   });
 
   it('measures the excursions on the graph when the pass can run', () => {
-    const { callGraph, metrics, injectTimeMs } = propagationCase();
-    const pruner = new TreePruner({ containmentOrder: true, faultFreeProfile: profileForCase() });
-    const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs });
+    const { callGraph, metrics, injectTimeMs, failedTraceEdges } = propagationCase();
+    const pruner = new TreePruner({
+      containmentOrder: true,
+      faultFreeProfile: profileForCase(),
+      failedEdgeWeight: 0,
+      failureContainment: false,
+    });
+    const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs, failedTraceEdges });
     expect(graph.containmentExcursions?.get('a')).toBe(0);
     expect(graph.containmentExcursions?.get('b')).toBeGreaterThan(1);
   });
@@ -534,12 +648,14 @@ describe('the containment order in the engine', () => {
     // the graph and the first arm was the pass-off control. A measurement is a property of the CASE; whether it
     // acts is a property of the RUN, and the run is `analyze` — the same phase `failedEdgeGateMode` already lives
     // in. The builder here has the pass OFF and the reader has it ON, which is the shape the harnesses use.
-    const { callGraph, metrics, injectTimeMs } = propagationCase();
+    const { callGraph, metrics, injectTimeMs, failedTraceEdges } = propagationCase();
     const builder = new TreePruner({
       containmentOrder: false,
       faultFreeProfile: profileForCase(),
+      failedEdgeWeight: 0,
+      failureContainment: false,
     });
-    const graph = builder.buildFaultGraph(callGraph, metrics, { injectTimeMs });
+    const graph = builder.buildFaultGraph(callGraph, metrics, { injectTimeMs, failedTraceEdges });
     const reader = new TreePruner({ containmentOrder: true, faultFreeProfile: profileForCase() });
     expect(
       reader

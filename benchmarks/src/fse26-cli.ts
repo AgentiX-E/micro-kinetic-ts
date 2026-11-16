@@ -484,13 +484,12 @@ export interface Fse26CliOptions {
   /**
    * Whether a caller may be ranked above a callee whose own latency excursion is larger — the containment pass.
    *
-   * Ships OFF (`DEFAULT_CONTAINMENT_ORDER` = false) and is inert without `--fault-free-profile` anyway, because the
-   * excursion is measured against the band the service occupied while nothing was wrong. This docblock said
-   * "ships ON" until iteration 289: the constant it names has been `false` since the pass was measured at 47
-   * gains against 5 losses, and a docblock that describes the opposite of the constant it cites is the exact
-   * failure mode the failed-edge margin bar was fixed for in §288a. Travels in the packed `ranking_knobs`
-   * block as `containment_order=1|0`; `0` is the ablation, and it is exact because the excursion map is not built
-   * at all.
+   * Ships ON (`DEFAULT_CONTAINMENT_ORDER` = true, since iteration 293) and is still inert without
+   * `--fault-free-profile`, because the excursion is measured against the band the service occupied while nothing
+   * was wrong. What moved the default is the pass's second requirement: it only inverts a pair whose own interface
+   * carried failed calls, which is a record every case either has or does not, so the pass is either evidence-bound
+   * or silent rather than weight-driven. Travels in the packed `ranking_knobs` block as `containment_order=1|0`;
+   * `0` is the ablation.
    */
   readonly containmentOrder: boolean;
   /**

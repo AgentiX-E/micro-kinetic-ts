@@ -565,3 +565,81 @@ changes.
   here distinguishes "a returned value reached a route" from "the caller corrupted the request".
 - The premise needs the platform to template `span_name` and record `attr.http.request.method`. A corpus without
   either reports zero novelty, and the reading then IS the counts reading — a refusal, not a measurement.
+
+---
+
+## 12. The second reading at the shipped default: +38/−5, and the interface requirement (iteration 293)
+
+§4 measured this pass against the 1 073 control, i.e. **before** iteration 291 promoted the failure flow. Two
+things were therefore unmeasured at the point the pass is actually offered: what it does on top of the promoted
+default, and whether the five losses that kept it switched off are still the same five.
+
+Both arms were re-read locally on the released corpus (`rcabench-shape-v1`, converter digest `b7fca80e…`, all
+seven shards verified against the manifest), one case per line, from each run's own `--per-case-out`:
+
+| arm | `containmentOrder` | interface evidence | Top@1 | Δ vs shipped | gains | losses |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| shipped | off | — | **1 141** (80.239 %) | — | — | — |
+| A: excursion alone (§4's rule) | on | not read | 1 174 (82.560 %) | **+33** | 38 | **5** |
+| B: §12.1's rule | on | ledger rows | 1 156 (81.294 %) | +15 | 15 | **0** |
+| C: §12.1's rule, raw rows | on | raw rows | **1 156** (81.294 %) | **+15** | 15 | **0** |
+
+Arm A reproduces §4's mechanism exactly where it matters: the gains are the families that **propagate**
+(`NetworkPartition` +11, `NetworkBandwidth` +9, `NetworkLoss` +7, `HTTPResponseDelay` +3, `NetworkLoss`/`Corrupt`
++2/+2, `HTTPRequestDelay` +2, `HTTPRequestReplaceMethod` +4) and the five losses are `HTTPResponseDelay`,
+`HTTPResponseAbort`, `HTTPResponseReplaceCode` ×2 and `HTTPRequestReplaceMethod` — the same shape §4 recorded,
+one fault family at a time.
+
+### 12.1 Why the pass needs an interface record, and which one
+
+An excursion is measured per **service**. Two candidates that both moved are therefore two independent
+measurements until the case says something passed *between* them. The five losses are exactly the pairs where
+nothing did: reading the raw `failedTraceEdges` of those five cases gives **0 failing records in all five**, while
+**32 of the 38 gains** sit on a pair whose interface did carry failed calls (1–27 each).
+
+That reading priced two candidate rules, and they are not the same rule:
+
+- **the ledger's rows** — the edges the direction term decided to pay after its mutual rule, its override rule and
+  its minimum-records floor. Arm B: the requirement is real and it costs 23 of the 38 gains, because a row the
+  term declined to credit is still a row that failed.
+- **the raw rows** (`failedInterfaces`, new field) — every edge that reported more failures after the injection
+  than before it, before any credit rule. Arm C: the requirement as the case states it.
+
+The distinction is the same one §3.1 draws between two instruments: the ledger is a **decision** about payment,
+the raw record is a **measurement** of the case, and a pass that needs evidence needs the measurement.
+
+**On this corpus the two readings are indistinguishable — arm B and arm C are the same 1 156, case for case — and
+that is a result rather than a disappointment.** The reason is the pass's own shape: it is a single adjacent sweep,
+so refusing ONE pair changes what the next comparison sees. An inversion that needed a blocked pair as its first
+step never happens, whatever evidence the pair three positions down carries; and that is why the requirement costs
+23 of the 38 gains even though a raw-record screen says 32 of them sit on a pair that did fail. The screen is a
+quantity over a FINISHED ranking; the pass is a sequence. §3 records the same lesson for the excursion itself, and
+this is its second instance in one document.
+
+### 12.3 What ships, and what is refused
+
+`DEFAULT_CONTAINMENT_ORDER` is `true` from iteration 293 with the requirement in place. The arm that was refused is
+the one with the larger number: **+33 with five losses** is not shippable under this register's standing gate — no
+fault family with n ≥ 20 may lose a case the shipped run answered — while **+15 against zero** clears it, gains in
+seven families and loses in none:
+
+| family | n | shipped | with the pass | Δ |
+| --- | ---: | ---: | ---: | ---: |
+| NetworkPartition | 97 | 66 | 72 | **+6** |
+| NetworkLoss | 48 | 31 | 33 | **+2** |
+| NetworkBandwidth | 42 | 21 | 23 | **+2** |
+| HTTPRequestReplaceMethod | 190 | 137 | 139 | **+2** |
+| HTTPRequestDelay | 88 | 68 | 69 | +1 |
+| HTTPResponseDelay | 89 | 67 | 68 | +1 |
+| NetworkCorrupt | 46 | 35 | 36 | +1 |
+| every other family (18) | — | — | — | 0 |
+
+The pass is inert without a profile, so it changes nothing on the golden half, and it is inert on a case with no
+failed-call channel at all. Both are properties of the same rule and neither is a special case in the code.
+
+### 12.2 Wiring
+
+`applyContainmentOrder` takes an optional `failingEdges` record; when present, a pair is inverted only if its own
+interface (in the edge's direction) is in it. `TreePruner.containmentOrdered` passes `graph.failedInterfaces`,
+and a case with no failed-call channel at all supplies an **empty** record rather than `undefined` — the absent
+map would have been read as "no requirement", which is the arm §12.1 refuses.

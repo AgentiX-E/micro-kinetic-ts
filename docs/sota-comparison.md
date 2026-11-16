@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config b449caf9b96e -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 617935621cbc -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -222,6 +222,14 @@ note is the instance of: a fingerprint identifies a CONFIGURATION, and a renderi
 it without the engine moving at all. The flow is inert on this corpus for a reason the artifact states — `failed
 edges in 15/30 cases` on RE3-OB, `admitted rank-1 with entry 0 of 0` — so an unchanged block is the measurement and
 not an omission.
+
+**The digest rolled a second time, and again with no reading under it moving.** Iteration 293 flipped
+`DEFAULT_CONTAINMENT_ORDER` to `true` (`docs/containment-order.md` §12), which `signals:` names as a
+constant-sourced field — the very field iteration 292 added to this line because its absence had let a default move
+in silence. The digest therefore rolls `b449caf9b96e` → `617935621cbc`. The pass is **inert on this corpus for the
+same reason the flow is**: it needs a fault-free profile, and the golden half supplies none, so every one of the
+nine cells is computed by a pass that never runs. The block above is unchanged, and the push-triggered RCAEval
+battery is the artifact that will say so per case; if a cell moves, this note is wrong and the flip is the suspect.
 
 **Reproduced, because a standing figure has to be one a stranger can obtain rather than one this document remembers.** The readings above were taken TWICE, on one revision and one configuration, from two independent dispatches of the golden half — `41853861726` (16:15) and `41865456632` (16:57) — and **every one of the fifteen per-cell counts and all four totals is identical between them**, read off each run's own `rcaeval-re{1,2,3}-results.txt` and never off a suite line. The anchor names the second because it is the one whose artifact is complete; the first is the same number and is what the pre-registration of this flip was written against.
 
