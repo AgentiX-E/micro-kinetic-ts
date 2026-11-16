@@ -124,7 +124,14 @@ describe('semantic preflight', () => {
     );
     await expect(run).rejects.toThrow(/api-embedding:embedding-3 is unavailable/);
     await expect(run).rejects.toThrow(/429/);
-    await expect(run).rejects.toThrow(/BENCHMARK_EMBEDDING_FALLBACK=local/);
+    // The way out names THREE things, because the reader of a red CI log has no other context: the
+    // variable, where it is set (a repository variable, not something a dispatch can pass), and the
+    // fact that the resulting run is not comparable. The previous form named only the variable and the
+    // spelling `=local`, which reads as a command-line flag — and on this repository the flag on the
+    // command line of CI is exactly what nobody can reach.
+    await expect(run).rejects.toThrow(/BENCHMARK_EMBEDDING_FALLBACK/);
+    await expect(run).rejects.toThrow(/repository variable/i);
+    await expect(run).rejects.toThrow(/not comparable/);
     // The refused arm must not build the local provider: a run that aborts has no use for it, and a
     // factory called on the abort path would be a second thing the refusal silently did.
     expect(factory.calls).toBe(0);

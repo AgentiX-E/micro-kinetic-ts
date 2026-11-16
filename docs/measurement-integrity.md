@@ -110,6 +110,21 @@ composes the configuration line and discovers the corpus.
 An unrecognised value is **refused**, not defaulted — the policy decides whether a run measures the published
 configuration, so a typo must not silently select either arm.
 
+**Who sets it, and why it is not a dispatch input.** `benchmark-rcaeval.yml` reads it from a repository
+variable — `BENCHMARK_EMBEDDING_FALLBACK: ${{ vars.BENCHMARK_EMBEDDING_FALLBACK || '' }}` on each of its eleven
+provider steps — rather than declaring a 26th input. `workflow_dispatch` accepts at most 25 inputs, this workflow
+defines exactly 25, and every one of the 25 is fenced by its own tests because each closes the same hole: an option
+the runner accepts that no dispatch can state is a configuration nobody can name. Freeing a slot would re-open one
+of those holes to plug this one.
+
+The variable also answers the better question. A dispatch input says *this run* was degraded; an environment
+variable says *this repository is currently degraded*, which is what an exhausted balance is — and it reaches the
+runs a dispatch cannot, since every push touching `packages/*/src/**` starts this workflow. The `|| ''` is
+load-bearing: an unset variable renders as empty, and `parseEmbeddingFallback` maps both `undefined` and `''` to
+`abort`. The refusal message names the variable, says where it is set, and says the resulting cells are not
+comparable — the reader of a red log has no other context, and the older spelling `BENCHMARK_EMBEDDING_FALLBACK=local`
+read as a command-line flag, which on this repository's CI is precisely what nobody can reach.
+
 The substitution is never implicit, and it is recorded where the artifact can see it: the configuration string
 (`diagnose_dump`'s header carries it verbatim) gained a third line.
 

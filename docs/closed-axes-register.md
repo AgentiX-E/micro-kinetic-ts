@@ -5085,6 +5085,16 @@ from an API-embedded one by digest alone, so a baseline should not be recorded f
 - **Whether the quota comes back.** Restoring it is the only thing that restores an API-embedded nine-cell
   reading; until then the workflow fails at the probe in about a minute instead of producing fourteen minutes of
   corrupted numbers, and that red is the honest state.
+- **That the red is a dead end.** It is not, but the way out is deliberately narrow and deliberate. A repository
+  variable — `BENCHMARK_EMBEDDING_FALLBACK = local` — substitutes the in-process provider, and the run that
+  results says `DEGRADED` above every number, carries the backend on its configuration line, and is refused
+  against the anchor by its own report. Unset is the strict arm; an unrecognised value is refused. It is a
+  variable rather than a 26th dispatch input because `workflow_dispatch` stops at 25 and all 25 are fenced —
+  `diagnose_decimals` alone by five tests, every one of them closing the same hole of an option the runner
+  accepts and no dispatch can state. The variable is also the only channel that reaches a **push**: the nine
+  cells are produced by pushes touching `packages/*/src/**`, and a dispatch input cannot be passed to those.
+  What this does not establish is that a degraded reading is worth taking — it is not, for anything that will be
+  compared with `81.294 %`.
 - **That the measurement is reproducible by a reader.** It is not, while it depends on a supplier's balance. The
   permanent fix is a cached embedding provider — a decorator over `IEmbeddingProvider` serving vectors keyed by
   `(modelId, text-hash)` — which is cheap here because the embedded population is the aligner's service ids and

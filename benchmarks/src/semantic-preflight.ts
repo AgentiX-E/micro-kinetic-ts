@@ -149,9 +149,11 @@ export async function preflightSemanticConfig(
       throw new Error(
         `embedding provider ${nameOf(provider)} is unavailable: ${reason}. ` +
           'Refusing to run: the published cells are measured with this provider, and a run without it ' +
-          'would publish a different configuration under the same name. Set ' +
-          'BENCHMARK_EMBEDDING_FALLBACK=local to measure with the in-process TF-IDF provider instead — ' +
-          'that run labels itself degraded and its cells are not comparable with an API-embedded run.',
+          'would publish a different configuration under the same name. To measure anyway, set the ' +
+          'repository variable BENCHMARK_EMBEDDING_FALLBACK to `local` (CI: Settings -> Secrets and ' +
+          'variables -> Actions -> Variables; locally: export it in the environment). That substitutes ' +
+          'the in-process TF-IDF provider, labels the run degraded above every number it prints, and ' +
+          'its cells are not comparable with an API-embedded run.',
       );
     }
 
