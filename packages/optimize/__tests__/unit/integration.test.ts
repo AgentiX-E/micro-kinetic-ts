@@ -264,6 +264,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // Iteration 289: the SECOND relational pass — the failure-flow order. Held for the containment order's
       // reason: it moves a pair rather than resizing a term, and its measured arm carries one regression, so
       // there is no coefficient for a search to interpolate and no arm to interpolate toward.
+      'failureAttribution',
       'failureContainment',
       'faultFreeProfile',
       'faultFreeSelection',

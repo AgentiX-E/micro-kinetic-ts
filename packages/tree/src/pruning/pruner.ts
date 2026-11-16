@@ -82,7 +82,14 @@ import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { applyContainmentOrder, latencyExcursions } from './containment-order.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
-import { applyFailureContainment, failureEdgeKey, failureFlows } from './failure-containment.js';
+import {
+  DEFAULT_FAILURE_ATTRIBUTION,
+  applyFailureContainment,
+  failureEdgeKey,
+  failureFlows,
+  isFailureAttribution,
+  type FailureAttribution,
+} from './failure-containment.js';
 import {
   computeFaultFreeScores,
   type FaultFreeProfile,
@@ -1106,6 +1113,21 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `pruning/failure-containment.ts` and `docs/containment-order.md` §5.
    */
   readonly failureContainment: boolean;
+  /**
+   * Which reading of the failure flow decides a pair — see `FailureAttribution`.
+   *
+   *   'shape'  (default) a rise that arrived on a request SHAPE the edge had never carried is charged to the
+   *            CALLER that sent it, not to the callee that rejected it. This is what makes the request-corruption
+   *            family legible, and it is why the pass no longer promotes a victim of it.
+   *   'counts' the 289 rule: every counted rise is charged where the count says it lands.
+   *
+   * Ships at `DEFAULT_FAILURE_ATTRIBUTION` = `'shape'`, because on every case whose failures all arrive on
+   * shapes the baseline carried the two readings are IDENTICAL — the FSE'26 families that inject at the callee
+   * produced zero novel-shape failures across the sampled datapacks — so the axis costs nothing where it has no
+   * evidence and speaks only where it does. The switch exists so the two can be ablated on one cache: it changes
+   * the READING, never the measurement, which is why the graph carries both kinds either way.
+   */
+  readonly failureAttribution: FailureAttribution;
 }
 
 /**
@@ -1462,6 +1484,11 @@ export const DEFAULT_CONTAINMENT_MARGIN = 0;
  *   ablate.
  */
 export const DEFAULT_FAILURE_CONTAINMENT = false;
+
+// Re-exported beside the option that consumes it, for the same reason as the gate vocabulary below: the runners
+// import this module directly rather than the barrel, and a vocabulary a CLI cannot import is a vocabulary no flag
+// can be parsed against.
+export { DEFAULT_FAILURE_ATTRIBUTION, isFailureAttribution };
 
 // Re-exported beside the option that consumes it: the two runners import this module directly rather than the
 // barrel, and a vocabulary a CLI cannot import is a vocabulary no flag can be parsed against.
@@ -2269,6 +2296,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   containmentOrder: DEFAULT_CONTAINMENT_ORDER,
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
+  failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
 };
 
 /**
@@ -2670,7 +2698,13 @@ export class TreePruner {
       failureRows.length === 0
         ? undefined
         : new Map(
-            failureRows.map((row) => [failureEdgeKey(row.caller, row.callee), row.rise] as const),
+            failureRows.map(
+              (row) =>
+                [
+                  failureEdgeKey(row.caller, row.callee),
+                  { rise: row.rise, novel: row.novel },
+                ] as const,
+            ),
           );
 
     // The SELF-TIME share: the fraction of a service's own latency rise that no callee can explain.
@@ -2964,6 +2998,7 @@ export class TreePruner {
       ranking: ranked,
       flows,
       failingEdges: graph.failingEdges,
+      attribution: this.options.failureAttribution,
     });
     let moved = false;
     for (let i = 0; i < ordered.length; i++) {

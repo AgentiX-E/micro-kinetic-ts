@@ -25,7 +25,9 @@ imply, aggregated. The bridge therefore resolves each span's parent service via
 a polars self-join and emits two derived products instead, shrinking the trace
 component by ~3 orders of magnitude: the DISTINCT caller → callee edges as
 `traceEdges`, and the caller → callee pairs whose post-injection calls returned
-an HTTP status of 400 or above as `failedTraceEdges`. Metric time
+an HTTP status of 400 or above as `failedTraceEdges`, each row carrying the
+pre-injection count on the same edge and the part of the post-injection count
+whose request SHAPE the edge had never carried before. Metric time
 series remain the dominant per-case size (~34 MB/case measured on a 500 MB
 prefix subset), so `case.json` is far smaller than the span list but still
 substantial.
@@ -50,7 +52,7 @@ Output `case.json` schema (per datapack):
         ["ts-ui-dashboard", "ts-order-service"]
       ],
       "failedTraceEdges": [
-        ["ts-ui-dashboard", "ts-order-service", 12, 1]
+        ["ts-ui-dashboard", "ts-order-service", 12, 1, 0]
       ],
       "logs": [
         {"timestamp": 1756998000000, "service": "...", "level": "ERROR", "message": "..."}
@@ -912,6 +914,33 @@ FAILED_STATUS_COLUMN = "attr.http.response.status_code"
 # failure, so the comparison is `>=`, not `>`.
 FAILURE_STATUS_FLOOR = 400
 
+# The columns that describe the SHAPE of a request as the callee saw it. Read
+# together, they say *what was asked*: the route the call resolved to and the
+# method it was issued with. Two calls that share both are the same request
+# repeated; a call whose shape appears nowhere in the pre-injection window is a
+# request this edge had never carried before.
+REQUEST_SHAPE_COLUMNS = ("span_name", "attr.http.request.method")
+
+
+def _request_shape(available: "list[str]") -> pl.Expr:
+    """
+    The shape expression over whichever of the shape columns a datapack carries.
+
+    A datapack missing both columns has no shape information, so the expression
+    collapses to one constant — every request is then indistinguishable from
+    every other and no shape can be novel, which is the correct reading of an
+    absent instrument rather than a zero measured on it.
+
+    The separator is a NUL so two different column values cannot concatenate
+    into the same key (`"a" + "bc"` vs `"ab" + "c"`).
+    """
+    if not available:
+        return pl.lit("")
+    return pl.concat_str(
+        [pl.col(name).cast(pl.Utf8).fill_null("") for name in available],
+        separator="\u0000",
+    )
+
 
 def read_failed_trace_edges(
     normal_path: Path, abnormal_path: Path
@@ -927,7 +956,7 @@ def read_failed_trace_edges(
     against, and every outgoing span carries both the calling service and the
     HTTP response status of the call.
 
-    Returns `[caller, callee, failed, baseline]` rows, sorted by
+    Returns `[caller, callee, failed, baseline, novel]` rows, sorted by
     `(caller, callee)` for the same determinism reason `read_trace_edges` sorts:
     polars' grouping keeps no stable order, so an identical datapack could
     otherwise produce different bytes on each build. `failed` counts the
@@ -937,16 +966,39 @@ def read_failed_trace_edges(
     evidence about the fault, and emitting it would implicate the same callee in
     every case.
 
+    `novel` is the part of `failed` whose request SHAPE had never been seen on
+    this edge before the injection. It exists because the counts alone cannot
+    separate the two ways an edge fails, and the difference decides who is
+    causal:
+
+    - A callee that broke answers requests it has always answered → its failures
+      arrive on shapes the edge already carried.
+    - A CALLER that corrupted its request produces shapes the edge never
+      carried — a replaced method, a rewritten path — and the callee rejects
+      them. That is the `HTTPRequestReplaceMethod` family, whose failing edge is
+      caused by the caller while every count lands on the callee.
+
+    The shape is `(span_name, method)`: what was asked, as the callee recorded
+    it. Novelty is a SET MEMBERSHIP test against the pre-injection window, not a
+    threshold, and it is scoped to edges that HAVE a pre-injection observation —
+    an edge that appears only after the injection has an absent baseline, not an
+    empty one, and none of its shapes may be called novel.
+
     Degrades to an empty list when the status column is absent from a file's
     schema, which happens for some datapacks — the same condition
-    `read_trace_derived_metrics` already checks for the same column.
+    `read_trace_derived_metrics` already checks for the same column. A datapack
+    whose traces carry neither shape column reports `novel = 0` on every edge:
+    the instrument is absent, and an absent instrument may not claim a finding.
     """
     frames: list[pl.DataFrame] = []
     for path, is_abnormal in ((normal_path, False), (abnormal_path, True)):
         if not path.exists():
             continue
-        if FAILED_STATUS_COLUMN not in pl.read_parquet_schema(path):
+        schema = pl.read_parquet_schema(path)
+        if FAILED_STATUS_COLUMN not in schema:
             continue
+        carried = [name for name in REQUEST_SHAPE_COLUMNS if name in schema]
+        absent = [name for name in REQUEST_SHAPE_COLUMNS if name not in schema]
         frames.append(
             pl.read_parquet(
                 path,
@@ -956,8 +1008,11 @@ def read_failed_trace_edges(
                     "parent_span_id",
                     "service_name",
                     FAILED_STATUS_COLUMN,
+                    *carried,
                 ],
-            ).with_columns(pl.lit(is_abnormal).alias("__abnormal"))
+            )
+            .with_columns([pl.lit(None, dtype=pl.Utf8).alias(name) for name in absent])
+            .with_columns(pl.lit(is_abnormal).alias("__abnormal"))
         )
     if not frames:
         return []
@@ -968,11 +1023,14 @@ def read_failed_trace_edges(
         & pl.col("span_id").is_not_null()
         & pl.col("trace_id").is_not_null()
     )
-
-    failed = df.filter(
-        pl.col(FAILED_STATUS_COLUMN).is_not_null()
-        & (pl.col(FAILED_STATUS_COLUMN) >= FAILURE_STATUS_FLOOR)
+    df = df.with_columns(
+        _request_shape(list(REQUEST_SHAPE_COLUMNS)).alias("__shape")
     )
+
+    # Only spans that ANSWERED carry an outcome. A span with no status made no
+    # HTTP call, so it can neither fail nor describe a request shape.
+    answered = df.filter(pl.col(FAILED_STATUS_COLUMN).is_not_null())
+    failed = answered.filter(pl.col(FAILED_STATUS_COLUMN) >= FAILURE_STATUS_FLOOR)
 
     # The parent lookup is deduplicated on the join key. A span id is unique in
     # well-formed data, but if it were not, the inner join would fan out and
@@ -985,14 +1043,44 @@ def read_failed_trace_edges(
         pl.col("span_id").alias("parent_span_id"),
         pl.col("service").alias("parent_service"),
     ).unique(subset=["parent_span_id"], keep="first")
+
+    resolved = answered.join(parents, on="parent_span_id", how="inner").filter(
+        pl.col("parent_service") != pl.col("service")
+    )
+    pre = resolved.filter(pl.col("__abnormal").not_())
+    # Two separate sets, both read off the SAME resolved pre-injection spans: the
+    # edges that were observed at all, and the shapes each of them carried. An
+    # edge in the first set but not the second for a given shape is what "novel"
+    # will mean.
+    observed_edges = pre.select(["parent_service", "service"]).unique().with_columns(
+        pl.lit(True).alias("__edge_seen")
+    )
+    observed_shapes = (
+        pre.select(["parent_service", "service", "__shape"])
+        .unique()
+        .with_columns(pl.lit(True).alias("__seen"))
+    )
+
     joined = failed.join(parents, on="parent_span_id", how="inner")
     joined = joined.filter(pl.col("parent_service") != pl.col("service"))
+    joined = joined.join(observed_edges, on=["parent_service", "service"], how="left")
+    joined = joined.join(
+        observed_shapes, on=["parent_service", "service", "__shape"], how="left"
+    )
+    joined = joined.with_columns(
+        (
+            pl.col("__abnormal")
+            & pl.col("__edge_seen").fill_null(False)
+            & pl.col("__seen").is_null()
+        ).alias("__novel")
+    )
 
     grouped = (
         joined.group_by(["parent_service", "service"])
         .agg(
             pl.col("__abnormal").sum().alias("failed"),
             pl.col("__abnormal").not_().sum().alias("baseline"),
+            pl.col("__novel").sum().alias("novel"),
         )
         .filter(pl.col("failed") > 0)
         .sort(["parent_service", "service"])
@@ -1004,6 +1092,7 @@ def read_failed_trace_edges(
             row["service"],
             int(row["failed"]),
             int(row["baseline"]),
+            int(row["novel"]),
         ]
         for row in grouped.iter_rows(named=True)
     ]

@@ -124,6 +124,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     containmentOrder: opts.containmentOrder,
     containmentMargin: opts.containmentMargin,
     failureContainment: opts.failureContainment,
+    failureAttribution: opts.failureAttribution,
     topoWeight: opts.topoWeight,
     topoDiscount: opts.topoDiscount,
     topoDiscountScope: opts.topoDiscountScope,

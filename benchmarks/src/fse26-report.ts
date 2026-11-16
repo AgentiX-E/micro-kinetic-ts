@@ -28,6 +28,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FailureAttribution,
   FaultFreeSelection,
   OnsetShape,
   PoolAdmission,
@@ -39,6 +40,7 @@ import type {
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
@@ -215,6 +217,8 @@ export interface FSE26RunConfig {
   readonly containmentMargin?: number;
   /** The failure-flow order's switch, rendered for the same reason the containment order's is. */
   readonly failureContainment?: boolean;
+  /** Which reading of the failure flow that pass applied. */
+  readonly failureAttribution?: FailureAttribution;
   readonly topoWeight: number;
   /**
    * Topological deduction strength. Printed only when non-zero, and its scope nested under it: the deduction
@@ -605,6 +609,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // when the constant was read and the comment was not.
   line += ` containmentOrder=${config.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER}`;
   line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
+  if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
+    line += ` failureAttribution=${config.failureAttribution}`;
+  }
   if ((config.containmentMargin ?? DEFAULT_CONTAINMENT_MARGIN) !== 0) {
     line += ` containmentMargin=${config.containmentMargin}`;
   }

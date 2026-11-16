@@ -269,14 +269,20 @@ export interface FSE26MetricSeries {
 type FSE26TraceEdge = readonly [string, string];
 
 /**
- * A bridge-emitted FAILED-call edge: `[caller, callee, failed, baseline]`.
+ * A bridge-emitted FAILED-call edge: `[caller, callee, failed, baseline, novel?]`.
  *
  * Both counts are present because they are measured on the SAME edge in two
  * windows — `failed` at/after the injection, `baseline` before it. The engine
  * subtracts them, so an edge that was already broken is not mistaken for this
  * fault's signature.
+ *
+ * `novel` is the part of `failed` whose request shape the edge had never carried
+ * before the injection, and it is OPTIONAL because the caches cut before
+ * iteration 290 have no such column. A four-element row therefore still parses,
+ * and the engine reads its absence as zero novelty — the pre-290 channel — so
+ * adding the column is additive for the reader as well as for the writer.
  */
-type FSE26FailedTraceEdge = readonly [string, string, number, number];
+type FSE26FailedTraceEdge = readonly [string, string, number, number, number?];
 
 /**
  * `[caller, callee, preMeanMs, postMeanMs]` per edge with a measurable span
@@ -307,7 +313,7 @@ export interface FSE26RawCase {
   readonly metrics: Readonly<Record<string, readonly FSE26MetricSeries[]>>;
   readonly traceEdges?: readonly FSE26TraceEdge[];
   /**
-   * `[caller, callee, failed, baseline]` per edge with at least one
+   * `[caller, callee, failed, baseline, novel?]` per edge with at least one
    * post-injection failed call. Written only when non-empty, so an absent key
    * means "not measured", never "nothing failed".
    */
@@ -441,11 +447,16 @@ export function toFSE26FailedEdges(
   failedTraceEdges: readonly FSE26FailedTraceEdge[] | undefined,
 ): FaultFailedEdge[] | undefined {
   if (!failedTraceEdges || failedTraceEdges.length === 0) return undefined;
-  return failedTraceEdges.map(([caller, callee, failed, baseline]) => ({
+  return failedTraceEdges.map(([caller, callee, failed, baseline, novel]) => ({
     caller,
     callee,
     failed,
     baseline,
+    // A cache cut before the shape channel existed carries four elements and no
+    // novelty. `?? 0` is the whole of that compatibility: an absent instrument
+    // reports nothing, which is what an empty novelty MEANS rather than a
+    // number standing in for a measurement.
+    ...(novel === undefined ? {} : { novel }),
   }));
 }
 

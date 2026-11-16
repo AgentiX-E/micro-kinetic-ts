@@ -571,22 +571,35 @@ export interface FaultPropagationGraph {
    * produced by the very calls it makes and cancels. `pruning/failure-containment.ts` reads that difference on
    * two candidates; no candidate-local term can express it.
    *
+   * A flow carries TWO kinds of evidence as well as two directions, because a count alone cannot say which end
+   * of an edge produced it. A callee that broke fails the requests it has always served; a CALLER that corrupted
+   * its request emits a shape the callee has never been asked for and is rejected for it (iteration 290). The
+   * counts are identical in the two cases — which is why the 289 full-corpus readback lost two
+   * `HTTPRequestReplaceMethod` cases — so the flow keeps the novel-shape rises apart from the known-shape ones
+   * and the pass decides which end each kind charges.
+   *
    * ABSENT (not empty) when the case carried no net rise at all, because a channel that measured nothing is not a
    * channel that measured zero.
    */
   readonly failureFlows?: ReadonlyMap<
     ServiceId,
-    { readonly incoming: number; readonly outgoing: number }
+    {
+      readonly knownIn: number;
+      readonly knownOut: number;
+      readonly novelIn: number;
+      readonly novelOut: number;
+    }
   >;
   /**
-   * The edges that carried a net failed-call rise, keyed by `failureEdgeKey(caller, callee)`, valued by the rise.
+   * The edges that carried a net failed-call rise, keyed by `failureEdgeKey(caller, callee)`.
    *
    * A flow says "this service's interfaces are failing"; only the edge keys say WHICH caller reported it, and the
    * rise is what lets the pass recognise the one configuration in which its own arithmetic carries no direction:
-   * a single count replicated at every site of a relay (see `pruning/failure-containment.ts`). ABSENT with
-   * {@link failureFlows}.
+   * a single count replicated at every site of a relay (see `pruning/failure-containment.ts`). `novel` is the part
+   * of that rise that arrived on shapes the edge had never carried, so the degeneracy test can compare like with
+   * like — a novel count is not the same account as a known one. ABSENT with {@link failureFlows}.
    */
-  readonly failingEdges?: ReadonlyMap<string, number>;
+  readonly failingEdges?: ReadonlyMap<string, { readonly rise: number; readonly novel: number }>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

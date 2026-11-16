@@ -165,6 +165,21 @@ export interface FaultFailedEdge {
   readonly failed: number;
   /** Failed calls on the SAME edge before the injection time. */
   readonly baseline: number;
+  /**
+   * The part of {@link failed} whose REQUEST SHAPE the edge had never carried before the injection.
+   *
+   * A count says an edge failed; it does not say who made it fail, because both ends can: a callee that broke
+   * rejects nothing, it fails the requests it has always served, while a CALLER that corrupted its request sends
+   * a shape the callee has never been asked for and is rejected for it. `failed − baseline` is identical in the
+   * two cases, so the counts alone cannot charge either end, which is the residue the FSE'26 readback measured as
+   * two `HTTPRequestReplaceMethod` losses.
+   *
+   * Shape is `(route, method)` as the callee recorded it, and novelty is a set-membership test against the
+   * pre-injection window of the SAME edge — not a threshold, and never asserted for an edge that has no
+   * pre-injection observation at all (an absent baseline is not an empty one). Producers that cannot measure it
+   * omit the field or report `0`, which reads as the pre-290 channel: absent instrument, no finding.
+   */
+  readonly novel?: number;
 }
 
 /**

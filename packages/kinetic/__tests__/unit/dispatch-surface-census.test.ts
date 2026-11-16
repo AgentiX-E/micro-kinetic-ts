@@ -318,6 +318,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // two passes that can be dispatched at all — the containment order needs a corpus profile no dispatch may
     // name, and this one needs nothing but the case.
     '--failure-containment',
+    // Iteration 290: the READING that pass applies. Packed with it, because the two together are one experiment:
+    // an ablation of the shape channel on a single cache is what separates it from the counts it re-attributes.
+    '--failure-attribution',
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
@@ -926,6 +929,16 @@ const KNOBS: Readonly<
     // golden half cannot name it (no input left under GitHub's 25-input ceiling, the reason every late knob is
     // packed rather than given an input), so the axis is FSE'26-only until that surface changes.
     flag: '--failure-containment',
+    owner: 'containment-order.md',
+    fse26: 'ranking_knobs',
+    rcaeval: null,
+  },
+  failureAttribution: {
+    // The reading that pass applies: `shape` charges a rise that arrived on a request shape the edge never
+    // carried to the CALLER, `counts` charges every counted rise where the count says it lands. It rides in the
+    // same packed block as its parent, because the pair IS the experiment -- the attribution is only measurable
+    // against the counts it re-attributes, on one cache.
+    flag: '--failure-attribution',
     owner: 'containment-order.md',
     fse26: 'ranking_knobs',
     rcaeval: null,

@@ -704,23 +704,34 @@ class TestReadFailedTraceEdges(unittest.TestCase):
     STATUS = "attr.http.response.status_code"
 
     def _write_traces(self, root: Path, name: str, rows: list[tuple]) -> Path:
-        """Write a traces Parquet from (trace_id, span_id, parent, service[, status]).
+        """Write a traces Parquet from (trace_id, span_id, parent, service[, status[, shape[, method]]]).
 
         The status is optional per row because it is optional per SPAN: a span
         with no outgoing HTTP call has nothing to report, so the fixtures that
         only need a parent to exist omit it rather than invent a value.
+
+        The shape columns are emitted only when some row supplies one, because
+        their ABSENCE is itself a case the reader has to survive: a datapack
+        without `span_name` cannot call any request shape novel, and a fixture
+        that always emitted the columns could never test that refusal.
         """
         path = root / name
-        pl.DataFrame(
-            {
-                "trace_id": [r[0] for r in rows],
-                "span_id": [r[1] for r in rows],
-                "parent_span_id": [r[2] for r in rows],
-                "service_name": [r[3] for r in rows],
-                self.STATUS: [r[4] if len(r) > 4 else None for r in rows],
-            },
-            schema_overrides={self.STATUS: pl.Int32},
-        ).write_parquet(path)
+        data: dict[str, list] = {
+            "trace_id": [r[0] for r in rows],
+            "span_id": [r[1] for r in rows],
+            "parent_span_id": [r[2] for r in rows],
+            "service_name": [r[3] for r in rows],
+            self.STATUS: [r[4] if len(r) > 4 else None for r in rows],
+        }
+        if any(len(r) > 5 for r in rows):
+            data["span_name"] = [r[5] if len(r) > 5 else None for r in rows]
+        if any(len(r) > 6 for r in rows):
+            data[conv.REQUEST_SHAPE_COLUMNS[1]] = [
+                r[6] if len(r) > 6 else None for r in rows
+            ]
+        pl.DataFrame(data, schema_overrides={self.STATUS: pl.Int32}).write_parquet(
+            path
+        )
         return path
 
     def test_attributes_a_failed_call_to_its_callee(self) -> None:
@@ -733,7 +744,7 @@ class TestReadFailedTraceEdges(unittest.TestCase):
                 ("t1", "s1", "s0", "ts-order-service", 500)],
             )
             edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
-        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0, 0]])
 
     def test_counts_every_failed_span_and_aggregates_per_edge(self) -> None:
         # Three failing calls over one edge are one triple carrying 3, not three
@@ -754,7 +765,7 @@ class TestReadFailedTraceEdges(unittest.TestCase):
                 ],
             )
             edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
-        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 3, 0]])
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 3, 0, 0]])
 
     def test_separates_fault_time_failures_from_pre_injection_ones(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -772,7 +783,7 @@ class TestReadFailedTraceEdges(unittest.TestCase):
                 ("t1", "b", "a", "ts-order-service", 500)],
             )
             edges = conv.read_failed_trace_edges(normal, abnormal)
-        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 1]])
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 1, 0]])
 
     def test_a_status_below_four_hundred_is_not_a_failure(self) -> None:
         # 399 is the boundary the platform's own error-rate metric uses; a reader
@@ -792,7 +803,7 @@ class TestReadFailedTraceEdges(unittest.TestCase):
                 ],
             )
             edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
-        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0, 0]])
 
     def test_a_null_status_is_not_a_failure(self) -> None:
         # The column is present for some datapacks and null for some spans; a
@@ -883,9 +894,9 @@ class TestReadFailedTraceEdges(unittest.TestCase):
         self.assertEqual(
             first,
             [
-                ["ts-travel-service", "ts-order-service", 1, 0],
-                ["ts-ui-dashboard", "ts-order-service", 1, 0],
-                ["ts-ui-dashboard", "ts-station-service", 1, 0],
+                ["ts-travel-service", "ts-order-service", 1, 0, 0],
+                ["ts-ui-dashboard", "ts-order-service", 1, 0, 0],
+                ["ts-ui-dashboard", "ts-station-service", 1, 0, 0],
             ],
         )
 
@@ -905,7 +916,7 @@ class TestReadFailedTraceEdges(unittest.TestCase):
                 ],
             )
             edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
-        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0, 0]])
 
     def test_does_not_mistake_the_span_kind_column_for_the_http_status(self) -> None:
         # The archive carries a bare `attr.status_code` on every span — a span
@@ -942,6 +953,236 @@ class TestReadFailedTraceEdges(unittest.TestCase):
             )
             edges = conv.read_failed_trace_edges(normal, root / "missing.parquet")
         self.assertEqual(edges, [])
+
+
+    def test_a_failure_on_a_shape_the_edge_never_carried_is_novel(self) -> None:
+        # The request-corruption family: the caller replaces the method on the
+        # wire, the callee rejects a shape it has never been asked for, and
+        # every COUNT lands on the callee. Shape novelty is the fact that puts
+        # the cause back where it belongs.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-price-service", 200, "GET /prices", "GET"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-price-service", 405, "POST /prices", "POST"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-price-service", 1, 0, 1]])
+
+    def test_a_failure_on_a_known_shape_is_not_novel(self) -> None:
+        # The callee-side family: a service that broke still answers the
+        # requests it has always answered. Its failures must NOT read as
+        # caller-side corruption, or the pass would exonerate every real fault.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-price-service", 200, "GET /prices", "GET"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-price-service", 500, "GET /prices", "GET"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-price-service", 1, 0, 0]])
+
+    def test_novelty_is_scoped_to_the_calling_edge(self) -> None:
+        # A shape is a shape OF AN EDGE. ts-ui-dashboard legitimately asks
+        # ts-order-service for the route it always asks for; the same route seen
+        # on a DIFFERENT edge that normally carries a different route IS novel
+        # for that edge. Both edges are observed before the injection, so the
+        # absent-baseline refusal cannot be what decides this.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-ui-dashboard"),
+                    ("t0", "n1", "n0", "ts-order-service", 200, "GET /orders", "GET"),
+                    ("t0", "n2", "n0", "ts-station-service", 200, "GET /stations", "GET"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-ui-dashboard"),
+                    ("t1", "b", "a", "ts-station-service", 405, "GET /orders", "GET"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-station-service", 1, 0, 1]])
+
+    def test_a_shape_already_failing_before_the_injection_is_known(self) -> None:
+        # The baseline set is built from every answered pre-injection span, not
+        # only the successful ones. An edge that was already returning 500 for
+        # this shape is a broken deployment, and its failures are neither a rise
+        # nor a novelty.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-travel-service"),
+                    ("t0", "n1", "n0", "ts-basic-service", 500, "GET /trains", "GET"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-travel-service"),
+                    ("t1", "b", "a", "ts-basic-service", 500, "GET /trains", "GET"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-travel-service", "ts-basic-service", 1, 1, 0]])
+
+    def test_an_edge_with_no_baseline_observation_has_no_novelty(self) -> None:
+        # An edge that appears only after the injection has an ABSENT baseline,
+        # not an empty one. Every shape a new edge carries is unseen by
+        # construction, so reading that as novelty would blame a caller for a
+        # route it had simply never needed before.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-inside-payment-service"),
+                    ("t1", "b", "a", "ts-order-service", 503, "POST /payments", "POST"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [["ts-inside-payment-service", "ts-order-service", 1, 0, 0]])
+
+    def test_shape_is_the_pair_of_route_and_method(self) -> None:
+        # The two columns answer different halves of "what was asked". A method
+        # replacement keeps the route and changes the method, so a reader that
+        # keyed on the route alone would call the mutated request known.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-price-service", 200, "GET /prices", "GET"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-price-service", 500, "GET /prices", "GET"),
+                    ("t2", "c", "", "ts-basic-service"),
+                    ("t2", "d", "c", "ts-price-service", 405, "GET /prices", "POST"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-price-service", 2, 0, 1]])
+
+    def test_span_name_alone_is_enough_to_measure_shape(self) -> None:
+        # Some datapacks carry the route but not the attribute for the method.
+        # The route still separates a rewritten path from a normal one, so the
+        # reader uses what is there instead of refusing the whole instrument.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-train-service", 200, "GET /trains"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-train-service", 404, "GET /wrong/route"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-train-service", 1, 0, 1]])
+
+    def test_no_shape_column_at_all_reports_zero_novelty(self) -> None:
+        # The instrument is absent, and an absent instrument may not report a
+        # finding: every failure stays known, which is the pre-290 reading.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-price-service", 200),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-price-service", 405),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-price-service", 1, 0, 0]])
+
+    def test_novelty_never_exceeds_the_failure_count_it_splits(self) -> None:
+        # `novel` is the part of `failed` that arrived on unseen shapes, so it
+        # must partition the count rather than sit beside it. A reader that
+        # double-counted would let one failure explain two directions.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t0", "n0", "", "ts-basic-service"),
+                    ("t0", "n1", "n0", "ts-price-service", 200, "GET /prices", "GET"),
+                    ("t0", "n2", "n0", "ts-price-service", 200, "POST /prices", "POST"),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-basic-service"),
+                    ("t1", "b", "a", "ts-price-service", 405, "DELETE /prices", "DELETE"),
+                    ("t2", "c", "", "ts-basic-service"),
+                    ("t2", "d", "c", "ts-price-service", 500, "GET /prices", "GET"),
+                    ("t3", "e", "", "ts-basic-service"),
+                    ("t3", "f", "e", "ts-price-service", 500, "POST /prices", "POST"),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-basic-service", "ts-price-service", 3, 0, 1]])
 
 
 class TestReadMetricsHistogram(unittest.TestCase):
@@ -1361,7 +1602,9 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
 
         # Only the POST-injection failure counts; the pre-injection child span
         # succeeded, so the baseline is 0 rather than omitted.
-        self.assertEqual(case["failedTraceEdges"], [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+        self.assertEqual(
+            case["failedTraceEdges"], [["ts-ui-dashboard", "ts-order-service", 1, 0, 0]]
+        )
 
     def test_network_fault_round_trip(self) -> None:
         src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")

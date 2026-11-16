@@ -285,6 +285,13 @@ describe('FSE26 report — the two renderings agree', () => {
         'containmentOrder=false failureContainment=false ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
+    // The attribution is printed only when it is NOT the shipped reading: 'shape' is the default, so printing it
+    // would add a token to every published line, while an arm that ran 'counts' must be visible or the artifact
+    // cannot attribute the difference it exists to attribute.
+    expect(formatFSE26ConfigLine(makeConfig({}))).not.toContain('failureAttribution');
+    expect(
+      formatFSE26ConfigLine(makeConfig({ failureContainment: true, failureAttribution: 'counts' })),
+    ).toContain('failureAttribution=counts');
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
     );

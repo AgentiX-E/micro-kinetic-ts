@@ -21,6 +21,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -94,6 +95,9 @@ describe('buildFse26EngineOptions', () => {
       // The SECOND relational pass, asserted the same way: a switch that lands in `topology` instead of
       // `signals` would be read by no pruner field at all.
       failureContainment: DEFAULT_FAILURE_CONTAINMENT,
+      // The reading that pass applies, asserted here for the same reason: 'counts' next to a `false` switch
+      // would look like an ablation of a lever nobody has measured.
+      failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

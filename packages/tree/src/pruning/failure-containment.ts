@@ -16,17 +16,39 @@
  * The failed-call channel was already in the engine as a TERM: `computeFailedEdgeScores` charges every failing
  * edge to its CALLEE, so the service whose interface is failing collects the evidence. A term is
  * candidate-local, and the question this pass has to answer is relational: *of these two candidates, which one
- * is the source?* The answer the channel can give is a flow:
+ * is the source?* The answer the channel can give is a flow, and the flow is a 2×2 — a direction and a KIND of
+ * evidence:
  *
- *     incoming(v)  = Σ max(0, failed − baseline) over edges  c → v     — v's interface failing
- *     outgoing(v)  = Σ max(0, failed − baseline) over edges  v → d     — v's own calls failing
- *     unexplained(v) = max(0, incoming(v) − outgoing(v))
+ *                        the edge carried the shape before      the shape is new
+ *     edge  c → v        knownIn(v)   — v's own interface      novelOut(c) — c sent a corrupted request
+ *     edge  v → d        knownOut(v)  — v's own calls failing  novelOut(v) — v sent a corrupted request
  *
- * A source's incoming rise is its own: nothing it calls is failing. A VICTIM's incoming rise is produced by the
- * same calls it makes — that is what propagation IS — so its outgoing rise cancels it. On a chain `c → a → b`
+ *     unexplained(v) = max(0, knownIn(v) + novelOut(v) − knownOut(v))        ('shape' attribution)
+ *     unexplained(v) = max(0, knownIn(v) + novelIn(v) − knownOut(v) − novelOut(v))   ('counts')
+ *
+ * A source's inbound rise is its own: nothing it calls is failing. A VICTIM's inbound rise is produced by the
+ * same calls it makes — that is what propagation IS — so its outbound rise cancels it. On a chain `c → a → b`
  * with the fault at `b`, `a` reports failures inbound (from `c`) and outbound (to `b`) in the same counts and
  * nets zero, while `b` nets its entire rise. That is the asymmetry this pass reads, and it is read on BOTH
  * candidates, never on one.
+ *
+ * ## Why the KIND of evidence exists (iteration 290)
+ *
+ * The one-dimensional form above has a blind spot the full-corpus readback named: a CALLER that corrupts its
+ * request — a replaced method, a rewritten path — makes its callee reject a shape the callee has never been
+ * asked for. Every COUNT of that failure still lands on the callee, so the callee nets the whole rise and the
+ * pass promotes a victim, which is exactly the two `HTTPRequestReplaceMethod` losses §10.3 recorded.
+ *
+ * The counts cannot separate the two cases because the counts are correct. What separates them is the REQUEST
+ * SHAPE: a callee that broke fails the requests it has always served, while a caller that corrupted its request
+ * emits a shape the edge never carried. Charging those to the caller (`novelOut`) instead of to the callee
+ * (`knownIn`) is the whole of the 'shape' attribution, and on every case whose failures all arrive on shapes the
+ * baseline carried it reduces EXACTLY to the one-dimensional form — measured on the FSE'26 families that inject
+ * at the callee: `response-replace-code`, `response-replace-body` and `response-abort` produced `0` novel
+ * failures across every sampled case, while the request-corruption families produced thousands.
+ *
+ * `'counts'` is therefore not a fallback but the 289 rule kept reachable, so the attribution can be ablated on
+ * ONE cache: it charges every counted rise where the count says it lands.
  *
  * ## What this pass refuses to do
  *
@@ -35,7 +57,7 @@
  * - A pair whose own edge carried **no rise** is left alone however asymmetric the flows are. When one conduit
  *   carries the whole failure count — `c → a → b` with 203 failures on both hops — the asymmetry is an artefact
  *   of where the chain ends, not evidence about either end. This refusal is the measured arm's single
- *   regression in 711 cases (`docs/containment-order.md` §5).
+ *   regression in 711 cases (`docs/containment-order.md` §10.4).
  * - A pair whose two unexplained flows are EQUAL is left alone: the comparison is strict, and equality is the
  *   channel saying it cannot tell the two apart.
  * - A candidate the channel did not measure is read as zero unexplained rise, which is the same refusal the
@@ -58,14 +80,60 @@ export interface FailedEdgeRise {
   readonly callee: ServiceId;
   /** Net rise, i.e. `max(0, failed − baseline)` — already clamped and above the record floor. */
   readonly rise: number;
+  /**
+   * The part of {@link rise} whose request shape the edge had never carried before the injection.
+   *
+   * Never greater than {@link rise}: the channel reports novelty as a SUBSET of what it counted, and a producer
+   * that disagreed would otherwise let one failure explain two directions.
+   */
+  readonly novel: number;
 }
 
-/** How many net failed calls a service's interfaces reported, in each direction. */
+/** One failing edge, as the pair rule reads it. */
+export interface FailingEdge {
+  /** Total net rise on the edge — what makes it a failing edge at all. */
+  readonly rise: number;
+  /** The novel-shape part of {@link rise}. */
+  readonly novel: number;
+}
+
+/** How many net failed calls a service's interfaces reported, split by direction and by kind of evidence. */
 export interface FailureFlow {
-  /** Net rises on edges whose CALLEE is this service: its interface failing. */
-  readonly incoming: number;
-  /** Net rises on edges whose CALLER is this service: its own calls failing. */
-  readonly outgoing: number;
+  /** Rise on edges INTO this service that carried a shape the edge had always carried: its interface failing. */
+  readonly knownIn: number;
+  /** Rise on edges OUT OF this service that carried a known shape: its own calls failing. */
+  readonly knownOut: number;
+  /** Rise on edges INTO this service that carried a shape the edge had never carried: someone else's request. */
+  readonly novelIn: number;
+  /** Rise on edges OUT OF this service that carried a novel shape: this service's own requests malformed. */
+  readonly novelOut: number;
+}
+
+/**
+ * Which reading of the flow decides a pair.
+ *
+ * - `'shape'` credits a novel-shape rise to the CALLER that produced the request, which is what makes the
+ *   request-corruption family legible. The measured default.
+ * - `'counts'` credits every counted rise where the count says it lands — the 289 rule. Kept as a switch so the
+ *   two can be ablated on one cache, and so a caller can pin the older reading without re-cutting data.
+ */
+export type FailureAttribution = 'shape' | 'counts';
+
+/** The attribution every caller gets unless it asks for the other one. */
+export const DEFAULT_FAILURE_ATTRIBUTION: FailureAttribution = 'shape';
+
+/**
+ * Whether an untrusted value names a reading. Total, for parsers and for callers holding `string`.
+ *
+ * A flag that mapped an unknown spelling onto one of the two readings would silently publish a configuration
+ * nobody asked for, and the two readings disagree by design — so the parser has to be able to tell "not a
+ * reading" from "the other reading".
+ *
+ * @param value - Anything a boundary handed over.
+ * @returns Whether it is one of the two readings.
+ */
+export function isFailureAttribution(value: unknown): value is FailureAttribution {
+  return value === 'shape' || value === 'counts';
 }
 
 /**
@@ -87,7 +155,9 @@ export function failureEdgeKey(from: ServiceId, to: ServiceId): string {
  *
  * A MEASUREMENT, not a decision: it is built from the same rows the failed-edge term's scores are built from,
  * before any of that term's rules decide which charges to drop, because whether a charge is credited is a
- * property of the term's configuration and what the interfaces did is a property of the case.
+ * property of the term's configuration and what the interfaces did is a property of the case. Both readings of
+ * {@link FailureAttribution} are computable from this one object, which is why the switch needs no measurement
+ * of its own.
  *
  * @param rows - The counted rises, in edge order.
  * @returns One entry per service the channel measured. A service absent from the map was not measured.
@@ -95,35 +165,57 @@ export function failureEdgeKey(from: ServiceId, to: ServiceId): string {
 export function failureFlows(rows: readonly FailedEdgeRise[]): Map<ServiceId, FailureFlow> {
   const flows = new Map<ServiceId, FailureFlow>();
   for (const row of rows) {
-    const up = flows.get(row.callee);
+    const novel = Math.max(0, Math.min(row.novel, row.rise));
+    const known = row.rise - novel;
+    const into = flows.get(row.callee);
     flows.set(row.callee, {
-      incoming: (up?.incoming ?? 0) + row.rise,
-      outgoing: up?.outgoing ?? 0,
+      knownIn: (into?.knownIn ?? 0) + known,
+      knownOut: into?.knownOut ?? 0,
+      novelIn: (into?.novelIn ?? 0) + novel,
+      novelOut: into?.novelOut ?? 0,
     });
     // The caller may be the same service as the callee in a self-call, which the ledger has already dropped, so
     // the two writes below cannot land on the same entry for one row.
-    const down = flows.get(row.caller);
+    const out = flows.get(row.caller);
     flows.set(row.caller, {
-      incoming: down?.incoming ?? 0,
-      outgoing: (down?.outgoing ?? 0) + row.rise,
+      knownIn: out?.knownIn ?? 0,
+      knownOut: (out?.knownOut ?? 0) + known,
+      novelIn: out?.novelIn ?? 0,
+      novelOut: (out?.novelOut ?? 0) + novel,
     });
   }
   return flows;
 }
 
 /**
- * The incoming rise no outgoing rise explains.
+ * The rise that is this service's own doing.
+ *
+ * Under `'shape'`, two kinds of evidence NET here, because they are the same claim about different interfaces:
+ * what ARRIVED and failed on a request the edge had always carried (`knownIn`), and what LEFT in a shape nothing
+ * had asked for before (`novelOut`). Both say "this service emits the failure". What it CALLS failing
+ * (`knownOut`) is the propagation the residual exists to remove, and a request a callee rejected for its shape
+ * never becomes evidence about the callee — that is the whole reason the novel rise is not in `knownIn`.
+ *
+ * Under `'counts'` the two kinds are not distinguished: every inbound count is the callee's, every outbound one
+ * the caller's, and the residual is the 289 quantity.
  *
  * Clamped at zero because the quantity is a statement about evidence, not a penalty: a service whose own calls
  * fail more than its interface does is not "negatively explained", and letting the number go negative would
  * make one comparison of two arbitrary magnitudes decide a pair.
  *
  * @param flow - The service's flow, or `undefined` when the channel did not measure it.
+ * @param attribution - Which reading to apply. Defaults to the measured one, `'shape'`.
  * @returns The unexplained rise, in failed calls.
  */
-export function unexplainedFailures(flow: FailureFlow | undefined): number {
+export function unexplainedFailures(
+  flow: FailureFlow | undefined,
+  attribution: FailureAttribution = DEFAULT_FAILURE_ATTRIBUTION,
+): number {
   if (flow === undefined) return 0;
-  const residual = flow.incoming - flow.outgoing;
+  const residual =
+    attribution === 'counts'
+      ? flow.knownIn + flow.novelIn - flow.knownOut - flow.novelOut
+      : flow.knownIn + flow.novelOut - flow.knownOut;
   return residual > 0 ? residual : 0;
 }
 
@@ -134,13 +226,15 @@ export interface FailureContainmentInput<T> {
   /** The flow map from {@link failureFlows}. Empty or absent means the pass is a no-op. */
   readonly flows: ReadonlyMap<ServiceId, FailureFlow> | undefined;
   /**
-   * The edges that carried a net rise, keyed by {@link failureEdgeKey}, valued by that rise.
+   * The edges that carried a net rise, keyed by {@link failureEdgeKey}.
    *
-   * Not derivable from `flows`: a service's incoming rise says nothing about WHICH caller reported it, and the
+   * Not derivable from `flows`: a service's inbound rise says nothing about WHICH caller reported it, and the
    * rule requires the pair's own edge to be among the failing ones. The VALUE is what makes the degenerate relay
    * recognisable — see {@link applyFailureContainment}.
    */
-  readonly failingEdges: ReadonlyMap<string, number> | undefined;
+  readonly failingEdges: ReadonlyMap<string, FailingEdge> | undefined;
+  /** Which reading of the flow decides a pair. Absent means {@link DEFAULT_FAILURE_ATTRIBUTION}. */
+  readonly attribution?: FailureAttribution;
 }
 
 /** The minimum of a candidate and its rank, as the pass reads them. */
@@ -155,7 +249,7 @@ interface RankedService {
  * candidate's unexplained flow is strictly greater than the higher one's. The two comparisons are the same
  * quantity in the same unit on the two candidates, so no margin exists to tune and none is offered.
  *
- * @param input - The published ranking, the flows, and the set of edges that failed.
+ * @param input - The published ranking, the flows, the edges that failed, and the reading to apply.
  * @returns The same candidates in the same order, with the qualified adjacent pairs inverted.
  */
 export function applyFailureContainment<T extends RankedService>(
@@ -164,28 +258,37 @@ export function applyFailureContainment<T extends RankedService>(
   const order = [...input.ranking];
   const flows = input.flows;
   const failingEdges = input.failingEdges;
+  const attribution = input.attribution ?? DEFAULT_FAILURE_ATTRIBUTION;
   if (order.length < 2 || flows === undefined || flows.size === 0) return order;
   if (failingEdges === undefined || failingEdges.size === 0) return order;
 
   for (let i = 0; i + 1 < order.length; i++) {
     const upper = order[i]!;
     const lower = order[i + 1]!;
-    const rise = failingEdges.get(failureEdgeKey(upper.service, lower.service));
-    if (rise === undefined || rise <= 0) continue;
+    const edge = failingEdges.get(failureEdgeKey(upper.service, lower.service));
+    if (edge === undefined || edge.rise <= 0) continue;
     const lowerFlow = flows.get(lower.service);
     const upperFlow = flows.get(upper.service);
-    if (!(unexplainedFailures(lowerFlow) > unexplainedFailures(upperFlow))) continue;
+    if (
+      !(unexplainedFailures(lowerFlow, attribution) > unexplainedFailures(upperFlow, attribution))
+    ) {
+      continue;
+    }
     // The DEGENERATE RELAY. When every failure the callee saw arrived on this one edge, every failure the caller
-    // reported left on it, and the caller's own incoming count is that same number, the three accounts are one
+    // reported left on it, and the caller's own inbound count is that same number, the three accounts are one
     // account: a single count travelling down a chain. The residual asymmetry the rule reads is then an artefact
-    // of where the chain stops rather than a statement about either end, and the pair is refused. Measured: this
-    // is the whole of the arm's one regression, and refusing it costs none of the gains that carry a gradient.
+    // of where the chain stops rather than a statement about either end, and the pair is refused.
+    //
+    // The test reads the flow in the SAME reading the rule used, and it compares the pair edge's own rise with
+    // its novel part removed when that reading separates the two kinds — a count that arrived on a shape this
+    // edge had never carried is not the same account as the ones that did, so the equality must not be satisfied
+    // by mixing them.
+    const pairRise = attribution === 'counts' ? edge.rise : edge.rise - edge.novel;
     if (
       lowerFlow !== undefined &&
       upperFlow !== undefined &&
-      lowerFlow.incoming === rise &&
-      upperFlow.outgoing === rise &&
-      upperFlow.incoming === rise
+      pairRise > 0 &&
+      relayEqualities(lowerFlow, upperFlow, pairRise, attribution)
     ) {
       continue;
     }
@@ -193,4 +296,27 @@ export function applyFailureContainment<T extends RankedService>(
     order[i + 1] = upper;
   }
   return order;
+}
+
+/**
+ * Whether the three accounts of a pair are one account.
+ *
+ * Split out only so the two readings can each state their own equalities in one place: a relay is the same
+ * statement about known counts under either reading, and the novel-excluding quantities are what the `'shape'`
+ * reading has to compare.
+ */
+function relayEqualities(
+  lower: FailureFlow,
+  upper: FailureFlow,
+  rise: number,
+  attribution: FailureAttribution,
+): boolean {
+  if (attribution === 'counts') {
+    return (
+      lower.knownIn + lower.novelIn === rise &&
+      upper.knownOut + upper.novelOut === rise &&
+      upper.knownIn + upper.novelIn === rise
+    );
+  }
+  return lower.knownIn === rise && upper.knownOut === rise && upper.knownIn === rise;
 }

@@ -22,6 +22,7 @@
 import type {
   DualFamilyGateMode,
   FailedEdgeMode,
+  FailureAttribution,
   FaultFreeProfile,
   FaultFreeSelection,
   LogNormalisation,
@@ -161,6 +162,8 @@ export interface Fse26SignalOptions {
   readonly containmentMargin: number;
   /** The SECOND relational pass: the failure-flow order. See `Fse26CliOptions.failureContainment`. */
   readonly failureContainment: boolean;
+  /** Which reading that pass applies. See `Fse26CliOptions.failureAttribution`. */
+  readonly failureAttribution: FailureAttribution;
   readonly topoWeight: number;
   /** Topological deduction strength (0 = off) — see `TreePrunerOptions.topoDiscount`. */
   readonly topoDiscount: number;
@@ -277,6 +280,7 @@ export function buildFse26EngineOptions(
       containmentOrder: opts.containmentOrder,
       containmentMargin: opts.containmentMargin,
       failureContainment: opts.failureContainment,
+      failureAttribution: opts.failureAttribution,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,

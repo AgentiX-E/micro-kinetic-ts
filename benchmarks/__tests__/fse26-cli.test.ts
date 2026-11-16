@@ -157,6 +157,23 @@ describe('parseFSE26Args — other flags', () => {
     expect(opts.output).toBe('out.json');
   });
 
+  it('parses the failure-flow attribution as a closed vocabulary', () => {
+    // The reading is a WORD, not a weight: `shape` charges a rise that arrived on a request shape the edge had
+    // never carried to the caller, `counts` charges every counted rise where the count lands. An unknown word
+    // falls back to the shipped reading on the CLI's own rule — a typo reproduces a published configuration
+    // rather than inventing a third reading — which is only safe because the vocabulary is closed and checked.
+    expect(parseFSE26Args([]).failureAttribution).toBe('shape');
+    expect(parseFSE26Args(['--failure-attribution', 'counts']).failureAttribution).toBe('counts');
+    expect(parseFSE26Args(['--failure-attribution', 'shape']).failureAttribution).toBe('shape');
+    expect(parseFSE26Args(['--failure-attribution', 'novel']).failureAttribution).toBe('shape');
+    // A flag with no value does not silently consume the next flag: `hasValue` refuses a token that starts with
+    // `--`, so this falls through to the unrecognised-argument branch and the run stops. Loud, because the
+    // alternative is a dispatch that meant to set a reading and published the shipped one instead.
+    expect(() => parseFSE26Args(['--failure-attribution', '--max-cases', '5'])).toThrow(
+      /unrecognised argument/u,
+    );
+  });
+
   it('turns off rank normalization', () => {
     expect(parseFSE26Args(['--no-rank-normalization']).rankNormalization).toBe(false);
   });

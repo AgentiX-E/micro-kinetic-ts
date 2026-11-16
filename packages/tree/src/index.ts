@@ -195,13 +195,17 @@ export type {
 } from './pruning/containment-order.js';
 
 export {
+  DEFAULT_FAILURE_ATTRIBUTION,
   applyFailureContainment,
   failureEdgeKey,
   failureFlows,
+  isFailureAttribution,
   unexplainedFailures,
 } from './pruning/failure-containment.js';
 export type {
   FailedEdgeRise,
+  FailingEdge,
+  FailureAttribution,
   FailureContainmentInput,
   FailureFlow,
 } from './pruning/failure-containment.js';

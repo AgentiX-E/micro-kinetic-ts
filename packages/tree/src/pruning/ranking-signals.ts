@@ -1707,9 +1707,19 @@ export function isFailedEdgeOverrideRule(value: unknown): value is FailedEdgeOve
  * @internal
  */
 function risesOf(
-  counted: ReadonlyArray<{ caller: ServiceId; callee: ServiceId; contribution: number }>,
+  counted: ReadonlyArray<{
+    caller: ServiceId;
+    callee: ServiceId;
+    contribution: number;
+    novel: number;
+  }>,
 ): readonly FailedEdgeRise[] {
-  return counted.map((row) => ({ caller: row.caller, callee: row.callee, rise: row.contribution }));
+  return counted.map((row) => ({
+    caller: row.caller,
+    callee: row.callee,
+    rise: row.contribution,
+    novel: row.novel,
+  }));
 }
 
 /** An evidence report with nothing in it, shared so an empty case allocates nothing. */
@@ -1796,7 +1806,12 @@ export function computeFailedEdgeLedger(
   // has. The mutual-pair rule needs to know WHERE a charge came from, which a per-callee sum cannot answer, and
   // rebuilding the map from a second pass over `edges` would put the filter logic in two places — the class of
   // defect this repository has paid for repeatedly. One array answers both without changing any order.
-  const counted: Array<{ caller: ServiceId; callee: ServiceId; contribution: number }> = [];
+  const counted: Array<{
+    caller: ServiceId;
+    callee: ServiceId;
+    contribution: number;
+    novel: number;
+  }> = [];
   // Caller → the callees it reported a NET rise against, filled by the same pass, so "mutual" is defined on
   // exactly the rows the scores are built from: a baseline-subtracted, self-edge-free, in-graph, above-floor row.
   const reported = new Map<ServiceId, Set<ServiceId>>();
@@ -1819,7 +1834,17 @@ export function computeFailedEdgeLedger(
     const contribution = Math.max(0, edge.failed - edge.baseline);
     if (contribution <= 0) continue;
 
-    counted.push({ caller: edge.caller, callee: edge.callee, contribution });
+    // The novel-shape part of this rise, clamped to the rise itself. A shape absent from the baseline window has
+    // a baseline of zero BY CONSTRUCTION, so novelty is always a subset of `failed`; it is a subset of the RISE
+    // only when the edge's known shapes did not fail less than they used to. `Math.min` is what keeps the two
+    // statements consistent instead of leaving a consumer to discover the disagreement.
+    const reportedNovel = edge.novel;
+    const novel =
+      typeof reportedNovel === 'number' && Number.isFinite(reportedNovel)
+        ? Math.max(0, Math.min(reportedNovel, contribution))
+        : 0;
+
+    counted.push({ caller: edge.caller, callee: edge.callee, contribution, novel });
     const against = reported.get(edge.caller);
     if (against === undefined) {
       reported.set(edge.caller, new Set([edge.callee]));

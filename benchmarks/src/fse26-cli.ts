@@ -65,6 +65,7 @@ import {
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -101,6 +102,7 @@ import {
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
+  isFailureAttribution,
   isFaultFreeSelection,
   isLogNormalisation,
   isLogSignalMode,
@@ -112,6 +114,7 @@ import {
   isTransientGuardTest,
   TRANSIENT_GUARD_TESTS,
   type DualFamilyGateMode,
+  type FailureAttribution,
   type OnsetShape,
   type PrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -507,6 +510,17 @@ export interface Fse26CliOptions {
    */
   readonly failureContainment: boolean;
   /**
+   * Which reading of the failure flow the pass applies: `shape` charges a rise that arrived on a request shape
+   * the edge had never carried to the CALLER that sent it, `counts` charges every counted rise where the count
+   * says it lands. Travels in the packed `ranking_knobs` block as `failure_attribution=shape|counts`.
+   *
+   * Ships at `DEFAULT_FAILURE_ATTRIBUTION` = `shape`: on every case whose failures all arrive on shapes the
+   * baseline carried, the two readings are IDENTICAL, so the axis is silent where it has no evidence. It is a
+   * switch rather than a hard-wired choice because the two must be ablatable on ONE cache — a data-level
+   * ablation would have to re-cut the corpus, which is not an ablation anybody can run twice.
+   */
+  readonly failureAttribution: FailureAttribution;
+  /**
    * Weight on the trace-topology signal. `0` = off, the shipped value.
    *
    * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
@@ -771,6 +785,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentOrder: DEFAULT_CONTAINMENT_ORDER,
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
+    failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -1027,7 +1042,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--no-containment-order') opts.containmentOrder = false;
     else if (arg === '--failure-containment') opts.failureContainment = true;
     else if (arg === '--no-failure-containment') opts.failureContainment = false;
-    else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
+    else if (arg === '--failure-attribution' && hasValue(argv, i + 1)) {
+      // A closed vocabulary, and an unknown value falls back to the SHIPPED one on the rule every option here
+      // follows: a typo reproduces a published configuration rather than inventing a third reading.
+      const value = argv[++i]!;
+      opts.failureAttribution = isFailureAttribution(value) ? value : DEFAULT_FAILURE_ATTRIBUTION;
+    } else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
       // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
       // reproduces a published configuration rather than inventing one.
       const parsed = Number.parseFloat(argv[++i]!);

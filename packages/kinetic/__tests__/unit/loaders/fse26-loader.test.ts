@@ -543,6 +543,36 @@ describe('toFSE26FailedEdges', () => {
     ]);
   });
 
+  it('carries the optional fifth element as the edge’s novel-shape rise', () => {
+    // Iteration 290 writes `[caller, callee, failed, baseline, novel]`: the part of `failed` whose request shape
+    // the edge had never carried. It has to survive the loader as a NUMBER, because the flow pass charges it to
+    // the caller rather than to the callee the counts land on.
+    const edges = toFSE26FailedEdges([['ts-basic-service', 'ts-price-service', 2963, 0, 2963]]);
+    expect(edges).toEqual([
+      {
+        caller: 'ts-basic-service',
+        callee: 'ts-price-service',
+        failed: 2963,
+        baseline: 0,
+        novel: 2963,
+      },
+    ]);
+  });
+
+  it('leaves `novel` absent on a four-element row, so an older cache reads as the pre-290 channel', () => {
+    // Every cache cut before this iteration carries four elements. `novel: 0` and an absent key are the same
+    // MEANING — no novelty measured — but the absent key is the honest one: an instrument that is not there is
+    // not an instrument that measured zero.
+    const [edge] = toFSE26FailedEdges([['ts-ui-dashboard', 'ts-order-service', 12, 1]])!;
+    expect(edge).toEqual({
+      caller: 'ts-ui-dashboard',
+      callee: 'ts-order-service',
+      failed: 12,
+      baseline: 1,
+    });
+    expect(Object.hasOwn(edge!, 'novel')).toBe(false);
+  });
+
   it('maps an absent key to undefined rather than an empty list', () => {
     // The converter writes the key only when the list is non-empty, so an
     // absent key means "no evidence", NOT "no edge failed". Collapsing the two
