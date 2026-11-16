@@ -468,3 +468,141 @@ that carries failed-call records.
 `failedEdgeMinRecords` is therefore **not** the knob: the records exist and the filter is not what stops the term.
 The knob this finding asks for is a gate on the term's own input — `failedTraceEdges.length > 0` — so that a
 configuration line can never again print a weight for a term whose map is empty on every case it is applied to.
+
+## 13. The far misses, read from every candidate at once
+
+§12 closed the question "does the gate reach its subject on RCABench" for the RCAEval cells. This section asks the
+same question where the term was measured in the first place — the 1 422-case FSE'26 archive — and it asks it from
+the WHOLE ranking rather than from the top five. `--terms-dump` writes every candidate with its named terms, and a
+score is affine in its own weights (`score = Σ wᵢ·slopeᵢ`, verified to the last bit on the rows checked), so the
+truth's rank, the size of the field it lost to, and the counterfactual for any weight vector are all computable
+offline. Nothing in this section is a new dispatch; every number is a re-reading of one control run whose shape is
+`docs/containment-order.md` §11.4's first row (1 073 cases, 75.457 % Top@1).
+
+### 13.1 Where the truth sits in the candidate pool
+
+| bucket | cases | share of 1 422 |
+| --- | --- | --- |
+| rank 1 | 1 073 | 75.46 % |
+| rank 2–5 | 176 | 12.38 % |
+| rank 6–19 | 59 | 4.15 % |
+| **rank ≥ 20** | **114** | **8.02 %** |
+| **absent from the pool** | **0** | **0.00 %** |
+
+The last row is the one that changes the label on this defect. Candidate GENERATION is not failing anywhere on this
+corpus: the truth is in the candidate set in all 1 422 cases, so no recall instrument — no wider pool, no second
+retrieval pass — can move a single case. Every one of the 114 is a scoring question, and the rest of this section is
+about which score.
+
+### 13.2 The far misses are FLAT fields, and that is a measurement rather than a figure of speech
+
+The top-1 lead is the difference between the first and second score in the published order. On the whole corpus its
+median is 0.6277; among the 114 far cases it is **0.0765**.
+
+| top-1 lead | all 1 422 | the 114 far cases |
+| --- | --- | --- |
+| ≤ 0.05 | 11.2 % | 46.5 % |
+| ≤ 0.10 | 16.1 % | 52.6 % |
+| ≤ 0.30 | 30.8 % | **90.4 %** |
+| ≤ 0.90 | 60.4 % | 100.0 % |
+
+A `w = 3` term spans three whole score units, and the `margin` bar's own statistic is `lead / w`: at the shipped
+share of 0.3 the bar admits a case when its lead is under 0.9. Every far case is inside that — which is why the
+offline counterfactual below tracks the bar and not the population.
+
+### 13.3 The three populations the gate makes, measured
+
+Each case was classified from its own dump: whether the channel measured a subject at all (some candidate carries a
+`failedEdge` slope above zero), and whether any candidate was paid it (some candidate carries the term's weight).
+
+| population | cases | share | what it means |
+| --- | --- | --- | --- |
+| no subject measured | 200 | 14.1 % | the term is inert for an INPUT reason, not a gate reason |
+| admitted and paid | 108 | 7.6 % | the term acted |
+| **measured, then refused** | **1 114** | **78.3 %** | the channel saw a failing interface and the gate withheld the term |
+
+Two facts about the third row, both read from the same dumps:
+
+- **86 of the 114 far misses are in it.** By fault type: `HTTPResponseReplaceCode` 46 of 46, `HTTPRequestReplaceMethod`
+  32 of 32, `HTTPRequestAbort` 1, `NetworkPartition` 1, `HTTPRequestDelay` 2, `HTTPResponseDelay` 1, `JVMReturn` 2,
+  `JVMException` 1. The two families that carry the far tail are refused on **every** case.
+- **852 of the 1 114 carry the truth's own measured slope.** The gate is not refused for want of evidence about the
+  candidate it would promote; it is refused on a property of the candidate the baseline already put FIRST.
+
+The second half of that is the structural defect this section can state exactly. `admitsFailedEdgeTerm` reads the
+rank-1 candidate's dominant metric label and its inbound latency rise, and the term it gates is the term that exists
+to OVERTURN that candidate. When rank 1 is a victim — which is what a propagation-carrying fault produces — the gate
+measures the victim's channel and refuses the only instrument that could demote it. The name half refuses 72.4 % of
+the corpus before any bar is consulted (§4 measured 1 030; this cache re-cuts to a slightly larger population, and
+the two predicates are not the same one, so they are reported separately rather than reconciled).
+
+### 13.4 What the gate is worth, priced offline
+
+`score' = score + (w' − w)·slope` is exact on this arm, so each counterfactual below is the engine's own answer at
+that weight and not an approximation of one. Control is 1 073.
+
+| counterfactual | Top@1 | Δ | repaired | broken |
+| --- | --- | --- | --- | --- |
+| term added at `w = 1` everywhere | 1 142 | +69 | — | — |
+| term added at `w = 2` everywhere | 1 143 | +70 | — | — |
+| term added at `w = 3` everywhere (the configured weight) | 1 099 | +26 | 105 | 79 |
+| term added at `w = 4` everywhere | 1 008 | −65 | — | — |
+| term added at `w = 6` everywhere | 895 | −178 | — | — |
+| `margin` bar, `w = 3`, share 0.10 | 1 147 | +74 | — | — |
+| **`margin` bar, `w = 3`, share 0.20–0.35** | **1 148** | **+75** | — | — |
+| `margin` bar, `w = 3`, share 0.50 | 1 139 | +66 | — | — |
+| **threshold-free**: pay it when the channel measured exactly ONE subject | 1 120 | +47 | 64 | 17 |
+
+At `w = 3` with the gate removed the repairs are 61 `HTTPResponseReplaceCode` (53 of them far), 11
+`HTTPRequestReplaceMethod`, 10 `NetworkBandwidth`, 7 `JVMException`, 6 `NetworkPartition`; the breaks are 18
+`JVMMemoryStress`, 13 `HTTPRequestDelay`, 12 `PodFailure`, 10 `ContainerKill`. The threshold-free variant, whose rule
+is "the channel named exactly one failing interface", repairs 57 of the response-code cases and breaks 11
+`JVMMemoryStress`, 3 `ContainerKill`, 2 `PodFailure`, 1 `PodKill`.
+
+### 13.5 Why none of it ships, and what that leaves
+
+Every arm that repairs the far cases breaks families, and the acceptance condition this repository holds itself to is
+the total WITHOUT a family regression. `margin` was already rejected on that condition (§4's frontier: nine families
+at every bound). Paying the term at its configured weight costs `JVMMemoryStress` 18 of 171 — the family that is
+already the corpus's worst — and the threshold-free rule costs the same family 11. So the honest reading of 13.4 is
+not "the gate is mis-set" but "the term's contribution is 3.0 against a base term bounded by log 2": any rule that
+lets it speak on a case where it points at a victim pays for the flat fields with a family.
+
+What that leaves is a precise problem rather than a knob. The population is 86 cases, it is two families, and in
+every one of them the channel measured the truth's own interface failing at slope 1.0 while the published order was
+decided by a lead of a few hundredths. A repair has to distinguish "the field is flat because two candidates are
+genuinely close" from "the field is flat because the base term has saturated on every service in the window" — the
+latter being what the far cases look like: six candidates within 0.07 of each other, all of them carried by
+`selfAnomalyLog1p` alone with no second channel. That distinction is available in the artifacts (the refused far
+cases have exactly one measured subject and no peer differentiation), and it is the next instrument this document
+owes rather than the next bar.
+
+### 13.6 Depth, and what it costs to compare with the agents
+
+The far cases are not merely low-ranked; they are mostly DISCONNECTED. Taking `d*` as the shortest path from the truth
+to the loudest service along the propagation direction (callee → callers), the corpus splits as below, and 107 of the
+114 far misses fall in the last row — cases where no path exists at all, so the candidate the engine promoted is in a
+different component from the cause.
+
+| `d*` | cases | Top@1 | far |
+| --- | --- | --- | --- |
+| 0 (the truth is the loudest) | 348 | 91.38 % | 0 |
+| 1 | 218 | 72.02 % | 6 |
+| 2 | 107 | 84.11 % | 0 |
+| 3 | 29 | 82.76 % | 1 |
+| ≥ 4 | 0 | — | — |
+| **no path** | **720** | **67.22 %** | **107** |
+
+The strongest 2026 agentic result on this benchmark reports Acc@1 by depth of 88.2 / 88.6 / 96.8 / 85.7 at
+`d* = 2..5` (`arXiv:2608.21310`, Sonnet·ThinkDepth.ai, 90.0 Acc@1 over a 500-case sample). This corpus is 2.8× that
+sample and `d*` here is a stand-in — the paper measures to the SLO-alerting service, this measures to the loudest one
+— and on half the corpus no such path exists, so the two profiles are not directly comparable and are not presented
+as such. What the table does say is that this engine's difficulty is concentrated where the paper's is not: its
+weakest cell is the 720 cases whose symptom is topologically unrelated to the cause, not the deep chains.
+
+Two of that paper's failure modes are worth naming against this section, because they were measured on agents and
+they describe the same physics. `MIS3` — reading the failure direction backwards, caller for callee — accounts for
+**86 %** of the incorrect trajectories of the strongest arm; §11's shape reading is an instrument aimed at exactly
+that error, and §13.3 says the direction channel is refused on 78.3 % of this corpus. `MIS2` — trusting the loudest
+signal without separating cause from symptom — is **42 %**, and the far misses in 13.2 are that failure mode with the
+engine's own weights: the loudest service wins by 0.01 on an instrument that has saturated.

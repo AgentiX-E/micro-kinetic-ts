@@ -490,6 +490,39 @@ The shape reading then repairs both losses and adds one more case:
 The gains the counts arm already had on this family survive: 12 of the 68 are `HTTPRequestReplaceMethod`, and the
 shape reading keeps every one of them, so this is not a trade between families.
 
+The same statement, per family, on the re-cut cache — the acceptance condition is that no family may regress, so it is
+checked at the family grain rather than at the total:
+
+| family | n | shipped | `shape` | Δ |
+| --- | ---: | ---: | ---: | ---: |
+| `HTTPRequestReplaceMethod` | 190 | 125 | 137 | **+12** |
+| `HTTPRequestDelay` | 88 | 57 | 68 | **+11** |
+| `HTTPResponseDelay` | 89 | 56 | 67 | **+11** |
+| `HTTPResponseReplaceCode` | 231 | 162 | 171 | **+9** |
+| `HTTPResponseAbort` | 44 | 34 | 40 | **+6** |
+| `NetworkCorrupt` | 46 | 31 | 35 | **+4** |
+| `HTTPResponseReplaceBody` | 51 | 45 | 49 | **+4** |
+| `HTTPRequestAbort` | 60 | 46 | 49 | **+3** |
+| `JVMException` | 43 | 30 | 32 | **+2** |
+| `NetworkLoss` | 48 | 29 | 31 | **+2** |
+| `NetworkPartition` | 97 | 64 | 66 | **+2** |
+| `HTTPRequestReplacePath` | 39 | 38 | 39 | **+1** |
+| `NetworkBandwidth` | 42 | 20 | 21 | **+1** |
+
+Thirteen families gain and **none loses** — the two `HTTPRequestReplaceMethod` losses §10.3 recorded are inside the
++12. The families that do not appear are unchanged to the case.
+
+The shape reading's own increment over the counts arm is exactly three cases, and it is checked at the same grain
+because a total of +3 can hide a swap:
+
+| family | counts | `shape` | Δ |
+| --- | ---: | ---: | ---: |
+| `HTTPRequestReplaceMethod` | 135 | 137 | **+2** |
+| `HTTPRequestReplacePath` | 38 | 39 | **+1** |
+
+Every other family is identical between the two readings: the KIND of evidence changes the answer only where a novel
+shape exists, which is what the census in §11.3 said it would do.
+
 ### 11.5 What promotion still needs
 
 `failureContainment` stays `false` and `failureAttribution` ships `'shape'`. The reading costs nothing where there

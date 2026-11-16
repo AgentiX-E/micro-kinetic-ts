@@ -4727,9 +4727,11 @@ twelve survive, so the change is not a trade between families.
 ### 290e. The pass still ships off, for a reason that is now operational
 
 The converter changed, so no released cache matches this checkout's digest and a dispatch would be refused by its
-own provenance gate. Promotion is: cut a cache (`cache-datasets.yml`), dispatch one readback that must reproduce
-1 141 at `failure_containment=1`, then flip `DEFAULT_FAILURE_CONTAINMENT`. Until the third step the arm is
-**+68/0 on 1 422 cases with a cache rebuild between it and the default**.
+own provenance gate. Promotion is: cut a cache (`AgentiX-E/rcabench-data`'s `build-cache.yml`, which clones this
+repository and stamps the digest into the manifest), dispatch one readback that must reproduce 1 141 at
+`failure_containment=1`, then flip `DEFAULT_FAILURE_CONTAINMENT`. Until the third step the arm is **+68/0 on 1 422
+cases with a cache rebuild between it and the default**. (The workflow was named `cache-datasets.yml` here, which is
+the RCAEval JSON cache — the wrong owner, and the correction is recorded rather than silently rewritten.)
 
 ### Axes this closes
 
@@ -4742,3 +4744,92 @@ own provenance gate. Promotion is: cut a cache (`cache-datasets.yml`), dispatch 
   rule is unchanged; only which cell of the flow it credits (§290d).
 - **"A model-free engine cannot read intent."** Partly true, and enough: it does not read intent, it reads whether
   this edge has ever carried this request before (§290c).
+
+## §291 — The far misses are the direction channel's refusals, and no bar repairs them
+
+§290 closed the two request-corruption losses by giving the failure flow a KIND of evidence. What it did not touch is
+the population the flow cannot reach at all: the cases whose truth sits outside the top five. This entry reads that
+population from a dump of EVERY candidate rather than from the reported five, and it is the same control run §11.4
+of `docs/containment-order.md` reports (1 073 of 1 422, 75.457 %).
+
+### 291a. Candidate generation is not the defect — every truth is in the pool
+
+| bucket | cases | share |
+| --- | --- | --- |
+| rank 1 | 1 073 | 75.46 % |
+| rank 2–5 | 176 | 12.38 % |
+| rank 6–19 | 59 | 4.15 % |
+| rank ≥ 20 | 114 | 8.02 % |
+| **absent** | **0** | **0.00 %** |
+
+The far tail had been carried in the working notes as a CANDIDATE-GENERATION problem — a truth the pool never
+retrieved. The dump refutes it: `absent` is zero, so no wider pool can move a case, and all 114 are a scoring
+question.
+
+### 291b. They are flat fields, and flatness is what the margin bar measures
+
+Median top-1 lead: **0.0765** among the far cases against **0.6277** over the corpus. 90.4 % of far cases have a lead
+under 0.30 (30.8 % of the corpus), 100 % under 0.90. The `margin` statistic `lead / w` is therefore inside its bar on
+every one of them, which is why the counterfactuals in 291d track that bar.
+
+### 291c. The direction channel is refused on 78.3 % of the corpus, and it knew
+
+Three populations, classified from each case's own dump:
+
+| population | cases | share |
+| --- | --- | --- |
+| no subject measured (inert for an input reason) | 200 | 14.1 % |
+| admitted and paid | 108 | 7.6 % |
+| **measured, then refused by the gate** | **1 114** | **78.3 %** |
+
+- **86 of the 114 far misses are in the third row**, and the two families that carry the far tail are refused on
+  every case: `HTTPResponseReplaceCode` 46 of 46, `HTTPRequestReplaceMethod` 32 of 32.
+- **852 of the 1 114 carry the TRUTH's own measured slope**, usually at 1.0 — the channel's maximum.
+
+The gate reads the rank-1 candidate's dominant metric label and inbound latency rise (`admitsFailedEdgeTerm`), and the
+term it gates exists to overturn that candidate. When rank 1 is a victim — what a propagation-carrying fault produces
+— the gate measures the victim and withholds the only instrument that could demote it. `docs/failed-edge-gate.md` §13
+carries the tables.
+
+### 291d. Every repair that fixes them breaks a family, so none ships
+
+Offline re-scoring is exact on this arm (`score = Σ w·slope`), control 1 073:
+
+| counterfactual | Top@1 | Δ | consequence |
+| --- | --- | --- | --- |
+| pay the term at `w = 1` / `w = 2` everywhere | 1 142 / 1 143 | +69 / +70 | — |
+| pay it at its configured `w = 3` | 1 099 | +26 | repairs 61 response-code, breaks 18 `JVMMemoryStress` |
+| `margin` bar, `w = 3`, share 0.20–0.35 | 1 148 | +75 | rejected in §4 for nine family regressions |
+| threshold-free: pay it when the channel named exactly ONE subject | 1 120 | +47 | 64 repaired, breaks 11 `JVMMemoryStress` |
+
+The acceptance condition is the total WITHOUT a family regression, so the answer to "is the gate mis-set" is **no**:
+the term's contribution is 3.0 against a base term bounded by `log 2`, and any rule that lets it speak where it
+points at a victim buys the flat fields with a family. What the numbers leave is a distinction rather than a bar —
+"the field is flat because two candidates are close" against "the field is flat because the base term saturated on
+every service in the window" — and the far cases are all the second kind (six candidates inside 0.07, every one of
+them carried by `selfAnomalyLog1p` alone).
+
+### 291e. The far cases are disconnected, not deep
+
+`d*` as the shortest propagation path from the truth to the loudest service: 348 cases at 0 (91.38 %), 218 at 1
+(72.02 %), 107 at 2 (84.11 %), 29 at 3 (82.76 %), and **720 with no path at all (67.22 %), which contain 107 of the
+114 far misses**. So this engine's weak cell is not the deep chain the 2026 agentic studies lose at
+(`arXiv:2608.21310` reports 88.2–96.8 % at `d* = 2..5` for its strongest arm); it is the half of the corpus where the
+candidate the engine promotes is in a different component from the cause. Half the corpus having no path is also why
+the two depth profiles are not presented as a comparison.
+
+### Axes this closes
+
+- **"The far misses need a bigger candidate pool."** Refuted — the truth is in the pool in 1 422 of 1 422 cases
+  (§291a).
+- **"The margin bar is a tuning away from shipping."** No — it is +75 and it loses nine families; the bar's
+  statistic is a share of the term's own span, so it cannot tell a genuinely close pair from a saturated base term
+  (§291d).
+- **"A threshold-free rule escapes the trade."** No — paying the term when the channel named exactly one subject
+  repairs 64 and breaks 17, `JVMMemoryStress` again (§291d).
+- **"The depth profile is where this engine loses."** False — it loses where there is no profile to draw, on the
+  720 cases whose symptom is topologically unrelated to the cause (§291e).
+- **Two independent confirmations of §290's direction.** A 2026 trajectory study of ten agent frameworks attributes
+  **86 %** of its strongest arm's wrong answers to reading the failure direction backwards, and **42 %** to trusting
+  the loudest signal (§13.6 of `docs/failed-edge-gate.md`). Those are the two mechanisms §290 and this entry measure
+  as arithmetic.
