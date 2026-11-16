@@ -28,6 +28,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FailedEdgeGateMode,
   FailureAttribution,
   FaultFreeSelection,
   OnsetShape,
@@ -40,6 +41,7 @@ import type {
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_POOL_ADMISSION,
@@ -219,6 +221,15 @@ export interface FSE26RunConfig {
   readonly failureContainment?: boolean;
   /** Which reading of the failure flow that pass applied. */
   readonly failureAttribution?: FailureAttribution;
+  /**
+   * Which bar let the failed-call direction term speak, rendered only when it is not the shipped one.
+   *
+   * Conditional rather than unconditional, unlike the two switches above: a MODE that is not the default can always
+   * be read off the artifact, so the failure the unconditional rendering guards against — an ON run that renders
+   * byte-identically to the shipped OFF one — is unreachable here. The shipped byte stream stays what every
+   * published cell was measured on.
+   */
+  readonly failedEdgeGateMode?: FailedEdgeGateMode;
   readonly topoWeight: number;
   /**
    * Topological deduction strength. Printed only when non-zero, and its scope nested under it: the deduction
@@ -611,6 +622,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
   if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
     line += ` failureAttribution=${config.failureAttribution}`;
+  }
+  if (
+    (config.failedEdgeGateMode ?? DEFAULT_FAILED_EDGE_GATE_MODE) !== DEFAULT_FAILED_EDGE_GATE_MODE
+  ) {
+    line += ` failedEdgeGateMode=${config.failedEdgeGateMode}`;
   }
   if ((config.containmentMargin ?? DEFAULT_CONTAINMENT_MARGIN) !== 0) {
     line += ` containmentMargin=${config.containmentMargin}`;

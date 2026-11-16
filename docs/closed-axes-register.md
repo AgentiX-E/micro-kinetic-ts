@@ -4801,13 +4801,36 @@ Offline re-scoring is exact on this arm (`score = Σ w·slope`), control 1 073:
 | pay it at its configured `w = 3` | 1 099 | +26 | repairs 61 response-code, breaks 18 `JVMMemoryStress` |
 | `margin` bar, `w = 3`, share 0.20–0.35 | 1 148 | +75 | rejected in §4 for nine family regressions |
 | threshold-free: pay it when the channel named exactly ONE subject | 1 120 | +47 | 64 repaired, breaks 11 `JVMMemoryStress` |
+| source caller only (the failing caller is a graph source) | 974 | −99 | 101 repaired, 200 broken |
+| source caller AND the margin bar, shares 0.10–0.50 | 1 093…977 | +20…−96 | worse than either half |
+| **source caller AND exactly one measured subject** | **1 136** | **+63** | **64 repaired, ONE broken** |
 
-The acceptance condition is the total WITHOUT a family regression, so the answer to "is the gate mis-set" is **no**:
-the term's contribution is 3.0 against a base term bounded by `log 2`, and any rule that lets it speak where it
-points at a victim buys the flat fields with a family. What the numbers leave is a distinction rather than a bar —
-"the field is flat because two candidates are close" against "the field is flat because the base term saturated on
-every service in the window" — and the far cases are all the second kind (six candidates inside 0.07, every one of
-them carried by `selfAnomalyLog1p` alone).
+The last row is the one worth carrying forward, but it prices a rule the engine CANNOT express, and the difference
+between that price and the mode's own is this entry's finding.
+
+Scored offline as a bonus paid only to the candidate the rule names, the conjunction answers **1 136 (+63)** with 64
+repairs and one break — and the one break has a name, `ts2-ts-consign-service-pod-kill-476gml`, a `PodKill` where the
+entry's interface failed from the load generator while the killed pod sat one hop behind it. Three relay refinements
+(all reading the promoted node's own outbound rise) return the same +63/−1, because a pod kill makes the entry STOP
+calling the victim rather than call it and fail: the channel that would see it is the one that reads a call that was
+never made.
+
+Implemented as the `boundary` gate mode and run on the same corpus (`--failed-edge-gate-mode boundary`), the same rule
+answers **1 094 (+21)**. The 42-case gap is not a measurement error — it is the difference between paying ONE candidate
+and paying the map: `admitsFailedEdgeTerm` decides once per CASE, and an admitted case pays the term to every callee
+the channel credited. On a network fault the credit set is wide, so the case-level rule admits on the one source-fed
+subject and pays the victims too. `HTTPResponseReplaceCode` gains **+57**; `NetworkPartition` loses **16**,
+`NetworkLoss`/`NetworkBandwidth`/`NetworkCorrupt` **8** each.
+
+Composed with the failure-flow pass the total is **1 159 (81.505 %)** — the highest this corpus has produced, +86 over
+the shipped default and +18 over containment alone — and it is still refused, with the same four network families
+paying for the response-code gain.
+
+So the axis closes on a mechanism rather than on a bar: **the gate decides per case, the payment lands per map, and
+the evidence is per candidate.** Every arm in 291d loses a family because those three granularities do not match, and
+the one measurement that loses none is the one the engine cannot express. The next instrument is a per-candidate
+CREDIT — the qualifying callee paid and the others not, the shape `trace`'s `traceSkipsLeader` mask already
+demonstrates — not a sixth bar. `boundary` ships arm-ready and off; `absolute` remains the default.
 
 ### 291e. The far cases are disconnected, not deep
 
@@ -4829,6 +4852,10 @@ the two depth profiles are not presented as a comparison.
   repairs 64 and breaks 17, `JVMMemoryStress` again (§291d).
 - **"The depth profile is where this engine loses."** False — it loses where there is no profile to draw, on the
   720 cases whose symptom is topologically unrelated to the cause (§291e).
+- **"A better bar would let the direction term speak without cost."** False, and the reason is granularity rather
+  than the bar: the decision is per case, the payment per map, the evidence per candidate. The conjunction that
+  loses ONE case offline loses four network families once implemented, because an admitted case pays every callee
+  it credited (§291d). The axis is a per-candidate CREDIT, not a sixth bar.
 - **Two independent confirmations of §290's direction.** A 2026 trajectory study of ten agent frameworks attributes
   **86 %** of its strongest arm's wrong answers to reading the failure direction backwards, and **42 %** to trusting
   the loudest signal (§13.6 of `docs/failed-edge-gate.md`). Those are the two mechanisms §290 and this entry measure

@@ -16,6 +16,7 @@
 
 import type {
   MetricMap,
+  RootCauseResult,
   ServiceCallGraph,
   ServiceNode,
   TimeSeries,
@@ -34,6 +35,7 @@ import {
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
+  failedEdgeBoundary,
   isFailedEdgeGateMode,
   maxInboundRise,
   TreePruner,
@@ -476,13 +478,16 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
  *    unrelated predicates.
  */
 describe('the gate bar — absolute versus fleet-relative', () => {
-  it('names exactly four modes, and the shipped one is the absolute bar', () => {
-    // Four, and the extra three are not three BARS on one quantity: `absolute` and `fleet` are two ways to read one
-    // rise, `evidence` reads the failed-call channel's own failure rate, and `margin` reads the baseline ranking's
-    // lead. The vocabulary is closed so a parser, a workflow input and a dispatch cannot disagree about which words
-    // are legal — the reason this list is asserted at all rather than discovered from the type.
+  it('names exactly five modes, and the shipped one is the absolute bar', () => {
+    // Five, and the extra four are not four BARS on one quantity: `absolute` and `fleet` are two ways to read one
+    // rise, `evidence` reads the failed-call channel's own failure rate, `margin` reads the baseline ranking's
+    // lead, and `boundary` reads neither a bar nor a name — it reads how many interfaces the channel measured and
+    // whether their traffic entered from outside the graph. The vocabulary is closed so a parser, a workflow input
+    // and a dispatch cannot disagree about which words are legal — the reason this list is asserted at all rather
+    // than discovered from the type.
     expect(Object.keys(FAILED_EDGE_GATE_MODES).sort()).toEqual([
       'absolute',
+      'boundary',
       'evidence',
       'fleet',
       'margin',
@@ -747,3 +752,174 @@ describe('maxInboundRise — the case champion the fleet bar is a share of', () 
     expect(maxInboundRise(map)).toBe(3);
   });
 });
+
+describe('the boundary bar — one measured interface, fed from outside the graph', () => {
+  it('admits exactly the pair the measurement selected, and refuses each half alone', () => {
+    // The rule is a conjunction and both halves are load-bearing: on the FSE'26 archive the source-caller half
+    // ALONE answers 974 against a 1 073 control (−99, 200 breaks), and the single-subject half alone answers 1 120
+    // with eleven `JVMMemoryStress` regressions. Together they answer 1 136 with one break, which is why the
+    // predicate is asserted as a conjunction rather than as two thresholds a caller could combine.
+    expect(
+      admitsFailedEdgeTerm(DURATION, 999, {
+        mode: 'boundary',
+        boundary: { subjects: 1, fromSource: true },
+      }),
+    ).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(DURATION, 999, {
+        mode: 'boundary',
+        boundary: { subjects: 2, fromSource: true },
+      }),
+    ).toBe(false);
+    expect(
+      admitsFailedEdgeTerm(DURATION, 999, {
+        mode: 'boundary',
+        boundary: { subjects: 1, fromSource: false },
+      }),
+    ).toBe(false);
+    expect(
+      admitsFailedEdgeTerm(DURATION, 999, {
+        mode: 'boundary',
+        boundary: { subjects: 0, fromSource: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('reads NEITHER the metric name NOR the rise, which is the two refusals it exists to replace', () => {
+    // The shipped `absolute` bar refuses 1 030 of 1 422 cases on the rank-1 candidate's metric label and the rest
+    // on its latency rise — and rank 1 is frequently the candidate the term exists to DEMOTE. A resource metric
+    // with no measured rise is admitted here as long as the channel's own account is the boundary one.
+    expect(
+      admitsFailedEdgeTerm(RESOURCE, 0, {
+        mode: 'boundary',
+        boundary: { subjects: 1, fromSource: true },
+      }),
+    ).toBe(true);
+    expect(
+      admitsFailedEdgeTerm(undefined, undefined, {
+        mode: 'boundary',
+        boundary: { subjects: 1, fromSource: true },
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses an ABSENT boundary rather than reading it as a zeroed one', () => {
+    // A graph built without the walk that produces the two counts cannot answer the question. `subjects: 0` would
+    // also be refused, so the two absences agree here by construction — the assertion keeps them distinguishable
+    // in the code rather than in the outcome, which is what the explicit branch in the predicate is for.
+    expect(admitsFailedEdgeTerm(DURATION, 999, { mode: 'boundary' })).toBe(false);
+    expect(admitsFailedEdgeTerm(DURATION, 999, { mode: 'boundary', boundary: undefined })).toBe(
+      false,
+    );
+  });
+
+  it('counts DISTINCT callees and reads the caller in-degree from the topology', () => {
+    // Two rows against one callee are ONE subject — the channel credited one interface twice, which is still a
+    // single statement. The source test is per ROW, so one source-fed row among interior ones is enough: the
+    // failure did enter from outside.
+    const edges = [
+      { from: 'gw', to: 'a' },
+      { from: 'gw', to: 'b' },
+      { from: 'a', to: 'c' },
+    ];
+    expect(failedEdgeBoundary([], edges)).toEqual({ subjects: 0, fromSource: false });
+    expect(
+      failedEdgeBoundary(
+        [
+          { caller: 'gw', callee: 'a', rise: 5, novel: 0 },
+          { caller: 'gw', callee: 'a', rise: 2, novel: 0 },
+        ],
+        edges,
+      ),
+    ).toEqual({ subjects: 1, fromSource: true });
+    // `a` has an inbound edge, so a failure reported by it is an interior one.
+    expect(failedEdgeBoundary([{ caller: 'a', callee: 'c', rise: 5, novel: 0 }], edges)).toEqual({
+      subjects: 1,
+      fromSource: false,
+    });
+    // Two callees credited: the term is a COMPARISON here, and the rule is refused.
+    expect(
+      failedEdgeBoundary(
+        [
+          { caller: 'gw', callee: 'a', rise: 5, novel: 0 },
+          { caller: 'a', callee: 'c', rise: 4, novel: 0 },
+        ],
+        edges,
+      ),
+    ).toEqual({ subjects: 2, fromSource: true });
+  });
+
+  it('does not read a SELF-call as an entry from outside, whatever its in-degree', () => {
+    // A self-edge is dropped by the ledger, but the predicate must not depend on that: a row whose caller IS its
+    // callee says nothing about where the fault entered, and treating an in-degree-zero isolated node's self-call
+    // as a source entry would admit the term on a graph with no topology at all.
+    expect(failedEdgeBoundary([{ caller: 'a', callee: 'a', rise: 5, novel: 0 }], [])).toEqual({
+      subjects: 1,
+      fromSource: false,
+    });
+  });
+
+  it('carries the two counts on the graph whether or not the gate reads them', () => {
+    // A property of the CASE rather than of the run, like the failure flow it is derived from: a graph built by
+    // one pruner and analysed by another must not change what was measured. The shipped mode never looks at the
+    // field, which is what keeps its path byte-identical.
+    const pruner = new TreePruner({ failedEdgeWeight: 3 });
+    const [callGraph, metrics] = boundaryCase();
+    const shipped = pruner.buildFaultGraph(callGraph, metrics, {
+      failedTraceEdges: boundaryFailures,
+    });
+    expect(shipped.failedEdgeBoundary).toEqual({ subjects: 1, fromSource: true });
+    // No rows at all: the channel credited nothing, so the field is ABSENT rather than a zeroed pair.
+    const silent = pruner.buildFaultGraph(callGraph, metrics, {});
+    expect(silent.failedEdgeBoundary).toBeUndefined();
+  });
+
+  it('licenses the term on a case the shipped bar refuses, on the same graph and the same failures', () => {
+    // The behavioural claim, on one fixture: `absolute` refuses because the rank-1's dominant metric is a resource
+    // counter and its inbound latency did not rise; `boundary` admits because the only interface the channel
+    // measured is the rank-1's own and its caller is the graph's source. Same graph, same rows, one option.
+    const [callGraph, metrics] = boundaryCase();
+    const rank = (mode: FailedEdgeGateMode) => {
+      const pruner = new TreePruner({ failedEdgeWeight: 3, failedEdgeGateMode: mode });
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        failedTraceEdges: boundaryFailures,
+      });
+      return pruner.analyze(graph, 2);
+    };
+    const refused = rank('absolute');
+    const admitted = rank('boundary');
+    const term = (results: RootCauseResult[]) =>
+      results[0]?.terms?.find((entry) => entry.name === 'failedEdge');
+    expect(refused[0]!.serviceId).toBe('svc');
+    // The refusal wears the label a refusal wears — `WEIGHT_ZERO`, the sharpest cause the classification can
+    // reach — and the contribution is zero; the same term on the same case is LIVE under `boundary`.
+    expect(term(refused)?.cause).toBe('WEIGHT_ZERO');
+    expect(term(refused)?.contribution ?? 0).toBe(0);
+    expect(term(admitted)?.cause).toBeUndefined();
+    expect(term(admitted)?.contribution ?? 0).toBeGreaterThan(0);
+    expect(admitted[0]!.serviceId).toBe('svc');
+  });
+});
+
+const BOUNDARY_SOURCE = 'gw';
+const BOUNDARY_SERVICE = 'svc';
+const boundaryFailures = [
+  { caller: BOUNDARY_SOURCE, callee: BOUNDARY_SERVICE, failed: 40, baseline: 0 },
+];
+
+function boundaryCase(): [ServiceCallGraph, MetricMap] {
+  // The source is the only caller and the service is the only callee, so the channel credits ONE interface and
+  // that interface's traffic enters from outside. The dominant metric is a resource counter and no latency rose,
+  // which is precisely what the shipped name-and-rise bar refuses.
+  return [
+    makeCallGraph([
+      [BOUNDARY_SOURCE, BOUNDARY_SERVICE],
+      [BOUNDARY_SERVICE, 'db'],
+    ]),
+    new Map<string, readonly TimeSeries[]>([
+      [BOUNDARY_SOURCE, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 1, 1, 1, 1])]],
+      [BOUNDARY_SERVICE, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 4, 4, 4, 4])]],
+      ['db', [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 1, 1, 1, 1])]],
+    ]),
+  ];
+}

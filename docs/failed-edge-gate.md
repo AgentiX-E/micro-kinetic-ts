@@ -606,3 +606,82 @@ they describe the same physics. `MIS3` — reading the failure direction backwar
 that error, and §13.3 says the direction channel is refused on 78.3 % of this corpus. `MIS2` — trusting the loudest
 signal without separating cause from symptom — is **42 %**, and the far misses in 13.2 are that failure mode with the
 engine's own weights: the loudest service wins by 0.01 on an instrument that has saturated.
+
+### 13.7 Two more rules, tried because 13.5 named a distinction
+
+13.5 says the far cases are flat because the base term saturated, and that a repair must tell that apart from a
+genuinely close pair. Two candidates were priced against that statement and both were refused, which is recorded here
+because a refused rule is the only evidence that the axis was searched rather than guessed.
+
+**The source-caller rule.** The repaired cases have one thing in common in the raw rows: the failing edge's CALLER is
+a source of the call graph (`loadgenerator → ts-ui-dashboard`, in-degree 0), so the failure enters the topology from
+outside and the callee is the fault's boundary. The broken cases have an interior caller — `ts-ui-dashboard →
+ts-consign-service` with the truth `ts-consign-price-service` one hop deeper, i.e. a propagation symptom. Paying the
+term only to a callee whose failing caller is a source answers **974 (−99)**: it repairs 101 cases, 82 of them far,
+and breaks 200 — including 42 response-code and 35 request-method cases in which the entry's own interface failed
+because something behind it broke.
+
+**The same rule behind the margin bar.** Composed with the flatness condition at shares 0.10 / 0.20 / 0.30 / 0.50 the
+arm answers +20 / −24 / −62 / −96. The composition is worse than either half, because the far cases are not the only
+flat ones: an interior fault that propagates to a source-facing edge produces exactly the same signature.
+
+So the distinction 13.5 asks for is not "how flat", and that is now spent rather than open. But the source-caller
+half of the rule was measured at the wrong grain: it was applied to every case it allowed, and the cases it allows are
+heterogeneous. Split by how many subjects the channel measured, the same rule reads:
+
+| measured subjects | cases allowed | repaired | broken |
+| ---: | ---: | ---: | ---: |
+| **1** | 130 | **64** | **1** |
+| 2 | 243 | 36 | 62 |
+| 3+ | 368 | 1 | 137 |
+
+The single-subject row is the whole finding — and it is a finding about a rule the ENGINE cannot express.
+
+**Source caller AND exactly one measured subject**, scored offline as a bonus paid only to the subject it names,
+answers **1 136 (+63)** against the control's 1 073: 64 repairs, 50 of them far cases, and **one** break. That
+arithmetic is exact, and it prices a PER-CANDIDATE payment. The engine's gate is not that: `admitsFailedEdgeTerm`
+decides once per CASE, and an admitted case pays the term to EVERY callee the channel credited.
+
+Implemented as the `boundary` mode and run on the same 1 422 cases, the rule answers **1 094 (+21)**:
+
+| family | n | shipped | `boundary` | Δ |
+| --- | ---: | ---: | ---: | ---: |
+| `HTTPResponseReplaceCode` | 231 | 162 | 219 | **+57** |
+| `HTTPRequestDelay` | 88 | 57 | 60 | +3 |
+| `HTTPResponseDelay` | 89 | 56 | 59 | +3 |
+| `HTTPRequestAbort` | 60 | 46 | 47 | +1 |
+| `HTTPRequestReplaceMethod` | 190 | 125 | 123 | −2 |
+| `PodKill` | 10 | 10 | 9 | −1 |
+| `NetworkLoss` | 48 | 29 | 21 | **−8** |
+| `NetworkBandwidth` | 42 | 20 | 12 | **−8** |
+| `NetworkCorrupt` | 46 | 31 | 23 | **−8** |
+| `NetworkPartition` | 97 | 64 | 48 | **−16** |
+
+The gap between +63 and +21 is the finding, and it is not a measurement error: it is the difference between paying
+one candidate and paying the map. On a network fault the channel credits MANY callees; the case-level rule admits
+those cases on the one subject that happens to be source-fed and then pays every credited callee the term's full
+weight, which promotes victims the shipped bar had correctly left alone. That is why the network families are the
+ones that pay: they are the families with a wide credit set.
+
+Composed with the failure-flow pass it is the best total this corpus has produced — **1 159 (81.505 %)** against
+1 141 for containment alone — and it is refused anyway, for the same reason:
+
+| family | `containment+shape` | `+ boundary` | Δ |
+| --- | ---: | ---: | ---: |
+| `HTTPResponseReplaceCode` | 171 | 228 | **+57** |
+| `HTTPRequestDelay` | 68 | 71 | +3 |
+| `HTTPResponseDelay` | 67 | 70 | +3 |
+| `HTTPRequestAbort` | 49 | 50 | +1 |
+| `HTTPRequestReplaceMethod` | 137 | 135 | −2 |
+| `PodKill` | 10 | 9 | −1 |
+| `NetworkBandwidth` | 21 | 13 | **−8** |
+| `NetworkLoss` | 31 | 22 | **−9** |
+| `NetworkCorrupt` | 35 | 24 | **−11** |
+| `NetworkPartition` | 66 | 51 | **−15** |
+
+So the axis closes with a mechanism rather than a bar: **the gate decides per case, the payment lands per map, and
+the evidence is per candidate.** Every arm tried in 13.4 and here loses a family because those three granularities
+do not match, and the one measurement that does not lose a family is the one the engine cannot express yet. The next
+instrument is therefore not a sixth bar but a per-candidate CREDIT — the qualifying callee paid, the others not —
+which the `trace` term already demonstrates is expressible inside the score (its `traceSkipsLeader` mask). The mode
+ships `absolute`; `boundary` ships arm-ready and off, with this table as its verdict.

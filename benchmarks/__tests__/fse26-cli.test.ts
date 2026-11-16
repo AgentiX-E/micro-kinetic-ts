@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -170,6 +171,26 @@ describe('parseFSE26Args — other flags', () => {
     // `--`, so this falls through to the unrecognised-argument branch and the run stops. Loud, because the
     // alternative is a dispatch that meant to set a reading and published the shipped one instead.
     expect(() => parseFSE26Args(['--failure-attribution', '--max-cases', '5'])).toThrow(
+      /unrecognised argument/u,
+    );
+  });
+
+  it('parses the failed-edge gate mode as a closed vocabulary of five bars', () => {
+    // A WORD, not a number, and the closed vocabulary is the whole safety property: `boundary` reads the call
+    // channel's own account of a case, the other four read numbers in the corpus's units, and a typo must
+    // reproduce the shipped bar rather than invent a sixth reading. The FSE'26 surface had no input here until
+    // `boundary` existed — the four bars in the corpus's units needed none — so the flag is new rather than
+    // re-wired, which is why the default is asserted from the engine's own constant below.
+    expect(parseFSE26Args([]).failedEdgeGateMode).toBe(DEFAULT_FAILED_EDGE_GATE_MODE);
+    for (const mode of ['absolute', 'fleet', 'evidence', 'margin', 'boundary']) {
+      expect(parseFSE26Args(['--failed-edge-gate-mode', mode]).failedEdgeGateMode).toBe(mode);
+    }
+    expect(parseFSE26Args(['--failed-edge-gate-mode', 'boundry']).failedEdgeGateMode).toBe(
+      DEFAULT_FAILED_EDGE_GATE_MODE,
+    );
+    // No value: the next token is a flag, `hasValue` refuses it, and the run stops loudly rather than
+    // publishing a bar nobody asked for.
+    expect(() => parseFSE26Args(['--failed-edge-gate-mode', '--max-cases', '5'])).toThrow(
       /unrecognised argument/u,
     );
   });

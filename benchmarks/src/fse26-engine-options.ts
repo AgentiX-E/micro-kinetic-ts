@@ -21,6 +21,7 @@
 
 import type {
   DualFamilyGateMode,
+  FailedEdgeGateMode,
   FailedEdgeMode,
   FailureAttribution,
   FaultFreeProfile,
@@ -164,6 +165,8 @@ export interface Fse26SignalOptions {
   readonly failureContainment: boolean;
   /** Which reading that pass applies. See `Fse26CliOptions.failureAttribution`. */
   readonly failureAttribution: FailureAttribution;
+  /** Which bar lets the failed-call direction term speak. See `Fse26CliOptions.failedEdgeGateMode`. */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
   readonly topoWeight: number;
   /** Topological deduction strength (0 = off) — see `TreePrunerOptions.topoDiscount`. */
   readonly topoDiscount: number;
@@ -281,6 +284,7 @@ export function buildFse26EngineOptions(
       containmentMargin: opts.containmentMargin,
       failureContainment: opts.failureContainment,
       failureAttribution: opts.failureAttribution,
+      failedEdgeGateMode: opts.failedEdgeGateMode,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,
       topoDiscountScope: opts.topoDiscountScope,

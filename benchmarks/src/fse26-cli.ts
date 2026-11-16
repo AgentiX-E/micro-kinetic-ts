@@ -62,6 +62,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
@@ -102,6 +103,7 @@ import {
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
+  isFailedEdgeGateMode,
   isFailureAttribution,
   isFaultFreeSelection,
   isLogNormalisation,
@@ -114,6 +116,7 @@ import {
   isTransientGuardTest,
   TRANSIENT_GUARD_TESTS,
   type DualFamilyGateMode,
+  type FailedEdgeGateMode,
   type FailureAttribution,
   type OnsetShape,
   type PrismPooling,
@@ -521,6 +524,18 @@ export interface Fse26CliOptions {
    */
   readonly failureAttribution: FailureAttribution;
   /**
+   * Which bar decides whether the failed-call direction term may speak at all.
+   *
+   * Ships at `DEFAULT_FAILED_EDGE_GATE_MODE` = `absolute`, the constant every published cell ran. The FSE'26
+   * surface had no input for this axis and the census recorded that as a decision rather than an omission
+   * ("that corpus IS the bar's units"); `boundary` is the mode that made the input necessary, because it is
+   * the only reading of the axis whose evidence is the channel's OWN account of the case rather than a number
+   * in the corpus's units — one measured interface, fed from outside the graph. It answers 1 136 against the
+   * shipped 1 073 with 64 repairs and one regression on this corpus
+   * (`docs/failed-edge-gate.md` §13.7), so it has to be dispatchable to be accepted or refused on a runner.
+   */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
+  /**
    * Weight on the trace-topology signal. `0` = off, the shipped value.
    *
    * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
@@ -786,6 +801,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+    failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
@@ -1047,6 +1063,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // follows: a typo reproduces a published configuration rather than inventing a third reading.
       const value = argv[++i]!;
       opts.failureAttribution = isFailureAttribution(value) ? value : DEFAULT_FAILURE_ATTRIBUTION;
+    } else if (arg === '--failed-edge-gate-mode' && hasValue(argv, i + 1)) {
+      // Closed vocabulary, shipped fallback: an unknown word reproduces a published configuration rather than
+      // inventing a sixth reading.
+      const value = argv[++i]!;
+      opts.failedEdgeGateMode = isFailedEdgeGateMode(value) ? value : DEFAULT_FAILED_EDGE_GATE_MODE;
     } else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
       // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
       // reproduces a published configuration rather than inventing one.

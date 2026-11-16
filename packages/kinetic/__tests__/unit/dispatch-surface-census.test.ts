@@ -321,6 +321,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 290: the READING that pass applies. Packed with it, because the two together are one experiment:
     // an ablation of the shape channel on a single cache is what separates it from the counts it re-attributes.
     '--failure-attribution',
+    // Iteration 291: the BAR that lets the direction term speak at all. It reaches FSE'26 for a reason the four
+    // bars before it did not need one: they read numbers in the corpus's units, and `boundary` reads the
+    // channel's own account of a case — one measured interface, fed from outside the graph — so it is
+    // measurable on the corpus it was measured on rather than only on the golden half.
+    '--failed-edge-gate-mode',
     // Iteration 139: the trend-bonus ceiling. A shape flag rather than a weight, and packed for the same
     // reason — the golden half has no input left to spend.
     '--cap-trend-bonus-at-deviation',
@@ -549,11 +554,16 @@ const KNOBS: Readonly<
   failedEdgeGateMode: {
     // The weight's OTHER axis, and the one that decided whether the term could act on the golden half at all:
     // `absolute` is the 300 fitted on FSE'26's injection strength, `fleet` a share of each case's own champion.
-    // FSE'26 has no input for it and does not need one — that corpus IS the bar's units — so the row is
-    // `rcaeval`-only, which is a statement about where the defect lives rather than about the field.
+    //
+    // This row was `fse26`-null until the `boundary` mode existed, and the reason it recorded was sound for the
+    // four bars it had: each of them reads a number in the corpus's units, so FSE'26 — which IS those units —
+    // needed no input. `boundary` reads no number at all: it reads how many interfaces the channel measured and
+    // whether their traffic entered from outside the graph, which are properties of any case, so the mode has to
+    // be dispatchable on the corpus it was measured on (1 136 against 1 073, 64 repairs, one regression —
+    // `docs/failed-edge-gate.md` §13.7).
     flag: '--failed-edge-gate-mode',
     owner: 'failed-edge-gate.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   failedEdgeGateShare: {
@@ -1066,6 +1076,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   // Iteration 124: the direction term's weight became a golden input, so the arm the FSE'26 half has been able
   // to ask for since iteration 16 finally has BOTH halves dispatchable. Before this the criterion's AND had one
   // side it could not be asked on, which is why the flip was undecidable rather than refused.
+  'failedEdgeGateMode',
   'failedEdgeWeight',
   'latMinRise',
   'latWeight',

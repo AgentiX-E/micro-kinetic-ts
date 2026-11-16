@@ -253,6 +253,7 @@ export {
   classifyTermZero,
   computeOnsetSlopes,
   computeTemporalEarliness,
+  failedEdgeBoundary,
   isFailedEdgeGateMode,
   isOnsetShape,
   namesDurationChannel,
@@ -260,6 +261,7 @@ export {
   toRankingWeights,
 } from './pruning/pruner.js';
 export type {
+  FailedEdgeBoundary,
   FailedEdgeGate,
   FailedEdgeGateMode,
   OnsetShape,

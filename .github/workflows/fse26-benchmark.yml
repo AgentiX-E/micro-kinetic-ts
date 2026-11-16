@@ -413,6 +413,16 @@ jobs:
                     *) echo "::error::ranking_knobs: failure_attribution takes shape or counts, got '$value'"; exit 1 ;;
                   esac
                   ;;
+                # Which bar lets the failed-call direction term speak. 'absolute' is the shipped constant; 'boundary'
+                # is the reading whose evidence is the channel's own account of the case -- one measured interface,
+                # fed from outside the graph -- and it is the only mode on this axis whose inputs are units of no
+                # corpus. A closed vocabulary, so a fifth word cannot be dispatched as a typo of a fourth.
+                failed_edge_gate_mode)
+                  case "$value" in
+                    absolute|fleet|evidence|margin|boundary) KNOB_ARGS+=(--failed-edge-gate-mode "$value") ;;
+                    *) echo "::error::ranking_knobs: failed_edge_gate_mode takes absolute, fleet, evidence, margin or boundary, got '$value'"; exit 1 ;;
+                  esac
+                  ;;
                 drop_deviation)
                   KNOB_ARGS+=(--drop-deviation-mode "$value")
                   ;;

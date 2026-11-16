@@ -20,6 +20,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
@@ -98,6 +99,10 @@ describe('buildFse26EngineOptions', () => {
       // The reading that pass applies, asserted here for the same reason: 'counts' next to a `false` switch
       // would look like an ablation of a lever nobody has measured.
       failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+      // The BAR that lets the direction term speak at all. It belongs in `signals` for the same reason the two
+      // rows above do, and its shipped value is the one every published cell ran — so a silent drop would be
+      // invisible in every number and visible only here.
+      failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The five the mirror of iteration 96 added, each asserted here rather than left to the

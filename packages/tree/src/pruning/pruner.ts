@@ -88,6 +88,7 @@ import {
   failureEdgeKey,
   failureFlows,
   isFailureAttribution,
+  type FailedEdgeRise,
   type FailureAttribution,
 } from './failure-containment.js';
 import {
@@ -1886,7 +1887,7 @@ export const FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR = 300;
  * statistic was measured on, OR of the physics of the term. See {@link FailedEdgeGate} and the docblock
  * on `failedEdgeRiseBar` for the two artifacts that make that a measurement rather than an argument.
  */
-export type FailedEdgeGateMode = 'absolute' | 'fleet' | 'evidence' | 'margin';
+export type FailedEdgeGateMode = 'absolute' | 'fleet' | 'evidence' | 'margin' | 'boundary';
 
 /**
  * The mode vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree
@@ -1897,6 +1898,7 @@ export const FAILED_EDGE_GATE_MODES: Readonly<Record<FailedEdgeGateMode, true>> 
   fleet: true,
   evidence: true,
   margin: true,
+  boundary: true,
 };
 
 /** The shipped gate mode: the absolute bar, which is what every published cell ran. */
@@ -2022,6 +2024,38 @@ export interface FailedEdgeGate {
    * computes it (it is a by-product of the walk that builds the scores) and never looks at it.
    */
   readonly evidence?: FailedEdgeEvidence | undefined;
+  /**
+   * How many interfaces the channel measured, and whether any of their failures came from OUTSIDE the graph.
+   *
+   * Read only at `boundary`, and supplied by the caller for the same reason `fleetMax` and `reach` are: the
+   * predicate is a function of scalars, and a caller that passed the row list would be free to pass one the
+   * scores were not built from.
+   */
+  readonly boundary?: FailedEdgeBoundary | undefined;
+}
+
+/**
+ * The failed-call channel's own account of where the fault's boundary sits.
+ *
+ * Two fields, and both are STRUCTURAL — a count of the interfaces the channel measured and a statement about the
+ * caller's position in the topology. Neither is a bar, a name, a corpus unit or a score, which is what makes the
+ * reading transferable to a corpus whose metrics are `cpu_usage` and `memory`.
+ *
+ * - `subjects` — distinct callees the channel credited. A single subject means the term cannot COMPARE anything:
+ *   max-normalisation makes it `1.0` for that one candidate and it has no second measurement to grade it against,
+ *   so the score it produces is a statement of presence rather than of rank.
+ * - `fromSource` — whether at least one of those failures was reported by a caller with no inbound calls of its
+ *   own, i.e. a client outside the topology. A failure that enters the graph from a source is an interface
+ *   failure of the callee; a failure reported by an interior caller may be the propagation of something deeper.
+ *
+ * The pair is the shipped `boundary` gate: one measured interface, fed from outside. See
+ * `docs/failed-edge-gate.md` §13.7 for the measurement that selected it and for the single case it loses.
+ */
+export interface FailedEdgeBoundary {
+  /** Distinct callees the channel credited on this case. */
+  readonly subjects: number;
+  /** Whether any credited rise was reported by a caller with in-degree zero. */
+  readonly fromSource: boolean;
 }
 
 /**
@@ -2071,6 +2105,7 @@ export function admitsFailedEdgeTerm(
   const mode = gate?.mode ?? DEFAULT_FAILED_EDGE_GATE_MODE;
   if (mode === 'margin') return admitsFailedEdgeReach(gate?.reach, gate?.share);
   if (mode === 'evidence') return admitsFailedEdgeEvidence(gate?.evidence, gate?.share);
+  if (mode === 'boundary') return admitsFailedEdgeBoundary(gate?.boundary);
   if (!namesDurationChannel(dominantMetric)) return false;
   // A missing measurement is REFUSED before the bar is computed, and that ordering is the whole of the
   // rule: folding an absent rise into `0` and then comparing it would admit the case at a share of 0,
@@ -2134,6 +2169,55 @@ function admitsFailedEdgeEvidence(
  * @param share - The fraction of the span the lead may occupy.
  * @returns True only when a measured reach is inside the share.
  */
+/**
+ * The boundary bar: did the channel measure exactly one interface, and did that interface's traffic come from
+ * outside the graph?
+ *
+ * No share, no name, no score. The two halves answer the two ways the shipped `absolute` bar goes wrong on this
+ * corpus, both of which are counted in `docs/failed-edge-gate.md` §13: it reads the dominant metric of the rank-1
+ * candidate — which is the candidate the term exists to demote — and it reads it on 1 422 cases where 78.3 % of the
+ * answers were refused after the channel had already measured a failing interface.
+ *
+ * The rule is deliberately the strictest of the five and its measurement says so: on the FSE'26 archive it answers
+ * 1 136 against the shipped 1 073 (**+63**) with 64 repairs and **one** regression, while the same rule with the
+ * subject half removed answers 974 (−99). Two measured subjects is the line: the cases the rule would then admit
+ * split 611 into 37 repairs and 199 breaks.
+ *
+ * An ABSENT boundary is refused rather than read as `{subjects: 0, fromSource: false}`: a graph built without the
+ * walk that produces it cannot answer the question, and `subjects === 1` is false for a defaulted zero — the same
+ * refusal direction `admitsFailedEdgeEvidence` takes, stated explicitly so the two absences stay distinguishable.
+ */
+function admitsFailedEdgeBoundary(boundary: FailedEdgeBoundary | undefined): boolean {
+  if (boundary === undefined) return false;
+  return boundary.subjects === 1 && boundary.fromSource;
+}
+
+/**
+ * The {@link FailedEdgeBoundary} of one case, from the rows the scores were built from and the topology's edges.
+ *
+ * Exported because the census and the arms have to report the two counts the gate decides on, and a second walk
+ * that re-derived them would be a second definition of "subject" — the defect this repository keeps finding one
+ * level up.
+ *
+ * @param rows - The channel's credited rises, after the same filters the scores applied.
+ * @param edges - The topology's edges, whose in-degree decides whether a caller is a source.
+ * @returns The subject count and whether any rise entered from a source.
+ */
+export function failedEdgeBoundary(
+  rows: readonly FailedEdgeRise[],
+  edges: readonly { readonly from: ServiceId; readonly to: ServiceId }[],
+): FailedEdgeBoundary {
+  const inbound = new Map<ServiceId, number>();
+  for (const edge of edges) inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
+  const subjects = new Set<ServiceId>();
+  let fromSource = false;
+  for (const row of rows) {
+    subjects.add(row.callee);
+    if (row.caller !== row.callee && (inbound.get(row.caller) ?? 0) === 0) fromSource = true;
+  }
+  return { subjects: subjects.size, fromSource };
+}
+
 function admitsFailedEdgeReach(reach: number | undefined, share: number | undefined): boolean {
   if (reach === undefined || !Number.isFinite(reach)) return false;
   const bar =
@@ -2786,6 +2870,8 @@ export class TreePruner {
       containmentExcursions,
       failureFlows: failureFlowMap,
       failingEdges,
+      failedEdgeBoundary:
+        failureRows.length === 0 ? undefined : failedEdgeBoundary(failureRows, topologyGraph.edges),
     };
   }
 
@@ -2906,6 +2992,11 @@ export class TreePruner {
           ? baselineReachOf(baseline, directionWeight, graph.failedEdgeScores)
           : undefined,
       evidence: gateMode === 'evidence' ? graph.failedEdgeEvidence : undefined,
+      // A property of the CASE, not of the run: the walk that produces the two counts happens with every other
+      // failed-call measurement, and only the DECISION is conditional on the mode. Making the measurement
+      // conditional would put a per-run switch inside a per-case artifact — the phase error this module's
+      // containment-excursion comment records, where a graph built by one pruner decided what a second one measured.
+      boundary: gateMode === 'boundary' ? graph.failedEdgeBoundary : undefined,
     };
     if (
       !admitsFailedEdgeTerm(

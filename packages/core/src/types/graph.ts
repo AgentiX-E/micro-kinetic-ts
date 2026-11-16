@@ -600,6 +600,19 @@ export interface FaultPropagationGraph {
    * like — a novel count is not the same account as a known one. ABSENT with {@link failureFlows}.
    */
   readonly failingEdges?: ReadonlyMap<string, { readonly rise: number; readonly novel: number }>;
+  /**
+   * The failed-call channel's own account of where the fault's boundary sits: how many interfaces it credited,
+   * and whether any of their failures entered the graph from a caller with no inbound calls of its own.
+   *
+   * The two counts are a property of the CASE — measured with the channel, on every graph — and the gate that
+   * reads them is a property of the RUN, which is why they live here rather than inside the predicate. ABSENT
+   * when the channel credited nothing, and absent is not `{subjects: 0}`: a graph built without the walk cannot
+   * answer the question, and the gate refuses that absence explicitly.
+   */
+  readonly failedEdgeBoundary?: {
+    readonly subjects: number;
+    readonly fromSource: boolean;
+  };
 }
 
 /** A pruned edge record — documents why an edge was removed. */
