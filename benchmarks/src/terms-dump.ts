@@ -37,6 +37,23 @@
  * The first five of that order are the five that were reported, because the ranking is a total
  * order sliced at the end.
  *
+ * ## Why the ORDER is not a function of the scores
+ *
+ * The array order IS the engine's answer, and the scores do NOT determine it. Two relational passes —
+ * `containmentOrder` and the failure flow — permute a finished list of adjacent candidates, one position at a
+ * time, reading instruments no term scores, so two candidates can appear in the published order in the reverse
+ * of their `finalScore` relationship. On FSE'26 the flow alone moves 68 of 1 422 cases at the unchanged weight
+ * vector: the score-sorted reading of a shipped run's dump reproduces 1 073 top-1 answers where the run
+ * published 1 141, and it is the same 68 cases the flow's own per-family table names.
+ *
+ * That makes one mistake available to every consumer, and it is worth naming rather than avoiding: a weight
+ * screen must re-score and re-SORT — that is what a weight screen is — so its own control, the weight vector the
+ * repository already ships, reports the PRE-pass engine. Its deltas are then measured against a baseline 68
+ * cases below the product, and a screen reporting "−68" for the shipped configuration would be telling the truth
+ * about its own arithmetic and a falsehood about the engine. The order is authoritative for "what the run
+ * answered"; the sort is authoritative for "what a term vector would answer"; neither may be used to state the
+ * other. `benchmarks/__tests__/terms-dump.test.ts` fences it on a case the flow moves.
+ *
  * @module benchmarks/terms-dump
  */
 

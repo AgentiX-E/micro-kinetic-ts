@@ -19,7 +19,15 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { RootCauseResult } from '../../packages/core/src/index.js';
+import { TreePruner } from '@agentix-e/micro-kinetic-tree';
+import type {
+  MetricMap,
+  RootCauseResult,
+  ServiceCallGraph,
+  ServiceNode,
+  TimeSeries,
+} from '../../packages/core/src/index.js';
+import { prepareCases, screenPrepared } from '../src/term-weight-screen.js';
 import { TermDump, parseTermsDump, readTermsDump } from '../src/terms-dump.js';
 
 /**
@@ -296,5 +304,92 @@ describe('reading a term dump back', () => {
     ],
   ])('refuses %s, by line', (_label, text, message) => {
     expect(() => parseTermsDump(text)).toThrow(message);
+  });
+});
+
+describe('the dump carries the engine ORDER, which its scores do not determine', () => {
+  /**
+   * Four services in a line — `c` calls `a` calls `b`, and `d` also calls `b` — with `a` the fusion's mistaken
+   * leader: its own rise is tenfold while `b`'s is a fifth, so every arithmetic reading of the dump puts `a`
+   * first. The failure flow is the only thing that promotes `b`, and it is the pass this fence is about.
+   */
+  const relayGraph = (): {
+    readonly callGraph: ServiceCallGraph;
+    readonly metrics: MetricMap;
+    readonly failures: readonly {
+      caller: string;
+      callee: string;
+      failed: number;
+      baseline: number;
+    }[];
+  } => {
+    const nodes = new Map<string, ServiceNode>(
+      ['a', 'b', 'c', 'd'].map((id) => [id, { id, name: id, namespace: 'default', labels: {} }]),
+    );
+    const series = (values: number[]): TimeSeries => ({
+      label: 'cpu',
+      timestamps: values.map((_, i) => i * 60_000),
+      values: new Float64Array(values),
+      unit: 'count',
+    });
+    return {
+      callGraph: {
+        nodes,
+        edges: [
+          { from: 'a', to: 'b', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 },
+          { from: 'c', to: 'a', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 },
+          { from: 'd', to: 'b', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 },
+        ],
+        systemLoad: 0.3,
+      },
+      metrics: new Map<string, readonly TimeSeries[]>([
+        ['a', [series([10, 10, 10, 10, 10, 100, 100, 100, 100, 100])]],
+        ['b', [series([10, 10, 10, 10, 10, 12, 12, 12, 12, 12])]],
+        ['c', [series([10, 10, 10, 10, 10, 11, 11, 11, 11, 11])]],
+        ['d', [series([10, 10, 10, 10, 10, 10.5, 10.5, 10.5, 10.5, 10.5])]],
+      ]),
+      // `a`'s inbound failures are entirely explained by its own outgoing ones; `b`'s are explained by nothing,
+      // and by TWO callers so the fixture is not the degenerate relay the pass refuses.
+      failures: [
+        { caller: 'c', callee: 'a', failed: 200, baseline: 0 },
+        { caller: 'a', callee: 'b', failed: 200, baseline: 0 },
+        { caller: 'd', callee: 'b', failed: 300, baseline: 0 },
+      ],
+    };
+  };
+
+  it('files the pass’s answer first, and an arithmetic reading of the same rows reverses it', () => {
+    // The defect this fences: a screen re-scores `Σ w'·slope` and re-sorts, which is CORRECT for a weight screen
+    // and BLIND to a pass that permutes a finished list. Its own control therefore disagrees with the answer the
+    // run published — on FSE'26 by 68 cases, 1 073 against the shipped 1 141 — and every delta it reports is
+    // measured against the pre-pass engine rather than against the product.
+    const { callGraph, metrics, failures } = relayGraph();
+    const pruner = new TreePruner();
+    const graph = pruner.buildFaultGraph(callGraph, metrics, {
+      injectTimeMs: 300_000,
+      failedTraceEdges: failures,
+    });
+    const published = pruner.analyze(graph, callGraph.nodes.size);
+    expect(published[0]?.serviceId).toBe('b');
+
+    const path = freshPath();
+    new TermDump(path).record({
+      datapack: 'relay',
+      faultType: 'NetworkDelay',
+      accepted: ['b'],
+      ranking: published,
+    });
+    const [kase] = readTermsDump(path);
+    expect(kase?.candidates[0]?.id).toBe('b');
+
+    const byScore = [...kase!.candidates].sort(
+      (left, right) => (right.score ?? 0) - (left.score ?? 0),
+    );
+    expect(byScore[0]?.id).toBe('a');
+    // And the consequence on the artifact a screen reports: a control that scores the case a MISS while the
+    // engine answered it. `refused` is asserted so the zero is the flow's absence and not a rebuild failure.
+    const report = screenPrepared(prepareCases([kase!]), []);
+    expect(report.refused).toBe(0);
+    expect(report.baseline).toBe(0);
   });
 });

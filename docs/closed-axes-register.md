@@ -4857,6 +4857,15 @@ The readback reproduced the local arm to the case count — 1 141 — which is t
 row is the part that makes the reproduction mean something: `noSplit=0` says the shape column was present on every
 case, so the arm was not measured on a cache that had silently reverted to the counts reading.
 
+**The default was then re-measured as the default.** Run `43826481420` is a BARE dispatch — no `ranking_knobs`, no
+`shard_tag`, every input empty — and it reports `Top@1 = 80.2%`, `Cases = 1422`, `Top@5 = 87.8`,
+`loadErrors=0 engineErrors=0 emptyGraphs=0`, `[guard] placeable=1422/1422 injectTime=1422 noSplit=0`, with the config
+line carrying `failedEdgeWeight=3 … failureContainment=true`. That is the difference between "the flag measures 1 141"
+and "the engine measures 1 141 when nobody passes a flag": the first is an arm, the second is the product, and only
+the second is what a reader who clones this repository gets. The same run also reports the population the pass can
+reach at all — `failed edges in 1222/1422 cases (4805 records, 4805 in-graph)` — so 200 cases contribute no
+failed-edge evidence by construction and the term is silent on them rather than refused.
+
 **`DEFAULT_FAILURE_CONTAINMENT` is now `true`.** 1 073 → 1 141 on 1 422 cases (75.457 % → 80.239 %), thirteen
 families gain and none loses (§11.4 of `docs/containment-order.md`), and the one degenerate conduit the iteration-289
 guard could not remove is refused by the shape rule rather than by a threshold. `failure_containment=0` remains

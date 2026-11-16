@@ -408,6 +408,13 @@ function byId(left: string, right: string): number {
  * measurement — a caller-supplied baseline would be a second reading of the same corpus, and two readings that
  * disagree by one case produce a `delta` no point on the grid produced.
  *
+ * It is NOT the shipped engine's answer, and the difference is not rounding: the reconstruction sorts by score,
+ * while the engine permutes a finished list through two relational passes that read no score (see the order
+ * section of `terms-dump.ts`). On FSE'26 this baseline is **1 073** where the run published **1 141**, and the 68
+ * cases between them are the failure flow's. A row's `delta` is therefore a statement about the term vector
+ * against the pre-pass engine, which is the comparison a weight screen exists to make; a caller who wants the
+ * shipped answer reads the run's own result file, never this report.
+ *
  * @param corpus - The prepared dump.
  * @param points - The grid. An empty grid returns no rows.
  * @returns The report: the population, the baseline and one row per point, in the grid's order.
