@@ -167,6 +167,13 @@ export default defineConfig({
         // Added with the module: the table's four rows each name one field, and the mapping is the
         // only place a row can become another row's number again.
         'src/rcaeval-metric-rows.ts',
+        // Added with the modules: `cell-population.ts` decides whether a cell's rate is a measurement at all
+        // (the run-43901259774 defect: thirty asked for, none loaded, `AC@1 0.0 %` published over an empty
+        // denominator), and `semantic-preflight.ts` decides what happens when the embedding provider refuses to
+        // answer. Both are pure decision points whose every branch is asserted, because both exist to stop an
+        // absence from being rendered as a number.
+        'src/cell-population.ts',
+        'src/semantic-preflight.ts',
         // Added with the module: the separator screen is the register's own precondition
         // ("show it separates, on a free read") turned into code.
         'src/fse26-separator.ts',

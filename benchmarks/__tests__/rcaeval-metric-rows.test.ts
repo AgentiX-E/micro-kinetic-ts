@@ -37,7 +37,10 @@ describe('rcaeval metric rows', () => {
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     expect(byKey.avg5!.cells).toEqual([0.65]);
     expect(byKey.ac1!.cells).toEqual([0.5]);
-    expect(byKey.avg5!.average).toBeGreaterThan(byKey.ac1!.average);
+    // `average` is `number | null` since iteration 294 (null = no cell exists, so there is no rate). A
+    // non-null assertion is the right spelling here rather than a cast: this fixture HAS a cell, and a
+    // future change that emptied it would fail on the null rather than on the comparison below.
+    expect(byKey.avg5!.average!).toBeGreaterThan(byKey.ac1!.average!);
   });
 
   it('prints the fault-type share on TA', () => {
@@ -67,9 +70,14 @@ describe('rcaeval metric rows', () => {
     expect(ac1.average).toBe(0.5);
   });
 
-  it('returns every row even when no cell exists, so the table keeps its shape', () => {
+  it('returns every row even when no cell exists, and gives each a NULL average rather than a zero', () => {
+    // The rows keep their shape so a printer can iterate them; the AVERAGE does not, and the difference is the
+    // whole point. This test asserted `average === 0` until iteration 294, and that assertion is what let a run
+    // whose thirty cases all failed to load print `AC@1 0.0 %` in the published table format: a rate over no
+    // cases, rendered as a rate. `null` says there is no rate, and a printer that publishes one anyway has to
+    // handle the null explicitly.
     const rows = buildMetricRows(['ghost'], () => undefined);
     expect(rows.map((r) => r.key)).toEqual(['ac1', 'avg5', 'la', 'ta']);
-    expect(rows.every((r) => r.average === 0)).toBe(true);
+    expect(rows.every((r) => r.average === null)).toBe(true);
   });
 });

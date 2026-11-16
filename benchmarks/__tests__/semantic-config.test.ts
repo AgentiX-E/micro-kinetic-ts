@@ -286,7 +286,12 @@ describe('the run’s banner names the provider that reached it', () => {
   it('prints that backend rather than a hard-coded vendor name', async () => {
     const source = readFileSync(new URL('../src/run-rcaeval.ts', import.meta.url), 'utf-8');
 
-    expect(source).toContain('embeddingProvider?.meta?.backend');
+    // The banner reads the backend the PREFLIGHT reports since iteration 294, rather than re-deriving it from
+    // the config object: the preflight is the component that can change the provider (on a declared
+    // degradation), so the provider it reports is the one that reached the run. Re-deriving it here would be a
+    // second answer to "which provider is in use", and the one time this file had two of those the banner
+    // named a vendor the run had not used.
+    expect(source).toContain('const semanticBackend = preflight.backend');
     // The defect, as text: a ternary on presence ALONE cannot distinguish the two providers, so every string
     // it can produce is a name the run may not have used.
     expect(source).not.toMatch(/useSemantic \? ' \+ semantic enhancement \(Zhipu embedding-3\)'/);

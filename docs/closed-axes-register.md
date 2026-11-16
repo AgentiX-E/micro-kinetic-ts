@@ -4978,3 +4978,104 @@ profile (which is why no golden cell can move) and inert on a case with no faile
   rows elsewhere), so it is a worse rule by the standing gate; it was not run to a full arm.
 - **Why 23 gains need an unimpeached first inversion.** The mechanism is the sweep, but no test here separates "the
   blocked pair was the only path" from "the blocked pair changed a later comparison's winner".
+
+## §294 — A rate over no cases was being published as a rate of zero
+
+Iteration 293 shipped the containment order and pushed `73dc662`. The RCAEval workflow on that commit
+(`43901259774`) reached the RE3 cells with an exhausted Zhipu balance: every alignment call answered `429
+Insufficient balance`, all thirty cases of each cell failed to load on it, and the run printed
+
+```
+║ Micro-Kinetic       | AC@1   |   0.0% ║
+```
+
+with an empty denominator — four rows, in the published table format, over no cases — then exited 0. The
+workflow went green carrying it.
+
+This entry is not about the quota. It is about the three defects that let a supplier's billing state reach a
+published reading, none of which need the supplier to be down to be wrong. The mechanism, the four cell verdicts
+and the provider policy are in `measurement-integrity.md`; what follows is what it cost and what it closes.
+
+### The guard asked the wrong question
+
+`if (stats.considered === 0) { … continue; }`, and `considered` counts the cases the loader was **asked for**.
+It was thirty, so the guard whose purpose is to stop an empty cell from being reported is the guard that let it
+be reported. The two populations are different questions:
+
+| name | counted by | answers |
+| --- | --- | --- |
+| `requested` | `LoadStats.considered`, summed over memory slices | which cases the dispatch asked for |
+| `evaluated` | `Σ RunResult.totalCases` | which cases the scorer produced a verdict for |
+
+`cell-population.ts` now owns the decision, with four states rather than two, because they call for different
+responses: nothing selected (change the dispatch), corpus/provider failure (restore the provider), a silent drop
+with no load error (a loader bug, and it says so), and measured.
+
+### The empty population became a zero
+
+`buildMetricRows` computed `average = present.length === 0 ? 0 : …`, so a cell with no fault types — which is
+what an all-failed cell produces — rendered `0.0 %` four times. The unit test in `rcaeval-metric-rows.test.ts`
+asserted exactly that (`rows.every((r) => r.average === 0)`), which is the third time in this register that the
+test asserting a defect is what preserved it. `average` is `number | null` now, and the printer renders `N/A`;
+the absence is unrepresentable as a rate at the type level, so a printer that wants to publish one has to say
+what it means.
+
+An unmeasured cell prints counts, a reason and no percentage, and the run exits **3** (1 is what an exception
+returns; "the measurement could not be taken" is a different event from "the runner threw"). Partial coverage
+still prints a table, with `coverage: 28/30 cases reached the scorer (93.3%)` beside it — a rate over 28 cases
+is a real rate over a stated population, and folding it into either extreme would be the same error in the
+opposite direction.
+
+### The provider was discovered to be unavailable fourteen minutes in
+
+`semantic-preflight.ts` asks one question before the corpus walk: two texts in, two vectors out. Two, because
+"the call did not throw" is not the question — `embed([])` returns `{ vectors: [] }` without a request, and a
+provider that answers without embedding anything would otherwise pass a probe that only looked for exceptions.
+
+On a refusal the policy is explicit, and it defaults to refusing:
+
+| `BENCHMARK_EMBEDDING_FALLBACK` | behaviour |
+| --- | --- |
+| unset / `abort` (default) | throw before any case is read, naming provider, reason and way out; exit 1 |
+| `local` | substitute the in-process TF-IDF provider, print a `DEGRADED` banner, change the configuration line |
+
+An unrecognised value is refused rather than defaulted, on the anomaly-knob rule: this policy decides whether a
+run measures the published configuration, so a typo must not silently pick either arm.
+
+### The attribution hole the repair exposed
+
+The aligner adds edges for every service the YAML registry does not name; those edges are ranking input; and a
+TF-IDF-embedded run and an `embedding-3`-embedded run are therefore different experiments — while their
+artifacts were **identical in every field a reader could see**. The configuration string gained a third line,
+`topology: yaml-v2 + semantic(<backend>)`, rendered once and interpolated into both the banner and the
+`diagnose_dump` header, on the same rule `corpus:` already follows.
+
+The anchor digest does **not** roll (`617935621cbc`): `configDigest` hashes the `signals:` line by definition,
+and this is not a signal. What the digest does not cover is printed verbatim in the same artifact. The narrow
+hole that remains is stated rather than papered over: a digest-keyed comparison cannot tell a degraded artifact
+from an API-embedded one by digest alone, so a baseline should not be recorded from a degraded run.
+
+### Axes this closes
+
+- **"A 0.0 % cell means the engine failed there."** It means the cell failed, and the two are now different
+  lines in the log and different exit codes.
+- **"The provider can be assumed available."** It is asked, before the work, with a check that reads the answer
+  rather than the absence of an exception.
+- **"The embedding backend is not a configuration field."** It moves the graph, so it is on the configuration
+  line, and a substituted run says so above every number it prints.
+
+### What this does not establish
+
+- **Whether the quota comes back.** Restoring it is the only thing that restores an API-embedded nine-cell
+  reading; until then the workflow fails at the probe in about a minute instead of producing fourteen minutes of
+  corrupted numbers, and that red is the honest state.
+- **That the measurement is reproducible by a reader.** It is not, while it depends on a supplier's balance. The
+  permanent fix is a cached embedding provider — a decorator over `IEmbeddingProvider` serving vectors keyed by
+  `(modelId, text-hash)` — which is cheap here because the embedded population is the aligner's service ids and
+  descriptor queries, a few hundred strings per system, not free text. It needs one successful run to populate,
+  so it follows a recharge rather than substituting for one.
+- **That no other runner has this defect.** `run-fse26.ts` was checked for it and does not have the shape: it
+  carries no `considered`-style guard, reads a local corpus with no provider, and fails a case rather than
+  dropping it. What was NOT checked is whether its per-cell denominator differs from its per-cell population in
+  some other way — the question is cheap and it has not been asked there, which is a different statement from
+  "it is clean".

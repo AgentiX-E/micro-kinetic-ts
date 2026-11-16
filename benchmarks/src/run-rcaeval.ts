@@ -112,6 +112,12 @@ import {
 // reads the corpus (how many latency rows a view supplied); this reads the predicate's own verdicts, which is
 // the reading that says the term fired once in 735 cases while the corpus line said it COULD fire on four cells.
 import {
+  classifyCell,
+  formatCellCoverageLine,
+  formatUnmeasuredBlock,
+  type UnmeasuredCell,
+} from './cell-population.js';
+import {
   accumulateFailedEdgeGateCensus,
   createFailedEdgeGateCensus,
   formatFailedEdgeGateCensusLine,
@@ -209,6 +215,11 @@ import {
   isRCAEvalTopologyInitialized,
 } from './rcaeval-topology.js';
 import { createSemanticConfig } from './semantic-config.js';
+import {
+  formatTopologyLine,
+  parseEmbeddingFallback,
+  preflightSemanticConfig,
+} from './semantic-preflight.js';
 
 // ── Semantic Enhancement (optional, requires .env) ────────
 
@@ -816,7 +827,8 @@ function printResultsTable(
     // only when every fault type holds the same number of cases, which is RE1 and is not RE2 or RE3. The
     // mean now comes from the row that owns it, so a row cannot be averaged over a different population
     // than the one it printed.
-    row += ` ${(metric.average * 100).toFixed(1).padStart(5)}% ║`;
+    row +=
+      metric.average === null ? '   N/A ║' : ` ${(metric.average * 100).toFixed(1).padStart(5)}% ║`;
     console.log(row);
   }
 
@@ -1257,7 +1269,40 @@ async function main(): Promise<void> {
     opts.faultFreeProfilePath === undefined
       ? undefined
       : readFaultFreeProfileFile(opts.faultFreeProfilePath).profile;
-  const configuration = `${formatSignalLine(opts)}\n${formatCorpusLine(opts.latencyView)}`;
+  // ── The semantic provider, resolved and PROBED before the configuration line is composed ──
+  // Moved above `configuration` in iteration 294 because the backend belongs ON that line. The aligner adds
+  // edges for every service the YAML registry does not name, those edges are ranking input, and a run that
+  // built them from TF-IDF and one that built them from `embedding-3` are different experiments — while their
+  // artifacts were identical in every field a reader could see.
+  //
+  // The probe is the other half of the same defect. On run 43901259774 the provider answered `429 Insufficient
+  // balance` on all thirty RE3 cases, the loader swallowed one failure per case, and the run printed nine
+  // cells three of which were `0.0 %` over an empty denominator. Asking one question before the walk costs a
+  // request and turns a fourteen-minute silent corruption into a refusal that names its cause.
+  loadEnvFile();
+  const configuredSemantic = await createSemanticConfig();
+  const preflight = await preflightSemanticConfig(configuredSemantic, {
+    fallback: parseEmbeddingFallback(process.env['BENCHMARK_EMBEDDING_FALLBACK']),
+  });
+  const semanticConfig = preflight.config;
+  // Rendered ONCE and consumed twice — the degradation banner and the configuration line must not be able to
+  // state different things, which is the same rule the signals and corpus renderers follow.
+  const topologyLine = formatTopologyLine({
+    backend: preflight.backend,
+    ...(preflight.degradation === undefined ? {} : { degradation: preflight.degradation }),
+  });
+  if (preflight.degradation !== undefined) {
+    // Loud, and before any number: the cells this run prints are NOT the published configuration's, and a
+    // reader who sees this banner cannot mistake them for comparable with the anchor.
+    console.log('');
+    console.log(`!! DEGRADED — ${topologyLine}`);
+    console.log(
+      '!! These cells were measured on a substituted embedding backend and are NOT comparable',
+    );
+    console.log('!! with an API-embedded run. Do not publish them against the anchor.');
+    console.log('');
+  }
+  const configuration = `${formatSignalLine(opts)}\n${formatCorpusLine(opts.latencyView)}\n${topologyLine}`;
   console.log(configuration);
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1324,23 +1369,22 @@ async function main(): Promise<void> {
   // Load all three system topology configs once before benchmarking.
   // Falls back gracefully to ring-connect if configs are not found.
   //
-  // Semantic enhancement: when ZHIPU_API_KEY is available, real embedding-based
-  // alignment is used; otherwise falls back to TF-IDF (local, zero-cost).
-  loadEnvFile();
-  const semanticConfig = await createSemanticConfig();
+  // The config was resolved and probed above, beside the configuration line that now names its backend, so
+  // this site only has to USE it. Re-resolving here would build a second provider, and the one the run
+  // measured with would no longer be the one the artifact names.
   await initRCAEvalTopology(undefined, semanticConfig);
   const useSemantic = Boolean(semanticConfig.embeddingProvider);
   // Which provider REACHED the run, not which one the environment could have produced. The line used to
   // read `useSemantic ? 'Zhipu embedding-3' : …`, and `createSemanticConfig` ALWAYS returns a provider — the
   // TF-IDF fallback is a provider — so a local run with `BENCHMARK_USE_TFIDF=1` printed "Zhipu embedding-3"
   // while aligning with TF-IDF. `meta.backend` is the provider's own answer, and both built-ins report it.
-  const semanticBackend = semanticConfig.embeddingProvider?.meta?.backend;
+  const semanticBackend = preflight.backend;
   console.log(
     `Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})` +
       (useSemantic
         ? semanticBackend === 'api'
-          ? ' + semantic enhancement (Zhipu embedding-3, network)'
-          : ' + semantic enhancement (local TF-IDF, no network)'
+          ? ' + semantic enhancement (API embedding, network)'
+          : ` + semantic enhancement (local ${semanticBackend}, no network)`
         : ''),
   );
   console.log('═'.repeat(65));
@@ -1357,6 +1401,18 @@ async function main(): Promise<void> {
   // failures and not a sample of them: `printFailureDiagnostics` shows the first few per fault type, so a
   // split computed from the console would be a split of a sample while reading as one of the population.
   const lossRecords: LossRecord[] = [];
+  /**
+   * The cells that produced no rate, in dispatch order.
+   *
+   * Kept rather than reported and forgotten, because the run's EXIT CODE depends on it: a dispatch that asked
+   * for three cells and measured two did not succeed, and this list is what turns that into a non-zero exit
+   * instead of a green workflow carrying two cells and a silence.
+   */
+  const unmeasuredCells: Array<{
+    readonly systemName: string;
+    readonly suiteName: string;
+    readonly measurement: UnmeasuredCell;
+  }> = [];
   // The dump is ONE file for the whole invocation, owned here rather than inside the group loop
   // below: `--suite re1` covers three systems, and the first version of this feature wrote the file
   // once per group, so each system truncated the last one's and the artifact held a third of the
@@ -1749,13 +1805,31 @@ async function main(): Promise<void> {
 
     reportLoadErrors(systemName, suiteName, stats);
 
-    // `considered` rather than `cases.length`: a merged cell has released its cases, which is what the slicing is
-    // for, and a guard on the array would skip every cell that was sliced — reporting "no cases loaded" for a run
-    // that loaded all of them.
-    if (stats.considered === 0) {
-      console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
+    // ── Is this cell a MEASUREMENT? ───────────────────────
+    // The guard that stood here compared `stats.considered` with zero, and `considered` counts the cases the
+    // loader was ASKED for — so on run 43901259774, where all thirty RE3 cases failed to load on an
+    // embedding-quota error, it passed and the cell printed `AC@1 0.0 %` over an empty denominator. The two
+    // populations are different questions and only the second one has a rate over it: `requested` is the
+    // dispatch's slice, `evaluated` is what the scorer produced a verdict for. `classifyCell` is the one place
+    // that decides, so the four states (nothing selected / corpus failure / silent drop / measured) cannot be
+    // conflated by a later edit here.
+    const measurement = classifyCell({
+      requested: stats.considered,
+      evaluated: [...results.values()].reduce((sum, r) => sum + r.totalCases, 0),
+      loadErrors: stats.errorSamples,
+    });
+    if (measurement.kind === 'unmeasured') {
+      console.log(formatUnmeasuredBlock(systemName, suiteName, measurement));
+      unmeasuredCells.push({ systemName, suiteName, measurement });
+      results.clear();
+      sliceStats.length = 0;
+      resultsByFaultType.clear();
       continue;
     }
+    // Beside the table, not only in the load-error block: a cell at 28 of 30 and one at 30 of 30 print the
+    // same format, and only this line tells a reader which denominator the rate below is over.
+    const coverageLine = formatCellCoverageLine(measurement);
+    if (coverageLine !== undefined) console.log(coverageLine);
 
     // ── Semantic enhancement diagnostics ──────────────────
     if (useSemantic) {
@@ -2114,6 +2188,23 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nTotal duration: ${Date.now() - startTime}ms`);
+
+  // ── The run's own verdict ─────────────────────────────
+  // A cell that produced no rate is not a cell at 0 %. The blocks were printed where the cells were, so a
+  // reader of the log has already seen them; this summary and the exit code are for the WORKFLOW, which until
+  // iteration 294 could not tell a run that measured nine cells from one that measured six and printed three
+  // zeroes. Exit 3 rather than 1: 1 is what an exception returns, and "the measurement could not be taken" is
+  // not the same event as "the runner threw".
+  if (unmeasuredCells.length > 0) {
+    console.log('');
+    console.log(
+      `!! ${unmeasuredCells.length} cell(s) produced NO RATE — this run is not a measurement of them:`,
+    );
+    for (const cell of unmeasuredCells) {
+      console.log(`!!   ${cell.systemName}/${cell.suiteName}: ${cell.measurement.reason}`);
+    }
+    process.exitCode = 3;
+  }
 }
 
 main().catch((err) => {

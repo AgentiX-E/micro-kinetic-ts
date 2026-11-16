@@ -41,8 +41,16 @@ export interface RCAEvalMetricRow {
   readonly label: string;
   /** One value per fault type, in the order given; `null` where the fault type has no cases. */
   readonly cells: ReadonlyArray<number | null>;
-  /** Mean over the cells that exist — the published convention, not the mean over cases. */
-  readonly average: number;
+  /**
+   * Mean over the cells that exist — the published convention, not the mean over cases.
+   *
+   * `null` when NO cell exists, and it used to be `0`. The two are the same number to a printer and opposite
+   * claims to a reader: a cell set with no cases has no rate, and rendering that absence as `0.0 %` is how a
+   * run whose corpus failed to load published a reading thirty cases never supported (see
+   * `cell-population.ts`). `null` makes the absence unrepresentable as a rate at the type level, so a printer
+   * that wants to publish one has to say what it means.
+   */
+  readonly average: number | null;
 }
 
 /** The label each key prints under. */
@@ -80,6 +88,9 @@ export function metricValue(counts: FaultTypeCounts, key: RCAEvalMetricKey): num
 /**
  * Build the four rows for a table over `faultTypes`.
  *
+ * A row's average is `null` when the table has no cell at all. Callers that publish a rate must therefore
+ * decide what to do about a cell set that holds none — and the only honest answer is not to publish one.
+ *
  * @param faultTypes - The columns, in print order.
  * @param lookup - The fault type's counts, or `undefined` when the cell has none.
  * @returns The four rows, in print order.
@@ -95,7 +106,8 @@ export function buildMetricRows(
       return counts === undefined ? null : metricValue(counts, key);
     });
     const present = cells.filter((v): v is number => v !== null);
-    const average = present.length === 0 ? 0 : present.reduce((s, v) => s + v, 0) / present.length;
+    const average =
+      present.length === 0 ? null : present.reduce((s, v) => s + v, 0) / present.length;
     return { key, label: LABELS[key], cells, average };
   });
 }

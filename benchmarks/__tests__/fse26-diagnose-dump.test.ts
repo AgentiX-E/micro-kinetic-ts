@@ -134,14 +134,17 @@ describe('DiagnoseDump — one file per invocation, however many groups it cover
     expect(source.indexOf('.write()')).toBeGreaterThan(
       source.indexOf('for (const [groupKey, metas] of groups) {'),
     );
-    // And the header is the banner's own string — ONE expression, two consumers, which is what the count of
+    // And the header is the banner's own string — ONE expression, several consumers, which is what the count of
     // two `formatSignalLine(opts)` calls here used to approximate. The second line of that string is the
     // CORPUS the run ranked on, which is not an engine option and therefore cannot live on the signals line:
     // an artifact whose signals line matched the shipped one while its corpus did not would be two
-    // measurements filed under one configuration.
+    // measurements filed under one configuration. The THIRD is the topological backend that built the semantic
+    // edges, added in iteration 294 for the same reason: it moves the graph and therefore the cells, and the
+    // aligner's provider was absent from every field a reader could see.
     expect(source.match(/formatSignalLine\(opts\)/g) ?? []).toHaveLength(1);
+    expect(source.match(/formatTopologyLine\(/g) ?? []).toHaveLength(1);
     expect(source).toMatch(
-      /const configuration = `\$\{formatSignalLine\(opts\)\}\\n\$\{formatCorpusLine\(opts\.latencyView\)\}`/,
+      /const configuration = `\$\{formatSignalLine\(opts\)\}\\n\$\{formatCorpusLine\(opts\.latencyView\)\}\\n\$\{topologyLine\}`/,
     );
     expect(source).toContain('console.log(configuration);');
   });
