@@ -5199,6 +5199,31 @@ re-runnable by dispatch (`scopes=ablation`) and are exploration rather than gate
 answers the question this iteration actually owes — whether an instrument change moved a cell — and it is the one
 that would have been lost.
 
+### The run this protected, read back
+
+`43974549448` finished its three golden jobs green, and the nine cells are the committed anchor cell for cell:
+
+| cell | `f9546a9` (before the refactor) | `78dd3b0` (after it) | anchor |
+| --- | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 113 | 113 | 113 |
+| RE1:SockShop | 119 | 119 | 119 |
+| RE1:TrainTicket | 113 | 113 | 113 |
+| RE2:OnlineBoutique | 84 | 84 | 84 |
+| RE2:SockShop | 89 | 89 | 89 |
+| RE2:TrainTicket | 76 | 76 | 76 |
+| RE3:OnlineBoutique | 26 | 26 | 26 |
+| RE3:SockShop | 24 | 24 | 24 |
+| RE3:TrainTicket | 22 | 22 | 22 |
+| **total** | **666** | **666** | **666** |
+
+Two independent walks on either side of `d1c41a6` — the commit that routed `applyContainmentOrder` through
+`inspectContainmentOrder` — reproduce the anchor exactly. The refactor that added the edge population is therefore
+behaviourally invisible, which is what an instrument change has to be: an observation port that moved a cell would
+be a ranking change wearing a measurement's clothes.
+
+This is the check the cancellation above was made to buy, and it is the only number in this entry that was
+purchased rather than assumed.
+
 ### Axes this closes
 
 - **"Declaring a concurrency group makes overlapping runs impossible."** It makes the next overlap impossible.
