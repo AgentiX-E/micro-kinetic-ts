@@ -2675,34 +2675,48 @@ jobs:
             artifacts/rcaeval-results.txt
             artifacts/ablation-results.txt
 
+      #   The summary is BUDGETED, and the budget is the reason this step is not a `cat`.
+      #
+      #   Run `43901259774` ended with this step aborted: "$GITHUB_STEP_SUMMARY upload aborted, supports content
+      #   up to a size of 1024k, got 1048k". That run's cells had emptied because of an embedding-quota failure,
+      #   and the only thing the workflow's colour recorded was the SIZE of the transcript — a run whose numbers
+      #   are perfect can go red by printing one more census line, and a run whose numbers are absent can go red
+      #   for a reason that has nothing to do with them. Neither is a measurement.
+      #
+      #   Each section is therefore capped, and a capped section SAYS it is capped: the artifact holds the whole
+      #   transcript and the summary says where it is. The total is bounded by construction (3 × 300 000 = 900 KB
+      #   against a 1 024 KB limit), which is a property of this block rather than a number to keep in mind.
       - name: Post summary
         if: always()
         run: |
+          SECTION_BYTES=300000
+          emit() { # emit <path> <fallback-line>
+            if [ -s "$1" ]; then
+              bytes=$(wc -c < "$1")
+              if [ "$bytes" -gt "$SECTION_BYTES" ]; then
+                head -c "$SECTION_BYTES" "$1" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "… truncated: $bytes bytes in the artifact, $SECTION_BYTES shown here." >> $GITHUB_STEP_SUMMARY
+              else
+                cat "$1" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "$2" >> $GITHUB_STEP_SUMMARY
+            fi
+          }
           echo '## Micro-Kinetic Synthetic Benchmark' >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          if [ -f artifacts/synthetic-results/benchmark-results.json ]; then
-            cat artifacts/synthetic-results/benchmark-results.json >> $GITHUB_STEP_SUMMARY
-          else
-            echo 'No synthetic results available' >> $GITHUB_STEP_SUMMARY
-          fi
+          emit artifacts/synthetic-results/benchmark-results.json 'No synthetic results available'
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '## RCAEval Real Dataset Benchmark (Parallel RE1/RE2/RE3)' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ -f artifacts/rcaeval-results.txt ]; then
-            cat artifacts/rcaeval-results.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo 'No RCAEval results' >> $GITHUB_STEP_SUMMARY
-          fi
+          emit artifacts/rcaeval-results.txt 'No RCAEval results'
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '## Feature Ablation Study' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ -f artifacts/ablation-results.txt ]; then
-            cat artifacts/ablation-results.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo 'No ablation results' >> $GITHUB_STEP_SUMMARY
-          fi
+          emit artifacts/ablation-results.txt 'No ablation results'
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Deploy to GitHub Pages

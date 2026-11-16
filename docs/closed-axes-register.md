@@ -4989,12 +4989,18 @@ Insufficient balance`, all thirty cases of each cell failed to load on it, and t
 ║ Micro-Kinetic       | AC@1   |   0.0% ║
 ```
 
-with an empty denominator — four rows, in the published table format, over no cases — then exited 0. The
-workflow went green carrying it.
+with an empty denominator — four rows, in the published table format, over no cases — then exited 0. The run's
+own status therefore said nothing, and the workflow's status said the wrong thing: it ended in **failure**, and
+not because of the zeros. The dashboard's `Post summary` step aborted with `$GITHUB_STEP_SUMMARY upload aborted,
+supports content up to a size of 1024k, got 1048k` — it pasted three whole console transcripts into a file GitHub
+caps at 1 MB. So the colour of the one workflow that produces the nine cells was decided by the size of its
+transcript, which is the same defect one level up: an artifact reporting a quantity that is not the measurement.
 
-This entry is not about the quota. It is about the three defects that let a supplier's billing state reach a
-published reading, none of which need the supplier to be down to be wrong. The mechanism, the four cell verdicts
-and the provider policy are in `measurement-integrity.md`; what follows is what it cost and what it closes.
+This entry is not about the quota. It is about the four defects that let a supplier's billing state reach a
+published reading — and about a fifth thing, the workflow colour, which was decided by a markdown size limit and
+therefore carried no information about any of them. None of the four needs the supplier to be down to be wrong. The
+mechanism, the four cell verdicts and the provider policy are in `measurement-integrity.md`; what follows is what
+it cost and what it closes.
 
 ### The guard asked the wrong question
 
@@ -5041,6 +5047,16 @@ On a refusal the policy is explicit, and it defaults to refusing:
 
 An unrecognised value is refused rather than defaulted, on the anomaly-knob rule: this policy decides whether a
 run measures the published configuration, so a typo must not silently pick either arm.
+
+### A colour decided by a markdown size limit
+
+The failure above is its own defect and it was fixed in the same commit. `Post summary` now routes all three
+transcripts through one `emit` helper with a 300 000-byte section budget: a section under budget is pasted whole,
+a section over it is cut and SAYS so with its true size, and the total is bounded by construction (3 × 300 000
+against 1 024 KB) rather than by remembering a number. `step-summary-budget.test.ts` asserts the bound, the
+presence of the truncation notice, the three fallback lines, and that no artifact path reaches `cat` again — the
+last one because `cat artifacts/… >> $GITHUB_STEP_SUMMARY` is exactly what a future edit would restore, reading as
+the obvious implementation.
 
 ### The attribution hole the repair exposed
 
