@@ -500,8 +500,14 @@ describe('applyFailureContainment', () => {
 // ── The engine ────────────────────────────────────────────
 
 describe('the failure-flow order in the engine', () => {
-  it('ships off, because the measured arm carries one regression in 711 cases', () => {
-    expect(DEFAULT_FAILURE_CONTAINMENT).toBe(false);
+  it('ships ON, because a runner reproduced the arm and no family regressed', () => {
+    // The constant is the engine's promise to every caller that omits the option, so its value is asserted
+    // rather than described. It shipped `false` for two reasons — no dispatch could state it, and the measured
+    // arm carried one regression — and both were closed in iteration 291: the shard cache was rebuilt from the
+    // converter, the readback reproduced 1 141 of 1 422 cases (80.239 %) with thirteen families gaining and
+    // none losing, and the one degenerate case is refused by the shape rule. `false` stays dispatchable, which
+    // is what the +68 was measured against.
+    expect(DEFAULT_FAILURE_CONTAINMENT).toBe(true);
   });
 
   it('reads novel-shape evidence to the caller in the shipped configuration', () => {
@@ -527,9 +533,13 @@ describe('the failure-flow order in the engine', () => {
     expect(rankWith({ failureContainment: true }).ranks.slice(0, 2)).toEqual([1, 2]);
   });
 
-  it('is off in the shipped configuration', () => {
-    expect(rankWith({}).services[0]).toBe('a');
-    expect(DEFAULT_FAILURE_CONTAINMENT).toBe(false);
+  it('is ON in the shipped configuration, and the ablation pole is what "off" costs', () => {
+    // Two claims, and the second is what makes the first measured: a run that omits the option must rank
+    // exactly as a run that names it, and the pole it replaced must still be reachable, or the promotion would
+    // have deleted the arm it was measured against.
+    expect(rankWith({}).services[0]).toBe('b');
+    expect(rankWith({}).services).toEqual(rankWith({ failureContainment: true }).services);
+    expect(rankWith({ failureContainment: false }).services[0]).toBe('a');
   });
 
   it('carries the flows on the graph even when the pass is off', () => {

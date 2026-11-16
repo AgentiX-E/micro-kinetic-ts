@@ -1109,9 +1109,10 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * whose truth is published second behind its own caller, only 34 carry a latency signature at all and 41 have
    * BOTH candidates inside their bands (iteration 289). Needs no profile — the flow is a property of the case.
    *
-   * Ships at {@link DEFAULT_FAILURE_CONTAINMENT} = `false`: the measured arm is +72 gains against **one** loss in
-   * 711 cases, and that loss is a single conduit whose counts carry no directional information. See
-   * `pruning/failure-containment.ts` and `docs/containment-order.md` §5.
+   * Ships at {@link DEFAULT_FAILURE_CONTAINMENT} = `true`. It shipped `false` while the arm was unmeasurable on a
+   * runner and carried one loss; the readback of iteration 291 reproduced 1 141 on 1 422 cases with no family
+   * regression, and the constant's own docblock records both closures. See `pruning/failure-containment.ts` and
+   * `docs/containment-order.md` §11.
    */
   readonly failureContainment: boolean;
   /**
@@ -1469,22 +1470,27 @@ export const DEFAULT_CONTAINMENT_ORDER = false;
 export const DEFAULT_CONTAINMENT_MARGIN = 0;
 
 /**
- * Whether the failure-flow order runs. Off in the shipped configuration.
+ * Whether the failure-flow order runs. ON in the shipped configuration.
  *
- * Two independent reasons, and the second is why this stays off rather than shipping at +10 pp:
+ * The two reasons this shipped OFF until iteration 291, and what closed each:
  *
- * - **No dispatch can state it yet**, exactly as `containmentOrder` had no dispatch surface before its own
- *   workflow input existed. The option is reachable from the engine, the runners' option objects and the
- *   libraries; a benchmark configuration that cannot name a switch is a measurement that cannot be repeated.
- * - **The measured arm carries one regression.** On 711 FSE'26 cases the pass turns 72 wrong top-1 answers into
- *   right ones and one right answer into a wrong one: a chain in which a single failure count appears at every
- *   hop, so the counts are one number replicated and cannot orient the pair. No guard found so far removes that
- *   case without also removing 19 of the gains, and the two guards that are sound (self-anomaly corroboration,
- *   a second failing caller) keep 22 and 12 of them. The numbers and the refusal are in
- *   `docs/containment-order.md` §5; the option stays because a lever nothing can switch is a lever nothing can
- *   ablate.
+ * - **No dispatch could state it.** The pass measured +68/0 on a locally re-cut cache and the workflow's own
+ *   provenance gate refused every dispatch, because the converter had changed and no released cache's digest
+ *   matched the checkout. That is closed operationally rather than by argument: the shard cache was rebuilt from
+ *   the converter at `d4c3843f` (`AgentiX-E/rcabench-data` run `43806078620`, release `rcabench-shape-v1`), and
+ *   the readback it made possible reproduced the local number EXACTLY — runner run `43818561923`, 1 422 cases,
+ *   `Top@1 = 80.2%`, 1 141 correct, with the same fourteen-family profile the local arm reported.
+ * - **The measured arm carried one regression.** It no longer does. The 289 arm lost two cases; the KIND of
+ *   evidence the 290 flow carries repairs both, and across the whole corpus **thirteen families gain and none
+ *   loses** (the table is `docs/containment-order.md` §11.4). The single degenerate conduit that the 289 guard
+ *   could not remove is refused by name now, because a rise that arrived on a shape the edge had never carried is
+ *   not the same account as the ones that did.
+ *
+ * The flip is therefore a promotion on evidence rather than a preference: 1 073 (75.457 %) to 1 141 (80.239 %) on
+ * the full corpus, reproduced on a runner, with no family regression. `failureContainment=false` remains
+ * dispatchable as the ablation, which is what the +68 is measured against.
  */
-export const DEFAULT_FAILURE_CONTAINMENT = false;
+export const DEFAULT_FAILURE_CONTAINMENT = true;
 
 // Re-exported beside the option that consumes it, for the same reason as the gate vocabulary below: the runners
 // import this module directly rather than the barrel, and a vocabulary a CLI cannot import is a vocabulary no flag

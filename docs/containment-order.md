@@ -363,10 +363,13 @@ fact that it is right about the one case it was consulted for is not evidence.
 
 ### 10.6 Wiring
 
-`failureContainment` ships `false` in the engine, for the reason `containmentOrder` does — the full-corpus readback
-is the condition for a default, and this half is not that corpus. Unlike the containment order it needs **no
-profile**, so it is the one of the two a dispatch can state: it travels in the FSE'26 workflow's packed
-`ranking_knobs` block as `failure_containment=1|0`, and a bare dispatch is unchanged by construction. The golden
+`failureContainment` ships **`true`** since iteration 291. Until then it shipped `false` for the reason
+`containmentOrder` does — the full-corpus readback is the condition for a default — and that condition is met:
+the shard cache was rebuilt from the converter at `d4c3843f` (`rcabench-data` run `43806078620`, release
+`rcabench-shape-v1`) and dispatch `43818561923` reproduced **1 141 of 1 422 (80.2 %)**, with `noSplit=0` on the
+guard row, i.e. the shape column present on every case. Unlike the containment order it needs **no profile**, so
+it is the one of the two a dispatch can state: it travels in the FSE'26 workflow's packed
+`ranking_knobs` block as `failure_containment=0|1`, and `0` is now the ABLATION rather than the default. The golden
 half cannot name it — GitHub's 25-input ceiling leaves no input to spend, the reason every late knob is packed
 rather than given one — so the axis is FSE'26-only until that surface changes.
 
@@ -523,27 +526,36 @@ because a total of +3 can hide a swap:
 Every other family is identical between the two readings: the KIND of evidence changes the answer only where a novel
 shape exists, which is what the census in §11.3 said it would do.
 
-### 11.5 What promotion still needs
+### 11.5 What promotion needed, and what it got
 
-`failureContainment` stays `false` and `failureAttribution` ships `'shape'`. The reading costs nothing where there
-is no evidence — on every case whose failures all arrive on shapes the baseline carried, the two readings are
-identical — but the pass itself is still a default flip, and the register's rule is that a default flip is a
-DISPATCH question, not an arithmetic one:
+The register's rule is that a default flip is a DISPATCH question, not an arithmetic one, and the three steps it
+imposed are all closed:
 
-1. the converter changed, so the released cache's digest no longer matches this checkout and **a new cache must be
-   cut** before any dispatch can resolve one (`cache-datasets.yml`);
-2. one dispatched readback on that cache has to reproduce 1 141 with `failure_containment=1`, because a local run
-   and a runner run have disagreed before;
-3. only then does `DEFAULT_FAILURE_CONTAINMENT` move, and the full corpus is re-read at the new default.
+1. ~~a new cache must be cut~~ — `rcabench-data`'s `build-cache.yml` (run `43806078620`) rebuilt the shard cache
+   from this checkout at converter `d4c3843f` and released it as `rcabench-shape-v1`, so the workflow's provenance
+   gate resolves a dispatch against it. (This section named `cache-datasets.yml`; that workflow owns the RCAEval
+   JSON cache. The correction is recorded rather than quietly rewritten — the same misattribution §290e of the
+   register carries.)
+2. ~~one dispatched readback on that cache has to reproduce 1 141 with `failure_containment=1`~~ — run
+   `43818561923`: **Top@1 = 80.2 %**, `Cases = 1422`, `Top@3 = 86.4`, `Top@5 = 87.8`, `loadErrors=0
+   engineErrors=0 emptyGraphs=0`, and the guard row `placeable=1422/1422 injectTime=1422 **noSplit=0**`. The last
+   token is the one that matters: the shape column was present on every case, so the arm was not silently measured
+   as the counts reading.
+3. ~~only then does `DEFAULT_FAILURE_CONTAINMENT` move~~ — it is `true`, and `failureContainment: false` is the
+   ablation a dispatch names with `failure_containment=0`.
 
-Until step 3, the correct statement of this arm is: **+68 top-1 gains against zero losses on 1 422 cases, one
-cache away from shipping.**
+The statement of this arm is therefore no longer conditional: **+68 top-1 gains against zero losses on 1 422 cases,
+1 073 → 1 141 (75.457 % → 80.239 %), shipped and reproduced on a runner.** `failureAttribution` ships `'shape'`
+beside it, and the reading still costs nothing where there is no evidence — on every case whose failures all arrive
+on shapes the baseline carried, the two readings are identical.
 
 ### 11.6 Wiring
 
 `failureAttribution` reaches a dispatch through the packed `ranking_knobs` block as
-`failure_attribution=shape|counts`, beside `failure_containment=1|0`; the second is a closed vocabulary that fails
+`failure_attribution=shape|counts`, beside `failure_containment=0|1`; the second is a closed vocabulary that fails
 the step on any other word, because the two readings disagree on purpose and a typo must not silently pick one.
+Since the flip, `failure_containment=0` is the ABLATION — it is the number the +68 is measured against, so a bare
+dispatch and an explicit `=1` are now the same run, and the registry entry that says otherwise has been corrected.
 The golden half cannot name either — GitHub's 25-input ceiling — so both axes stay FSE'26-only until that surface
 changes.
 

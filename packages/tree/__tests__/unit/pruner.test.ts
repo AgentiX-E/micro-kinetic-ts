@@ -2187,9 +2187,11 @@ describe('TreePruner — failed-edge-direction signal', () => {
   ) => {
     const [callGraph, metrics] = makeCase(rankOneMetricLabel);
     const graph = pruner.buildFaultGraph(callGraph, metrics, options);
+    const results = pruner.analyze(graph);
     return {
       graph,
-      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+      results,
+      byService: new Map(results.map((r) => [r.serviceId, r.finalScore!])),
     };
   };
 
@@ -2201,17 +2203,33 @@ describe('TreePruner — failed-edge-direction signal', () => {
     expect(graph.failedEdgeScores?.has(CALLER)).toBe(false);
   });
 
-  it('is neutral at the default weight: carrying the field changes no score', () => {
+  it('is neutral at the default weight: the term charges nothing, whatever the flow does with the rows', () => {
     // This is the property that lets the field ship in the cache before the
     // signal is trusted: at weight 0 the presence of failed edges must be
-    // unobservable, exactly like an absent field.
-    const pruner = new TreePruner();
+    // unobservable THROUGH THE TERM, exactly like an absent field. The flow is
+    // switched off for the score comparison because it reads the same rows for a
+    // different reason — iteration 291 turned it on by default — and a fixture
+    // that left it on would attribute the flow's promotion to the term.
+    const pruner = new TreePruner({ failureContainment: false });
     const without = scores(pruner);
     const withField = scores(pruner, { failedTraceEdges });
 
     expect(without.graph.failedEdgeScores?.size ?? 0).toBe(0);
     expect([...withField.byService.keys()]).toEqual([...without.byService.keys()]);
     for (const [serviceId, score] of withField.byService) {
+      expect(score).toBeCloseTo(without.byService.get(serviceId)!, 12);
+    }
+    // …and the term is named and zero on every candidate in that same run, which is
+    // what "charged nothing" means on the artifact rather than in the arithmetic.
+    for (const result of withField.results) {
+      expect(result.terms?.find((entry) => entry.name === 'failedEdge')?.contribution ?? 0).toBe(0);
+    }
+    // The shipped default differs in ORDER and in nothing else: the flow moves the
+    // callee it is about, the scores do not move by a bit. Asserting both halves keeps
+    // a future rescoring inside the flow from hiding behind the reordering.
+    const shipped = scores(new TreePruner(), { failedTraceEdges });
+    expect([...shipped.byService.keys()]).not.toEqual([...without.byService.keys()]);
+    for (const [serviceId, score] of shipped.byService) {
       expect(score).toBeCloseTo(without.byService.get(serviceId)!, 12);
     }
   });

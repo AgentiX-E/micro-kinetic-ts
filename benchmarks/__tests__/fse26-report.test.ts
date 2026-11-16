@@ -278,20 +278,20 @@ describe('FSE26 report — the two renderings agree', () => {
         // `topoDiscount = 0` this config still names the set its ranking covered, which is the whole point of
         // the field being a value rather than a property of the deduction.
         `temporalWeight=0 onsetShape=earliness selfAnomalyWeight=1 ` +
-        // Both relational passes are printed unconditionally — not because they ship on (neither does) but
-        // because an omitted-when-default field would make an arm that switched one ON byte-identical to the
-        // shipped run, on the artifact that is supposed to attribute the difference. Iteration 289 added the
-        // second switch here for that reason.
-        'containmentOrder=false failureContainment=false ' +
+        // Both relational passes are printed unconditionally — not because they share a default (they do not:
+        // iteration 291 turned the flow ON) but because an omitted-when-default field would make an arm that
+        // switched one OFF byte-identical to the shipped run, on the artifact that is supposed to attribute the
+        // difference. Iteration 289 added the second switch here for that reason.
+        'containmentOrder=false failureContainment=true ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     // The attribution is printed only when it is NOT the shipped reading: 'shape' is the default, so printing it
     // would add a token to every published line, while an arm that ran 'counts' must be visible or the artifact
     // cannot attribute the difference it exists to attribute.
     expect(formatFSE26ConfigLine(makeConfig({}))).not.toContain('failureAttribution');
-    expect(
-      formatFSE26ConfigLine(makeConfig({ failureContainment: true, failureAttribution: 'counts' })),
-    ).toContain('failureAttribution=counts');
+    expect(formatFSE26ConfigLine(makeConfig({ failureAttribution: 'counts' }))).toContain(
+      'failureAttribution=counts',
+    );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
     );

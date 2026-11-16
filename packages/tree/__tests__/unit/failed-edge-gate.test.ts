@@ -388,7 +388,11 @@ describe('TreePruner — the gate decides the CASE, and the case is the engine�
     // half measured nothing, not that it measured no rise.
     const built = rank(0, DURATION).graph;
     const stripped = { ...built, edgeLatencyByCallee: undefined };
-    const pruner = new TreePruner({ failedEdgeWeight: 3 });
+    // The FLOW is off for the answer clause below, and only for it: since iteration 291 the flow ships on, and
+    // it promotes this same callee on its own, so with it on the two rankings would agree whether or not the
+    // term is live — and "the consequence is visible in the answer" would be a sentence the fixture cannot
+    // fail. Off, the two runs differ for exactly one reason.
+    const pruner = new TreePruner({ failedEdgeWeight: 3, failureContainment: false });
     const withMap = pruner.analyze(built, 3);
     const withoutMap = pruner.analyze(stripped, 3);
 

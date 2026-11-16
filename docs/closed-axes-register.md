@@ -4731,7 +4731,8 @@ own provenance gate. Promotion is: cut a cache (`AgentiX-E/rcabench-data`'s `bui
 repository and stamps the digest into the manifest), dispatch one readback that must reproduce 1 141 at
 `failure_containment=1`, then flip `DEFAULT_FAILURE_CONTAINMENT`. Until the third step the arm is **+68/0 on 1 422
 cases with a cache rebuild between it and the default**. (The workflow was named `cache-datasets.yml` here, which is
-the RCAEval JSON cache — the wrong owner, and the correction is recorded rather than silently rewritten.)
+the RCAEval JSON cache — the wrong owner, and the correction is recorded rather than silently rewritten.) All three
+steps are now done and the default has moved; §291f records the cache, the readback and what the flip cost the suite.
 
 ### Axes this closes
 
@@ -4840,6 +4841,44 @@ demonstrates — not a sixth bar. `boundary` ships arm-ready and off; `absolute`
 (`arXiv:2608.21310` reports 88.2–96.8 % at `d* = 2..5` for its strongest arm); it is the half of the corpus where the
 candidate the engine promotes is in a different component from the cause. Half the corpus having no path is also why
 the two depth profiles are not presented as a comparison.
+
+### 291f. The promotion: the cache, the readback, and the default
+
+§290e left the pass one dispatch away, and the dispatch was blocked by a provenance gate rather than by an argument.
+Both closed here, in order:
+
+| step | artefact | evidence |
+| --- | --- | --- |
+| the converter the arm was measured against | `d4c3843f` | the shape split's second column (§290b) |
+| the shard cache cut from it | `rcabench-data` run `43806078620`, release **`rcabench-shape-v1`** | `build-cache.yml` clones this repository and stamps the digest into the manifest, so the gate resolves |
+| the readback | `fse26-benchmark` run `43818561923`, `ranking_knobs=failure_containment=1` | **Top@1 = 80.2 %**, `Cases = 1422`, `Top@3 = 86.4`, `Top@5 = 87.8`, `loadErrors=0 engineErrors=0 emptyGraphs=0`, `[guard] boundary placeable=1422/1422 injectTime=1422 **noSplit=0**` |
+
+The readback reproduced the local arm to the case count — 1 141 — which is the condition §290e named, and the guard
+row is the part that makes the reproduction mean something: `noSplit=0` says the shape column was present on every
+case, so the arm was not measured on a cache that had silently reverted to the counts reading.
+
+**`DEFAULT_FAILURE_CONTAINMENT` is now `true`.** 1 073 → 1 141 on 1 422 cases (75.457 % → 80.239 %), thirteen
+families gain and none loses (§11.4 of `docs/containment-order.md`), and the one degenerate conduit the iteration-289
+guard could not remove is refused by the shape rule rather than by a threshold. `failure_containment=0` remains
+dispatchable and is now the ablation, which is what the +68 is measured against — the pole did not disappear when it
+became the minority reading.
+
+Three consequences that are structural rather than numeric, and all three were found by the suite rather than
+reasoned from the source:
+
+- **Six tests encoded the old default**, and each was rewritten to assert the promotion instead of the value it lost:
+  the constant, the engine's own omitted-option ranking (which must equal the explicit `true` arm and not the
+  explicit `false` one), the golden nine-cell pin, the term's neutrality at weight 0, the gate's fail-closed case,
+  and the report line's `failureContainment=` token.
+- **The neutrality fence moved.** "At weight 0 the failed-edge field is unobservable" was true of the TERM and is now
+  false of the ENGINE, because the flow reads the same rows for a different reason. The fence is asserted at the
+  flow-off pole, and the shipped default is asserted to differ in ORDER while staying bit-identical in SCORE —
+  which is the sharper statement, because it stops a future rescoring inside the flow from hiding behind a
+  reordering.
+- **The Law-34 red pole became two switches.** The golden nine-cell fence needs `{failedEdgeWeight: 0,
+  failureContainment: false}` to move `RE2-TT`; either switch alone leaves the cell at its pinned value, because the
+  flow promotes the same callee the term does. A pole that lowered only the weight would have gone green while
+  asserting nothing, so the test now asserts each half's own inertness and the pair cannot become decoration.
 
 ### Axes this closes
 

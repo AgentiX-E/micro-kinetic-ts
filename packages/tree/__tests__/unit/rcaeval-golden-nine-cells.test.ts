@@ -9,16 +9,18 @@
  *
  * So this file does not measure those cells (it cannot: the corpus is 735 cases of parquet). It
  * fences the CONSEQUENCE of the ENGINE's shipped weight on them, on a fixture whose cells are computed
- * by the real engine: at `new TreePruner()` every cell reads as pinned below, and at weight **0** —
- * the configuration every published cell before iteration 125 ran — exactly one cell reads DIFFERENTLY.
- * **That second assertion is what makes the first one evidence**: a nine-cell table that no weight can
- * move would be satisfied by the term doing nothing at all (law 34), which is the failure mode a
- * golden fence is prone to.
+ * by the real engine: at `new TreePruner()` every cell reads as pinned below, and at the pole every
+ * published cell before iteration 125 ran — the term at weight **0**, which is also before the failure
+ * flow existed — exactly one cell reads DIFFERENTLY. **That second assertion is what makes the first
+ * one evidence**: a nine-cell table that no weight can move would be satisfied by the term doing
+ * nothing at all (law 34), which is the failure mode a golden fence is prone to.
  *
  * The direction of the pair inverted in iteration 125, when the weight left 0. It has to: the pin
  * follows whatever ships, and the reachability proof has to move to the OTHER pole. What it still
  * catches is a default that changes without this table being re-read — which is the only thing a
- * fixture can know about a corpus it does not have.
+ * fixture can know about a corpus it does not have. Iteration 291 added the second switch to the pole
+ * for that same reason: the flow ships ON now and promotes this fixture's callee on its own, so the
+ * pole has to state both or the weight's effect hides behind the flow's.
  */
 
 import type {
@@ -31,6 +33,19 @@ import { TreePruner } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 /** One case: who the fault is on, what dominates the rank-1's anomaly, and which edges failed. */
+/**
+ * The POLE a table is measured at: the two switches the direction channel has.
+ *
+ * Both are named because they reached the engine at different times and neither is inert. The term has carried a
+ * weight since iteration 125 and the failure flow has been ON by default since iteration 291, and on this fixture
+ * the two promote the SAME callee — so a pole that lowered only the weight is a pole where the flow answers for the
+ * term, which is the exact way a golden fence goes green while asserting nothing.
+ */
+interface Pole {
+  readonly failedEdgeWeight?: number;
+  readonly failureContainment?: boolean;
+}
+
 interface CaseSpec {
   /** The ground-truth service set. */
   readonly truth: readonly string[];
@@ -53,7 +68,7 @@ const CPU = 'container_cpu_usage_seconds_total';
  * only job is to be a population the engine ranks: the assertion is on the engine's answer, never on
  * the fixture's shape.
  */
-function ranksAsTruth(spec: CaseSpec, options: { failedEdgeWeight?: number }): boolean {
+function ranksAsTruth(spec: CaseSpec, options: Pole): boolean {
   const ids = ['edge', 'mid', 'leaf'] as const;
   const nodes = new Map<string, ServiceNode>(
     ids.map((id) => [id, { id, name: id, namespace: 'default', labels: {} }]),
@@ -146,7 +161,7 @@ const CELLS: Readonly<Record<string, readonly CaseSpec[]>> = {
 };
 
 /** Correct / total per cell, in the published order. */
-function nineCells(options: { failedEdgeWeight?: number } = {}): Record<string, string> {
+function nineCells(options: Pole = {}): Record<string, string> {
   const table: Record<string, string> = {};
   for (const [cell, cases] of Object.entries(CELLS)) {
     const correct = cases.filter((spec) => ranksAsTruth(spec, options)).length;
@@ -186,14 +201,23 @@ describe('RCAEval golden nine cells — fenced at the shipped default', () => {
     expect(nineCells()).toEqual(PINNED);
   });
 
-  it('MOVES exactly one cell at weight 0 — the pole the published cells ran', () => {
-    // Law 34: a green census is evidence only if a red one is reachable. The shipped weight is 3 since
-    // iteration 125, so the DIFFERENT pole is 0 — the configuration every published cell before that ran —
-    // and the fixture must move there, in exactly the cell the gate admits a case in. If this ever reports
-    // zero moved cells, the pin above has stopped depending on the weight and asserts nothing.
-    const off = nineCells({ failedEdgeWeight: 0 });
+  it('MOVES exactly one cell at the pre-125 pole — the configuration the published cells ran', () => {
+    // Law 34: a green census is evidence only if a red one is reachable. The shipped configuration is weight 3
+    // with the flow ON since iteration 291, so the DIFFERENT pole is the one every published cell before
+    // iteration 125 ran: the term at 0, which is also before the flow existed. Both are switched here, and the
+    // flow has to be: it reads the same rows for a different reason and promotes this same callee, so a pole
+    // that lowered only the weight would leave RE2-TT at its pinned value and this fence would assert nothing
+    // while still passing green.
+    const off = nineCells({ failedEdgeWeight: 0, failureContainment: false });
     const moved = Object.keys(PINNED).filter((cell) => off[cell] !== PINNED[cell]);
     expect(moved).toEqual(['RE2-TT']);
     expect(off['RE2-TT']).toBe('2/2');
+    // And each half is load-bearing on its own account: the weight alone moves the cell (the term promotes the
+    // callee at 3), while the flow alone does not (the term has already done it at that weight). Asserting the
+    // second keeps the pole from being a pair where one switch is decoration.
+    const weightOnly = nineCells({ failedEdgeWeight: 0 });
+    expect(weightOnly['RE2-TT']).toBe(PINNED['RE2-TT']);
+    const flowOnly = nineCells({ failureContainment: false });
+    expect(flowOnly['RE2-TT']).toBe(PINNED['RE2-TT']);
   });
 });
