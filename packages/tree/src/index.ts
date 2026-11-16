@@ -185,12 +185,16 @@ export type { EmissionJurisdictionRow } from './pruning/emission-jurisdiction.js
 
 export {
   applyContainmentOrder,
+  inspectContainmentOrder,
   isLatencyChannel,
   latencyExcursions,
 } from './pruning/containment-order.js';
 export type {
+  ContainmentDecision,
   ContainmentEdge,
   ContainmentOrderInput,
+  ContainmentSweep,
+  ContainmentVerdict,
   LatencyExcursionInput,
 } from './pruning/containment-order.js';
 

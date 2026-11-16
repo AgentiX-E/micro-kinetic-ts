@@ -189,6 +189,109 @@ interface RankedService {
 }
 
 /**
+ * Why the sweep did or did not invert one adjacent pair.
+ *
+ * Four refusals rather than one, because they are four different statements and only the first two are about
+ * the pair's own measurements: `no-failed-interface` says the topology carried nothing between them,
+ * `unmeasured` says the profile could not speak, and `not-larger` says it spoke and the callee was not further
+ * out. A single `refused` would make a corpus that had no evidence indistinguishable from one whose evidence
+ * pointed the other way.
+ */
+export type ContainmentDecision = 'inverted' | 'no-failed-interface' | 'unmeasured' | 'not-larger';
+
+/**
+ * One adjacent pair that carried a call edge, and what the sweep decided about it.
+ *
+ * The excursions are recorded whenever they were MEASURED, including on a refusal — a refusal is a negative
+ * example, and the five losses the interface requirement removed were refusals whose excursions were the reason
+ * the older arm inverted them. A side the profile could not measure is ABSENT rather than zero: substituting
+ * zero is the exact move `latencyExcursions` refuses to make.
+ */
+export interface ContainmentVerdict {
+  /** The candidate that sat higher in the published order when the pair was examined. */
+  readonly upper: ServiceId;
+  /** The candidate that sat lower. */
+  readonly lower: ServiceId;
+  /** What the sweep did about it. */
+  readonly decision: ContainmentDecision;
+  /** The upper candidate's excursion in band widths, when the profile could measure it. */
+  readonly upperExcursion?: number | undefined;
+  /** The lower candidate's excursion in band widths, when the profile could measure it. */
+  readonly lowerExcursion?: number | undefined;
+}
+
+/** The sweep's order and its reasons, which {@link applyContainmentOrder} throws away. */
+export interface ContainmentSweep<T> {
+  /** The same candidates as the published ranking, with the qualified adjacent pairs inverted. */
+  readonly order: T[];
+  /** One row per adjacent pair that carried a call edge, in sweep order. */
+  readonly verdicts: ContainmentVerdict[];
+}
+
+/**
+ * Invert adjacent caller/callee pairs whose latency excursions are out of order, keeping the reasons.
+ *
+ * The same single sweep as {@link applyContainmentOrder} — that function is this one's `.order` — with one
+ * addition: every pair that carried a call edge is recorded, whether it was inverted or not. The record exists
+ * for a measurement that the ranking artifact cannot reconstruct: ρ, the factorisation residual of the pair's
+ * out-of-band indicators over the corpus, is a property of an EDGE, and the edge population is the set of
+ * adjacent pairs this sweep examined. A pair with no call edge is not recorded at all, because it has no edge
+ * to be a property of.
+ *
+ * The rows are in sweep order, which is not the same as the order of the final ranking: once a pair is inverted
+ * the next row describes the NEW adjacency, which is what makes the record reproducible from the same input.
+ *
+ * @param input - The published ranking, the topology, the excursions, the margin, and the failed interfaces.
+ * @returns The reordered candidates and one verdict per adjacent pair that carried an edge.
+ */
+export function inspectContainmentOrder<T extends RankedService>(
+  input: ContainmentOrderInput<T>,
+): ContainmentSweep<T> {
+  const order = [...input.ranking];
+  const verdicts: ContainmentVerdict[] = [];
+  if (order.length < 2 || input.excursions.size === 0 || input.edges.length === 0)
+    return { order, verdicts };
+  const margin = input.margin ?? 0;
+  const failingEdges = input.failingEdges;
+
+  const calls = new Set<string>();
+  for (const edge of input.edges) calls.add(`${edge.from}\u0000${edge.to}`);
+
+  for (let i = 0; i + 1 < order.length; i++) {
+    const upper = order[i]!;
+    const lower = order[i + 1]!;
+    const key = `${upper.service}\u0000${lower.service}`;
+    if (!calls.has(key)) continue;
+    const upperExcursion = input.excursions.get(upper.service);
+    const lowerExcursion = input.excursions.get(lower.service);
+    // Measured sides are carried, unmeasured ones are omitted — never zeroed. The spread rather than two
+    // conditional assignments so the optionality survives `exactOptionalPropertyTypes`.
+    const pair = {
+      upper: upper.service,
+      lower: lower.service,
+      ...(upperExcursion === undefined ? {} : { upperExcursion }),
+      ...(lowerExcursion === undefined ? {} : { lowerExcursion }),
+    };
+    if (failingEdges !== undefined && !failingEdges.has(key)) {
+      verdicts.push({ ...pair, decision: 'no-failed-interface' });
+      continue;
+    }
+    if (upperExcursion === undefined || lowerExcursion === undefined) {
+      verdicts.push({ ...pair, decision: 'unmeasured' });
+      continue;
+    }
+    if (!(lowerExcursion > upperExcursion + margin)) {
+      verdicts.push({ ...pair, decision: 'not-larger' });
+      continue;
+    }
+    order[i] = lower;
+    order[i + 1] = upper;
+    verdicts.push({ ...pair, decision: 'inverted' });
+  }
+  return { order, verdicts };
+}
+
+/**
  * Invert adjacent caller/callee pairs whose latency excursions are out of order.
  *
  * One pass from the top, over ADJACENT positions only, and a pair is inverted when the higher candidate calls
@@ -218,26 +321,5 @@ interface RankedService {
 export function applyContainmentOrder<T extends RankedService>(
   input: ContainmentOrderInput<T>,
 ): T[] {
-  const order = [...input.ranking];
-  if (order.length < 2 || input.excursions.size === 0 || input.edges.length === 0) return order;
-  const margin = input.margin ?? 0;
-  const failingEdges = input.failingEdges;
-
-  const calls = new Set<string>();
-  for (const edge of input.edges) calls.add(`${edge.from}\u0000${edge.to}`);
-
-  for (let i = 0; i + 1 < order.length; i++) {
-    const upper = order[i]!;
-    const lower = order[i + 1]!;
-    const key = `${upper.service}\u0000${lower.service}`;
-    if (!calls.has(key)) continue;
-    if (failingEdges !== undefined && !failingEdges.has(key)) continue;
-    const upperExcursion = input.excursions.get(upper.service);
-    const lowerExcursion = input.excursions.get(lower.service);
-    if (upperExcursion === undefined || lowerExcursion === undefined) continue;
-    if (!(lowerExcursion > upperExcursion + margin)) continue;
-    order[i] = lower;
-    order[i + 1] = upper;
-  }
-  return order;
+  return inspectContainmentOrder(input).order;
 }

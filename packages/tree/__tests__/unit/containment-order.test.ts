@@ -24,6 +24,7 @@ import {
   TreePruner,
   applyContainmentOrder,
   failureEdgeKey,
+  inspectContainmentOrder,
   isLatencyChannel,
   latencyExcursions,
 } from '@agentix-e/micro-kinetic-tree';
@@ -564,6 +565,150 @@ function rankWith(options: {
   const results = pruner.analyze(graph, 5);
   return { services: results.map((one) => one.serviceId), ranks: results.map((one) => one.rank) };
 }
+
+describe('inspectContainmentOrder', () => {
+  // The same sweep, with its reasons kept. `applyContainmentOrder` answers "what is the order"; this answers
+  // "what did you look at and why did you decline", which is the input to the factorisation residual (H2 in
+  // `preregistration-294.md`): ρ is a property of an EDGE over the corpus, and the edge population is exactly
+  // the set of adjacent pairs that carry a call edge — a set nothing in the ranking artifact can reconstruct.
+
+  it('agrees with applyContainmentOrder on the order, pair for pair', () => {
+    // The observation must not be able to disagree with the decision it observes. Both arms are the same
+    // sweep, so an order that differed would mean the audit had become a second implementation.
+    const input = {
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+    };
+    expect(servicesOf(inspectContainmentOrder(input).order)).toEqual(
+      servicesOf(applyContainmentOrder(input)),
+    );
+    expect(servicesOf(inspectContainmentOrder(input).order)).toEqual(['b', 'a']);
+  });
+
+  it('records an inversion with both excursions, which is what ρ needs', () => {
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0.25],
+        ['b', 3.5],
+      ]),
+    });
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0]).toEqual({
+      upper: 'a',
+      lower: 'b',
+      decision: 'inverted',
+      upperExcursion: 0.25,
+      lowerExcursion: 3.5,
+    });
+  });
+
+  it('keeps both excursions on a refusal, because a refusal is a negative example', () => {
+    // The five losses iteration 293 removed were pairs with no failed call. Their excursions were the reason
+    // the old arm inverted them, so a record that dropped the numbers on refusal would lose exactly the
+    // population the residual has to separate.
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 2],
+      ]),
+      failingEdges: new Map(),
+    });
+    expect(verdicts[0]).toMatchObject({
+      decision: 'no-failed-interface',
+      upperExcursion: 0,
+      lowerExcursion: 2,
+    });
+  });
+
+  it('names an unmeasured side as unmeasured rather than as a zero', () => {
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([['b', 2]]),
+    });
+    expect(verdicts[0]!.decision).toBe('unmeasured');
+    // The missing side is ABSENT from the record, not zero: a consumer that read it as 0 would be making the
+    // substitution `latencyExcursions` refused to make in the first place.
+    expect(verdicts[0]).not.toHaveProperty('upperExcursion');
+    expect(verdicts[0]).toHaveProperty('lowerExcursion', 2);
+  });
+
+  it('omits whichever side is missing, so the two absences are not one case', () => {
+    // The mirror of the test above. Both sides are measured in the fixtures everywhere else, so an
+    // implementation that carried the LOWER side unconditionally would pass every other row here and would
+    // quietly invent a zero for a callee the profile could not speak about.
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([['a', 2]]),
+    });
+    expect(verdicts[0]!.decision).toBe('unmeasured');
+    expect(verdicts[0]).toHaveProperty('upperExcursion', 2);
+    expect(verdicts[0]).not.toHaveProperty('lowerExcursion');
+  });
+
+  it('names a pair that did not clear the margin', () => {
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.5],
+      ]),
+      margin: 1,
+    });
+    expect(verdicts[0]!.decision).toBe('not-larger');
+  });
+
+  it('does not record a pair with no call edge, because ρ is undefined there', () => {
+    // Exclusion rather than a verdict: the residual is a statistic about an EDGE, so a pair the topology does
+    // not join has no edge to be a property of. Recording it as a decision would put a population in the
+    // denominator that no reader of ρ asked about.
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: [],
+      excursions: new Map([
+        ['a', 0],
+        ['b', 9],
+      ]),
+    });
+    expect(verdicts).toEqual([]);
+  });
+
+  it('records the pairs in sweep order, once each, and stops at the last position', () => {
+    // Four candidates, three call edges, and after the first inversion the adjacency at `i = 1` is (a, c) —
+    // which has no edge, so it produces no row. The two rows that remain are the sweep as it happened: one
+    // inversion, and one pair that had an edge and did not clear the comparison.
+    const chain: readonly CallEdge[] = [
+      { from: 'a', to: 'b', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'b', to: 'c', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'c', to: 'd', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+    ];
+    const { order, verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b', 'c', 'd'),
+      edges: chain,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 5],
+        ['c', 0],
+        ['d', 0],
+      ]),
+    });
+    expect(servicesOf(order)).toEqual(['b', 'a', 'c', 'd']);
+    expect(verdicts.map((one) => `${one.upper}>${one.lower}:${one.decision}`)).toEqual([
+      'a>b:inverted',
+      'c>d:not-larger',
+    ]);
+  });
+});
 
 describe('the containment order in the engine', () => {
   it('ships ON with a strict margin, on the interface requirement', () => {
