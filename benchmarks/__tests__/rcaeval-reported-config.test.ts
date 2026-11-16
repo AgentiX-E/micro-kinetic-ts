@@ -57,6 +57,11 @@ import {
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
+import {
+  DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILURE_ATTRIBUTION,
+  DEFAULT_FAILURE_CONTAINMENT,
+} from '@agentix-e/micro-kinetic-tree';
 import { DEFAULT_FAILED_EDGE_WEIGHT } from '../../packages/tree/src/index.js';
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
@@ -117,6 +122,22 @@ const shippedSignals = shippedEngine.signals;
 const shippedForwarded = [
   ...Object.keys(shippedEngine.signals),
   ...Object.keys(shippedEngine.topology),
+].sort();
+
+/**
+ * The fields the line names that the run does NOT forward, because nothing on this half can dispatch them.
+ *
+ * They are the engine's own defaults, and they belong on the artifact for exactly the reason the forwarded ones
+ * do: iteration 291 flipped `failureContainment` under every golden run and the line did not move a byte, so the
+ * artifact could not say which engine produced its nine cells. The three are read from the constants rather than
+ * restated, so the line follows the next flip without an edit here — and the assertion below is what keeps that
+ * true, because a literal would satisfy a "contains" test on the day it was written and fail it on the day the
+ * default moved.
+ */
+const ENGINE_DEFAULTS_ON_LINE = [
+  'containmentOrder',
+  'failureContainment',
+  'failureAttribution',
 ].sort();
 
 describe('RCAEval runner configuration ownership', () => {
@@ -376,8 +397,18 @@ describe('the RCAEval configuration line carries the configuration that produced
   it('names exactly the options it forwards, in both directions', () => {
     const named = namedOn(formatSignalLine(shipped)).sort();
     // Both directions in one equality: a forwarded option the line omits is an artifact that cannot
-    // be attributed, and a name the line invents is a configuration nobody ran.
-    expect(named).toEqual(shippedForwarded);
+    // be attributed, and a name the line invents is a configuration nobody ran. The population is therefore the
+    // forwarded fields PLUS the three engine defaults this half cannot dispatch, and not a byte more.
+    expect(named).toEqual([...shippedForwarded, ...ENGINE_DEFAULTS_ON_LINE].sort());
+    expect(named).not.toEqual(shippedForwarded);
+    // …and their VALUES are read from the constants, asserted as an equality against the constants themselves
+    // rather than against the words they hold today. A literal would satisfy a `toContain('failureContainment=true')`
+    // on the day it was written and lie on the day the default moved; this cannot, because the expectation moves
+    // with the constant.
+    const line = formatSignalLine(shipped);
+    expect(line).toContain(`containmentOrder=${DEFAULT_CONTAINMENT_ORDER}`);
+    expect(line).toContain(`failureContainment=${DEFAULT_FAILURE_CONTAINMENT}`);
+    expect(line).toContain(`failureAttribution=${DEFAULT_FAILURE_ATTRIBUTION}`);
     expect(named).toContain('latWeight');
     expect(named).toContain('latMinRise');
     expect(named).toContain('poolMetricPenaltyWeight');
@@ -559,7 +590,14 @@ describe('the RCAEval configuration line carries the configuration that produced
         // the term ships at `0.5` under a jurisdiction, so the field still has to be printed — an omitted-when-
         // default field would render the `w = 0` control arm of `docs/emission-jurisdiction.md` and the shipped
         // run byte-identically, which is the one comparison that table exists to make.
-        'topoPrecedence=off emissionWeight=0.5',
+        'topoPrecedence=off emissionWeight=0.5' +
+        // Iteration 292 appended the three engine defaults this half cannot dispatch, and they are the only
+        // fields here whose value is a CONSTANT rather than an option: the golden workflow has no input for the
+        // two relational passes or the attribution reading, so the engine's defaults are what these runs execute.
+        // Iteration 291 flipped `failureContainment` under every cell and this line did not move a byte — the
+        // artifact could not say which engine produced its nine cells. Printed unconditionally on the rule every
+        // field above follows, and read from the constants so the line follows the next flip without an edit here.
+        ' containmentOrder=false failureContainment=true failureAttribution=shape',
     );
   });
 

@@ -18,7 +18,12 @@
  *
  * ## The rule the line obeys
  *
- * Every option the runner FORWARDS is named, unconditionally. That is stricter than the FSE'26
+ * Every option the runner FORWARDS is named, unconditionally — and, since iteration 292, so are the three
+ * engine defaults this half cannot dispatch (`containmentOrder`, `failureContainment`, `failureAttribution`),
+ * read from the constants rather than restated. The reason is a run rather than a principle: iteration 291
+ * flipped `failureContainment` under every golden cell and the line did not move a byte, so two runs with
+ * different engines produced byte-identical artifacts on the one surface whose job is to say otherwise. That is
+ * stricter than the FSE'26
  * line's `omit when it holds its default`, and deliberately so: that rule is only safe while the
  * default is ZERO, and the shipped values here are not — `latWeight=0.561495` with
  * `latMinRise=10.3` were measured as a PAIR (+56 cases, none regressed), `poolMetricPenaltyWeight`
@@ -47,6 +52,11 @@ import type {
   TopoDiscountScope,
   TopoPrecedence,
   TransientGuardTest,
+} from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILURE_ATTRIBUTION,
+  DEFAULT_FAILURE_CONTAINMENT,
 } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
@@ -462,6 +472,16 @@ export function formatSignalLine(opts: CliOptions): string {
     ` topoPrecedence=${opts.topoPrecedence}` +
     // APPENDED on the same rule as every field above, and unconditional because 0 is the shipped weight: a
     // line that omitted it on the default would render the measured arm and the shipped run identically.
-    ` emissionWeight=${opts.emissionWeight}`
+    ` emissionWeight=${opts.emissionWeight}` +
+    // APPENDED on the same rule as every field above, and these three are the line's only CONSTANT-sourced
+    // fields: the golden half cannot DISPATCH the two relational passes or the attribution reading — GitHub's
+    // 25-input ceiling on the FSE'26 workflow left no room, and this half never grew the inputs at all — so the
+    // engine's own defaults are what these runs execute. Iteration 291 flipped `failureContainment` under this
+    // artifact and NOTHING in it moved, because the field was not on the line: a run before the flip and a run
+    // after it were byte-identical on the one surface whose job is to say which configuration produced a number.
+    // Reading them from the constants rather than writing the values keeps that from recurring — the line follows
+    // a flip without an edit here, and the test asserts the equality rather than the current words.
+    ` containmentOrder=${DEFAULT_CONTAINMENT_ORDER} failureContainment=${DEFAULT_FAILURE_CONTAINMENT}` +
+    ` failureAttribution=${DEFAULT_FAILURE_ATTRIBUTION}`
   );
 }

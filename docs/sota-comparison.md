@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 1fa9e7bca975 -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config b449caf9b96e -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -209,6 +209,19 @@ RE2 249 270
 RE3  72  90
 TOTAL 666 735
 ```
+
+**The digest moved, and the readings did not.** Iteration 292 found that the golden half's `signals:` line named
+every option the runner *forwards* and none of the three engine defaults it cannot dispatch — `containmentOrder`,
+`failureContainment`, `failureAttribution`. Iteration 291 flipped `failureContainment` to `true` under every cell of
+this block and the line did not move a byte, so the fingerprint that exists to turn this anchor red on a default
+change stayed green through one. The line now names all three, read from the constants rather than restated, and the
+digest therefore rolls from `1fa9e7bca975` to `b449caf9b96e`. **No reading above moved**: battery `43826330350` at
+`05236ff`, re-read per case at the shipped default, returns `113/119/113`, `84/89/76`, `26/24/22` and `666/735` —
+cell for cell what the block already said. That is the distinction the fingerprint's own docblock draws and this
+note is the instance of: a fingerprint identifies a CONFIGURATION, and a rendering that becomes more complete moves
+it without the engine moving at all. The flow is inert on this corpus for a reason the artifact states — `failed
+edges in 15/30 cases` on RE3-OB, `admitted rank-1 with entry 0 of 0` — so an unchanged block is the measurement and
+not an omission.
 
 **Reproduced, because a standing figure has to be one a stranger can obtain rather than one this document remembers.** The readings above were taken TWICE, on one revision and one configuration, from two independent dispatches of the golden half — `41853861726` (16:15) and `41865456632` (16:57) — and **every one of the fifteen per-cell counts and all four totals is identical between them**, read off each run's own `rcaeval-re{1,2,3}-results.txt` and never off a suite line. The anchor names the second because it is the one whose artifact is complete; the first is the same number and is what the pre-registration of this flip was written against.
 
