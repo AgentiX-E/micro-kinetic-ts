@@ -5168,3 +5168,40 @@ remains unbuilt.
 - **"Two runs cannot interfere."** They share a budget and a Pages deployment; one of them is now queued.
 - **"The sweep's decisions are only its output."** It keeps its reasons, and the refusals carry as much
   information as the inversions.
+
+## §296 — A concurrency block protects the NEXT run, not the one already going
+
+§295 added `concurrency:` with `cancel-in-progress: false` to stop two corpus walks from sharing the embedding
+budget. Pushing it demonstrated the limit of the mechanism within the same minute: run `43974549448` (on
+`78dd3b0`, the commit that declares the block) started while run `43966895574` (on `f9546a9`, which declares
+nothing) was still in its ablation phase, and **both walked the corpus at once**.
+
+GitHub applies a concurrency group to runs *created after* the declaration. A run already in flight cannot be
+retroactively grouped, and no syntax changes that. So the block's first real effect is on the second push after
+it lands, and the change that introduces it is precisely the one it cannot protect.
+
+The test in `benchmark-rcaeval-trigger.test.ts` asserts the declaration — a group, and `cancel-in-progress:
+false` rather than `true`. It cannot assert that the declaration had an effect on a run that began before it
+existed, and this entry is the record of that gap rather than a claim that the gap is closed.
+
+### What was done about it, and why that way
+
+Two overlapping walks spend the budget twice for one reading, so one of them had to go, and the choice was not
+symmetric:
+
+| run | what it still owed | what it had already produced |
+| --- | --- | --- |
+| `43966895574` | the three ablation arms (exploration) | all nine cells, 666 / 666 against the anchor |
+| `43974549448` | all nine cells, on a tree that now routes `applyContainmentOrder` through `inspectContainmentOrder` | nothing yet |
+
+`43966895574` was cancelled. The cells it had already produced are the anchor reproduction; the ablation arms are
+re-runnable by dispatch (`scopes=ablation`) and are exploration rather than gates. `43974549448` is the run that
+answers the question this iteration actually owes — whether an instrument change moved a cell — and it is the one
+that would have been lost.
+
+### Axes this closes
+
+- **"Declaring a concurrency group makes overlapping runs impossible."** It makes the next overlap impossible.
+  A declaration is not a state.
+- **"The regression check is free."** It costs a full nine-cell walk, and when two are queued the choice between
+  them is a judgement about which one's absence is affordable — recorded here rather than made silently.
