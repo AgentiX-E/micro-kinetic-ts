@@ -437,6 +437,10 @@ export default defineConfig({
         // not fit its whole is a lost observation, not weak evidence — and the log-space sum is the only reason a
         // 191-observation edge reports a finite number instead of `NaN`.
         'src/containment-significance.ts',
+        // Added with the self-time census: the term's REACH over a corpus, printed as one line. Included because
+        // the line is the only place "the arm moved nothing because the map was never built" can be said at all,
+        // and a formatter outside coverage is a claim about a population nobody counts.
+        'src/self-time-census-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

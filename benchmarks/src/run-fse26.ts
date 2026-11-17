@@ -47,7 +47,13 @@ import {
   FSE26Loader,
   toFaultGraphOptions,
 } from '../../packages/kinetic/src/benchmarks/index.js';
-import { DEFAULT_FAULT_FREE_SIGMA } from '../../packages/tree/src/index.js';
+import {
+  computeSelfTimeDetail,
+  DEFAULT_FAULT_FREE_SIGMA,
+  EMPTY_SELF_TIME_CENSUS,
+  mergeSelfTimeCensus,
+  type SelfTimeCensus,
+} from '../../packages/tree/src/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
 import { FingerprintDump } from './agentic-fingerprint-file.js';
@@ -60,6 +66,7 @@ import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
 import { DepthDump, formatDepthLadder, readDepthDump } from './ranking-depth.js';
+import { formatSelfTimeCensus } from './self-time-census-report.js';
 import { TermDump } from './terms-dump.js';
 
 import {
@@ -200,6 +207,11 @@ async function main(): Promise<void> {
   // number, on the rule `summariseFailedEdgeCoverage` records above. See fse26-boundary-census.
   const boundaryObservations: BoundaryObservation[] = [];
   const faultCells = new Map<string, FaultCell>();
+  // The self-time term's reach over the corpus, accumulated only on an arm that turns the term on. Read from the
+  // parsed weight rather than from the engine options because this is a property of the DISPATCH: an arm whose
+  // weight is 0 has no census to report, and one whose weight is non-zero must say whether the term could see.
+  const selfTimeWeight = opts.selfTimeWeight;
+  let selfTimeCensus: SelfTimeCensus = EMPTY_SELF_TIME_CENSUS;
   let loadErrors = 0;
   let engineErrors = 0;
   let emptyGraphs = 0;
@@ -282,6 +294,16 @@ async function main(): Promise<void> {
           toFaultGraphOptions(benchCase, benchCase.injectTime),
         );
         ranking = pruner.analyze(faultGraph, 5);
+        // The term's own census, taken from the SAME inputs the scorer reads and only when the weight asks for it.
+        // A term that ships at 0 has never been exercised on this corpus, and "the arm moved nothing" has two
+        // very different causes a ranking cannot separate: the normalisation is silent, or the map was never
+        // built. This counter is the difference between those two sentences.
+        if (selfTimeWeight !== 0) {
+          selfTimeCensus = mergeSelfTimeCensus(
+            selfTimeCensus,
+            computeSelfTimeDetail(benchCase.callGraph.edges, benchCase.metrics).census,
+          );
+        }
       }
     } catch {
       engineErrors++;
@@ -436,6 +458,11 @@ async function main(): Promise<void> {
   // Printed for the reason above, one axis over: this line is what a zero on a
   // `transientGuardTest` arm has to be read against.
   console.log(`  ${formatBoundaryCensus(summariseBoundaryCensus(boundaryObservations))}`);
+  // The self-time term's own census, printed only on an arm that asks for the term — an OFF term has nothing to
+  // report, and a line printed at weight 0 would invite a reader to interpret an absence the engine never built.
+  if (selfTimeWeight !== 0) {
+    console.log(`  ${formatSelfTimeCensus(selfTimeCensus)}`);
+  }
   console.log('');
   console.log(`  vs published anchor: SOTA avg ${pct(ANCHOR_AVG)} / best ${pct(ANCHOR_BEST)}`);
   const delta = top1 - ANCHOR_AVG;

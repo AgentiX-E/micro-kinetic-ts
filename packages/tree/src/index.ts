@@ -296,6 +296,7 @@ export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   EMISSION_MIN_RISE,
+  EMPTY_SELF_TIME_CENSUS,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
@@ -316,6 +317,7 @@ export {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeSelfTimeDetail,
   computeSelfTimeScores,
   computeStabilityScores,
   computeTopoSourceScores,
@@ -331,6 +333,7 @@ export {
   // the admission test would be free to disagree with the map it is trying to explain.
   logLineAdmittedByMode,
   maxInboundRise,
+  mergeSelfTimeCensus,
   // The trace vote's fleet baseline, exported because the `[trace-z]` instrument in `packages/kinetic` reports the
   // SAME quantity: a vote that read one median while the artifact beside it printed another would be two answers
   // to one question, and the census that explains a wrong vote would be explaining a number the rule never saw.
@@ -343,6 +346,8 @@ export type {
   InboundLatency,
   LogNormalisation,
   LogSignalMode,
+  SelfTimeCensus,
+  SelfTimeDetail,
   TraceActivityOptions,
 } from './pruning/ranking-signals.js';
 

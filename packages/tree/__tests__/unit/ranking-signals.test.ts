@@ -18,20 +18,24 @@ import {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeSelfTimeDetail,
   computeSelfTimeScores,
   computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  EMPTY_SELF_TIME_CENSUS,
   gatedRiseContribution,
   isLogNormalisation,
   isLogSignalMode,
   LOG_NORMALISATIONS,
   LOG_SATURATION_COUNT,
   LOG_SIGNAL_MODES,
+  mergeSelfTimeCensus,
   POOL_METRIC_PREFIX,
   rankNormalizeScores,
   traceFleetDrift,
+  type SelfTimeCensus,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -1046,6 +1050,147 @@ describe('computeSelfTimeScores', () => {
 
   it('is empty for a case with no metrics at all', () => {
     expect(computeSelfTimeScores([makeEdge('a', 'b')], new Map()).size).toBe(0);
+  });
+});
+
+describe('computeSelfTimeDetail', () => {
+  /** A step series: `pre` for the first half of the window, `post` for the second. */
+  const step = (pre: number, post: number, n = 30): number[] => {
+    const first = Math.floor(n / 2);
+    return [...Array<number>(first).fill(pre), ...Array<number>(n - first).fill(post)];
+  };
+  const series = (label: string, values: readonly number[]): TimeSeries => ({
+    label,
+    timestamps: values.map((_, i) => i * 1000),
+    values: Float64Array.from(values),
+    unit: '',
+  });
+  const mapOf = (entries: Record<string, readonly TimeSeries[]>): MetricMap =>
+    new Map(Object.entries(entries));
+
+  it('counts the services it can see, and the ones it cannot', () => {
+    // The three absences a ranking cannot tell apart, counted where they happen: no transport channel at all, a
+    // channel the window refuses, and a service whose share is ABSENT because a callee has no level.
+    const metrics = mapOf({
+      caller: [series('latency-90', step(5, 25))],
+      source: [series('latency-90', step(10, 50))],
+      // Cpu only: this service carries no transport channel, so it is invisible to the term AND makes its caller
+      // undecidable if anything calls it.
+      resourceOnly: [series('cpu', step(0.2, 0.9))],
+    });
+    const edges = [makeEdge('caller', 'source'), makeEdge('caller', 'resourceOnly')];
+
+    const { scores, census } = computeSelfTimeDetail(edges, metrics);
+
+    expect(census.services).toBe(3);
+    expect(census.withLatency).toBe(2);
+    expect(census.withLevel).toBe(2);
+    // The caller has one callee with no level, so its share is unknown rather than zero.
+    expect(census.undecided).toBe(1);
+    expect(census.scored).toBe(1);
+    expect(scores.has('caller')).toBe(false);
+    expect(scores.has('source')).toBe(true);
+    expect(census.channelsRefusedShort).toBe(0);
+    expect(census.channelsRefusedIdle).toBe(0);
+  });
+
+  it('separates a channel refused for the SAMPLE FLOOR from one refused for an IDLE baseline', () => {
+    // Two different data gaps wearing the same absence, and the repair for each is different: a short window needs
+    // more samples, an idle baseline needs a different statistic. A census that merged them would send a reader to
+    // the wrong document.
+    const metrics = mapOf({
+      short: [series('latency-90', [1, 2, 3, 4, 5])],
+      idle: [series('latency-90', step(0, 40))],
+      fine: [series('latency-90', step(10, 30))],
+    });
+
+    const { census } = computeSelfTimeDetail([], metrics);
+
+    expect(census.channelsRefusedShort).toBe(1);
+    expect(census.channelsRefusedIdle).toBe(1);
+    expect(census.withLatency).toBe(3);
+    expect(census.withLevel).toBe(1);
+  });
+
+  it('counts a MEASURED zero apart from an absent one', () => {
+    // A flat channel is a level of 0 and therefore a share of 0 — a measurement. An unchanneled service is absent.
+    // The term contributes nothing in both directions, which is exactly why the census has to say which.
+    const metrics = mapOf({
+      flat: [series('latency-90', step(10, 10))],
+      risen: [series('latency-90', step(10, 30))],
+    });
+
+    const { scores, census } = computeSelfTimeDetail([], metrics);
+
+    expect(scores.get('flat')).toBe(0);
+    expect(census.scored).toBe(2);
+    expect(census.measuredZero).toBe(1);
+  });
+
+  it('agrees with computeSelfTimeScores on the same input, so the census cannot explain a map it did not build', () => {
+    // The property the split exists for. A census computed by a second implementation would be free to describe a
+    // score the engine never used — the defect this repository has paid for with two owners of one question.
+    const metrics = mapOf({
+      caller: [series('latency-90', step(5, 25))],
+      source: [series('latency-90', step(10, 50))],
+      sibling: [series('latency-90', step(2, 2.4))],
+    });
+    const edges = [makeEdge('caller', 'source'), makeEdge('caller', 'sibling')];
+
+    expect(computeSelfTimeDetail(edges, metrics).scores).toEqual(
+      computeSelfTimeScores(edges, metrics),
+    );
+  });
+
+  it('is all zeroes for a case with no metrics, and for one with no transport channel', () => {
+    expect(computeSelfTimeDetail([makeEdge('a', 'b')], new Map()).census).toEqual(
+      EMPTY_SELF_TIME_CENSUS,
+    );
+    const cpuOnly = computeSelfTimeDetail(
+      [makeEdge('a', 'b')],
+      mapOf({ a: [series('cpu', step(1, 2))], b: [series('cpu', step(1, 2))] }),
+    );
+    expect(cpuOnly.scores.size).toBe(0);
+    expect(cpuOnly.census.services).toBe(2);
+    expect(cpuOnly.census.withLatency).toBe(0);
+  });
+
+  it('merges by addition, field by field, so a corpus total is the sum of its cases', () => {
+    const one: SelfTimeCensus = {
+      services: 3,
+      withLatency: 2,
+      withLevel: 2,
+      undecided: 1,
+      scored: 1,
+      measuredZero: 0,
+      channelsRefusedShort: 4,
+      channelsRefusedIdle: 5,
+    };
+    const two: SelfTimeCensus = {
+      services: 10,
+      withLatency: 7,
+      withLevel: 6,
+      undecided: 2,
+      scored: 4,
+      measuredZero: 1,
+      channelsRefusedShort: 0,
+      channelsRefusedIdle: 3,
+    };
+
+    const merged = mergeSelfTimeCensus(one, two);
+
+    expect(merged).toEqual({
+      services: 13,
+      withLatency: 9,
+      withLevel: 8,
+      undecided: 3,
+      scored: 5,
+      measuredZero: 1,
+      channelsRefusedShort: 4,
+      channelsRefusedIdle: 8,
+    });
+    expect(mergeSelfTimeCensus(EMPTY_SELF_TIME_CENSUS, one)).toEqual(one);
+    expect(mergeSelfTimeCensus(one, EMPTY_SELF_TIME_CENSUS)).toEqual(one);
   });
 });
 

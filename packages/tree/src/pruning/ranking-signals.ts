@@ -818,18 +818,127 @@ export function computeSelfTimeScores(
   metrics: MetricMap,
   minSamples = SELF_TIME_MIN_SAMPLES,
 ): Map<ServiceId, number> {
+  return computeSelfTimeDetail(edges, metrics, minSamples).scores;
+}
+
+/**
+ * Why a case's share map is the size it is — the census the term could not answer without.
+ *
+ * A term that contributes nothing has three very different causes, and a ranking cannot tell them apart: the case
+ * carries no transport channel at all; the channel exists but the window cannot carry a level; or the level exists
+ * and a **callee** it would have to be compared against does not. The third is the one this term's contract is
+ * proudest of (unknown is not a measured zero) and the one that can silently empty the map on a corpus where two
+ * thirds of the services export no latency series — which is exactly the state FSE'26 turned out to be in.
+ *
+ * Every counter is incremented by the SAME loop that builds the scores, so a census cannot disagree with the
+ * statistic it explains. `channelsRefused*` count CHANNELS; every other field counts SERVICES.
+ */
+export interface SelfTimeCensus {
+  /** Services carrying at least one metric series. */
+  readonly services: number;
+  /** … of which at least one series is labelled in the transport family. */
+  readonly withLatency: number;
+  /** … of which at least one transport channel yields a level. */
+  readonly withLevel: number;
+  /** … of which a callee carries no level, so the share is ABSENT rather than zero. */
+  readonly undecided: number;
+  /** Services carrying a share (the map's size). */
+  readonly scored: number;
+  /** … of which the share is exactly 0 — a flat or fallen level, or nothing created. */
+  readonly measuredZero: number;
+  /** Transport CHANNELS refused for the sample floor. */
+  readonly channelsRefusedShort: number;
+  /** Transport CHANNELS refused because the pre-fault level was not positive. */
+  readonly channelsRefusedIdle: number;
+}
+
+/** The share map beside the census of how it was built. */
+export interface SelfTimeDetail {
+  readonly scores: Map<ServiceId, number>;
+  readonly census: SelfTimeCensus;
+}
+
+/** Every counter at zero, for a caller that sums over cases. */
+export const EMPTY_SELF_TIME_CENSUS: SelfTimeCensus = {
+  services: 0,
+  withLatency: 0,
+  withLevel: 0,
+  undecided: 0,
+  scored: 0,
+  measuredZero: 0,
+  channelsRefusedShort: 0,
+  channelsRefusedIdle: 0,
+};
+
+/**
+ * Sum two censuses. Addition is the only sane merge: the counters describe disjoint sets of cases, and a reader
+ * asking "how much of the corpus could this term see" wants the total rather than the last case's answer.
+ *
+ * @param left - The running total.
+ * @param right - The case's census.
+ * @returns A new census holding the sum of every counter.
+ */
+export function mergeSelfTimeCensus(left: SelfTimeCensus, right: SelfTimeCensus): SelfTimeCensus {
+  return {
+    services: left.services + right.services,
+    withLatency: left.withLatency + right.withLatency,
+    withLevel: left.withLevel + right.withLevel,
+    undecided: left.undecided + right.undecided,
+    scored: left.scored + right.scored,
+    measuredZero: left.measuredZero + right.measuredZero,
+    channelsRefusedShort: left.channelsRefusedShort + right.channelsRefusedShort,
+    channelsRefusedIdle: left.channelsRefusedIdle + right.channelsRefusedIdle,
+  };
+}
+
+/**
+ * The share map, plus the census of how it was built.
+ *
+ * @param edges - Call graph edges (caller → callee).
+ * @param metrics - Raw per-service metric series.
+ * @param minSamples - Series floor; defaults to {@link SELF_TIME_MIN_SAMPLES}.
+ * @returns The sparse share map and the counters behind it.
+ */
+export function computeSelfTimeDetail(
+  edges: readonly CallEdge[],
+  metrics: MetricMap,
+  minSamples = SELF_TIME_MIN_SAMPLES,
+): SelfTimeDetail {
   const levels = new Map<ServiceId, number>();
+  let withLatency = 0;
+  let channelsRefusedShort = 0;
+  let channelsRefusedIdle = 0;
   for (const [serviceId, seriesList] of metrics) {
     let best: number | undefined;
+    let sawLatency = false;
     for (const ts of seriesList) {
       if (!isLatencyMetric(ts.label)) continue;
-      const level = latencyLevel(ts.values, minSamples);
-      if (level === undefined) continue;
+      sawLatency = true;
+      const window = latencyWindow(ts.values, minSamples);
+      if ('refusal' in window) {
+        if (window.refusal === 'short') channelsRefusedShort += 1;
+        else channelsRefusedIdle += 1;
+        continue;
+      }
+      const level = levelFromWindow(window);
       if (best === undefined || level > best) best = level;
     }
+    if (sawLatency) withLatency += 1;
     if (best !== undefined) levels.set(serviceId, best);
   }
-  if (levels.size === 0) return new Map();
+
+  const censusOf = (scores: Map<ServiceId, number>, undecided: number): SelfTimeCensus => ({
+    services: metrics.size,
+    withLatency,
+    withLevel: levels.size,
+    undecided,
+    scored: scores.size,
+    measuredZero: [...scores.values()].filter((value) => value === 0).length,
+    channelsRefusedShort,
+    channelsRefusedIdle,
+  });
+
+  if (levels.size === 0) return { scores: new Map(), census: censusOf(new Map(), 0) };
 
   const inherited = new Map<ServiceId, number>();
   const undecided = new Set<ServiceId>();
@@ -857,7 +966,7 @@ export function computeSelfTimeScores(
     const created = level - downstream;
     scores.set(serviceId, created > 0 ? created / level : 0);
   }
-  return scores;
+  return { scores, census: censusOf(scores, undecided.size) };
 }
 
 /**
@@ -958,18 +1067,49 @@ export function computeFleetSelfTimeResiduals(
  * @internal
  */
 function latencyLevel(values: Float64Array, minSamples: number): number | undefined {
+  const window = latencyWindow(values, minSamples);
+  return 'refusal' in window ? undefined : levelFromWindow(window);
+}
+
+/** A channel's two ends, or the reason it has none. */
+type LatencyWindow =
+  { readonly refusal: 'short' | 'idle' } | { readonly pre: number; readonly post: number };
+
+/**
+ * The two ends of a latency channel, computed once.
+ *
+ * The split exists so the census and the score read the SAME arithmetic: a channel counted as refused is a channel
+ * that produced no level, and a second implementation of the window is the class of defect this repository has paid
+ * for three times (two owners of one question, free to disagree).
+ *
+ * @param values - The channel's samples.
+ * @param minSamples - Series floor.
+ * @returns The two end medians, or which test refused the channel.
+ * @internal
+ */
+function latencyWindow(values: Float64Array, minSamples: number): LatencyWindow {
   const n = values.length;
   const width = Math.max(2, Math.floor(n / 3));
   // Two non-overlapping thirds, and never fewer samples than the declared floor.
-  if (n < minSamples || n < 2 * width) return undefined;
+  if (n < minSamples || n < 2 * width) return { refusal: 'short' };
   const pre = medianOfRange(values, 0, width);
-  const post = medianOfRange(values, n - width, n);
   // A non-positive pre-fault level has no relative rise — the idle-percentile artifact
   // `near-zero-rise-suppression-falsified.md` documents. It carries no level, rather than a big one.
   // Written as `!(pre > 0)` rather than `pre <= 0` so the NaN arm is the same arm: `NaN <= 0` is false,
   // which would let an unusable channel through to a comparison it cannot win.
-  if (!(pre > 0)) return undefined;
-  const rise = (post - pre) / pre;
+  if (!(pre > 0)) return { refusal: 'idle' };
+  return { pre, post: medianOfRange(values, n - width, n) };
+}
+
+/**
+ * The transport level of a window: `log₁₀(1 + rise)`, and `0` for a fall or a flat series.
+ *
+ * @param window - The channel's two ends.
+ * @returns The level.
+ * @internal
+ */
+function levelFromWindow(window: { readonly pre: number; readonly post: number }): number {
+  const rise = (window.post - window.pre) / window.pre;
   // A FALL creates nothing: the share measures disturbance a node created, and a service that got
   // faster while its peers broke did not create any. The finiteness guard is load-bearing rather than
   // defensive: a pre-fault level small enough to be positive yet denormal makes the ratio overflow to
