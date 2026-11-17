@@ -155,6 +155,33 @@ export interface ContainmentEdge {
   readonly to: ServiceId;
 }
 
+/**
+ * A requirement on an edge that the case did not measure.
+ *
+ * H2's second criterion is not about one case: the factorisation residual of a pair's out-of-band indicators is a
+ * property of an EDGE over many cases, and the claim to test is that a positive residual is a sufficient licence
+ * for an inversion. Testing that inside one run would be a leak — a case that contributed its own observation to
+ * an edge's residual and is then judged by it is being graded on its own answer — so the residual is fitted on
+ * one half of the corpus and required on the other. That is why the pass accepts a prior it cannot compute: the
+ * fitting is the caller's business, and the engine's business is only to honour a requirement it is given.
+ *
+ * The prior is keyed by {@link failureEdgeKey}, i.e. by the DIRECTION of the call edge, because that is the only
+ * key the sweep ever asks about: ρ itself is symmetric, but the pair the sweep examines is always the caller
+ * above its callee, and a map keyed unordered would admit a pair on an edge the sweep did not look at.
+ */
+export interface ContainmentPrior {
+  /** One fitted residual per directed edge, keyed by {@link failureEdgeKey}. */
+  readonly residuals: ReadonlyMap<string, number>;
+  /**
+   * The smallest residual that admits an inversion, EXCLUSIVE.
+   *
+   * `ρ > threshold` rather than `≥`, for the reason the margin is strict: a residual of exactly zero is the
+   * independence the requirement exists to exclude, so admitting it would admit every pair whose two ends move
+   * independently of each other — the entire population the mechanism is trying to separate itself from.
+   */
+  readonly threshold: number;
+}
+
 /** What {@link applyContainmentOrder} needs. */
 export interface ContainmentOrderInput<T> {
   /** The ranked candidates, best first, exactly as the fusion left them. */
@@ -181,6 +208,20 @@ export interface ContainmentOrderInput<T> {
    * same excursions, and only the evidence requirement moved.
    */
   readonly failingEdges?: ReadonlyMap<string, unknown> | undefined;
+  /**
+   * A per-edge requirement fitted OUTSIDE this case.
+   *
+   * Consulted LAST — after the interface record, after both measurements, and after the inequality — so that the
+   * two refusal reasons it adds (`prior-absent`, `prior-below`) mean **this pair would have been inverted and the
+   * prior stopped it**. Asking earlier would label pairs the measurements had already refused, and the count of
+   * blocked inversions is exactly the quantity the gate's price is read from: a gate that appears to block
+   * hundreds of pairs when it is only relabelling refusals would look like a strict filter rather than the
+   * narrow one it is.
+   *
+   * Absent means no requirement, which is the shipped configuration and the state every published containment
+   * number was measured in.
+   */
+  readonly prior?: ContainmentPrior | undefined;
 }
 
 /** The minimum of a candidate and its rank, as the pass reads them. */
@@ -191,13 +232,18 @@ interface RankedService {
 /**
  * Why the sweep did or did not invert one adjacent pair.
  *
- * Four refusals rather than one, because they are four different statements and only the first two are about
- * the pair's own measurements: `no-failed-interface` says the topology carried nothing between them,
- * `unmeasured` says the profile could not speak, and `not-larger` says it spoke and the callee was not further
- * out. A single `refused` would make a corpus that had no evidence indistinguishable from one whose evidence
- * pointed the other way.
+ * Six refusals rather than one, because they are six different statements: `no-failed-interface` says the
+ * topology carried nothing between them, `unmeasured` says the profile could not speak, `not-larger` says it
+ * spoke and the callee was not further out, and `prior-absent` / `prior-below` say the pair qualified on this
+ * case and was stopped by what the corpus fitted elsewhere. A single `refused` would make a corpus that had no
+ * evidence indistinguishable from one whose evidence pointed the other way.
+ *
+ * The last two are two statements rather than one on the same principle: an edge nobody fitted is not an edge
+ * measured to be independent, and a gate that merged them would report unmeasured edges as edges that
+ * disagreed with it.
  */
-export type ContainmentDecision = 'inverted' | 'no-failed-interface' | 'unmeasured' | 'not-larger';
+export type ContainmentDecision =
+  'inverted' | 'no-failed-interface' | 'unmeasured' | 'not-larger' | 'prior-absent' | 'prior-below';
 
 /**
  * One adjacent pair that carried a call edge, and what the sweep decided about it.
@@ -283,6 +329,20 @@ export function inspectContainmentOrder<T extends RankedService>(
     if (!(lowerExcursion > upperExcursion + margin)) {
       verdicts.push({ ...pair, decision: 'not-larger' });
       continue;
+    }
+    // Last, and deliberately: everything above this line already refused the pair on its own measurements, so a
+    // `prior-*` verdict below is a pair this case would have inverted. See `ContainmentOrderInput.prior`.
+    const prior = input.prior;
+    if (prior !== undefined) {
+      const fitted = prior.residuals.get(key);
+      if (fitted === undefined) {
+        verdicts.push({ ...pair, decision: 'prior-absent' });
+        continue;
+      }
+      if (!(fitted > prior.threshold)) {
+        verdicts.push({ ...pair, decision: 'prior-below' });
+        continue;
+      }
     }
     order[i] = lower;
     order[i + 1] = upper;

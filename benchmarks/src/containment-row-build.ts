@@ -156,5 +156,17 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     replay,
     pairs: toRows(gated),
     ungatedPairs: toRows(ungated),
+    // The sweep's own input, written beside its decisions so that an arm nobody has swept yet can be walked
+    // from this file. An ABSENT flow map and an EMPTY one are the same measurement — `applyFailureContainment`
+    // says so ("empty or absent means the pass is a no-op") — which is why both are written as `{}`.
+    chain: {
+      order: input.fusionOrder,
+      edges: input.edges.map((edge) => [edge.from, edge.to] as const),
+      excursions: Object.fromEntries(input.excursions ?? []),
+      failedInterfaces: Object.fromEntries(input.failedInterfaces ?? []),
+      flows: Object.fromEntries(input.failureFlows ?? []),
+      failingEdges: Object.fromEntries(input.failingEdges ?? []),
+      attribution: input.attribution,
+    },
   };
 }

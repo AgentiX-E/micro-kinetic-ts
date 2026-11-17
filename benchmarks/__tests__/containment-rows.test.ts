@@ -16,7 +16,22 @@ import {
   parseContainmentRows,
   readContainmentRows,
   type ContainmentCaseRow,
+  type ContainmentChain,
 } from '../src/containment-rows.js';
+
+/** The sweep's input, as the builder writes it. */
+function chain(overrides: Partial<ContainmentChain> = {}): ContainmentChain {
+  return {
+    order: ['frontend', 'cart'],
+    edges: [['frontend', 'cart']],
+    excursions: { frontend: 0, cart: 2.5 },
+    failedInterfaces: { 'frontend\u0000cart': 4 },
+    flows: { cart: { knownIn: 9, knownOut: 0, novelIn: 0, novelOut: 0 } },
+    failingEdges: { 'frontend\u0000cart': { rise: 9, novel: 0 } },
+    attribution: 'shape',
+    ...overrides,
+  };
+}
 
 /** A case row with one measured pair and one unmeasured side, which is the shape the register cares about. */
 function row(overrides: Partial<ContainmentCaseRow> = {}): ContainmentCaseRow {
@@ -41,6 +56,7 @@ function row(overrides: Partial<ContainmentCaseRow> = {}): ContainmentCaseRow {
       { upper: 'cart', lower: 'db', decision: 'unmeasured', lowerExcursion: 1.25 },
     ],
     ungatedPairs: [{ upper: 'frontend', lower: 'cart', decision: 'inverted', lowerExcursion: 2.5 }],
+    chain: chain(),
     ...overrides,
   };
 }
@@ -86,6 +102,21 @@ describe('formatContainmentRow', () => {
     const parsed = parseContainmentRows(formatContainmentRow(original));
     expect(parsed).toHaveLength(1);
     expect(parsed[0]).toEqual(original);
+  });
+
+  it('writes the sweep s input beside its decisions, so the walk can be repeated', () => {
+    const parsed = JSON.parse(formatContainmentRow(row())) as { chain: Record<string, unknown> };
+    expect(parsed.chain.order).toEqual(['frontend', 'cart']);
+    expect(parsed.chain.edges).toEqual([['frontend', 'cart']]);
+    expect(parsed.chain.excursions).toEqual({ frontend: 0, cart: 2.5 });
+    expect(parsed.chain.attribution).toBe('shape');
+  });
+
+  it('OMITS the chain rather than nulling it, so an old artifact is distinguishable from an empty case', () => {
+    const { chain: _dropped, ...withoutChain } = row();
+    const parsed = JSON.parse(formatContainmentRow(withoutChain)) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('chain');
+    expect(parseContainmentRows(JSON.stringify(parsed))[0]).not.toHaveProperty('chain');
   });
 });
 
@@ -135,6 +166,35 @@ describe('ContainmentRowDump', () => {
     // The identity the dump's docblock claims: every gated pair carries exactly one decision.
     expect(
       summary.inverted + summary.noFailedInterface + summary.unmeasured + summary.notLarger,
+    ).toBe(summary.pairs);
+  });
+
+  it('counts the two prior refusals apart, should a gated arm ever be recorded through it', () => {
+    // Neither arm a run sweeps can produce them — the run fits no prior — but the format's vocabulary is the
+    // sweep's, not the two arms'. Folding them into `notLarger` would make a gate's refusals indistinguishable
+    // from a measurement that pointed the other way.
+    const path = join(scratch(), 'containment.ndjson');
+    const dump = new ContainmentRowDump(path);
+    dump.record(
+      row({
+        pairs: [
+          { upper: 'a', lower: 'b', decision: 'prior-absent' },
+          { upper: 'b', lower: 'c', decision: 'prior-below' },
+        ],
+      }),
+    );
+    const summary = dump.summary;
+    expect(summary.priorAbsent).toBe(1);
+    expect(summary.priorBelow).toBe(1);
+    expect(summary.notLarger).toBe(0);
+    expect(summary.inverted).toBe(0);
+    expect(
+      summary.inverted +
+        summary.noFailedInterface +
+        summary.unmeasured +
+        summary.notLarger +
+        summary.priorAbsent +
+        summary.priorBelow,
     ).toBe(summary.pairs);
   });
 });
@@ -199,7 +259,7 @@ describe('parseContainmentRows', () => {
     expect(rejection({ pairs: 'none' })).toMatch(/pairs on line 1/);
   });
 
-  it('refuses a pair whose decision is not one of the four', () => {
+  it('refuses a pair whose decision is not one of the six', () => {
     expect(rejection({ pairs: [{ upper: 'a', lower: 'b', decision: 'refused' }] })).toMatch(
       /decision on line 1 is not a containment decision/,
     );
@@ -286,6 +346,94 @@ describe('parseContainmentRows', () => {
   it('refuses a top1 that is neither null nor a name', () => {
     expect(rejection({ fusionTop1: '' })).toMatch(/fusionTop1 on line 1/);
     expect(rejection({ gatedTop1: 7 })).toMatch(/gatedTop1 on line 1/);
+  });
+
+  it('refuses a chain that is not an object', () => {
+    expect(rejection({ chain: 'everything' })).toMatch(/chain on line 1 is not an object/);
+  });
+
+  it('refuses a chain whose order is not an array', () => {
+    expect(rejection({ chain: { ...chain(), order: 'frontend' } })).toMatch(
+      /chain.order on line 1 is not an array/,
+    );
+  });
+
+  it('refuses an order that carries something which is not a service name', () => {
+    expect(rejection({ chain: { ...chain(), order: ['frontend', null] } })).toMatch(
+      /chain.order on line 1 is not a service name/,
+    );
+  });
+
+  it('refuses edges that are not pairs', () => {
+    expect(rejection({ chain: { ...chain(), edges: 'frontend' } })).toMatch(
+      /chain.edges on line 1 is not an array/,
+    );
+    expect(rejection({ chain: { ...chain(), edges: [['a', 'b', 'c']] } })).toMatch(
+      /chain.edges on line 1 is not a pair/,
+    );
+    expect(rejection({ chain: { ...chain(), edges: [['a', '']] } })).toMatch(
+      /chain.edges.to on line 1 is not a service name/,
+    );
+  });
+
+  it('refuses an excursion map that is not an object', () => {
+    expect(rejection({ chain: { ...chain(), excursions: [] } })).toMatch(
+      /chain.excursions on line 1 is not an object/,
+    );
+  });
+
+  it('refuses a stored excursion that is negative or not a number', () => {
+    // The excursion is a distance divided by a band width: a negative one is a sign error, and a reader that
+    // accepted it would feed it to the inequality as evidence.
+    expect(rejection({ chain: { ...chain(), excursions: { cart: -1 } } })).toMatch(
+      /chain.excursions.cart on line 1 is negative/,
+    );
+    expect(rejection({ chain: { ...chain(), excursions: { cart: '2' } } })).toMatch(
+      /chain.excursions.cart on line 1 is not a finite number/,
+    );
+  });
+
+  it('refuses a flow map that is not an object, and a flow that is not four numbers', () => {
+    expect(rejection({ chain: { ...chain(), flows: 4 } })).toMatch(
+      /chain.flows on line 1 is not an object/,
+    );
+    expect(rejection({ chain: { ...chain(), flows: { cart: 4 } } })).toMatch(
+      /chain.flows.cart on line 1 is not an object/,
+    );
+    expect(
+      rejection({
+        chain: { ...chain(), flows: { cart: { knownIn: 0, knownOut: 0, novelIn: 0 } } },
+      }),
+    ).toMatch(/chain.flows.cart.novelOut on line 1 is not a finite number/);
+  });
+
+  it('refuses a failed-interface map that is not an object, or a count that is not a number', () => {
+    expect(rejection({ chain: { ...chain(), failedInterfaces: [] } })).toMatch(
+      /chain.failedInterfaces on line 1 is not an object/,
+    );
+    // The key carries the separator the pass uses, so the assertion matches the field name and the reason rather
+    // than spelling a control character into a pattern.
+    expect(rejection({ chain: { ...chain(), failedInterfaces: { 'a\u0000b': 'many' } } })).toMatch(
+      /chain\.failedInterfaces\.[^ ]+ on line 1 is not a finite number/,
+    );
+  });
+
+  it('refuses a failing-edge map that is not an object, or an entry that is not a rise', () => {
+    expect(rejection({ chain: { ...chain(), failingEdges: [] } })).toMatch(
+      /chain.failingEdges on line 1 is not an object/,
+    );
+    expect(rejection({ chain: { ...chain(), failingEdges: { 'a\u0000b': 9 } } })).toMatch(
+      /chain.failingEdges on line 1 is not an object/,
+    );
+    expect(rejection({ chain: { ...chain(), failingEdges: { 'a\u0000b': { rise: 1 } } } })).toMatch(
+      /chain.failingEdges.novel on line 1 is not a finite number/,
+    );
+  });
+
+  it('refuses an attribution that is not a flow reading', () => {
+    expect(rejection({ chain: { ...chain(), attribution: 'either' } })).toMatch(
+      /chain.attribution on line 1 is not a flow reading/,
+    );
   });
 
   it('accepts null top1, which is the honest value for a case with no candidates', () => {

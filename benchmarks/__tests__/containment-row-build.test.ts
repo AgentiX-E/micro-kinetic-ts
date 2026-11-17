@@ -181,4 +181,42 @@ describe('buildContainmentRow', () => {
     );
     expect(row.replay).toBe('identical');
   });
+
+  it('stores the sweep s input beside its decisions, so the walk can be repeated from the file', () => {
+    const row = buildContainmentRow(input({ attribution: 'counts' }));
+    expect(row.chain).toEqual({
+      order: ['frontend', 'cart'],
+      edges: [['frontend', 'cart']],
+      excursions: { frontend: 0, cart: 2 },
+      failedInterfaces: { 'frontend\u0000cart': 4 },
+      // An absent flow map is written as an empty one: `applyFailureContainment` treats the two as the same
+      // measurement, and a `null` here would be a third state the replay would have to invent a meaning for.
+      flows: {},
+      failingEdges: {},
+      attribution: 'counts',
+    });
+  });
+
+  it('keeps the containment requirement and the flow requirement apart', () => {
+    // Two maps, two passes, one letter of difference in their names: `failedInterfaces` counts failed calls on
+    // an interface and licenses an INVERSION, `failingEdges` counts a rise of a shape on an edge and licenses a
+    // FLOW promotion. A builder that swapped them would replay the shipped arm differently, which is the only
+    // reason this is checkable at all — so it is checked here rather than trusted.
+    const row = buildContainmentRow(
+      input({
+        failedInterfaces: new Map([[failureEdgeKey('frontend', 'cart'), 7]]),
+        failingEdges: new Map([[failureEdgeKey('frontend', 'cart'), { rise: 2, novel: 1 }]]),
+      }),
+    );
+    expect(row.chain!.failedInterfaces).toEqual({ 'frontend\u0000cart': 7 });
+    expect(row.chain!.failingEdges).toEqual({ 'frontend\u0000cart': { rise: 2, novel: 1 } });
+  });
+
+  it('carries no chain at all when the input has no excursion map', () => {
+    // The chain is the SWEEP's input, and a case the profile could not speak about still has an order and no
+    // excursions: the field records what there was, including nothing.
+    const row = buildContainmentRow(input({ excursions: undefined }));
+    expect(row.chain!.excursions).toEqual({});
+    expect(row.replay).toBe('unavailable');
+  });
 });

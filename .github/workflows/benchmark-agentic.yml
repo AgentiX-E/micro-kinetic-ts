@@ -340,6 +340,38 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ── H2's second criterion: the residual as the pass's requirement ──────────────────────────────────────
+      #
+      #   The first step asked whether ρ separates a gain from a loss. This one asks the only question that can
+      #   turn the answer into behaviour: would REQUIRING ρ > 0, in place of the failed-interface record, make the
+      #   containment pass better at +15 / −0 and a Top@1 above the shipped 1 156?
+      #
+      #   It is read cross-fitted, because a case that contributes its own indicators to an edge's residual and is
+      #   then judged by it is graded on its own answer: each half of the corpus is gated by the prior fitted on
+      #   the other, every case is gated exactly once, and both halves are then read together so the number stays
+      #   comparable to the whole-corpus 1 156.
+      #
+      #   The shipped row is the INSTRUMENT CHECK, not a result. Its replay must reproduce the corpus's published
+      #   number; a mismatch means the dump is missing an input, and the step exits 3 rather than report a
+      #   residual row describing a walk the run never took. A measured PASS or FAIL leaves the job green: a
+      #   refused hypothesis is not broken code.
+      - name: Read the containment gate (H2, second criterion)
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-containment-gate.ts \
+            --rows artifacts/agentic/containment.ndjson \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/containment-gate.json \
+            2>&1 | tee artifacts/agentic/containment-gate.txt
+          {
+            echo '### H2 — the residual as the requirement, cross-fitted'
+            echo ''
+            echo '```'
+            grep -E '^  (rows=|prior |arm=|gate decisions:|criterion:|H2-gate:)' \
+              artifacts/agentic/containment-gate.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
       # a verdict whose published order disagrees, because two artifacts from different runs would
       # produce a number for a configuration neither of them ran -- and the CLI exits non-zero on that
@@ -462,6 +494,8 @@ jobs:
             artifacts/agentic/ceiling.txt
             artifacts/agentic/containment.txt
             artifacts/agentic/containment-residual.json
+            artifacts/agentic/containment-gate.txt
+            artifacts/agentic/containment-gate.json
             artifacts/agentic/nomination.txt
             artifacts/agentic/nominations.ndjson
           if-no-files-found: warn

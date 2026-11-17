@@ -41,7 +41,12 @@
 
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
-import type { ContainmentDecision } from '../../packages/tree/src/index.js';
+import type {
+  ContainmentDecision,
+  FailureAttribution,
+  FailureFlow,
+} from '../../packages/tree/src/index.js';
+import { isFailureAttribution } from '../../packages/tree/src/index.js';
 
 /** One adjacent pair that carried a call edge, and what the arm decided about it. */
 export interface ContainmentPairRow {
@@ -67,6 +72,54 @@ export interface ContainmentPairRow {
  * disagreement unreadable.
  */
 export type ContainmentReplay = 'identical' | 'differs' | 'unavailable';
+
+/**
+ * The input the sweep and the flow pass consumed, stored so that an arm can be re-walked without the corpus.
+ *
+ * ## Why the row carries its own input
+ *
+ * The first version of this artifact recorded only the two decisions, which made it enough to AGGREGATE ρ over
+ * and not enough to ask a different question of the same cases. H2's second criterion is exactly such a
+ * question — plant the residual as the requirement in place of the interface record and re-read the corpus —
+ * and a gate changes which pairs are inverted, which changes the adjacencies the walk examines next, so the
+ * gated arm cannot be reconstructed from another arm's decisions. It has to be WALKED.
+ *
+ * Walking it needs what the two passes read and nothing else: the order the fusion published (the walk's
+ * start), the directed call edges (which adjacencies qualify), the per-service excursions (the inequality), the
+ * failed interfaces (the shipped arm's requirement) and the flow pass's own inputs (so the walk reaches the same
+ * FINAL order the published number is read from). With those the whole chain replays from the file, and the
+ * criterion is a local computation over an artifact rather than another corpus walk.
+ *
+ * ## What is NOT here
+ *
+ * Any accepted answer, any fault label, and any fitted statistic. The prior a gate consults is fitted by the
+ * reader from the OTHER half of THIS file, which is why the file must not carry one: a row that arrived with its
+ * own prior would have been judged by a number it helped compute.
+ */
+export interface ContainmentChain {
+  /** The order the FUSION published — the sweep's input, not its output. */
+  readonly order: readonly string[];
+  /** The case's directed call edges, as `[from, to]`. */
+  readonly edges: readonly (readonly [string, string])[];
+  /** The per-service excursions. A service absent from this map could not be measured — it is not a zero. */
+  readonly excursions: Readonly<Record<string, number>>;
+  /**
+   * The interfaces that reported more failed calls after the injection, keyed by `failureEdgeKey`.
+   *
+   * This is what the SHIPPED containment arm requires, and it is a different map from {@link failingEdges}
+   * below: one counts failed calls on an interface, the other the net rise of a shape on an edge, and they feed
+   * two different passes. The names are the graph's, kept rather than improved so that a reader can find them.
+   */
+  readonly failedInterfaces: Readonly<Record<string, number>>;
+  /** The flow map the failure-flow pass reads. */
+  readonly flows: Readonly<Record<string, FailureFlow>>;
+  /** The edges that carried a net rise, which the FLOW pass requires. */
+  readonly failingEdges: Readonly<
+    Record<string, { readonly rise: number; readonly novel: number }>
+  >;
+  /** Which reading of the flow decides a pair. */
+  readonly attribution: FailureAttribution;
+}
 
 /** One case's sweep rows. */
 export interface ContainmentCaseRow {
@@ -97,6 +150,14 @@ export interface ContainmentCaseRow {
   readonly pairs: readonly ContainmentPairRow[];
   /** The refused arm's sweep, over the same fusion order. */
   readonly ungatedPairs: readonly ContainmentPairRow[];
+  /**
+   * The sweep's input, or absent on a dump written before it was recorded.
+   *
+   * Optional rather than required because the file outlives the code: a reader that refused a three-field dump
+   * would have no way to say "this artifact predates the replay" other than failing to parse, and the arm that
+   * needs the chain can refuse it with a sentence instead.
+   */
+  readonly chain?: ContainmentChain | undefined;
 }
 
 /** What a dump wrote, for the run's own log line. */
@@ -111,6 +172,8 @@ export interface ContainmentRowsSummary {
   readonly noFailedInterface: number;
   readonly unmeasured: number;
   readonly notLarger: number;
+  readonly priorAbsent: number;
+  readonly priorBelow: number;
   readonly replayIdentical: number;
   readonly replayDiffers: number;
   readonly replayUnavailable: number;
@@ -156,7 +219,38 @@ export function formatContainmentRow(record: ContainmentCaseRow): string {
     replay: record.replay,
     pairs: record.pairs.map(pairToJson),
     ungatedPairs: record.ungatedPairs.map(pairToJson),
+    // Omitted rather than nulled when absent, for the rule the excursions already follow: a reader must be able
+    // to tell "this file predates the field" from "this case had an empty one".
+    ...(record.chain === undefined ? {} : { chain: chainToJson(record.chain) }),
   });
+}
+
+/** One chain as the file spells it: tuples for edges, objects keyed by service for the maps. */
+function chainToJson(chain: ContainmentChain): Record<string, unknown> {
+  return {
+    order: [...chain.order],
+    edges: chain.edges.map((edge) => [edge[0], edge[1]]),
+    excursions: { ...chain.excursions },
+    failedInterfaces: { ...chain.failedInterfaces },
+    flows: Object.fromEntries(
+      Object.entries(chain.flows).map(([service, flow]) => [
+        service,
+        {
+          knownIn: flow.knownIn,
+          knownOut: flow.knownOut,
+          novelIn: flow.novelIn,
+          novelOut: flow.novelOut,
+        },
+      ]),
+    ),
+    failingEdges: Object.fromEntries(
+      Object.entries(chain.failingEdges).map(([key, edge]) => [
+        key,
+        { rise: edge.rise, novel: edge.novel },
+      ]),
+    ),
+    attribution: chain.attribution,
+  };
 }
 
 /** The census fields, in the order every rendering writes them. */
@@ -169,20 +263,30 @@ const SUMMARY_FIELDS = [
   'noFailedInterface',
   'unmeasured',
   'notLarger',
+  'priorAbsent',
+  'priorBelow',
   'replayIdentical',
   'replayDiffers',
   'replayUnavailable',
 ] as const;
 
-/** The census field each decision adds to. A `Record` over the union, so a new decision fails to compile. */
+/**
+ * The census field each decision adds to. A `Record` over the union, so a new decision fails to compile.
+ *
+ * The two prior refusals have counters of their own even though neither arm a run sweeps can produce them: the
+ * dump's decision vocabulary is the sweep's, and a reader that later records a GATED arm through this same class
+ * must not have its two reasons folded into `notLarger`.
+ */
 const DECISION_FIELD: Record<
   ContainmentDecision,
-  'inverted' | 'noFailedInterface' | 'unmeasured' | 'notLarger'
+  'inverted' | 'noFailedInterface' | 'unmeasured' | 'notLarger' | 'priorAbsent' | 'priorBelow'
 > = {
   inverted: 'inverted',
   'no-failed-interface': 'noFailedInterface',
   unmeasured: 'unmeasured',
   'not-larger': 'notLarger',
+  'prior-absent': 'priorAbsent',
+  'prior-below': 'priorBelow',
 };
 
 /**
@@ -203,6 +307,8 @@ export class ContainmentRowDump {
     noFailedInterface: 0,
     unmeasured: 0,
     notLarger: 0,
+    priorAbsent: 0,
+    priorBelow: 0,
     replayIdentical: 0,
     replayDiffers: 0,
     replayUnavailable: 0,
@@ -257,13 +363,15 @@ function finiteAt(value: unknown, field: string, line: number): number {
   return value;
 }
 
-/** Refuses a value that is not one of the four decisions. */
+/** Refuses a value that is not one of the six decisions. */
 function decisionAt(value: unknown, field: string, line: number): ContainmentDecision {
   if (
     value === 'inverted' ||
     value === 'no-failed-interface' ||
     value === 'unmeasured' ||
-    value === 'not-larger'
+    value === 'not-larger' ||
+    value === 'prior-absent' ||
+    value === 'prior-below'
   ) {
     return value;
   }
@@ -273,10 +381,13 @@ function decisionAt(value: unknown, field: string, line: number): ContainmentDec
 /** Refuses a value that is neither `null` nor a non-empty string. */
 function serviceAt(value: unknown, field: string, line: number): string | null {
   if (value === null) return null;
+  return nameAt(value, field, line);
+}
+
+/** Refuses a value that is not a non-empty service name, for the fields that cannot be `null`. */
+function nameAt(value: unknown, field: string, line: number): string {
   if (typeof value !== 'string' || value === '') {
-    throw new Error(
-      `${field} on line ${line} is neither null nor a service name: ${String(value)}`,
-    );
+    throw new Error(`${field} on line ${line} is not a service name: ${String(value)}`);
   }
   return value;
 }
@@ -286,12 +397,8 @@ function parsePair(raw: unknown, line: number): ContainmentPairRow {
   if (typeof raw !== 'object' || raw === null)
     throw new Error(`pair on line ${line} is not an object`);
   const pair = raw as Record<string, unknown>;
-  if (typeof pair.upper !== 'string' || pair.upper === '') {
-    throw new Error(`pair upper on line ${line} is not a non-empty string`);
-  }
-  if (typeof pair.lower !== 'string' || pair.lower === '') {
-    throw new Error(`pair lower on line ${line} is not a non-empty string`);
-  }
+  const upper = nameAt(pair.upper, 'pair upper', line);
+  const lower = nameAt(pair.lower, 'pair lower', line);
   const upperExcursion =
     pair.upperExcursion === undefined
       ? undefined
@@ -307,8 +414,8 @@ function parsePair(raw: unknown, line: number): ContainmentPairRow {
     throw new Error(`lowerExcursion on line ${line} is negative: ${lowerExcursion}`);
   }
   return {
-    upper: pair.upper,
-    lower: pair.lower,
+    upper,
+    lower,
     decision: decisionAt(pair.decision, 'decision', line),
     ...(upperExcursion === undefined ? {} : { upperExcursion }),
     ...(lowerExcursion === undefined ? {} : { lowerExcursion }),
@@ -362,7 +469,7 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
     if (!Array.isArray(record.ungatedPairs)) {
       throw new Error(`ungatedPairs on line ${lineNumber} is not an array`);
     }
-    records.push({
+    const parsed: ContainmentCaseRow = {
       datapack: record.datapack,
       faultType: record.faultType,
       sigma,
@@ -374,9 +481,86 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
       replay,
       pairs: record.pairs.map((pair: unknown) => parsePair(pair, lineNumber)),
       ungatedPairs: record.ungatedPairs.map((pair: unknown) => parsePair(pair, lineNumber)),
-    });
+    };
+    records.push(
+      record.chain === undefined
+        ? parsed
+        : { ...parsed, chain: parseChain(record.chain, lineNumber) },
+    );
   }
   return records;
+}
+
+/** Refuses a value that is not a plain object, which every map in the chain is spelled as. */
+function objectAt(value: unknown, field: string, line: number): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${field} on line ${line} is not an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Parses the sweep's stored input, refusing any shape the walk could not consume. */
+function parseChain(raw: unknown, line: number): ContainmentChain {
+  const chain = objectAt(raw, 'chain', line);
+  if (!Array.isArray(chain.order)) throw new Error(`chain.order on line ${line} is not an array`);
+  const order = chain.order.map((service: unknown) => nameAt(service, 'chain.order', line));
+  if (!Array.isArray(chain.edges)) throw new Error(`chain.edges on line ${line} is not an array`);
+  const edges: [string, string][] = chain.edges.map((edge: unknown) => {
+    if (!Array.isArray(edge) || edge.length !== 2) {
+      throw new Error(`chain.edges on line ${line} is not a pair`);
+    }
+    return [nameAt(edge[0], 'chain.edges.from', line), nameAt(edge[1], 'chain.edges.to', line)];
+  });
+  const excursions = objectAt(chain.excursions, 'chain.excursions', line);
+  const measuredExcursions: Record<string, number> = {};
+  for (const [service, value] of Object.entries(excursions)) {
+    const excursion = finiteAt(value, `chain.excursions.${service}`, line);
+    // An excursion is a distance divided by a band width: negative is not a small measurement, it is a
+    // sign error, and a reader that accepted one would fold it into the inequality as evidence.
+    if (excursion < 0) {
+      throw new Error(`chain.excursions.${service} on line ${line} is negative: ${excursion}`);
+    }
+    measuredExcursions[service] = excursion;
+  }
+  const flows = objectAt(chain.flows, 'chain.flows', line);
+  const parsedFlows: Record<string, FailureFlow> = {};
+  for (const [service, value] of Object.entries(flows)) {
+    const flow = objectAt(value, `chain.flows.${service}`, line);
+    parsedFlows[service] = {
+      knownIn: finiteAt(flow.knownIn, `chain.flows.${service}.knownIn`, line),
+      knownOut: finiteAt(flow.knownOut, `chain.flows.${service}.knownOut`, line),
+      novelIn: finiteAt(flow.novelIn, `chain.flows.${service}.novelIn`, line),
+      novelOut: finiteAt(flow.novelOut, `chain.flows.${service}.novelOut`, line),
+    };
+  }
+  const interfaces = objectAt(chain.failedInterfaces, 'chain.failedInterfaces', line);
+  const parsedInterfaces: Record<string, number> = {};
+  for (const [key, value] of Object.entries(interfaces)) {
+    parsedInterfaces[key] = finiteAt(value, `chain.failedInterfaces.${key}`, line);
+  }
+  const failingEdges = objectAt(chain.failingEdges, 'chain.failingEdges', line);
+  const parsedFailing: Record<string, { rise: number; novel: number }> = {};
+  for (const [key, value] of Object.entries(failingEdges)) {
+    const edge = objectAt(value, `chain.failingEdges`, line);
+    parsedFailing[key] = {
+      rise: finiteAt(edge.rise, 'chain.failingEdges.rise', line),
+      novel: finiteAt(edge.novel, 'chain.failingEdges.novel', line),
+    };
+  }
+  if (!isFailureAttribution(chain.attribution)) {
+    throw new Error(
+      `chain.attribution on line ${line} is not a flow reading: ${String(chain.attribution)}`,
+    );
+  }
+  return {
+    order,
+    edges,
+    excursions: measuredExcursions,
+    failedInterfaces: parsedInterfaces,
+    flows: parsedFlows,
+    failingEdges: parsedFailing,
+    attribution: chain.attribution,
+  };
 }
 
 /**

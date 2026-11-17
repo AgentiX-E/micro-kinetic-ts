@@ -5330,3 +5330,77 @@ leak rather than a prior, so the gate has to be fitted on one half and read on t
   population it observed was defined by the same condition the statistic is monotone in.
 - **"A pre-registered statistic is a pre-registered measurement."** The words fixed the population; the code did
   not follow them, and the first reading was a constant.
+
+## §298 — A gate changes the walk, so the artifact has to carry its input
+
+§297 closed with the second criterion unmeasured and a reason: a case that contributes to an edge's residual
+cannot be judged by it. This entry builds the arm that measures it — cross-fitted, replayable from the dump alone
+— and it does so because the pre-registration's own falsifier fired, not because it was the next item on a list.
+
+### The falsifier, and who it indicted
+
+The docs repository’s pre-registration for 296 fixed H2b (the within-case residual over time slices) before any
+data and wrote: "If the
+readback of iteration 295 shows that the cross-case population is **not** thin … then the honest move is to run
+H2's gate first and to hold this arm". The readback put **36 of 38** labelled inversions on edges at `n ≥ 10`. The
+document named its own replacement, and the replacement is what got built.
+
+### Three decisions, each one a defect avoided
+
+| decision | what it prevents |
+| --- | --- |
+| the row carries the sweep's INPUT (`chain`), not only its decisions | a gate changes which pairs are inverted, which changes the adjacencies examined next; a re-decision over recorded rows reports a corpus the gate never saw |
+| four arms — `off`, `ungated`, `shipped`, `prior` | `off` and `ungated` are one line apart and a mechanism apart; a baseline that inverted pairs credits the gate with the fusion's own decisions |
+| the prior is consulted LAST in the sweep | asked first, it labels pairs the measurements already refused, and the count of blocked inversions — the gate's price — inflates with refusals it never reached |
+
+The `chain` field is omitted rather than nulled on an older dump, so "predates the field" and "empty" stay apart.
+With it, an arm nobody has run is a local computation over one artifact, and the run's own `replay` verdict becomes
+checkable by a reader who never ran the corpus.
+
+### Six decisions, and why two of them are two
+
+`inspectContainmentOrder` now reports `prior-absent` as well as `prior-below`. They are different statements: an
+edge nobody fitted is not an edge measured to be independent. The first implementation filtered the prior map at
+fit time, which made a measured `ρ = −0.14` indistinguishable from a measurement that never happened — and the
+gate reported **14 refusals, all `prior-absent`**, on a corpus where every one of them was a fitted negative. The
+map now keeps every fitted residual and the threshold does the refusing, which is what lets the sweep say which
+happened.
+
+The threshold is `0` and the comparison is strict, for the reason the margin is zero: `ρ = 0` is exactly the
+independence the mechanism claims a propagating pair departs from.
+
+### The shipped row is an instrument check
+
+The report prints three arms, and the second one is a check: the shipped arm, walked from the same chain, must
+reproduce the corpus's published number. If it does not, the dump is missing an input and the residual row beneath
+it describes a walk the run never took — so that case is `unmeasured` and exits **3**, beside the two other
+refusals (no rows carry a chain; only some do). A measured `pass` or `fail` stays exit **0**, because a refused
+hypothesis is not broken code.
+
+### The split
+
+FNV-1a over the case name, low bit. Not an index into the file: the dump is in the loader's directory order, which
+on this corpus groups cases by fault family, and a hash is order-independent by construction. `priorsFor` keys
+each prior by the half it may be APPLIED to, so cross-fitting is enforced by the data structure rather than by a
+comment. Both halves are then read together, which is what keeps the result comparable to the whole-corpus 1 156.
+
+### Instrument coverage
+
+`containment-gate.ts`, `containment-gate-report.ts` and `containment-replay.ts` measure at 100 % statements,
+branches and functions; so do `containment-rows.ts` (98.97 % branches) and `containment-order.ts` at 100 % after
+the two new decisions. The three ways a reading is refused are each asserted, as is the one that matters most: a
+gate fitted on its OWN half reads the mirror image of a cross-fitted one, and the fixture is built so the two
+produce different counts rather than different prose.
+
+### Not measured
+
+The corpus has not been read through this arm. `+15 / −0` and `Top@1 > 1 156` are the next dispatch's numbers, and
+nothing in this entry is a reading of them.
+
+### Axes this closes
+
+- **"An artifact that records the decision is enough to price a change."** It is enough to AGGREGATE the decision
+  and not enough to walk a different one; the input has to be in the file.
+- **"A requirement is a predicate."** It is also a population: a prior fitted on a fraction of the corpus refuses
+  edges the whole corpus could measure, and the report counts those separately from the ones it fitted and
+  rejected.

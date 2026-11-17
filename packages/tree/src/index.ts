@@ -193,6 +193,7 @@ export type {
   ContainmentDecision,
   ContainmentEdge,
   ContainmentOrderInput,
+  ContainmentPrior,
   ContainmentSweep,
   ContainmentVerdict,
   LatencyExcursionInput,

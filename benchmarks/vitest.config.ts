@@ -408,6 +408,14 @@ export default defineConfig({
         'src/containment-row-build.ts',
         'src/containment-residual.ts',
         'src/containment-residual-report.ts',
+        // Added with the gate: H2's second criterion, where a wrong split, a prior applied to the half it was
+        // fitted on, or an unmeasured edge admitted as an independent one would each produce a plausible number
+        // rather than an error. `containment-replay` is the walk every arm goes through — its four arms are
+        // `off`, no requirement, the interface record, and a prior — and `containment-gate` is the cross-fitting
+        // and the verdict, including the three ways a reading is refused rather than reported.
+        'src/containment-replay.ts',
+        'src/containment-gate.ts',
+        'src/containment-gate-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -844,3 +844,127 @@ by it is a leak rather than a prior.
 `containment-residual-report.ts` measure at 100 % statements, functions and lines, and at ≥ 98 % branches, with
 the two refusals asserted in both directions: an unmeasured **upper** side and an unmeasured **lower** side are
 separate branches, and a row with no call edge produces no verdict rather than a refusal verdict.
+
+## 15. H2's second criterion: the residual AS the requirement (iteration 296)
+
+§14 answered H2's first question — does ρ separate a gain from a loss — and left the second one open: would
+REQUIRING ρ > 0, in place of the failed-interface record, make the containment pass better? This section builds
+that arm. It writes no reading: the number is the next dispatch's output, and the design decisions below are the
+part that has to be right before the number means anything.
+
+### 15.1 The pre-registration's own falsifier fired, and it named this arm
+
+The docs repository’s pre-registration for 296 fixed H2b (the within-case residual over time slices) before any
+data, and wrote its own
+falsifier:
+
+> If the readback of iteration 295 shows that the cross-case population is **not** thin — i.e. the labelled
+> inversions mostly sit on edges with n ≥ 10 — then H2b's motivating sentence is false, and the honest move is to
+> run H2's gate first and to hold this arm until a population actually fails.
+
+The readback (§14.7) scored **36 of 38** labelled inversions on edges at n ≥ 10. The falsifier fired. H2b is held,
+and this section is the arm that sentence asks for — which is the point of writing a falsifier down: it was
+available to be ignored, and it was written in a place where ignoring it would be visible.
+
+### 15.2 A gate changes the walk, so the row has to carry its own input
+
+The cheap way to price a requirement is to re-read the decisions already recorded and drop the inversions it would
+have refused. That is wrong in the direction that flatters the requirement: a sweep inverts as it goes, so
+refusing one inversion changes the adjacency the NEXT row describes. The gated walk examines a different set of
+pairs — sometimes a superset in one place and a subset in another — and a re-decision would report a corpus the
+gate never saw.
+
+So the dump's row now carries `chain`: the fusion order the sweep was given, the directed call edges, the
+per-service excursions, the failed interfaces, the flow pass's inputs, and which reading of the flow decides a
+pair. With those the whole chain replays from the file, because `applyContainmentOrder` and
+`applyFailureContainment` are pure functions and the artifact now carries their arguments. Two consequences, both
+worth the bytes:
+
+- an arm nobody has run yet is a **local computation** over one artifact rather than another corpus walk;
+- the run's own `replay` verdict becomes checkable by a reader who never ran the corpus.
+
+The field is omitted rather than nulled on a dump written before it existed, so "this artifact predates the chain"
+and "this case had an empty one" stay distinguishable — the same rule the excursions already follow.
+
+### 15.3 Four arms, because "no requirement" and "no pass" are different arms
+
+| arm | what it is | why it exists |
+| --- | --- | --- |
+| `off` | no sweep at all; the fusion order goes straight to the flow pass | the **baseline** every ± in §4 and §12 is read against — 1 141 before the pass |
+| `ungated` | the excursion rule and nothing else | the arm §12 refused (`+33 / −5`), kept as the control the interface record is priced against |
+| `shipped` | the excursion rule AND the failed-interface record | the 1 156 the criterion must be exceeded |
+| `prior` | the excursion rule AND a residual fitted outside this case | H2's proposal |
+
+The first two are one line apart in the code and a whole mechanism apart in meaning, and conflating them would
+credit the gate with decisions the fusion had already made. `off` therefore records **no verdicts at all**: a
+baseline that examined nothing has nothing to say about what it examined.
+
+### 15.4 The prior is consulted LAST, so the label names what decided the pair
+
+`inspectContainmentOrder` grew two decisions — `prior-absent` and `prior-below` — and the new check sits after the
+interface record, after both measurements, and after the inequality:
+
+    no call edge → not recorded
+    interface did not fail → `no-failed-interface`
+    either side unmeasured → `unmeasured`
+    callee not further out → `not-larger`
+    edge not fitted → `prior-absent`
+    fitted and not above the threshold → `prior-below`
+    otherwise → `inverted`
+
+The order is the measurement. Asked first, the prior would label pairs the measurements had already refused, and
+the count of "blocked inversions" — the quantity the gate's price is read from — would include pairs it never
+reached. Placed last, `prior-absent` and `prior-below` mean exactly **this pair would have been inverted and the
+prior stopped it**, which is the population whose size decides whether the gate is a filter or a formality.
+
+### 15.5 Two refusal reasons, because an unfitted edge is not an independent one
+
+`ContainmentPrior` is a map of fitted residuals and a threshold, and **the map keeps every fitted residual,
+including the negative ones**: the threshold does the refusing. That is not a detail. Filtering at fit time made a
+measured `ρ = −0.14` indistinguishable from a measurement that never happened, and the first version of this gate
+reported 14 refusals, all of them `prior-absent`, on a corpus where every one of them was a fitted negative. The
+sweep's two decisions exist to keep those apart, and the fit has to preserve the difference for them to be able to.
+
+The threshold is `0` and the comparison is **strict**, for the reason the margin is zero: `ρ = 0` is precisely the
+independence the mechanism claims a propagating pair departs from, so admitting it would admit the population the
+hypothesis is trying to separate itself from.
+
+### 15.6 The shipped row is an instrument check, not a result
+
+The report prints three arms in a fixed order, and the second one is a check: the shipped arm is walked from the
+same chain and must reproduce the corpus's published number. If it does not, the dump is missing an input, and the
+residual row beneath it describes a walk the run never took. That case is `unmeasured` and exits **3**.
+
+Three refusals, each with its own sentence, and none of them a red build for a scientific reason:
+
+| state | when | exit |
+| --- | --- | --- |
+| `unmeasured` | no row carries a chain, or only some do, or the replay disagrees with the record | 3 |
+| `fail` | measured, and the arm misses the ± or the Top@1 | 0 |
+| `pass` | measured, and it clears both | 0 |
+
+A reading over the rows that happened to be walkable would be a population the run never declared, compared
+against a whole-corpus number — worse than no reading, so a partial chain refuses.
+
+### 15.7 The fold is a hash, and that is not cosmetic
+
+Each half's residual is fitted from the OTHER half, so every case is gated exactly once by a prior it did not
+contribute to, and both halves are then read together — which is what keeps the result comparable to the
+whole-corpus 1 156 instead of to a half-sized number.
+
+The fold is FNV-1a over the case NAME, low bit, rather than an index into the file. The dump is in the loader's
+directory order, which on this corpus groups cases by fault family; a hash is independent of that order by
+construction, and a reader holding one row can place it. The cost is that the halves are not exactly equal, which
+no reading here depends on.
+
+`priorsFor` keys each prior by the half it may be **applied to**, so there is no entry under the half it came
+from: the cross-fitting is enforced by the data structure rather than by a comment.
+
+### 15.8 What this does not claim
+
+- **No number.** The arm is built and wired; the reading is the next dispatch's.
+- **Not a replacement for H2's first criterion.** The AUC was read on the whole corpus and is met-not-established
+  (§14.7); this arm asks a different question of the same statistic, and a pass here does not repair a thin
+  negative class there.
+- **Not H2b.** The within-case residual stays pre-registered and unbuilt. §15.1 says why it is held and what would
+  have to be true for it to be the next arm.

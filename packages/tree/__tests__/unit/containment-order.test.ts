@@ -17,7 +17,7 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { FaultFreeProfile } from '@agentix-e/micro-kinetic-tree';
+import type { ContainmentPrior, FaultFreeProfile } from '@agentix-e/micro-kinetic-tree';
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
@@ -463,6 +463,200 @@ describe('applyContainmentOrder', () => {
       ]),
     });
     expect(ordered.map((one) => one.payload)).toEqual(['callee', 'caller']);
+  });
+});
+
+// ── The residual prior ────────────────────────────────────
+//
+// H2 asks whether an edge's factorisation residual can stand in for the per-case interface record: fitted over
+// many cases on ONE half of the corpus and required on the other, so that no case is judged by a statistic it
+// helped compute. The pass therefore has to accept a requirement it did not measure — and the five tests below
+// pin the API at the boundary (admitted, absent, below, direction of the key, a threshold above zero) while the
+// next five pin WHERE in the decision order the requirement sits, because a label that names a condition the
+// pair never reached is a label that misdescribes the refusal.
+
+describe('the residual prior', () => {
+  /** A prior that admits the pair, and one that refuses it for each of the two reasons. */
+  const ADMITS: ContainmentPrior = {
+    residuals: new Map([[failureEdgeKey('a', 'b'), 0.2]]),
+    threshold: 0,
+  };
+  const ABSENT: ContainmentPrior = { residuals: new Map(), threshold: 0 };
+  const NEGATIVE: ContainmentPrior = {
+    residuals: new Map([[failureEdgeKey('a', 'b'), -0.05]]),
+    threshold: 0,
+  };
+
+  it('inverts a pair whose edge cleared the residual on the other half', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: ADMITS,
+    });
+    expect(servicesOf(swept.order)).toEqual(['b', 'a']);
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['inverted']);
+  });
+
+  it('refuses a pair whose edge was never fitted', () => {
+    // The distinction that matters: an edge nobody fitted is not an edge measured to be independent, and a gate
+    // that merged the two would report a corpus it never measured as a corpus that disagreed with it.
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: ABSENT,
+    });
+    expect(servicesOf(swept.order)).toEqual(['a', 'b']);
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['prior-absent']);
+  });
+
+  it('refuses a residual that sits exactly on the threshold', () => {
+    // `ρ > 0` is the pre-registered requirement and the comparison is strict, for the same reason the margin is:
+    // a zero residual IS the independence the gate exists to exclude, so admitting it would be admitting nothing.
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: { residuals: new Map([[failureEdgeKey('a', 'b'), 0]]), threshold: 0 },
+    });
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['prior-below']);
+  });
+
+  it('refuses a negative residual, which is a pair that moved against itself', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: NEGATIVE,
+    });
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['prior-below']);
+  });
+
+  it('keys the residual by the direction of the call edge', () => {
+    // The residual itself is symmetric and the sweep only ever asks about `caller\0callee`. A key that ignored
+    // direction would admit the pair on the strength of an edge the sweep is not looking at.
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: { residuals: new Map([[failureEdgeKey('b', 'a'), 0.9]]), threshold: 0 },
+    });
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['prior-absent']);
+  });
+
+  it('cannot resurrect a pair the excursion rule rejected', () => {
+    // A requirement, not a second reason to move: an edge that moves as one does not license an inversion the
+    // excursions contradict. This is the same test the interface record had to pass.
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 4],
+        ['b', 1],
+      ]),
+      prior: ADMITS,
+    });
+    expect(servicesOf(swept.order)).toEqual(['a', 'b']);
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['not-larger']);
+  });
+
+  it('names the unmeasured side before the prior, because that is what decided it', () => {
+    // The prior is consulted LAST so that `prior-below` means "this pair would have been inverted". Asking it
+    // earlier would label refusals the measurements had already made, and the count of refused inversions —
+    // the quantity the gate's price is read from — would report the gate blocking things it never reached.
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([['a', 0]]),
+      prior: ABSENT,
+    });
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['unmeasured']);
+  });
+
+  it('is a requirement beside the interface record, not an alternative to it', () => {
+    const both = {
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+    };
+    expect(
+      inspectContainmentOrder({
+        ...both,
+        failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+        prior: ABSENT,
+      }).verdicts.map((one) => one.decision),
+    ).toEqual(['prior-absent']);
+    expect(
+      inspectContainmentOrder({ ...both, failingEdges: new Map(), prior: ADMITS }).verdicts.map(
+        (one) => one.decision,
+      ),
+    ).toEqual(['no-failed-interface']);
+  });
+
+  it('changes nothing when it is not supplied', () => {
+    // The shipped configuration: no prior, and the two arms of the register unchanged. A gate that altered the
+    // default would make every number in `docs/containment-order.md` a measurement of a different engine.
+    const input = {
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+    };
+    expect(servicesOf(inspectContainmentOrder(input).order)).toEqual(
+      servicesOf(inspectContainmentOrder({ ...input, prior: ADMITS }).order),
+    );
+    expect(servicesOf(inspectContainmentOrder(input).order)).toEqual(['b', 'a']);
+  });
+
+  it('honours a threshold above zero', () => {
+    const sweep = (residual: number): string[] =>
+      inspectContainmentOrder({
+        ranking: rows('a', 'b'),
+        edges: CALLS_AB,
+        excursions: new Map([
+          ['a', 0],
+          ['b', 1],
+        ]),
+        prior: { residuals: new Map([[failureEdgeKey('a', 'b'), residual]]), threshold: 0.05 },
+      }).verdicts.map((one) => one.decision);
+    expect(sweep(0.03)).toEqual(['prior-below']);
+    expect(sweep(0.06)).toEqual(['inverted']);
+  });
+
+  it('agrees with applyContainmentOrder on the order under a prior', () => {
+    const input = {
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      prior: ADMITS,
+    };
+    expect(servicesOf(applyContainmentOrder(input))).toEqual(
+      servicesOf(inspectContainmentOrder(input).order),
+    );
   });
 });
 
