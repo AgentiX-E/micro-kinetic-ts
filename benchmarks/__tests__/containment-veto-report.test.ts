@@ -63,6 +63,15 @@ function reading(overrides: Partial<VetoReading> = {}): VetoReading {
       'prior-absent': 0,
       'prior-below': 0,
     },
+    control: {
+      inverted: 117,
+      'record-silent': 0,
+      'no-failed-interface': 458,
+      unmeasured: 12,
+      'not-larger': 238,
+      'prior-absent': 0,
+      'prior-below': 0,
+    },
     ceiling: { atSecond: 36, reachable: 31, unreachable: 5, shipped: 15, veto: 29 },
     ...overrides,
   };
@@ -76,6 +85,16 @@ describe('parseVetoArgs', () => {
     // A flag with no value reads as the empty string and is then refused by the required-input check, rather than
     // silently taking the next flag as a path.
     expect(() => parseVetoArgs(['--rows'])).toThrow(/--rows is required/);
+    // The same for the other required input: a trailing flag takes the empty string and is refused by the check
+    // rather than by the loop, which is the branch that makes `?? ''` load-bearing instead of decorative.
+    expect(() => parseVetoArgs(['--rows', 'r', '--per-case'])).toThrow(/--per-case is required/);
+    // A flag whose value is missing reads as the empty string rather than swallowing a neighbour, and the output
+    // path is the one that may legitimately be absent, so the fallback is exercised on it rather than on an input.
+    expect(parseVetoArgs(['--rows', 'r', '--per-case', 'p', '--output'])).toEqual({
+      rows: 'r',
+      perCase: 'p',
+      output: '',
+    });
   });
 
   it('carries the output path only when one was given', () => {
@@ -106,8 +125,11 @@ describe('formatVetoReading', () => {
     expect(lines[6]).toBe(
       '  decisions inverted=242 record-silent=37 no-failed-interface=515 unmeasured=52 not-larger=561 prior-absent=0 prior-below=0',
     );
-    expect(lines[7]).toBe('  ceiling at-second=36 reachable=31 unreachable=5 shipped=15 veto=29');
-    expect(lines[8]).toBe('  criterion: gains>=15 losses<=0 top1>1156');
+    expect(lines[7]).toBe(
+      '  control   inverted=117 record-silent=0 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=0 prior-below=0',
+    );
+    expect(lines[8]).toBe('  ceiling at-second=36 reachable=31 unreachable=5 shipped=15 veto=29');
+    expect(lines[9]).toBe('  criterion: gains>=15 losses<=0 top1>1156');
   });
 
   it('carries the criterion it was given rather than the standing one', () => {

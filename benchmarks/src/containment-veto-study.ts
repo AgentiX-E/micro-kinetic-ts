@@ -111,6 +111,16 @@ export interface VetoReading {
   };
   /** What the veto walk decided about every pair it examined. */
   readonly decisions: Readonly<Record<ContainmentDecision, number>>;
+  /**
+   * What the SHIPPED walk decided about every pair it examined — the control's own census.
+   *
+   * The three arms before this one each printed their own census and never the control's, which is how §301 came
+   * to quote an inversion count for the shipped walk that was a DERIVATION rather than a reading: the gate's 198
+   * plus the 44 pairs the residual stopped, valid only if the two walks shared a cascade, which they do not —
+   * inverting one pair changes every adjacency below it. A control with no census is a control a claim about it
+   * cannot be checked against, and this field is one line of arithmetic away from existing.
+   */
+  readonly control: Readonly<Record<ContainmentDecision, number>>;
   /** The family's bound and what each arm took of it. */
   readonly ceiling: SweepCeiling;
 }
@@ -224,6 +234,7 @@ export function readVeto(
 ): VetoReading {
   const priors = priorsFor(rows);
   const decisions = emptyCensus();
+  const control = emptyCensus();
   const tally = { fusion: 0, shipped: 0, veto: 0 };
   const gains = { shipped: 0, veto: 0 };
   const losses = { shipped: 0, veto: 0 };
@@ -248,6 +259,9 @@ export function readVeto(
     // including rows with no accepted answer, whose refusals are still decisions the arm made.
     if (veto !== null) {
       for (const verdict of veto.verdicts) decisions[verdict.decision] += 1;
+    }
+    if (shipped !== null) {
+      for (const verdict of shipped.verdicts) control[verdict.decision] += 1;
     }
     if (base === null || shipped === null || veto === null) continue;
     if (!replayAgrees(row, shipped)) disagreements += 1;
@@ -291,6 +305,7 @@ export function readVeto(
       veto: { top1: tally.veto, gains: gains.veto, losses: losses.veto },
     },
     decisions,
+    control,
     ceiling: {
       atSecond: reach.unqualified + reach.reachable,
       reachable: reach.reachable,

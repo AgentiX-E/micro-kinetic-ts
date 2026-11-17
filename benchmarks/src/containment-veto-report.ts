@@ -108,6 +108,10 @@ export function formatVetoReading(
     armLine('shipped', reading.arms.shipped),
     armLine('veto', reading.arms.veto),
     `  decisions ${REASONS.map((reason) => `${reason}=${reading.decisions[reason]}`).join(' ')}`,
+    // The control's own census, printed first for the reason H7 prints `opened` beside `decisions`: a census with
+    // nothing to compare it against is the state this axis was in for four iterations, and §301's `242` is what it
+    // cost — a number about the shipped walk that no artifact could confirm or refuse.
+    `  control   ${REASONS.map((reason) => `${reason}=${reading.control[reason]}`).join(' ')}`,
     `  ceiling at-second=${reading.ceiling.atSecond} reachable=${reading.ceiling.reachable} unreachable=${reading.ceiling.unreachable} shipped=${reading.ceiling.shipped} veto=${reading.ceiling.veto}`,
     `  criterion: gains>=${criterion.gains} losses<=${criterion.losses} top1>${criterion.shippedTop1}`,
   ];

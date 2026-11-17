@@ -1532,3 +1532,86 @@ on this axis is read against the number of cases it is spending rather than agai
   positive coupling is enough. §297 showed the statistic is bounded by its marginals; nothing here addresses that.
 - **The margin is still `0`.** The two excursions are on one axis and the comparison is exact at zero, but neither
   side carries an error bar.
+
+### 19.6 The first reading measured a conjunction, and the census said so before any diagnosis did
+
+Run `44101598335` returned:
+
+```
+  arm=shipped   top1=1156 +15/-0
+  arm=veto      top1=1150 +9/-0
+  decisions inverted=99 record-silent=11 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=20
+```
+
+The arm came out **below the arm it was built to improve**, which is a result and not a bug in itself. The census
+is what made it diagnosable in one line: a case-scoped walk is a **relaxation** of the edge-scoped one — it can
+invert every pair the shipped walk inverts and some besides — and it inverted **99** where the shipped walk
+inverts **242**. A relaxation cannot be stricter, so the walk was not the walk.
+
+It was not. `inspectContainmentOrder` consulted `prior` after the record check, so a pair the record **licensed**
+was then asked whether its two ends co-move. That is the correlation statistic sitting on top of the causal one —
+precisely the conjunction §299 refused when it priced the residual as a *replacement*, reintroduced in a narrower
+scope where it looked like diligence. The condition is now `prior !== undefined && !licensed`.
+
+Two failures of the test suite let it through, and both are worth recording because they are the same failure:
+
+- `containment-order.test.ts` asserted the conjunction **as an invariant** — "a requirement beside the interface
+  record, not an alternative to it" — for a configuration no arm had ever run. A test can be green and be a
+  specification of the defect.
+- `containment-replay.test.ts` compared the veto arm with the shipped one under a prior that **admitted** the
+  edge. An admitting prior cannot expose a conjunction: both branches agree. An empty one can, and that is what it
+  now uses.
+
+The corrected reading is §302 of the register. What the same artifact established independently of the defect is
+§19.4's bound, and it is the more important half: `at-second=43 reachable=21 unreachable=22 shipped=15`.
+
+### 19.7 The corrected reading (run `44113097089`), and the axis closing at 15 of 21
+
+```
+  rows=1422 replayable=1422 scored=1422 disagreements=0 record-free=200
+  arm=fusion    top1=1141
+  arm=shipped   top1=1156 +15/-0
+  arm=veto      top1=1156 +15/-0
+  decisions inverted=117 record-silent=11 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=2
+  ceiling at-second=43 reachable=21 unreachable=22 shipped=15 veto=15
+  H8-veto: FAIL — Top@1 1156 does not exceed the shipped 1156
+```
+
+With the conjunction removed the arm is a relaxation again, and it behaves like one: **it never loses a case the
+shipped walk gets right**, and it ends at exactly the shipped number. Eleven pairs were inverted on silence, and
+**not one of them changed a published head.**
+
+The census says why, and the answer is not about the record at all. Of the pairs inside the 200 record-free cases,
+**238 of 263 were already refused by the measurement** (`not-larger`), 12 by `unmeasured`, 2 by an unfitted prior,
+and 11 qualified. Where the record is silent, the excursion rule has usually already spoken: in a case with no
+failed call anywhere, the candidate at the top of the order is normally further outside its own band than the
+callee below it. The silence was never the constraint. **The measurement was.**
+
+So the axis closes on a number rather than a verdict:
+
+| population | cases |
+| --- | ---: |
+| fusion misses (1 422 − 1 141) | 281 |
+| … with the accepted answer at position 1 of the recorded order | 43 |
+| … whose pair the rule can physically qualify | **21** |
+| … the shipped pass converts | **15** |
+| … any other arm on this axis converts | **0** (the veto's 6 candidates are refused because the case's record exists and does not include the edge) |
+
+Twenty-one is the ceiling of every arm on this axis, shipped or not, and it is a property of the sweep's geometry
+rather than of any statistic. The shipped pass already converts **71 %** of it. The remaining six are exactly the
+territory §299 priced: cases whose record exists, does not include the edge, and whose residual would admit a
+promotion — the population that produced three losses for eighteen gains and was refused. There is nothing left
+here that a rule can reach.
+
+### 19.8 The instrument defect this exposed
+
+`inverted=117` is the veto walk's own census. **The shipped walk's census was never printed** — the H2 arm printed
+the gate's, H7 the surprise's, H8 the veto's, and the control every one of them is read against had no line. §301
+quoted `242` for it, and that number was a *derivation* (the gate's 198 plus the 44 pairs the residual stopped)
+rather than a reading, valid only if the two walks shared a cascade — which they do not, because inverting one pair
+changes every adjacency below it. A control with no census of its own is the reason a claim about it could not be
+checked.
+
+That line exists now: the reading above is from the window before it, and the report prints a `control` row beside
+`decisions` from the next dispatch onward. Every transcript in this document before §19.7 is missing it, and that
+is a statement about when the instrument was built rather than about the walks.

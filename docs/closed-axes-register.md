@@ -5700,3 +5700,133 @@ and wrong about the size.
   fixed at the shipped one; whether the surprise map and the residual interact is a third arm nobody has walked.
 - **`not-larger` at 59 against 561 is a ratio, not a mechanism.** The next question is which channels produce those
   130 pairs, and this artifact does not carry the per-channel contributions — it carries the maximum only.
+
+## §302 — The record read at case scope: the silence was never the constraint, and the axis closes at 15 of 21
+
+Iteration 300 split one absence into two statements. Pre-registered in `docs-repository:preregistration-300.md`
+before the corpus was read. The artifact is run `44113097089`, study job, `containment-veto.txt`; the first attempt
+(`44101598335`) measured a conjunction and is recorded in §302.1 rather than discarded.
+
+### 302.1 The first reading was not a reading of the arm
+
+```
+  arm=shipped   top1=1156 +15/-0
+  arm=veto      top1=1150 +9/-0
+  decisions inverted=99 record-silent=11 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=20
+```
+
+A case-scoped walk is a **relaxation** of the edge-scoped one: every pair the shipped walk inverts, it inverts too.
+An arm that is a relaxation came out six cases **below** the arm it relaxes, with zero losses against the fusion —
+which is arithmetically possible and mechanistically impossible. The census said which: `prior-absent=20` on pairs
+the record had already licensed.
+
+`inspectContainmentOrder` consulted `prior` after the record check, so a licensed pair was also asked whether its
+two ends co-move — §299's conjunction, reintroduced in a narrower scope where it read as diligence. The condition
+is `!licensed` now.
+
+That `inverted=99` was **not** evidence of the defect is worth stating: the shipped walk's own inversion count is
+never printed anywhere (§19.8), so there was no control to compare it against, and the comparison this entry first
+wanted to make was against a *derived* 242 that assumed a shared cascade. The evidence that carried was the
+relaxation argument and `prior-absent`, and both were on the artifact.
+
+### 302.2 The corrected reading
+
+```
+  rows=1422 replayable=1422 scored=1422 disagreements=0 record-free=200
+  arm=fusion    top1=1141
+  arm=shipped   top1=1156 +15/-0
+  arm=veto      top1=1156 +15/-0
+  decisions inverted=117 record-silent=11 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=2
+  ceiling at-second=43 reachable=21 unreachable=22 shipped=15 veto=15
+  H8-veto: FAIL — Top@1 1156 does not exceed the shipped 1156
+```
+
+`unmeasurable` is not printed by this arm because its chain is the dump's own: 1 422 of 1 422 rows carry it, and
+`disagreements=0` says the shipped replay reproduces the recorded top-1 on every one. The control is a control.
+
+Eleven pairs were inverted on silence and **no published head moved**. The arm is exactly the shipped arm.
+
+### 302.3 Why — and it is not about the record
+
+Of the 263 adjacent pairs inside the 200 record-free cases, **238 (90 %) were refused by the measurement before the
+residual was ever consulted**: the candidate above is further outside its own band than the callee below it. Twelve
+were unmeasured, two sat on an unfitted edge, eleven qualified.
+
+So the silence was never the constraint on this corpus. The excursion rule had already spoken in nine of every ten
+pairs the record was silent about, and the one in ten it could not speak about was deep enough in the order that
+inverting it changed no answer.
+
+### 302.4 The ceiling, and why this axis is finished
+
+| population | cases |
+| --- | ---: |
+| fusion misses (1 422 − 1 141) | 281 |
+| accepted answer at position 1 of the recorded order | 43 |
+| … pair physically qualifiable by the rule | **21** |
+| … converted by the shipped pass | **15** |
+| … converted by the case-scoped pass | **15** |
+
+The first two rows are a theorem, not a count: the sweep visits adjacent positions from the top and never revisits
+one, so a candidate ascends **exactly one place** and only the pair at positions 0 and 1 can change the published
+head. Six of the 281 misses are therefore reachable by *any* arm on this axis beyond the shipped one, and all six
+are the territory §299 priced — record exists, edge absent, residual would admit — the population that produced
+three losses for eighteen gains.
+
+**The axis is closed at 15 of 21.** Five rule arms have now been measured against it (the interface record §12, the
+residual as a requirement §299, as a term §300, the channel set §301, the record's scope §302) and the first one
+was already within six cases of the physical bound.
+
+### 302.5 The pre-registered predictions, audited
+
+| # | written before the run | measured | verdict |
+| --- | --- | --- | --- |
+| 1 | `record-free` ∈ [150, 500] | **200** | ✅ |
+| 2 | losses = 0 | **0** | ✅ — but it was never at risk: the buggy run had 0 as well, because the conjunction could only *remove* inversions |
+| 3 | gains ∈ [20, 32] | **15** | ❌ — the arm adds nothing at all, which is the finding rather than the miss |
+| 4 | `record-silent` ∈ [100, 400] | **11** | ❌ — by a factor of nine. The pre-registration's own hedge ("below 20 means the silent cases are mostly `not-larger`") named the cause without betting on it |
+| 5 | `at-second` ≈ 36, `reachable` ∈ [24, 36] | **43**, **21** | ❌ — the 36 was read off the depth report's `@2 − @1`, which counts depth in the engine's order; this counts position 1 of the CHAIN's order, and the flow pass and the candidate pool separate them |
+
+Prediction 2's falsifier did not fire, so the axis does not close for the reason the pre-registration gave. It
+closes on §302.4's bound instead, which is stronger: it does not depend on any arm being wrong.
+
+### 302.6 What the arm's own machinery found on the way
+
+- **A conjunction can hide behind a passing test.** `containment-order.test.ts` asserted "a requirement beside the
+  interface record, not an alternative to it" as an **invariant**, for a configuration no arm had run. A green test
+  can be a specification of the defect, and the only thing that catches it is an arm that runs the configuration.
+- **A comparison needs the branch that cannot hide the bug.** `containment-replay.test.ts` compared the two walks
+  under a prior that ADMITTED the edge; an admitting prior makes both branches agree. It uses an empty one now.
+- **The control is the one arm with no census.** H2 printed the gate's, H7 the surprise's, H8 the veto's, and the
+  shipped walk printed nothing. That is why §301's `242` could be quoted and was wrong. The report now prints a
+  `control` row beside `decisions` — the reading above predates it, so the next dispatch is the first whose control
+  census can be diffed against its arm's.
+- **A relaxation has a checkable signature.** "Never loses a case the weaker rule gets right" is one line, and it
+  would have fired on the first reading without knowing anything about why.
+
+### 302.7 The two SOTA cells that were stale in our own disfavour
+
+`createSotaLeaderboard` recorded `0.774` and `0.824` for the two cells every other entry is positioned against,
+while `docs/sota-comparison.md` §0 has recorded `666/735` and `84/90` since the last re-anchor — twelve points low,
+on the two numbers that decide the headline. They are written as the fractions now, and `standing-anchor.test.ts`
+holds **the table** to the same anchor block it already held the document to. The join was missing, and its absence
+is the whole reason a code cell could drift while every document fence stayed green.
+
+The leaderboard also gained the four competitors it had not recorded: a general agent at **66.7 %** on the same 90
+Online-Boutique cases the agent arm is read on (`arXiv:2608.25661`), the harness that beat it on the 270-case slice
+(**59.0 %** averaged over four backbones), TD-RCA (**93.9 %** HR@1 on TrainTicket, `10.1109/IWQoS70441.2026.11661074`)
+and eIRWR (**MRR 0.75** on 12k–25k Alibaba nodes, `arXiv:2608.08073`). The first of those is a correction rather
+than an addition: `56.67 %` was the highest figure this table held for that cohort and it is not the highest
+published one.
+
+### 302.8 Axes this closes
+
+- **"The record's silence is what stops the pass."** It stops eleven pairs out of 263 and not one answer; the
+  measurement refuses nine in ten of them first.
+- **"A scope change is cheaper than a statistic change, so it should be tried first."** It is cheaper and it is
+  worth zero, because scope cannot reach a pair the measurement has already refused.
+- **"An arm that is a relaxation can still lose."** It cannot. The first reading violated an invariant that was
+  available for free.
+- **"An invariant asserted in a test is an invariant of the system."** Only if some arm runs the configuration the
+  test describes. This one did not for four iterations.
+- **"The table and the document are regenerated from one another."** They were not joined in either direction
+  that matters: the document was fenced and the code was not.

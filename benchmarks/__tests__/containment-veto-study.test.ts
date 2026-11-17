@@ -168,6 +168,52 @@ describe('readVeto', () => {
     );
   });
 
+  it('counts the CONTROL\u2019s census too, which the three arms before this one never printed', () => {
+    // A control with no census is a control a claim about it cannot be checked against, and that is exactly what
+    // §301's `242` for the shipped walk was: a derivation, not a reading. Both walks must report, on the same
+    // artifact, so that the next comparison is between two printed numbers.
+    const reading = readVeto(
+      [rowOf({ datapack: 'free' }), rowOf({ datapack: 'free-2' })],
+      accepted(['free', ['b']], ['free-2', ['b']]),
+    );
+    expect(reading.control['no-failed-interface']).toBe(2);
+    expect(reading.control['record-silent']).toBe(0);
+    // The veto walk's own count of the same reason is zero here — the record is silent, so the pair is not refused
+    // for it — which is the difference the two lines exist to show.
+    expect(reading.decisions['no-failed-interface']).toBe(0);
+  });
+
+  it('prices the shipped arm too, so the two \u00b1 are read on the same scale', () => {
+    // A record that licenses the inversion, and the callee as the truth: the fusion head is wrong, the shipped walk
+    // is right. Without a case of this shape the shipped arm's `gains` is never incremented and the ceiling's
+    // `shipped` column is never incremented either, which is how a counter can be 100 % covered and always zero.
+    const reading = readVeto(
+      [
+        rowOf({
+          datapack: 'licensed',
+          failedInterfaces: new Map([[failureEdgeKey('a', 'b'), 4]]),
+        }),
+      ],
+      accepted(['licensed', ['b']]),
+    );
+    expect(reading.arms.shipped.gains).toBe(1);
+    expect(reading.ceiling.reachable).toBe(1);
+    expect(reading.ceiling.shipped).toBe(1);
+    expect(reading.ceiling.veto).toBe(1);
+  });
+
+  it('leaves a fusion miss whose truth is further down out of the bound entirely', () => {
+    // Three candidates, the truth last: no sweep can reach it, and it belongs on neither side of the ceiling. A
+    // reader that folded these into `unreachable` would report the rule's population as larger than it is.
+    const reading = readVeto(
+      [rowOf({ datapack: 'deep', fusionOrder: ['a', 'b', 'c'] })],
+      accepted(['deep', ['c']]),
+    );
+    expect(reading.ceiling.atSecond).toBe(0);
+    expect(reading.ceiling.reachable).toBe(0);
+    expect(reading.ceiling.unreachable).toBe(0);
+  });
+
   it('counts the family\u2019s bound on the population it can act on, and what each arm took of it', () => {
     const corpus = fitCorpus();
     const target = rowOf({ datapack: 'target-free' });

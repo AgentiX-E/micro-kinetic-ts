@@ -485,7 +485,7 @@ jobs:
             echo '### H8 — the interface record kept as a veto and dropped as a licence'
             echo ''
             echo '```'
-            grep -E '^  (rows=|prior |arm=|decisions |ceiling |criterion:|H8-veto:)' \
+            grep -E '^  (rows=|prior |arm=|decisions |control |ceiling |criterion:|H8-veto:)' \
               artifacts/agentic/containment-veto.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
