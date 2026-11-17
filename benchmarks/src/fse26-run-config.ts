@@ -111,6 +111,7 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     faultFreeWeight: opts.faultFreeWeight,
     faultFreeSelection: opts.faultFreeSelection,
     selfTimeWeight: opts.selfTimeWeight,
+    selfTimeScope: opts.selfTimeScope,
     victimWeight: opts.victimWeight,
     dualFamilyWeight: opts.dualFamilyWeight,
     podStateWeight: opts.podStateWeight,

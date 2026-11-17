@@ -77,6 +77,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -91,6 +92,8 @@ import {
   isFailedEdgeMutualRule,
   isFailedEdgeOverrideRule,
   isOnsetShape,
+  isSelfTimeScope,
+  SELF_TIME_SCOPES,
   type DualFamilyGateMode,
   type FailedEdgeCredit,
   type FailedEdgeGateMode,
@@ -106,6 +109,7 @@ import type {
   LogSignalMode,
   PoolAdmission,
   PrismPooling,
+  SelfTimeScope,
   TopoClosure,
   TopoPrecedence,
 } from '../../packages/tree/src/index.js';
@@ -132,7 +136,6 @@ import {
   DEFAULT_TOPO_PRECEDENCE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRANSIENT_GUARD_TEST,
-  TRANSIENT_GUARD_TESTS,
   isBaselineAnchor,
   isDropDeviationMode,
   isLogNormalisation,
@@ -142,6 +145,7 @@ import {
   isTopoClosure,
   isTopoPrecedence,
   isTransientGuardTest,
+  TRANSIENT_GUARD_TESTS,
   type TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 
@@ -360,6 +364,16 @@ export interface CliOptions {
    * outranking the truth's `cpu` (14.35×) because a caller's response time contains its callees'.
    */
   selfTimeWeight: number;
+  /**
+   * The scale that weight reads: `absolute` (the share itself) or `fleet` (the share minus the median of the
+   * node's own out-degree class).
+   *
+   * A pair with the weight, and the golden half is where the pair was DECIDED: `docs/self-time-share.md` §6
+   * refused the absolute arm at 0.1 and 0.3 because TrainTicket collapsed 98 → 47 / 42 — the share pays a leaf
+   * its whole rise and therefore penalises hubs. A dispatch that stated only the weight would be stating an arm
+   * whose meaning this runner had already refused.
+   */
+  selfTimeScope: SelfTimeScope;
   /**
    * Weight on the EMISSION term — the collision source's own `Δλ`, in errors per request (see
    * `TreePrunerOptions.emissionWeight`).
@@ -871,6 +885,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     faultFreeProfilePath: undefined,
     faultFreeSelection: 'rarest',
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
     emissionWeight: DEFAULT_EMISSION_WEIGHT,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
@@ -1014,7 +1029,17 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.faultFreeSelection = value;
     } else if (args[i] === '--self-time-weight' && hasValue(args, i + 1))
       opts.selfTimeWeight = parseWeight(args[++i]!, DEFAULT_SELF_TIME_WEIGHT);
-    else if (args[i] === '--emission-weight' && hasValue(args, i + 1))
+    else if (args[i] === '--self-time-scope' && hasValue(args, i + 1)) {
+      // Refused rather than defaulted on an unknown word, on the same rule as every other mode this parser
+      // reads: the scope decides what the weight MULTIPLIES, so a typo that fell back would publish the refused
+      // arm under the repair's name.
+      const value = args[++i]!;
+      if (!isSelfTimeScope(value))
+        throw new Error(
+          `--self-time-scope must be one of ${Object.keys(SELF_TIME_SCOPES).join(', ')}, got ${value}`,
+        );
+      opts.selfTimeScope = value;
+    } else if (args[i] === '--emission-weight' && hasValue(args, i + 1))
       opts.emissionWeight = parseWeight(args[++i]!, DEFAULT_EMISSION_WEIGHT);
     else if (args[i] === '--self-anomaly-weight' && hasValue(args, i + 1))
       opts.selfAnomalyWeight = parseWeight(args[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);

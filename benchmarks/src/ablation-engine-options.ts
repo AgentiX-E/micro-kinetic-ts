@@ -43,6 +43,7 @@ import type {
   LogSignalMode,
   OnsetShape,
   PrismPooling,
+  SelfTimeScope,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
@@ -67,6 +68,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -180,6 +182,14 @@ export interface AblationSignalOptions {
    * a reader has to guess, and 0 is a fact rather than an omission.
    */
   readonly selfTimeWeight: number;
+  /**
+   * The scale that weight reads, held at the shipped `absolute` by every row.
+   *
+   * Named on the same rule as `failedEdgeGateMode` below: the absolute share is what every published number was
+   * taken with, and a field omitted at its default would render an arm and the control identically. No row varies
+   * it — the battery's subject is Deng Yu's terms and this is a precondition on one of them.
+   */
+  readonly selfTimeScope: SelfTimeScope;
   /**
    * The internal/external symmetry mask. Held at the shipped value by every row, on the rule the six
    * inherited terms above follow: the study's flags are binary and this term's shipped weight is 0, so no
@@ -814,6 +824,7 @@ export function buildAblationEngineOptions(
         overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
+      selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
       selfAnomalyWeight: overrides.selfAnomalyWeight ?? DEFAULT_SELF_ANOMALY_WEIGHT,
       emissionWeight: overrides.emissionWeight ?? DEFAULT_EMISSION_WEIGHT,
@@ -873,6 +884,7 @@ export function formatAblationConfigLine(
     // row and the shipped configuration identically — and the two artifacts are read against each other.
     `failedEdgeGateMode=${signals.failedEdgeGateMode} failedEdgeGateShare=${signals.failedEdgeGateShare} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
+    `selfTimeScope=${signals.selfTimeScope} ` +
     `selfAnomalyWeight=${signals.selfAnomalyWeight} emissionWeight=${signals.emissionWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
     `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +

@@ -31,6 +31,7 @@ import type {
   OnsetShape,
   PoolAdmission,
   PrismPooling,
+  SelfTimeScope,
   TopoClosure,
   TopoDiscountScope,
   TopologyFaultGraphConfig,
@@ -111,6 +112,11 @@ export interface Fse26SignalOptions {
    * shipped value is 0, which is exactly the value a silent no-op produces.
    */
   readonly selfTimeWeight: number;
+  /**
+   * Which scale the self-time weight reads. Required for the same reason as the weight itself: the pair is the
+   * configuration, and a scope the artifact cannot state is a run whose weight means one of two things.
+   */
+  readonly selfTimeScope: SelfTimeScope;
   /** Weight on the internal/external symmetry mask. Required for the same reason as the pool penalty. */
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus. Required for the same reason as the pool penalty. */
@@ -272,6 +278,7 @@ export function buildFse26EngineOptions(
       // six places (measured, not predicted: that is exactly what assigning it unconditionally did).
       ...(profile === undefined ? {} : { faultFreeProfile: profile }),
       selfTimeWeight: opts.selfTimeWeight,
+      selfTimeScope: opts.selfTimeScope,
       victimWeight: opts.victimWeight,
       selfAnomalyWeight: opts.selfAnomalyWeight,
       dualFamilyWeight: opts.dualFamilyWeight,

@@ -48,6 +48,7 @@ import type {
   OnsetShape,
   PoolAdmission,
   PrismPooling,
+  SelfTimeScope,
   TopoClosure,
   TopoDiscountScope,
   TopoPrecedence,
@@ -99,6 +100,14 @@ export interface RCAEvalSignalOptions {
    * prevent, one term over. It ships at the engine's 0 until a measurement enrols it.
    */
   readonly selfTimeWeight: number;
+  /**
+   * The scale that weight reads — `absolute` (every published number) or `fleet` (the degree-conditioned
+   * residual).
+   *
+   * Required for the reason the weight is: the two are ONE configuration, and a runner that inherited the scope
+   * by omission would report a run whose weight multiplies a statistic it never named.
+   */
+  readonly selfTimeScope: SelfTimeScope;
   /**
    * The emission term — the collision source's own `Δλ`, in errors per request.
    *
@@ -322,6 +331,7 @@ export function buildRCAEvalEngineOptions(
       ...(profile === undefined ? {} : { faultFreeProfile: profile }),
       selfAnomalyWeight: opts.selfAnomalyWeight,
       selfTimeWeight: opts.selfTimeWeight,
+      selfTimeScope: opts.selfTimeScope,
       emissionWeight: opts.emissionWeight,
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
@@ -444,7 +454,11 @@ export function formatSignalLine(opts: CliOptions): string {
     `anomalyBreadthWeight=${opts.anomalyBreadthWeight} anomalyBreadthGate=${opts.anomalyBreadthGate} ` +
     // The self-time term, named unconditionally for the failed-edge reason: it ships at 0, so an
     // omitted-when-default rule would render the measured arm and the shipped run identically.
-    `selfTimeWeight=${opts.selfTimeWeight} ` +
+    // Unconditional, unlike the FSE'26 twin's: this half's census test requires every REPORTED field to be
+    // named on the line, and the scope is reported. On a half that prints the weight, printing it without the
+    // scale it multiplies is the one omission the artifact cannot survive — `docs/self-time-share.md` §6 refused
+    // the `absolute` arm and this is the field that names its replacement.
+    `selfTimeWeight=${opts.selfTimeWeight} selfTimeScope=${opts.selfTimeScope} ` +
     `victimWeight=${opts.victimWeight} ` +
     `dualFamilyWeight=${opts.dualFamilyWeight} ` +
     // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the

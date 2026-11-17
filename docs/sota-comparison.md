@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 617935621cbc -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 706a4e8e7c01 -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -454,6 +454,33 @@ the profile map (`pruner.ts`: the map is `undefined`, not an empty one), so ever
 nine cells must be unmoved: `RE1 345/375`, `RE2 249/270`, `RE3 72/90`, `TOTAL 666/735`. The battery that
 confirms it is named in the paragraph below once it has run; a block that moved would mean the term reads
 something at zero.
+
+### 0p-vi. The seventh correction — one field, no behaviour, and a REFUSAL that has to be nameable
+
+The digest moved again, `617935621cbc → 706a4e8e7c01`, and again **nothing the ranking does has changed**. The
+self-time term gained a SCOPE: `selfTimeScope: 'absolute' | 'fleet'`, where `absolute` is the arm every published
+number was taken with and `fleet` is the repair `docs/self-time-share.md` §6 asked for in its own refusal — the
+same share read against the node's own out-degree class instead of against the absolute `[0, 1]` scale. The
+reported line gained the field that names it, beside the weight it belongs to: `selfTimeWeight=0
+selfTimeScope=absolute`.
+
+**Why the field is printed rather than omitted at its default.** One number can mean two statistics now. An
+artifact carrying `selfTimeWeight=0.1` alone cannot say whether that weight multiplied the share §6 refused
+(TrainTicket `98 → 47`) or the residual built in its place, and the two are the difference between a refusal and
+its repair. That is the same argument §0p-v made for the fault-free pair, and it is the reason the omission rule
+("print the non-shipped pole") does not apply here: the field is not a value, it is which of two mechanisms the
+run executed.
+
+**The prediction, stated before the run rather than after it.** At `selfTimeWeight = 0` the engine does not build
+the share map at all (`pruner.ts`: `selfTimeShares` is `undefined`), so the scope is never read and every score is
+bit-identical: `RE1 345/375`, `RE2 249/270`, `RE3 72/90`, `TOTAL 666/735`, cell for cell. The push-triggered
+RCAEval battery on this commit is what confirms it, and it is named here once it has run — a moved cell would mean
+the scope reads something at weight zero, which is the only way this field could be more than a name.
+
+**What did NOT move, and why.** The marker's `battery` and `revision` are unchanged. They answer "which run
+measured these nine cells", and that reading is the same one; the `config` field answers "what string does this
+code render for the shipped configuration", and that is the thing this iteration changed. Rolling all four would
+claim a battery that does not exist.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 

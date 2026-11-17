@@ -32,6 +32,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -76,6 +77,10 @@ describe('buildFse26EngineOptions', () => {
       // a reader of this object.
       faultFreeProfile: undefined,
       selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+      // The scale that weight reads. It must land in `signals` for the reason every field here must: a scope
+      // forwarded into `topology` would be read by no pruner field at all, and at weight 0 it is inert, so the
+      // drop would be invisible in every number.
+      selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
       victimWeight: DEFAULT_VICTIM_WEIGHT,
       // The base term's coefficient, on the same rule as every weight here: read from the engine's own
       // constant, and it must land in `signals` because that is the object the pruner reads it from.

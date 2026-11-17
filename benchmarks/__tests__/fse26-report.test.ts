@@ -73,6 +73,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     faultFreeWeight: 0,
     faultFreeSelection: 'rarest',
     selfTimeWeight: 0,
+    // The pair travels together: the weight alone could belong to either arm.
+    selfTimeScope: 'absolute',
     victimWeight: 0,
     dualFamilyWeight: 0,
     // The pod-state term, at its shipped 0: this fixture stays the published configuration. Present so
@@ -192,6 +194,7 @@ describe('FSE26 report — attribution', () => {
       'faultFreeWeight',
       'faultFreeSelection',
       'selfTimeWeight',
+      'selfTimeScope',
       'victimWeight',
       'dualFamilyWeight',
       'podStateWeight',

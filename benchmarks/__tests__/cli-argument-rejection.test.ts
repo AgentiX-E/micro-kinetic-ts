@@ -164,6 +164,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // Iteration 214: the transient guard's STATISTIC. A word union of two like the two above, and the probe's
   // job is to prove the option MOVES — `level-window` is the arm, i.e. the value the flag exists to name.
   '--transient-guard-test': 'level-window',
+  // Iteration 301: which SCALE the self-time weight reads. A word union of two, so `1` is refused and the probe
+  // would be testing the refusal rather than the arity — and `fleet` is the arm this flag exists to name, since
+  // `absolute` is both the shipped default and the arm `docs/self-time-share.md` §6 already refused.
+  '--self-time-scope': 'fleet',
   // Iteration 265: which of a candidate's channels the fault-free prior reads. A word union of two, so `1` is
   // refused; `dominant` is the arm this flag exists to be able to name, since `rarest` is the shipped default.
   '--fault-free-selection': 'dominant',

@@ -566,7 +566,13 @@ describe('the RCAEval configuration line carries the configuration that produced
         'anomalyBreadthGate=0.8 ' +
         // The self-time term, named unconditionally for the same reason: it ships at 0, so a line that
         // printed only non-defaults would render a measured arm and the shipped run identically.
-        'selfTimeWeight=0 victimWeight=0 dualFamilyWeight=0.25 dualFamilyGate=0.25 ' +
+        //
+        // Iteration 301 appended its SCOPE beside the weight: one number can mean the absolute share
+        // `docs/self-time-share.md` §6 refused or the fleet residual built in its place, so a line carrying only
+        // the weight could belong to either arm — and the arm is the whole difference between a refusal and its
+        // repair. Unconditional, like every other field on this half.
+        'selfTimeWeight=0 selfTimeScope=absolute victimWeight=0 dualFamilyWeight=0.25 ' +
+        'dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
         // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional

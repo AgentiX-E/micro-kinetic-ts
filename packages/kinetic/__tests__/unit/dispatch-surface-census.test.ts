@@ -321,6 +321,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // input of its own on the golden half — and a term measurable on one half only has an undecidable
     // other half, which is what `topo_discount`'s retirement record is about.
     '--self-time-weight',
+    // Iteration 301: the SCALE that weight reads, packed beside it because the two are one configuration — a
+    // weight without its scope is a number that means two different statistics.
+    '--self-time-scope',
     // Iteration 138: a GUARD rather than a weight, and it travels in the packed block for the same reason —
     // the golden half has no input of its own to spend (25/25 used).
     '--suppress-zero-baseline-latency',
@@ -408,6 +411,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-breadth-weight',
     '--anomaly-breadth-gate',
     '--self-time-weight',
+    // Iteration 301: the scale beside the weight, on the rule every entry here follows — a knob the golden half
+    // cannot dispatch is an arm with an undecidable other side.
+    '--self-time-scope',
     '--suppress-zero-baseline-latency',
     '--cap-trend-bonus-at-deviation',
     '--trace-skips-leader',
@@ -729,6 +735,16 @@ const KNOBS: Readonly<
     // BOTH halves through a PACKED block, and each spells the key its own block's style: the FSE'26 parser
     // is a `name=value` map (`self_time_weight`), the RCAEval one a short-key map (`selftime`, beside
     // `trend`/`burst`/`cv`/`breadth`/`gate`) because its input budget is full.
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  selfTimeScope: {
+    flag: '--self-time-scope',
+    owner: 'self-time-share.md',
+    // The same two packed blocks as the weight it belongs to, and for the same reason: the pair has to be
+    // dispatchable on BOTH halves or the arm has an undecidable side. `docs/self-time-share.md` §6 refused the
+    // `absolute` share on the golden half; a scope the FSE'26 half alone could state would leave that refusal
+    // untestable where it was made.
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -1107,6 +1123,10 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'capTrendBonusAtDeviation',
   'selfAnomalyWeight',
   'selfTimeWeight',
+  // Iteration 301: the SCALE that weight reads. It joins the intersection for the criterion's reason, and the
+  // refusal is what makes it load-bearing here: `docs/self-time-share.md` §6 refused `absolute` on the golden
+  // half, so an axis the FSE'26 half alone could state would leave the repair's deciding half unreachable.
+  'selfTimeScope',
   'stabilityWeight',
   'victimWeight',
   'dualFamilyWeight',

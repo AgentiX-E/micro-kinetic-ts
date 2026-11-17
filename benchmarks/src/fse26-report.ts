@@ -34,6 +34,7 @@ import type {
   OnsetShape,
   PoolAdmission,
   PrismPooling,
+  SelfTimeScope,
   TopoClosure,
   TopoDiscountScope,
   TransientGuardTest,
@@ -45,6 +46,7 @@ import {
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_POOL_ADMISSION,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
 } from '../../packages/tree/src/index.js';
@@ -173,6 +175,12 @@ export interface FSE26RunConfig {
    * measured arm and the shipped run byte-identically.
    */
   readonly selfTimeWeight: number;
+  /**
+   * Which scale that weight reads. Printed beside the weight because the two are ONE configuration: the same
+   * number means the refused absolute share under `absolute` and the fleet residual under `fleet`, so a line
+   * carrying only the weight could belong to either arm.
+   */
+  readonly selfTimeScope: SelfTimeScope;
   /** Weight on the internal/external symmetry mask; `0` = the shipped configuration. */
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus; `0` = the shipped configuration. */
@@ -452,6 +460,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'faultFreeWeight',
   'faultFreeSelection',
   'selfTimeWeight',
+  'selfTimeScope',
   'victimWeight',
   'dualFamilyWeight',
   'podStateWeight',
@@ -686,6 +695,15 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // above, and the reason this line's rule is "print the non-shipped value" rather than "print what is true".
   if (!config.suppressDemandMetrics) {
     line += ' suppressDemandMetrics=false';
+  }
+  // APPENDED at the very end, and printed only when it is NOT the shipped pole, because the scope is a PAIR with
+  // `selfTimeWeight` and the weight's own field is unconditional. `absolute` is the arm every published line already
+  // carries, so printing it unconditionally would make every artifact on record disagree with the code that
+  // produced it — a cost with no reader's benefit, since the field is still reachable on the artifact the moment a
+  // dispatch states `fleet`. `docs/self-time-share.md` §6 refused the absolute arm; a `fleet` line is the only
+  // thing that can distinguish that arm from the repair built on top of it.
+  if (config.selfTimeScope !== DEFAULT_SELF_TIME_SCOPE) {
+    line += ` selfTimeScope=${config.selfTimeScope}`;
   }
   return line;
 }

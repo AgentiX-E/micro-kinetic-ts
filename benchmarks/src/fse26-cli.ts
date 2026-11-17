@@ -41,6 +41,7 @@ import type {
   LogNormalisation,
   LogSignalMode,
   PoolAdmission,
+  SelfTimeScope,
   TopoClosure,
   TopoDiscountScope,
   TransientGuardTest,
@@ -83,6 +84,7 @@ import {
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
@@ -111,9 +113,11 @@ import {
   isOnsetShape,
   isPoolAdmission,
   isPrismPooling,
+  isSelfTimeScope,
   isTopoClosure,
   isTopoDiscountScope,
   isTransientGuardTest,
+  SELF_TIME_SCOPES,
   TRANSIENT_GUARD_TESTS,
   type DualFamilyGateMode,
   type FailedEdgeGateMode,
@@ -433,6 +437,15 @@ export interface Fse26CliOptions {
    * as the golden half; until it is measured the weight stays 0 and the map is not even built.
    */
   readonly selfTimeWeight: number;
+  /**
+   * Which scale that weight reads: `absolute` (the share itself, the arm `docs/self-time-share.md` §6
+   * refused) or `fleet` (the same share minus the median of the node's own OUT-DEGREE class).
+   *
+   * Exposed on this half for the reason every other scope is: a mechanism measurable on one half only has
+   * an undecidable other half. It is a pair with the weight rather than a second weight, and it is inert at
+   * weight 0, so the shipped configuration is unchanged by construction.
+   */
+  readonly selfTimeScope: SelfTimeScope;
   /**
    * Weight on the internal/external SYMMETRY MASK. Exposed on this half for the reason every term is: a
    * mechanism measurable on one half only has an undecidable other half. The shipped value is the engine's
@@ -817,6 +830,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     faultFreeProfilePath: undefined as string | undefined,
     faultFreeSelection: 'rarest' as FaultFreeSelection,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
     victimWeight: DEFAULT_VICTIM_WEIGHT,
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
@@ -994,6 +1008,16 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
       // selecting the ablation — the rule every weight on this parser follows.
       opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    } else if (arg === '--self-time-scope' && hasValue(argv, i + 1)) {
+      // Refused rather than defaulted on an unknown word: the scope decides what the weight MULTIPLIES, so a
+      // typo that fell back to `absolute` would publish the refused arm under the repair's name.
+      const value = argv[++i]!;
+      if (!isSelfTimeScope(value)) {
+        throw new Error(
+          `--self-time-scope must be one of ${Object.keys(SELF_TIME_SCOPES).join(', ')}, got ${value}`,
+        );
+      }
+      opts.selfTimeScope = value;
     } else if (arg === '--self-anomaly-weight' && hasValue(argv, i + 1)) {
       opts.selfAnomalyWeight = parseWeight(argv[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);
     } else if (arg === '--victim-weight' && hasValue(argv, i + 1)) {
