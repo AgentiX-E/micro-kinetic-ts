@@ -1134,7 +1134,7 @@ the two fold-a cases, whose granting prior reads p = 0.0012. It also cuts the ad
 
 That is the answer to the objection, and it is not the answer that would have rescued the requirement: **a stricter
 test does not repair a causal blind spot, it only shrinks the population that pays for it.** The arm stays
-pre-registered as `preregistration-297.md` records it — including its predicted failure, and its falsifier, which
+pre-registered as `docs-repository:preregistration-297.md` records it — including its predicted failure, and its falsifier, which
 says an empty admitted set is `UNMEASURED` rather than `fail` — and it is not built as a candidate requirement,
 because §15.9 has already measured the thing it would be asked to fix.
 

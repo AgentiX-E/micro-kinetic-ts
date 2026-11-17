@@ -5487,7 +5487,7 @@ refuses it, the prior fitted on half b reads `p = 1.24 × 10⁻³`, `q = 0.019` 
 
 That is the objection answered, and it is not the answer that would have rescued the requirement. **A stricter
 test does not repair a causal blind spot; it shrinks the population that pays for it.** The arm remains
-pre-registered in the docs repository (`preregistration-297.md`, with its predicted failure and its `UNMEASURED`
+pre-registered in the docs repository as `docs-repository:preregistration-297.md`, with its predicted failure and its `UNMEASURED`
 falsifier) and is not built as a candidate requirement, because the thing it would be asked to fix has already been
 measured.
 

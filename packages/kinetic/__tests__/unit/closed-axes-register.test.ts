@@ -140,9 +140,31 @@ function referencedDocs(): string[] {
   // matched from the first lowercase run of a camelCase name onwards, so `logicHttpJoint-falsified.md` was
   // read as `oint-falsified.md` and reported as a dangling reference the moment a row named it. Every doc
   // name in this repo starts with a letter, so the pattern anchors there and stops at the extension.
-  return [...new Set([...register.matchAll(/([A-Za-z0-9][A-Za-z0-9_-]*\.md)/g)].map((m) => m[1]!))]
+  return documentNamesIn(register)
     .filter((name) => name !== REGISTER_NAME)
     .sort();
+}
+
+/**
+ * The document names in `text` that this checkout is expected to hold in `docs/`.
+ *
+ * A name written `docs-repository:<name>.md` is deliberately NOT one of them. Two of this register's entries
+ * cited a pre-registration that lives in the docs repository by its bare name, and the rule below failed both
+ * times — correctly, since the file is not in this checkout. The mistake is not the citation, which is what a
+ * reader needs; it is that a reference this repo cannot verify was written in the one form the guard treats as
+ * verifiable. So the two kinds of reference are told apart in the TEXT, by the prefix, rather than in whoever
+ * was writing that day.
+ *
+ * @param text - A document's text.
+ * @returns Every bare `*.md` name in it, in order of first appearance and without duplicates.
+ */
+function documentNamesIn(text: string): string[] {
+  const withoutRepositoryRefs = text.replace(/docs-repository:[A-Za-z0-9][A-Za-z0-9_-]*\.md/g, '');
+  return [
+    ...new Set(
+      [...withoutRepositoryRefs.matchAll(/([A-Za-z0-9][A-Za-z0-9_-]*\.md)/g)].map((m) => m[1]!),
+    ),
+  ];
 }
 
 /** The register's table rows, as cells with the leading/trailing pipes removed. */
@@ -175,10 +197,15 @@ describe('closed-axes register', () => {
 
   it('names only documents that exist', () => {
     // A dangling reference sends a reader to a file that is not there, which is
-    // worse than no reference.
+    // worse than no reference. The message is the rule, because the reader of a
+    // failure is the person about to make the same citation again.
     const existing = new Set(readdirSync(DOCS));
     const dangling = referencedDocs().filter((name) => !existing.has(name));
-    expect(dangling).toEqual([]);
+    expect(
+      dangling,
+      'a bare `<name>.md` is a reference this checkout must be able to open; a document living in the docs ' +
+        'repository is cited as `docs-repository:<name>.md`',
+    ).toEqual([]);
   });
 
   it('reads a referenced document name WHOLE, capitals included', () => {
@@ -193,6 +220,20 @@ describe('closed-axes register', () => {
     ]);
     expect(read('see `joint-falsified.md`')).toEqual(['joint-falsified.md']);
     expect(read('see `docs/re3-fault-ceiling.md`')).toEqual(['re3-fault-ceiling.md']);
+  });
+
+  it('verifies the references it can see and tolerates the ones it cannot', () => {
+    // The distinction the two failures needed and did not have: a document in the
+    // docs REPOSITORY is not in this checkout, so citing it is legal and checking it
+    // is impossible — and a bare name is indistinguishable from a broken link, which
+    // is precisely how two entries were refused. The prefix is what carries it.
+    expect(documentNamesIn('see `docs-repository:preregistration-297.md`')).toEqual([]);
+    expect(documentNamesIn('see `containment-order.md`')).toEqual(['containment-order.md']);
+    expect(
+      documentNamesIn(
+        'see `docs-repository:preregistration-297.md` beside `containment-order.md` and `containment-order.md`',
+      ),
+    ).toEqual(['containment-order.md']);
   });
 
   it('registers every verdict as a ROW, not as a passing mention', () => {
