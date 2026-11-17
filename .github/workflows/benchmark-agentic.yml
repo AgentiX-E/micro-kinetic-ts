@@ -78,7 +78,7 @@ on:
         required: false
         default: ''
       containment_order:
-        description: 'The containment pass: a caller may not outrank a callee whose own latency excursion is larger. This is the only workflow that can state it, because the pass needs the fault-free profile and this is the only workflow that BUILDS one -- the benchmark surface refuses `--fault-free-profile` by name so a dispatch cannot name a stale band. Empty = the engine default (off); 1 = on, 0 = off. Measured on the FSE 26 corpus by two dispatches at 1 and 0: 47 gains, 5 losses, 75.457 to 78.411 percent Top@1 -- shipped off because this register refuses a change with regressions (docs/containment-order.md)'
+        description: 'The containment pass: a caller may not outrank a callee whose own latency excursion is larger. This is the only workflow that can state it, because the pass needs the fault-free profile and this is the only workflow that BUILDS one -- the benchmark surface refuses `--fault-free-profile` by name so a dispatch cannot name a stale band. Empty = the engine default, which has been ON since iteration 293 once the failed-interface requirement was in place; 1 = on, 0 = off (the arm §12 refused: 33 gains against 5 losses, where the gated arm reads 15 against 0). Measured on the FSE 26 corpus by two dispatches at 1 and 0 before that requirement: 47 gains, 5 losses, 75.457 to 78.411 percent Top@1 -- see docs/containment-order.md §4 and §12.2'
         required: false
         default: ''
       weight:
