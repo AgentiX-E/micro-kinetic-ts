@@ -5230,3 +5230,75 @@ purchased rather than assumed.
   A declaration is not a state.
 - **"The regression check is free."** It costs a full nine-cell walk, and when two are queued the choice between
   them is a judgement about which one's absence is affordable — recorded here rather than made silently.
+
+## §297 — ρ is bounded by the marginals, so the gate has to be read beside φ
+
+§295 produced the rows H2 needs and stopped there. This entry adds the artifact that carries them out of a run,
+and it records a property of the statistic that was derivable before any corpus was read — which is why it is
+written here rather than discovered after a gate came back low.
+
+### The instrument
+
+`run-fse26.ts --containment-out` writes one line per case: the fusion order's top-1, both arms' top-1, the
+published top-1, a **replay verdict**, and two separate pair traces. Three design points, each of which was a
+defect waiting to happen:
+
+| decision | why |
+| --- | --- |
+| the sweep's input is re-derived by a second pruner with both relational passes OFF | `analyze` applies the containment pass and then the flow pass, so the published ranking is two transformations past the fusion order the sweep actually saw |
+| the two arms are stored as two traces | once one arm inverts a pair the other refused, the scans are looking at different adjacencies; zipping rows by index would attach a decision to a pair it was never taken about |
+| the replay is written, not asserted | `differs` is a statement about the instrument — the rows describe something other than the decision — and a run that threw would delete the evidence |
+
+`--containment-depth` defaults to 5, the depth every number in §4 and §12 was measured at. A depth of 1 is refused
+by name: it carries no adjacent pair, so the artifact would publish an empty population that reads as "the sweep
+examined nothing".
+
+### The ceiling, derived
+
+δa and δb are Bernoulli indicators, so
+
+    ρ = P(δa ∧ δb) − pq  and  P(δa ∧ δb) ≤ min(p, q)
+    ⇒ ρ ≤ min(p, q) − pq = min(p(1−q), q(1−p))
+
+| marginals | perfectly co-moving joint | ρ |
+| --- | --- | ---: |
+| 0.5, 0.5 | 0.5 | 0.25 |
+| 0.9, 0.9 | 0.9 | 0.09 |
+| 1.0, 1.0 | 1.0 | **0** |
+
+An edge whose two ends are out of band in every observation therefore scores **zero** on the pre-registered
+statistic, and an edge that moved together half the time scores the maximum. The estimator's ranking is partly a
+ranking of where the marginals sit.
+
+`φ = ρ / √(p(1−p)q(1−q))` removes the ceiling (it is the Pearson correlation of the two indicators) and is `null`
+at a degenerate marginal. It is printed beside ρ in the same report and on the same population, and **it does not
+decide H2**: a hypothesis is judged by the number it fixed. What it buys is that a separation ρ loses to its own
+scale is visible without a second corpus walk.
+
+The two do not dominate each other, which is why both are printed: on an edge whose two ends never leave their
+bands, ρ reads 0 and φ is undefined, so φ's population is SMALLER on exactly the edges that carry no signal. A
+report that printed only φ would drop those labels rather than score them as failures to discriminate.
+
+### Refusals
+
+- A population below 10 observations yields no residual (`1/√n` at n = 10 is already 0.32; below it the estimate
+  cannot be told from zero).
+- A pair with an unmeasured side contributes nothing — `0` is "inside the band", absent is "not measured", and only
+  the first is counted.
+- A case is labelled only when the arm inverted **exactly one** pair and the answer moved. Several inversions are
+  `ambiguous`, counted beside the thin-population cases rather than merged with them: one is a rule problem, the
+  other a corpus problem.
+- An empty row file exits **3**. A population that cannot separate the two classes is a finding and exits 0.
+
+### Axes this closes
+
+- **"The residual is a measure of coupling."** It is a covariance with a marginal-dependent ceiling; on the
+  highest-marginal edges — the ones most likely to be true propagation — it is zero by construction.
+- **"A hypothesis written in advance is a hypothesis that cannot be wrong about its own instrument."** H2 fixed ρ
+  and, in doing so, fixed an estimator whose ceiling had not been computed. The ceiling is now in the record, and
+  the pre-registered number still decides.
+
+### Not measured
+
+No corpus has been read through this instrument yet. The rows, the replay count and the two AUCs are the next
+dispatch's output, and nothing in this entry is a reading of them.

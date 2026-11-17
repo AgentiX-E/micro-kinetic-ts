@@ -699,3 +699,103 @@ populations: the row is a fact about one case, and ρ is a statistic about an ed
 
 It also does not change any default. No weight, no margin, no gate moved; `containment-order.ts` is at
 100 % statements, branches, functions and lines with the 45 pre-existing tests untouched.
+
+## 14. The observation H2 needs, and the ceiling ρ carries (iteration 295)
+
+H2 asks whether the factorisation residual of a pair's out-of-band indicators separates a propagating pair from a
+coincidental one. `inspectContainmentOrder` (iteration 294, §13) produces the rows; this section records the
+artifact that carries them across the process boundary, the two defects the implementation had to design around,
+and — before any corpus is read — the **ceiling the statistic itself imposes**, because that ceiling decides how a
+failed gate has to be interpreted.
+
+### 14.1 The sweep’s input is not the run’s output
+
+The sweep's population is the adjacent pairs of the order the **fusion** published. The ranking a run reports is
+not that order: `contained` runs the containment pass and then the failure-flow pass over the fusion's result, so
+by the time a case is scored the fusion order is two transformations behind it. A dump derived from the published
+ranking would therefore describe a population with the wrong adjacencies — and on a case the flow pass reordered,
+a different set of pairs altogether.
+
+`TreePruner` is constructed a second time in the runner with both passes off (`containmentOrder: false`,
+`failureContainment: false`). That pruner publishes the fusion order, and the runner sweeps it with the same
+`inspectContainmentOrder` the engine calls. Costs one ranking pass per case and no graph build; the depth is
+`--containment-depth`, defaulting to **5** because that is the depth every number in §4 and §12 was measured at.
+
+### 14.2 Two arms are two walks, not two columns
+
+The shipped arm requires the pair's own interface to have carried a failed call; the refused arm (§12) reads the
+excursions alone. Both are swept from the same fusion order and their rows are stored **separately**, because the
+moment one arm inverts a pair the other refused, the two scans are looking at different adjacencies: row `i` of
+one trace and row `i` of the other describe different pairs. Zipping them by index would attach a decision to a
+pair it was never taken about, and nothing in the file would show it.
+
+### 14.3 The replay, recorded rather than asserted
+
+The builder reapplies the same two passes, in the same order, to the same input, and compares the result against
+the ranking the engine published. The verdict is written to the row (`identical` / `differs` / `unavailable`)
+rather than thrown on. A non-zero `differs` count is a statement about the **instrument** — the rows are
+describing something other than the decision — and a run that refused to write would leave that fact invisible.
+`unavailable` is the honest third state: the case carried no profile or no call edge, so the pass could speak
+about nothing and there is no claim to check.
+
+### 14.4 The estimator has a ceiling, and it is not small
+
+ρ is a covariance of two Bernoulli indicators, so it is bounded by the **marginals** rather than by the coupling:
+
+    ρ = P(δa ∧ δb) − p·q, and P(δa ∧ δb) ≤ min(p, q)
+    ⇒ ρ ≤ min(p, q) − p·q = min(p(1−q), q(1−p))
+
+Two consequences, both of which have to be in the record before the gate is read:
+
+| marginals | perfect co-movement (both = min(p,q)) | ρ |
+| --- | --- | ---: |
+| p = q = 0.5 | joint = 0.5 | **0.25** |
+| p = q = 0.9 | joint = 0.9 | **0.09** |
+| p = q = 1 | joint = 1 | **0** |
+
+So an edge whose two ends are out of band in **every** observation — the most propagation-like measurement the
+corpus can produce — scores **zero** on the pre-registered statistic, while an edge whose ends moved together half
+the time scores the maximum. This is a property of the estimator, not of the corpus, and it is why the report
+prints a second column:
+
+    φ = ρ / √(p(1−p)·q(1−q))
+
+φ is the Pearson correlation of the two indicators, its ceiling is 1 at every marginal configuration, and it is
+`null` when either marginal is degenerate (`p ∈ {0, 1}`) — a correlation with no denominator, which is not the
+same statement as "no correlation". **H2 is decided on ρ**, because a hypothesis is judged by the number it fixed;
+φ is read beside it so that a separation ρ loses to its own scale is visible in the same artifact instead of
+costing a second corpus walk. Neither statistic is a gate until the pre-registration's in-engine arm clears
++15 / −0, which §12 still owns.
+
+The two do not dominate each other, and the smoke fixture shows it: on an edge where both sides are inside their
+band in every observation ρ reads 0 and φ is undefined, so φ's population is the SMALLER of the two on exactly
+the edges that carry no signal. A report that printed only φ would silently drop those labels instead of scoring
+them as failures to discriminate.
+
+### 14.5 What is counted, and what is refused
+
+- **Population floor.** An edge with fewer than 10 observations yields no residual at all — at `n` observations
+  the sampling error of ρ is about `1/√n`, so a residual over six cases cannot be distinguished from zero.
+- **Unmeasured sides.** A pair whose either side the profile could not speak about contributes **nothing**. The
+  excursion is `0` when the service stayed inside its band — a measurement — and absent when it could not be
+  measured; only the first is counted.
+- **Attribution.** A case's move is attributed to the one pair that caused it, and only when the arm inverted
+  **exactly one** pair and the answer moved. An arm that inverted three pairs and moved the answer could have been
+  helped by any of them, and a residual fitted to a guess about which one would be fitted to the guess. Such a
+  case is counted as `ambiguous`, separately from a case whose edge was too thin (`scored` below `gains + losses`),
+  because one is a rule problem and the other a corpus problem.
+- **No label in the artifact.** The rows carry no accepted answers, for the reason
+  `agentic-fingerprint-file.ts` records; they join to the run's per-case verdict file on `datapack`.
+
+### 14.6 The three verdicts
+
+`pass` and `fail` are **findings** and leave the job green: a red build says the code is broken, and a refused
+hypothesis is not broken code. Exit **3** is reserved for a row file with no case in it — an instrument failure,
+where nothing was measured and a printed zero would be read as a null result.
+
+### 14.7 Instrument coverage
+
+`containment-rows.ts`, `containment-row-build.ts`, `containment-residual.ts` and
+`containment-residual-report.ts` measure at 100 % statements, functions and lines, and at ≥ 98 % branches, with
+the two refusals asserted in both directions: an unmeasured **upper** side and an unmeasured **lower** side are
+separate branches, and a row with no call edge produces no verdict rather than a refusal verdict.
