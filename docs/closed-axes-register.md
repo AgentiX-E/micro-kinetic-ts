@@ -5868,3 +5868,70 @@ from the record is terminal (`no-failed-interface`, 541 of them), and every pair
 that makes the residual's own guard inapplicable. So the residual is consulted only on the 200 record-free cases'
 pairs, and there the measurement has already refused all but two. That is the structural reason §299's `prior` arm
 had to REPLACE the record rather than supplement it: under the shipped rule the residual has no jurisdiction at all.
+
+## §303 — The fleet reading is refused on a population that cannot see it, so the census is the finding
+
+§8 of `docs/self-time-share.md` pre-registered H9 — the share read against the fleet instead of against
+`[0, 1]` — with a falsifier and four auditable predictions. The arms ran; this entry is the reading, and it is
+the first entry in this register whose headline is a CENSUS rather than a delta.
+
+### 303.1 Three arms, one digest
+
+| arm | run | `Top@1` | per-case `md5` |
+| --- | --- | ---: | --- |
+| control, `selfTimeWeight=0` (`05236ff`) | `43828014109` | 1 141 (80.24 %) | `a201eb81…` |
+| A3, `0.05` + `absolute` (mechanism control) | `44134531473` | 1 141 | `a201eb81…` |
+| A1, `0.05` + `fleet` | `44134503641` | 1 141 | `a201eb81…` |
+| A2, `0.2` + `fleet` | `44134518256` | 1 141 | `a201eb81…` |
+
+The digest is the same digest, so the identity is artifact-level, not percentage-level: 1 422 rows, candidate
+for candidate, same order. An eight-fold weight increase between A1 and A2 moved nothing.
+
+### 303.2 The falsifier fired, and its second sentence did not
+
+§8 committed the axis to closure if both fleet points landed at or below the control. They did, and the axis
+closes **on FSE'26**. But the falsifier also committed to a diagnosis — "the share, in either reading, is not
+the statistic that decides this ranking" — and that sentence is not readable off this run:
+
+```
+[self-time] services=71105 withLatency=0 (0.0%) withLevel=0 (0.0%) undecided=0 scored=0 (0.0%)
+            measuredZero=0 channelsRefusedShort=0 channelsRefusedIdle=0
+```
+
+`withLatency=0` over 71 105 services, with all three refusal counters at 0, says the term was never handed a
+channel — not that the channels were refused and not that the levels came out flat. `isLatencyMetric` gates on
+`label.startsWith('latency')` and this corpus's converter writes no such prefix, so the map is empty on every
+case and the weight multiplied nothing, four times, at two weights and two scopes.
+
+**The two sentences a `Top@1` column cannot separate are now separate, and only one of them is true here.** "The
+normalisation is silent on this corpus" is NOT ESTABLISHED — nothing was normalised — while "the map was never
+built" is ESTABLISHED on every service in the population. This is the register's own law from §6 of the share
+document applied to the REFERENCE instead of to the statistic: an absence is not a measured zero, and a tie
+between two unobservable arms is not a comparison between them.
+
+### 303.3 The four predictions, audited
+
+| # | pre-registered | outcome |
+| --- | --- | --- |
+| 1 | A3 loses cases (the §6 mechanism is direction-blind on leaf-heavy graphs) | **NOT REALISED** — a term with no map cannot lose a case |
+| 2 | A2 moves strictly more than A1, both directions | **NOT REALISED** — both move zero |
+| 3 | Residual ABSENT for most candidates on the 14- and ~10-service graphs | **NOT TESTED** — there is no residual |
+| 4 | Gains are win-the-CALLER cases; losses are leaf-among-moved-leaves | **NOT TESTED** |
+
+Two failed and two were never reached, and the failure is informative in one direction only: it is evidence
+about the arm's **reach**, not about its theory. The pre-registration is left as written. Rewriting it into a
+retrodiction would have cost the one thing the ladder bought — the knowledge that a single point at `0.05`
+would have produced "0.05 is not enough", a sentence about a weight measured on nothing.
+
+### 303.4 What the corpus actually contains, and what it does not
+
+The census was added because of this arm and it earns its place on the first reading. On FSE'26 the self-time
+term has **no population**: the corpus supplies metric channels without the `latency` prefix, so the
+`levels.size === 0` return is the term's entire life on all 1 422 cases. Every future arm on this statistic has
+to run where the channel exists — RCAEval's nine cells — and a dispatch here will keep returning one digest
+however many weights it is given.
+
+That is the closing fact, and it is narrower than §8's falsifier anticipated. The share is not refused because
+it failed to price transport; it is refused, on this population, because the population cannot see it. §6's
+refusal on the golden nine cells stands as the only measured judgement of the statistic, and it stands
+unchanged.

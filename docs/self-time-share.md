@@ -1,9 +1,10 @@
 # The self-time share — transport is created where it is not inherited
 
-**Status:** the mechanism is IMPLEMENTED, tested, shipped at weight **0**, and REFUSED at both measured
-weights (§6). This document is its
-design record; the measurement that enrols or refuses it is appended below as §5 and §6, and until one
-of them exists the term is OFF and the published numbers are unaffected by construction.
+**Status:** the mechanism is IMPLEMENTED, tested, shipped at weight **0**, REFUSED at both measured weights
+(§6), and its fleet repair is REFUSED on FSE'26 with a census rather than a deficit (§9) — the corpus carries
+no latency channel, so the term is unobservable there and three arms at two scopes are one artifact digest.
+This document is its design record; the measurements that enrol or refuse it are appended as §5, §6 and §9,
+and the term stays OFF, so the published numbers are unaffected by construction.
 
 | what | where |
 | --- | --- |
@@ -246,3 +247,69 @@ next arm on this population must be a different channel rather than a third norm
    services), so the term is silent there and the arm's entire effect is on the large ones.
 4. If the repair works, its gains are cases whose winner is a CALLER of the truth — the population §1 names —
    and its losses are cases where the truth is a leaf among moved leaves.
+
+## 9. The reading — three arms, one number, and a census that says why
+
+The arms were dispatched against `3fd024f`, and the control was re-read on the same commit rather than
+inherited: `selfTimeWeight = 0` is bit-identical to every published number by construction, but "by
+construction" is a claim about the engine, not about the corpus, and a corpus whose cache rolled would make
+the control describe a different population.
+
+| arm | run | config as printed | `Top@1` | `Top@3` | `Top@5` | per-case digest |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| control | `43828014109` (`05236ff`) | `selfTimeWeight=0` | **1 141** (80.24 %) | 86.4 % | 87.8 % | `a201eb81…` |
+| A3 mechanism control | `44134531473` | `selfTimeWeight=0.05` (scope omitted = `absolute`) | **1 141** (80.24 %) | 86.4 % | 87.8 % | `a201eb81…` |
+| A1 | `44134503641` | `…=0.05 … selfTimeScope=fleet` | **1 141** (80.24 %) | 86.4 % | 87.8 % | `a201eb81…` |
+| A2 | `44134518256` | `…=0.2 … selfTimeScope=fleet` | **1 141** (80.24 %) | 86.4 % | 87.8 % | `a201eb81…` |
+
+**The four digests are the same digest.** Not "the same accuracy": the same 1 422 rows, candidate for
+candidate, in the same order — `md5` `a201eb8111893c90453b730c6ae965f0` on all four, so the identity holds at
+the level of the artifact and not at the level of a rounded percentage. Zero cases moved, in either direction,
+on the arm that raises the weight eight-fold over the arm below it.
+
+Under §8's falsifier that is a refusal: both fleet points are at the control, so the axis does not enrol. But
+the falsifier's wording commits to a second sentence — "the share, in either reading, is not the statistic
+that decides this ranking" — and the census says that sentence **cannot be read off this run**. The census was
+built for exactly this ambiguity and its first reading is:
+
+```
+[self-time] services=71105 withLatency=0 (0.0%) withLevel=0 (0.0%) undecided=0 scored=0 (0.0%)
+            measuredZero=0 channelsRefusedShort=0 channelsRefusedIdle=0
+```
+
+**Zero of 71 105 services carried a latency channel.** Not "the channels were refused" — all three refusal
+counters are 0 — and not "the level came out flat": no level was ever attempted, because the loop that builds
+them returns on an empty channel set before it looks at a window. `isLatencyMetric` gates on
+`label.startsWith('latency')` and this corpus's converter emits no channel with that prefix, so
+`levels.size === 0` on every case and the term's map is empty on all 1 422 of them. The weight multiplied
+nothing, three times, at two weights and two scopes.
+
+So the two sentences the arms could not separate are now separated, and only one of them is true here:
+
+- **"The normalisation is silent on this corpus"** — NOT ESTABLISHED. Nothing was normalised. The fleet
+  residual and the absolute share were equally unobservable, which is why A1, A2 and A3 are one digest: the
+  scope decides what the weight multiplies, and the weight multiplied an empty map.
+- **"The map was never built"** — ESTABLISHED, by the counts, on 71 105 of 71 105 services.
+
+### The four predictions, against the artifact
+
+| # | pre-registered | outcome |
+| --- | --- | --- |
+| 1 | A3 loses cases — the §6 mechanism is direction-blind on leaf-heavy graphs | **NOT REALISED**, and its premise is why: a term that never builds a map cannot lose a case. The prediction was about a term that runs. |
+| 2 | A2 moves strictly more cases than A1, in both directions | **NOT REALISED** — both move exactly zero. |
+| 3 | The residual is ABSENT for most candidates on the 14- and ~10-service graphs | **NOT TESTED.** There is no residual to be absent. |
+| 4 | Gains are win-the-CALLER cases, losses are leaf-among-moved-leaves cases | **NOT TESTED**, same reason. |
+
+Two predictions failed and two were never reached; the document records that instead of rewriting the four
+into a retrodiction. A pre-registration whose predictions fail because the arm could not run is evidence about
+the arm's reach, not about its theory — which is the reason the census had to exist before the next arm, and
+the reason §8's ladder was right to be a ladder: one point alone would have produced "0.05 is not enough",
+a sentence about a weight measured on nothing.
+
+### What this closes, in the register's vocabulary
+
+The self-time share is now closed **on FSE'26** for a narrower reason than the falsifier anticipated: the
+population cannot see the term, so no weight on it can be evaluated there. §6's refusal on the golden nine
+cells stands unchanged and remains the only measured judgement of the statistic. The next arm on this
+population must be a different channel — the falsifier's own instruction — and the register entry records the
+census rather than the tie, because the tie is the weaker fact.
