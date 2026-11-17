@@ -157,3 +157,92 @@ scale, because `1.0` means two different things for a leaf and for a hub. That i
 The term stays shipped at weight 0 with its tests, its two dispatch keys and this record. A refused
 mechanism that can be re-measured in two dispatches is worth more than a deleted one that has to be
 re-derived.
+
+## 7. The repair, built — `computeFleetSelfTimeResiduals` and `selfTimeScope: 'fleet'`
+
+§6 ends with a requirement rather than a term: *the quantity must compare a node's self-created transport against
+the FLEET's typical self-created transport on the same graph, not against the absolute `[0, 1]` scale, because
+`1.0` means two different things for a leaf and for a hub.* This section is that sentence as arithmetic.
+
+```
+peers(v)    = { u measured, u ≠ v, outdegree(u) = outdegree(v) }
+residual(v) = share(v) − median{ share(u) : u ∈ peers(v) }          ABSENT when peers(v) is empty
+```
+
+Three properties are the design, each pinned by a test rather than argued:
+
+1. **Leave-one-out.** `v` is excluded from its own reference. On a bin of three at `0.4 / 0.7 / 1.0` the 0.4 node
+   reads `0.4 − 0.85 = −0.45`; a reference that included the node itself would read `0.4 − 0.7 = −0.30`, and that
+   is not a smaller number so much as a different statistic — one shrunk by a factor that varies with how many
+   peers the graph happens to have. A degree artefact must not be reintroduced by the term that exists to remove
+   one.
+2. **Conditioned on OUT-degree, because out-degree is the structural part of the share.** The denominator is the
+   node's own level and the subtrahend is a **callee**'s, so fan-out is the graph property that fixes the scale:
+   a leaf's share is 1 by construction and a four-callee node's is capped by its loudest callee. In-degree does
+   not enter the formula at all. Distinct callees are counted, so two parallel calls to one service are one
+   branch, and an unmeasured callee still counts toward the fan-out — the fan-out is a fact about the service,
+   not about the instrumentation that deleted a channel.
+3. **ABSENT rather than zero when a node has no peer of its own degree.** The term's contract already says
+   unknown is not a measured `0` (that is why a caller with an undecidable callee is absent rather than maximally
+   self-created); this is the same sentence applied to the REFERENCE. On a graph of fourteen services most nodes
+   are alone in their degree class, and the term is then silent **by construction** rather than by a weight that
+   happened to be small — which is the property that keeps this from being a hub penalty with a new name.
+
+What it is **not**: a re-tuning of the refused term. The estimator, the raw series, the sparse contract and the
+undecidable-callee rule are `computeSelfTimeScores`' own — the residual is a TRANSFORM of the share, computed
+from it, so an A/B between the two scopes is a reading of the normalisation rather than of two statistics.
+Nothing is fitted: the reference is a median of the case's own nodes, and the residual is **signed**, which the
+`[0, 1]` statistic could not be. A node that created less transport than its structural peers is now pushed
+DOWN, and the caller in §1 — the service the whole term exists to demote — is exactly such a node.
+
+The weight stays 0. The scope is `'absolute'` unless a dispatch states otherwise, so no published number moves:
+at weight 0 the map is not built at all, and the two knobs cannot disagree about an OFF term.
+
+## 8. Pre-registration — H9, the fleet reading against two points of the weight
+
+Written before any run of the arm, and the run ids are appended below once they exist.
+
+**Question.** The absolute share was refused at `0.1` and `0.3` on the golden half. Is the refused statistic the
+problem, or the reading? The repair above is the document's own stated answer; this arm is whether it is right.
+
+**Arms**, one variable each against the same-commit control (`selfTimeWeight = 0`, which is bit-identical to
+every published number by construction):
+
+| arm | dispatch | what it prices |
+| --- | --- | --- |
+| control | `ranking_knobs=self_time_weight=0` | the shipped reading, on this commit |
+| A1 | `self_time_weight=0.05,self_time_scope=fleet` | the repair, at a weight a rank step can feel |
+| A2 | `self_time_weight=0.2,self_time_scope=fleet` | the repair, four times louder |
+| A3 | `self_time_weight=0.05,self_time_scope=absolute` | **the mechanism control**: any transport term at all |
+
+A3 is not an afterthought. Without it a gain on A1 or A2 is indistinguishable from "a term that rewards
+self-created latency helps", which is a different claim and one §6 already refused on the golden half. The
+absolute arm has never been measured on FSE'26 at all, so this is its first reading there.
+
+**Why a ladder rather than one weight.** The residual's scale is new: none of the published runs has ever
+carried it, and the register's law is that a weight is enrolled by a run, not chosen. A single point picked blind
+would make a null result undecidable — it could be the wrong weight or the wrong statistic. Two points can
+distinguish those: a monotone response says the term is live and the sign is the finding, while two flat points
+say the term never spoke.
+
+**Population.** FSE'26 RCABench, all 1 422 cases, `Top@1` with `Top@3` / `Top@5` and per-fault-type cells. The
+golden nine cells are spent only if a point clears this half — the criterion is an AND, and this is its cheaper
+side.
+
+**The criterion, stated before the numbers.** A point enrols iff `Top@1` strictly exceeds the control, the
+regressed fault-type count is `0`, and it loses no cell on the nine. Anything else is refused, and a refusal is
+recorded here with its reading rather than deleted.
+
+**Falsifier.** If BOTH fleet points are at or below their control, the axis is refused as a statute — not "this
+weight is wrong" but "the share, in either reading, is not the statistic that decides this ranking" — and the
+next arm on this population must be a different channel rather than a third normalisation of this one.
+
+**Four predictions, auditable against the artifact:**
+
+1. A3 (absolute, 0.05) loses cases on FSE'26 — the mechanism §6 named is direction-blind on any graph with many
+   leaves, and TrainTicket-shaped cells exist on both halves.
+2. A2 moves strictly more cases than A1, in both directions.
+3. The residual is ABSENT for most candidates on the small graphs (OnlineBoutique and SockShop are 14 and ~10
+   services), so the term is silent there and the arm's entire effect is on the large ones.
+4. If the repair works, its gains are cases whose winner is a CALLER of the truth — the population §1 names —
+   and its losses are cases where the truth is a leaf among moved leaves.
