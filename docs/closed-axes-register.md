@@ -5830,3 +5830,41 @@ published one.
   test describes. This one did not for four iterations.
 - **"The table and the document are regenerated from one another."** They were not joined in either direction
   that matters: the document was fenced and the code was not.
+
+### 302.9 The control's first reading, and the number it corrects
+
+Run `44124896064` (study job) is the first dispatch whose report prints the shipped walk's own census. It reads:
+
+```
+rows=1422 replayable=1422 scored=1422 disagreements=0 record-free=200
+arm=fusion  top1=1141
+arm=shipped top1=1156 +15/-0
+arm=veto    top1=1156 +15/-0
+decisions inverted=117 record-silent=11 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=2 prior-below=0
+control   inverted=117 record-silent=0  no-failed-interface=541 unmeasured=2  not-larger=178 prior-absent=0 prior-below=0
+ceiling   at-second=43 reachable=21 unreachable=22 shipped=15 veto=15
+H8-veto: FAIL — Top@1 1156 does not exceed the shipped 1156
+```
+
+Two things are worth more than the verdict.
+
+**The 838 pairs partition exactly, in both walks.** `117 + 541 + 2 + 178 = 838` for the shipped walk and
+`117 + 11 + 458 + 12 + 238 + 2 = 838` for the arm. The arm's release of the record's silence moves a pair out of
+`no-failed-interface` (−83) and into four other headings: `not-larger` +60, `unmeasured` +10, `prior-absent` +2, and
+the new `record-silent` +11. **Ninety per cent of the released pairs are refused by the measurement**, which is
+§302.4's finding arriving through a second door: the record's silence is not what stops the pass, and releasing it
+does not move the constraint to anywhere the arm can act.
+
+**§301.3's `242` was not this walk's number, and the control says so.** That table was arithmetic on the GATED
+LATENCY arm's census (`inverted=198` plus the 44 the residual stopped) read as a description of the shipped walk.
+The shipped walk inverts **117** pairs and refuses **178** as `not-larger` and **2** as `unmeasured` — not 242, 561
+and 52. The two walks do not share a cascade: the latency arm opens pairs the shipped rule refuses at the record,
+so a count from one cannot be transplanted onto the other by addition. That is the instrument defect §302.6 named,
+and this is what it cost: a number in a register that described an arm nobody had run.
+
+**And the residual is unreachable under the shipped rule.** `prior-absent=0` and `prior-below=0` are not "the
+residual agreed" — they are the residual never being asked. On the shipped scope every pair whose edge is absent
+from the record is terminal (`no-failed-interface`, 541 of them), and every pair present in it carries a licence
+that makes the residual's own guard inapplicable. So the residual is consulted only on the 200 record-free cases'
+pairs, and there the measurement has already refused all but two. That is the structural reason §299's `prior` arm
+had to REPLACE the record rather than supplement it: under the shipped rule the residual has no jurisdiction at all.
