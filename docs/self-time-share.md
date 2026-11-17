@@ -267,10 +267,17 @@ candidate, in the same order — `md5` `a201eb8111893c90453b730c6ae965f0` on all
 the level of the artifact and not at the level of a rounded percentage. Zero cases moved, in either direction,
 on the arm that raises the weight eight-fold over the arm below it.
 
+The control was then re-taken **on `2122359`**, the commit that adds the census, so the comparison does not rest
+on two commits agreeing: run `44142865215` (`selfTimeWeight=0`) also reads **1 141** with the same digest, and it
+prints **no** `[self-time]` row — which is the other half of the print rule (an OFF term has nothing to report)
+arriving as a reading rather than as a code path.
+
 Under §8's falsifier that is a refusal: both fleet points are at the control, so the axis does not enrol. But
 the falsifier's wording commits to a second sentence — "the share, in either reading, is not the statistic
 that decides this ranking" — and the census says that sentence **cannot be read off this run**. The census was
-built for exactly this ambiguity and its first reading is:
+built for exactly this ambiguity; it was dispatched at both scopes on `2122359` (`44141801070` at `absolute`,
+`44141794481` at `fleet`), and both print the line identically, which is the point: the scope decides what the
+weight multiplies, and this line is about whether there is anything to multiply:
 
 ```
 [self-time] services=71105 withLatency=0 (0.0%) withLevel=0 (0.0%) undecided=0 scored=0 (0.0%)
