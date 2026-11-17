@@ -18,11 +18,13 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
+  DEFAULT_TREE_PRUNER_OPTIONS,
   isPrismPooling,
   LOG_SATURATION_COUNT,
   ONSET_SHAPES,
@@ -3485,6 +3487,33 @@ describe('TreePruner — self-time prior', () => {
     };
   };
 
+  /**
+   * A case with POPULATED degree classes, which is what the fleet scope needs in order to be readable at all.
+   *
+   * Two callers with one callee each and two leaves, so every node has exactly one structural peer. The shares
+   * come out `{SOURCE: 1, QUIET: 0, CALLER: 0, PEER_CALLER: 1}`: the caller whose rise is entirely inherited
+   * scores the same as the service that never moved, and a maximum-over-metrics anomaly cannot tell them apart.
+   */
+  const QUIET = 'ts-route-service';
+  const PEER_CALLER = 'ts-price-service';
+  const fleetCase = (): { callGraph: ServiceCallGraph; metrics: MetricMap } => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [CALLER, [makeTimeSeries('latency-90', [10, 10, 10, 10, 30, 30, 30, 30])]],
+      [SOURCE, [makeTimeSeries('latency-90', [10, 10, 10, 10, 50, 50, 50, 50])]],
+      // Flat: a level of zero, which is a MEASURED zero and therefore share 0 rather than an absence.
+      [QUIET, [makeTimeSeries('latency-90', [10, 10, 10, 10, 10, 10, 10, 10])]],
+      [PEER_CALLER, [makeTimeSeries('latency-90', [10, 10, 10, 10, 40, 40, 40, 40])]],
+    ]);
+    const callGraph = makeCallGraph(
+      [CALLER, SOURCE, QUIET, PEER_CALLER],
+      [
+        [CALLER, SOURCE],
+        [PEER_CALLER, QUIET],
+      ],
+    );
+    return { callGraph, metrics };
+  };
+
   /** The same graph with the term's own field removed, so "inert" is measured against its ABSENCE. */
   const withoutField = (): ReadonlyMap<string, number> => {
     const [callGraph, metrics] = makeCase();
@@ -3544,6 +3573,80 @@ describe('TreePruner — self-time prior', () => {
     expect(term.contribution).toBeCloseTo(weight, 10);
     expect(term.cause).toBeUndefined();
     expect(term.source).toBeUndefined();
+  });
+
+  it('is ABSENT on the two-service fixture, because neither service has a peer of its own degree', () => {
+    // The scope's third property, at the level a benchmark reads it: `CALLER` has one callee and `SOURCE` has
+    // none, so each is alone in its degree class and the fleet has nothing to compare either against. The term
+    // therefore contributes nothing — which is what keeps the scope harmless on small graphs instead of making
+    // it a hub penalty with a new name.
+    const { graph } = scores(
+      new TreePruner({ topoDiscount: 0, selfTimeWeight: 1, selfTimeScope: 'fleet' }),
+    );
+
+    expect(graph.selfTimeScores?.size).toBe(0);
+  });
+
+  it('carries the FLEET RESIDUAL where the graph HAS degree classes, and the caller goes NEGATIVE', () => {
+    // Two callers with one callee each and two leaves: the degree classes are populations, so the statistic can
+    // be read. The absolute arm hands the caller 0 — the same number a service that never moved receives, which
+    // is why an unsigned share cannot demote it. The fleet arm hands it −1: it moved, and its structural peer
+    // moved further while creating all of its own rise.
+    const pruner = new TreePruner({
+      topoDiscount: 0,
+      selfTimeWeight: 1,
+      selfTimeScope: 'fleet',
+    });
+    const { callGraph, metrics } = fleetCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+    expect(graph.selfTimeScores?.get(SOURCE)).toBeCloseTo(1, 12);
+    expect(graph.selfTimeScores?.get(QUIET)).toBeCloseTo(-1, 12);
+    expect(graph.selfTimeScores?.get(CALLER)).toBeCloseTo(-1, 12);
+    expect(graph.selfTimeScores?.get(PEER_CALLER)).toBeCloseTo(1, 12);
+  });
+
+  it('PUSHES the caller down under the fleet scope, and only under it', () => {
+    // A signed term is a different mechanism from an unsigned one rather than a rescaled one:
+    // `docs/self-time-share.md` §6 refused the absolute arm because on a graph that is mostly leaves it pays
+    // every leaf its whole rise and therefore only ever pushes HUBS down. Here the direction is available for
+    // the caller too, which is the service the term exists to demote.
+    const weight = 0.3;
+    const scoreOf = (options: ConstructorParameters<typeof TreePruner>[0]) => {
+      const pruner = new TreePruner(options);
+      const { callGraph, metrics } = fleetCase();
+      return new Map(
+        pruner
+          .analyze(pruner.buildFaultGraph(callGraph, metrics))
+          .map((r) => [r.serviceId, r.finalScore!]),
+      );
+    };
+
+    const before = scoreOf({ topoDiscount: 0, selfTimeWeight: 0 });
+    const absolute = scoreOf({ topoDiscount: 0, selfTimeWeight: weight });
+    const fleet = scoreOf({ topoDiscount: 0, selfTimeWeight: weight, selfTimeScope: 'fleet' });
+
+    expect(fleet.get(CALLER)! - before.get(CALLER)!).toBeCloseTo(-weight, 10);
+    // The absolute share cannot reach below zero, so the caller it cannot distinguish is unmoved by it.
+    expect(absolute.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+    // The source's residual equals its share on this fixture, so both arms agree about it.
+    expect(fleet.get(SOURCE)!).toBeCloseTo(absolute.get(SOURCE)!, 12);
+  });
+
+  it('builds no map at weight 0 under either scope', () => {
+    const { graph } = scores(
+      new TreePruner({ topoDiscount: 0, selfTimeWeight: 0, selfTimeScope: 'fleet' }),
+    );
+
+    expect(graph.selfTimeScores).toBeUndefined();
+  });
+
+  it('defaults to the ABSOLUTE scope, which is the arm every published number ran', () => {
+    // The scope is optional and absent means `absolute`, so the two readers of the default — this object and the
+    // engine's own fallback — must agree; an absent value that meant `fleet` would change the shipped meaning of
+    // a weight the moment somebody set one.
+    expect(DEFAULT_SELF_TIME_SCOPE).toBe('absolute');
+    expect(DEFAULT_TREE_PRUNER_OPTIONS.selfTimeScope).toBe(DEFAULT_SELF_TIME_SCOPE);
   });
 });
 

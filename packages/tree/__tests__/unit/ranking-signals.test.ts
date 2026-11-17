@@ -11,6 +11,7 @@ import {
   computeDeepestExceptions,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
+  computeFleetSelfTimeResiduals,
   computeHttpEmitterDominance,
   computeHttpVictimSet,
   computeLogNoveltyScores,
@@ -1045,6 +1046,209 @@ describe('computeSelfTimeScores', () => {
 
   it('is empty for a case with no metrics at all', () => {
     expect(computeSelfTimeScores([makeEdge('a', 'b')], new Map()).size).toBe(0);
+  });
+});
+
+describe('computeFleetSelfTimeResiduals', () => {
+  /** Shares as {@link computeSelfTimeScores} returns them, from a plain record. */
+  const sharesOf = (entries: Record<string, number>): Map<ServiceId, number> =>
+    new Map(Object.entries(entries));
+
+  it('removes the leaf bonus: a leaf that moved like its peers scores NOTHING', () => {
+    // The refusal's mechanism, stated as an assertion. `docs/self-time-share.md` §6 refused the absolute
+    // share because `1.0` is what a leaf scores whenever it moved, so on a graph that is mostly leaves the
+    // term pays the entire fleet the same maximum and its only effect is to push the hubs DOWN — which is
+    // what took TrainTicket 98 → 47. Three leaves that all moved score zero here, and that is the repair
+    // working rather than the term being broken: the fleet is uniform, so there is nothing to distinguish.
+    const shares = sharesOf({ leafA: 1, leafB: 1, leafC: 1 });
+
+    const residuals = computeFleetSelfTimeResiduals(shares, []);
+
+    expect([...residuals.values()]).toEqual([0, 0, 0]);
+  });
+
+  it('rewards the leaf that moved while its peers did not, and pushes the others down', () => {
+    // The same population as the test above with one leaf moving and two not. The absolute share cannot
+    // say this — it reads 1.0 for the mover and 0.2 for the quiet pair and says nothing about whether 0.2
+    // is unusual — while the fleet reading is a CONTRAST: +0.8 for the mover, −0.4 for each quiet leaf.
+    const shares = sharesOf({ mover: 1, quietA: 0.2, quietB: 0.2 });
+
+    const residuals = computeFleetSelfTimeResiduals(shares, []);
+
+    expect(residuals.get('mover')).toBeCloseTo(0.8, 12);
+    expect(residuals.get('quietA')).toBeCloseTo(-0.4, 12);
+    expect(residuals.get('quietB')).toBeCloseTo(-0.4, 12);
+  });
+
+  it('excludes the node from its OWN reference, so the residual is not shrunk by the graph width', () => {
+    // Leave-one-out is load-bearing rather than tidy. On a bin of three with shares 0.4 / 0.7 / 1.0 the
+    // leave-one-out reference for the 0.4 node is median(0.7, 1.0) = 0.85 → −0.45, while a reference that
+    // included the node itself would read median(0.4, 0.7, 1.0) = 0.7 → −0.30. The included form shrinks
+    // every residual by a factor that varies with how many peers the graph happens to have, which is a
+    // degree artefact reintroduced by the term that exists to remove one.
+    const shares = sharesOf({ a: 0.4, b: 0.7, c: 1 });
+
+    const residuals = computeFleetSelfTimeResiduals(shares, []);
+
+    expect(residuals.get('a')).toBeCloseTo(-0.45, 12);
+    expect(residuals.get('b')).toBeCloseTo(0, 12); // median(0.4, 1.0) = 0.7
+    expect(residuals.get('c')).toBeCloseTo(0.45, 12); // median(0.4, 0.7) = 0.55
+  });
+
+  it('conditions on OUT-degree: a hub is read against hubs, not against the fleet median', () => {
+    // The heart of the repair. Three leaves sit at 1.0 and two hubs at 0.1 and 0.3. Read against the whole
+    // fleet's median (1.0) the loud hub would be −0.7 — the hub penalty again, wearing a different hat —
+    // while read against the other hub it is +0.2, which is the statement the term is supposed to make:
+    // this node created more transport than a node with the same call structure did.
+    const shares = sharesOf({ leafA: 1, leafB: 1, leafC: 1, hubQuiet: 0.1, hubLoud: 0.3 });
+    const edges = [
+      makeEdge('hubQuiet', 'x1'),
+      makeEdge('hubQuiet', 'x2'),
+      makeEdge('hubLoud', 'y1'),
+      makeEdge('hubLoud', 'y2'),
+    ];
+
+    const residuals = computeFleetSelfTimeResiduals(shares, edges);
+
+    expect(residuals.get('hubLoud')).toBeCloseTo(0.2, 12);
+    expect(residuals.get('hubQuiet')).toBeCloseTo(-0.2, 12);
+    expect(residuals.get('leafA')).toBe(0);
+  });
+
+  it('is ABSENT for a node with no measured peer at its own out-degree', () => {
+    // A fleet of one is not a reference. The term's contract already says unknown is not a measured zero
+    // (that is why a caller with an undecidable callee is absent rather than maximally self-created), and
+    // this is the same sentence applied to the reference: a node alone in its degree class has nothing to
+    // be compared against, so it contributes nothing rather than contributing zero BY COINCIDENCE.
+    const shares = sharesOf({ lonely: 1, hub: 0.4 });
+
+    const residuals = computeFleetSelfTimeResiduals(shares, [
+      makeEdge('hub', 'a'),
+      makeEdge('hub', 'b'),
+    ]);
+
+    expect(residuals.has('lonely')).toBe(false);
+    expect(residuals.has('hub')).toBe(false);
+  });
+
+  it('counts DISTINCT callees, not edges, so a duplicated call does not change the degree class', () => {
+    // Two parallel edges to one callee are one branch of the fan-out. Counting them twice would put the
+    // caller in a degree class its structure does not have — and then compare it against nodes it does not
+    // resemble, which is the only way this statistic can be silently wrong rather than merely silent.
+    const shares = sharesOf({ twice: 1, once: 1 });
+    const edges = [
+      makeEdge('twice', 'callee'),
+      makeEdge('twice', 'callee'),
+      makeEdge('once', 'callee'),
+    ];
+
+    const residuals = computeFleetSelfTimeResiduals(shares, edges);
+
+    // Both are out-degree 1, so each is the other's reference and both shares are equal.
+    expect(residuals.get('twice')).toBe(0);
+    expect(residuals.get('once')).toBe(0);
+  });
+
+  it('does not count a self-edge as a callee relation', () => {
+    const shares = sharesOf({ self: 1, other: 0.5 });
+
+    const residuals = computeFleetSelfTimeResiduals(shares, [makeEdge('self', 'self')]);
+
+    // Both are out-degree 0 and therefore peers: 1.0 against 0.5.
+    expect(residuals.get('self')).toBeCloseTo(0.5, 12);
+    expect(residuals.get('other')).toBeCloseTo(-0.5, 12);
+  });
+
+  it('counts an UNMEASURED callee toward the fan-out, because the fan-out is a fact about the service', () => {
+    // The share map is sparse: a caller whose callee carries no latency channel is absent from it, and a
+    // callee may be absent on its own account. Neither changes how many services the caller calls. If the
+    // degree were counted over the MEASURED subgraph, a caller would move between degree classes depending
+    // on which of its callees the guard deleted — the degree class would then be a property of the
+    // instrumentation, which is exactly what a normalisation against call structure must not be.
+    const shares = sharesOf({ caller: 1, peer: 0.2 });
+    const edges = [makeEdge('caller', 'unmeasured'), makeEdge('peer', 'unmeasured')];
+
+    const residuals = computeFleetSelfTimeResiduals(shares, edges);
+
+    expect(residuals.get('caller')).toBeCloseTo(0.8, 12);
+    expect(residuals.get('peer')).toBeCloseTo(-0.8, 12);
+  });
+
+  it('never reads an absent peer as zero, and never produces NaN', () => {
+    // A node in the GRAPH but not in the shares is not a peer: it has no share to be a reference. Reading
+    // it as 0 would drag every reference of its degree class toward zero and hand the pair a bonus the
+    // data does not contain — the same absent-versus-zero defect this file already pays for twice.
+    const shares = sharesOf({ a: 1, b: 0.4 });
+    const edges = [makeEdge('absent', 'a')]; // `absent` is in no shares map at all
+
+    const residuals = computeFleetSelfTimeResiduals(shares, edges);
+
+    expect(residuals.get('a')).toBeCloseTo(0.6, 12);
+    expect(residuals.get('b')).toBeCloseTo(-0.6, 12);
+    expect([...residuals.values()].every((value) => Number.isFinite(value))).toBe(true);
+  });
+
+  it('is independent of the order the shares were inserted in', () => {
+    // A residual is a function of a SET. An implementation that referenced the first peer, or that read the
+    // map in insertion order, would pass every test above and reorder the ranking for callers that build
+    // their maps in a different order — which the two runners do.
+    const forward = sharesOf({ a: 1, b: 0.2, c: 0.6, d: 0.4 });
+    const backward = new Map<string, number>([...forward].reverse());
+
+    expect(computeFleetSelfTimeResiduals(backward, [])).toEqual(
+      computeFleetSelfTimeResiduals(forward, []),
+    );
+  });
+
+  it('is bounded by the shares it was given, so no single node can dominate the sum', () => {
+    const shares = sharesOf({ a: 1, b: 0, c: 0.5, d: 0.5 });
+    const values = [...computeFleetSelfTimeResiduals(shares, []).values()];
+
+    expect(Math.max(...values)).toBeLessThanOrEqual(1);
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(-1);
+  });
+
+  it('is empty for an empty share map, and for a map with no measurable node', () => {
+    expect(computeFleetSelfTimeResiduals(new Map(), []).size).toBe(0);
+    expect(computeFleetSelfTimeResiduals(sharesOf({}), [makeEdge('a', 'b')]).size).toBe(0);
+  });
+
+  it('composes with the share, so a corpus scaled by ten gives the same residuals', () => {
+    // The engine's composition is `share → residual`, and the residual therefore inherits the share's
+    // scale-invariance rather than needing an argument of its own. Without this test the two functions could
+    // each be scale-invariant and their composition not be — a defect that only appears where nobody looks.
+    const series = (label: string, values: readonly number[]): TimeSeries => ({
+      label,
+      timestamps: values.map((_, i) => i * 1000),
+      values: Float64Array.from(values),
+      unit: '',
+    });
+    const step = (pre: number, post: number, n = 30): number[] => {
+      const first = Math.floor(n / 2);
+      return [...Array<number>(first).fill(pre), ...Array<number>(n - first).fill(post)];
+    };
+    const edges = [
+      makeEdge('caller', 'source'),
+      makeEdge('caller', 'leafA'),
+      makeEdge('caller', 'leafB'),
+    ];
+    const compose = (scale: number): Map<ServiceId, number> => {
+      const metrics: MetricMap = new Map([
+        ['caller', [series('latency-90', step(5 * scale, 25 * scale))]],
+        ['source', [series('latency-90', step(10 * scale, 50 * scale))]],
+        ['leafA', [series('latency-90', step(2 * scale, 4 * scale))]],
+        ['leafB', [series('latency-90', step(8 * scale, 4 * scale))]],
+      ]);
+      return computeFleetSelfTimeResiduals(computeSelfTimeScores(edges, metrics), edges);
+    };
+
+    const base = compose(1);
+    // The three leaves are one degree class: two at 1.0 and one that FELL, so the class is not unanimous.
+    expect(base.get('source')).toBeCloseTo(0.5, 12); // 1 − median(1, 0)
+    expect(base.get('leafB')).toBeCloseTo(-1, 12); // 0 − median(1, 1)
+    // `caller` is out-degree two and alone there, so the fleet cannot answer for it.
+    expect(base.has('caller')).toBe(false);
+    expect(compose(10)).toEqual(base);
   });
 });
 

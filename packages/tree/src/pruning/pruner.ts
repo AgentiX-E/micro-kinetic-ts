@@ -125,6 +125,7 @@ import {
   computeEdgeLatencyScores,
   computeEmissionScores,
   computeFailedEdgeLedger,
+  computeFleetSelfTimeResiduals,
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
@@ -924,6 +925,24 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly selfTimeWeight: number;
   /**
+   * Which SCALE that weight reads — the node's own share, or its share measured against the FLEET it sits in.
+   *
+   *   'absolute' → selfTimeShare(v)                     ∈ [0, 1]   (every published number)
+   *   'fleet'    → selfTimeShare(v) − median over same-out-degree peers   (signed)
+   *
+   * `'absolute'` is the arm `docs/self-time-share.md` §6 REFUSED at two weights: the share pays a node with
+   * no callee its whole rise, so on a graph that is mostly leaves it is a hub penalty, and TrainTicket
+   * collapsed `98 → 47`. `'fleet'` is that document's own stated repair, implemented here rather than
+   * described — see {@link computeFleetSelfTimeResiduals} for the statistic and why the reference is a
+   * LEAVE-ONE-OUT median at the node's own out-degree.
+   *
+   * OPTIONAL, and absent means `'absolute'`: the same rule as `recordScope`, which is optional because the
+   * shipped reading is the one every published number was taken with. A scope that had to be stated would
+   * make every existing caller state a value it does not vary, which is the shape of a knob no run reads.
+   * `'fleet'` at `selfTimeWeight = 0` builds nothing, so the two knobs cannot disagree about an OFF term.
+   */
+  readonly selfTimeScope?: SelfTimeScope | undefined;
+  /**
    * Weight on the EMISSION change — the collision source's own `Δλ`, in errors per REQUEST.
    *
    *   finalScore(v) += emissionWeight × emissionShare(v)
@@ -1316,6 +1335,40 @@ export const DEFAULT_SELF_ANOMALY_WEIGHT = 1;
  * the weight is the only thing that differs between two runs. The map is not even built at 0.
  */
 export const DEFAULT_SELF_TIME_WEIGHT = 0;
+
+/**
+ * Which scale the self-time term reads: the node's own share, or its share read against the fleet it sits in.
+ *
+ * Two words, and `'fleet'` already means this in the engine: `FailedEdgeGateMode` uses it for the bar that
+ * measures a rise against the CASE's own champion rather than against a constant fitted on another corpus. The
+ * question here is the same one — what is the reference a magnitude is read against — so the words are the same.
+ */
+export type SelfTimeScope = 'absolute' | 'fleet';
+
+/**
+ * The scope vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree about
+ * which words the engine accepts.
+ */
+export const SELF_TIME_SCOPES: Readonly<Record<SelfTimeScope, true>> = {
+  absolute: true,
+  fleet: true,
+};
+
+/**
+ * Whether a string names a scope the engine accepts.
+ *
+ * @param value - The candidate word, typically straight off a command line.
+ * @returns `true` when it is a member of {@link SELF_TIME_SCOPES}.
+ */
+export function isSelfTimeScope(value: string): value is SelfTimeScope {
+  return Object.hasOwn(SELF_TIME_SCOPES, value);
+}
+
+/**
+ * The shipped scope: the absolute share, which is the arm every published number was taken with — the term's
+ * weight has been 0 throughout, so what this constant protects is the meaning of the field rather than a cell.
+ */
+export const DEFAULT_SELF_TIME_SCOPE: SelfTimeScope = 'absolute';
 
 /**
  * The shipped weight of the emission term — see {@link TreePrunerOptions.emissionWeight}.
@@ -2389,6 +2442,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+  selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
   emissionWeight: DEFAULT_EMISSION_WEIGHT,
   victimWeight: DEFAULT_VICTIM_WEIGHT,
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
@@ -2840,10 +2894,20 @@ export class TreePruner {
     // Computed from the RAW metric series rather than from the anomaly features, because the guards
     // delete exactly the propagation channels this term has to compare — see the function's docblock.
     // At weight 0 the map is not built at all, so the shipped path is byte-identical by construction.
-    const selfTimeScores =
+    //
+    // The SCOPE decides what the weight multiplies: the share itself (the arm `docs/self-time-share.md` §6
+    // refused) or the same share read against the node's own degree class (that document's stated repair).
+    // The absolute map is built first in both cases because the fleet reading is a TRANSFORM of it — the
+    // estimator, the sparse contract and the undecidable-callee rule are shared, which is what makes an
+    // A/B between the two scopes a reading of the normalisation rather than of two statistics.
+    const selfTimeShares =
       this.options.selfTimeWeight !== 0
         ? computeSelfTimeScores(topologyGraph.edges, metrics)
         : undefined;
+    const selfTimeScores =
+      selfTimeShares === undefined || this.options.selfTimeScope !== 'fleet'
+        ? selfTimeShares
+        : computeFleetSelfTimeResiduals(selfTimeShares, topologyGraph.edges);
 
     // The EMISSION change — the collision source's own `Δλ`, in errors per REQUEST. Computed from the raw
     // series for the same reason the self-time share is: the guards delete the error channel on exactly the

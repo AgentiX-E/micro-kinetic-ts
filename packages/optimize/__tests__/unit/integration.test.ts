@@ -291,6 +291,9 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'poolMetricPenaltyWeight',
       'prismPooling',
       'selfAnomalyWeight',
+      // The scale beside the weight, for the reason `logNormalisation` is held: it is a different question from
+      // how much weight the term carries, and the two readings are different populations of evidence.
+      'selfTimeScope',
       'selfTimeWeight',
       'stabilityWeight',
       // The deduction's four fields, in code-unit order: `C` before `D`, so the closure heads the family.

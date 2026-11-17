@@ -861,6 +861,94 @@ export function computeSelfTimeScores(
 }
 
 /**
+ * The same share, read against the FLEET instead of against the absolute `[0, 1]` scale.
+ *
+ * ## Why the absolute share was refused, in the refusal's own words
+ *
+ * `docs/self-time-share.md` §6 measured the term at `selftime=0.1` and `0.3` on the nine cells and refused it:
+ * RE1 **319 → 271 / 269**, with TrainTicket collapsing `98 → 47 / 42`. The cause is arithmetic rather than a
+ * weight: `share(v) = (L(v) − max callee L) / L(v)` pays a node with no callee its **whole** rise, so on
+ * TrainTicket — 64 services over 79 edges, most of them leaves — the statistic is a leaf bonus and therefore a
+ * **hub penalty**, and the hubs include `ts-order-service`, the truth in a plurality of that cell's cases. The
+ * refusal's stated repair is this function: `1.0` means two different things for a leaf and for a hub, so a
+ * share has to be compared against the fleet's **typical** share at the same call structure.
+ *
+ * ## The statistic
+ *
+ * ```
+ *   peers(v)   = { u measured, u ≠ v, outdegree(u) = outdegree(v) }
+ *   residual(v) = share(v) − median{ share(u) : u ∈ peers(v) }        absent when peers(v) is empty
+ * ```
+ *
+ * Three properties are the design, and each is pinned by a test:
+ *
+ * 1. **Leave-one-out.** `v` is excluded from its own reference, so a bin of two compares the two nodes to each
+ *    other rather than to a median the node itself dragged. Including `v` would shrink every residual by a
+ *    factor of `1/n` that varies with the graph's width — a degree artefact reintroduced by the very term that
+ *    exists to remove one.
+ * 2. **Conditioned on OUT-degree, because out-degree is the structural part.** The share's denominator is the
+ *    node's own level and the thing subtracted is a **callee**'s level, so fan-out is the graph property that
+ *    sets the scale of the statistic: a leaf's share is 1 by construction and a node with four callees' is
+ *    capped by the loudest of them. In-degree does not enter the formula at all.
+ * 3. **ABSENT rather than zero when a node has no peer of its own degree.** A node alone in its degree class has
+ *    no fleet to be compared against, and the term's contract already says unknown is not a measured `0` — the
+ *    same sentence that makes an unmeasurable callee's caller absent rather than maximally self-created. On a
+ *    graph with fourteen services this is most nodes, and the term is then silent **by construction** rather
+ *    than by a weight that happened to be small.
+ *
+ * ## What it is not
+ *
+ * It is not a re-tuning of the refused term: the share is the same estimator over the same raw series, the
+ * difference subtracted is the fleet's own median rather than a fitted coefficient, and the residual is
+ * **signed** — a node that created less transport than its structural peers is pushed DOWN, which the refused
+ * `[0, 1]` statistic could not express at all. Nothing here is fitted to a corpus: the reference is a median of
+ * the case's own nodes.
+ *
+ * @param shares - The absolute shares, as {@link computeSelfTimeScores} returns them (sparse).
+ * @param edges - Call graph edges (caller → callee), the same list the shares were computed over.
+ * @returns Per-service residual, signed, centred on the node's own degree class. ABSENT for a node with no
+ *   measured peer of its own out-degree.
+ */
+export function computeFleetSelfTimeResiduals(
+  shares: ReadonlyMap<ServiceId, number>,
+  edges: readonly CallEdge[],
+): Map<ServiceId, number> {
+  if (shares.size === 0) return new Map();
+
+  // Distinct CALLEES, not edges: two parallel calls to one callee are one branch of the fan-out, and counting
+  // them twice would put a node in a degree class its own structure does not have.
+  const callees = new Map<ServiceId, Set<ServiceId>>();
+  for (const serviceId of shares.keys()) callees.set(serviceId, new Set());
+  for (const edge of edges) {
+    if (edge.from === edge.to) continue;
+    callees.get(edge.from)?.add(edge.to);
+  }
+
+  const bins = new Map<number, ServiceId[]>();
+  for (const [serviceId, own] of callees) {
+    const degree = own.size;
+    const bin = bins.get(degree);
+    if (bin === undefined) bins.set(degree, [serviceId]);
+    else bin.push(serviceId);
+  }
+
+  const residuals = new Map<ServiceId, number>();
+  for (const [serviceId, share] of shares) {
+    const bin = bins.get(callees.get(serviceId)!.size)!;
+    // A bin of one is a node the fleet cannot answer for: there is no peer at its call structure.
+    if (bin.length < 2) continue;
+    const peerValues = new Float64Array(bin.length - 1);
+    let at = 0;
+    for (const peer of bin) {
+      if (peer === serviceId) continue;
+      peerValues[at++] = shares.get(peer)!;
+    }
+    residuals.set(serviceId, share - medianOfRange(peerValues, 0, peerValues.length));
+  }
+  return residuals;
+}
+
+/**
  * The transport level of one latency channel: `log₁₀(1 + rise)`, or `undefined` when the window
  * cannot carry one.
  *
