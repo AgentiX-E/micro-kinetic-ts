@@ -5511,3 +5511,106 @@ artifact these numbers came from is the one that has it.
   one of.
 - **"An artifact that prints the count is enough to replay it."** The counts were printed and the map was not, so
   the JSON cannot reproduce an admission from its own contents.
+
+## §300 — The residual as a term: no slope, and the reason is distance
+
+Iteration 298 built the shape §299 asked for — the residual spent **proportionally** instead of as a licence on
+the edge — pre-registered `docs-repository:preregistration-298.md` (φ instead of ρ as the weight, λ = 1 derived
+below the smallest of the three losses' gaps, the standing criterion unchanged, the whole λ sweep committed), and
+measured it on the artifact that refused the gate. It was refused too, and the refusal is the more valuable half:
+it says what was carrying the gate.
+
+### The reading
+
+```
+  rows=1422 replayable=1422 disagreements=0 unordered=0
+  population fusion=833 ungated=861 same-length-cases=1385
+  phi fitted-on=a applies-to=b edges=56 fitted=8 positive=8 observations=406
+  phi fitted-on=b applies-to=a edges=61 fitted=9 positive=9 observations=375
+  transfers qualified=228 unfitted=45 paid=183 silent=0 refused=605
+  arm=fusion  top1=1141
+  arm=shipped top1=1156 +15/-0
+  arm=prior   top1=1165 +27/-3
+  arm=graded  top1=1137 +6/-10 lambda=1
+  H6-term: FAIL — +6 is below the 15 the gate requires
+```
+
+The `prior` row reproduces §299's `+27 / −3` / 1 165 exactly, which is what makes the graded row beneath it
+readable. The pre-registered prediction was **0 losses, 8–14 gains, Top@1 1 149–1 165**; all three are wrong.
+
+### Why the prediction's algebra was wrong, in one paragraph
+
+The bound `term ≤ λ` is on **one pair**: it says a callee cannot gain more than λ over the caller it shared an
+edge with. It says nothing about how many candidates that gain lets it pass. A rank-3 candidate paid λ can overtake
+a rank-1 candidate it never touched, and that is how ten cases were lost with no pair moving more than a point.
+The pre-registration is not amended — the falsifier it wrote is the one that fired.
+
+### The finding: precision is a function of distance, not of the statistic
+
+| λ | rank 2 | rank 3 | rank 4 | rank 5 |
+| --- | --- | --- | --- | --- |
+| 0.25 | +2 / −0 | +0 / −1 | — | — |
+| 1 | **+4 / −0** (100 %) | +2 / −5 (29 %) | +0 / −2 | +0 / −3 |
+| 4 | +11 / −3 (79 %) | +17 / −7 (71 %) | +0 / −11 | +0 / −9 |
+
+Ranks 4 and 5 are **0 for 20** at every λ. Rank 2 is perfect at λ = 1. And the nodes a long lift promotes are the
+corpus's downstream hubs — `ts-travel-service`, `ts-basic-service`, `ts-travel2-service` — which carry **φ = 1.000**
+on their incoming edges because containment is precisely what makes a callee co-move with its caller. The term pays
+most to the node that co-moves most, and that node is the furthest down the chain.
+
+**So `+27 / −3` was not a measurement of the residual's discrimination (AUC 0.8611) — it was a measurement of the
+step's constraint.** An adjacent swap can promote exactly the candidate at rank 2, and rank 2 is the only distance
+at which this statistic reads 100 %. A step bounds *which pairs can move*; a term bounds only *what one pair is
+worth*. The first is the load-bearing part, and nothing in §299 said so.
+
+### The curve, and the word for it
+
+| λ | Top@1 | ± | moved |
+| --- | ---: | --- | ---: |
+| 0.25 | 1 142 | +2 / −1 | 13 |
+| 0.5 | 1 139 | +4 / −6 | 32 |
+| 1 | 1 137 | +6 / −10 | 55 |
+| 2 | 1 141 | +18 / −18 | 98 |
+| 4 | 1 139 | +28 / −30 | 139 |
+
+One-to-one over a 16-fold range. Not inert (the curve moves), not noise (the sign of its *net* is stable), and not
+a bar that was missed: **it has no slope.** A spend that buys one case for every one it sells is not a candidate
+requirement at any magnitude.
+
+### The union, priced, and why the axis is closed rather than extended
+
+The reach table implies one more shape — the residual added to the interface record, restricted to rank 2 — and it
+can be priced before it is built. An exploratory probe (labelled as such: no pre-registration, so a bound and not
+a reading) over the 279 cases the fusion misses:
+
+| λ | both fix | shipped only | term-at-rank-2 only | union Top@1 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 3 | 12 | 1 | 1 157 |
+| 4 | 9 | 6 | 2 | 1 158 |
+
+One case at λ = 1, two at λ = 4, in exchange for a pass that must become score-aware — giving up a documented
+property of `applyContainmentOrder` for a one-case return. **The residual axis is exhausted:** as a gate it loses
+the argument, as a term it has no slope, and restricted to its reliable distance it adds one case.
+
+### The artifact defect §299 recorded, fixed here
+
+`containment-gate.json` serialised the prior as `"residuals": {}` because `JSON.stringify` writes a `Map` as `{}`.
+`gateReadingToJson` writes the entries, sorted by key so two runs of one corpus diff cleanly, and
+`compareEdgeKeys` is a named comparator so its equality arm is testable at all (a `Map` cannot hold a duplicate
+key, so an inlined `=== 0` arm is unreachable — and the repository's comparator census then enrols the site, which
+is how the new function was caught in the first place). The fix changes artifacts written after it; the artifact
+the numbers above came from is unchanged, and §299's note stands beside it.
+
+### Axes this closes
+
+- **"A better statistic would have made the gate work."** The statistic's discrimination (0.8611) was never the
+  operative variable. What made the gate work was that a swap can only promote the runner-up.
+- **"A graded version of a step is a better step."** It is a different object: a step has a move set, a term has a
+  magnitude. The step's move set is what was precise.
+- **"φ fixes ρ's ceiling."** It does, and it changed nothing — because the ceiling was never what failed. The
+  weight was computable and correct and still bought nothing.
+- **"The residual's remaining headroom can be spent."** Priced: one case. The 18 cases §299 counted are not
+  reachable by a weight on an edge, at any weight.
+- **"A pre-registration that predicts its own failure is the same as no pre-registration."** This one predicted
+  three numbers, got all three wrong, and the record says so with the falsifier that fired named. The value was
+  not in being right; it was in being wrong in a way that named the mechanism.

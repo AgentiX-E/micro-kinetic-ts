@@ -160,12 +160,41 @@ export function edgeCounts(
   rows: readonly ContainmentCaseRow[],
   arm: 'gated' | 'ungated' = 'ungated',
 ): Map<string, EdgeCounts> {
+  return countObservations(rows.map((row) => armTrace(row, arm)));
+}
+
+/** One observation, as the counter reads it: a pair that carried a call edge and the two excursions. */
+export interface ObservedPair {
+  /** The candidate that sat higher: the caller. */
+  readonly upper: string;
+  /** The candidate that sat lower: the callee. */
+  readonly lower: string;
+  /** The caller's excursion, or `undefined` when unmeasured. */
+  readonly upperExcursion?: number | undefined;
+  /** The callee's excursion, or `undefined` when unmeasured. */
+  readonly lowerExcursion?: number | undefined;
+}
+
+/**
+ * Accumulate out-of-band counts over any population of examined pairs.
+ *
+ * Split from {@link edgeCounts} so that a second population can be counted WITHOUT a second implementation of
+ * the counting: the containment gate fits on the ungated sweep's examined pairs, and the containment term fits on
+ * the fusion order's own adjacencies, and a corpus walk that counted one of them with its own loop would be free
+ * to disagree with the other about what an observation is.
+ *
+ * @param groups - One group of pairs per case; the grouping carries no meaning to the counter.
+ * @returns One entry per edge, keyed by {@link edgeKeyOf}.
+ */
+export function countObservations(
+  groups: Iterable<Iterable<ObservedPair>>,
+): Map<string, EdgeCounts> {
   const counts = new Map<
     string,
     { measured: number; bothOut: number; aOut: number; bOut: number }
   >();
-  for (const row of rows) {
-    for (const pair of armTrace(row, arm)) {
+  for (const group of groups) {
+    for (const pair of group) {
       const upperOut = pair.upperExcursion;
       const lowerOut = pair.lowerExcursion;
       if (upperOut === undefined || lowerOut === undefined) continue;

@@ -26,11 +26,12 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import type { ContainmentCaseRow } from './containment-rows.js';
+import { gradeByTerm, type TermTransfer } from './containment-term.js';
 
 /**
  * Which arm the containment stage is walked as.
  *
- * Four arms, because this repository asks four different things of the pass and only one of them is "do nothing":
+ * Five arms, because this repository asks five different things of the pass and only one of them is "do nothing":
  *
  * - `off` — no sweep at all. The order goes straight to the flow pass, which is the 1 141-case baseline every ±
  *   in `docs/containment-order.md` is read against, and the arm the gate is compared TO.
@@ -38,6 +39,9 @@ import type { ContainmentCaseRow } from './containment-rows.js';
  *   is the control the interface record is priced against.
  * - `shipped` — the excursion rule AND the failed-interface record.
  * - `prior` — the excursion rule AND a residual fitted outside this case.
+ * - `graded` — no sweep: the fusion order re-sorted by `score + Σδ`, where δ is the residual spent as a bounded
+ *   TERM (`containment-term.ts`). The transfers are passed in rather than computed here so that this module stays
+ *   a walk of the shipped chain and the study keeps its census.
  *
  * `off` and `ungated` are not the same arm, and conflating them is the mistake this type exists to prevent: a
  * baseline that inverted pairs would credit the gate with decisions the fusion had already made.
@@ -46,7 +50,12 @@ export type ReplayArm =
   | { readonly kind: 'off' }
   | { readonly kind: 'ungated' }
   | { readonly kind: 'shipped' }
-  | { readonly kind: 'prior'; readonly prior: ContainmentPrior };
+  | { readonly kind: 'prior'; readonly prior: ContainmentPrior }
+  | {
+      readonly kind: 'graded';
+      readonly transfers: readonly TermTransfer[];
+      readonly scores: ReadonlyMap<string, number>;
+    };
 
 /** One case's chain, walked. */
 export interface ReplayedCase {
@@ -74,6 +83,17 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
   const chain = row.chain;
   if (chain === undefined) return null;
   const ranking = chain.order.map((service) => ({ service }));
+  // `graded` re-sorts rather than sweeps, and its refusal is a value: a case whose candidate has no score cannot
+  // be ordered by score, and `null` is that statement rather than an order invented from the ones that can.
+  if (arm.kind === 'graded') {
+    const graded = gradeByTerm({
+      order: chain.order,
+      scores: arm.scores,
+      transfers: arm.transfers,
+    });
+    if (graded === null) return null;
+    return publishThroughFlows(chain, row, graded, []);
+  }
   // `off` skips the sweep entirely rather than passing it an empty requirement: the pass is what the arm is
   // about, and a sweep with nothing to require is still a sweep — it inverts, and that is the `ungated` arm.
   const sweep =
@@ -93,17 +113,39 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
           // already refused.
           ...(arm.kind === 'prior' ? { prior: arm.prior } : {}),
         });
+  return publishThroughFlows(
+    chain,
+    row,
+    sweep.order.map((entry) => entry.service),
+    sweep.verdicts,
+  );
+}
+
+/**
+ * The order the engine publishes: the containment stage, then the failure-flow pass.
+ *
+ * Shared by every arm rather than repeated, because the flow pass is not what any of them vary: an arm that ran
+ * its own copy could disagree about the chain it is supposed to be a change to.
+ *
+ * @param chain - The case's recorded inputs.
+ * @param row - The case's dump row, for the margin.
+ * @param containment - The containment stage's order.
+ * @param verdicts - The pairs the sweep examined.
+ * @returns The walked orders and the sweep's reasons.
+ */
+function publishThroughFlows(
+  chain: NonNullable<ContainmentCaseRow['chain']>,
+  row: ContainmentCaseRow,
+  containment: readonly string[],
+  verdicts: readonly ContainmentVerdict[],
+): ReplayedCase {
   const published = applyFailureContainment({
-    ranking: sweep.order,
+    ranking: containment.map((service) => ({ service })),
     flows: new Map(Object.entries(chain.flows)),
     failingEdges: new Map(Object.entries(chain.failingEdges)),
     attribution: chain.attribution,
   }).map((entry) => entry.service);
-  return {
-    containment: sweep.order.map((entry) => entry.service),
-    published,
-    verdicts: sweep.verdicts,
-  };
+  return { containment: [...containment], published, verdicts };
 }
 
 /**

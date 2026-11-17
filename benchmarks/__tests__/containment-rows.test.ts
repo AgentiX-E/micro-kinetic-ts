@@ -169,6 +169,25 @@ describe('ContainmentRowDump', () => {
     ).toBe(summary.pairs);
   });
 
+  it('counts an ungated pair that was refused, not only the ones the ungated arm inverted', () => {
+    // The counter's job is to separate "the ungated walk examined this pair" from "the ungated walk inverted it",
+    // because the difference is the whole price of the interface record (§4 of `docs/containment-order.md`). A
+    // fixture whose every pair is inverted cannot tell the two counts apart, and would report the counter as
+    // correct while it was only ever copying the total.
+    const dump = new ContainmentRowDump(join(scratch(), 'containment.ndjson'));
+    dump.record(
+      row({
+        ungatedPairs: [
+          { upper: 'a', lower: 'b', decision: 'not-larger' },
+          { upper: 'b', lower: 'c', decision: 'inverted' },
+          { upper: 'c', lower: 'd', decision: 'no-failed-interface' },
+        ],
+      }),
+    );
+    expect(dump.summary.ungatedPairs).toBe(3);
+    expect(dump.summary.invertedUngated).toBe(1);
+  });
+
   it('counts the two prior refusals apart, should a gated arm ever be recorded through it', () => {
     // Neither arm a run sweeps can produce them — the run fits no prior — but the format's vocabulary is the
     // sweep's, not the two arms'. Folding them into `notLarger` would make a gate's refusals indistinguishable

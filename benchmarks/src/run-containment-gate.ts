@@ -28,7 +28,12 @@
 import { writeFileSync } from 'node:fs';
 
 import { formatGateReading, parseGateArgs } from './containment-gate-report.js';
-import { STANDING_CRITERION, gateVerdict, readGate } from './containment-gate.js';
+import {
+  STANDING_CRITERION,
+  gateReadingToJson,
+  gateVerdict,
+  readGate,
+} from './containment-gate.js';
 import { readContainmentRows } from './containment-rows.js';
 import { readPerCaseVerdicts } from './fse26-per-case.js';
 
@@ -75,7 +80,9 @@ function main(): void {
           score: opts.score,
           verdict,
           reason,
-          reading,
+          // Serialised through the helper rather than directly: a `Map` stringifies to `{}`, and the first
+          // artifact of this reading lost the admitted edges that way (§15.9 of `docs/containment-order.md`).
+          reading: gateReadingToJson(reading),
         },
         null,
         2,

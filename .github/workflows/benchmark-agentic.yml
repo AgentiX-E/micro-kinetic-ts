@@ -368,7 +368,50 @@ jobs:
             echo ''
             echo '```'
             grep -E '^  (rows=|prior |arm=|gate decisions:|criterion:|H2-gate:)' \
-              artifacts/agentic/containment-gate.txt || true
+              artifacts/agentic/containment-gate.txt
+            artifacts/agentic/containment-gate.json
+            artifacts/agentic/containment-term.txt
+            artifacts/agentic/containment-term.json || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── H6: the residual as a bounded TERM in the score ─────────────────────────────────────────────────────
+      #
+      #   The gate above spent the residual as a licence on one edge, which spends the same amount whether the
+      #   fusion led by 0.01 or by 4. This step spends it proportionally — `score + λ·φ·a` on the callee of a
+      #   qualifying pair — and reads four arms: the fusion baseline, the shipped interface record, the gate, and
+      #   the term.
+      #
+      #   It is here rather than in a notebook because the answer is a REFUSAL and a refusal has to be re-read on
+      #   every corpus: the arm reads +6/−10 at Top@1 1 137, and the reason is a census this step prints — the
+      #   promotion's precision is 100 % at rank 2 and 0 for 20 at ranks 4 and 5. A future corpus that changes that
+      #   table changes the conclusion, and nothing else in the pipeline would notice.
+      #
+      #   The λ sweep is printed in full because the pre-registration committed to the curve before the number
+      #   existed. A single λ is a parameter; the curve is the smallest object that can tell a weight from a
+      #   coincidence, and on this corpus it is one-to-one — a case bought for every case sold.
+      #
+      #   `--depth` is the same run's score dump. Joining the two dumps on `datapack` is a join INSIDE one
+      #   artifact, and the CLI refuses a size mismatch rather than reading a smaller population.
+      #
+      #   Exit 3 is reserved for an artifact it cannot walk (a missing chain, a candidate with no score). A
+      #   measured FAIL leaves the job green, on the same principle as the gate: a refused hypothesis is not broken
+      #   code.
+      - name: Read the containment term (H6)
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-containment-term.ts \
+            --rows artifacts/agentic/containment.ndjson \
+            --depth artifacts/agentic/depth.ndjson \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/containment-term.json \
+            2>&1 | tee artifacts/agentic/containment-term.txt
+          {
+            echo '### H6 — the residual as a term, cross-fitted'
+            echo ''
+            echo '```'
+            grep -E '^  (rows=|population|phi |transfers|moved=|reach |arm=|lambda sweep:|    lambda=|criterion:|H6-term:)' \
+              artifacts/agentic/containment-term.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

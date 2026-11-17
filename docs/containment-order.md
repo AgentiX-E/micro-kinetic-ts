@@ -1146,3 +1146,198 @@ residual a **graded term** in the score — prior, evidence, centred residual, a
 implements it — rather than a binary licence on the edge. A term cannot promote a victim over its root by 0.08, and
 it cannot block the eighteen cases either; it moves them by an amount proportional to the evidence. That is the
 next arm on this axis, and the statistic it needs is the one this section built.
+
+## 17. The residual as a TERM (iteration 298) — refused, and the reason is locality
+
+§16 closed the objection that the gate's threshold was never *tested*, and answered it in the way that did not
+rescue the gate: a stricter test does not repair a causal blind spot, it shrinks the population that pays for it.
+What §16 could not answer is the other objection — that a binary licence on an edge is the wrong **shape**. A step
+spends the same amount whether the fusion led by 0.01 or by 4, so the three losses it took were not a problem of
+evidence but of spend.
+
+This section builds the shape that spends proportionally, measures it on the same artifact, and refuses it too.
+The refusal is worth more than either pass would have been, because it names what was actually carrying the gate.
+
+### 17.1 What was built
+
+| module | what it holds |
+| --- | --- |
+| `benchmarks/src/containment-term.ts` | `asymmetryOf`, `termTransfers`, `phiByEdge`, `fusionPairs`, `gradeByTerm` — the arithmetic of one pair and of one order |
+| `benchmarks/src/containment-term-study.ts` | `readTerm`, `sweepTerm`, `termVerdict` — the cross-fitted reading, four arms, the reach census |
+| `benchmarks/src/containment-term-report.ts` | the argument parser and the report, on the gate's layout so the two read as one column set |
+| `benchmarks/src/run-containment-term.ts` | the CLI, exit 3 on an artifact it cannot walk |
+| `benchmarks/src/containment-replay.ts` | a FIFTH arm, `graded`, so every arm is walked by one implementation |
+
+`containment-residual.ts` gained `countObservations`: the term fits on the fusion order's own adjacencies and the
+gate fits on a sweep's, and a second corpus walk with its own counting loop would have been free to disagree with
+the first about what an observation is. `containment-gate.ts` gained `compareEdgeKeys` (the comparator the
+residual JSON needs, named so its equality arm is testable at all) and `gateReadingToJson` — the fix for the
+artifact defect §15.9 recorded: `JSON.stringify` writes a `Map` as `{}`, so the first gate artifact kept
+`fitted`/`admitted` and lost **which edges** they were.
+
+### 17.2 The statistic is φ, not ρ, and the term is single-sided
+
+ρ's ceiling was recorded in the residual module before any gate existed: with `p = q = 1` the joint is forced and
+**ρ = 0 however perfectly the two services move together**, while `p = q = 0.5` reads 0.25 for the same coupling.
+As a threshold that costs one refusal. As a **weight** it zeroes the most propagation-like edge in the corpus and
+pays the most to an edge that co-moved half the time. So the term is weighted by φ — the same covariance over
+`√(p(1−p)·q(1−q))`, already computed and serialised beside ρ — and one λ means one thing on every edge:
+
+```
+pair (u above, v below), both measured, x_v > x_u + margin
+a       = (x_v − x_u) / (x_v + x_u)        ∈ (0, 1]
+term(v) += λ · φ(edge) · a                  ≤ λ
+```
+
+Nothing is subtracted from `u`. The mechanism's claim is one-directional — the callee's movement is the source —
+and punishes-the-caller is a second claim whose counter-example is exactly the three losses. Single-sided is also
+what makes `≤ λ` true, which is the bound §17.3 rests on.
+
+### 17.3 λ = 1, derived rather than tuned
+
+The three losses the gate took have fused gaps of **1.226766**, **1.008035** and **1.007362** score points. Since
+`|φ| ≤ 1` and `a ≤ 1` and the term is single-sided, a pair moves by at most λ — so for `λ < 1.007362` this arm
+**cannot** reproduce any of the three. That is arithmetic, not hope, and it is why λ = 1: the largest round unit
+strictly below the smallest of the three gaps. Its cost is stated with it — a term that cannot pay more than one
+point can only move pairs the fusion was unsure about — and the whole sweep from 0.25 to 4 is reported so the
+bound can be seen to bind.
+
+### 17.4 The prediction, and what happened to it
+
+`preregistration-298.md` (docs repository) fixed the numbers before the corpus was read: **losses 0, "and not by
+luck"**, 8–14 gains, Top@1 between 1 149 and 1 165. Run `44013268053`'s artifact reads:
+
+```
+  rows=1422 replayable=1422 disagreements=0 unordered=0
+  population fusion=833 ungated=861 same-length-cases=1385
+  phi fitted-on=a applies-to=b edges=56 fitted=8 positive=8 observations=406
+  phi fitted-on=b applies-to=a edges=61 fitted=9 positive=9 observations=375
+  transfers qualified=228 unfitted=45 paid=183 silent=0 refused=605
+  moved=55 (graded head differs from the fusion head)
+  arm=fusion  top1=1141
+  arm=shipped top1=1156 +15/-0
+  arm=prior   top1=1165 +27/-3
+  arm=graded  top1=1137 +6/-10 lambda=1
+  reach rank=2 +4/-0 rank=3 +2/-5 rank=4 +0/-2 rank=5 +0/-3
+```
+
+**Every one of the three predictions is wrong, and the first is wrong by construction rather than by luck.** The
+`prior` row reproduces §15.9's 1 165 / `+27 / −3` exactly, which is what licenses reading the row beneath it.
+
+### 17.5 Why the algebra failed: the bound is on the pair, not on the tournament
+
+The derivation in §17.3 bounds how much a callee can gain **over the caller it was compared with**. It does not
+bound how many candidates that gain lets it pass. A candidate at rank 3 that is paid λ can overtake a rank-1
+candidate it never shared an edge with, and the three losses §17.3 was reasoning about are not the only way to
+lose a case.
+
+That is a category error in the pre-registration, and the pre-registration is not amended: `λ = 1` stays, the
+criterion stays, and the falsifier "any loss at λ = 1 falsifies the derivation" is what fired. The correct
+statement of the bound is the one this section can now make honestly: **a term bounds what one pair is worth, and
+a step bounds which pairs can move at all.**
+
+### 17.6 The mechanism, counted: precision is a function of how far the promotion reaches
+
+Every case whose published head changed is bucketed by the rank the promoted candidate held in the fusion order:
+
+| λ | rank 2 | rank 3 | rank 4 | rank 5 |
+| --- | --- | --- | --- | --- |
+| 0.25 | **+2 / −0** (100 %) | +0 / −1 (0 %) | — | — |
+| 1 | **+4 / −0** (100 %) | +2 / −5 (29 %) | +0 / −2 (0 %) | +0 / −3 (0 %) |
+| 4 | +11 / −3 (79 %) | +17 / −7 (71 %) | +0 / −11 (0 %) | +0 / −9 (0 %) |
+
+**Ranks 4 and 5 are 0 for 20 at every λ.** Rank 2 is perfect at λ = 1 and still 79 % at four times it. The term's
+precision is not a property of the residual; it is a property of the distance.
+
+And the losers are not a scatter — they are one class of node. At λ = 1 all ten are the same mechanism, and the
+edges that paid them are the corpus's most coupled:
+
+| case | truth | promoted | edge that paid it | φ |
+| --- | --- | --- | --- | --- |
+| `ts1-ts-basic-service-request-replace-method-hz96t6` | `ts-basic-service` | `ts-route-plan-service` | `ts-travel-plan → ts-route-plan` | 0.839 |
+| `ts1-ts-basic-service-response-replace-code-5pdcrx` | `ts-basic-service` | `ts-travel2-service` | `ts-travel-plan → ts-travel2` | 0.753 |
+| `ts1-ts-route-service-latency-vhk7dz` | `ts-route-service` | `ts-basic-service` | `ts-travel → ts-basic` | **1.000** |
+| `ts2-mysql-delay-d427wn` | `ts-route-service` | `ts-basic-service` | `ts-travel → ts-basic` | **1.000** |
+| `ts3-ts-seat-service-request-delay-79xhc2` | `ts-seat-service` | `ts-travel-service` | `ts-travel-plan → ts-travel` | 0.749 |
+
+`ts-basic-service` and `ts-travel-service` are the corpus's downstream hubs, and they carry **φ = 1.000**: they
+co-move with their callers in every observation. That is not an accident of the statistic — it is what containment
+*is*. A caller's latency contains its callee's, so a callee moves whenever its caller does, and the node with the
+most callers has the most reasons to move. **The term pays most to the node that co-moves most, and the node that
+co-moves most is the furthest downstream.** §15.9 measured this once, as three cases on one edge; a global spend
+makes it the dominant failure mode.
+
+### 17.7 Therefore the gate was carried by its step, not by its residual
+
+An adjacent swap can promote exactly one candidate — the one at rank 2 — and that is the distance at which this
+statistic reads 100 %. §15.9's `+27 / −3` was therefore not a measurement of the residual's strength. It was a
+measurement of a **constrained move whose constraint happened to match the statistic's only reliable range**.
+
+Two consequences, and the second is the uncomfortable one:
+
+- **The AUC of 0.8611 (§14.7) measures a discrimination that no global spend can convert.** Ranking gains against
+  losses by ρ says the statistic knows which pairs are real; it says nothing about which *candidates* those pairs
+  are about, and a term is asked the second question.
+- **The `+27 / −3` is not evidence that a better statistic would do better.** It is evidence that the step's
+  structure — a licence on one edge, spent on that edge's own adjacency — is doing most of the work. Anything
+  proposed to replace the step has to be measured against *that*, and this arm is the first measurement that says
+  so out loud.
+
+### 17.8 The sweep, whole, and its ratio
+
+| λ | Top@1 | ± vs fusion | moved |
+| --- | ---: | --- | ---: |
+| 0.25 | 1 142 | +2 / −1 | 13 |
+| 0.5 | 1 139 | +4 / −6 | 32 |
+| 1 | 1 137 | +6 / −10 | 55 |
+| 2 | 1 141 | +18 / −18 | 98 |
+| 4 | 1 139 | +28 / −30 | 139 |
+
+The curve is not flat, which rules out the "inert" falsifier, and it is not non-monotone in sign, which rules out
+the "noise" one. It is **one-to-one**. Gains and losses grow together over a 16-fold range: at λ = 4 the arm buys
+28 cases and sells 30. The marginal precision of a further unit of spend is ~50 % at every scale, which is the
+precise sense in which the residual's *marginal* value in this shape is zero — and why the arm is refused not for
+being below a bar but for having no slope.
+
+### 17.9 The price is starvation, again
+
+`qualified=228`, `unfitted=45`, `paid=183`, `silent=0`, `refused=605`. Of the 228 pairs that qualified on their
+excursions, **45 sit on an edge the paying half could not fit** — the same starvation §15.9 recorded as
+`prior-absent=43`, for the same reason: a φ fitted on half a corpus cannot fit the edges only the other half
+measured. `silent` is zero everywhere, which is its own small finding: no fitted edge in this corpus has φ ≤ 0 once
+it is coupled enough to qualify, so the "the corpus measured independence" branch never fired.
+
+### 17.10 What was probed afterwards, and why it closes the axis rather than opening a new arm
+
+The reach table suggests one more shape: **the residual as an addition to the interface record, restricted to the
+distance where it is precise.** That is a union — invert when the interface failed, OR when the term's payment
+clears the gap at rank 2 — and it can be priced on the same artifact before it is built. It was, as an exploratory
+probe and labelled as one (no pre-registration, so it is a bound and not a reading):
+
+| λ | both fix it | shipped only | term-at-rank-2 only | union Top@1 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 3 | 12 | 1 | 1 157 |
+| 2 | 4 | 11 | 1 | 1 157 |
+| 4 | 9 | 6 | 2 | 1 158 |
+
+Over the 279 cases the fusion misses, the residual restricted to its only reliable distance adds **one** case at
+λ = 1 and two at λ = 4, against the shipped arm's fifteen. The union clears 1 156 by one case, and the cost of
+building it is a pass that becomes score-aware — which is a documented property of `applyContainmentOrder`
+("its result is deterministic and independent of the candidates' scores") and would have to be given up for a
+one-case return.
+
+So the honest reading is not "build the union". It is: **the residual axis is exhausted.** As a gate it loses the
+argument (§15.9); as a term it has no slope (§17.8); restricted to where it is precise it adds one case (§17.10).
+The 18 cases §15.9 called headroom are real and are not reachable from this axis: they need a term that is
+*evidence about the candidate*, not a weight on the edge, which is what H6 was hoped to be and is not.
+
+### 17.11 The debts this does not pay
+
+- **φ still has no interval.** A term is a weight, and a weight with no error bar is exactly what a term was
+  supposed to be better than a threshold at. The debt §16.4 named twice is now sharper, not smaller.
+- **No claim about a candidate below the fifth position.** The term only qualifies pairs the sweep examined, so a
+  candidate outside the chain never receives one; the reach census's ranks are the fusion's first five, and
+  nothing here says what a lift from rank 9 would be worth.
+- **The three losses' "cannot happen" argument was about the pair's gap,** and §17.5 records why it did not
+  extend. A reader who wants the bound to hold should read the reach table as the bound's replacement: it is
+  empirical, it is per distance, and it is the reason the next arm on this axis is not a spend.

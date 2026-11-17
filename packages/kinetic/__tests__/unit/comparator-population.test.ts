@@ -110,6 +110,17 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     { signature: 'a.key < b.key', population: '`counter.entries()`, a Map' },
     { signature: 'a.faultType < b.faultType', population: '`byType.values()`, a Map' },
   ],
+  'benchmarks/src/containment-gate.ts': [
+    // The ONE derived site whose tie-break answers `0`, and therefore the shape the audit is asking every other
+    // site to have: `? -1 : 1` without an equality arm answers `1` in both directions for equal keys, and this
+    // comparator returns `0` instead. The list is a `Map`'s entries, whose keys are unique by construction, so
+    // the arm is also never taken — which is why the coverage of it is a direct test of the function rather than
+    // a fixture that could not be built.
+    {
+      signature: 'a < b',
+      population: '`prior.prior.residuals.entries()`, a Map keyed by edge, sorted so two runs diff',
+    },
+  ],
   'benchmarks/src/fse26-discriminator.ts': [
     { signature: 'a.config < b.config', population: '`configDeltas`, a `new Set` of names' },
   ],

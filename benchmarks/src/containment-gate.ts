@@ -338,7 +338,74 @@ export function gateVerdict(
       reason: `${reading.disagreements} case(s) did not reproduce the recorded top-1, so the chain is incomplete`,
     };
   }
-  const arm = reading.arms.prior;
+  return judgeArm(reading.arms.prior, criterion);
+}
+
+/**
+ * Order two edge keys by code unit.
+ *
+ * `localeCompare` would answer from ICU and the active locale — machine state — and this comparison exists so
+ * that two runs of one corpus produce artifacts a reader can diff. Named rather than inlined so that the equality
+ * case is expressible: a `Map` cannot hold a duplicate key, so an inline comparator's `=== 0` arm is unreachable
+ * and untestable, and an unreachable arm in a sort is exactly the one that would be wrong when it mattered.
+ *
+ * @param a - One key.
+ * @param b - The other.
+ * @returns `-1`, `0` or `1`.
+ */
+export function compareEdgeKeys(a: string, b: string): number {
+  // The equality arm is the whole point: the `? -1 : 1` shape this repository audits answers `1` in BOTH
+  // directions for a pair of equal keys, which is the inconsistency `docs/comparator-consistency-audit.md`
+  // measured. This one answers `0`, so it is consistent for every pair and not only for a unique-keyed list.
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/**
+ * The reading as JSON, with the priors' residual maps made serialisable.
+ *
+ * `JSON.stringify` writes a `Map` as `{}`, so the first artifact of this reading recorded `"residuals": {}` and
+ * kept `fitted`/`admitted` while losing **which edges** they were — the one thing §15.2 of
+ * `docs/containment-order.md` exists to guarantee, since a reader with the JSON alone could not reproduce an
+ * admission. Recorded in §15.9 as a defect of that artifact rather than patched into it; this is the fix, and it
+ * changes the artifact only for runs after it.
+ *
+ * The map becomes an array of `[edgeKey, residual]` pairs sorted by key, so two runs of one corpus diff cleanly
+ * instead of reordering themselves.
+ *
+ * @param reading - The gate's reading.
+ * @returns A JSON-ready object: the reading with each prior's residuals as sorted entries.
+ */
+export function gateReadingToJson(reading: GateReading): object {
+  return {
+    ...reading,
+    priors: reading.priors.map((prior) => ({
+      ...prior,
+      prior: {
+        threshold: prior.prior.threshold,
+        residuals: [...prior.prior.residuals.entries()].sort(([left], [right]) =>
+          compareEdgeKeys(left, right),
+        ),
+      },
+    })),
+  };
+}
+
+/**
+ * The criterion's three numbers, applied to one arm.
+ *
+ * Split out so that a second arm — the residual spent as a term rather than as a gate — is judged by THIS
+ * implementation and not by a copy of it. Two arms judged by two copies of a criterion is how a repository ends up
+ * with two bars that both call themselves the standing one.
+ *
+ * @param arm - The arm's Top@1 and its ± against the no-pass baseline.
+ * @param criterion - The standing gate, or another one.
+ * @returns `'pass'`, or `'fail'` with the number that failed.
+ */
+export function judgeArm(
+  arm: GateArmScore,
+  criterion: GateCriterion = STANDING_CRITERION,
+): { readonly verdict: 'pass' | 'fail'; readonly reason: string } {
   if (arm.gains < criterion.gains) {
     return {
       verdict: 'fail',

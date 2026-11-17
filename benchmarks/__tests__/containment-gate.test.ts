@@ -16,8 +16,10 @@ import { failureEdgeKey } from '../../packages/tree/src/index.js';
 import {
   GATE_THRESHOLD,
   STANDING_CRITERION,
+  compareEdgeKeys,
   fitPrior,
   foldOf,
+  gateReadingToJson,
   gateVerdict,
   otherFold,
   priorsFor,
@@ -461,5 +463,59 @@ describe('gateVerdict', () => {
     });
     expect(lenient.verdict).toBe('pass');
     expect(STANDING_CRITERION).toEqual({ gains: 15, losses: 0, shippedTop1: 1_156 });
+  });
+});
+
+// ── gateReadingToJson ─────────────────────────────────────
+
+describe('gateReadingToJson', () => {
+  it('writes the prior’s residual map as sorted entries instead of an empty object', () => {
+    // `JSON.stringify(new Map())` is `{}`. The artifact this was found on recorded `"residuals": {}` and kept
+    // `fitted`/`admitted` while losing which edges they were, so a reader holding the JSON could not reproduce an
+    // admission — the property the chain was added to guarantee. This is the fix, asserted through the same
+    // `JSON.stringify` a reader would use rather than against the object's shape.
+    const { rows, accepted } = corpusOf(12, () => CO_MOVING);
+    const reading = readGate(rows, accepted, 'rho');
+    const json = JSON.parse(JSON.stringify(gateReadingToJson(reading))) as {
+      priors: { prior: { threshold: number; residuals: [string, number][] } }[];
+    };
+    expect(json.priors).toHaveLength(2);
+    for (const prior of json.priors) {
+      expect(prior.prior.threshold).toBe(0);
+      expect(Array.isArray(prior.prior.residuals)).toBe(true);
+      // Sorted, so two runs of one corpus diff cleanly instead of reordering themselves.
+      const keys = prior.prior.residuals.map(([key]) => key);
+      expect(keys).toEqual([...keys].sort());
+    }
+    // And the counts survive beside them, so the artifact is readable both ways.
+    expect(json.priors[0]).toHaveProperty('fitted');
+  });
+
+  it('keeps the residuals that the threshold refused, because a refusal is a measurement', () => {
+    const { rows, accepted } = corpusOf(12, () => CO_MOVING);
+    const reading = readGate(rows, accepted, 'rho');
+    const json = JSON.parse(JSON.stringify(gateReadingToJson(reading))) as {
+      priors: { prior: { residuals: [string, number][] }; fitted: number; admitted: number }[];
+    };
+    for (const prior of json.priors) {
+      // Two entries per fitted edge: the map is keyed by the direction of the call edge, because that is the only
+      // key the sweep asks about, and ρ itself is symmetric. The count is therefore 2× the edges, which is what
+      // makes `fitted` and the map's length reconcilable rather than two numbers about the same thing.
+      expect(prior.prior.residuals).toHaveLength(2 * prior.fitted);
+    }
+  });
+});
+
+// ── compareEdgeKeys ───────────────────────────────────────
+
+describe('compareEdgeKeys', () => {
+  it('orders by code unit and answers zero for equal keys', () => {
+    // The equality arm is unreachable inside a `Map`, which is why the comparator is a named function: the arm
+    // that cannot be reached through the caller is the arm that has to be tested directly.
+    expect(compareEdgeKeys('a\u0000b', 'a\u0000b')).toBe(0);
+    expect(compareEdgeKeys('a\u0000b', 'a\u0000c')).toBe(-1);
+    expect(compareEdgeKeys('a\u0000c', 'a\u0000b')).toBe(1);
+    // And it must not answer from ICU: `localeCompare` would put these in a locale's order, not a code unit's.
+    expect(compareEdgeKeys('Z', 'a')).toBe(-1);
   });
 });

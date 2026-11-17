@@ -213,3 +213,54 @@ describe('replayAgrees', () => {
     expect(replayAgrees(withoutChain, replayCase(withoutChain, { kind: 'shipped' }))).toBeNull();
   });
 });
+
+describe('the graded arm’s refusal', () => {
+  it('returns null rather than an order when a candidate has no score', () => {
+    // The refusal is the arm's honest answer: a candidate the engine could not score has no place in a sort by
+    // score, and an order invented from the ones that can be scored would be a population the run never declared.
+    const row = {
+      datapack: 'case',
+      margin: 0,
+      chain: {
+        order: ['a', 'b'],
+        edges: [['a', 'b']],
+        excursions: { a: 0, b: 1 },
+        failedInterfaces: {},
+        flows: {},
+        failingEdges: {},
+        attribution: 'count',
+      },
+    } as unknown as ContainmentCaseRow;
+    expect(
+      replayCase(row, { kind: 'graded', transfers: [], scores: new Map([['a', 1]]) }),
+    ).toBeNull();
+  });
+
+  it('publishes the graded order through the same flow pass every arm gets', () => {
+    const row = {
+      datapack: 'case',
+      margin: 0,
+      chain: {
+        order: ['a', 'b'],
+        edges: [['a', 'b']],
+        excursions: { a: 0, b: 1 },
+        failedInterfaces: {},
+        flows: {},
+        failingEdges: {},
+        attribution: 'count',
+      },
+    } as unknown as ContainmentCaseRow;
+    const replayed = replayCase(row, {
+      kind: 'graded',
+      transfers: [{ caller: 'a', callee: 'b', phi: 0.9, asymmetry: 1, delta: 1 }],
+      scores: new Map([
+        ['a', 1],
+        ['b', 0.5],
+      ]),
+    });
+    expect(replayed?.containment).toEqual(['b', 'a']);
+    // No sweep ran, so no pair was examined: the graded arm's reasons are the transfers, which live in the study.
+    expect(replayed?.verdicts).toEqual([]);
+    expect(replayed?.published).toEqual(['b', 'a']);
+  });
+});
