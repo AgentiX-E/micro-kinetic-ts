@@ -5404,3 +5404,110 @@ nothing in this entry is a reading of them.
 - **"A requirement is a predicate."** It is also a population: a prior fitted on a fraction of the corpus refuses
   edges the whole corpus could measure, and the report counts those separately from the ones it fitted and
   rejected.
+
+## §299 — The residual requirement wins the corpus and loses the argument
+
+Iteration 296 built the arm that asks whether REQUIRING `ρ > 0` of an edge — in place of the failed-interface
+record — makes the containment pass better, and pre-registered `+15 / −0` and `Top@1 > 1 156` as the bar. Run
+`44013268053` answered it, and the exact test that was supposed to make the requirement respectable was written and
+checked in the same iteration. Neither part turned out the way the previous entry expected.
+
+### The reading, and the reconstruction that licenses it
+
+```
+  rows=1422 replayable=1422 scored=1422 disagreements=0
+  prior fitted-on=b applies-to=a edges=61 fitted=8 admitted=8 unfitted=53 observations=391
+  prior fitted-on=a applies-to=b edges=56 fitted=9 admitted=8 unfitted=47 observations=418
+  arm=fusion  top1=1141/1422
+  arm=shipped top1=1156/1422 +15/-0
+  arm=prior   top1=1165/1422 +27/-3
+  gate decisions: inverted=198 prior-absent=43 prior-below=1 not-larger=561 unmeasured=52
+  H2-gate: FAIL — 3 loss(es) against a requirement of 0
+```
+
+The shipped arm's replay reproduces the published 1 156 with **zero** disagreements over 1 422 cases, so the rows
+beside it describe a walk the run took rather than a reconstruction of one. That check was the reason the row
+carries its own input (§15.2), and this is the first run in which it could have failed and did not.
+
+### The number that is refused, and why refusing it is not bookkeeping
+
+The requirement gains **27** where the interface record gains 15, loses **3** where it loses none, and ends at
+**1 165**, which is 9 above the shipped arm and the best of the three. Nine of its gains are cases the interface
+record also fixes; **eighteen it does not reach at all**. The criterion refuses it, and the entry does not move the
+criterion after reading the tally: `losses ≤ 0` was written before the number existed, and a bar that is
+renegotiated by the result it judges is not a bar.
+
+The three losses are one edge and one mechanism, and in all three the correct answer was already first:
+
+| case                                                   | fold | fused / shipped head  | prior head            | inversion                   |
+| ------------------------------------------------------ | ---- | --------------------- | --------------------- | --------------------------- |
+| `ts1-ts-preserve-service-response-abort-fxjfws`        | a    | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+| `ts1-ts-preserve-service-response-replace-code-qnm2bw` | b    | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+| `ts2-ts-preserve-service-response-replace-code-glvrkq` | a    | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+
+The fault is at `ts-preserve-service` in all three (`response-abort`, `response-replace-code`) and the accepted
+answer is the service whose response was corrupted. Its callee moved further out of band, so the order promoted the
+callee over the root — exactly the promotion the interface record refused, correctly, because no call failed on
+that edge. **ρ measures co-movement and a caller and its victim co-move.** The interface record measures something
+else: that a call was made and did not complete. That is why its zero is a purpose and not a coincidence, and why
+18 gains do not buy the right to promote a victim over its root.
+
+### What refused the other 44 inversions
+
+`prior-absent=43`, `prior-below=1`. A prior fitted on half a corpus leaves 53 and 47 edges unfitted, and an unfitted
+edge blocks every inversion on it. So the gate's **cost** is population — most edges are unmeasurable on the half
+that would judge them — while its **price** is paid entirely on the edges it admitted. A report that printed only
+`admitted` would have made the gate look selective when it was mostly starved: 8 of 8 and 8 of 9 fitted edges were
+admitted on the two halves, so `ρ > 0` refused almost nothing it could measure.
+
+### The residual is an edge constant — and the loss edge is the least constant one
+
+Eight edges are measurable in both halves. Every one is positive in both, there are **no sign flips**, and the mean
+`|ρ_a − ρ_b|` is **0.0421**. An edge-level prior is therefore a defensible object on this corpus. But the edge that
+produced all three losses is the corpus's **least stable**: `0.0800` (n = 20) against `0.2178` (n = 15), `Δ = +0.1378`,
+the largest of the eight. It stays positive on both halves, so "the sign must reproduce" or "the smaller half's
+estimate must be positive" would not have blocked it. Instability is a warning about that edge, not a test that
+separates it.
+
+### The exact test, and the answer it gives to the obvious objection
+
+`MIN_POPULATION = 10` was a p-value with the marginals collapsed to their worst case: at `n = 10` a balanced edge
+that couples perfectly is worth `1/C(10,5) = 0.00397` and an edge whose margins sit at `0.9` is worth `0.1` at the
+same coupling and can never reach significance. `benchmarks/src/containment-significance.ts` replaces it with the
+hypergeometric tail `P(X ≥ bothOut)`, which **is** the permutation test in closed form rather than an approximation
+of it, and with Benjamini–Hochberg at `q = 0.05` because a floor never had to count how many edges were asked.
+Checked against the tea-tasting table, five hand-computed fractions, 200 000 real permutations (`z = −0.29 → −1.59`),
+`scipy.stats.hypergeom.sf` over 120 random tables (max `4.7 × 10⁻¹³`) and `scipy.stats.false_discovery_control` over
+60 random p-vectors (**exactly 0.0**). 100 % coverage in all four dimensions over 31 tests.
+
+Priced against the artifact it would run on, it admits 4 of 56 edges on one half and 4 of 61 on the other, against
+`ρ > 0`'s 8/8 and 8/9. And on the loss edge it splits: the prior fitted on half a reads `p = 1.37 × 10⁻¹` and
+refuses it, the prior fitted on half b reads `p = 1.24 × 10⁻³`, `q = 0.019` and **admits** it. So the test blocks
+**one** of the three losses and leaves the two whose granting half found the edge significant.
+
+That is the objection answered, and it is not the answer that would have rescued the requirement. **A stricter
+test does not repair a causal blind spot; it shrinks the population that pays for it.** The arm remains
+pre-registered in the docs repository (`preregistration-297.md`, with its predicted failure and its `UNMEASURED`
+falsifier) and is not built as a candidate requirement, because the thing it would be asked to fix has already been
+measured.
+
+### One artifact defect the JSON exposed
+
+`containment-gate.json` records the prior as `"residuals": {}`. A `Map` stringifies to nothing, so the
+machine-readable record keeps `fitted`/`admitted` and loses **which edges** they were — the one thing §15.2 exists to
+guarantee. The reading above is unaffected, and the defect is recorded rather than patched silently, because the
+artifact these numbers came from is the one that has it.
+
+### Axes this closes
+
+- **"A requirement that is better in aggregate is better."** `+27 / −3` nets `+24` over the fusion and `+9` over the
+  shipped arm, and is still refused. The gate is a conjunction of a gain bar and a loss bar, and a net is neither.
+- **"A significance test would have removed the bad edge."** Computed on the same counts: it removes one of three,
+  because the edge is genuinely co-moving on the half that grants the inversion. Significance answers "is this
+  edge's coupling an accident", not "is this edge's direction right".
+- **"An edge's residual is a property of the edge."** Mostly true here — 8 of 8 reproduce their sign, mean
+  disagreement 0.042 — and true of the loss edge too, which is why the axis was mistaken for a safe one.
+- **"A population floor is a test."** It is a test with the margins thrown away, and it cannot count the edges it is
+  one of.
+- **"An artifact that prints the count is enough to replay it."** The counts were printed and the map was not, so
+  the JSON cannot reproduce an admission from its own contents.

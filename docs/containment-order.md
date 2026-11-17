@@ -968,3 +968,181 @@ from: the cross-fitting is enforced by the data structure rather than by a comme
   negative class there.
 - **Not H2b.** The within-case residual stays pre-registered and unbuilt. §15.1 says why it is held and what would
   have to be true for it to be the next arm.
+
+### 15.9 The reading: +27 / −3, and the three cases that refuse the requirement
+
+Run `44013268053` (`cfecf4d`, 1 422 cases, `containment_order: 1`) is the first dump that carries the chain, and
+its gate step printed:
+
+```
+  rows=1422 replayable=1422 scored=1422 disagreements=0
+  prior fitted-on=b applies-to=a score=rho edges=61 fitted=8 admitted=8 unfitted=53 observations=391 (floor n>=10)
+  prior fitted-on=a applies-to=b score=rho edges=56 fitted=9 admitted=8 unfitted=47 observations=418 (floor n>=10)
+  arm=fusion top1=1141/1422
+  arm=shipped top1=1156/1422 +15/-0
+  arm=prior top1=1165/1422 +27/-3
+  gate decisions: inverted=198 prior-absent=43 prior-below=1 not-larger=561 unmeasured=52
+  criterion: gains>=15 losses<=0 top1>1156
+  H2-gate: FAIL — 3 loss(es) against a requirement of 0
+```
+
+**The reconstruction came back exact**, which is the condition for the two rows under it to describe a walk the run
+took: `disagreements=0` over 1 422 replayable cases, and the shipped arm's replay reproduces the corpus's
+published 1 156 to the case.
+
+**The requirement is better than the interface record at everything except the one thing that was asked of it.**
+It gains 27 where the interface record gains 15, loses 3 where the interface record loses none, and ends 9 cases
+higher (1 165 against 1 156). Nine of its 27 gains are cases the interface record also fixes; **eighteen are cases
+the interface record does not reach**. The net is the best of the three arms and the criterion refuses it anyway,
+because the criterion was `losses ≤ 0` before the number existed and this entry does not renegotiate a bar after
+reading the tally.
+
+**All three losses are one edge, and in all three the correct answer was already first.**
+
+| case                                                   | fold | fused head            | shipped head          | prior head            | inversion                   |
+| ------------------------------------------------------ | ---- | --------------------- | --------------------- | --------------------- | --------------------------- |
+| `ts1-ts-preserve-service-response-abort-fxjfws`        | a    | `ts-preserve-service` | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+| `ts1-ts-preserve-service-response-replace-code-qnm2bw` | b    | `ts-preserve-service` | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+| `ts2-ts-preserve-service-response-replace-code-glvrkq` | a    | `ts-preserve-service` | `ts-preserve-service` | `ts-security-service` | `ts-preserve → ts-security` |
+
+The injected fault is at `ts-preserve-service` in every one (`response-abort`, `response-replace-code`), so the
+accepted answer is the service whose response was corrupted. Its callee, `ts-security-service`, is downstream and
+moved further out of band, so the containment order promoted the callee over the root — a promotion the interface
+record refused, correctly, because no call failed on that edge.
+
+This is the residual's blind spot stated in one case: **ρ measures co-movement, and a caller and its victim
+co-move.** The interface record does not measure co-movement at all; it records that a call was made and failed,
+which is evidence that a propagation _occurred_ rather than that two series rose together. Its zero losses are
+therefore its purpose and not its luck, which is why the three losses are not a small number to be traded against
+eighteen gains — they are the mechanism's own failure mode, and the criterion's `losses ≤ 0` is the sentence that
+names it.
+
+**What refused the other 44 inversions is population, not disagreement.** Of 198 inversions the arm performed,
+`prior-absent` refused 43 and `prior-below` refused exactly **one**. A gate fitted on half a corpus leaves 53 and
+47 edges unfitted per half, and an unfitted edge blocks every inversion on it — so the requirement's real cost is
+that most edges are unmeasurable on one half, while its real price is paid entirely on the edges it _admitted_.
+
+**The residual is stable across the split, so the losses are not an artifact of it.** Of the 64 edges carrying an
+inversion, 8 are measurable in both halves. Every one is positive in both, there are **no sign flips**, and the
+mean absolute difference is **0.0421**:
+
+| edge                             | n (a) |  ρ (a) | n (b) |  ρ (b) |           Δ |
+| -------------------------------- | ----: | -----: | ----: | -----: | ----------: |
+| `ts-preserve ↔ ts-security`      |    20 | 0.0800 |    15 | 0.2178 | **+0.1378** |
+| `ts-travel-plan ↔ ts-travel2`    |    34 | 0.0900 |    40 | 0.1781 |     +0.0882 |
+| `ts-route-plan ↔ ts-travel`      |    20 | 0.1425 |    17 | 0.0969 |     −0.0456 |
+| `ts-route-plan ↔ ts-travel-plan` |   104 | 0.2102 |    87 | 0.1872 |     −0.0229 |
+| `ts-preserve ↔ ts-travel`        |    20 | 0.1750 |    17 | 0.1522 |     −0.0228 |
+| `ts-route-plan ↔ ts-travel2`     |    22 | 0.1612 |    14 | 0.1735 |     +0.0123 |
+| `ts-travel-plan ↔ ts-travel`     |    33 | 0.1570 |    31 | 0.1644 |     +0.0074 |
+| `ts-basic ↔ ts-travel`           |    11 | 0.1983 |    11 | 0.1983 |      0.0000 |
+
+Two things follow, and the second is the important one. First, an edge-level constant is a defensible assumption on
+this corpus: eight of eight reproduce their sign, and the mean disagreement is 0.042. Second, **the one edge that
+produced the three losses is the least stable edge in the corpus** (0.0800 against 0.2178, the largest Δ) and it is
+still positive on both halves — so no requirement of the form "the sign must reproduce" or "the smaller half's
+estimate must be positive" would have blocked it. The instability is a _warning_ about that edge, not a test that
+separates it.
+
+**One artifact defect, found by reading its own JSON.** `containment-gate.json` serialises the prior as
+`"residuals": {}` — a `Map` stringifies to nothing — so the machine-readable record keeps `fitted`/`admitted` but
+loses which edges they were. The reading above is unaffected (the counts are printed, and the walks are in the
+dump), but a reader with the JSON alone cannot reconstruct an admission, which is the one thing §15.2 exists to
+guarantee. The fix is to serialise the map's entries; it is recorded here rather than patched silently, because the
+artifact this iteration was read from is the one those numbers came from.
+
+## 16. The exact test for an edge's independence (iteration 297, statistic only)
+
+§15.9 refuses the requirement on three cases and says the blind spot is causal rather than statistical. The
+obvious objection is that the requirement was never _tested_: `ρ > 0` is a threshold on a point estimate, and a
+point estimate over ten observations is not evidence. This section answers the objection with the test the floor
+was standing in for, and it is written before the arm that uses it exists, because the criterion had to be fixed
+before the number that judges it.
+
+### 16.1 The floor was a p-value with the marginals collapsed
+
+`MIN_POPULATION = 10` is derived in §14.4 from "the sampling error of ρ is about `1/√n`". The scaling is right and
+the constant is not, because the evidence an edge carries depends on its **margins** as much as on its count:
+
+| edge                        |   n | margins       | smallest attainable one-sided p | passes 0.05? |
+| --------------------------- | --: | ------------- | ------------------------------: | ------------ |
+| balanced, perfectly coupled |  10 | `p = q = 0.5` |           `1/C(10,5) = 0.00397` | yes          |
+| skewed, perfectly coupled   |  10 | `p = q = 0.9` |                       `0.10000` | **no**       |
+| balanced, perfectly coupled |  20 | `p = q = 0.5` |                   `5.41 × 10⁻⁶` | yes          |
+| balanced, eight of ten      |  20 | `p = q = 0.5` |                       `0.01151` | yes          |
+
+The floor admits both `n = 10` rows and refuses neither; the second one cannot reach significance at **any**
+coupling. A flat count of observations is simultaneously too lax where the margins are skewed and too strict where
+they are not.
+
+### 16.2 The test is the permutation test, in closed form
+
+Fix an edge's `n` observations, `a` with side a out of band and `b` with side b out of band. Under independence the
+joint count is what a permutation of the b-indicators produces with both margins held fixed, and that permutation
+law is exactly hypergeometric:
+
+```
+X = bothOut ~ Hypergeometric(n, a, b),   P(X = k) = C(a,k)·C(n−a, b−k) / C(n,b)
+p = P(X ≥ bothOut)
+```
+
+So `benchmarks/src/containment-significance.ts` enumerates the sum instead of shuffling. That is not a shortcut
+around the permutation test; it **is** the permutation test, at the resolution of the exact distribution rather than
+of a seed. The sum is taken in log space through a `log(n!)` table, because `C(191,50)` is about 10⁴⁹ and the direct
+ratio is `NaN` at the populations this corpus reaches.
+
+### 16.3 The multiplicity the floor could not have
+
+A floor never had to count itself. Testing `m` edges at 0.05 admits about `0.05·m` of them under a global null, so
+the criterion is not a p-value but a family-wise procedure, fixed at **Benjamini–Hochberg, `q = 0.05`**, over the
+edges a half could fit. An admission is a licence to invert one adjacent pair and a false admission costs one
+blocked pair, which is counted; that is the level FDR controls, and it is why this is not Bonferroni — at `m = 64`
+Bonferroni demands `p ≤ 7.8 × 10⁻⁴` of the smallest p and would make the gate a test of corpus size.
+
+### 16.4 Three independent checks, because a p-value cannot be spot-checked
+
+| check                                                                                                                                         | what it establishes                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| the tea-tasting table `n = 8, a = b = x = 4` → `1/70`, plus five hand-computed fractions (`1/252`, `17/70`, `1063/92378`, `0.8`, `0.1`)       | the enumeration is the right enumeration, including a tail that is a sum rather than one term                                                                            |
+| 200 000 actual permutations against the closed form at four tables                                                                            | exact `1.428571e-2` / `3.968254e-3` / `1.150707e-2` / `2.693889e-3` against permuted `1.421e-2` / `3.945e-3` / `1.1135e-2` / `2.62e-3`, `z = −0.29, −0.17, −1.59, −0.65` |
+| `scipy.stats.hypergeom.sf` over 120 random tables, and `scipy.stats.false_discovery_control` over 60 random p-vectors of up to 200 hypotheses | max absolute difference `4.7 × 10⁻¹³` on the tails; **exactly 0.0** on every adjusted value                                                                              |
+
+Coverage is 100 % statements, branches, functions and lines over 31 tests, with both structural refusals asserted
+as errors rather than `null`s: a table with `bothOut > min(a,b)` or `a + b − bothOut > n` is not a weak table, it is
+an impossible one, and the counts that produced it came from an accumulator that lost an observation.
+
+### 16.5 What the test does to §15.9's three losses — computed, not promised
+
+The counts are already in the artifact, so the arm can be priced before it is built. Per half, over that half's
+examined pairs, with BH at `q = 0.05` and **no floor** (the test replaces it, since it is valid at `n = 1`):
+
+| half          | edges | testable | admitted at `q = 0.05` |
+| ------------- | ----: | -------: | ---------------------: |
+| a (713 cases) |    56 |       56 |                      4 |
+| b (709 cases) |    61 |       61 |                      4 |
+
+And the edge that caused all three losses splits across the split:
+
+| prior fitted on           |   n | both |   a |   b |      ρ |              p |     q | admitted |
+| ------------------------- | --: | ---: | --: | --: | -----: | -------------: | ----: | -------- |
+| **a** (applies to fold b) |  20 |    4 |   8 |   6 | 0.0800 | `1.373 × 10⁻¹` | 0.854 | **no**   |
+| **b** (applies to fold a) |  15 |    7 |   7 |   8 | 0.2178 | `1.243 × 10⁻³` | 0.019 | **yes**  |
+
+So the test blocks **one** of the three losses — the fold-b case, whose granting prior has p = 0.137 — and leaves
+the two fold-a cases, whose granting prior reads p = 0.0012. It also cuts the admitted population from 17 edges
+(8 + 9) to 8 (4 + 4), which is where the eighteen gains the interface record does not reach mostly live.
+
+That is the answer to the objection, and it is not the answer that would have rescued the requirement: **a stricter
+test does not repair a causal blind spot, it only shrinks the population that pays for it.** The arm stays
+pre-registered as `preregistration-297.md` records it — including its predicted failure, and its falsifier, which
+says an empty admitted set is `UNMEASURED` rather than `fail` — and it is not built as a candidate requirement,
+because §15.9 has already measured the thing it would be asked to fix.
+
+### 16.6 Where the residual axis goes instead
+
+The 18 cases the interface record cannot reach are real headroom, and the 3 it wrongly promoted are the price of
+asking a co-movement statistic to decide a direction. Both are answered by the shape **H6** names: make the
+residual a **graded term** in the score — prior, evidence, centred residual, as arXiv:2609.27069 independently
+implements it — rather than a binary licence on the edge. A term cannot promote a victim over its root by 0.08, and
+it cannot block the eighteen cases either; it moves them by an amount proportional to the evidence. That is the
+next arm on this axis, and the statistic it needs is the one this section built.
