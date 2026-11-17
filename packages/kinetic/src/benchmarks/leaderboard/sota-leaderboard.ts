@@ -577,8 +577,12 @@ export function createSotaLeaderboard(generatedAt: string): LeaderboardTable {
       cohort: 'cross-benchmark',
       metric: 'HR@1',
       system: 'TrainTicket',
-      note: 'VAE-GNN with dual-perspective decoupling; 0.943 on SocialNetwork. Names the failure mode this engine\'s containment pass was built for: a victim whose symptoms are LOUDER than its root',
-      provenance: { kind: 'published', source: 'He et al., IWQoS 2026', doi: '10.1109/IWQoS70441.2026.11661074' },
+      note: "VAE-GNN with dual-perspective decoupling; 0.943 on SocialNetwork. Names the failure mode this engine's containment pass was built for: a victim whose symptoms are LOUDER than its root",
+      provenance: {
+        kind: 'published',
+        source: 'He et al., IWQoS 2026',
+        doi: '10.1109/IWQoS70441.2026.11661074',
+      },
     },
     {
       method: 'eIRWR',
