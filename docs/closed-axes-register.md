@@ -5614,3 +5614,89 @@ the numbers above came from is unchanged, and §299's note stands beside it.
 - **"A pre-registration that predicts its own failure is the same as no pre-registration."** This one predicted
   three numbers, got all three wrong, and the record says so with the falsifier that fired named. The value was
   not in being right; it was in being wrong in a way that named the mechanism.
+
+## §301 — The pass reading every channel: the same answer from a different measurement, and two of three predictions wrong
+
+Iteration 299 swapped the containment pass's **measurement** while holding its **rule** fixed — the first arm on
+this axis that did not price the rule again. Pre-registered in `docs-repository:preregistration-299.md` before the
+corpus was read; the artifact is run `44045839933`, study job, `containment-surprise.txt`.
+
+### 301.1 The reading
+
+```
+  rows=1422 replayable=1422 unmeasurable=0 disagreements=0 scored=1422
+  moved=15 (the surprise map changes the published head)  sigma=3
+  arm=fusion    top1=1141
+  arm=shipped   top1=1156 +15/-0
+  arm=surprise  top1=1155 +16/-2
+  decisions inverted=226 no-failed-interface=552 unmeasured=0 not-larger=59
+  opened    inverted=1 no-failed-interface=0 unmeasured=2 not-larger=130
+  H7-surprise: FAIL — 2 loss(es) against a requirement of 0
+```
+
+The `shipped` row reproduces the corpus's published `1 156 / +15 / −0` exactly, which is the instrument check that
+licenses the surprise row beneath it. `unmeasurable=0` says every one of the 1 422 chains carried the map, so this
+is a whole-corpus reading and not a subset that happens to look tidy.
+
+### 301.2 The three predictions, audited
+
+| prediction | written before the run | measured | verdict |
+| --- | --- | --- | --- |
+| 1 | the arm fails **on losses**, Top@1 in `[1 120, 1 150]`, `losses ≥ 8` | failed on losses (**2**), Top@1 **1 155** | **half wrong** — the direction held, both magnitudes did not: 1 155 is five ABOVE the band and the losses are a quarter of the floor |
+| 2 | `opened` total `> 50`, dominated by `unmeasured`, `not-larger` non-empty | total **133**, `not-larger` **130**, `unmeasured` **2** | **partly wrong** — the total is right and the DOMINANT heading is the other one |
+| 3 | `moved` in `[40, 120]` | `moved` **15** | **wrong** — by a factor of three |
+
+The falsifier the pre-registration wrote — *"if `opened` totals 0, §289 was wrong about its own mechanism"* — did
+not fire: 133 pairs were opened. What fired instead is the prediction that said a replacement must sell the shipped
+pass's cases. It did not sell them: it reached 1 155 against 1 156, one case apart, with two losses.
+
+### 301.3 The finding: the measurements disagree about pairs and agree about the answer
+
+Three censuses, side by side. The latency walk's totals come from the gated arm printed beside this one
+(`inverted=198`, `prior-absent=43`, `prior-below=1`, `not-larger=561`, `unmeasured=52`); the 44 pairs the residual
+stopped would have been inversions without it, so the shipped rule inverts **242** pairs and refuses **561** as
+`not-larger` and **52** as `unmeasured`.
+
+| census | latency (shipped rule) | all channels (surprise) |
+| --- | ---: | ---: |
+| pairs inverted | 242 | 226 |
+| refused `not-larger` | 561 | 59 |
+| refused `unmeasured` | 52 | 0 |
+| refused `no-failed-interface` | — | 552 |
+
+The two walks agree on **93** inversions and disagree on **282** (149 latency-only, 133 surprise-only). That is
+59 % of the surprise arm's work being new, and the change is exactly where §289 said it would be: **561 pairs
+refused for not being further out on LATENCY become 59 when every channel is read**, and 130 of them are then
+inverted. Yet `moved=15` — fifteen heads out of 1 422.
+
+**So the channel ceiling is real and it is not load-bearing at rank 1.** A pair inversion changes the published
+head only when the pair is at the top of the order, and at the top of the order latency is the channel that speaks:
+the caller's own response time is the metric containment is about. The 130 opened pairs live further down, where an
+inversion is a rearrangement the answer never sees. That is the same lesson §17.6 taught from the residual's
+distance table, measured here from the measurement's side rather than the spend's.
+
+### 301.4 What this does and does not close
+
+**It does not close the measurement axis.** The arm is refused — 2 losses against a requirement of 0, and
+`1 155 ≤ 1 156` — but it is refused as a **replacement**, which is what it was pre-registered as. The population
+that makes a union worth pricing now exists as a measurement rather than a hope: 133 pairs the shipped walk refuses,
+130 of them under `not-larger`, contributing 2 losses and (with the shipped arm's own 15) a head count one short.
+A union would have to be priced against exactly that, and it is the next pre-registration rather than this one.
+
+**It closes the claim that the pass's channel family is arbitrary.** Before this, `latencyExcursions` was one
+family among many with an argument and no measurement; now a second family has been run over the whole corpus, and
+its verdict is that the family is worth 561 refusals and 15 heads. §289's sentence was right about the mechanism
+and wrong about the size.
+
+### 301.5 The debts this iteration sharpens
+
+- **The margin is still `0` and still underived.** Both maps are on their own axis (band widths, nats) and
+  comparable only within a case, which is what makes a strict comparison exact — but neither has an error bar, and
+  now there are two of them.
+- **`σ` was not swept on the surprise side.** The band sets both the fires and the rates that price them, so the
+  arm's optimum could sit at a band the profile builder never considered. It is a two-dimensional sweep over
+  (band, rate floor) and nothing here constrains it.
+- **The 44 pairs the residual stops are inside the comparison and were never re-read.** Iteration 299 held the rule
+  fixed at the shipped one; whether the surprise map and the residual interact is a third arm nobody has walked.
+- **`not-larger` at 59 against 561 is a ratio, not a mechanism.** The next question is which channels produce those
+  130 pairs, and this artifact does not carry the per-channel contributions — it carries the maximum only.

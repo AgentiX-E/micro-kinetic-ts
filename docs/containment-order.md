@@ -1341,3 +1341,105 @@ The 18 cases §15.9 called headroom are real and are not reachable from this axi
 - **The three losses' "cannot happen" argument was about the pair's gap,** and §17.5 records why it did not
   extend. A reader who wants the bound to hold should read the reach table as the bound's replacement: it is
   empirical, it is per distance, and it is the reason the next arm on this axis is not a spend.
+
+## 18. The pass reading every channel (iteration 299) — the rule held fixed, the measurement swapped
+
+§17 closed the residual axis and named what the next arm had to be: a quantity that is *evidence about the
+candidate*. Every containment arm before this one priced the **rule** — the interface record (§12), the residual as
+a requirement (§15.9), the residual as a term (§17) — while §289 named the other ceiling in one sentence: the pass
+reads `latencyExcursions`, one channel family. Nothing had swapped the measurement while the rule stood still,
+because the pass takes a plain `ReadonlyMap<ServiceId, number>` and the swap needed a second map *in the artifact*
+before the arm could be walked at all.
+
+### 18.1 The quantity
+
+`channelSurprise` (`packages/tree/src/pruning/fault-free-surprise.ts`) prices each candidate's own post-injection
+window against the rate at which its channels fire while nothing is wrong:
+
+```
+fired(v, c) = [ max over the post window of |x − centre_c| > σ · scale_c ]     ← the profile's own fire rule
+q_c         = (fires_c + 1) / (windows_c + 2)                                 ← Laplace, one pseudo-count each way
+surprise(v) = max over c of  fired(v, c) ? log(1 / q_c) : 0
+```
+
+Three properties, and each is a decision rather than a detail:
+
+- **Per candidate.** The pass compares two numbers; this is one of them. No relation is invented that the case
+  does not carry, which is exactly what §17.8 said the residual could not manage.
+- **Dimensionless.** Nats, so one channel's milliseconds and another's byte counts share an axis — the reason the
+  profile adopted a *counting* estimator in the first place (`pruning/fault-free-profile.ts`).
+- **Zero, not absent, for a measured-clean window.** The pass requires both sides to be measured; a candidate whose
+  channel set was read and stayed inside its bands is a measurement of *no* excursion, while a candidate the
+  profile cannot speak about is an absence. Substituting one for the other is the move `latencyExcursions` refuses
+  and this module refuses identically.
+
+The `max` rather than a sum is the fourth decision: a sum would make the number of published channels a term, and
+a candidate with forty channels would out-score one with six for having been observed more.
+
+### 18.2 What the arm changes, and what it does not
+
+The arm is one walk of one chain with one map swapped (`containment-replay.ts`, `kind: 'surprise'`). The rule that
+made the shipped pass earn `+15 / −0` is untouched: the pair must share a call edge, the interface must have
+carried more failed calls after the injection, and the callee's number must exceed the caller's by the shipped
+margin of `0`. So a difference between the two arms is attributable to the measurement and to nothing else.
+
+The map reaches the artifact through the row builder and the chain, and it is written **only when the run measured
+one**. An absent map REFUSES the arm rather than walking it empty: an empty map makes the pass a no-op, so a dump
+from before the field would report the arm as identical to `off` and the difference would look like a finding.
+
+### 18.3 What a replacement can and cannot say
+
+The arm replaces latency, so its Top@1 is expected to sell the cases the shipped pass fixed — a number that would
+say "worse" and stop. The census is what makes the reading useful: `opened` tallies the pairs the surprise walk
+inverted and the shipped walk did not, keyed by **the reason the shipped walk refused them**. The two headings that
+matter are `unmeasured` (the profile could not measure the candidate's latency at all) and `not-larger` (it
+measured, and the callee was not further out on that channel). §289's claim is that those two are a channel
+artefact; this census is the first test of it.
+
+A union of the two measurements is deliberately **not** built, whatever the census shows. A union is a new rule,
+and the arm exists to price the second measurement. If `opened` is large and the cases behind it improve, the union
+becomes the next pre-registration with its own numbers.
+
+### 18.4 The bar, and the instrument check
+
+Unchanged: **gains ≥ 15, losses ≤ 0, Top@1 > 1 156**, applied by `judgeArm` — the same implementation that judges
+the gate and the term, so the bar cannot drift between arms. The `shipped` row is a check rather than a result: a
+replay that does not reproduce the published number makes the reading `unmeasured`, and the CLI exits 3. So does a
+row whose chain carries no surprise map.
+
+### 18.5 The debts this does not pay
+
+- **One channel set, one null.** The price of a fire is the corpus's rate for that channel; nothing here says the
+  rate is stable across the corpus's fault types, and a channel that fires rarely *because* its service is rarely
+  the source is a confound this arm cannot separate from evidence.
+- **The margin is still zero and still underived.** The two numbers are on the same axis now, which is what makes a
+  strict comparison exact, but the pass still has no error bar on either side.
+- **`σ` is the profile's 3 and was not swept.** A wider band shrinks both the fires and the rates that price them,
+  and the arm's optimum could sit at a band the profile builder never considered.
+
+### 18.6 The reading (run `44045839933`)
+
+```
+  rows=1422 replayable=1422 unmeasurable=0 disagreements=0 scored=1422
+  moved=15 (the surprise map changes the published head)  sigma=3
+  arm=fusion    top1=1141
+  arm=shipped   top1=1156 +15/-0
+  arm=surprise  top1=1155 +16/-2
+  decisions inverted=226 no-failed-interface=552 unmeasured=0 not-larger=59
+  opened    inverted=1 no-failed-interface=0 unmeasured=2 not-larger=130
+  H7-surprise: FAIL — 2 loss(es) against a requirement of 0
+```
+
+The replacement did **not** sell the shipped arm's cases, which is what §18.3 expected it to do: it lands one case
+below at `1 155`, with `+16 / −2`. The two measurements disagree about 282 pairs — 149 that latency inverts and the
+all-channel map does not, 133 the other way — and agree about 1 407 of 1 422 heads. Reading every channel turns
+**561 `not-larger` refusals into 59** and 130 of those become inversions, and fifteen heads move for it.
+
+So the ceiling §289 named is real and it is not where the ranking is decided: a pair inversion changes the head
+only at the top of the order, and at the top of the order the channel that speaks is the caller's own response
+time. The 130 opened pairs are further down, where an inversion is a rearrangement the answer never sees. That is
+§17.6's distance lesson arriving from the measurement's side instead of the spend's.
+
+The arm is refused as a replacement, which is what it was pre-registered as. The union now has a measured
+population to be priced against rather than a hope, and §301.4 of the register records why it is the next
+pre-registration and not this one.
