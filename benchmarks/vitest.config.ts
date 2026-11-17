@@ -416,6 +416,11 @@ export default defineConfig({
         'src/containment-replay.ts',
         'src/containment-gate.ts',
         'src/containment-gate-report.ts',
+        // Added with the exact test: the p-value that replaces the population floor, and the multiplicity that
+        // replacing it exposes. Both refusals are arguments that must not become `null`s — a table whose parts do
+        // not fit its whole is a lost observation, not weak evidence — and the log-space sum is the only reason a
+        // 191-observation edge reports a finite number instead of `NaN`.
+        'src/containment-significance.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
