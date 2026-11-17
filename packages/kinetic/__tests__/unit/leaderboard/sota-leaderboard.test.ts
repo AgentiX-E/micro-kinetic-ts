@@ -109,13 +109,16 @@ describe('createSotaLeaderboard', () => {
   });
 
   it('records our two measured cells with the reproducing commit', () => {
+    // Moved from `80709c2` in iteration 300. A provenance commit is a claim that THIS commit reproduces the cell,
+    // so it has to move when the reading is re-anchored — and the fact that it had not moved is how the two cells
+    // above stayed twelve points low without a single test refusing them.
     const ours = table.entries.filter(
       (e): e is LeaderboardEntry & { readonly provenance: OursMeasuredProvenance } =>
         isOursMeasured(e.provenance),
     );
     expect(ours).toHaveLength(2);
     for (const entry of ours) {
-      expect(entry.provenance.commit).toBe('80709c2');
+      expect(entry.provenance.commit).toBe('3499888');
     }
   });
 });
@@ -280,15 +283,28 @@ describe('requireComparable', () => {
 // ── marginTo ──────────────────────────────────────────────
 
 describe('marginTo', () => {
-  it('computes the corrected ~1.14x margin over PRISM', () => {
+  it('computes the margin over PRISM from the fractions, not from a rounded decimal', () => {
+    // The two cells are written as `666 / 735` and `84 / 90` so that the arithmetic is checkable here rather than
+    // at a rendering. The values below were `0.774` and `0.824` until iteration 300, and both had been stale for
+    // far longer than the readings they describe — the standing document has recorded `90.61 %` and `93.3 %`
+    // throughout. A margin computed against a stale own-cell is the one error this table cannot catch in itself.
     const table = createSotaLeaderboard('2026-09-08T00:00:00.000Z');
     const ours = table.entries.find(
       (e) => e.method === 'Micro-Kinetic' && e.cohort === 'rcaeval-full',
     )!;
     const prism = table.entries.find((e) => e.method === 'PRISM')!;
+    expect(ours.result).toBe(666 / 735);
     const margin = marginTo(ours, prism);
-    expect(margin.ratio).toBeCloseTo(0.774 / 0.68, 5);
-    expect(margin.ppGap).toBeCloseTo(9.4, 5);
+    expect(margin.ratio).toBeCloseTo(666 / 735 / 0.68, 10);
+    expect(margin.ppGap).toBeCloseTo((666 / 735 - 0.68) * 100, 10);
+  });
+
+  it('carries the RE2-OnlineBoutique cell as the fraction the anchor produced', () => {
+    const table = createSotaLeaderboard('2026-09-08T00:00:00.000Z');
+    const ours = table.entries.find(
+      (e) => e.method === 'Micro-Kinetic' && e.cohort === 'rcaeval-re2-ob',
+    )!;
+    expect(ours.result).toBe(84 / 90);
   });
 
   it('throws on a cross-cohort comparison (the strawman)', () => {

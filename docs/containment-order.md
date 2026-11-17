@@ -1443,3 +1443,92 @@ time. The 130 opened pairs are further down, where an inversion is a rearrangeme
 The arm is refused as a replacement, which is what it was pre-registered as. The union now has a measured
 population to be priced against rather than a hope, and §301.4 of the register records why it is the next
 pre-registration and not this one.
+
+## 19. The record read at case scope (iteration 300) — one absence, two statements
+
+Five arms have now priced this pass: the interface record (§12), the residual as a requirement (§15.9), the residual
+as a term (§17), a different channel set (§18), and now the **scope of the record**. The first four moved a
+statistic. This one moves a word, and it is the only arm of the five for which nothing had to be fitted.
+
+### 19.1 The sentence §299 left behind
+
+`§299` read a residual requirement that REPLACES the record:
+
+```
+arm=shipped top1=1156 +15/-0
+arm=prior   top1=1165 +27/-3      ← refused
+```
+
+Nine of the 27 gains are cases the record also fixes. **Eighteen it does not reach at all.** And all three losses
+are one edge — `ts-preserve → ts-security`, in three cases — where the fault is at the **caller**, the callee moved
+further out, and the record's refusal was **correct**, because no call on that edge failed.
+
+Those two halves are the same absence read two ways:
+
+- the case recorded failed calls *somewhere*, and this edge is not among them. A call passed between these two and
+  completed. That is evidence the failure did not travel over it. It is a **veto**.
+- the case recorded no failed call *at all*. The record is silent about the case, which is a fact about the
+  recording and says nothing about this pair. Treating it as a veto is what discards the eighteen.
+
+The shipped rule cannot tell them apart, at no cost, because it never needs to: under a rule that requires the
+record, both absences lead to the same refusal. `ContainmentOrderInput.recordScope` is the difference, and it is a
+scope rather than a threshold — no number is being tuned, one word is being disambiguated.
+
+### 19.2 What the arm is, and what it is not
+
+```
+scope 'edge'  (default, every published number)   absent → refuse, whatever the case recorded
+scope 'case'                                      absent → refuse when the case recorded failed calls anywhere,
+                                                          fall through to the measurement and the residual
+                                                          when it recorded none
+```
+
+The measurement, the inequality, the margin of `0`, the sweep and its adjacency are untouched. The residual is the
+same cross-fitted prior the `prior` arm carries, and its threshold is the shipped `0`. **Nothing is fitted**, which
+is the reason this arm is worth a dispatch: an improvement here cannot be a coefficient that happened to fit the
+corpus, and it cannot be re-tuned into a better one.
+
+The two requirements are never consulted for the same pair. The record decides where it **speaks**; the residual
+decides where it is **silent**. That is the opposite shape from the `prior` arm, which replaces the record and
+therefore prices the residual on the pairs the record had already refused.
+
+### 19.3 `record-silent` is a decision, not a note
+
+`ContainmentDecision` gained one member and it is the only one that is an **inversion** rather than a refusal. Its
+existence is the point: `no-failed-interface` used to mean both "the record says a call completed here" and "the
+record says nothing here", and the two only became distinguishable when a walk was allowed to act on the
+difference. A census that kept them merged would report the arm's whole population inside a counter that reads as
+a refusal.
+
+`decisions` also gained the column on the two walks that cannot reach it — the gate's and the surprise's. Their
+counters are a `Record` over the union, and a missing key would make the census silently partial the day a scoped
+arm is recorded through it.
+
+### 19.4 The family's ceiling, which is a proof and not an estimate
+
+The sweep visits adjacent positions from the top and never revisits one. A candidate therefore ascends **exactly
+one place**, and only the pair at positions 0 and 1 can change the published head. Three consequences, and the
+third is the one that reframes the whole axis:
+
+1. Any containment arm's published head is either the fusion's first candidate or the fusion's second.
+2. The set of cases any arm on this axis can convert is **countable off the artifact**: fusion misses whose
+   accepted answer sits at position 1, whose pair carries a call edge, whose two sides are both measured, and whose
+   lower side is further out by more than the margin.
+3. §17's long-range promotions could only ever lose — `rank=3 +2/−5`, `rank=4 +0/−2`, `rank=5 +0/−3` — and §17.6
+   explained it as a distance effect. The distance effect is real and it is a corollary: a sweep cannot promote
+   past one place, so an arm that re-sorts by a score is pricing a different mechanism, and the mechanism it left
+   could not have carried the cases it wanted.
+
+The study prints this bound as `ceiling at-second=… reachable=… unreachable=… shipped=… veto=…`, so every `top1`
+on this axis is read against the number of cases it is spending rather than against 1 422.
+
+### 19.5 The debts this does not pay
+
+- **The silence is one bit.** A case with no record anywhere is treated as uniformly informative about nothing.
+  There is no reading of *why* it is silent — a fault that corrupts a response code generates errors its callers
+  log, and a fault that corrupts a method may generate none — and that difference is exactly the `ReplaceCode` /
+  `ReplaceMethod` mass §301 identified.
+- **One prior, one threshold, still underived.** The residual's threshold is `0`, which is a statement that any
+  positive coupling is enough. §297 showed the statistic is bounded by its marginals; nothing here addresses that.
+- **The margin is still `0`.** The two excursions are on one axis and the comparison is exact at zero, but neither
+  side carries an error bar.

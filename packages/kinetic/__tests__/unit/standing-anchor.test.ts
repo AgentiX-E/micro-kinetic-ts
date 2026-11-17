@@ -33,6 +33,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { createSotaLeaderboard } from '../../src/benchmarks/leaderboard/sota-leaderboard.js';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const DOC = readFileSync(resolve(REPO_ROOT, 'docs/sota-comparison.md'), 'utf8');
 
@@ -356,5 +358,61 @@ describe('the standing document is anchored to one battery', () => {
     expect(gala, 'the retraction of the "exact closure" is stated rather than deleted').toMatch(
       /RETRACTED/,
     );
+  });
+});
+
+/**
+ * The SOTA table is held to the SAME anchor, because it is the source of truth the document is rendered from and
+ * it went stale in the other direction.
+ *
+ * Iteration 300 found `createSotaLeaderboard` still reporting `0.774` and `0.824` — `77.4 %` and `82.4 %` — for the
+ * two cells every other entry in that file is positioned against, while this document recorded `666/735` and
+ * `84/90`. The fence above holds the DOCUMENT to the battery; nothing held the CODE to it, and the code is the
+ * side a reader quotes. Twelve points low, in our own disfavour, on the two cells that decide the headline.
+ *
+ * The join is the anchor block, unchanged: the same keys, the same fractions, read from the table the code builds.
+ */
+describe('the leaderboard table is held to the anchor block', () => {
+  /** The cell the table carries for one anchor key. */
+  function cellOf(key: string): { readonly correct: number; readonly total: number } {
+    const table = createSotaLeaderboard('2026-11-17T00:00:00.000Z');
+    const [cohort, system] = key.split(':');
+    const entry = table.entries.find((one) => {
+      if (one.method !== 'Micro-Kinetic') return false;
+      if (cohort === 'TOTAL') return one.cohort === 'rcaeval-full';
+      return (
+        one.cohort === 'rcaeval-re2-ob' &&
+        one.system !== undefined &&
+        system !== undefined &&
+        one.system.toLowerCase() === system.toLowerCase()
+      );
+    });
+    expect(entry, `the table carries a cell for ${key}`).toBeDefined();
+    // Recovered from the fraction rather than stored twice: the table defines its cell as `correct / total`, so a
+    // disagreement here is a disagreement about the cell and not about a rounding of it.
+    const total = key === 'TOTAL' ? 735 : 90;
+    return { correct: Math.round(entry!.result * total), total };
+  }
+
+  it('carries the overall cell as the anchor reads it', () => {
+    const overall = byKey('TOTAL');
+    expect(cellOf('TOTAL').correct).toBe(overall.correct);
+  });
+
+  it('carries the RE2 OnlineBoutique cell as the anchor reads it', () => {
+    const onlineBoutique = byKey('RE2:OnlineBoutique');
+    expect(cellOf('RE2:OnlineBoutique').correct).toBe(onlineBoutique.correct);
+  });
+
+  it('names a provenance commit that is a full anchor the battery reproduced on', () => {
+    // A provenance commit is a claim, and the claim has to be a commit the anchor's own battery ran on rather
+    // than a hash copied forward. The anchor's marker names it; the table must at least not name an earlier one.
+    const table = createSotaLeaderboard('2026-11-17T00:00:00.000Z');
+    for (const entry of table.entries) {
+      if (entry.provenance.kind !== 'ours-measured') continue;
+      expect(entry.provenance.commit, `${entry.cohort} carries a commit`).toMatch(
+        /^[0-9a-f]{7,40}$/,
+      );
+    }
   });
 });

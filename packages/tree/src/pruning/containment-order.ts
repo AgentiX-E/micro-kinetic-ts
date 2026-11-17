@@ -358,12 +358,15 @@ export function inspectContainmentOrder<T extends RankedService>(
     // between these two and completed. Only a case whose record is silent THROUGHOUT falls through to the
     // measurements, and it is labelled at the end, because `record-silent` describes why the pair qualified.
     let silentRecord = false;
-    if (failingEdges !== undefined && !failingEdges.has(key)) {
-      if (input.recordScope !== 'case' || failingEdges.size > 0) {
+    // Whether the RECORD licensed this pair — a different question from whether the pair ends up inverted, and the
+    // one the prior is conditioned on below.
+    let licensed = false;
+    if (failingEdges !== undefined) {
+      if (failingEdges.has(key)) licensed = true;
+      else if (input.recordScope !== 'case' || failingEdges.size > 0) {
         verdicts.push({ ...pair, decision: 'no-failed-interface' });
         continue;
-      }
-      silentRecord = true;
+      } else silentRecord = true;
     }
     if (upperExcursion === undefined || lowerExcursion === undefined) {
       verdicts.push({ ...pair, decision: 'unmeasured' });
@@ -375,8 +378,15 @@ export function inspectContainmentOrder<T extends RankedService>(
     }
     // Last, and deliberately: everything above this line already refused the pair on its own measurements, so a
     // `prior-*` verdict below is a pair this case would have inverted. See `ContainmentOrderInput.prior`.
+    //
+    // AND conditioned on the record, which is the one place this sweep can be got wrong in a way no single test
+    // sees: a pair the record LICENSED already has a causal reason to be inverted, and asking the residual whether
+    // its two ends co-move would put the correlational statistic on top of the causal one. §299 measured that as a
+    // replacement and refused it; applying it on top of the licence is the same mistake wearing a narrower scope,
+    // and it is why the condition is `!licensed` rather than "the prior is present". A walk with no record at all
+    // (the `prior` arm) leaves `licensed` false everywhere, so its behaviour is unchanged.
     const prior = input.prior;
-    if (prior !== undefined) {
+    if (prior !== undefined && !licensed) {
       const fitted = prior.residuals.get(key);
       if (fitted === undefined) {
         verdicts.push({ ...pair, decision: 'prior-absent' });

@@ -360,7 +360,20 @@ export function marginTo(a: LeaderboardEntry, b: LeaderboardEntry): EntryMargin 
 
 // ── Canonical data ────────────────────────────────────────
 
-const OUR_COMMIT = '80709c2';
+/**
+ * The commit the two cells below were measured on.
+ *
+ * It moved in iteration 300 because the two cells had been LEFT at `80709c2` for far longer than the numbers did:
+ * the standing document (`docs/sota-comparison.md` §0) records `90.61 %` and `93.3 %` and this table recorded
+ * `77.4 %` and `82.4 %`. The table is supposed to be the source of truth and the document a rendering of it, so
+ * the stale side was the one a reader of the CODE would quote — twelve points low, in our own disfavour, on the
+ * two cells every other entry in the file is positioned against.
+ *
+ * `3499888` is the anchor the RCAEval battery last reproduced `666/735` on (run `44018110532`), and the nine cells
+ * have been byte-identical across every dispatch since. The fractions are written as divisions rather than as
+ * decimals so that the arithmetic is checkable at the definition instead of at the rendering.
+ */
+const OUR_COMMIT = '3499888';
 
 /** Micro-Kinetic's own cells, measured in this repository. */
 function oursEntries(): readonly LeaderboardEntry[] {
@@ -368,22 +381,22 @@ function oursEntries(): readonly LeaderboardEntry[] {
     {
       method: 'Micro-Kinetic',
       paradigm: 'deterministic-causal',
-      result: 0.774,
+      result: 666 / 735,
       cohort: 'rcaeval-full',
       metric: 'Top-1',
       suite: 'overall',
-      note: '735 cases, all 9 subsets; deterministic, sub-second, zero API cost',
+      note: '735 cases, all 9 subsets; deterministic, sub-second, zero API cost. 666/735, re-anchored in iteration 300',
       provenance: { kind: 'ours-measured', commit: OUR_COMMIT, harness: 'rcaeval-loader' },
     },
     {
       method: 'Micro-Kinetic',
       paradigm: 'deterministic-causal',
-      result: 0.824,
+      result: 84 / 90,
       cohort: 'rcaeval-re2-ob',
       metric: 'AC@1',
       suite: 'RE2',
       system: 'OnlineBoutique',
-      note: '90 cases',
+      note: '90 cases; 84/90, the cell the boundary-gate enrolment took up by three cases',
       provenance: { kind: 'ours-measured', commit: OUR_COMMIT, harness: 'rcaeval-loader' },
     },
   ];

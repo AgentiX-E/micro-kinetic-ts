@@ -53,6 +53,9 @@ const ADMITS = {
   threshold: 0,
 };
 
+/** A prior that has fitted nothing, which is the state a small corpus produces and the one that exposes a conjunction. */
+const EMPTY = { residuals: new Map<string, number>(), threshold: 0 };
+
 describe('headOf', () => {
   it('is null for an empty order rather than an empty string', () => {
     expect(headOf([])).toBeNull();
@@ -328,15 +331,21 @@ describe('replayCase — the veto arm', () => {
   it('reads the record per edge where the record exists, which is the shipped arm exactly', () => {
     // The arm is one word of interpretation, so on every case whose record is non-empty it must agree with the
     // shipped walk: no tuning, no drift, and a difference here would be a defect rather than a finding.
+    //
+    // The prior is deliberately EMPTY, which is the form that catches the defect this test did not catch the
+    // first time. Written with a prior that admitted the edge, it passed while the arm was asking the residual on
+    // top of the licence: a licensed pair with no fitted residual became `prior-absent` and the arm inverted 110
+    // pairs where the shipped walk inverts 242. An empty prior makes every licensed pair a candidate for that
+    // mistake, so agreeing with the shipped walk here is the assertion that the conjunction is gone.
     const built = row();
     const shipped = replayCase(built, { kind: 'shipped' })!;
-    const veto = replayCase(built, { kind: 'veto', prior: ADMITS })!;
+    const veto = replayCase(built, { kind: 'veto', prior: EMPTY })!;
     expect(veto.published).toEqual(shipped.published);
     expect(veto.verdicts).toEqual(shipped.verdicts);
   });
 
   it('still refuses where the residual does not admit, however silent the record is', () => {
-    const refused = { residuals: new Map(), threshold: 0 };
+    const refused = EMPTY;
     expect(headOf(replayCase(recordFree(), { kind: 'veto', prior: refused })!.published)).toBe('a');
   });
 

@@ -589,7 +589,17 @@ describe('the residual prior', () => {
     expect(swept.verdicts.map((one) => one.decision)).toEqual(['unmeasured']);
   });
 
-  it('is a requirement beside the interface record, not an alternative to it', () => {
+  it('is never asked on top of the record\u2019s licence, and is still a requirement where the record is silent', () => {
+    // This test said the opposite until iteration 300 — "a requirement beside the interface record, not an
+    // alternative to it" — describing a conjunction that no arm ever ran and that §299 refused on the day it
+    // priced the residual as a REPLACEMENT. A licensed pair already has a causal reason to move; asking whether
+    // its two ends co-move as well puts the correlational statistic on top of the causal one, which is the same
+    // mistake wearing a narrower scope. The defect it caused was measurable: with the conjunction in place the
+    // case-scoped arm inverted 110 pairs where the shipped arm inverts 242, and its Top@1 came out BELOW the arm
+    // it was built to improve.
+    //
+    // Where the record is silent, the prior IS a requirement — that is what the arm is for — and the two
+    // branches below are the whole distinction.
     const both = {
       ranking: rows('a', 'b'),
       edges: CALLS_AB,
@@ -598,10 +608,25 @@ describe('the residual prior', () => {
         ['b', 1],
       ]),
     };
+    const licensed = new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]);
+    expect(
+      inspectContainmentOrder({ ...both, failingEdges: licensed, prior: ABSENT }).verdicts.map(
+        (one) => one.decision,
+      ),
+    ).toEqual(['inverted']);
     expect(
       inspectContainmentOrder({
         ...both,
-        failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+        failingEdges: new Map(),
+        recordScope: 'case',
+        prior: ADMITS,
+      }).verdicts.map((one) => one.decision),
+    ).toEqual(['record-silent']);
+    expect(
+      inspectContainmentOrder({
+        ...both,
+        failingEdges: new Map(),
+        recordScope: 'case',
         prior: ABSENT,
       }).verdicts.map((one) => one.decision),
     ).toEqual(['prior-absent']);
