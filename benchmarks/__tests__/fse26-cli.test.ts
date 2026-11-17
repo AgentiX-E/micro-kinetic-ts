@@ -31,7 +31,12 @@ import {
   TRANSIENT_GUARD_TESTS,
 } from '../../packages/tree/src/index.js';
 
-import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
+import {
+  DEFAULT_CONTAINMENT_DEPTH,
+  DEFAULT_FSE26_LOG_MODE,
+  isLogSignalMode,
+  parseFSE26Args,
+} from '../src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../src/fse26-engine-options.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from '../src/rcaeval-engine-options.js';
@@ -205,6 +210,7 @@ describe('parseFSE26Args — other flags', () => {
     expect(opts.termsOut).toBe('');
     expect(opts.fingerprintOut).toBe('');
     expect(opts.depthOut).toBe('');
+    expect(opts.containmentOut).toBe('');
   });
 
   it('parses the three diagnostic writers, each onto its OWN field', () => {
@@ -234,9 +240,45 @@ describe('parseFSE26Args — other flags', () => {
   });
 
   it('refuses a writer flag with no value rather than writing to an empty path', () => {
-    for (const flag of ['--depth-out', '--terms-dump', '--fingerprint-out', '--per-case-out']) {
+    for (const flag of [
+      '--depth-out',
+      '--terms-dump',
+      '--fingerprint-out',
+      '--per-case-out',
+      '--containment-out',
+    ]) {
       expect(() => parseFSE26Args([flag])).toThrow();
     }
+  });
+
+  describe('the containment sweep dump', () => {
+    it('defaults its depth to the five the engine publishes', () => {
+      expect(parseFSE26Args([]).containmentDepth).toBe(DEFAULT_CONTAINMENT_DEPTH);
+      expect(DEFAULT_CONTAINMENT_DEPTH).toBe(5);
+    });
+
+    it('parses the writer and the depth onto their own fields', () => {
+      const opts = parseFSE26Args(['--containment-out', 'c.ndjson', '--containment-depth', '12']);
+      expect(opts.containmentOut).toBe('c.ndjson');
+      expect(opts.containmentDepth).toBe(12);
+    });
+
+    it('reads 0 as "every candidate" rather than as a default', () => {
+      expect(parseFSE26Args(['--containment-depth', '0']).containmentDepth).toBe(0);
+    });
+
+    it('refuses a depth of 1, which carries no adjacent pair at all', () => {
+      // A depth of one publishes a dump whose every case has an empty `pairs` array — a zero that reads as "the
+      // sweep examined nothing" when the flag asked for nothing to be examined. Refused rather than clamped,
+      // because a clamped value would run a different population than the one on the command line.
+      expect(() => parseFSE26Args(['--containment-depth', '1'])).toThrow(/containment-depth/);
+    });
+
+    it('refuses a non-integer, a negative and a non-numeric depth', () => {
+      for (const value of ['2.5', '-3', 'ten', 'NaN']) {
+        expect(() => parseFSE26Args(['--containment-depth', value])).toThrow(/containment-depth/);
+      }
+    });
   });
 
   it('splits and trims the comma-separated flags', () => {

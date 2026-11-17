@@ -395,6 +395,18 @@ export default defineConfig({
         // the recall curve that says which of the two a gap belongs to. Every branch of the accounting is measured,
         // including the empty posterior and the clamp on a depth.
         'src/agentic-protocol-ceiling.ts',
+        // Added with the modules: the containment sweep's observation and the residual read off it. `containment-rows`
+        // is the artifact H2's population lives in, so an unmeasured side that survives as a `null` — or a missing
+        // `ungatedPairs` trace read as "the arm examined nothing" — becomes a residual rather than an error; the
+        // builder is where the two arms are swept from one fusion order and where the replay against the published
+        // ranking is decided, and its `differs` verdict is the only thing that can show the observation and the
+        // decision disagreeing; the residual module is arithmetic whose every branch (a population below its floor,
+        // one class empty, a tie, an ambiguous case) is a number a reader would otherwise take on trust; and the
+        // report is where an absent measurement must print `N/A` rather than `0.5`.
+        'src/containment-rows.ts',
+        'src/containment-row-build.ts',
+        'src/containment-residual.ts',
+        'src/containment-residual-report.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

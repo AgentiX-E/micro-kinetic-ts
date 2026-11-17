@@ -217,12 +217,18 @@ jobs:
             --fingerprint-out artifacts/agentic/fingerprints.ndjson \
             --per-case-out artifacts/agentic/per-case.ndjson \
             --depth-out artifacts/agentic/depth.ndjson \
+            --containment-out artifacts/agentic/containment.ndjson \
             --output artifacts/agentic/results.json \
             "${CONTAINMENT_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
           echo "depth lines:       $(wc -l < artifacts/agentic/depth.ndjson)"
+          #   The containment dump is the only artifact that can carry H2's population: ρ is a property of an EDGE
+          #   over many cases, and a pair that was never inverted leaves no trace in the published answer. It is
+          #   written at the SHIPPED depth (5), because that is the population every containment measurement in
+          #   `docs/containment-order.md` was taken on — a dump at another depth would explain an arm nobody ran.
+          echo "containment lines: $(wc -l < artifacts/agentic/containment.ndjson)"
 
       # The corpus manifest is STAGED BESIDE THE DUMPS rather than uploaded from the workspace root.
       #   `upload-artifact` computes the least common ancestor of every path it is given, so one path outside
@@ -248,6 +254,7 @@ jobs:
             artifacts/agentic/fingerprints.ndjson
             artifacts/agentic/per-case.ndjson
             artifacts/agentic/depth.ndjson
+            artifacts/agentic/containment.ndjson
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
             artifacts/agentic/manifest.json
@@ -302,6 +309,33 @@ jobs:
           set -o pipefail
           pnpm exec tsx benchmarks/src/run-depth-report.ts \
             --depth artifacts/agentic/depth.ndjson 2>&1 | tee artifacts/agentic/depth.txt
+
+      # ── H2: the factorisation residual of a pair's out-of-band indicators ───────────────────────────────────
+      #
+      #   The question the interface requirement only answers crudely: "did anything pass between these two" is a
+      #   count of failed calls, while ρ asks whether the two services' movements CO-MOVE more than independence
+      #   predicts. The pre-registration fixed the bar before the data (`AUC > 0.8`), and the arm it is asked
+      #   about is the one §12 refused — the excursions alone, without the failed-interface requirement.
+      #
+      #   Exit 3 is reserved for an EMPTY row file, which is an instrument failure. A population that cannot
+      #   separate the two classes is a MEASUREMENT — it is what the kill criterion names — so it prints as FAIL
+      #   and leaves the build green. Turning a refused hypothesis into a red job would make the next dispatch
+      #   unable to tell a rejected arm from broken code.
+      - name: Read the containment residual (H2)
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-containment-residual.ts \
+            --rows artifacts/agentic/containment.ndjson \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/containment-residual.json \
+            2>&1 | tee artifacts/agentic/containment.txt
+          {
+            echo '### H2 — the factorisation residual'
+            echo ''
+            echo '```'
+            grep -E '^  (replay|arm=|──|H2):' artifacts/agentic/containment.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
       # a verdict whose published order disagrees, because two artifacts from different runs would
@@ -423,6 +457,8 @@ jobs:
             artifacts/agentic/eliminator.txt
             artifacts/agentic/claims.ndjson
             artifacts/agentic/ceiling.txt
+            artifacts/agentic/containment.txt
+            artifacts/agentic/containment-residual.json
             artifacts/agentic/nomination.txt
             artifacts/agentic/nominations.ndjson
           if-no-files-found: warn

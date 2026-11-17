@@ -70,6 +70,8 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'termsOut',
   'fingerprintOut',
   'depthOut',
+  'containmentOut',
+  'containmentDepth',
   'faultFreeProfilePath',
 ] as const;
 

@@ -47,11 +47,15 @@ import {
   FSE26Loader,
   toFaultGraphOptions,
 } from '../../packages/kinetic/src/benchmarks/index.js';
+import { DEFAULT_FAULT_FREE_SIGMA } from '../../packages/tree/src/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
 import { FingerprintDump } from './agentic-fingerprint-file.js';
 import { buildCandidateFingerprints } from './agentic-fingerprint.js';
 import { discoverCaseDirs } from './case-discovery.js';
+import { buildContainmentPruner, quietEngineOptions } from './containment-pruner.js';
+import { buildContainmentRow } from './containment-row-build.js';
+import { ContainmentRowDump } from './containment-rows.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
@@ -215,6 +219,16 @@ async function main(): Promise<void> {
   // It is also the only artifact that can tell a case ranked too low from a case the order never held, which is
   // the split that decides whether the remaining headroom is a ranking question or a graph question.
   const depthDump = opts.depthOut === '' ? undefined : new DepthDump(opts.depthOut);
+  // The containment rows, on the same truncate-once rule and for the same reason: they describe a POPULATION.
+  const containmentDump =
+    opts.containmentOut === '' ? undefined : new ContainmentRowDump(opts.containmentOut);
+  // The QUIET pruner: the same engine with both relational passes switched off, so the order it publishes is the
+  // order the FUSION produced — which is the sweep's INPUT. The published ranking is not: two passes have run over
+  // it by the time a run reports, and a row derived from it would describe a population the sweep never saw.
+  const quietPruner =
+    containmentDump === undefined
+      ? undefined
+      : buildContainmentPruner(quietEngineOptions(engineOptions));
 
   for (const dir of selected) {
     let raw: FSE26RawCase;
@@ -320,6 +334,41 @@ async function main(): Promise<void> {
         termDump?.record({ datapack: basename(dir), faultType, accepted, ranking: full });
       }
       depthDump?.record({ datapack: basename(dir), faultType, accepted, ranking: full });
+    }
+
+    // ── Optional per-case CONTAINMENT SWEEP rows (--containment-out) ──
+    // The observation H2 needs and no other artifact carries: one row per adjacent pair the sweep examined with a
+    // call edge between them, from BOTH arms, plus a replay check against the published ranking. The dump exists
+    // because ρ is a property of an edge over many cases while the label ("did this inversion help") is a property
+    // of a case, and deciding the population at write time would decide the measurement.
+    if (containmentDump !== undefined) {
+      // `0` is every candidate — the setting a reader reaches for when ρ's per-edge population is too thin. The
+      // shipped depth is the default, because every containment number in `docs/containment-order.md` was measured
+      // on the five the engine publishes and a dump at another depth would describe a different population.
+      const depth =
+        opts.containmentDepth === 0
+          ? Math.max(2, benchCase.callGraph.nodes.size)
+          : opts.containmentDepth;
+      const fusionOrder =
+        faultGraph === undefined
+          ? []
+          : quietPruner!.analyze(faultGraph, depth).map((result) => result.serviceId);
+      containmentDump.record(
+        buildContainmentRow({
+          datapack: basename(dir),
+          faultType,
+          sigma: DEFAULT_FAULT_FREE_SIGMA,
+          margin: engineOptions.signals.containmentMargin,
+          edges: faultGraph?.callGraph.edges ?? [],
+          excursions: faultGraph?.containmentExcursions,
+          failedInterfaces: faultGraph?.failedInterfaces,
+          failureFlows: faultGraph?.failureFlows,
+          failingEdges: faultGraph?.failingEdges,
+          attribution: engineOptions.signals.failureAttribution,
+          fusionOrder,
+          publishedOrder: ranking.map((result) => result.serviceId),
+        }),
+      );
     }
 
     // ── Optional per-case elimination FINGERPRINT (--fingerprint-out) ──
@@ -448,6 +497,22 @@ async function main(): Promise<void> {
       `  Fingerprint census: considered=${summary.census.considered} offered=${summary.census.offered} ` +
         `unmeasurable=${summary.census.unmeasurable} unprofiled=${summary.census.unprofiled} ` +
         `shadowed=${summary.census.shadowed} capped=${summary.census.capped}`,
+    );
+  }
+  if (containmentDump !== undefined) {
+    // Printed rather than only written: a dump whose replay count is not equal to its case count is describing
+    // something other than the decision it observes, and that has to be legible in the log of the run that wrote
+    // it — the artifact itself is what a reader joins on, but a mismatch is a finding about the instrument.
+    const summary = containmentDump.summary;
+    console.log(
+      `  Containment rows: ${summary.cases} cases, ${summary.pairs} pairs ` +
+        `(${summary.measuredPairs} measured both sides), inverted=${summary.inverted} ` +
+        `ungated-inverted=${summary.invertedUngated} no-failed-interface=${summary.noFailedInterface} ` +
+        `unmeasured=${summary.unmeasured} not-larger=${summary.notLarger} -> ${summary.path}`,
+    );
+    console.log(
+      `  Containment replay: identical=${summary.replayIdentical} differs=${summary.replayDiffers} ` +
+        `unavailable=${summary.replayUnavailable}`,
     );
   }
 }

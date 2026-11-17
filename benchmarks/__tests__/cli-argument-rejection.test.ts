@@ -172,6 +172,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // proved only that the branch existed. It is now a vocabulary (`RCAEVAL_SYSTEM_CODES`), and `ss` is a
   // member: the filter's refusal is covered in `system-filter.test.ts`, which asserts it BY NAME.
   '--system': 'ss',
+  // Iteration 295: the containment dump's DEPTH. It is a COUNT rather than a mode, and the probe's default of
+  // `1` is the one value the parser refuses by name — a depth of one carries no adjacent pair, so the dump would
+  // publish an empty population that reads as "the sweep examined nothing". `5` is the shipped depth.
+  '--containment-depth': '5',
 };
 
 function argvFor(one: AcceptedFlag): string[] {

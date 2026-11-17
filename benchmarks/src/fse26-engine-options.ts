@@ -226,6 +226,12 @@ export const NON_ENGINE_OPTION_KEYS = [
   // than a knob — but it is listed here because an option that reached neither the engine nor this list is the
   // silent drop the completeness test exists to catch.
   'depthOut',
+  // The containment-sweep writer, and the depth its input order carries. Both describe the INVOCATION rather than
+  // the configuration: the writer serialises a sweep the engine already ran, and the depth selects how much of the
+  // fusion order that artifact covers — neither reaches the engine, and a run without the dump is the same
+  // configuration as one with it. Listed rather than omitted for the reason the three writers above record.
+  'containmentOut',
+  'containmentDepth',
   'dropMetrics',
   // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
   // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the

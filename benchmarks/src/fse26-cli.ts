@@ -168,6 +168,16 @@ export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
   return Object.prototype.hasOwnProperty.call(FAILED_EDGE_MODES, value);
 }
 
+/**
+ * How many candidates the containment sweep's input order carries unless asked otherwise.
+ *
+ * `5` is not a convenient number, it is the DEPTH every containment measurement in
+ * `docs/containment-order.md` was taken at: the sweep's input is the fusion order the engine publishes, and the
+ * published order is `k = 5`. A dump taken at another depth describes a sweep with another population, so the
+ * default has to be the measured one or the artifact would explain an arm nobody ran.
+ */
+export const DEFAULT_CONTAINMENT_DEPTH = 5;
+
 /** Parsed command-line options for one benchmark run. */
 export interface Fse26CliOptions {
   readonly dataDir: string;
@@ -277,6 +287,30 @@ export interface Fse26CliOptions {
    * off unless asked for. It changes nothing the engine computes, which is why both classification lists name it.
    */
   readonly depthOut: string;
+  /**
+   * Path to write the per-case CONTAINMENT SWEEP rows to (empty = none).
+   *
+   * H2's population: one row per adjacent pair the containment sweep examined with a call edge between them,
+   * carrying both arms' decisions and both sides' excursions. The ranking ndjson cannot reconstruct that
+   * population — a pair that was never inverted leaves no trace in an answer — which is why the measurement
+   * needs its own artifact rather than a second reading of the one that already exists.
+   *
+   * It carries no label, for the reason `agentic-fingerprint-file.ts` records, and it joins to the accepted
+   * answers on `datapack`. Off by default: it costs one extra ranking pass over each case (the sweep's input is
+   * the FUSION order, which the published ranking no longer contains), and a run that does not ask for it must
+   * not pay for it. It changes nothing the engine computes, which is why both classification lists name it.
+   */
+  readonly containmentOut: string;
+  /**
+   * How many candidates the sweep's input order carries (0 = every candidate).
+   *
+   * Defaults to 5 because that is what the shipped run publishes and what every containment measurement in
+   * `docs/containment-order.md` was taken on: a dump taken at a different depth would describe a sweep with a
+   * different population, and the +47/−5 arm it is meant to explain would no longer be the arm it explains.
+   * A larger depth is what a reader reaches for when ρ's per-edge population turns out too thin, and the
+   * artifact records the depth it used through the row count rather than through a comment.
+   */
+  readonly containmentDepth: number;
   /**
    * Metric names to filter out of every case before scoring (empty = none).
    * Component-ablation switch: the bridge merges four metric sources into one
@@ -766,6 +800,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     termsOut: '',
     fingerprintOut: '',
     depthOut: '',
+    containmentOut: '',
+    containmentDepth: DEFAULT_CONTAINMENT_DEPTH,
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -867,7 +903,21 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--terms-dump' && hasValue(argv, i + 1)) opts.termsOut = argv[++i]!;
     else if (arg === '--fingerprint-out' && hasValue(argv, i + 1)) opts.fingerprintOut = argv[++i]!;
     else if (arg === '--depth-out' && hasValue(argv, i + 1)) opts.depthOut = argv[++i]!;
-    else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
+    else if (arg === '--containment-out' && hasValue(argv, i + 1)) opts.containmentOut = argv[++i]!;
+    else if (arg === '--containment-depth' && hasValue(argv, i + 1)) {
+      // Refused rather than clamped, for the reason `--rise-ceiling` records one branch below: a depth of one
+      // carries no adjacent pair at all, so it would publish a dump whose every case has an empty `pairs` array —
+      // a zero that reads as "the sweep examined nothing" when the truth is that the flag asked for nothing to be
+      // examined. `0` is the explicit "every candidate" setting and is legal.
+      const depth = Number(argv[++i]!);
+      if (!Number.isInteger(depth) || depth < 0 || depth === 1) {
+        throw new Error(
+          `--containment-depth must be 0 (every candidate) or an integer >= 2, got ${String(argv[i])}`,
+        );
+      }
+      opts.containmentDepth = depth;
+    } else if (arg === '--drop-metrics' && hasValue(argv, i + 1))
+      opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
       opts.eventExtraLabels = csv(argv[++i]!);
     else if (arg === '--rise-ceiling' && hasValue(argv, i + 1)) {

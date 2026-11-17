@@ -261,6 +261,19 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'That split is a property of a configuration, not a degree of freedom — a depth at a second weight is a ' +
     'second reading of the same run, so it travels beside the fingerprint as an artifact rather than as an ' +
     'input. `docs/agentic-headroom.md` §10 owns the reading it made possible',
+  containmentOut:
+    'writes the per-case CONTAINMENT SWEEP rows (--containment-out); an OUTPUT PATH, and the engine never reads it ' +
+    'back. It is not a knob because it multiplies nothing: it records the adjacent pairs the sweep examined with ' +
+    'a call edge between them — both arms’ decisions and both sides’ excursions — which is the only ' +
+    'population a factorisation residual can be computed over, since a pair that was never inverted leaves no ' +
+    'trace in the published answer. The pass it observes is the knob (`containmentOrder`, which has a row of its ' +
+    'own); `docs/containment-order.md` §14 owns the reading it made possible',
+  containmentDepth:
+    'how many candidates the containment dump’s input order carries (--containment-depth); a property of the ' +
+    'ARTIFACT rather than of the ranking. The sweep’s input is the FUSION order, so two depths are two ' +
+    'populations of one run rather than two configurations of it: the default is 5 because that is the depth ' +
+    'every containment number in `docs/containment-order.md` was measured at, and a depth of 1 is refused by ' +
+    'name because it carries no adjacent pair at all',
 };
 
 /**
@@ -1336,6 +1349,23 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'writes the per-case ranking depth — where the corpus answer sits in the full order — which is a reading of ' +
     'a configuration rather than a knob: a second weight is a second reading of the same run, not a second ' +
     'dispatch. `docs/agentic-headroom.md` §10 owns the split it made measurable',
+  // Iteration 295: the containment sweep rows, on the same rule as the three dumps above and with the same
+  // caveat: `.github/workflows/benchmark-agentic.yml` DOES pass it, because a residual is computed over an edge
+  // population the published ranking cannot reconstruct, and that workflow is outside this census's scan set. So
+  // the entry means "no BENCHMARK dispatch reaches it", which is the direction that stays true.
+  '--containment-out':
+    "writes the adjacent pairs the containment sweep examined, with both arms' decisions and both sides' " +
+    'excursions — the only population a factorisation residual can be computed over, since a pair that was never ' +
+    'inverted leaves no trace in the answer the run publishes. An OUTPUT PATH rather than a knob: it serialises ' +
+    'a sweep the engine already ran. `docs/containment-order.md` §14 owns the reading it made possible',
+  // And its depth, which is a property of that artifact: the sweep\'s input is the FUSION order, so two depths
+  // are two populations of one run rather than two configurations of it. A dispatch that could lower it to 1
+  // would publish an empty population per case, which reads as "the sweep examined nothing".
+  '--containment-depth':
+    "how many candidates the containment dump's input order carries. The default (5) is the depth every " +
+    'containment number in `docs/containment-order.md` was measured at, so a dispatch must not be able to move ' +
+    'it and then quote those numbers against a different population; a reader who needs a wider population ' +
+    're-runs the local arm, which is also where the profile it needs can be named',
 };
 
 /**
