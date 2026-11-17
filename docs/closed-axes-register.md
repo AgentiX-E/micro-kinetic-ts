@@ -5298,7 +5298,35 @@ report that printed only φ would drop those labels rather than score them as fa
   and, in doing so, fixed an estimator whose ceiling had not been computed. The ceiling is now in the record, and
   the pre-registered number still decides.
 
-### Not measured
+### The first readback, and the population the statistic needs
 
-No corpus has been read through this instrument yet. The rows, the replay count and the two AUCs are the next
-dispatch's output, and nothing in this entry is a reading of them.
+Run `43993982158` read 1 422 cases and returned **every residual zero** and an AUC of exactly `0.5`. The
+population was "the pairs the arm inverted", and on that population the residual is identically zero:
+
+    inversion requires excursion(lower) > excursion(upper)  ⇒  p_lower = 1
+    ⇒  ρ = p_upper − p_upper·1 = 0
+
+The pre-registration says "every adjacent pair the containment sweep considers", so the restriction was an
+implementation error rather than a hypothesis failing. Over the examined pairs, on the same artifact:
+
+| arm | edges | obs | n ≥ 10 | gains | losses | AUC(ρ) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ungated | 64 | 809 | 16 | 45 | 3 | **0.8611** |
+| gated | 64 | 786 | 16 | 41 | 0 | N/A |
+
+Two qualifications are part of the number and not footnotes to it. `AUC = 0.8611` is computed over **two**
+negative cases, so the statistic moves in steps of `1/72` and one loss placed one position earlier reads `0.75` —
+the criterion is met and not established. And the population was changed after a null was seen; the justification
+is that the pre-registration already fixed the examined pairs, which is checkable, but a reader who counts it as
+one tuning step is not being unreasonable. Both numbers stay in the record.
+
+The second criterion — `ρ > 0` as the gate, at +15 / −0 and Top@1 > 1 156 — is **not measured**, and cannot be
+measured on a single corpus walk: a case that contributes to an edge's residual and is then judged by it is a
+leak rather than a prior, so the gate has to be fitted on one half and read on the other.
+
+### Axes this closes
+
+- **"An observation port is a neutral instrument."** This one was neutral and still produced a null, because the
+  population it observed was defined by the same condition the statistic is monotone in.
+- **"A pre-registered statistic is a pre-registered measurement."** The words fixed the population; the code did
+  not follow them, and the first reading was a constant.

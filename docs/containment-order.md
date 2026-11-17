@@ -793,7 +793,52 @@ them as failures to discriminate.
 hypothesis is not broken code. Exit **3** is reserved for a row file with no case in it — an instrument failure,
 where nothing was measured and a printed zero would be read as a null result.
 
-### 14.7 Instrument coverage
+### 14.7 The first readback, and the population error it exposed
+
+Run `43993982158` (1 422 cases, `containment_order: 1`) produced the first numbers: **244 observations over 30
+edges**, of which 7 reached the population floor, and every residual exactly `0.0000` with an AUC of exactly
+`0.5`. φ was undefined on all seven for the same reason.
+
+That is not a weak estimator. It is a CONSTANT one on that population, and the argument is two lines:
+
+    an inversion requires  excursion(lower) > excursion(upper) + margin,  margin = 0
+    ⇒ excursion(lower) > 0 in EVERY observation   ⇒  p_lower = 1
+    ⇒ δupper ⇒ δlower, so P(both) = p_upper
+    ⇒ ρ = p_upper − p_upper · 1 = 0.
+
+The population used was "the pairs the arm inverted", and the pre-registration says "every adjacent pair the
+containment sweep considers". Restricting it to the acted-on pairs makes the statistic identically zero **by
+construction** — the sweep only acts when the callee is further out, which forces that side's indicator to 1.
+
+Re-read over the EXAMINED pairs, on the same artifact and with no new corpus walk:
+
+| arm | edges | observations | edges at n ≥ 10 | gains | losses | scored | AUC(ρ) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| ungated | 64 | 809 | 16 | 45 | 3 | 36 / 2 | **0.8611** |
+| gated | 64 | 786 | 16 | 41 | 0 | 33 / 0 | N/A (one class empty) |
+
+The top edges are the ones the mechanism predicts — `ts-route-plan-service ↔ ts-travel-plan-service`
+(ρ = 0.1995, n = 191), `ts-preserve-service ↔ ts-travel-service` (ρ = 0.1629, n = 37), `ts-travel-plan-service ↔
+ts-travel-service` (ρ = 0.1592, n = 64) — and the one negative edge is
+`ts-contacts-service ↔ ts-preserve-service` (ρ = −0.1200, n = 10).
+
+**Two qualifications, and neither is cosmetic.**
+
+1. **`AUC = 0.8611` rests on two negative cases.** With `n₋ = 2` the statistic can only take values in steps of
+   `1/72`, and moving either loss one position earlier drops it to `0.75` — below the bar. The gate's first
+   criterion is therefore **met and not established**; it is a reading that must be repeated on a population with
+   more losses before anything is built on it.
+2. **The re-read is post-hoc in the arithmetic though not in the criterion.** The population was changed after
+   seeing a null, and the justification is that the pre-registration's own words already fixed the examined pairs.
+   That justification is checkable — the sentence is quoted above — but it is a justification, and a reader who
+   counts it as one tuning step is not being unreasonable. The record keeps both numbers.
+
+The second pre-registered criterion — replanting `ρ > 0` as the gate in `applyContainmentOrder` and re-reading the
+corpus at +15 / −0 and Top@1 > 1 156 — has **not** been measured. It needs the residual computed on one half of
+the corpus and applied to the other, because a case that contributes to the edge's own residual and is then judged
+by it is a leak rather than a prior.
+
+### 14.8 Instrument coverage
 
 `containment-rows.ts`, `containment-row-build.ts`, `containment-residual.ts` and
 `containment-residual-report.ts` measure at 100 % statements, functions and lines, and at ≥ 98 % branches, with

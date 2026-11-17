@@ -130,15 +130,30 @@ export function armTrace(
 }
 
 /**
- * Accumulate the out-of-band counts of every pair an arm inverted.
+ * Accumulate the out-of-band counts of every pair an arm EXAMINED and could measure on both sides.
  *
- * Only INVERTED pairs are counted, and that is a decision rather than an oversight: the residual is asked to
- * predict **which inversions were right**, so its population is the pairs the arm acted on. Including the pairs
- * the arm refused would add observations whose labels do not exist — a refusal has no "was this a gain" — and
- * the estimate would then describe the corpus's edges rather than the arm's decisions.
+ * ## The population is the examined pairs, and that is not a preference
+ *
+ * The pre-registration fixes it in words — "for every adjacent pair the containment sweep considers" — and the
+ * corpus proved it the hard way. Restricting the population to the pairs the arm INVERTED makes the statistic
+ * **identically zero**, by a two-line argument that was measured before it was understood:
+ *
+ *     an inversion requires  excursion(lower) > excursion(upper) + margin, margin = 0
+ *     ⇒ excursion(lower) > 0 in EVERY observation  ⇒  p_lower = 1
+ *     ⇒ ρ = P(δupper ∧ δlower) − p_upper·1, and δupper ⇒ δlower, so P(both) = p_upper
+ *     ⇒ ρ = p_upper − p_upper = 0.
+ *
+ * Run `43993982158` read exactly that: thirty edges, every residual `0.0000`, and an AUC of exactly `0.5` over 28
+ * gains and 2 losses — because every point was tied. φ was undefined on all of them for the same reason (`p = 1`
+ * is a degenerate marginal). The estimator was not weak on that population; it was CONSTANT on it.
+ *
+ * Over the examined pairs the implication does not hold: a pair the arm refused can have its upper side out of
+ * band while the lower one is inside it, so both marginals sit strictly between 0 and 1 and the residual varies.
+ * That is the population the residual is a property of — an edge's tendency to move as one, measured on every
+ * occasion the sweep looked at it, and then asked whether the occasions it CHOSE to act on were the co-moving ones.
  *
  * @param rows - The corpus's sweep rows.
- * @param arm - Which arm's inversions define the population.
+ * @param arm - Which arm's trace defines the examined set (the two traces are different walks).
  * @returns One entry per edge, keyed by {@link edgeKeyOf}.
  */
 export function edgeCounts(
@@ -151,12 +166,11 @@ export function edgeCounts(
   >();
   for (const row of rows) {
     for (const pair of armTrace(row, arm)) {
-      if (pair.decision !== 'inverted') continue;
       const upperOut = pair.upperExcursion;
       const lowerOut = pair.lowerExcursion;
       if (upperOut === undefined || lowerOut === undefined) continue;
-      const { a, b } = edgeEndpoints(edgeKeyOf(pair.upper, pair.lower));
       const key = edgeKeyOf(pair.upper, pair.lower);
+      const { a, b } = edgeEndpoints(key);
       const bucket = counts.get(key) ?? { measured: 0, bothOut: 0, aOut: 0, bOut: 0 };
       const outA = (a === pair.upper ? upperOut : lowerOut) > 0;
       const outB = (b === pair.upper ? upperOut : lowerOut) > 0;

@@ -90,7 +90,12 @@ describe('top1Correct', () => {
 });
 
 describe('edgeCounts', () => {
-  it('counts only the arm’s inversions', () => {
+  it('counts every pair the arm examined, not only the ones it inverted', () => {
+    // The population the pre-registration fixed ("every adjacent pair the sweep considers"), and the only one on
+    // which the statistic is not identically zero: an inversion requires the callee's excursion to exceed the
+    // caller's, so every inverted pair has the callee out of band in EVERY observation, its marginal is 1, and the
+    // residual collapses to `p_upper - p_upper = 0`. Measured on run 43993982158: thirty edges, every residual
+    // 0.0000, and an AUC of exactly 0.5 over 28 gains and 2 losses because every point was tied.
     const rows = [
       caseRow({
         pairs: [
@@ -105,9 +110,36 @@ describe('edgeCounts', () => {
         ungatedPairs: [inverted('a', 'b', 1, 2)],
       }),
     ];
-    expect(edgeCounts(rows, 'gated').size).toBe(0);
-    const ungated = edgeCounts(rows, 'ungated');
-    expect(ungated.get(edgeKeyOf('a', 'b'))).toEqual({ measured: 1, bothOut: 1, aOut: 1, bOut: 1 });
+    expect(edgeCounts(rows, 'gated').get(edgeKeyOf('a', 'b'))).toEqual({
+      measured: 1,
+      bothOut: 1,
+      aOut: 1,
+      bOut: 1,
+    });
+    expect(edgeCounts(rows, 'ungated').get(edgeKeyOf('a', 'b'))).toEqual({
+      measured: 1,
+      bothOut: 1,
+      aOut: 1,
+      bOut: 1,
+    });
+  });
+
+  it('counts a refused pair whose upper side is out and lower side is in', () => {
+    // This is the observation an inverted-only population cannot contain and it is why the residual varies at
+    // all: `not-larger` means the callee was NOT further out, so the caller can be the only side outside its band.
+    const rows = [
+      caseRow({
+        ungatedPairs: [
+          { upper: 'a', lower: 'b', decision: 'not-larger', upperExcursion: 3, lowerExcursion: 0 },
+        ],
+      }),
+    ];
+    expect(edgeCounts(rows, 'ungated').get(edgeKeyOf('a', 'b'))).toEqual({
+      measured: 1,
+      bothOut: 0,
+      aOut: 1,
+      bOut: 0,
+    });
   });
 
   it('refuses an observation whose either side is unmeasured', () => {

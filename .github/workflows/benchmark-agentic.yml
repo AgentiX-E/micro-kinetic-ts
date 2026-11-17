@@ -333,7 +333,10 @@ jobs:
             echo '### H2 — the factorisation residual'
             echo ''
             echo '```'
-            grep -E '^  (replay|arm=|──|H2):' artifacts/agentic/containment.txt || true
+            #   The four line SHAPES the report prints, matched on their own prefixes: a pattern that required a
+            #   colon after the em-dash rule matched nothing, and a summary that silently dropped the table it was
+            #   quoting would look like a report with nothing in it.
+            grep -E '^  (replay:|arm=|H2:)' artifacts/agentic/containment.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
