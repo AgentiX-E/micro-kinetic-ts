@@ -449,6 +449,47 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ── H8: the interface record kept as a veto, and dropped as a licence ──────────────────────────────────
+      #
+      #   Every containment arm before this one moved a STATISTIC: the residual as a requirement, as a term, or
+      #   the channel set behind the measurement. This one moves a WORD. The shipped rule refuses a pair whose
+      #   own edge carried no failed call, and that single refusal merges two statements:
+      #
+      #     - the case recorded failed calls SOMEWHERE, so a call passed between these two and completed — the
+      #       record vetoes the promotion, correctly (`+15 / −0`, and §299's three losses are what it buys);
+      #     - the case recorded none AT ALL, so the record is silent about the case and says nothing about this
+      #       pair — and refusing here discards the eighteen gains §299 measured and could not keep.
+      #
+      #   `ContainmentOrderInput.recordScope: 'case'` is that distinction. Nothing is fitted: the residual is
+      #   the same cross-fitted prior the `prior` arm carries, the threshold is the shipped `0`, and the margin,
+      #   the measurement and the inequality are untouched. An improvement here is not a coefficient that
+      #   happened to fit the corpus.
+      #
+      #   The `ceiling` line is the other reason the step exists. A sweep visits adjacent positions from the top
+      #   and never revisits one, so a candidate ascends exactly one place and only the pair at positions 0 and 1
+      #   can change the published head. The cases ANY arm on this axis can fix are therefore countable before
+      #   any arm is run, and every Top@1 above is spending against that number rather than against a
+      #   percentage.
+      #
+      #   Exit 3 is the three instrument failures — no walkable chain, a partial chain, a shipped replay that
+      #   does not reproduce the published top-1. A measured FAIL leaves the job green.
+      - name: Read the containment veto (H8)
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-containment-veto.ts \
+            --rows artifacts/agentic/containment.ndjson \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/containment-veto.json \
+            2>&1 | tee artifacts/agentic/containment-veto.txt
+          {
+            echo '### H8 — the interface record kept as a veto and dropped as a licence'
+            echo ''
+            echo '```'
+            grep -E '^  (rows=|prior |arm=|decisions |ceiling |criterion:|H8-veto:)' \
+              artifacts/agentic/containment-veto.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # The study reads the ARTIFACT and nothing else. `joinHeadroom` refuses to pair a fingerprint with
       # a verdict whose published order disagrees, because two artifacts from different runs would
       # produce a number for a configuration neither of them ran -- and the CLI exits non-zero on that
@@ -577,6 +618,8 @@ jobs:
             artifacts/agentic/containment-term.json
             artifacts/agentic/containment-surprise.txt
             artifacts/agentic/containment-surprise.json
+            artifacts/agentic/containment-veto.txt
+            artifacts/agentic/containment-veto.json
             artifacts/agentic/nomination.txt
             artifacts/agentic/nominations.ndjson
           if-no-files-found: warn

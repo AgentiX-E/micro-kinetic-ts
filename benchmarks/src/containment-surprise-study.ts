@@ -83,6 +83,9 @@ function correct(answer: string | null, accepted: readonly string[]): boolean | 
 function emptyCensus(): Record<ContainmentDecision, number> {
   return {
     inverted: 0,
+    // Unreachable from this arm — the surprise walk reads the record per edge — and present for the reason the
+    // gate's census records: the counters are a `Record` over the union.
+    'record-silent': 0,
     'no-failed-interface': 0,
     unmeasured: 0,
     'not-larger': 0,

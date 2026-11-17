@@ -142,6 +142,7 @@ function readingOf(overrides: Partial<GateReading['arms']['prior']> = {}): GateR
     },
     decisions: {
       inverted: 0,
+      'record-silent': 0,
       'no-failed-interface': 0,
       unmeasured: 0,
       'not-larger': 0,

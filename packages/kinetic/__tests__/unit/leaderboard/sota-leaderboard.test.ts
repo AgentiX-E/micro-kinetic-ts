@@ -91,7 +91,11 @@ describe('createSotaLeaderboard', () => {
   });
 
   it('contains the canonical 18 cells', () => {
-    expect(table.entries).toHaveLength(18);
+    // Grown from 18 in iteration 300 — four cells, and each one is a competitor this table had not recorded: a
+    // general agent at 66.7 % on the SAME 90 cases the agent arm is read on, the harness that beat it on the
+    // 270-case slice, and two graph methods (TD-RCA, eIRWR) whose cohorts are not RCAEval's at all. The count is
+    // pinned so that a cell cannot be added without a reader noticing.
+    expect(table.entries).toHaveLength(22);
   });
 
   it('is valid: no errors, only the two venue-only warnings', () => {

@@ -29,6 +29,7 @@ function reading(overrides: Partial<SurpriseReading> = {}): SurpriseReading {
     },
     decisions: {
       inverted: 12,
+      'record-silent': 0,
       'no-failed-interface': 3,
       unmeasured: 4,
       'not-larger': 5,
@@ -37,6 +38,7 @@ function reading(overrides: Partial<SurpriseReading> = {}): SurpriseReading {
     },
     opened: {
       inverted: 1,
+      'record-silent': 0,
       'no-failed-interface': 0,
       unmeasured: 6,
       'not-larger': 2,

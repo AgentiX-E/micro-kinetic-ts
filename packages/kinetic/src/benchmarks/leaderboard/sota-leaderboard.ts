@@ -47,6 +47,16 @@ export type Cohort =
   | 'rcaeval-full'
   /** RCAEval RE2 Online-Boutique (90 cases), where the LLM agents report. */
   | 'rcaeval-re2-ob'
+  /**
+   * The 270-case RCAEval slice the 2026 agent literature reports: RE2-OnlineBoutique, RE2-SockShop and
+   * RE3-TrainTicket, ninety each.
+   *
+   * Separate from {@link Cohort.rcaeval-full} because it is a THIRD of it, and separate from
+   * {@link Cohort.rcaeval-re2-ob} because a figure averaged over three systems is not one system's figure. The
+   * distinction exists because the most recent agent paper publishes exactly this population, and filing its
+   * number under either neighbour would be the cross-cohort comparison this table's guards exist to refuse.
+   */
+  | 'rcaeval-three-system'
   /** Single-system / single-slice results (not comparable to the full benchmark). */
   | 'rcaeval-single-system'
   /** Non-RCAEval benchmarks (AIOPS-2022, TrainTicket, FSE'26, ORCA-bench). */
@@ -422,6 +432,21 @@ export function createSotaLeaderboard(generatedAt: string): LeaderboardTable {
     },
 
     // ── rcaeval-re2-ob (90 cases, AC@1) ───────────────────
+    //
+    //   The strongest published LLM figure on these 90 cases is not an RCA system at all. `arXiv:2608.25661`
+    //   reports a general-purpose coding agent with no RCA harness at 66.7 % A@1 on this exact slice, above every
+    //   purpose-built agent below it — the paper's own finding, and the reason its authors argue the harness and
+    //   not the agent is the thing to build.
+    {
+      method: 'Codex (Direct)',
+      paradigm: 'llm-agent',
+      result: 0.667,
+      cohort: 'rcaeval-re2-ob',
+      metric: 'AC@1',
+      system: 'OnlineBoutique',
+      note: 'GPT-5.5 driving a general agent with no RCA harness; A@3 83.3 %, Avg@3 95.0 %',
+      provenance: { kind: 'published', source: 'Huang et al., OpsHarness', arxivId: '2608.25661' },
+    },
     {
       method: 'RCLAgent (Qwen-3.6-Plus)',
       paradigm: 'llm-agent',
@@ -483,6 +508,17 @@ export function createSotaLeaderboard(generatedAt: string): LeaderboardTable {
       provenance: { kind: 'published', source: "OpenRCA (ICLR'25), Xu et al." },
     },
 
+    // ── rcaeval-three-system (270 cases, A@1) ─────────────
+    {
+      method: 'OpsHarness (avg of 4 backbones)',
+      paradigm: 'llm-agent',
+      result: 0.59,
+      cohort: 'rcaeval-three-system',
+      metric: 'A@1',
+      note: 'Self-evolving external harness over a general agent; 63.4 % over the bare agent, 4.02x over specialized ones',
+      provenance: { kind: 'published', source: 'Huang et al., OpsHarness', arxivId: '2608.25661' },
+    },
+
     // ── rcaeval-single-system ─────────────────────────────
     {
       method: 'StableRCA',
@@ -533,6 +569,26 @@ export function createSotaLeaderboard(generatedAt: string): LeaderboardTable {
       system: 'Augmented-TrainTicket',
       note: "The authors' own augmentation of TrainTicket",
       provenance: { kind: 'published', source: 'Zhang et al. (PKU/Huawei)', arxivId: '2605.14866' },
+    },
+    {
+      method: 'TD-RCA',
+      paradigm: 'multimodal',
+      result: 0.939,
+      cohort: 'cross-benchmark',
+      metric: 'HR@1',
+      system: 'TrainTicket',
+      note: 'VAE-GNN with dual-perspective decoupling; 0.943 on SocialNetwork. Names the failure mode this engine\'s containment pass was built for: a victim whose symptoms are LOUDER than its root',
+      provenance: { kind: 'published', source: 'He et al., IWQoS 2026', doi: '10.1109/IWQoS70441.2026.11661074' },
+    },
+    {
+      method: 'eIRWR',
+      paradigm: 'deterministic-causal',
+      result: 0.75,
+      cohort: 'cross-benchmark',
+      metric: 'MRR',
+      system: 'Alibaba-trace-12k-25k',
+      note: 'Reverse-edge and self-loop augmented random walk; MRR 0.94 at high root visibility. Its ablation is the load-bearing part: elastic damping on the transition matrix is mathematically equivalent to raising the restart probability, so published "damping" gains are restart gains',
+      provenance: { kind: 'published', source: 'eIRWR', arxivId: '2608.08073' },
     },
     {
       method: "FSE'26 best-of-11",

@@ -1011,3 +1011,140 @@ describe('the containment order in the engine', () => {
     ).toEqual(['a', 'b']);
   });
 });
+
+// ── recordScope ───────────────────────────────────────────
+
+/**
+ * The record's absence is two facts, and `recordScope` is which of them the pass reads.
+ *
+ * The shipped arm reads the absence as one thing and refuses, which is what earns it `+15 / −0`. §299 measured
+ * what that costs: three cases where the record correctly vetoed a promotion, and eighteen gains the same
+ * requirement takes where the record never spoke at all. These tests pin the distinction at the sweep's own
+ * boundary — the same maps, one word of interpretation — so that the corpus reading is a measurement of the
+ * interpretation and not of anything else.
+ */
+describe('recordScope', () => {
+  /** The pair, measured, with no record on its own edge. */
+  const silent = {
+    ranking: rows('a', 'b'),
+    edges: CALLS_AB,
+    excursions: new Map([
+      ['a', 0],
+      ['b', 1],
+    ]),
+  };
+
+  it('refuses a missing record at edge scope, which is the configuration every published number was measured in', () => {
+    const sweep = inspectContainmentOrder({ ...silent, failingEdges: new Map() });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['no-failed-interface']);
+    expect(servicesOf(sweep.order)).toEqual(['a', 'b']);
+  });
+
+  it('inverts on a silent record at case scope, and reports the reason as its own decision', () => {
+    // A case with no failed call anywhere is a case the record cannot speak about: it is a fact about the
+    // recording, not evidence that a call between these two completed.
+    const sweep = inspectContainmentOrder({
+      ...silent,
+      failingEdges: new Map(),
+      recordScope: 'case',
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['record-silent']);
+    expect(servicesOf(sweep.order)).toEqual(['b', 'a']);
+  });
+
+  it('keeps the veto when the case recorded a failed call somewhere else', () => {
+    // The call between these two completed — that is what the record says when it says anything at all — and a
+    // case-level walk must not lose that. This is the arm's whole risk and the three losses §299 records.
+    const sweep = inspectContainmentOrder({
+      ...silent,
+      failingEdges: new Map([[failureEdgeKey('b', 'a'), { rise: 9, novel: 0 }]]),
+      recordScope: 'case',
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['no-failed-interface']);
+    expect(servicesOf(sweep.order)).toEqual(['a', 'b']);
+  });
+
+  it('still refuses a silent pair the excursions do not support', () => {
+    // Silence removes a REQUIREMENT, never a measurement: a case-scoped walk whose callee is not further out is
+    // refused for the same reason the edge-scoped one is.
+    const sweep = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 4],
+        ['b', 1],
+      ]),
+      failingEdges: new Map(),
+      recordScope: 'case',
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['not-larger']);
+  });
+
+  it('refuses a silent pair the profile could not measure', () => {
+    const sweep = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([['b', 1]]),
+      failingEdges: new Map(),
+      recordScope: 'case',
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['unmeasured']);
+  });
+
+  it('lets the prior speak where the record is silent, and reports its two refusals as its own', () => {
+    const below: ContainmentPrior = {
+      residuals: new Map([[failureEdgeKey('a', 'b'), 0]]),
+      threshold: 0,
+    };
+    expect(
+      inspectContainmentOrder({
+        ...silent,
+        failingEdges: new Map(),
+        recordScope: 'case',
+        prior: below,
+      }).verdicts.map((verdict) => verdict.decision),
+    ).toEqual(['prior-below']);
+    const absent: ContainmentPrior = { residuals: new Map(), threshold: 0 };
+    expect(
+      inspectContainmentOrder({
+        ...silent,
+        failingEdges: new Map(),
+        recordScope: 'case',
+        prior: absent,
+      }).verdicts.map((verdict) => verdict.decision),
+    ).toEqual(['prior-absent']);
+  });
+
+  it('inverts a silent pair the residual admits, and still calls the reason the silence', () => {
+    const admitted: ContainmentPrior = {
+      residuals: new Map([[failureEdgeKey('a', 'b'), 0.4]]),
+      threshold: 0,
+    };
+    const sweep = inspectContainmentOrder({
+      ...silent,
+      failingEdges: new Map(),
+      recordScope: 'case',
+      prior: admitted,
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['record-silent']);
+    expect(servicesOf(sweep.order)).toEqual(['b', 'a']);
+  });
+
+  it('calls a licensed inversion `inverted` even at case scope, because the record did speak', () => {
+    const sweep = inspectContainmentOrder({
+      ...silent,
+      failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+      recordScope: 'case',
+    });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['inverted']);
+    expect(servicesOf(sweep.order)).toEqual(['b', 'a']);
+  });
+
+  it('is unreachable without a record at all, because there is then nothing to be silent', () => {
+    // `failingEdges` absent is the ruled-out arm, not a case-scoped one: no map means no requirement, and the
+    // pass reads the excursions alone. A walk that labelled its inversions `record-silent` here would claim a
+    // record it was never given.
+    const sweep = inspectContainmentOrder({ ...silent, recordScope: 'case' });
+    expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['inverted']);
+  });
+});

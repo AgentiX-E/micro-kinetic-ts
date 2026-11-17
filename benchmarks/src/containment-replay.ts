@@ -31,7 +31,7 @@ import { gradeByTerm, type TermTransfer } from './containment-term.js';
 /**
  * Which arm the containment stage is walked as.
  *
- * Five arms, because this repository asks five different things of the pass and only one of them is "do nothing":
+ * Six arms, because this repository asks six different things of the pass and only one of them is "do nothing":
  *
  * - `off` — no sweep at all. The order goes straight to the flow pass, which is the 1 141-case baseline every ±
  *   in `docs/containment-order.md` is read against, and the arm the gate is compared TO.
@@ -46,6 +46,12 @@ import { gradeByTerm, type TermTransfer } from './containment-term.js';
  *   the fault-free surprise over every published channel instead of the latency excursion over one family. It is
  *   the same walk of the same chain with one map swapped, which is what makes it a statement about the
  *   measurement rather than about the rule.
+ *
+ * - `veto` — the shipped rule reading its own interface record at CASE scope (`ContainmentOrderInput.recordScope`).
+ *   A pair whose own edge carried no failed call is still refused when the case recorded failed calls ANYWHERE, and
+ *   falls through to the measurements and the residual when it recorded none. `prior` is the same cross-fitted
+ *   residual the `prior` arm carries. The record stays a requirement on the edges that have one, which is the whole
+ *   point: this arm keeps the veto and drops the licence.
  *
  * A row whose chain carries no surprise map REFUSES the `surprise` arm rather than walking it empty: an empty map
  * makes the pass a no-op, so a dump written before the field existed would report the arm as identical to `off`
@@ -64,7 +70,11 @@ export type ReplayArm =
       readonly transfers: readonly TermTransfer[];
       readonly scores: ReadonlyMap<string, number>;
     }
-  | { readonly kind: 'surprise' };
+  | { readonly kind: 'surprise' }
+  | {
+      readonly kind: 'veto';
+      readonly prior: ContainmentPrior;
+    };
 
 /** One case's chain, walked. */
 export interface ReplayedCase {
@@ -124,16 +134,18 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
           edges: chain.edges.map(([from, to]) => ({ from, to })),
           excursions: measured,
           margin: row.margin,
-          // The interface record is what the SHIPPED rule requires, and this arm varies the measurement rather
-          // than the requirement — so it carries the record, and dropping it would price a different rule.
-          ...(arm.kind === 'shipped' || arm.kind === 'surprise'
+          // The interface record is what the SHIPPED rule requires, and the `surprise` arm varies the measurement
+          // rather than the requirement — so it carries the record, and dropping it would price a different rule.
+          // `veto` carries it too and reads it at CASE scope: the same map, one word of interpretation.
+          ...(arm.kind === 'shipped' || arm.kind === 'surprise' || arm.kind === 'veto'
             ? { failingEdges: new Map(Object.entries(chain.failedInterfaces)) }
             : {}),
-          // The two requirements are mutually exclusive by construction rather than by preference: the
-          // pre-registered arm REPLACES the failed-interface record with the residual, so a walk carrying both
-          // would be answering a question nobody asked and would price the residual on the cases the record had
-          // already refused.
-          ...(arm.kind === 'prior' ? { prior: arm.prior } : {}),
+          ...(arm.kind === 'veto' ? { recordScope: 'case' as const } : {}),
+          // The `prior` arm REPLACES the failed-interface record with the residual, so a walk carrying both would
+          // price the residual on the cases the record had already refused. The `veto` arm is the opposite shape,
+          // and that is why it carries both: the record decides where it SPEAKS, the residual where it is SILENT.
+          // One requirement per pair either way; the two are never consulted for the same one.
+          ...(arm.kind === 'prior' || arm.kind === 'veto' ? { prior: arm.prior } : {}),
         });
   return publishThroughFlows(
     chain,

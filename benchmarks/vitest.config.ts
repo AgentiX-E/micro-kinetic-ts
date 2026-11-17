@@ -425,6 +425,13 @@ export default defineConfig({
         // reason missing from the census line would read as a reason nobody looked for.
         'src/containment-surprise-study.ts',
         'src/containment-surprise-report.ts',
+        // Added with H8: the interface record read at CASE scope, and the family's ceiling counted off the
+        // artifact. The study is included for the reason the other two are — three arms over one chain, where an
+        // unmeasurable row counted as a lost case would turn a smaller population into a worse arm — and the
+        // report for the reason the others are, that a reason missing from the census line reads as a reason
+        // nobody looked for.
+        'src/containment-veto-study.ts',
+        'src/containment-veto-report.ts',
         // Added with the exact test: the p-value that replaces the population floor, and the multiplicity that
         // replacing it exposes. Both refusals are arguments that must not become `null`s — a table whose parts do
         // not fit its whole is a lost observation, not weak evidence — and the log-space sum is the only reason a

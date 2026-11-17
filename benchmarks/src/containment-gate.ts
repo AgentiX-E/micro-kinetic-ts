@@ -233,8 +233,13 @@ export function readGate(
   score: ResidualScore = 'rho',
 ): GateReading {
   const priors = priorsFor(rows, score);
+  // `record-silent` is a decision only a CASE-SCOPED walk can reach, and every arm this module walks reads the
+  // record per edge — so the column exists and stays zero. It is present rather than omitted because the counters
+  // are a `Record` over the union: a missing key would make the census silently partial the day a scoped arm is
+  // recorded through it, and §301 already cost this repository a defect of exactly that shape.
   const decisions: Record<ContainmentDecision, number> = {
     inverted: 0,
+    'record-silent': 0,
     'no-failed-interface': 0,
     unmeasured: 0,
     'not-larger': 0,

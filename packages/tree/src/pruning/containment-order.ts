@@ -209,6 +209,27 @@ export interface ContainmentOrderInput<T> {
    */
   readonly failingEdges?: ReadonlyMap<string, unknown> | undefined;
   /**
+   * What a missing record on a pair's own edge MEANS — the shipped reading, or the case-scoped one.
+   *
+   * `'edge'` — the default, and the configuration every published containment number was measured in — reads an
+   * absent record as a refusal: the pass only inverts a pair whose own interface failed. That is the right
+   * reading when the record is a LICENCE, and the corpus agrees with it: the arm earns `+15 / −0`.
+   *
+   * `'case'` reads the same absence as two different facts. When the case recorded failed calls somewhere, the
+   * record exists and this edge is not in it, so the call completed and the refusal stands: the record's silence
+   * about one edge is a VETO. When the case recorded no failed call at all, the record is silent about the CASE,
+   * which is a fact about the recording rather than about this pair, and the pair falls through to the
+   * measurements and the prior as it would in a walk that carried no record.
+   *
+   * The distinction is not a preference; it is what `docs/closed-axes-register.md` §299's three losses say. All
+   * three are one edge (`ts-preserve → ts-security`) where the caller is the root, its callee moved further out,
+   * and the shipped rule refused correctly. A rule that treats the record as a permission cannot tell those three
+   * from the eighteen gains the same arm takes where the record never spoke at all. Splitting the absence is the
+   * only rule change that can keep the refusal and the gains, and it is why this field is a scope and not a
+   * threshold: no number is being tuned, one word is being disambiguated.
+   */
+  readonly recordScope?: 'edge' | 'case' | undefined;
+  /**
    * A per-edge requirement fitted OUTSIDE this case.
    *
    * Consulted LAST — after the interface record, after both measurements, and after the inequality — so that the
@@ -241,9 +262,23 @@ interface RankedService {
  * The last two are two statements rather than one on the same principle: an edge nobody fitted is not an edge
  * measured to be independent, and a gate that merged them would report unmeasured edges as edges that
  * disagreed with it.
+ *
+ * `record-silent` is the one decision that is an INVERSION and not a refusal, and it exists because the four
+ * refusals above conflate two statements the moment the record's scope is allowed to vary. "No failed call on
+ * this edge" means one thing when the case recorded failed calls elsewhere — the call between these two
+ * completed, which is evidence the failure did not travel over it — and a different thing when the case recorded
+ * no failed call at all, which is not evidence about this edge but about the recording. The shipped rule refuses
+ * both, at no cost, because it never has a reason to distinguish them. A walk that consults the residual where
+ * the record is silent does, and the count of pairs the silence opened is the quantity that walk is read on.
  */
 export type ContainmentDecision =
-  'inverted' | 'no-failed-interface' | 'unmeasured' | 'not-larger' | 'prior-absent' | 'prior-below';
+  | 'inverted'
+  | 'record-silent'
+  | 'no-failed-interface'
+  | 'unmeasured'
+  | 'not-larger'
+  | 'prior-absent'
+  | 'prior-below';
 
 /**
  * One adjacent pair that carried a call edge, and what the sweep decided about it.
@@ -318,9 +353,17 @@ export function inspectContainmentOrder<T extends RankedService>(
       ...(upperExcursion === undefined ? {} : { upperExcursion }),
       ...(lowerExcursion === undefined ? {} : { lowerExcursion }),
     };
+    // The record's absence is two facts, and `recordScope` is which of them the caller wants read. Under `'edge'`
+    // — and under `'case'` whenever this case recorded anything at all — the absence is the VETO: a call passed
+    // between these two and completed. Only a case whose record is silent THROUGHOUT falls through to the
+    // measurements, and it is labelled at the end, because `record-silent` describes why the pair qualified.
+    let silentRecord = false;
     if (failingEdges !== undefined && !failingEdges.has(key)) {
-      verdicts.push({ ...pair, decision: 'no-failed-interface' });
-      continue;
+      if (input.recordScope !== 'case' || failingEdges.size > 0) {
+        verdicts.push({ ...pair, decision: 'no-failed-interface' });
+        continue;
+      }
+      silentRecord = true;
     }
     if (upperExcursion === undefined || lowerExcursion === undefined) {
       verdicts.push({ ...pair, decision: 'unmeasured' });
@@ -346,7 +389,7 @@ export function inspectContainmentOrder<T extends RankedService>(
     }
     order[i] = lower;
     order[i + 1] = upper;
-    verdicts.push({ ...pair, decision: 'inverted' });
+    verdicts.push({ ...pair, decision: silentRecord ? 'record-silent' : 'inverted' });
   }
   return { order, verdicts };
 }

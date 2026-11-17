@@ -179,6 +179,15 @@ export interface ContainmentRowsSummary {
   readonly measuredPairs: number;
   readonly inverted: number;
   readonly invertedUngated: number;
+  /**
+   * Pairs inverted because the case's interface record was silent THROUGHOUT.
+   *
+   * Zero on every arm this dump writes, because they all read the record per edge. It exists for the reason the
+   * two prior refusals do: the dump's vocabulary is the sweep's, and a reader that later records a case-scoped
+   * walk through this same class must not have the silence folded into `noFailedInterface` — which is the
+   * opposite statement, that the record exists and this edge is not in it.
+   */
+  readonly recordSilent: number;
   readonly noFailedInterface: number;
   readonly unmeasured: number;
   readonly notLarger: number;
@@ -273,6 +282,7 @@ const SUMMARY_FIELDS = [
   'measuredPairs',
   'inverted',
   'invertedUngated',
+  'recordSilent',
   'noFailedInterface',
   'unmeasured',
   'notLarger',
@@ -292,9 +302,16 @@ const SUMMARY_FIELDS = [
  */
 const DECISION_FIELD: Record<
   ContainmentDecision,
-  'inverted' | 'noFailedInterface' | 'unmeasured' | 'notLarger' | 'priorAbsent' | 'priorBelow'
+  | 'inverted'
+  | 'recordSilent'
+  | 'noFailedInterface'
+  | 'unmeasured'
+  | 'notLarger'
+  | 'priorAbsent'
+  | 'priorBelow'
 > = {
   inverted: 'inverted',
+  'record-silent': 'recordSilent',
   'no-failed-interface': 'noFailedInterface',
   unmeasured: 'unmeasured',
   'not-larger': 'notLarger',
@@ -317,6 +334,7 @@ export class ContainmentRowDump {
     measuredPairs: 0,
     inverted: 0,
     invertedUngated: 0,
+    recordSilent: 0,
     noFailedInterface: 0,
     unmeasured: 0,
     notLarger: 0,
@@ -380,6 +398,7 @@ function finiteAt(value: unknown, field: string, line: number): number {
 function decisionAt(value: unknown, field: string, line: number): ContainmentDecision {
   if (
     value === 'inverted' ||
+    value === 'record-silent' ||
     value === 'no-failed-interface' ||
     value === 'unmeasured' ||
     value === 'not-larger' ||

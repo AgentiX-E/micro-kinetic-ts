@@ -304,3 +304,45 @@ describe('the graded arm’s refusal', () => {
     expect(replayed?.published).toEqual(['b', 'a']);
   });
 });
+
+describe('replayCase — the veto arm', () => {
+  /** A case whose record is silent throughout: no interface failed anywhere. */
+  const recordFree = (overrides: Partial<BuildContainmentRowInput> = {}): ContainmentCaseRow =>
+    row({ failedInterfaces: new Map(), ...overrides });
+
+  it('inverts where the record is silent and the residual admits the pair', () => {
+    const built = recordFree();
+    expect(headOf(replayCase(built, { kind: 'shipped' })!.published)).toBe('a');
+    expect(headOf(replayCase(built, { kind: 'prior', prior: ADMITS })!.published)).toBe('b');
+    expect(headOf(replayCase(built, { kind: 'veto', prior: ADMITS })!.published)).toBe('b');
+  });
+
+  it('keeps the record as a veto on a case that recorded a failed call somewhere else', () => {
+    // This is the arm's whole risk, and the three losses §299 records: a call passed between these two and
+    // completed, so the record vetoes the promotion even though the residual would admit it.
+    const built = row({ failedInterfaces: new Map([[failureEdgeKey('b', 'a'), 4]]) });
+    expect(headOf(replayCase(built, { kind: 'prior', prior: ADMITS })!.published)).toBe('b');
+    expect(headOf(replayCase(built, { kind: 'veto', prior: ADMITS })!.published)).toBe('a');
+  });
+
+  it('reads the record per edge where the record exists, which is the shipped arm exactly', () => {
+    // The arm is one word of interpretation, so on every case whose record is non-empty it must agree with the
+    // shipped walk: no tuning, no drift, and a difference here would be a defect rather than a finding.
+    const built = row();
+    const shipped = replayCase(built, { kind: 'shipped' })!;
+    const veto = replayCase(built, { kind: 'veto', prior: ADMITS })!;
+    expect(veto.published).toEqual(shipped.published);
+    expect(veto.verdicts).toEqual(shipped.verdicts);
+  });
+
+  it('still refuses where the residual does not admit, however silent the record is', () => {
+    const refused = { residuals: new Map(), threshold: 0 };
+    expect(headOf(replayCase(recordFree(), { kind: 'veto', prior: refused })!.published)).toBe('a');
+  });
+
+  it('carries the record into the sweep even when the prior is empty, so the silence is what moves', () => {
+    const refused = { residuals: new Map(), threshold: 0 };
+    const replayed = replayCase(recordFree(), { kind: 'veto', prior: refused })!;
+    expect(replayed.verdicts.map((verdict) => verdict.decision)).toEqual(['prior-absent']);
+  });
+});

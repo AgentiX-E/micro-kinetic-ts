@@ -45,6 +45,7 @@ const READING: GateReading = {
   },
   decisions: {
     inverted: 20,
+    'record-silent': 0,
     'no-failed-interface': 0,
     unmeasured: 100,
     'not-larger': 300,
