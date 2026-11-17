@@ -161,6 +161,34 @@ describe('formatDepthLadder', () => {
     expect(text).toMatch(/absent\s+1\b/);
     expect(text).toMatch(new RegExp(`beyond@${DEPTH_TOP_LIMIT}\\s+1\\b`));
     expect(text).toContain('cases=4');
+    // The DECOMPOSITION row: `Top@k = Retrieval@K × Rerank@k`, with `Retrieval@K` the share of cases whose
+    // accepted answer is anywhere in the recorded order. Here one of four is absent, so the row must NOT claim
+    // that every miss is a rerank miss — that claim is the artifact line this test exists to keep honest.
+    expect(text).toContain('Retrieval@K = 3/4 = 75.00%');
+    expect(text).toContain('1 miss(es) are RETRIEVAL');
+    expect(text).not.toContain('RERANK miss');
+  });
+
+  it('states that EVERY miss is a rerank miss only when nothing is absent', () => {
+    // The sentence the published numbers are read under. On the corpus every dispatch has measured, `absent` is
+    // 0, so every published figure is a RERANKING figure — but that is a fact about the population, and a report
+    // that printed it unconditionally would keep asserting it on a corpus that had stopped satisfying it.
+    const rows: DepthRow[] = [
+      { datapack: 'a', faultType: 'F', accepted: ['x'], depth: 0, candidates: 5, top: [['x', 1]] },
+      { datapack: 'b', faultType: 'F', accepted: ['y'], depth: 3, candidates: 5, top: [['y', 3]] },
+    ];
+    const text = formatDepthLadder(rows);
+
+    expect(text).toContain('Retrieval@K = 2/2 = 100.00%');
+    expect(text).toContain('every miss here is a RERANK miss');
+    expect(text).not.toContain('RETRIEVAL');
+  });
+
+  it('prints the decomposition over an EMPTY population as 0/0 rather than as 100 %', () => {
+    // The vacuity floor on the new row: an empty artifact must not read as a perfect retrieval. `0/0` is printed
+    // as 0.00 % by the same branch that makes the ladder's percentages zero-counted.
+    expect(formatDepthLadder([])).toContain('Retrieval@K = 0/0 — the artifact holds no cases');
+    expect(formatDepthLadder([])).not.toContain('100.00%');
   });
 
   it('prints a ladder over an EMPTY population without dividing by zero', () => {

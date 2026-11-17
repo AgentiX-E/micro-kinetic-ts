@@ -160,11 +160,28 @@ export function formatDepthLadder(rows: readonly DepthRow[]): string {
     cases === 0 ? '  0.00%' : `${((value / cases) * 100).toFixed(2).padStart(6)}%`;
   const line = (label: string, value: number): string =>
     `  ${label.padEnd(11)}${String(value).padStart(5)}  ${percent(value)}`;
+  // The DECOMPOSITION the ladder's numbers are read under, printed as a row rather than asserted in prose:
+  // `Top@k = Retrieval@K × Rerank@k`, and `Retrieval@K` is exactly the share of cases whose accepted answer is
+  // anywhere in the order this artifact recorded. `absent` is that share's complement, so the row is arithmetic on
+  // the same two counts above it — and it says which claim the corpus supports, because a reader who takes every
+  // miss for a reranking miss on a corpus that is not 100 % retrieved is reading a different number.
+  const retrieved = cases - absent;
+  const retrieval = cases === 0 ? 0 : (retrieved / cases) * 100;
+  const decomposition =
+    // `0/0` is not 100 %: an artifact with no cases decomposes nothing, and a branch that read the empty
+    // population as a perfect retrieval would print the strongest possible claim over the weakest possible data.
+    cases === 0
+      ? 'Retrieval@K = 0/0 — the artifact holds no cases, so there is no population to decompose'
+      : absent === 0
+        ? `Retrieval@K = ${retrieved}/${cases} = 100.00% — every miss here is a RERANK miss (Top@k = Rerank@k)`
+        : `Retrieval@K = ${retrieved}/${cases} = ${retrieval.toFixed(2)}% — ${absent} miss(es) are RETRIEVAL ` +
+          'losses the order cannot reach, so not every miss is a rerank miss';
   return [
     `Ranking depth over the full order (cases=${cases}, ladder to @${widest}):`,
     ...steps.map((step) => line(`@${step.k}`, step.hits)),
     line(`beyond@${widest}`, beyond),
     line('absent', absent),
+    `  ${decomposition}`,
   ].join('\n');
 }
 
