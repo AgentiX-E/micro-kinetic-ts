@@ -22,7 +22,7 @@
  *   pnpm exec tsx benchmarks/src/run-fse26.ts [--data-dir <json-root>] \
  *     [--max-cases N] [--log-weight <w>] [--no-rank-normalization] [--output <path>] \
  *     [--diagnose <fault-types>] [--diagnose-limit N] [--diagnose-decimals N] \
- *     [--drop-metrics <names>]
+ *     [--containment-out <path>] [--containment-depth N] [--drop-metrics <names>]
  *
  * `--drop-metrics` is the component-ablation switch: it filters the named
  * metric series out of every case before scoring, so a ranking change can be

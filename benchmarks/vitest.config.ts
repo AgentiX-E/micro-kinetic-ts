@@ -403,6 +403,7 @@ export default defineConfig({
         // decision disagreeing; the residual module is arithmetic whose every branch (a population below its floor,
         // one class empty, a tie, an ambiguous case) is a number a reader would otherwise take on trust; and the
         // report is where an absent measurement must print `N/A` rather than `0.5`.
+        'src/containment-pruner.ts',
         'src/containment-rows.ts',
         'src/containment-row-build.ts',
         'src/containment-residual.ts',
