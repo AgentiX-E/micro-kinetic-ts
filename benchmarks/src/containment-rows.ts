@@ -104,6 +104,16 @@ export interface ContainmentChain {
   /** The per-service excursions. A service absent from this map could not be measured — it is not a zero. */
   readonly excursions: Readonly<Record<string, number>>;
   /**
+   * The per-service fault-free surprise, in nats — the same candidates measured through every published channel.
+   *
+   * The second map the pass can be walked with, and a different measurement of the same case rather than a second
+   * decision about it: the excursion reads latency only, this reads the whole channel set priced by each channel's
+   * own fault-free rate. Optional on the same ground as {@link chain} itself — a dump written before this was
+   * recorded must be readable, and the arm that needs it refuses with a sentence rather than treating absence as
+   * an empty map, which would make a surprise-less dump indistinguishable from a case where nothing moved.
+   */
+  readonly surprises?: Readonly<Record<string, number>> | undefined;
+  /**
    * The interfaces that reported more failed calls after the injection, keyed by `failureEdgeKey`.
    *
    * This is what the SHIPPED containment arm requires, and it is a different map from {@link failingEdges}
@@ -231,6 +241,9 @@ function chainToJson(chain: ContainmentChain): Record<string, unknown> {
     order: [...chain.order],
     edges: chain.edges.map((edge) => [edge[0], edge[1]]),
     excursions: { ...chain.excursions },
+    // Written only when it was measured: an empty object here would say "every candidate was measured and none
+    // moved", which is the one reading a dump from before this field cannot support.
+    ...(chain.surprises === undefined ? {} : { surprises: { ...chain.surprises } }),
     failedInterfaces: { ...chain.failedInterfaces },
     flows: Object.fromEntries(
       Object.entries(chain.flows).map(([service, flow]) => [
@@ -522,6 +535,21 @@ function parseChain(raw: unknown, line: number): ContainmentChain {
     }
     measuredExcursions[service] = excursion;
   }
+  // Absent and empty are two different statements here, so the field is parsed only when it is present.
+  let measuredSurprises: Record<string, number> | undefined;
+  if (chain.surprises !== undefined) {
+    const surprises = objectAt(chain.surprises, 'chain.surprises', line);
+    measuredSurprises = {};
+    for (const [service, value] of Object.entries(surprises)) {
+      const surprise = finiteAt(value, `chain.surprises.${service}`, line);
+      // Surprise is a surprisal: `log(1/q)` over a probability in `(0, 1)` is non-negative, and a negative value
+      // would be folded into the pass's inequality as an inverted comparison rather than as a small measurement.
+      if (surprise < 0) {
+        throw new Error(`chain.surprises.${service} on line ${line} is negative: ${surprise}`);
+      }
+      measuredSurprises[service] = surprise;
+    }
+  }
   const flows = objectAt(chain.flows, 'chain.flows', line);
   const parsedFlows: Record<string, FailureFlow> = {};
   for (const [service, value] of Object.entries(flows)) {
@@ -556,6 +584,7 @@ function parseChain(raw: unknown, line: number): ContainmentChain {
     order,
     edges,
     excursions: measuredExcursions,
+    ...(measuredSurprises === undefined ? {} : { surprises: measuredSurprises }),
     failedInterfaces: parsedInterfaces,
     flows: parsedFlows,
     failingEdges: parsedFailing,

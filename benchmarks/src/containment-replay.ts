@@ -42,6 +42,14 @@ import { gradeByTerm, type TermTransfer } from './containment-term.js';
  * - `graded` — no sweep: the fusion order re-sorted by `score + Σδ`, where δ is the residual spent as a bounded
  *   TERM (`containment-term.ts`). The transfers are passed in rather than computed here so that this module stays
  *   a walk of the shipped chain and the study keeps its census.
+ * - `surprise` — the shipped rule (the interface record included) reading a DIFFERENT per-candidate measurement:
+ *   the fault-free surprise over every published channel instead of the latency excursion over one family. It is
+ *   the same walk of the same chain with one map swapped, which is what makes it a statement about the
+ *   measurement rather than about the rule.
+ *
+ * A row whose chain carries no surprise map REFUSES the `surprise` arm rather than walking it empty: an empty map
+ * makes the pass a no-op, so a dump written before the field existed would report the arm as identical to `off`
+ * and the difference would look like a finding.
  *
  * `off` and `ungated` are not the same arm, and conflating them is the mistake this type exists to prevent: a
  * baseline that inverted pairs would credit the gate with decisions the fusion had already made.
@@ -55,7 +63,8 @@ export type ReplayArm =
       readonly kind: 'graded';
       readonly transfers: readonly TermTransfer[];
       readonly scores: ReadonlyMap<string, number>;
-    };
+    }
+  | { readonly kind: 'surprise' };
 
 /** One case's chain, walked. */
 export interface ReplayedCase {
@@ -96,15 +105,28 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
   }
   // `off` skips the sweep entirely rather than passing it an empty requirement: the pass is what the arm is
   // about, and a sweep with nothing to require is still a sweep — it inverts, and that is the `ungated` arm.
+  // The two maps are read here rather than inline, so that the arm which needs the missing one REFUSES before the
+  // sweep is called: an empty map would make the pass a no-op and the arm would report itself as identical to
+  // `off`, which is the reading `channelSurprise` spends its refusals preventing.
+  let measured: Map<ServiceId, number>;
+  if (arm.kind === 'surprise') {
+    const surprises = chain.surprises;
+    if (surprises === undefined) return null;
+    measured = new Map<ServiceId, number>(Object.entries(surprises));
+  } else {
+    measured = new Map<ServiceId, number>(Object.entries(chain.excursions));
+  }
   const sweep =
     arm.kind === 'off'
       ? { order: ranking, verdicts: [] }
       : inspectContainmentOrder({
           ranking,
           edges: chain.edges.map(([from, to]) => ({ from, to })),
-          excursions: new Map<ServiceId, number>(Object.entries(chain.excursions)),
+          excursions: measured,
           margin: row.margin,
-          ...(arm.kind === 'shipped'
+          // The interface record is what the SHIPPED rule requires, and this arm varies the measurement rather
+          // than the requirement — so it carries the record, and dropping it would price a different rule.
+          ...(arm.kind === 'shipped' || arm.kind === 'surprise'
             ? { failingEdges: new Map(Object.entries(chain.failedInterfaces)) }
             : {}),
           // The two requirements are mutually exclusive by construction rather than by preference: the

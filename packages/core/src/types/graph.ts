@@ -563,6 +563,20 @@ export interface FaultPropagationGraph {
    */
   readonly containmentExcursions?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service FAULT-FREE SURPRISE in nats — how improbable the service's own post-injection window is under the
+   * rate its channels fire at when nothing is wrong.
+   *
+   * The same shape as {@link containmentExcursions} and a different measurement: the excursion reads one channel
+   * FAMILY (latency, in band widths) and this reads every published channel, priced by its own fault-free rate, so
+   * a service whose latency never moved is no longer silent when some other channel of it left its band. Measured
+   * for the same reason and under the same rule — `0` is a measured clean window, a service is ABSENT when the
+   * profile cannot speak about it — and it exists so that the containment pass can be walked with either map from
+   * one artifact rather than re-run per channel family.
+   *
+   * ABSENT (not empty) when the run was given no fault-free profile.
+   */
+  readonly containmentSurprises?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service FAILURE FLOW — how many net failed calls each service's interfaces reported inbound and how many
    * its own calls reported outbound.
    *

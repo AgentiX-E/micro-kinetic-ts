@@ -419,6 +419,12 @@ export default defineConfig({
         'src/containment-term.ts',
         'src/containment-term-study.ts',
         'src/containment-term-report.ts',
+        // Added with H7: the pass's MEASUREMENT swapped while its rule is held fixed. The study is included for
+        // the reason the gate's is — three arms over one chain, where an unmeasurable row counted as a lost case
+        // would turn a smaller population into a worse arm — and the report for the reason the term's is, that a
+        // reason missing from the census line would read as a reason nobody looked for.
+        'src/containment-surprise-study.ts',
+        'src/containment-surprise-report.ts',
         // Added with the exact test: the p-value that replaces the population floor, and the multiplicity that
         // replacing it exposes. Both refusals are arguments that must not become `null`s — a table whose parts do
         // not fit its whole is a lost observation, not weak evidence — and the log-space sum is the only reason a

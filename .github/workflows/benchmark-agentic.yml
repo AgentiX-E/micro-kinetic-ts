@@ -368,10 +368,7 @@ jobs:
             echo ''
             echo '```'
             grep -E '^  (rows=|prior |arm=|gate decisions:|criterion:|H2-gate:)' \
-              artifacts/agentic/containment-gate.txt
-            artifacts/agentic/containment-gate.json
-            artifacts/agentic/containment-term.txt
-            artifacts/agentic/containment-term.json || true
+              artifacts/agentic/containment-gate.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -412,6 +409,43 @@ jobs:
             echo '```'
             grep -E '^  (rows=|population|phi |transfers|moved=|reach |arm=|lambda sweep:|    lambda=|criterion:|H6-term:)' \
               artifacts/agentic/containment-term.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── H7: the containment pass reading every channel instead of one family ───────────────────────────────
+      #
+      #   Every containment arm before this one priced the RULE: the interface record (§12), the residual as a
+      #   requirement (§299) and as a term (§300). §289 named the other ceiling — the pass reads
+      #   `latencyExcursions`, one channel family — and nothing had swapped the MEASUREMENT while holding the rule
+      #   fixed, because the pass takes a plain map and the swap therefore needed a second map in the artifact
+      #   before it could be walked at all.
+      #
+      #   `channelSurprise` is that map: each candidate's post-injection window over EVERY published channel,
+      #   priced by the rate at which that channel fires while nothing is wrong (`log(1/q)`, with `q` smoothed by
+      #   one pseudo-count so that a channel that never fired is finite). Because the pass is unchanged, the arm is
+      #   one walk of one chain with one map swapped — a statement about the measurement and not about the rule.
+      #
+      #   The three arms are the fusion baseline, the shipped latency arm, and the surprise arm. The `opened`
+      #   census is the reason the step exists: the arm REPLACES latency, so its Top@1 is expected to sell the
+      #   cases the shipped pass fixed, and the number that decides whether a union is worth building is how many
+      #   pairs the second measurement opened and under WHICH of the shipped walk's refusals.
+      #
+      #   Exit 3 is the three instrument failures — no walkable chain, a chain carrying no surprise map, a shipped
+      #   replay that does not reproduce the published top-1. A measured FAIL leaves the job green.
+      - name: Read the containment surprise (H7)
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-containment-surprise.ts \
+            --rows artifacts/agentic/containment.ndjson \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --output artifacts/agentic/containment-surprise.json \
+            2>&1 | tee artifacts/agentic/containment-surprise.txt
+          {
+            echo '### H7 — the pass reading every channel instead of one family'
+            echo ''
+            echo '```'
+            grep -E '^  (rows=|moved=|arm=|decisions |opened |criterion:|H7-surprise:)' \
+              artifacts/agentic/containment-surprise.txt || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -539,6 +573,10 @@ jobs:
             artifacts/agentic/containment-residual.json
             artifacts/agentic/containment-gate.txt
             artifacts/agentic/containment-gate.json
+            artifacts/agentic/containment-term.txt
+            artifacts/agentic/containment-term.json
+            artifacts/agentic/containment-surprise.txt
+            artifacts/agentic/containment-surprise.json
             artifacts/agentic/nomination.txt
             artifacts/agentic/nominations.ndjson
           if-no-files-found: warn

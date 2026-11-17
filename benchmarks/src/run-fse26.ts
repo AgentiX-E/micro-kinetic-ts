@@ -361,6 +361,7 @@ async function main(): Promise<void> {
           margin: engineOptions.signals.containmentMargin,
           edges: faultGraph?.callGraph.edges ?? [],
           excursions: faultGraph?.containmentExcursions,
+          surprises: faultGraph?.containmentSurprises,
           failedInterfaces: faultGraph?.failedInterfaces,
           failureFlows: faultGraph?.failureFlows,
           failingEdges: faultGraph?.failingEdges,

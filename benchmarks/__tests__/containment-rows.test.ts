@@ -112,6 +112,21 @@ describe('formatContainmentRow', () => {
     expect(parsed.chain.attribution).toBe('shape');
   });
 
+  it('round-trips the surprise map, and keeps an absent one absent', () => {
+    // The second measurement the pass can be walked with. A reader that turned absence into `{}` would make a dump
+    // from before the field indistinguishable from a case where every candidate was measured and none moved.
+    const withSurprises = row({ chain: chain({ surprises: { frontend: 0, cart: 2 } }) });
+    expect(parseContainmentRows(formatContainmentRow(withSurprises))[0]!.chain!.surprises).toEqual({
+      frontend: 0,
+      cart: 2,
+    });
+    const without = JSON.parse(formatContainmentRow(row())) as { chain: Record<string, unknown> };
+    expect(without.chain).not.toHaveProperty('surprises');
+    expect(parseContainmentRows(formatContainmentRow(row()))[0]!.chain).not.toHaveProperty(
+      'surprises',
+    );
+  });
+
   it('OMITS the chain rather than nulling it, so an old artifact is distinguishable from an empty case', () => {
     const { chain: _dropped, ...withoutChain } = row();
     const parsed = JSON.parse(formatContainmentRow(withoutChain)) as Record<string, unknown>;
@@ -409,6 +424,20 @@ describe('parseContainmentRows', () => {
     );
     expect(rejection({ chain: { ...chain(), excursions: { cart: '2' } } })).toMatch(
       /chain.excursions.cart on line 1 is not a finite number/,
+    );
+  });
+
+  it('refuses a stored surprise that is negative or not a number', () => {
+    // A surprisal is `log(1/q)` over a probability in `(0, 1)`: negative is not a small measurement, it is a sign
+    // error that would enter the pass's inequality as the opposite comparison.
+    expect(rejection({ chain: { ...chain(), surprises: { cart: -0.5 } } })).toMatch(
+      /chain.surprises.cart on line 1 is negative/,
+    );
+    expect(rejection({ chain: { ...chain(), surprises: { cart: 'many' } } })).toMatch(
+      /chain.surprises.cart on line 1 is not a finite number/,
+    );
+    expect(rejection({ chain: { ...chain(), surprises: [] } })).toMatch(
+      /chain.surprises on line 1 is not an object/,
     );
   });
 

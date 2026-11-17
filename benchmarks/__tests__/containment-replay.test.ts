@@ -30,6 +30,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
       ['a', 0],
       ['b', 2],
     ]),
+    surprises: undefined,
     failedInterfaces: new Map([[failureEdgeKey('a', 'b'), 4]]),
     failureFlows: undefined,
     failingEdges: undefined,
@@ -63,6 +64,45 @@ describe('headOf', () => {
 });
 
 describe('replayCase', () => {
+  it('refuses the surprise arm on a row whose chain carries no surprise map', () => {
+    // Not an empty map: an empty map makes the pass a no-op, so the arm would report itself as identical to `off`
+    // and a dump written before the field existed would look like a finding about the measurement.
+    expect(replayCase(row(), { kind: 'surprise' })).toBeNull();
+  });
+
+  it('walks the surprise arm over the surprise map, and the shipped arm over the excursions', () => {
+    // Latency says nothing (both sides inside their bands) while the whole-channel measurement says the callee is
+    // far out. The rule and the interface record are identical, so the two heads differ only by the measurement.
+    const both = row({
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0],
+      ]),
+      surprises: new Map([
+        ['a', 0],
+        ['b', Math.log(7)],
+      ]),
+    });
+    expect(headOf(replayCase(both, { kind: 'shipped' })!.published)).toBe('a');
+    expect(headOf(replayCase(both, { kind: 'surprise' })!.published)).toBe('b');
+  });
+
+  it('keeps the interface record in the surprise arm, because the arm varies the measurement and not the rule', () => {
+    // The interface did not fail, so neither arm may invert: an arm that dropped the record would be pricing a
+    // different rule and crediting the improvement to the measurement.
+    const recordless = row({
+      failedInterfaces: new Map(),
+      surprises: new Map([
+        ['a', 0],
+        ['b', Math.log(7)],
+      ]),
+    });
+    expect(replayCase(recordless, { kind: 'surprise' })!.verdicts[0]!.decision).toBe(
+      'no-failed-interface',
+    );
+    expect(headOf(replayCase(recordless, { kind: 'surprise' })!.published)).toBe('a');
+  });
+
   it('refuses to walk a row that carries no input', () => {
     const built = buildContainmentRow(input());
     const { chain: _dropped, ...withoutChain } = built;

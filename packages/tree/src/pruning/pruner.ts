@@ -96,6 +96,7 @@ import {
   type FaultFreeProfile,
   type FaultFreeSelection,
 } from './fault-free-profile.js';
+import { channelSurprise } from './fault-free-surprise.js';
 import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -2788,6 +2789,20 @@ export class TreePruner {
           })
         : undefined;
 
+    // The same case, measured through EVERY channel rather than through the latency family: how improbable each
+    // service's post-injection window is under the rate its own channels fire at while nothing is wrong. A second
+    // measurement of the same case, not a second decision — nothing in this file reads it, and the arm that does is
+    // walked from the artifact (`benchmarks/src/containment-replay.ts`). It is built only when a profile exists,
+    // because without one there is nothing to price the window against.
+    const containmentSurprises =
+      this.options.faultFreeProfile !== undefined
+        ? channelSurprise({
+            metrics,
+            profile: this.options.faultFreeProfile,
+            injectTimeMs,
+          })
+        : undefined;
+
     // The FAILURE FLOW: how many net failed calls each service's interfaces reported inbound and how many its own
     // calls reported outbound. The second relational measurement, and a property of the CASE rather than of the
     // run — the same phase decision the excursion map above records, for the same reason: `analyze` takes a graph
@@ -2898,6 +2913,7 @@ export class TreePruner {
       channelSymmetry,
       dualFamilyServices,
       containmentExcursions,
+      containmentSurprises,
       failureFlows: failureFlowMap,
       failingEdges,
       failedInterfaces,

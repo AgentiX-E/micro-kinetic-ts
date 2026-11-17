@@ -54,6 +54,14 @@ export interface BuildContainmentRowInput {
   readonly edges: readonly ContainmentEdge[];
   /** The per-service excursions, ABSENT when the run had no profile or the case no latency channel. */
   readonly excursions: ReadonlyMap<ServiceId, number> | undefined;
+  /**
+   * The per-service fault-free surprises, ABSENT when the run had no profile.
+   *
+   * The same case measured through every published channel instead of through the latency family, recorded beside
+   * the excursion map so that the pass can be walked a second way from this file. It is a MEASUREMENT and not a
+   * decision: no arm in this builder reads it, and the arm that does lives in `containment-replay.ts`.
+   */
+  readonly surprises: ReadonlyMap<ServiceId, number> | undefined;
   /** The interfaces that reported more failed calls after the injection, when the case carried any. */
   readonly failedInterfaces: ReadonlyMap<string, number> | undefined;
   /** The flow map the failure-flow pass reads. */
@@ -163,6 +171,9 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
       order: input.fusionOrder,
       edges: input.edges.map((edge) => [edge.from, edge.to] as const),
       excursions: Object.fromEntries(input.excursions ?? []),
+      // Absent rather than empty when the run had no profile: an empty map would say every candidate was measured
+      // and none moved, which is exactly the reading `channelSurprise` refuses to make.
+      ...(input.surprises === undefined ? {} : { surprises: Object.fromEntries(input.surprises) }),
       failedInterfaces: Object.fromEntries(input.failedInterfaces ?? []),
       flows: Object.fromEntries(input.failureFlows ?? []),
       failingEdges: Object.fromEntries(input.failingEdges ?? []),

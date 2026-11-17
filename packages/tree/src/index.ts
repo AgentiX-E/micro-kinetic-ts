@@ -376,6 +376,11 @@ export type {
   FaultFreeSelection,
 } from './pruning/fault-free-profile.js';
 
+// The observation priced in the units the profile counts: a candidate's own post-injection window measured
+// against the rate its channels fire at when nothing is wrong. See `pruning/fault-free-surprise.ts`.
+export { channelSurprise, smoothedFiringRate } from './pruning/fault-free-surprise.js';
+export type { ChannelSurpriseInput } from './pruning/fault-free-surprise.js';
+
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';
 export type { TreeRCAOptions } from './rca/tree-rca.js';

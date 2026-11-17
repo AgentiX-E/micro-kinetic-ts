@@ -25,6 +25,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
       ['frontend', 0],
       ['cart', 2],
     ]),
+    surprises: undefined,
     failedInterfaces: new Map([[failureEdgeKey('frontend', 'cart'), 4]]),
     failureFlows: undefined,
     failingEdges: undefined,
@@ -218,5 +219,24 @@ describe('buildContainmentRow', () => {
     const row = buildContainmentRow(input({ excursions: undefined }));
     expect(row.chain!.excursions).toEqual({});
     expect(row.replay).toBe('unavailable');
+  });
+
+  it('records the surprise map when the run measured one', () => {
+    const row = buildContainmentRow(
+      input({
+        surprises: new Map([
+          ['frontend', 0],
+          ['cart', Math.log(7)],
+        ]),
+      }),
+    );
+    expect(row.chain!.surprises).toEqual({ frontend: 0, cart: Math.log(7) });
+  });
+
+  it('omits the surprise field rather than writing an empty map when no profile was built', () => {
+    // Absent and empty are different statements: `{}` would say every candidate was measured and none moved, and
+    // the arm that reads this field refuses an absent one instead of walking an empty one as a no-op.
+    const row = buildContainmentRow(input({ surprises: undefined }));
+    expect(row.chain === undefined ? undefined : 'surprises' in row.chain).toBe(false);
   });
 });

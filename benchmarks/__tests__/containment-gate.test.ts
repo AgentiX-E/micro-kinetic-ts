@@ -72,6 +72,9 @@ function rowFor(name: string, spec: CaseSpec): ContainmentCaseRow {
       ['a', spec.a],
       ['b', spec.b],
     ]),
+    // The gate is about the residual, not about the measurement, so this arm's rows carry no surprise map: the
+    // field is required by the builder and its absence is what the H7 arm refuses on.
+    surprises: undefined,
     failedInterfaces: new Map([[failureEdgeKey('a', 'b'), 4]]),
     failureFlows: undefined,
     failingEdges: undefined,
