@@ -937,6 +937,58 @@ number on our cells and are therefore filed here rather than in a table:
   borrow if wall-clock becomes our binding constraint. Our own loop is sequential by construction, and every
   agentic readout this project has published is accuracy-only.
 
+### 0c-v. The first published RCABench reading above ours, and what it is worth
+
+Iteration 303's re-read re-verified the one entry that has to be stated plainly rather than filed: **`arXiv:2608.21310`**
+(Lu, Fang, Xu, Shang, Zhang, Yang, Yan & He; `v1` 2026-08-21, `v2` 2026-10-09), *Beyond Fault Localization: A
+Trajectory-Level Study of LLM Agents for Microservice Root Cause Analysis* reports **90.0 % `Acc@1`** for
+**Sonnet + ThinkDepth.ai** on **RCABench**. It is the first published number on a population we own that sits
+above one of our cells, and `sota-populations.md` already carries it — classified **`OTHER`**, and this entry
+keeps that classification for the reason the classification exists: the 500 cases are a **random sample whose
+draw the paper does not publish**, so there is no subset we can re-score to difference against. What follows is
+therefore a **directional reading, not a rank**.
+
+The comparison has to be stated with its populations, because they are not the same one:
+
+| | this repository | Sonnet + ThinkDepth.ai |
+| --- | --- | --- |
+| cases | **1 422 of 1 422** (the whole corpus) | **500 of 1 430** (a random sample) |
+| backbone | none — a deterministic graph engine | Claude Sonnet |
+| model calls per case | **0** | ~30.5 rounds |
+| tokens per case | **0** | **1 465 ktok** |
+| cost per case | **$0** | **$4.64** |
+| `Acc@1` | 80.24 % | 90.0 % |
+
+Two things follow that the table cannot show, and both are load-bearing.
+
+**The width-5 reading in §0c's predecessor was the wrong yardstick, and this is the paper that proves it.** Our
+`Top@12` oracle is **90.51 %** and our `Top@20` oracle is **92.12 %** (`rank-depth.md` §2) — so a re-ranking layer
+reading a twelve-deep posterior has, arithmetically, **more room than the Sonnet result used**. The published
+`87.8 %` "ceiling" that ordered the agentic plan was `PER_CASE_RANK_LIMIT`, and against a 90.0 % competitor it
+would have been read as "this is unwinnable" — which is what it was read as, for three iterations.
+
+What makes it a direction rather than a gap is arithmetic on our own side, and it is the point of this entry:
+
+**The rest of the same table is the honest context.** Under one backbone the frameworks span `77.6 %–79.6 %`
+(Qwen: ThinkDepth.ai 79.2, ClaudeCode 79.6, AIQ 77.6), then `65.2 %` (TaskWeaver), `53.4 %` (RCLAgent V2),
+`48.2 %` (GoS), `46.6 %` (OpenRCA), `45.8 %` (OpsAgent), `42.6 %` (mABC). Our `80.24 %` with **no model at all**
+sits above every one of those and below the one configuration that swaps to a stronger backbone. The paper's own
+diagnosis is that *"the backbone is the dominant lever among top-band agents"* — the framework spread under Sonnet
+is `2.0 pp`, five times smaller than the `10.8 pp` model-swap gap. Read against us, that says something different
+from what it says about them: **we are already at the top of the framework band without a backbone**, and the
+remaining `9.76 pp` sits in the region the paper attributes to model strength.
+
+**What to borrow, and it is not the model.** The paper's second contribution is `DiagGuard`, a two-part wrapper
+over a *frozen* diagnostician: a **Grounder** that forces a systematic survey of available observations before
+localisation, and a **Verifier** that audits a diagnosis against evidence before commitment. Measured on a
+deliberately held-out setting (different backbone, different benchmark `AIOps 2025`, different topology) it lifts
+`Acc@1` `43.5 % → 52.5 %` (`+9.0`), `pass@3` `56.9 → 67.1`, `pass@5` `62.3 → 73.0`, with near-additive,
+non-redundant contributions (Grounder alone `+4.5`, Verifier alone `+4.1`, full stack `+9.0`) **and** the full
+stack costs less per incident than the Grounder-only variant. Both parts are answer-agnostic prompt-level
+disciplines, which means they are testable against our own loop without adopting anyone's numbers — and the
+Grounder's mechanism is the one our own H9 reading called for: an agent that cannot see which channels are
+**empty** will claim evidence it never read.
+
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 
 **OpsHarness**, _From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis_

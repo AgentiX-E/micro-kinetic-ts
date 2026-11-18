@@ -6091,3 +6091,103 @@ Also open, as an instrument defect rather than a finding: the promised count of 
 that flip was **not** produced, because iteration 301's term dump — which carried the bucket-A labels — was not
 retained. An artifact that is thrown away cannot be re-read, and this is the second time in three iterations a
 census had to be rebuilt from the corpus for that reason.
+
+## §306 — The depth ladder closes at 49, and three attempts to beat the ranking were noise
+
+| record | what it measures | artifact | cost |
+| --- | --- | --- | --- |
+| `rank-depth.md` | ladder to 49, the permutation, the gap calibration, three refusals, the corpus count | `--depth-out` + `--terms-dump` + one A/B | 15 m 29 s + 14 m 5 s, **zero model calls** |
+
+`benchmarks/src/ranking-depth.ts` has measured the per-case depth since iteration 262 and
+`docs/agentic-headroom.md` §10 quoted its `@20` rung as the reachable ceiling. What it could not do is close: the
+ladder ran to `20` and the orders run to `49`, so `absent` meant "not in the first twenty" and the `7.9 %` left
+over at `@20` could not be attributed to "ranked too low" or to "not ranked". `DEPTH_TOP_LIMIT` now runs to `50`
+and the ladder carries `25, 30, 40, 50`.
+
+### 306.1 Every answer is inside the order
+
+| K | 1 | 2 | 3 | 5 | 10 | 12 | 20 | 25 | 30 | 40 | 45 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cases | 1 141 | 1 190 | 1 228 | 1 249 | 1 278 | 1 287 | 1 310 | 1 327 | 1 345 | 1 400 | **1 422** |
+| share | 80.24 % | 83.68 % | 86.36 % | 87.83 % | 89.87 % | 90.51 % | 92.12 % | 93.32 % | 94.59 % | 98.45 % | **100.00 %** |
+
+**`absent = 0` on all 1 422 cases.** The truth is at rank `45` at the worst, in orders of up to `50`, so no re-ranking at any width is
+blocked by a missing candidate: the 281 misses are orderings, and every rung below `94.59 %` is a **presentation**
+choice. What stays true is that the `87.83 %` in `agentic-layer-plan.md` §6 is the **elimination** ceiling and is
+correct as one; the clause after it omitted its own width, and the width is `maxCandidates`, a flag accepting `[1, 50]`.
+
+### 306.2 The two relational passes are worth +68, confined to rank 1
+
+| K | 1 | 2 | 3 | 5 | 10 | 20 | 30 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| engine | 1 141 | 1 190 | 1 228 | 1 249 | 1 278 | 1 310 | 1 345 |
+| score-only | 1 073 | 1 184 | 1 227 | 1 249 | 1 278 | 1 310 | 1 344 |
+
+`terms-dump.ts` already recorded the `+68`. That it is **confined to the first position** is new, and it is the
+finding: a contribution that lives entirely in the ordering of the first two plots is a **direction** statement
+(which endpoint is the source), not a **magnitude** one, which is the opposite of what a term can be — a term is
+affine in its weight and the weight axis is a measured plateau (`stability-dispersion.md` §6, `+8/1 422`). The
+apparatus's measured contribution and its shipped form agree.
+
+### 306.3 The score gap is a calibration curve, and the smallest-gap band is a twin
+
+| gap | `[0,.005)` | `[.005,.01)` | `[.01,.02)` | `[.02,.05)` | `[.05,.1)` | `[.1,.3)` | `[.3,∞)` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| cases | 9 | 18 | 76 | 93 | 95 | 372 | 759 |
+| accuracy | 44.4 % | 27.8 % | **14.5 %** | 52.7 % | 74.7 % | 73.4 % | **95.9 %** |
+
+`gap ≥ 0.3` is 759 cases (53.4 % of the corpus) at 95.9 %. `gap < 0.02` is 103 cases — **7.2 % of the corpus
+holding 83 of the 281 misses, 29.5 % of them** — at 19.4 %, and the `[0.01, 0.02)` band alone scores 14.5 %.
+
+The band has a mechanism. In those 103 cases the truth is first in 20, **second in 9**, **third in 18**: twice as
+often third as second. A small gap is not the engine hesitating between a cause and a near-cause — it is scoring
+**two nodes of one shape** alike while the answer lies behind both. Swapping the top two scores 8.7 % against the
+19.4 % already achieved, which refutes the obvious repair for free and says the repair must add evidence rather
+than reshape the tie.
+
+### 306.4 The failure-flow channel, refused three ways
+
+On the 173 cases outside the top five, ordering by `failedEdge` alone puts the truth first in **78 (45 %)** against
+the composite's 0 by construction; as a complete order it scores **676/1 422 (47.54 %, −465)**, and its
+jurisdiction form (re-order only the stratum the term measured, the pattern `emission` ships with) scores `−186`.
+A gated switch to it is `+54` tuned on all 1 422 and **+4 / +5** tuned on one half and read on the other, against a
+bootstrap 95 % interval of `[+6, +21]` on the full-corpus optimum: fifty cases of fit, four of signal.
+Single-channel recall over the same cases is not ranking power — `temporal` holds 148 of 173 in its top 20 and
+scores **44/1 422** as an order. The information exists in several channels and **no single channel orders it**.
+
+### 306.5 The shape attribution survives the A/B it had never been given
+
+`failureAttribution = 'shape'` shipped on a **cost** argument ("identical where there is no evidence"), never on a
+benefit. Measured where the evidence exists:
+
+| arm | Top@1 | cases | flips |
+| --- | --- | --- | --- |
+| `shape` (shipped) | **1 141 / 80.24 %** | 1 422 | 3 won, 0 lost |
+| `counts` | 1 138 / 80.0 % | 1 422 | 0 won, 3 lost |
+
+All three flips are `novel > 0` cases (two `HTTPRequestReplaceMethod` at 1 487 and 2 014 novel failures, one
+`HTTPRequestReplacePath` at 73) and none of the 1 219 `novel == 0` cases moves — the design claim, confirmed
+exactly. An earlier reading in the same iteration pointed the other way (the 127 `ReplaceMethod` cases **with**
+novelty at 66.1 % against 84.1 % for the 63 without) and is recorded so it is not re-derived: that is a difference
+between **populations**, not between readings. A subgroup rate is not a counterfactual, and the mistake was made
+and corrected inside one day.
+
+### 306.6 What was repeated, and the lesson that is worth more than the reading
+
+`rank-depth.ts` was written in this iteration as a new module before `ranking-depth.ts` was read, and it did what
+the existing file already did — `firstHitDepth`, `recallLadder`, `DepthDump`, and a rung list that already reached
+`20`. It was deleted rather than merged, and the reading it was built for came from the existing instrument with
+one constant changed. **The repository's instruments are not discoverable from the documents that cite their
+output**: `ranking-depth.ts` is named in `agentic-headroom.md`'s prose and in `benchmarks/vitest.config.ts`'s
+coverage list, and in neither place is it findable by someone asking "what already measures rank depth".
+
+Before building the next instrument: read `benchmarks/src/` and `benchmarks/vitest.config.ts`'s `include` list
+first. The second lesson is the one iteration 302 learned at a different stage: **before concluding that a bound
+is a property of a method, find out what measured it, at what width, and whether the width was a parameter.**
+
+### 306.7 The corpus against its own paper
+
+RCABench's abstract states **1 430** validated failure cases; this corpus holds **1 422** across seven category
+shards (HTTP 796, Network 254, Resource 173, Pod 123, JVM 73, Time 2, DNS 1). The difference is **8 cases
+(0.56 %)**, unexplained by the Zenodo record, and it moves no conclusion here. `Time` holds 2 cases and `DNS`
+holds 1, so a per-family claim about either is a claim about two cases and one case.

@@ -27,7 +27,28 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-/** How many ranked services a row carries. Five, because Top@5 is the deepest `At-K` this suite reports. */
+/**
+ * How many ranked services a verdict row carries.
+ *
+ * ## Five is a reporting width, and the reason it is five is not a reason
+ *
+ * This constant truncates the **artifact**. The engine sorts the whole node set and slices at the end, so `Top@5`
+ * is a prefix of a total order that already exists; only a reader of this file sees five. The first version of
+ * this docblock justified the value with "Top@5 is the deepest `At-K` this suite reports", which is the artifact
+ * citing itself — the suite reports five because the row holds five — and a justification that runs in a circle
+ * is how a **reporting** choice becomes available to a later argument as a **method** bound.
+ *
+ * It was taken as one. `docs/agentic-layer-plan.md` §6 reasoned from `Top@5` that "no layer can beat 87.8 %
+ * without the ranking improving first", while the same document's own ceiling table, one page down, quotes
+ * `Top@20 = 92.12 %` from the depth ladder (`docs/agentic-headroom.md` §10). Both numbers were measured; only the
+ * sentence was wrong, and it was wrong for a reason this constant can state: **it omitted its own width**.
+ *
+ * So the value stays at five — the published format is five and every number in this repository was read from it
+ * — and nothing may read it as a bound on what the ranking contains. `benchmarks/src/ranking-depth.ts` owns the
+ * measurement that says what it does contain, and `DEPTH_TOP_LIMIT` now runs to the width of the corpus's orders
+ * rather than to this constant (`docs/rank-depth.md` §2: every answer is inside the order, at rank 49 of 49 at the
+ * worst).
+ */
 export const PER_CASE_RANK_LIMIT = 5;
 
 /** One case's answer beside the corpus's own label set. */

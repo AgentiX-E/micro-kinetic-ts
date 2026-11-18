@@ -184,6 +184,30 @@ expected-outlier rate survives as a **fingerprint column** — it is what makes 
 as a **decider** (`docs/agentic-headroom.md` §5);
 0c. **the skip rule**, refused (above).
 
+### The 87.8 % sentence, and the width it forgot to say
+
+Row 0a's final clause — *"no layer can beat 87.8 % without the ranking improving first"* — has one defect, and it is
+not the number. `87.69 %` is the **elimination** ceiling and it is correct: a protocol that may only *remove* a
+candidate cannot promote one the five-wide window never showed, so `Top@5` really is its bound. The defect is that
+the clause then makes a claim about **every** layer while stating the bound of one width. This document's own
+ceiling table, three hundred lines down, already quotes `Top@20 = 92.12 %` — measured by the depth ladder in
+`docs/agentic-headroom.md` §10 — and a reader who takes the clause at face value never reaches the table.
+
+Two corrections follow, and neither changes a measurement:
+
+1. **The bound is a function of the width, and the width is a flag.** `maxCandidates` accepts `[1, 50]` and
+   defaults to `5`; the oracle rises `87.83 % → 90.51 % → 92.12 % → 94.59 %` at widths `5 → 12 → 20 → 30`
+   (`docs/rank-depth.md` §2). So the arm order in §6 was derived from a default rather than from a measurement,
+   and a **width arm** cannot be skipped in favour of a protocol arm: it costs the same one call per case and
+   raises the oracle by `4.3 pp` before any protocol question is asked.
+2. **The candidate set is complete, which no earlier reading could say.** `DEPTH_TOP_LIMIT` ran to `20` while the
+   orders run to `49`, so `absent` was "not in the first twenty". Counted over the whole order, every one of the
+   1 422 answers is present, at rank `49` at the worst: the ladder's `100.00 %` rung is reachable, and every rung
+   below it is a presentation choice rather than a property of the ranking (`docs/rank-depth.md` §2).
+
+What survives unchanged is row 0a's measurement: a perfect eliminator moves 174 cases over the engine of the day,
+at the width it was measured at.
+
 ## 7. Dependency layering, and the cycle that killed the first attempt
 
 ```

@@ -1057,20 +1057,6 @@ export function computeFleetSelfTimeResiduals(
   return residuals;
 }
 
-/**
- * The transport level of one latency channel: `log₁₀(1 + rise)`, or `undefined` when the window
- * cannot carry one.
- *
- * @param values - The channel's samples.
- * @param minSamples - Series floor.
- * @returns The level (0 for a fall or a flat series), or `undefined` for an unusable channel.
- * @internal
- */
-function latencyLevel(values: Float64Array, minSamples: number): number | undefined {
-  const window = latencyWindow(values, minSamples);
-  return 'refusal' in window ? undefined : levelFromWindow(window);
-}
-
 /** A channel's two ends, or the reason it has none. */
 type LatencyWindow =
   { readonly refusal: 'short' | 'idle' } | { readonly pre: number; readonly post: number };

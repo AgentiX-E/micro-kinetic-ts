@@ -152,7 +152,7 @@ describe('formatDepthLadder', () => {
       { datapack: 'a', faultType: 'F', accepted: ['x'], depth: 0, candidates: 5, top: [['x', 1]] },
       { datapack: 'b', faultType: 'F', accepted: ['y'], depth: 4, candidates: 5, top: [['y', 1]] },
       { datapack: 'c', faultType: 'F', accepted: ['z'], depth: null, candidates: 5, top: [] },
-      { datapack: 'd', faultType: 'F', accepted: ['w'], depth: 40, candidates: 60, top: [] },
+      { datapack: 'd', faultType: 'F', accepted: ['w'], depth: 55, candidates: 60, top: [] },
     ];
     const text = formatDepthLadder(rows);
     // @1 -> 1 hit, @5 -> 2 hits, absent -> 1, beyond -> 1.

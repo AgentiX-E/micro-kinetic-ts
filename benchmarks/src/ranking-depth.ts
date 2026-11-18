@@ -46,10 +46,27 @@ import type { RootCauseResult } from '../../packages/core/src/index.js';
  * channels is ~6 400 tokens, which is four times the three-round budget `docs/agentic-layer-plan.md` prices, so a
  * case that first appears beyond it is one no bounded presentation can reach.
  */
-export const DEPTH_LADDER = [1, 2, 3, 5, 8, 10, 15, 20] as const;
+export const DEPTH_LADDER = [1, 2, 3, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50] as const;
 
-/** The widest rung {@link DEPTH_LADDER} reports, and how much of the order a row carries. */
-export const DEPTH_TOP_LIMIT = 20;
+/**
+ * The widest rung {@link DEPTH_LADDER} reports, and how much of the order a row carries.
+ *
+ * ## Why fifty and not twenty
+ *
+ * The list ran to `20` while the engine's orders run to `50`, so the ladder could not answer the one question a
+ * re-ranking layer is spent against: **does the order hold the answer at all**. Every rung up to `20` is a share of
+ * a population that might still be hiding its answer at rank 21, and `docs/agentic-headroom.md` §10 reported the
+ * ceiling as `92.12 %` at `@20` without being able to say whether the missing `7.9 %` was "ranked too low" or "not
+ * ranked". With the row carrying the whole order the ladder closes: on all 1 422 RCABench cases the answer is
+ * inside the order, at rank `45` at the worst in orders of up to `50`, so `100.00 %` is reachable and every rung
+ * below it is a
+ * **presentation** choice rather than a bound on what the ranking contains
+ * (`docs/rank-depth.md` §2).
+ *
+ * The cost is one row per case carrying fifty `[serviceId, finalScore]` pairs instead of twenty — a few kilobytes —
+ * and it is paid once per `--depth-out` run.
+ */
+export const DEPTH_TOP_LIMIT = 50;
 
 /** One case's first-hit depth beside the head of the order that produced it. */
 export interface DepthRow {
