@@ -67,6 +67,13 @@ honest and cheap, and neither is in our harness yet: **`--report-chance`** (prin
 absolute score can be read against the floor a random ranker would reach on the same candidate set") and
 **`--report-decomposition K`** (prints `Retrieval@K` and `Rerank@1` beneath each `Avg@5`).
 
+*A correction to the sentence above, added 2026-11-18.* It says neither instrument is in our harness, and half of
+that has since stopped being true. **`Retrieval@K` is** — `benchmarks/src/ranking-depth.ts` prints it, with the
+`absent` census that makes it additive — and **`Rerank@1` is computed from the same artifact rather than by a
+flag**: `agentic-promotion-gate.md` §10 states the identity `Top@k = Retrieval@K × Rerank@k` over the 1 422-case
+FSE'26 corpus and reads `87.83 % × 92.55 % = 81.29 %` to six places. What is still missing is a **single command**
+that prints both beside a cell, which is a convenience rather than a measurement.
+
 ---
 
 ## 0. STANDING — where this project sits, on three published evaluations
