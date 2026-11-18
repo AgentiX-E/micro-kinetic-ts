@@ -6523,3 +6523,118 @@ Width 5 → 20 buys **61 cases over 15 slots** (4.1 per slot); width 30 → 40 b
 is the shoulder of the curve and the better next arm if the axis survives at all. And the 17-case permutation does
 not change this: the ladder taken over the fingerprint's own order equals the ladder taken over the fifty-wide
 terms dump at every rung, and the set newly reachable between 5 and 20 is *the same 61 cases* by identity.
+
+## §310 — The width axis closes at 20, and it closes net-neutral rather than inert
+
+`docs-repository:preregistration-305.md` authorised arm W (width 20, gate `0.03`) behind a single falsifier: *if its `Top@1` is at
+or below arm G's, the width axis closes as a class at 20*. `44299700032` ran it on `87fcdf0`, 1 422 cases,
+`deepseek-chat` asked and `deepseek-flash` served (the endpoint's own reply, as in every arm since
+`docs/agentic-eliminator.md` §140), 13.95 M prompt tokens, 4 m 42 s of model time.
+
+### 310.1 The four predictions, and the falsifier
+
+| # | as registered | reading | verdict |
+| --- | --- | --- | --- |
+| W1 | `Top@1` ≥ 1 165 + 12 = **1 177** | **1 165** | **FAILS** |
+| W2 | overrides ≤ 56 + 61 = **117** | **32** | bound holds, **reason refuted** |
+| W3 | band unchanged at **122** | **122**, engineWrong **98** | holds — plumbing check only |
+| W4 | `promoted` rises, `agrees` falls by the same amount, `reversed` ≥ **26** | promoted **32** (arm G 56), `reversed` **14**, `agrees` 1 313 | **FAILS, in the opposite direction** |
+| — | falsifier: `Top@1` ≤ arm G's **1 165** | **1 165** | **FIRES** |
+
+W2 is the interesting miss. The bound was written as an upper limit and the reading is far below it, so the
+prediction "passes" while the sentence justifying it — *a wider list gives the model candidates it did not have, so
+it will use more of them* — is refuted by the same number. Overrides fell by 24. A bound that holds for the opposite
+of its stated reason is a prediction that should be counted as a miss, and it is counted as one here.
+
+W3 held to the digit and could not have failed: `(s₁ − s₂)` is read from positions 1 and 2, which the widening
+provably does not move, and the spread is read from the terms dump, which is byte-identical. It is recorded as a
+plumbing check, which is how it was re-stated before dispatch.
+
+### 310.2 What the null is made of
+
+`+9 = +9` is not inertness. The 11 fixes split by where the truth sat in the published five:
+
+| truth inside the published five | fixes |
+| --- | ---: |
+| yes — at ranks 2, 2, 2, 3, 3, 5 | **6** |
+| **no — absent, presented at ranks 6, 9, 9, 14, 17** | **5** |
+
+and the exchange rate is symmetric: arm G's `15 fix / 6 break` became `11 / 2`. **Five cases were answered that a
+five-wide table cannot produce, and four were lost that it could**, with the model becoming more conservative
+(56 → 32 overrides) and more accurate when it acted (71.4 % → 84.6 %).
+
+The five are named in `agentic-presentation-width.md` §10.1 rather than counted, because a claim that a wider window
+is reachable should be checkable case by case.
+
+### 310.3 The mechanism, and why it is a fact about the model
+
+The engine is untouched — the control reproduces `1 156` to the digit, and `band / engineWrong` reproduce `122 / 98`.
+Everything that moved is in the model's behaviour, and the two movements point in opposite directions:
+
+- given twenty rows, the model names the engine's leader **more** often, so the gate has fewer disagreements to
+  arbitrate;
+- when it does name something else, it is right more often.
+
+The gate's admission rule is scaled to `(s₁ − s₂)`, which the model's conservatism does not change; what changed is
+how many cases ever reach it. So the width did not fail to produce information — it produced it on 61 new cases and
+suppressed it on the cases where a fifth row used to be enough to disagree.
+
+This is also the direct answer to `agentic-promotion-gate.md` §10.2's open question about `Rerank@1` across widths:
+it is **not** constant. At width 20 it reads `1 165 / 1 310 = 88.93 %` against `93.27 %` at width 5, and that fall is
+arithmetic (same numerator, denominator +61) rather than a worse reranker.
+
+### 310.4 What closes, and what the closure does not say
+
+Closed, as registered: **no arm that widens `maxCandidates` is dispatched under this pre-registration, at any width
+≤ 20, on this protocol.**
+
+Not said by the closure, and worth naming so it is not over-read:
+
+- **Not "width is worthless".** Five cases came from population only width 20 reaches. The falsifier is about the
+  **net** on this protocol with this admission rule.
+- **Not width 50.** `docs-repository:preregistration-305.md` wrote the falsifier at 20 on purpose, and the ladder puts the shoulder
+  at `30 → 40` (+55 cases over ten slots). That is a different arm with a different cost (≈ 25 M tokens) and it is
+  not authorised here.
+- **Not the admission rule.** §10.1's second consequence said a better threshold has no room left and a better
+  *rule* has 84 cases of it. Arm W's census sharpens that: the rule now arbitrates 32 disagreements instead of 56,
+  so a rule that is a function of the case rather than of the pair has less to arbitrate and more to gain per
+  decision.
+
+`docs-repository:preregistration-306.md` is the document that picks up from here, and its decision rule selects arm T (a
+system-level topology brief) on this outcome — the falsifier fired, so the branch is fixed independently of
+preference.
+
+### 310.5 Two configuration facts the readback found, and neither is about width
+
+Arm W's artifacts were read twice: once for the arm, and once to check that the run described the configuration
+this repository believes it ships. It does not, in two ways.
+
+**(a) The standing FSE'26 cell is anchored on a corpus two caches old.** `docs/sota-comparison.md` §0a carries
+`1 073 / 1 422 = 75.46 %` from run `42729721072` at `4d0050d7`, whose manifest is `builtAt 2026-11-10`, converter
+`f72899e5…` (`rcabench-pod-v1`). The push-triggered FSE'26 battery on `1c11c41` (run `44210828265`, artifact
+`fse26-results`) reads **`1 112 / 1 422 = 78.20 %`** on a manifest `builtAt 2026-11-16`, converter `b7fca80e…`. The
+39-case difference is **engine and corpus at once** and is NOT decomposable here: the provenance gate refuses a
+cache whose converter digest does not match the checkout, so the old corpus cannot be re-run under today's engine.
+It is recorded rather than re-anchored, because writing +2.74 pp into the standing table would attribute to the
+engine a movement that may belong to the converter.
+
+**(b) The containment pass is worth +44 cases when it can speak, and the published cell is the one where it
+cannot.** On the *same* manifest (`b7fca80e…`, 1 422 cases) and the same engine defaults, two workflows disagree:
+
+| workflow | profile | Top@1 | Top@3 | Top@5 |
+| --- | --- | ---: | ---: | ---: |
+| `fse26-benchmark.yml`, run `44210828265` | **none** — the surface refuses `--fault-free-profile` by name | 1 112 (78.20 %) | 1 230 (86.50 %) | **1 256 (88.33 %)** |
+| `benchmark-agentic.yml`, run `44299700032` measure job | built from the corpus in the same job | **1 156 (81.29 %)** | 1 228 (86.36 %) | 1 249 (87.83 %) |
+
+So the pass concentrates answers into position 1 — **+44 at Top@1, −7 at Top@5** — which is what a pass that
+permutes the list it is handed does: it swaps some answers up to the front and some out of the five. The published
+cell quotes the configuration where the pass is inert, because a benchmark dispatch may not name a profile (a
+dispatch that could would name a stale band, §307's rule). The **+44 is three times the +15** recorded when the
+pass shipped (`docs/containment-order.md` §20), on a configuration that has since gained the pod-lifecycle channel,
+the transient-guard policy and the failed-edge gate.
+
+**This is the road item the width arm displaced, and it is cheaper than any arm**: the surface already has the
+corpus and already runs the builder for nothing in the other workflow. Building the profile inside the benchmark
+surface — from the corpus it just downloaded, keyed by the same digest — makes the cell the configuration the
+engine actually ships, and it costs one engine run and no model calls. It is recorded here as a defect in the
+published cell rather than as an arm, because that is what it is.

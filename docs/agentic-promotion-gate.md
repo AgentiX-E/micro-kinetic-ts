@@ -374,3 +374,28 @@ and `Rerank@1` only has to reach `90.0 / 92.12 = 97.7 %` of retrieved cases for 
   `OTHER` in `docs/sota-populations.md`, and its artefact URL 404s
   (`docs/competitor-artefact-availability.md`). What is taken from it is the **decomposition**, which is why the
   numbers above are this project's own.
+
+### 10.3 Arm W measured the width term, and it is net-neutral
+
+§10.1's third consequence said a perfect reranker at width 20 reaches 92.12 %, above the published 90.0 %, and that
+the road is therefore "width plus reranking". Arm W took the width half of that road and read **1 165 — the same
+number arm G reached at width 5** (`docs/agentic-presentation-width.md` §10, run `44299700032`).
+
+Two things must be said together, because either one alone is false:
+
+- **The ceiling moved and the answer did not.** `Retrieval@20` is 1 310, so the axis opened 61 new cases and the
+  arm converted **5** of them — cases whose truth sat at presented ranks 6, 9, 9, 14 and 17, which a five-wide
+  table cannot produce at all.
+- **The cases the width gained were paid for by cases it lost.** Arm G fixed 15 and broke 6; arm W fixed 11 and
+  broke 2. Fewer overrides (56 → 32), higher precision when it did override (71.4 % → 84.6 %), the same net.
+
+So `Rerank@1` is **not** constant across widths, and §10.2 was right to refuse to assume it: it reads
+`1 165 / 1 310 = 88.93 %` at width 20 against `93.27 %` at width 5. That fall is arithmetic rather than behavioural
+— the numerator is identical and the denominator grew by 61 — so the decomposition cannot, on its own, say whether
+the model reranks worse. What can say it is the gate's own census: overrides `56 → 32` and conditional precision
+`71.4 % → 84.6 %`. The model reranked **better** per decision and made fewer decisions, and the projection `1 212`
+failed because it assumed an unchanged *count* of overrides rather than an unchanged *rate*.
+
+The consequence for the road is stated in `agentic-presentation-width.md` §10.2: the width class closes at ≤ 20 on
+this protocol, and the next lever on `Rerank@1` is an **admission rule or a better-posed question**, not a wider
+list. That is the same conclusion §10.1's second consequence reached from the other side, now with a run behind it.

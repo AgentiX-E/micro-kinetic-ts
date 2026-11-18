@@ -296,3 +296,59 @@ One comparison is deliberately **not** made. `arXiv:2609.36686` reports `Retriev
 benchmarks and ours reads 0.910. Its retriever is its own, on RCAEval, with a K=15 pool it built deliberately;
 this ladder is this engine's total order on RCABench. The two numbers answer different questions, and putting them
 in one row is the error `docs/sota-comparison.md` §0a's contract forbids.
+
+## 10. What the arm returned, and why the axis closes
+
+Arm W ran as `44299700032` on `87fcdf0`: 1 422 cases, `--max-candidates 20 --max-ranked 20 --promotion 0.03`,
+`deepseek-chat` asked and `deepseek-flash` served (the endpoint's own reply, as in every arm since
+`docs/agentic-eliminator.md`). It completed end to end — the presentation dump paired 1 422 of 1 422 cases, which is
+the repair in §3.2 working on the corpus it was built for.
+
+| | arm G (width 5) | **arm W (width 20)** | |
+| --- | ---: | ---: | --- |
+| control (gate off) | 1 156 | **1 156** | identical, as §4 predicted |
+| **Top@1 with the gate** | **1 165** | **1 165** | **the same number** |
+| net | +9 | +9 | |
+| band / engine wrong inside it | 122 / 98 | **122 / 98** | to the digit |
+| overrides | 56 | **32** | **fell** |
+| … fix / break / neutral | 15 / 6 / 35 | **11 / 2 / 19** | fewer of each |
+| conditional precision | 71.4 % | **84.6 %** | rose |
+| prompt tokens | 3.94 M (projected from the width-5 measurement) | **13.95 M** (measured) | 3.54× |
+
+So W1 fails (`1 165 < 1 177`), W4 fails in the direction opposite to its registration (`promoted` fell, `reversed`
+reads 14 against a registered floor of 26), W2's *bound* holds at 32 while its *reason* is refuted, and W3 holds to
+the digit — as it had to, since it was unfalsifiable (§4 of the register entry).
+
+### 10.1 The width was not inert, and that is the interesting part
+
+`+9 = +9` is not "width did nothing". The 11 fixes decompose by where the truth sat in the **published five**:
+
+| truth inside the published five | fixes |
+| --- | ---: |
+| yes — ranks 2, 2, 2, 3, 3, 5 | **6** |
+| **no — absent from it, presented at ranks 6, 9, 9, 14, 17** | **5** |
+
+**Five cases were answered correctly that a five-wide table could not have produced.** They are the width axis
+existing, measured: `ts1-ts-config-service-latency-5kkcrc` (truth at presented rank 9),
+`ts2-ts-ui-dashboard-response-replace-code-475jm4` (6), `ts4-ts-assurance-service-return-x28fwz` (14),
+`ts4-ts-station-service-return-qrsdpz` (9), `ts5-ts-ui-dashboard-response-replace-code-dww7g8` (17).
+
+And four cases that arm G fixed were **not** fixed here, with four breaks avoided in exchange: `15 / 6` became
+`11 / 2`. So the wider window moved the gate's *composition* and left its *net* alone — the model, shown twenty rows,
+became measurably more conservative and measurably more accurate when it did override, and those two effects cancel
+to the case.
+
+That is a result about the model, not about the artifact: nothing in the dump changed the engine, and the control
+reproduced to the digit. It is also the answer to "is the axis empty?" — no, it is **net-neutral at 20 on this
+protocol**, which for a falsifier written as "at or below arm G's" is the same verdict as empty.
+
+### 10.2 The falsifier fires, and what it closes
+
+> *If arm W's `Top@1` is at or below arm G's, the width axis closes as a class at 20: no arm that widens
+> `maxCandidates` is dispatched under this pre-registration, at any width ≤ 20, on this protocol.*
+
+`1 165 ≤ 1 165`. The axis closes as a class. What stays open is stated in the same paragraph of
+`preregistration-305.md`: the falsifier was deliberately written at 20, so a failure there does not forbid asking
+about 50 — it forbids *this class of arm*, which is the wider statement and was made on purpose. The ladder in §9
+says where such an arm would have to aim (the `30 → 40` shoulder), and the five width-only fixes say a window that
+deep is not worthless. Neither of those is a dispatch authorisation.
