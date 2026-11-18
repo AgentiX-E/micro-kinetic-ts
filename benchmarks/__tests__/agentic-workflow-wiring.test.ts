@@ -56,6 +56,10 @@ const ACTION = readFileSync(
   resolve(repoRoot, '.github/actions/rcabench-shards/action.yml'),
   'utf8',
 );
+const PROFILE_ACTION = readFileSync(
+  resolve(repoRoot, '.github/actions/rcabench-profile/action.yml'),
+  'utf8',
+);
 const PRUNE = readFileSync(resolve(repoRoot, '.github/workflows/cache-prune.yml'), 'utf8');
 
 /** The job blocks of a workflow, keyed by job id. */
@@ -299,22 +303,34 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(WORKFLOW).toContain('cp manifest.json artifacts/agentic/manifest.json');
   });
 
-  it('derives the profile cache key instead of typing one', () => {
-    // `cache-datasets.yml` records the version of this that shipped: the constant `RCAEvalJSON` hit the
-    // cache the OLD bridge had produced, so the fix converted nothing and the step read `skipped`. Here the
-    // key is the corpus digest times a digest of every source file the build reads.
-    expect(WORKFLOW).toContain('id: key');
-    expect(WORKFLOW).toContain('key: ${{ steps.key.outputs.key }}');
-    expect(WORKFLOW).toContain('--digest');
-    expect(WORKFLOW).toContain("pathlib.Path(root).rglob('*.ts')");
+  it('derives the profile cache key instead of typing one, in the ONE action both workflows call', () => {
+    // `cache-datasets.yml` records the version of this that shipped: the constant `RCAEvalJSON` hit the cache
+    // the OLD bridge had produced, so the fix converted nothing and the step read `skipped`. Here the key is the
+    // corpus digest times a digest of every source file the build reads.
+    //
+    // It lives in the action rather than in this file because the FSE'26 surface is now the second consumer and
+    // a second copy of a key derivation is a second owner of "what the profile depends on": a miss costs minutes
+    // and a HIT on a changed builder publishes a stale band. The assertions therefore moved WITH the code, and
+    // the workflow's half of the claim is that it calls the action at all.
+    expect(PROFILE_ACTION).toContain('id: key');
+    expect(PROFILE_ACTION).toContain('key=fault-free-profile-$CORPUS-$BUILDER');
+    expect(PROFILE_ACTION).toContain('--digest');
+    expect(PROFILE_ACTION).toContain("pathlib.Path(root).rglob('*.ts')");
+    expect(WORKFLOW).toContain('uses: ./.github/actions/rcabench-profile');
+    expect(FSE26).toContain('uses: ./.github/actions/rcabench-profile');
   });
 
-  it('builds the profile over the whole corpus rather than the dispatched scope', () => {
-    // The profile is a property of the CORPUS; an arm that rebuilt it per scope could not be compared with
-    // an arm that read it, which is the reason `fault-free-profile-build.ts` is a separate step at all.
-    const build = WORKFLOW.slice(WORKFLOW.indexOf('name: Build the fault-free profile'));
-    const step = build.slice(0, build.indexOf('- name:', 10));
-    expect(step).not.toMatch(/--max-cases/);
+  it('never lets a caller choose where the profile lives', () => {
+    // The one input is the corpus. A `path` input would let a caller place a profile fitted on another corpus,
+    // and no reader downstream could tell that artifact from a measurement of this one — so the location is the
+    // action's own and the absence of the input is the guard.
+    const inputs = PROFILE_ACTION.split('\ninputs:\n')[1]!.split('\noutputs:\n')[0]!;
+    const names = [...inputs.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((match) => match[1]!);
+    expect(names).toEqual(['data-dir']);
+    // And the profile is built over the WHOLE corpus rather than a dispatched scope: the profile is a property
+    // of the corpus, and an arm that rebuilt it per scope could not be compared with one that read it.
+    expect(PROFILE_ACTION).not.toMatch(/--max-cases/);
+    expect(PROFILE_ACTION).toContain('--data-dir "${{ inputs.data-dir }}"');
   });
 
   it('stays inside the dispatch input limit', () => {

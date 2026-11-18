@@ -1,0 +1,114 @@
+name: RCABench fault-free profile
+description: >-
+  Build (or restore) the corpus fault-free profile a run needs to make the containment pass speak, and refuse
+  to let a second copy of that decision exist. One owner for the three things that would otherwise be typed
+  twice: which corpus the profile describes, which builder produced it, and where it lives.
+
+
+  ## Why this is an action and not four steps in the workflow that had them
+
+  `benchmark-agentic.yml` built the profile inline: derive a cache key, restore, build, save. That was correct
+  while it was the only consumer. The FSE'26 benchmark surface is now the second, and it is the one whose
+  published cell needs it: on the SAME corpus manifest, with the SAME engine defaults, the surface that cannot
+  supply a profile reads **1 112 / 1 422 = 78.20 %** and the surface that can reads **1 156 / 1 422 = 81.29 %**
+  -- +44 at Top@1, -7 at Top@5 (register §310.5). A published cell measured with the shipped pass switched off
+  by an ABSENT FILE is not a cell for this engine.
+
+
+  Copying the key derivation into the second workflow is the defect this repository keeps finding one level up
+  (`docs/sota-comparison.md` §0p, `cell-baseline.ts`, and `.github/actions/rcabench-shards`): two copies of a
+  guard are a guard enforced in one place and skipped in another. So the four steps become one action, and both
+  workflows call it.
+
+
+  ## The key is derived, and the path is the action's
+
+  The key is the converter digest (WHICH corpus) times a digest of every `.ts` file the build reads (WHICH
+  builder). A typed key is the defect `cache-datasets.yml` records: a constant key hit the cache the OLD
+  pipeline had produced, converted nothing, and reported `skipped`. The builder digest walks directory ROOTS
+  rather than a hand list, for the same reason -- a hand list is a second owner of "what the profile depends
+  on", and it drifts silently in the safe direction (a miss costs minutes) and in the unsafe one (a hit on a
+  changed builder publishes a stale band).
+
+
+  There is deliberately **no `path` input**. The profile's location is not a choice a caller makes: a caller
+  that could place it could place one fitted on another corpus, and that artifact is indistinguishable
+  downstream from a measurement of this one. The only input is the corpus the caller just downloaded, so the
+  profile is always fitted on the corpus the run is about to rank.
+
+inputs:
+  data-dir:
+    description: >-
+      The converted corpus root this profile describes, as the shard action extracted it. Passed by the caller
+      from the step it just ran, so the profile cannot be fitted on a corpus the run is not about to rank.
+    required: true
+
+outputs:
+  path:
+    description: The profile file, at the one location this action owns.
+    value: ~/fault-free-profile.json
+  key:
+    description: The derived cache key, printed in the log so a run names the band it was scored against.
+    value: ${{ steps.key.outputs.key }}
+  cache-hit:
+    description: '`true` when the profile was restored rather than built, which is the log''s build time.'
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Derive the key from the corpus and the builder
+      id: key
+      shell: bash
+      run: |
+        set -euo pipefail
+        #   The `sha256:` prefix is stripped because the value is pasted into a cache key, and a key is an
+        #   identifier rather than a digest declaration.
+        CORPUS=$(python3 scripts/fse26_provenance.py --root scripts --digest | sed 's/^sha256://')
+        BUILDER=$(python3 - <<'PY'
+        import hashlib, pathlib
+        roots = ['benchmarks/src', 'packages/tree/src', 'packages/kinetic/src/benchmarks', 'packages/core/src']
+        digest = hashlib.sha256()
+        for root in roots:
+            for path in sorted(pathlib.Path(root).rglob('*.ts')):
+                digest.update(str(path).encode())
+                digest.update(path.read_bytes())
+        print(digest.hexdigest()[:16])
+        PY
+        )
+        echo "key=fault-free-profile-$CORPUS-$BUILDER"
+        echo "key=fault-free-profile-$CORPUS-$BUILDER" >> "$GITHUB_OUTPUT"
+
+    - name: Restore
+      id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/fault-free-profile.json
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Build
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        pnpm exec tsx benchmarks/src/build-fault-free-profile.ts \
+          --data-dir "${{ inputs.data-dir }}" \
+          --out "$HOME/fault-free-profile.json"
+        ls -l "$HOME/fault-free-profile.json"
+
+    - name: Publish
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/fault-free-profile.json
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Name the band on the run's own log
+      shell: bash
+      run: |
+        #   Printed unconditionally, on the rule `summariseFailedEdgeCoverage` records: a pass that received
+        #   nothing reads as "no change", and the only thing that separates the two is the input's identity
+        #   printed beside the numbers. The file is a few hundred kilobytes and it is what every containment
+        #   number is scored against.
+        ls -l "$HOME/fault-free-profile.json"
+        echo "profile key: ${{ steps.key.outputs.key }}"
+        echo "profile bytes: $(wc -c < "$HOME/fault-free-profile.json")"

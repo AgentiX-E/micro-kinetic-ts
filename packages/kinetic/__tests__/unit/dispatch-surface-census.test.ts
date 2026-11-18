@@ -1486,22 +1486,47 @@ const OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE: Readonly<Record<string, string>> =
 /**
  * Options both parsers accept and NEITHER workflow may pass, with the reason.
  *
- * The third direction, and it exists because the other two would have filed these as holes. A
- * `bothRequired` entry with no exclusion reads as an unreached flag, which is exactly the shape the
- * test above is built to fail on — so the direction has to be stated, and here it is the NEGATIVE
- * one: reachable from neither workflow, and that is the requirement rather than the defect.
- *
- * `faultFreeProfilePath` is the first and only member. It names the fault-free profile a weighting
- * term scores against, and the file is an ARTIFACT of the corpus — built from the same datapacks a
- * run is about to rank. A dispatch that could name a path could name a stale one, and a profile
- * fitted on another corpus is indistinguishable downstream from a measurement of this one, which
- * would make "recomputable from its dispatch" false in the one direction nobody would check.
+ * The third direction, and it is EMPTY — emptied by a repair rather than by convenience. Its only member was
+ * `faultFreeProfilePath`, filed here because a dispatch that could name a profile could name one fitted on
+ * another corpus. That claim survives and is now enforced one table below, where the flag is reachable but no
+ * input maps onto it: the FSE'26 surface had to start passing it, because a cell measured without it reports the
+ * shipped containment pass as "no change" (78.20 % against 81.29 % on one corpus, register §310.5). An entry
+ * leaves this table only when the requirement it states is enforced somewhere stronger, which is why the
+ * emptiness is asserted rather than assumed.
  */
-const OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER: Readonly<Record<string, string>> = {
-  faultFreeProfilePath:
-    'the fault-free profile is built from the corpus and read back, so a dispatch that could name it could ' +
-    'name one fitted on a different corpus — an artifact, not a choice, and the one option here whose ' +
-    'miswiring would be invisible in the numbers it changes',
+const OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER: Readonly<Record<string, string>> = {};
+
+/**
+ * Options both parsers accept that a workflow passes, but that NO dispatch input can name — because the value
+ * is derived by an action from the run's own corpus.
+ *
+ * This is the fourth direction, and it exists because the third one (reachable from neither) stopped being true
+ * for a reason that is a REPAIR rather than a regression. `faultFreeProfilePath` was filed there with the
+ * argument: a dispatch that could name a profile could name one fitted on another corpus, and a profile from
+ * another corpus is indistinguishable downstream from a measurement of this one.
+ *
+ * That argument is about the DISPATCH, and it still holds — it is now enforced by the input set rather than by
+ * unreachability. The FSE'26 benchmark surface had to start passing the flag, because its published cell was
+ * measured with the containment pass inert: the pass ships ON and reads the corpus's per-channel excursions, and
+ * without a profile it has nothing to read. On one corpus manifest and one set of engine defaults the two cells
+ * read **78.20 % (1 112)** without a profile and **81.29 % (1 156)** with one (register §310.5) — a 44-case
+ * difference that is a property of a MISSING FILE, not of the engine.
+ *
+ * So the direction is stated as the stronger pair of claims instead: every workflow that reaches the flag calls
+ * the action that derives it, and NO input in any workflow maps onto it. A dispatch therefore still cannot name a
+ * profile, and the artifact it carries is always fitted on the corpus the run is about to rank.
+ */
+const OPERATIONAL_OPTIONS_REACHABLE_BY_DERIVATION: Readonly<
+  Record<string, { readonly action: string; readonly reason: string }>
+> = {
+  faultFreeProfilePath: {
+    action: '.github/actions/rcabench-profile',
+    reason:
+      'the fault-free profile is built from the corpus a job just downloaded and read back by the run in that ' +
+      'same job. A dispatch that could name the path could name one fitted on a different corpus, which no ' +
+      'reader downstream could tell apart from a measurement of this one — so no workflow input maps onto this ' +
+      'option and every workflow that passes the flag calls the one action that derives it',
+  },
 };
 
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
@@ -2047,6 +2072,7 @@ describe('the dispatch surface has one owner per knob', () => {
     for (const option of both) {
       if (option in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE) continue;
       if (option in OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER) continue;
+      if (option in OPERATIONAL_OPTIONS_REACHABLE_BY_DERIVATION) continue;
       for (const which of ['fse26', 'rcaeval'] as const) {
         const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
         expect(flag, `${which} accepts ${option}`).toBeDefined();
@@ -2059,7 +2085,8 @@ describe('the dispatch surface has one owner per knob', () => {
     const bothRequired = both.filter(
       (o) =>
         !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE) &&
-        !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER),
+        !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER) &&
+        !(o in OPERATIONAL_OPTIONS_REACHABLE_BY_DERIVATION),
     );
     expect(bothRequired).toEqual(['dataDir', 'diagnoseDecimals', 'termsOut']);
     for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE)) {
@@ -2081,6 +2108,9 @@ describe('the dispatch surface has one owner per knob', () => {
     // accepted by both parsers and reachable from NEITHER workflow. Without this the table would be a
     // place to park a hole — the object would silence `bothRequired` while nothing checked the claim
     // that made the exclusion legitimate.
+    // The third table is empty and the emptiness is the assertion: an option parked here is an option nobody
+    // reaches, and the only member this table ever had left for the stronger state one table below.
+    expect(Object.keys(OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER)).toEqual([]);
     for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER)) {
       expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
       expect(reason.length, `${option} needs a reason`).toBeGreaterThan(60);
@@ -2088,6 +2118,32 @@ describe('the dispatch surface has one owner per knob', () => {
         const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
         expect(flag, `${which} accepts ${option}`).toBeDefined();
         expect(reaches(flag!, texts[which]), `${which} must NOT reach ${flag}`).toBe(false);
+      }
+    }
+    // The FOURTH direction: reachable from a workflow, and nameable by no input, because the value is derived by
+    // an action from the corpus that job just downloaded. Both halves are asserted — a flag that reached a
+    // workflow without its deriving action would be a path the workflow typed, which is the state the third table
+    // used to forbid and the reason this one has to be stronger.
+    for (const [option, derivation] of Object.entries(
+      OPERATIONAL_OPTIONS_REACHABLE_BY_DERIVATION,
+    )) {
+      expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
+      expect(derivation.reason.length, `${option} needs a reason`).toBeGreaterThan(80);
+      // No input in EITHER workflow may derive onto this option: `flagOfInput` is the same derivation the
+      // classification test uses, so an input named after the knob would be caught here rather than at dispatch.
+      for (const which of ['fse26', 'rcaeval'] as const) {
+        const inputs = which === 'fse26' ? fse26Inputs : rcaevalInputs;
+        for (const name of inputs) {
+          const bound = accepted[which].get(flagOfInput(name));
+          expect(bound, `input ${name} in ${which} must not name ${option}`).not.toBe(option);
+        }
+      }
+      // And every workflow that reaches the flag consults the action that owns the value.
+      for (const which of ['fse26', 'rcaeval'] as const) {
+        const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
+        if (flag === undefined) continue;
+        if (!reaches(flag, texts[which])) continue;
+        expect(texts[which], `${which} reaches ${flag}`).toContain(`uses: ./${derivation.action}`);
       }
     }
   });

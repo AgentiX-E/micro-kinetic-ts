@@ -6690,3 +6690,45 @@ check — and the two literals had to agree or every recorded answer would read 
 instead of about the build. The brief added a fourth field, i.e. a fourth chance to disagree, so the two literals are
 now one object built before either use. This is §307's shape a fourth time: **a decision with two owners**, found
 because a field was added to both.
+
+## §312 — The published FSE'26 cell was measuring a configuration the engine does not ship
+
+§310.5 recorded this as a defect in the cell rather than as an arm. It is repaired here, because it is cheaper than
+any arm and because a published number that understates the engine by 3.1 pp is worse than a number that is merely
+old.
+
+### 312.1 The measurement the repair rests on
+
+Same corpus manifest (`b7fca80e…`, 1 422 cases), same engine defaults, two workflows, and the only difference is
+whether the run could supply a fault-free profile:
+
+| workflow | profile | Top@1 | Top@3 | Top@5 |
+| --- | --- | ---: | ---: | ---: |
+| `fse26-benchmark.yml` | none | 1 112 (78.20 %) | 1 230 | **1 256** |
+| `benchmark-agentic.yml` measure | built from the corpus | **1 156 (81.29 %)** | 1 228 | 1 249 |
+
+The containment pass ships ON (`DEFAULT_CONTAINMENT_ORDER`) and reads the corpus's per-channel excursions to decide
+whether an adjacent pair is inverted. **Without a profile it has nothing to read**, so the published cell was
+reporting the pass as "no change" — a statement about a missing file, not about the engine. The +44 / −7 shape is
+what a pass that permutes the list it is handed does: it moves answers up to the front and a few out of the five.
+
+### 312.2 The repair, and why it is an action rather than four more steps
+
+`fse26-benchmark.yml` now builds the profile from the corpus it just downloaded and passes it. The four steps that
+did this in the agentic workflow became `.github/actions/rcabench-profile`, and **both** workflows call it, on the
+rule `.github/actions/rcabench-shards` established: two copies of a guard are a guard enforced in one place and
+skipped in another. A second copy of a cache-key derivation is worse than a copied guard, because a key that hits on
+a changed builder publishes a stale band under a green check.
+
+The action has exactly one input, the corpus root. Its **path is not an input at all**, which is the stronger form of
+the rule that kept `faultFreeProfilePath` out of every dispatch: a caller that could place the profile could place
+one fitted on another corpus, and that artifact is indistinguishable downstream from a measurement of this one. The
+census's third table (`OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER`) is therefore **empty**, and a fourth states the
+replacement — reachable from a workflow, nameable by no input, and only alongside the action that derives it.
+
+### 312.3 What the published cell will read, and why it is not re-anchored in this commit
+
+The next push-triggered battery produces the number. Writing `81.29 %` into the standing table before that run exists
+would be replacing a stale transcript with a projection, and this repository's rule for a cell is that it is quoted
+from an artifact. So this entry records the instrument change, names the reading it expects, and the cell is
+re-anchored by the commit that reads the run — with both figures printed, because Top@5 moves the other way.

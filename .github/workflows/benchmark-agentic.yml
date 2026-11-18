@@ -170,58 +170,20 @@ jobs:
       # with an arm that read it.
       #
       #   It is also the one step in this job worth caching, and the only one: measured at **6 m 46 s**
-      #   for 711 cases here, so ~10 minutes for the full corpus, for a 437 KB output. The key is
+      #   for 711 cases here, so ~20 minutes for the full corpus, for a 437 KB output. The key is
       #   DERIVED rather than typed -- the converter digest (which corpus) times a digest of every
       #   `.ts` file the build reads (which builder) -- because a hand-written key is the defect
       #   `cache-datasets.yml` records: `2b15f6e` fixed the conversion pipeline, hit the cache the OLD
       #   pipeline had produced, and converted nothing while the step read `skipped`.
-      - name: Derive the profile key from the corpus and the builder
-        id: key
-        run: |
-          set -euo pipefail
-          #   The `sha256:` prefix is stripped because the value is pasted into a cache key, and a key is
-          #   an identifier rather than a digest declaration.
-          CORPUS=$(python3 scripts/fse26_provenance.py --root scripts --digest | sed 's/^sha256://')
-          #   Directory roots rather than a hand list of files: a list is a second owner of "what the
-          #   profile depends on", and it drifts silently in the safe direction (a miss costs minutes)
-          #   and in the unsafe one (a hit on a changed builder publishes a stale band). The roots are
-          #   the loader the build reads cases through, the profile builder, and the tree package that
-          #   computes the bands.
-          BUILDER=$(python3 - <<'PY'
-          import hashlib, pathlib
-          roots = ['benchmarks/src', 'packages/tree/src', 'packages/kinetic/src/benchmarks', 'packages/core/src']
-          digest = hashlib.sha256()
-          for root in roots:
-              for path in sorted(pathlib.Path(root).rglob('*.ts')):
-                  digest.update(str(path).encode())
-                  digest.update(path.read_bytes())
-          print(digest.hexdigest()[:16])
-          PY
-          )
-          echo "key=fault-free-profile-$CORPUS-$BUILDER"
-          echo "key=fault-free-profile-$CORPUS-$BUILDER" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the profile
-        id: profile
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/fault-free-profile.json
-          key: ${{ steps.key.outputs.key }}
-
+      #
+      #   It is an ACTION rather than four steps here, because the FSE'26 benchmark surface is now the
+      #   second consumer and the two must not be able to drift: that surface's published cell was measured
+      #   at 78.20 % with the pass inert (no profile) against 81.29 % with it speaking on the same corpus
+      #   (register §310.5), so both workflows ask the same owner for the same artifact.
       - name: Build the fault-free profile
-        if: steps.profile.outputs.cache-hit != 'true'
-        run: |
-          pnpm exec tsx benchmarks/src/build-fault-free-profile.ts \
-            --data-dir "$HOME/rcabench/json" \
-            --out "$HOME/fault-free-profile.json"
-          ls -l "$HOME/fault-free-profile.json"
-
-      - name: Publish the profile
-        if: steps.profile.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: ./.github/actions/rcabench-profile
         with:
-          path: ~/fault-free-profile.json
-          key: ${{ steps.key.outputs.key }}
+          data-dir: $HOME/rcabench/json
 
       - name: Run the engine with the elimination dumps
         env:
