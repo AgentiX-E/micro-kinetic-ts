@@ -8,6 +8,7 @@ import {
   nominateCases,
   parseNominationArgs,
   sweepNomination,
+  sweepPromotion,
   type ProposeNominationOptions,
 } from '../src/agentic-nomination-study.js';
 import type { NominationRecord } from '../src/agentic-nomination.js';
@@ -84,6 +85,35 @@ describe('parseNominationArgs', () => {
     expect(() =>
       parseNominationArgs(['--fingerprints', 'f', '--verdicts', 'v', '--propose']),
     ).toThrow(/--nominations is required/);
+  });
+
+  it('accepts a value inside range for every numeric flag, and assigns it', () => {
+    // The refusal on each flag was tested and the assignment was not, which left every bound checked on one side
+    // only. A flag that parses and then never reaches the study is a flag that silently does nothing.
+    const args = parseNominationArgs([
+      '--fingerprints',
+      'f',
+      '--verdicts',
+      'v',
+      '--concurrency',
+      '2',
+      '--limit',
+      '10',
+      '--max-candidates',
+      '20',
+      '--max-channels',
+      '4',
+      '--max-ranked',
+      '6',
+      '--delta',
+      '0.2',
+    ]);
+    expect(args.concurrency).toBe(2);
+    expect(args.limit).toBe(10);
+    expect(args.maxCandidates).toBe(20);
+    expect(args.maxChannels).toBe(4);
+    expect(args.maxRanked).toBe(6);
+    expect(args.delta).toBeCloseTo(0.2, 12);
   });
 
   it('refuses a value outside its range', () => {
@@ -288,5 +318,120 @@ describe('formatNominationStudy', () => {
     expect(text).toContain('oracle');
     expect(text).toContain('nominate');
     expect(text).toContain('refusals:');
+  });
+});
+
+describe('parseNominationArgs — the gate flags', () => {
+  const base = ['--fingerprints', 'f', '--verdicts', 'v'];
+
+  it('defaults to a fusion, with no depth and no threshold', () => {
+    const args = parseNominationArgs(base);
+    expect(args.depth).toBe('');
+    expect(args.promotion).toBeNull();
+  });
+
+  it("reads 'off' as the control rather than as a number", () => {
+    // `Number('off')` is NaN, so the two spellings have to be told apart explicitly or a control would be rejected
+    // as a malformed threshold.
+    expect(
+      parseNominationArgs([...base, '--depth', 'd', '--promotion', 'off']).promotion,
+    ).toBeNull();
+  });
+
+  it('reads a threshold in (0, 1)', () => {
+    expect(parseNominationArgs([...base, '--depth', 'd', '--promotion', '0.03']).promotion).toBe(
+      0.03,
+    );
+  });
+
+  it('refuses a threshold outside (0, 1) and a word that is not off', () => {
+    for (const bad of ['0', '1', '-0.1', '2', 'yes', '']) {
+      expect(() => parseNominationArgs([...base, '--depth', 'd', '--promotion', bad])).toThrow(
+        /--promotion/,
+      );
+    }
+  });
+
+  it('refuses a threshold without the artifact its spread comes from', () => {
+    // The gate's denominator is a property of the order it is read from. Without `--depth` the only order in hand
+    // is the population's, whose width is whatever the dump was asked for.
+    expect(() => parseNominationArgs([...base, '--promotion', '0.03'])).toThrow(/needs --depth/);
+    // `--depth` on its own is fine: it is also useful to a caller that only wants the population written out.
+    expect(parseNominationArgs([...base, '--depth', 'd']).promotion).toBeNull();
+  });
+});
+
+describe('sweepPromotion', () => {
+  const cases = [oneCase('c1', ['a']), oneCase('c2', ['b'])];
+  const records = new Map<string, NominationRecord>([
+    [
+      'c1',
+      {
+        datapack: 'c1',
+        model: 'm',
+        protocol: 1,
+        digest: 'd',
+        ranking: ['b'],
+        ms: 1,
+        promptTokens: 1,
+        completionTokens: 1,
+      },
+    ],
+    [
+      'c2',
+      {
+        datapack: 'c2',
+        model: 'm',
+        protocol: 1,
+        digest: 'd',
+        ranking: ['b'],
+        ms: 1,
+        promptTokens: 1,
+        completionTokens: 1,
+      },
+    ],
+  ]);
+  const spread = new Map([
+    [
+      'c1',
+      [
+        { service: 'a', score: 1.0 },
+        { service: 'b', score: 0.99 },
+        { service: 'c', score: 0.0 },
+      ],
+    ],
+    [
+      'c2',
+      [
+        { service: 'a', score: 1.0 },
+        { service: 'b', score: 0.99 },
+        { service: 'c', score: 0.0 },
+      ],
+    ],
+  ]);
+
+  it('puts the control on the grid, so the table states its own baseline', () => {
+    const outcomes = sweepPromotion(cases, records, spread);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes[0]!.promotion?.threshold).toBeNull();
+    expect(outcomes[1]!.promotion?.threshold).toBeCloseTo(0.03, 12);
+  });
+
+  it('differences the two arms over one denominator', () => {
+    const outcomes = sweepPromotion(cases, records, spread);
+    // Both cases have a ratio of 0.01, so the gate fires on both; c1 is repaired and c2 was already right, which
+    // the override then breaks.
+    expect(outcomes[0]!.correct).toBe(1);
+    expect(outcomes[1]!.promotion?.overrides).toBe(2);
+    expect(outcomes[1]!.promotion?.fix).toBe(1);
+    expect(outcomes[1]!.promotion?.breaks).toBe(1);
+    expect(outcomes[1]!.correct).toBe(1);
+    expect(outcomes[0]!.cases).toBe(outcomes[1]!.cases);
+  });
+
+  it('honours a caller-supplied grid', () => {
+    const outcomes = sweepPromotion(cases, records, spread, [{ threshold: 0 }]);
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]!.promotion?.threshold).toBe(0);
   });
 });

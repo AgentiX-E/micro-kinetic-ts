@@ -6301,3 +6301,63 @@ The sweep that found this also **rediscovered an entry already on file**: RCAtla
 `sota-populations.md` since an earlier iteration, with three root-cause levels and a leakage audit this search did
 not surface. Recording it because the failure mode is the one §307's own §8.8 names one surface over: *read what
 the repository already says before writing what the web says.*
+
+## §308 — The gate reproduces at +9 on production code, and the guard around it was one candidate too strict
+
+§307.3 measured `+9` with an analysis script. `preregistration-304.md` fixed the threshold at `0.03` and named four
+predictions; this section is the confirmatory run, on the gate as a module (`packages/ai/src/agent/promotion.ts`,
+`gatePromotion`) with a `--promotion` flag and the arm wired into `scoreNomination` so that the control and the
+treatment are one loop rather than two.
+
+### 308.1 The four predictions
+
+| # | as registered | reading |
+| --- | --- | --- |
+| G1 | net ≥ **+5** | **+9** |
+| G2 | both id-hash halves positive, `\|A − B\| ≤ 6` | **+5 / +4**, difference 1 |
+| G3 | overrides ≤ band | **56 ≤ 122** |
+| G4 | end to end as `1 156 + net`, fraction printed | **1 156 → 1 165** |
+
+The falsifier does not fire, so the axis stays open and arm W is authorised. `docs/agentic-promotion-gate.md` §9
+carries the readings and the artifact provenance; the one number that makes the replay a confirmation rather than a
+second opinion is that the terms dump is **byte-identical** to the one §307 was computed from
+(`md5 4b1dadd057f4b52e1b242c40c39aba19`), from a run that cost $0.00 and 15 m 52 s because it asks only the engine.
+
+### 308.2 The defect was in the guard, and it was one candidate too strict
+
+The first run of the confirmatory code read **band 121, engine wrong 97, `orderDisagreement` 17** — every number one
+below §307's. The guard refuses to gate a case whose full order disagrees with the population's, and it compared the
+whole five-candidate prefix. Seventeen cases differ, and the distribution of the first differing position is the
+whole finding:
+
+| first differing position | 1 | 2 | 3 | 4 | 5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cases | **0** | **0** | 0 | **2** | **15** |
+
+The gate reads `full[0]` (the answer), the pair `(full[0], full[1])` (the margin) and `min(score)` (the denominator).
+Two of those three live in positions 1 and 2, and neither position ever differs. So the correct condition is
+`full[0].service === engine[0]`, and the readings return to `122 / 98 / 56 / 15 / 6 / 35 / +9` — bit for bit §307's.
+
+This is the fourth appearance of one shape in this line of work, and it is the first one where the over-strict
+quantity was a **guard** rather than a statistic: §305 was a unit error, §306 was a reporting width taken for a
+method ceiling, §307 was an input missing from a record. A guard that demands more agreement than the measurement
+uses does not make the measurement safer; it deletes cases and reports the deletion as a smaller population.
+
+### 308.3 Why the tails differ — a property of the terms dump, not of either writer
+
+A structural pass permutes **adjacent pairs of the list it is handed**, so the pass over a 50-wide order and the pass
+over the same run's 5-wide top five are two permutations of two different lists. They diverge exactly where a
+candidate exists in one and not the other: a 50-wide order has a sixth candidate that a five-wide one cannot promote
+past its fifth, and a five-wide one has a boundary the 50-wide one does not.
+
+`terms-dump.ts` already states that the array order is the engine's answer and that the scores do not determine it.
+The boundary condition this run adds is: **the array order is the engine's answer at that width.** A consumer
+reading the terms dump as "the published order, longer" gets positions 1 and 2 right — which is all a margin rule
+reads — and can get positions 4 and 5 wrong, which no margin rule reads.
+
+### 308.4 What is not claimed
+
+The `+9` is the same `+9`. A confirmation that moved the number would have refuted the earlier one, and the value of
+this run is that a second implementation through a different entry point agrees to the case. It is still in-sample:
+the threshold was chosen on this corpus, the halves are the only internal replication, and `81.92 %` remains
+8.1 pp below the published RCABench best.

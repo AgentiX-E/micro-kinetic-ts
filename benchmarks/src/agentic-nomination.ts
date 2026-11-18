@@ -31,14 +31,20 @@
 import {
   NOMINATION_PROTOCOL,
   fuseNomination,
+  gatePromotion,
   parseNominationReply,
   verifyNomination,
   type CandidateFingerprint,
   type NominationRejection,
+  type PromotionDecision,
+  type PromotionOptions,
+  type PromotionOutcome,
+  type PublishedCandidate,
   type RankStrategy,
 } from '../../packages/ai/src/agent/index.js';
 
 import type { HeadroomCase } from './agentic-headroom.js';
+import type { ParsedTermCase } from './terms-dump.js';
 
 /** One case's answer. `ranking: []` is a legitimate answer — the model agrees with the engine. */
 export interface NominationRecord {
@@ -168,11 +174,113 @@ export interface NominationOutcome {
   readonly truthAbsent: number;
   /** Correct answers, per fault family. */
   readonly byFamily: Readonly<Record<string, number>>;
+  /** The gate's census, or `null` when the arm ran without one. */
+  readonly promotion: PromotionTally | null;
+}
+
+/**
+ * What the gate did, over and above what the arm scored.
+ *
+ * `census` is the exhaustive count, and the three outcome fields classify the overrides by what they were worth:
+ * a `fix` turned a wrong engine answer into a right one, a `break` did the reverse, and a `neutral` left the case
+ * wrong either way — the override was free, and counting it as a win is how a promotion arm reports precision it
+ * does not have.
+ */
+export interface PromotionTally {
+  /** The threshold the arm ran at. `null` is the control: the gate looked at nothing. */
+  readonly threshold: number | null;
+  /** Counts by outcome, over the cases the gate examined. Exhaustive by construction. */
+  readonly census: Readonly<Record<PromotionOutcome, number>>;
+  /**
+   * Cases the gate measured inside its band, `relGap >= 0 && relGap < threshold`.
+   *
+   * `relGap >= 0` is the score-sorted condition stated as arithmetic: the spread is positive, so a non-negative
+   * ratio is exactly "the published leader does not score below the second row".
+   */
+  readonly band: number;
+  /** Of those, cases the engine got wrong — the base rate any override in the band is measured against. */
+  readonly engineWrongInBand: number;
+  /** Cases whose top-1 the gate changed. */
+  readonly overrides: number;
+  readonly fix: number;
+  readonly breaks: number;
+  readonly neutral: number;
+  /**
+   * Cases the gate could not examine because no full scored order was supplied for them.
+   *
+   * Not folded into `band` and not silently scored against a narrower spread: a spread read from a five-wide cut is
+   * that cut's property, which is the defect `docs/agentic-promotion-gate.md` §3 records.
+   */
+  readonly orderMissing: number;
+  /**
+   * Cases where the full scored order disagrees with the population's own order.
+   *
+   * A non-zero reading means the two artifacts are not from the same run, and every gate figure over them describes
+   * a join rather than an arm. Reported instead of thrown for the reason the refusals are counted: a reader who can
+   * see the number can decide what it invalidates.
+   */
+  readonly orderDisagreement: number;
+}
+
+/** How to score a nomination arm. */
+export interface NominationArmOptions {
+  readonly strategy: RankStrategy;
+  readonly weight: number;
+  readonly rrfK?: number;
+  /**
+   * The gate. Absent means the arm is a fusion, which is what every arm before iteration 304 was.
+   *
+   * Present with `threshold: null` is the gate's own control: the same code path, the same verification, the same
+   * counting, and no promotion. That is what makes the gate's delta a delta against the engine rather than against
+   * a second implementation of it.
+   */
+  readonly promotion?: PromotionOptions;
+  /**
+   * The full scored order, by case, for the gate's spread.
+   *
+   * Required whenever `promotion.threshold` is a number. The published order's own `score` field is carried on the
+   * candidate, but a population read from a five-wide fingerprint dump carries five candidates and therefore a
+   * spread over five — so the caller states which artifact the denominator comes from instead of the module
+   * inferring it from whatever it was handed.
+   */
+  readonly spreadOrder?: ReadonlyMap<string, readonly PublishedCandidate[]>;
 }
 
 /** An empty refusal tally, as a fresh object so a caller cannot share one. */
 function emptyRefusals(): Record<NominationRejection, number> {
   return { 'unknown-candidate': 0, 'duplicate-candidate': 0 };
+}
+
+/**
+ * The tally while it is being accumulated.
+ *
+ * The published {@link PromotionTally} is read-only because a caller must not edit a reading. This is the shape the
+ * loop needs, and it is kept local so the read-only one is what leaves the function.
+ */
+interface MutableTally {
+  threshold: number | null;
+  census: Record<PromotionOutcome, number>;
+  band: number;
+  engineWrongInBand: number;
+  overrides: number;
+  fix: number;
+  breaks: number;
+  neutral: number;
+  orderMissing: number;
+  orderDisagreement: number;
+}
+
+/** An empty census, as a fresh object so a caller cannot share one. */
+function emptyCensus(): Record<PromotionOutcome, number> {
+  return {
+    off: 0,
+    unranked: 0,
+    agrees: 0,
+    reversed: 0,
+    degenerate: 0,
+    'band-miss': 0,
+    promoted: 0,
+  };
 }
 
 /** The engine's order, best first. */
@@ -189,24 +297,51 @@ function answered(order: readonly string[], accepted: readonly string[]): boolea
 /**
  * Score the nomination arm over a population.
  *
- * The control is this same function at `weight = 0`, not a second loop: an arm's number and the control's number
- * produced by one piece of code is what makes a delta mean something.
+ * The control is this same function at `weight = 0` — or, when a gate is configured, at `threshold: null`. Not a
+ * second loop: an arm's number and the control's number produced by one piece of code is what makes a delta mean
+ * something.
  *
  * A case with no record is **not** dropped. It keeps its engine answer and is counted under `missing`, because a
  * run that answered 900 of 1 422 cases must not report an accuracy over 900.
  *
  * @param cases - The paired population.
  * @param records - Recorded answers, keyed by case.
- * @param options - Strategy and weight.
+ * @param options - Strategy and weight, or a promotion gate with the full scored order its spread comes from.
  * @returns Counts and rates. Fractions are over `cases`, never over the answered subset.
+ * @throws TypeError when a promotion threshold is configured without `spreadOrder` — a programming error, not a
+ *   reading, and the one failure here that must not be reported as a number.
  */
 export function scoreNomination(
   cases: readonly HeadroomCase[],
   records: ReadonlyMap<string, NominationRecord>,
-  options: { readonly strategy: RankStrategy; readonly weight: number; readonly rrfK?: number },
+  options: NominationArmOptions,
 ): NominationOutcome {
+  const gate = options.promotion;
+  if (gate !== undefined && gate.threshold !== null && options.spreadOrder === undefined) {
+    throw new TypeError(
+      'scoreNomination: a promotion threshold needs `spreadOrder`. Without the full scored order the spread ' +
+        'would be read from the width of whatever population the caller held, which is the defect ' +
+        'docs/agentic-promotion-gate.md §3 records.',
+    );
+  }
+
   const refused = emptyRefusals();
   const byFamily: Record<string, number> = {};
+  const tally: MutableTally | null =
+    gate === undefined
+      ? null
+      : {
+          threshold: gate.threshold,
+          census: emptyCensus(),
+          band: 0,
+          engineWrongInBand: 0,
+          overrides: 0,
+          fix: 0,
+          breaks: 0,
+          neutral: 0,
+          orderMissing: 0,
+          orderDisagreement: 0,
+        };
   let correct = 0;
   let moved = 0;
   let ranked = 0;
@@ -219,9 +354,11 @@ export function scoreNomination(
     const engine = engineOrderOf(oneCase.candidates);
     const acceptedSet = new Set(oneCase.accepted);
     if (!engine.some((service) => acceptedSet.has(service))) truthAbsent += 1;
+    const engineCorrect = answered(engine, oneCase.accepted);
 
     const record = records.get(oneCase.datapack);
     let order = engine;
+    let decision: PromotionDecision | null = null;
     if (record === undefined) {
       missing += 1;
     } else if (record.malformed !== undefined) {
@@ -234,11 +371,59 @@ export function scoreNomination(
         declined += 1;
       } else {
         ranked += 1;
-        order = fuseNomination(engine, verified.order, {
-          strategy: options.strategy,
-          weight: options.weight,
-          rrfK: options.rrfK ?? 60,
-        });
+        // A switched-off gate reads no score, so it needs no full order: it is handed the population's own order and
+        // returns it unchanged, which is what makes the control's number the engine's number. Only a gate that
+        // measures needs the artifact whose width its denominator is a property of.
+        const full =
+          gate === undefined
+            ? undefined
+            : gate.threshold === null
+              ? oneCase.candidates.map((row) => ({ service: row.service, score: row.score }))
+              : options.spreadOrder?.get(oneCase.datapack);
+        if (gate !== undefined && full !== undefined && tally !== null) {
+          // The two artifacts must agree about the ANSWER, which is the first candidate and nothing else: `answered`
+          // reads `order[0]`, and the gate reads `full[0]` and `full[1]` out of the one artifact it was handed.
+          //
+          // They need not agree about the tail. A structural pass permutes adjacent pairs of the list it is given,
+          // so the pass over a 50-wide order and the pass over the same run's 5-wide top-5 are not one function of
+          // one list: on this corpus 17 cases differ, 15 of them first at position 5 and 2 at position 4, and none
+          // at position 1 or 2. Requiring the whole prefix would discard cases the gate can read perfectly well,
+          // and would make the band's size a property of a comparison nobody needed.
+          const agrees = full[0]?.service === engine[0];
+          if (!agrees) {
+            tally.orderDisagreement += 1;
+          } else {
+            decision = gatePromotion(full, verified.order, gate);
+            order = decision.order;
+            tally.census[decision.outcome] += 1;
+            if (
+              decision.relGap !== null &&
+              decision.relGap >= 0 &&
+              gate.threshold !== null &&
+              decision.relGap < gate.threshold
+            ) {
+              tally.band += 1;
+              if (!engineCorrect) tally.engineWrongInBand += 1;
+            }
+            if (decision.promote) {
+              tally.overrides += 1;
+              const afterCorrect = answered(order, oneCase.accepted);
+              if (!engineCorrect && afterCorrect) tally.fix += 1;
+              else if (engineCorrect && !afterCorrect) tally.breaks += 1;
+              else tally.neutral += 1;
+            }
+          }
+        } else if (gate !== undefined) {
+          // No full order for this case: it keeps the engine's answer, and the tally says so rather than scoring it
+          // against a spread taken from whatever width the population happened to carry.
+          if (tally !== null) tally.orderMissing += 1;
+        } else {
+          order = fuseNomination(engine, verified.order, {
+            strategy: options.strategy,
+            weight: options.weight,
+            rrfK: options.rrfK ?? 60,
+          });
+        }
       }
     }
 
@@ -263,6 +448,7 @@ export function scoreNomination(
     refused,
     truthAbsent,
     byFamily,
+    promotion: tally,
   };
 }
 
@@ -347,3 +533,85 @@ export function formatNominationRefusals(outcomes: readonly NominationOutcome[])
 
 /** Re-exported so a CLI can parse a raw reply without importing the package's internals twice. */
 export { NOMINATION_PROTOCOL, parseNominationReply };
+
+/**
+ * The full scored order of every case, read from a `--terms-dump` artifact, for the gate's spread.
+ *
+ * The dump's array order **is** the engine's answer and its `score` field is what the sort used, so this is a
+ * transcription rather than a re-ranking: re-sorting by score would reproduce the pre-pass engine, which on this
+ * corpus is 1 073 rather than 1 141 (see `terms-dump.ts`'s module docblock).
+ *
+ * @param cases - Cases parsed from a terms dump.
+ * @returns The published order, with scores, by case id.
+ * @throws Error when a candidate carries no score, because a margin rule cannot be computed over a candidate whose
+ *   rank the producer never recorded a number for — and skipping it would silently stretch the spread.
+ */
+export function spreadOrdersOf(
+  cases: readonly ParsedTermCase[],
+): Map<string, readonly PublishedCandidate[]> {
+  const orders = new Map<string, readonly PublishedCandidate[]>();
+  for (const oneCase of cases) {
+    const order: PublishedCandidate[] = [];
+    for (const candidate of oneCase.candidates) {
+      if (candidate.score === null) {
+        throw new Error(
+          `${oneCase.datapack}: candidate ${candidate.id} has no score, so no spread can be taken over this order`,
+        );
+      }
+      order.push({ service: candidate.id, score: candidate.score });
+    }
+    orders.set(oneCase.datapack, order);
+  }
+  return orders;
+}
+
+/**
+ * Render the gate table: one row per arm, with the band and what the overrides in it were worth.
+ *
+ * A row's `top1` is `correct / cases` — the same denominator as every other table in this file, so the control and
+ * the treatment are differences of two numbers over one population rather than of two rates over two.
+ *
+ * @param outcomes - The scored arms, in publication order. Arms without a gate are skipped.
+ * @returns The table, as text. A single line when no arm carried a gate.
+ */
+export function formatPromotionTable(outcomes: readonly NominationOutcome[]): string {
+  const gated = outcomes.filter((outcome) => outcome.promotion !== null);
+  if (gated.length === 0) return 'gate: no arm carried one';
+  const lines = [
+    'gate    cases    band  engineWrong  overrides   fix  break  neutral    top1  missing  disagree',
+  ];
+  for (const outcome of gated) {
+    const tally = outcome.promotion;
+    if (tally === null) continue;
+    const name = tally.threshold === null ? 'off' : tally.threshold.toFixed(3);
+    lines.push(
+      `${name.padEnd(6)}  ${String(outcome.cases).padStart(5)}  ${String(tally.band).padStart(6)}  ` +
+        `${String(tally.engineWrongInBand).padStart(11)}  ${String(tally.overrides).padStart(9)}  ` +
+        `${String(tally.fix).padStart(4)}  ${String(tally.breaks).padStart(5)}  ` +
+        `${String(tally.neutral).padStart(7)}  ${pct(outcome.top1).padStart(6)}  ` +
+        `${String(tally.orderMissing).padStart(7)}  ${String(tally.orderDisagreement).padStart(8)}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * State what an override in the band was worth, so the number cannot be read as a precision it does not have.
+ *
+ * @param outcome - One gated arm.
+ * @returns The reading, as text.
+ */
+export function formatPromotionReadout(outcome: NominationOutcome): string {
+  const tally = outcome.promotion;
+  if (tally === null) return 'gate: this arm did not carry one';
+  const decisive = tally.fix + tally.breaks;
+  const lines = [
+    `band ${tally.band} of ${outcome.cases} cases, engine wrong inside it ${tally.engineWrongInBand}`,
+    `overrides ${tally.overrides}: ${tally.fix} fix, ${tally.breaks} break, ${tally.neutral} neutral`,
+    decisive === 0
+      ? 'conditional precision: no override changed an outcome, so there is no precision to state'
+      : `conditional precision: ${tally.fix}/${decisive} = ${(100 * (tally.fix / decisive)).toFixed(1)}%`,
+    `net ${tally.fix - tally.breaks > 0 ? '+' : ''}${tally.fix - tally.breaks}`,
+  ];
+  return lines.join('\n');
+}

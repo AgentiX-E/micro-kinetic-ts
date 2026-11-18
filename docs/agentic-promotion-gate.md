@@ -215,3 +215,96 @@ pnpm exec tsx benchmarks/src/run-agentic-nomination.ts \
 
 The gate is a pure function of `(published order with scores, model ranking)` and is applied offline, so every
 number above is replayable from artifacts already in the repository's `artifacts/agentic/`.
+
+## 9. The confirmatory replay — arm G, on production code
+
+`preregistration-304.md` fixed the threshold at `0.03` and named four predictions before this run. What follows is
+the run, and it differs from §4 in one respect that matters: **it is not the analysis script that produced §4.** The
+gate is now `packages/ai/src/agent/promotion.ts` with a `gatePromotion` entry point, a `--promotion` flag on the
+nomination runner, and the arm pathway wired into `scoreNomination` so the control and the treatment are one loop.
+Re-deriving the number through a different implementation is what separates a reading from a transcription.
+
+### 9.1 The artifacts, and why a new run was spent on them
+
+The gate needs three things from one run: the population, the recorded nominations, and the **full scored order**
+the spread is taken over. `artifacts/agentic/` does not carry the last one; the terms dump does.
+
+| artifact | supplies | cases |
+| --- | --- | --- |
+| `fingerprints.ndjson` (`--fingerprint-out`) | the population: posterior, channels, prompt digest | 1 422 |
+| `per-case.ndjson` (`--per-case-out`) | the accepted set the run scored against | 1 422 |
+| `terms.ndjson` (`--terms-dump`) | the whole scored order — 49 or 50 candidates per case | 1 422 |
+| `nominations.ndjson` (recorded 2026-11-17) | the model's ranking per case | 1 422 |
+
+The run cost 15 m 52 s and **$0.00** in model calls, because it asks the engine and nothing else. Its control is
+`1 156 / 1 422 = 81.29 %`, and its terms dump is **byte-identical** to the one §4 was computed from
+(`md5 4b1dadd057f4b52e1b242c40c39aba19`). That is the check worth stating: a confirmatory run whose artifact is not
+the same artifact is not a confirmation of anything.
+
+### 9.2 The four predictions
+
+| # | as registered | reading | |
+| --- | --- | --- | --- |
+| **G1** | net ≥ **+5** | **+9** | holds |
+| **G2** | both id-hash halves positive, `\|A − B\| ≤ 6` | **+5 / +4**, difference 1 | holds |
+| **G3** | every override inside the band, so overrides ≤ band | **56 ≤ 122** | holds |
+| **G4** | end to end printed as `1 156 + net` with the fraction | **1 156 → 1 165** | holds |
+
+The falsifier — *"if arm G's net on all 1 422 cases is ≤ 0, the promotion axis closes as a class"* — **does not
+fire**. Arm W is therefore authorised, and it is registered in `preregistration-305.md`.
+
+G3 is worth one sentence, because it is a structural guarantee rather than a measurement: a promotion is counted in
+the band before it is counted as an override, so `overrides ≤ band` holds by construction. The runner prints
+`IMPOSSIBLE` if it ever stops holding, and that line exists so that the guarantee has a witness.
+
+### 9.3 The defect this replay found — in the checker, not in the gate
+
+The first run of the confirmatory code read **band 121, engine wrong 98 → 97, `orderDisagreement` 17**. The
+disagreement count was a guard added in §9.4: it refuses to gate a case whose full order disagrees with the
+population's. Seventeen cases tripped it, so seventeen cases were scored on the engine's answer instead, and one of
+them was inside the band.
+
+The guard was **too strict**. It compared the whole five-candidate prefix, and the two artifacts differ:
+
+| first differing position | cases |
+| ---: | ---: |
+| 1 | 0 |
+| 2 | 0 |
+| 4 | 2 |
+| 5 | 15 |
+
+The gate reads exactly two things from the order: `order[0]`, which is the answer, and the pair `(full[0], full[1])`
+plus `min(score)`, which is the margin and its denominator. **Position 1 never differs and position 2 never
+differs.** So the correct condition is `full[0].service === engine[0]`, and with it the readings return to
+`122 / 98 / 56 / 15 / 6 / 35 / +9` — bit for bit what §4 reported from the analysis script.
+
+### 9.4 Why the tails differ, and why that is a property of this artifact family
+
+The difference is not noise and not a bug in either writer. A structural pass — `containmentOrder` and the failure
+flow — permutes **adjacent pairs of the list it is handed**. The fingerprint dump is written from the run's
+top-5 answer; the terms dump is written from a separate `analyze` over the whole node set, at `topK = nodes.size`.
+Those are two different lists, so the two passes are two different permutations of two different lengths, and they
+diverge where a candidate exists in one and not the other: a 50-wide order has a sixth candidate that a five-wide
+one cannot promote past its fifth.
+
+`terms-dump.ts` already says the array order *is* the engine's answer and that the scores do not determine it. What
+this run adds is the boundary condition: **the array order is the engine's answer at that width.** A consumer that
+reads the terms dump as "the published order, longer" gets the first two positions right — which is all a margin
+rule needs — and can get positions 4 and 5 wrong, which no margin rule reads.
+
+The guard that came out of this is stated in §9.3 and is deliberately minimal: it does not claim the two artifacts
+agree, only that they agree about the one candidate a promotion would move.
+
+### 9.5 What the replay does not add
+
+- **No new accuracy.** `1 156 → 1 165` is the same `+9` §4 reported, `81.29 % → 81.92 %`. A confirmation that
+  changed the number would have been a refutation of the earlier one.
+- **Still not held out.** The threshold is the one `preregistration-304.md` fixed, but it was chosen by looking at
+  this corpus. The halves are the only internal replication and §4.1 states its limit.
+- **The prompt is unchanged, which is checked rather than assumed.** The runner rebuilds each case's prompt and
+  compares its digest against the one in the nominations artifact; **0 of 1 422** recorded answers belong to a
+  different prompt. So the replay is a replay of the question that was asked, not an answer lent to a new one. The
+  reason it holds is worth recording, because the opposite was expected: the fingerprint dump records the
+  **published** order (its top-1 is `1 156`, not the `1 141` of a run whose containment pass had nothing to read),
+  and both runs' dumps agree — so the table the model was shown in November and the table it would be shown now are
+  the same table.

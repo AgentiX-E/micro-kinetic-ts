@@ -9,35 +9,72 @@
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-agentic-nomination.ts \
  *     --fingerprints <ndjson> --verdicts <ndjson> --nominations <ndjson> \
- *     [--propose] [--model M] [--concurrency N] [--limit N]
+ *     [--propose] [--model M] [--concurrency N] [--limit N] \
+ *     [--depth <terms.ndjson> --promotion <off|threshold>]
  *
- * Output is the swept arm table, the oracle row, and the refusal census.
+ * Output is the swept arm table, the oracle row, and the refusal census. With `--promotion` it is followed by the
+ * gate table, the readout over the overrides it made, and a census of what the gate decided per case.
+ *
+ * `--depth` is the terms dump, and it is not optional decoration: the gate's band is a fraction of the case's own
+ * spread, so the denominator is a property of the artifact it is read from. A spread taken from the five-wide
+ * fingerprint dump would be the width of a presentation layer — `docs/agentic-promotion-gate.md` §3.
  *
  * @module benchmarks/run-agentic-nomination
  */
 
+import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
-import { buildNominationPrompt } from '../../packages/ai/src/agent/index.js';
+import { buildNominationPrompt, formatPromotionCensus } from '../../packages/ai/src/agent/index.js';
 
 import { inCaseOrder } from '../../packages/kinetic/src/benchmarks/case-order.js';
 
 import { readFingerprintFile } from './agentic-fingerprint-file.js';
-import { joinHeadroom } from './agentic-headroom.js';
+import { joinHeadroom, type HeadroomCase } from './agentic-headroom.js';
 import {
   formatNominationStudy,
   nominateCases,
   parseNominationArgs,
   sweepNomination,
+  sweepPromotion,
   type SweepPoint,
 } from './agentic-nomination-study.js';
 import {
   formatNominationRecord,
+  formatPromotionReadout,
+  formatPromotionTable,
   parseNominationRecords,
+  spreadOrdersOf,
   type NominationRecord,
 } from './agentic-nomination.js';
 import { createChatClientFromEnv } from './chat-completions.js';
 import { readPerCaseVerdicts } from './fse26-per-case.js';
+import { parseTermsDump } from './terms-dump.js';
+
+/** A rate as the tables print it. */
+function percent(value: number): string {
+  return `${(100 * value).toFixed(1)}%`;
+}
+
+/** A count with its sign, so a delta of zero reads as a delta rather than as a missing value. */
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
+/**
+ * Which of the two pre-registered hash halves a case belongs to.
+ *
+ * SHA-256 of the id and its low bit, which is the split `docs/agentic-promotion-gate.md` §4.1 reports. It is
+ * deliberately **not** `hashId` from `agentic-sampling.ts`: that is FNV-1a and answers a different question (which
+ * sampling stratum a case is in), so using it here would silently publish a different split under the same name.
+ *
+ * @param datapack - The case id.
+ * @returns `0` or `1`.
+ */
+function halfOf(datapack: string): 0 | 1 {
+  const digest = createHash('sha256').update(datapack).digest();
+  return ((digest[digest.length - 1] ?? 0) & 1) as 0 | 1;
+}
 
 /** A grid that also covers the control on both strategies, so the table shows the operator doing nothing. */
 const GRID: readonly SweepPoint[] = [
@@ -159,6 +196,76 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`All ${population.length} paired cases`);
   console.log(formatNominationStudy(population, sweepNomination(population, records, GRID)));
+
+  if (args.promotion !== null) {
+    // The gate's spread comes from the full scored order and nowhere else. A population read from a five-wide
+    // fingerprint dump carries five candidates, so reading the spread off it would be reading the artifact's width
+    // — the error `docs/agentic-promotion-gate.md` §3 records as having been made twice already.
+    const spreadOrder = spreadOrdersOf(parseTermsDump(readFileSync(args.depth, 'utf8')));
+    console.log('');
+    console.log(`Gate over ${population.length} cases — spread from ${args.depth}`);
+    const gated = sweepPromotion(population, records, spreadOrder, [
+      { threshold: null },
+      { threshold: args.promotion },
+    ]);
+    console.log(formatPromotionTable(gated));
+    console.log('');
+    const control = gated[0];
+    const treatment = gated[1];
+    if (control === undefined || treatment === undefined)
+      throw new Error('the gate grid lost a point');
+    console.log(`control (gate off): ${control.correct}/${control.cases}`);
+    console.log(formatPromotionReadout(treatment));
+    const delta = treatment.correct - control.correct;
+    console.log(
+      `end to end           ${control.correct} → ${treatment.correct}` +
+        ` (${percent(control.top1)} → ${percent(treatment.top1)}), delta ${signed(delta)}`,
+    );
+    for (const [label, outcome] of [
+      ['control', control],
+      ['treatment', treatment],
+    ] as const) {
+      const tally = outcome.promotion;
+      if (tally === null) continue;
+      console.log('');
+      console.log(`census — ${label} (threshold ${tally.threshold ?? 'off'})`);
+      console.log(formatPromotionCensus(tally.census, outcome.cases));
+      if (tally.orderMissing > 0 || tally.orderDisagreement > 0) {
+        console.log(
+          `  orderMissing ${tally.orderMissing}, orderDisagreement ${tally.orderDisagreement}` +
+            ` — a non-zero disagreement means ${args.depth} and ${args.fingerprints} are not one run`,
+        );
+      }
+      if (tally.overrides > tally.band) {
+        // Structurally impossible: a promotion is counted in the band before it is counted as an override. The line
+        // exists because the alternative is that one of those two counters stops meaning what it says.
+        console.log(`  IMPOSSIBLE: ${tally.overrides} overrides in a ${tally.band}-case band`);
+      }
+    }
+
+    // The halves the pre-registration names. SHA-256 of the id — not `hashId`, which is the sampling stratum's
+    // FNV-1a — because the halves in `docs/agentic-promotion-gate.md` §4.1 are the SHA-256 ones and a re-derivation
+    // has to be the same split or it is a different test.
+    console.log('');
+    console.log('hash halves (SHA-256 of the case id, low bit)');
+    const halves: [HeadroomCase[], HeadroomCase[]] = [[], []];
+    for (const oneCase of population) halves[halfOf(oneCase.datapack)].push(oneCase);
+    for (const [label, subset] of [
+      ['A', halves[0]],
+      ['B', halves[1]],
+    ] as const) {
+      const [controlHalf, treatmentHalf] = sweepPromotion(subset, records, spreadOrder, [
+        { threshold: null },
+        { threshold: args.promotion },
+      ]);
+      if (controlHalf === undefined || treatmentHalf === undefined) throw new Error('lost a point');
+      const net = treatmentHalf.correct - controlHalf.correct;
+      console.log(
+        `  half ${label}: ${String(subset.length).padStart(5)} cases, ` +
+          `${controlHalf.correct} → ${treatmentHalf.correct}, net ${signed(net)}`,
+      );
+    }
+  }
 }
 
 await main();

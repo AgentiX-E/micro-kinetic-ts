@@ -79,3 +79,18 @@ export type {
 } from './nomination.js';
 
 export { CHANNEL_TABLE_HEADER, CHANNEL_TABLE_RULE, num, renderCandidateTable } from './table.js';
+
+export {
+  DEFAULT_PROMOTION_THRESHOLD,
+  PROMOTION_OFF,
+  PROMOTION_OUTCOMES,
+  formatPromotionCensus,
+  gatePromotion,
+} from './promotion.js';
+
+export type {
+  PromotionDecision,
+  PromotionOptions,
+  PromotionOutcome,
+  PublishedCandidate,
+} from './promotion.js';

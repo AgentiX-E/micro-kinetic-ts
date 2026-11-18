@@ -30,10 +30,12 @@
 
 import {
   DEFAULT_NOMINATION_OPTIONS,
+  DEFAULT_PROMOTION_THRESHOLD,
   NOMINATION_PROTOCOL,
   buildNominationPrompt,
   parseNominationReply,
   type NominationOptions,
+  type PublishedCandidate,
 } from '../../packages/ai/src/agent/index.js';
 
 import type { HeadroomCase } from './agentic-headroom.js';
@@ -62,6 +64,10 @@ export interface NominationArgs {
   readonly maxChannels: number;
   readonly maxRanked: number;
   readonly delta: number;
+  /** The terms dump a gate reads its spread from, or empty when there is none. */
+  readonly depth: string;
+  /** The gate's threshold, or `null` when the arm is a fusion. */
+  readonly promotion: number | null;
 }
 
 /**
@@ -72,7 +78,7 @@ export interface NominationArgs {
  * @throws Error on an unknown flag, a missing value or a value outside its range, so a typo cannot run a study.
  */
 export function parseNominationArgs(argv: readonly string[]): NominationArgs {
-  const args = {
+  const args: { -readonly [K in keyof NominationArgs]: NominationArgs[K] } = {
     fingerprints: '',
     verdicts: '',
     nominations: '',
@@ -84,6 +90,8 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     maxChannels: DEFAULT_NOMINATION_OPTIONS.maxChannels,
     maxRanked: DEFAULT_NOMINATION_OPTIONS.maxRanked,
     delta: 0.05,
+    depth: '',
+    promotion: null,
   };
   const numeric = new Map<string, (value: number) => void>([
     [
@@ -152,13 +160,32 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     else if (arg === '--verdicts') args.verdicts = value;
     else if (arg === '--nominations') args.nominations = value;
     else if (arg === '--model') args.model = value;
-    else throw new Error(`unknown flag ${arg}`);
+    else if (arg === '--depth') args.depth = value;
+    else if (arg === '--promotion') {
+      if (value === 'off') {
+        args.promotion = null;
+      } else {
+        const threshold = Number(value);
+        if (!Number.isFinite(threshold) || !(threshold > 0 && threshold < 1)) {
+          throw new Error(`--promotion must be 'off' or a threshold in (0, 1), got ${value}`);
+        }
+        args.promotion = threshold;
+      }
+    } else throw new Error(`unknown flag ${arg}`);
   }
   if (args.fingerprints === '' || args.verdicts === '') {
     throw new Error('--fingerprints and --verdicts are both required');
   }
   if (args.propose && args.nominations === '') {
     throw new Error('--propose writes an artifact, so --nominations is required');
+  }
+  if (args.promotion !== null && args.depth === '') {
+    // The gate's denominator is the spread, and the spread comes from the full scored order. Without `--depth` the
+    // only order in hand is the population's, whose width is whatever the dump was asked for — the exact
+    // substitution `docs/agentic-promotion-gate.md` §3 records as an error made twice already.
+    throw new Error(
+      '--promotion needs --depth: the gate reads its spread from the full scored order',
+    );
   }
   return args;
 }
@@ -385,4 +412,40 @@ export function formatNominationStudy(
     '',
     formatNominationRefusals(outcomes),
   ].join('\n');
+}
+
+/** One gate configuration. `null` is the control and is on the grid, so the table states its own baseline. */
+export interface GatePoint {
+  readonly threshold: number | null;
+}
+
+/**
+ * Score the gate against its own control.
+ *
+ * `strategy` and `weight` are passed through as the control's label and are **not read** by the gate path — a gate
+ * has one degree of freedom, the threshold, and the arm's table is printed by
+ * `formatPromotionTable` rather than by the fusion table. Passing them anyway keeps one
+ * `NominationOutcome` shape for both kinds of arm, which is what lets the two be differenced by a reader who trusts
+ * the loop rather than the formatting.
+ *
+ * @param cases - The paired population.
+ * @param records - Recorded answers, keyed by case.
+ * @param spreadOrder - The full scored order, by case — where the spread comes from.
+ * @param grid - Gate points to score. Defaults to the control plus the pre-registered threshold.
+ * @returns One outcome per point, in grid order.
+ */
+export function sweepPromotion(
+  cases: readonly HeadroomCase[],
+  records: ReadonlyMap<string, NominationRecord>,
+  spreadOrder: ReadonlyMap<string, readonly PublishedCandidate[]>,
+  grid: readonly GatePoint[] = [{ threshold: null }, { threshold: DEFAULT_PROMOTION_THRESHOLD }],
+): readonly NominationOutcome[] {
+  return grid.map((point) =>
+    scoreNomination(cases, records, {
+      strategy: 'rrf',
+      weight: 0,
+      promotion: { threshold: point.threshold },
+      spreadOrder,
+    }),
+  );
 }
