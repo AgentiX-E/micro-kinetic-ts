@@ -111,7 +111,7 @@ and not against a remembered one.
 It is the only arm of the four to raise a depth statistic, and that asymmetry is part of the reading rather than a
 consolation.
 
-### 6.1 The displacement, which is the measurement that explains the three columns
+### 6.1 The displacement and the regressed families — the two measurements a weight table hides
 
 A weight is not a lever. What a term buys is the number of decisions it changes, and what it costs is how far it
 moves them. Both are in the artifacts, because the per-case verdicts carry each arm's top-5:
@@ -126,6 +126,20 @@ At the **same weight**, the family-binned residual changes **6.3×** as many top
 71), and 79% of what it installs is a candidate the rest of the engine had ranked sixth or worse. That is not a
 perturbation on a ranking; it **is** the ranking. The unbinned residual, at the same weight, is a perturbation: 78%
 of its breakages are adjacent swaps (`rank1 ↔ rank2`) and only 11 cases come from outside the control's top-5.
+
+The criterion's **second** clause is `0` regressed families, and it is the clause no weight on this ladder comes
+close to:
+
+| arm | families | improved | regressed | flat | largest gain | largest regression |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1 `fleet 0.1` | 25 | 1 | **22** | 2 | `DNSRandom` +1 | `HTTPResponseReplaceCode` −78 |
+| A2 `fleet 0.4` | 25 | 0 | **22** | 3 | — | `HTTPResponseReplaceCode` −157 |
+| A3 `unbinned 0.1` | 25 | 2 | **12** | 11 | `NetworkDelay` +1, `JVMMySQLLatency` +1 | `NetworkCorrupt` −5, `NetworkPartition` −5 |
+
+A1's single improved family is `DNSRandom`, which has **one case in the whole corpus** — a `+1` that is one case,
+and a reminder that a family count with a one-member family in it prices a case and calls it a family. A3 regresses
+twelve of twenty-five and improves two, each by a single case, which is what an arm that permutes the head looks
+like from the criterion's side: eleven families untouched, twelve down by one to five, two up by one.
 
 ### 6.2 The unit error
 

@@ -6025,6 +6025,10 @@ every five of its breakages install a service the rest of the engine had ranked 
 a perturbation on this ranking: **it was the ranking.** A3, at the same weight, is a perturbation — 78% of its
 breakages are `rank1 ↔ rank2` swaps — which is why it loses 29 cases instead of 411 while *gaining* 7 at `Top@5`.
 
+The criterion's second clause (zero regressed families) is nowhere near satisfied and is measured separately: of the
+`25` fault families A1 improves **1** and regresses **22**, A2 improves **0** and regresses **22**, A3 improves **2**
+and regresses **12** — and A1's single improved family is `DNSRandom`, a family with **one case in the corpus**.
+
 ### 305.2 The residual has information; the standardisation has no portable scale
 
 `A2` puts the term in charge of 89.5% of the decisions it touches, so its `18.99%` is as close as this artifact
