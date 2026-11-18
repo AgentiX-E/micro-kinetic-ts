@@ -902,6 +902,41 @@ argues that such a number is not the measure it looks like.
   arms are statistical and causal rankers on an eight-dataset pool, while our `90.61%` is `top@1` on RCAEval's
   735 with the injection-time protocol, and the two share neither population nor metric.
 
+### 0c-iv. Two 2026 arrivals surfaced by the 2026-11-18 re-read — one taxonomy and one cost structure
+
+The re-read found **nothing above us** on any population we own, and re-verified the two entries already on
+record: **OpsHarness** (`arXiv:2608.25661`) is still `59.0%` top-1 across _"two public benchmarks and an
+industrial deployment"_ with `+63.4%` over a bare agent and `4.02×` over baseline RCA agents — three populations in
+one sentence and no per-population figure, so §0d's standing is unchanged — and **VerifyRCA** is confirmed as a
+real 2026 reference (`ICETIS 2026`, pp. 322–327, _LLM-Guided but
+Evidence-Verified Root Cause Analysis for Microservice Backends_); its `72%` on the 90-case RE2-OnlineBoutique slice
+was already recorded in §2b-ii and is unchanged by this pass. What the pass did add is two references that carry no
+number on our cells and are therefore filed here rather than in a table:
+
+- **`arXiv:2602.09937`**, Kim, Park, Yun & Lee, _Why Do AI Agents Systematically Fail at Cloud Root Cause
+  Analysis?_ (2026-02-10, `v2` 2026-03-04). A **process-level** failure analysis: the full **OpenRCA** benchmark,
+  **five** LLM models, **1 675** agent runs, failures classified into **12 pitfall types** across intra-agent
+  reasoning, inter-agent communication and agent-environment interaction. Two findings are load-bearing for us.
+  First, the dominant pitfalls — **hallucinated data interpretation** and **incomplete exploration** — persist
+  across every capability tier, which the authors read as evidence that the failures come from the **shared agent
+  architecture** and not from the model. Second, **prompt engineering alone does not resolve them**, while
+  enriching the **inter-agent communication protocol** cuts communication-related failures by up to **15 pp**.
+  Population is OpenRCA, not RCAEval and not RCABench, and **no `top@1` on any cell we print** appears in the
+  abstract — so no gap is quoted in either direction. It is named because it is the first published taxonomy of
+  what an agentic RCA loop gets wrong, and this repository's Phase III (`InvestigatorToolkit`, the `ReAct` loop)
+  is exactly the object the taxonomy describes: the paper's claim is that the failure lives in the architecture,
+  which is a **cheap prediction to test against our own agentic artifacts** before spending more runs on prompts,
+  and its 12 labels are an instrument we can adopt without adopting anyone's numbers.
+- **`arXiv:2601.02736`**, Zhang, Jia, Zhai, Pan, Duan, He, Xiao & Li (PKU / Alibaba / Tsinghua),
+  _Hypothesize-Then-Verify: Speculative Root Cause Analysis for Microservices with Pathwise Parallelism_
+  (**ICSE-NIER '26**, 2026-01-06). `SpecRCA`: a hypothesis-drafting module proposes
+  candidates and a **parallel** root-cause verifier validates them, motivated by two limitations it names in the
+  LLM-RCA literature — limited exploration diversity and dependence on large models, hence slow inference.
+  Preliminary experiments are on **AIOps 2022**, which is neither our corpus nor our metric, so there is **no
+  number to place**. It is named for its **cost structure**: draft cheap, verify in parallel, which is the shape to
+  borrow if wall-clock becomes our binding constraint. Our own loop is sequential by construction, and every
+  agentic readout this project has published is accuracy-only.
+
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 
 **OpsHarness**, _From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis_

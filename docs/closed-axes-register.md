@@ -5995,3 +5995,95 @@ residual stands.
 
 The arms and the falsifier are in `docs-repository:preregistration-302.md`; their readings belong to §6 of
 `docs/stability-dispersion.md`, which is empty until they exist.
+
+## §305 — The dispersion residual loses 411 cases at the weight that was supposed to let it be felt
+
+Four arms, one commit (`1c11c41`), FSE'26 RCABench on all 1 422 cases. The control reproduces the published
+bare-dispatch reading exactly, so the deltas below are same-commit deltas and not remembered ones.
+
+| arm | dispatch | Top@1 | Top@3 | Top@5 | saved | broke | net |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| control | `stability_weight=0` | 1 141 **80.24%** | 1 228 | 1 249 | — | — | — |
+| A1 | `scope=fleet, weight=0.1` | 730 **51.34%** | 1 045 | 1 123 | 19 | 430 | **−411** |
+| A2 | `scope=fleet, weight=0.4` | 270 **18.99%** | 603 | 782 | 12 | 883 | **−871** |
+| A3 | `scope=fleet_unbinned, weight=0.1` | 1 112 **78.20%** | 1 230 | 1 256 | 21 | 50 | **−29** |
+
+Runs `44210815387`, `44210819354`, `44210824103`, `44210828265`. The full reading, the prediction audit and the
+`Top@3`/`Top@5` asymmetry live in `stability-dispersion.md` §6; this entry records the closure and the three defects
+the closure exposes.
+
+### 305.1 The lever is the measurement a weight table hides
+
+| arm | top-1s changed | breakages installing a candidate the control ranked outside its top-5 |
+| --- | --- | --- |
+| A1 `fleet 0.1` | **449** | 340 / 430 = **79.1%** |
+| A2 `fleet 0.4` | **895** | 790 / 883 = **89.5%** |
+| A3 `unbinned 0.1` | **71** | 11 / 50 = **22.0%** |
+
+At the same weight the family-binned residual moves **6.3×** as many decisions as the unbinned one, and four of
+every five of its breakages install a service the rest of the engine had ranked sixth or worse. The term was never
+a perturbation on this ranking: **it was the ranking.** A3, at the same weight, is a perturbation — 78% of its
+breakages are `rank1 ↔ rank2` swaps — which is why it loses 29 cases instead of 411 while *gaining* 7 at `Top@5`.
+
+### 305.2 The residual has information; the standardisation has no portable scale
+
+`A2` puts the term in charge of 89.5% of the decisions it touches, so its `18.99%` is as close as this artifact
+gets to the residual's standalone top-1 rate — far above the `~5%` a random order over 20–50 candidates scores, and
+61 points below the composite. So the closure is **not** "`cv` carries no order information". It is:
+
+```
+fleet      : peers share units  →  cv values cluster  →  MAD → 0  →  residual → ±10²   (valid, unbounded)
+unbinned   : peers mix units    →  MAD is cross-family →  residual ~ O(1)              (bounded, invalid)
+```
+
+Validity and scale are **the same fact about the choice of reference**, and the pre-registration argued only
+validity. It anchored the weight at `0.1` by comparing it to the base term's `1` — an anchor on the weight axis,
+never on the product axis — and then predicted that a quantity with "no ceiling" would gain more at `0.4`. The
+quantity with no ceiling did move more; it moved the ranking. A MAD-standardised residual is a **significance**
+statistic, and multiplying a `t`-like number by a weight calibrated for bounded shares is a unit error.
+
+### 305.3 The falsifier fired, and its second sentence is false
+
+The pre-registered clause — "if both fleet points are at or below the control, the axis closes **as a class**" —
+is satisfied (`51.34%`, `18.99%`, both under `80.24%`), so the axis closes and no third transform of `cv` is
+dispatched under this pre-registration. The sentence attached to that clause — "not 'this residual is wrong' but
+'the dispersion statistic, in either reading, is not what decides these rankings'" — is refuted by the same
+artifacts: the term decided **449** rankings at `0.1` and **895** at `0.4`.
+
+This is §303's defect a second time, which makes it a pattern rather than an accident: **a compound falsifier
+yields one measured verdict and one unmeasured sentence, and the sentence is the one a later reader quotes.** From
+this entry forward a falsifier states one clause, and any mechanism claim it wants to make gets its own entry with
+its own artifact.
+
+### 305.4 Three pre-registration defects, named so the next one does not repeat them
+
+1. **An unmeasured anchor.** "`0.1`, an order of magnitude below the base term's `1`" compares two numbers on
+   different axes. The quantity that had to be anchored is `weight × residual`, and its typical magnitude was never
+   measured before the ladder was chosen — the one measurement this iteration could have taken offline and did not.
+2. **A bucket that cannot be populated.** Prediction 3 said the losses would sit on cases whose node is alone in
+   its metric family, "ABSENT and therefore inert rather than wrong". The guard that makes the term absent is the
+   same guard that removes it from the sum, so that bucket produces **no losses by construction**. Inert and wrong
+   are not two regions of one axis; they are mutually exclusive by the code.
+3. **An argument about validity used to predict a magnitude.** Prediction 4 ordered A3's regressed-family count
+   *behind* A1's "because unbinned peers mix families whose `cv` distributions do not overlap". That is a
+   distributional claim producing a scale prediction, and the artifacts reverse it (`50` against `430`) for the
+   reason in §305.2. Mixing families is what *bounds* the residual.
+
+### 305.5 What is closed, what stays open
+
+Closed **as a class**: the dispersion statistic as a ranking term, at any weight on the ladder, under either
+reading. Rejected on the primary statistic, both fleet points, no golden half read (the criterion is an AND and the
+FSE'26 half failed first), so `stabilityScope = 'fleet' | 'fleet_unbinned'` ships **unreachable by default** and
+keeps its tests as the record of what was tried.
+
+Not closed, and now specified: a **bounded** squash of the same residual (`tanh`, or a clip at three MADs), whose
+weight would mean "the largest contribution this term can add" and would therefore be portable across the binning
+key. It is a third transform of `cv`, so this pre-registration forbids dispatching it; it also is not what the
+falsifier prescribes next — the 11 bucket-C cases, whose truth leads on **nothing** and which no re-weighting of an
+existing term can reach. Order of work: bucket-C audit first, then a fresh pre-registration for the bounded form
+with its weight stated in *contribution* units and that magnitude measured **before** the arm.
+
+Also open, as an instrument defect rather than a finding: the promised count of the 163 stability-singleton cases
+that flip was **not** produced, because iteration 301's term dump — which carried the bucket-A labels — was not
+retained. An artifact that is thrown away cannot be re-read, and this is the second time in three iterations a
+census had to be rebuilt from the corpus for that reason.
