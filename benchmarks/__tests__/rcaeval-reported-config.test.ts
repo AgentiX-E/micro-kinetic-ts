@@ -571,7 +571,10 @@ describe('the RCAEval configuration line carries the configuration that produced
         // `docs/self-time-share.md` §6 refused or the fleet residual built in its place, so a line carrying only
         // the weight could belong to either arm — and the arm is the whole difference between a refusal and its
         // repair. Unconditional, like every other field on this half.
-        'selfTimeWeight=0 selfTimeScope=absolute victimWeight=0 dualFamilyWeight=0.25 ' +
+        // Iteration 302: the STATISTIC the stability weight reads, beside the self-time scope it mirrors.
+        // Unconditional on this half because the census requires every REPORTED field on the line, so the
+        // shipped artifact's byte sequence gains one token and the reading it produced is unchanged.
+        'selfTimeWeight=0 selfTimeScope=absolute stabilityScope=rank victimWeight=0 dualFamilyWeight=0.25 ' +
         'dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
         // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the

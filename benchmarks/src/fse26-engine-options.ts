@@ -32,6 +32,7 @@ import type {
   PoolAdmission,
   PrismPooling,
   SelfTimeScope,
+  StabilityScope,
   TopoClosure,
   TopoDiscountScope,
   TopologyFaultGraphConfig,
@@ -117,6 +118,7 @@ export interface Fse26SignalOptions {
    * configuration, and a scope the artifact cannot state is a run whose weight means one of two things.
    */
   readonly selfTimeScope: SelfTimeScope;
+  readonly stabilityScope: StabilityScope;
   /** Weight on the internal/external symmetry mask. Required for the same reason as the pool penalty. */
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus. Required for the same reason as the pool penalty. */
@@ -279,6 +281,7 @@ export function buildFse26EngineOptions(
       ...(profile === undefined ? {} : { faultFreeProfile: profile }),
       selfTimeWeight: opts.selfTimeWeight,
       selfTimeScope: opts.selfTimeScope,
+      stabilityScope: opts.stabilityScope,
       victimWeight: opts.victimWeight,
       selfAnomalyWeight: opts.selfAnomalyWeight,
       dualFamilyWeight: opts.dualFamilyWeight,

@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 706a4e8e7c01 -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 41fbca20ab8d -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -481,6 +481,39 @@ the scope reads something at weight zero, which is the only way this field could
 measured these nine cells", and that reading is the same one; the `config` field answers "what string does this
 code render for the shipped configuration", and that is the thing this iteration changed. Rolling all four would
 claim a battery that does not exist.
+
+### 0p-vii. The eighth correction — a statistic, no behaviour, and the defect found one stage upstream
+
+The digest moved again, `706a4e8e7c01 → 41fbca20ab8d`, and again **nothing the ranking does has changed**. The
+decisive-stability term gained a STATISTIC: `stabilityScope: 'rank' | 'fleet' | 'fleet_unbinned'`, where `rank` is
+`(n − 1 − rank)/(n − 1)` over the dominant metric's dispersion bonus — the reading every published number was
+taken with — and the two fleet words are a MAD-standardised residual against the node's metric family, plus its
+mechanism control (peers with no family binning). The reported line gained the field that names it:
+`stabilityScope=rank`.
+
+**The name is load-bearing for the same reason `selfTimeScope`'s is.** One weight can mean two statistics. An
+artifact carrying `stabilityWeight=0.1` alone cannot say whether `0.1` multiplied a rank or a residual, and those
+are different populations of evidence: iteration 301's sweep puts the rank's own optimum at ×40 with ×80 already
+negative, so a residual read at `0.1` is a different measurement, not a louder one.
+
+**The finding that changed the design, recorded before the arm runs.** The pre-registration
+(`docs-repository:preregistration-302.md`) was written against `breakdown.cv`, and that field is not a
+dispersion: it is `cvBonus = cv > 0.5 ? min(cv, 1.5) × 0.05 : 0` — hard-zeroed below `0.5`, saturated above `1.5`,
+and scaled into a band `0.05` wide in between. A residual standardised inside that band would have standardised
+three transformations rather than the node, and the 163 misses §4.4 of `PROGRESS_2026-11-17g.md` measured would
+have stayed lost. `AnomalyFeatures.dominantMetric.dispersionCv` therefore carries the raw `σ/μ` beside the bonus,
+and the residual reads that or nothing — no fallback, because a statistic that silently mixed a compressed value
+with an uncompressed one would be two statistics under one name. The binning key was corrected in the same
+pre-registration, in the same place, for the same reason: 50 services against 85–87 labels makes an exact-label
+reference 0.59 members wide, so the key is the metric FAMILY.
+
+**The prediction.** At `stabilityWeight = 0` under every scope the ranking is bit-identical, and at the shipped
+`0.007352` with `stabilityScope = 'rank'` — the default — nothing reads the new field at all. `RE1 345/375`,
+`RE2 249/270`, `RE3 72/90`, `TOTAL 666/735`, cell for cell, on the push-triggered battery.
+
+**What did NOT move, and why.** `battery` and `revision` are unchanged, on §0p-vi's rule: they answer "which run
+measured these nine cells" and that reading is the same one. Only `configuration` answers "what string does this
+code render for the shipped configuration", and that is the only thing this iteration changed.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 

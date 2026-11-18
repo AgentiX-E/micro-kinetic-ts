@@ -75,6 +75,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the self-time prior, shipped OFF and measured outside this search space: it is a transport-causality term whose weight is a dispatch question, not a fusion coefficient the search can move while it is 0',
   selfTimeScope:
     'the SCALE that prior is read against (absolute | fleet), which is a different question from how much weight it carries: `absolute` is the share `docs/self-time-share.md` §6 refused and `fleet` is the degree-conditioned residual built in its place, so the two are different populations of evidence and a search interpolating between them would be averaging two readings — the same reason `logNormalisation` and `topoDiscountScope` are held',
+  stabilityScope:
+    'the STATISTIC the decisive-stability weight reads (rank | fleet | fleet_unbinned), which is a different question from how much weight it carries: the rank is the reading `DEFAULT_STABILITY_WEIGHT`\u2019s criterion intersection was solved on and the fleet residual is a different population of evidence, so a search interpolating across them would be averaging two readings \u2014 the same reason `logNormalisation`, `topoDiscountScope` and `selfTimeScope` are held',
   emissionWeight:
     'the emission term, shipped OFF and REFUSED at the weight it was measured at (docs/emission-intensity.md: +9 on RE3:SockShop for -3, -2 and two -1s on four other cells), so there is no fusion coefficient here to search — a continuous search would spend its evaluations interpolating toward an arm the record already rejected',
   traceSkipsLeader:

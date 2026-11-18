@@ -35,6 +35,7 @@ import type {
   PoolAdmission,
   PrismPooling,
   SelfTimeScope,
+  StabilityScope,
   TopoClosure,
   TopoDiscountScope,
   TransientGuardTest,
@@ -47,6 +48,7 @@ import {
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_SELF_TIME_SCOPE,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
 } from '../../packages/tree/src/index.js';
@@ -181,6 +183,7 @@ export interface FSE26RunConfig {
    * carrying only the weight could belong to either arm.
    */
   readonly selfTimeScope: SelfTimeScope;
+  readonly stabilityScope: StabilityScope;
   /** Weight on the internal/external symmetry mask; `0` = the shipped configuration. */
   readonly victimWeight: number;
   /** Weight on the dual-family presence bonus; `0` = the shipped configuration. */
@@ -457,6 +460,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'latMinRise',
   'poolMetricPenaltyWeight',
   'stabilityWeight',
+  'stabilityScope',
   'faultFreeWeight',
   'faultFreeSelection',
   'selfTimeWeight',
@@ -702,6 +706,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // produced it — a cost with no reader's benefit, since the field is still reachable on the artifact the moment a
   // dispatch states `fleet`. `docs/self-time-share.md` §6 refused the absolute arm; a `fleet` line is the only
   // thing that can distinguish that arm from the repair built on top of it.
+  // Appended only off the shipped pole, on the same rule as `selfTimeScope`: the published artifacts must stay
+  // byte-identical, and a token that repeated the default on every line would be a value no run varies.
+  if (config.stabilityScope !== DEFAULT_STABILITY_SCOPE) {
+    line += ` stabilityScope=${config.stabilityScope}`;
+  }
   if (config.selfTimeScope !== DEFAULT_SELF_TIME_SCOPE) {
     line += ` selfTimeScope=${config.selfTimeScope}`;
   }

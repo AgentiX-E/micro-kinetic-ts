@@ -44,6 +44,7 @@ import type {
   OnsetShape,
   PrismPooling,
   SelfTimeScope,
+  StabilityScope,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
@@ -70,6 +71,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
@@ -190,6 +192,7 @@ export interface AblationSignalOptions {
    * it — the battery's subject is Deng Yu's terms and this is a precondition on one of them.
    */
   readonly selfTimeScope: SelfTimeScope;
+  readonly stabilityScope: StabilityScope;
   /**
    * The internal/external symmetry mask. Held at the shipped value by every row, on the rule the six
    * inherited terms above follow: the study's flags are binary and this term's shipped weight is 0, so no
@@ -825,6 +828,7 @@ export function buildAblationEngineOptions(
       stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       selfTimeWeight: overrides.selfTimeWeight ?? DEFAULT_SELF_TIME_WEIGHT,
       selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
+      stabilityScope: DEFAULT_STABILITY_SCOPE,
       victimWeight: overrides.victimWeight ?? DEFAULT_VICTIM_WEIGHT,
       selfAnomalyWeight: overrides.selfAnomalyWeight ?? DEFAULT_SELF_ANOMALY_WEIGHT,
       emissionWeight: overrides.emissionWeight ?? DEFAULT_EMISSION_WEIGHT,
@@ -885,6 +889,7 @@ export function formatAblationConfigLine(
     `failedEdgeGateMode=${signals.failedEdgeGateMode} failedEdgeGateShare=${signals.failedEdgeGateShare} ` +
     `stabilityWeight=${signals.stabilityWeight} selfTimeWeight=${signals.selfTimeWeight} ` +
     `selfTimeScope=${signals.selfTimeScope} ` +
+    `stabilityScope=${signals.stabilityScope} ` +
     `selfAnomalyWeight=${signals.selfAnomalyWeight} emissionWeight=${signals.emissionWeight} ` +
     `victimWeight=${signals.victimWeight} ` +
     `dualFamilyWeight=${signals.dualFamilyWeight} dualFamilyGate=${signals.dualFamilyGate} ` +

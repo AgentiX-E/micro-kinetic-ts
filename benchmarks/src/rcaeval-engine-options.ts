@@ -49,6 +49,7 @@ import type {
   PoolAdmission,
   PrismPooling,
   SelfTimeScope,
+  StabilityScope,
   TopoClosure,
   TopoDiscountScope,
   TopoPrecedence,
@@ -108,6 +109,7 @@ export interface RCAEvalSignalOptions {
    * by omission would report a run whose weight multiplies a statistic it never named.
    */
   readonly selfTimeScope: SelfTimeScope;
+  readonly stabilityScope: StabilityScope;
   /**
    * The emission term — the collision source's own `Δλ`, in errors per request.
    *
@@ -332,6 +334,7 @@ export function buildRCAEvalEngineOptions(
       selfAnomalyWeight: opts.selfAnomalyWeight,
       selfTimeWeight: opts.selfTimeWeight,
       selfTimeScope: opts.selfTimeScope,
+      stabilityScope: opts.stabilityScope,
       emissionWeight: opts.emissionWeight,
       victimWeight: opts.victimWeight,
       dualFamilyWeight: opts.dualFamilyWeight,
@@ -459,6 +462,11 @@ export function formatSignalLine(opts: CliOptions): string {
     // scale it multiplies is the one omission the artifact cannot survive — `docs/self-time-share.md` §6 refused
     // the `absolute` arm and this is the field that names its replacement.
     `selfTimeWeight=${opts.selfTimeWeight} selfTimeScope=${opts.selfTimeScope} ` +
+    // The STATISTIC that weight reads, printed beside the scope of the term above it because both answer
+    // "which quantity does this coefficient multiply". Unconditional for the census reason: every REPORTED
+    // field has to be named on this line, and a half that could print the weight without the statistic it
+    // reads would render the rank arm and the residual arm identically.
+    `stabilityScope=${opts.stabilityScope} ` +
     `victimWeight=${opts.victimWeight} ` +
     `dualFamilyWeight=${opts.dualFamilyWeight} ` +
     // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the

@@ -42,6 +42,7 @@ import type {
   LogSignalMode,
   PoolAdmission,
   SelfTimeScope,
+  StabilityScope,
   TopoClosure,
   TopoDiscountScope,
   TransientGuardTest,
@@ -86,6 +87,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
@@ -114,10 +116,12 @@ import {
   isPoolAdmission,
   isPrismPooling,
   isSelfTimeScope,
+  isStabilityScope,
   isTopoClosure,
   isTopoDiscountScope,
   isTransientGuardTest,
   SELF_TIME_SCOPES,
+  STABILITY_SCOPES,
   TRANSIENT_GUARD_TESTS,
   type DualFamilyGateMode,
   type FailedEdgeGateMode,
@@ -408,6 +412,19 @@ export interface Fse26CliOptions {
    * this repo published one 24.2pp off the best-measured value.
    */
   readonly stabilityWeight: number;
+  /**
+   * Which STATISTIC the stability weight reads — the case rank, or the dispersion read against the metric
+   * family.
+   *
+   * `rank` is the shipped statistic and the one `DEFAULT_STABILITY_WEIGHT`'s criterion intersection was solved
+   * on; `fleet` and `fleet_unbinned` are the repair and its mechanism control. A new statistic invalidates that
+   * intersection rather than inheriting it, which is why the fleet arms carry their own weight ladder — the
+   * rank's permission ends at `0.008032` and the residual's typical magnitude is `O(1)`.
+   *
+   * Refused on an unknown word rather than defaulted: the scope decides what the weight multiplies, so a typo
+   * that fell back would publish the rank arm under the repair's name.
+   */
+  readonly stabilityScope: StabilityScope;
   /**
    * Weight on the FAULT-FREE FREQUENCY prior, SHIPPED OFF at {@link DEFAULT_FAULT_FREE_WEIGHT} = 0.
    *
@@ -826,6 +843,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    stabilityScope: DEFAULT_STABILITY_SCOPE,
     faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
     faultFreeProfilePath: undefined as string | undefined,
     faultFreeSelection: 'rarest' as FaultFreeSelection,
@@ -988,6 +1006,16 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
       // turn a blank flag into a measurement of the ablation).
       opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
+    } else if (arg === '--stability-scope' && hasValue(argv, i + 1)) {
+      // Refused rather than defaulted, on `--self-time-scope`'s rule: the scope decides what the weight
+      // multiplies, so a typo that fell back to `rank` would publish the rank arm under the repair's name.
+      const value = argv[++i]!;
+      if (!isStabilityScope(value)) {
+        throw new Error(
+          `--stability-scope must be one of ${Object.keys(STABILITY_SCOPES).join(', ')}, got ${value}`,
+        );
+      }
+      opts.stabilityScope = value;
     } else if (arg === '--fault-free-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` on the same rule as every other weight: an empty value falls back to the
       // SHIPPED weight rather than selecting a configuration nobody asked for.

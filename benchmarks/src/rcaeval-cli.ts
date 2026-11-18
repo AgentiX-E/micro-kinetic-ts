@@ -79,6 +79,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
@@ -93,7 +94,9 @@ import {
   isFailedEdgeOverrideRule,
   isOnsetShape,
   isSelfTimeScope,
+  isStabilityScope,
   SELF_TIME_SCOPES,
+  STABILITY_SCOPES,
   type DualFamilyGateMode,
   type FailedEdgeCredit,
   type FailedEdgeGateMode,
@@ -110,6 +113,7 @@ import type {
   PoolAdmission,
   PrismPooling,
   SelfTimeScope,
+  StabilityScope,
   TopoClosure,
   TopoPrecedence,
 } from '../../packages/tree/src/index.js';
@@ -342,6 +346,18 @@ export interface CliOptions {
    * was REJECTED for moving four of the nine golden cells, one of them by 15.8pp.
    */
   stabilityWeight: number;
+  /**
+   * Which STATISTIC that weight reads — `rank`, `fleet` or `fleet_unbinned` (see `StabilityScope`).
+   *
+   * `rank` is the shipped statistic and the one `DEFAULT_STABILITY_WEIGHT`'s criterion intersection was solved
+   * on; the two fleet words are the dispersion residual and its mechanism control (peers by metric family, or
+   * by nothing). A new statistic invalidates that intersection rather than inheriting it, which is why the
+   * fleet arms carry their own weight ladder.
+   *
+   * Refused on an unknown word rather than defaulted: the scope decides what the weight multiplies, so a typo
+   * that fell back would publish the rank arm under the repair's name.
+   */
+  stabilityScope: StabilityScope;
   /**
    * Weight on the FAULT-FREE FREQUENCY prior, SHIPPED OFF at the engine's 0.
    *
@@ -881,6 +897,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    stabilityScope: DEFAULT_STABILITY_SCOPE,
     faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
     faultFreeProfilePath: undefined,
     faultFreeSelection: 'rarest',
@@ -1014,7 +1031,16 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
     } else if (args[i] === '--stability-weight' && hasValue(args, i + 1))
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
-    else if (args[i] === '--fault-free-weight' && hasValue(args, i + 1))
+    else if (args[i] === '--stability-scope' && hasValue(args, i + 1)) {
+      // Refused rather than defaulted, on `--self-time-scope`'s rule: the scope decides what the weight
+      // multiplies, so a typo that fell back to `rank` would publish the rank arm under the repair's name.
+      const value = args[++i]!;
+      if (!isStabilityScope(value))
+        throw new Error(
+          `--stability-scope must be one of ${Object.keys(STABILITY_SCOPES).join(', ')}, got ${value}`,
+        );
+      opts.stabilityScope = value;
+    } else if (args[i] === '--fault-free-weight' && hasValue(args, i + 1))
       opts.faultFreeWeight = parseWeight(args[++i]!, DEFAULT_FAULT_FREE_WEIGHT);
     else if (args[i] === '--fault-free-profile' && hasValue(args, i + 1))
       opts.faultFreeProfilePath = args[++i]!;

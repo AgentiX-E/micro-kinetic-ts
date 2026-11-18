@@ -34,6 +34,7 @@ import {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_CLOSURE,
@@ -81,6 +82,7 @@ describe('buildFse26EngineOptions', () => {
       // forwarded into `topology` would be read by no pruner field at all, and at weight 0 it is inert, so the
       // drop would be invisible in every number.
       selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
+      stabilityScope: DEFAULT_STABILITY_SCOPE,
       victimWeight: DEFAULT_VICTIM_WEIGHT,
       // The base term's coefficient, on the same rule as every weight here: read from the engine's own
       // constant, and it must land in `signals` because that is the object the pruner reads it from.

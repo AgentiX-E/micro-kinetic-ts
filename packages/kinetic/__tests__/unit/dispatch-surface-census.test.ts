@@ -324,6 +324,8 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // Iteration 301: the SCALE that weight reads, packed beside it because the two are one configuration — a
     // weight without its scope is a number that means two different statistics.
     '--self-time-scope',
+    // Iteration 302: the decisive-stability statistic, packed on the same rule and the same reason.
+    '--stability-scope',
     // Iteration 138: a GUARD rather than a weight, and it travels in the packed block for the same reason —
     // the golden half has no input of its own to spend (25/25 used).
     '--suppress-zero-baseline-latency',
@@ -411,6 +413,7 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     '--anomaly-breadth-weight',
     '--anomaly-breadth-gate',
     '--self-time-weight',
+    '--stability-scope',
     // Iteration 301: the scale beside the weight, on the rule every entry here follows — a knob the golden half
     // cannot dispatch is an arm with an undecidable other side.
     '--self-time-scope',
@@ -745,6 +748,16 @@ const KNOBS: Readonly<
     // dispatchable on BOTH halves or the arm has an undecidable side. `docs/self-time-share.md` §6 refused the
     // `absolute` share on the golden half; a scope the FSE'26 half alone could state would leave that refusal
     // untestable where it was made.
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  stabilityScope: {
+    flag: '--stability-scope',
+    owner: 'stability-dispersion.md',
+    // Both packed blocks, on `selfTimeScope`'s rule and for its reason: the weight and the statistic it
+    // multiplies are a pair, and an arm whose scope only one half could state has an undecidable other half.
+    // The two fleet words are separate members rather than a boolean because the mechanism control — peers
+    // with no family binning — has to be dispatchable or it is not a control.
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
@@ -1127,6 +1140,10 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   // refusal is what makes it load-bearing here: `docs/self-time-share.md` §6 refused `absolute` on the golden
   // half, so an axis the FSE'26 half alone could state would leave the repair's deciding half unreachable.
   'selfTimeScope',
+  // Iteration 302: the STATISTIC the stability weight reads. Both halves, on `selfTimeScope`'s rule: the
+  // criterion is an AND across the two populations, so a scope one half alone could state would make the
+  // golden half's refusal unreachable.
+  'stabilityScope',
   'stabilityWeight',
   'victimWeight',
   'dualFamilyWeight',

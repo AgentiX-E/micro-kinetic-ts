@@ -5935,3 +5935,63 @@ That is the closing fact, and it is narrower than §8's falsifier anticipated. T
 it failed to price transport; it is refused, on this population, because the population cannot see it. §6's
 refusal on the golden nine cells stands as the only measured judgement of the statistic, and it stands
 unchanged.
+
+## §304 — The stability statistic's resolution was destroyed one stage upstream, not by the rank
+
+Iteration 301 measured 163 misses whose truth outscores the winner on exactly one term — `stability` — and closed
+with an arithmetic problem rather than an answer: one rank step on a 49-candidate case is `1/48 = 0.0208` while the
+median winner-truth gap is `0.53`, so the rank needs a multiplier near **×350** to close it, and `×160` already
+loses 65 cases. `docs/stability-dispersion.md` is the design record for the repair; this entry is what the repair
+found on the way, because the finding changed the design before any arm ran.
+
+### 304.1 The second defect, and it is not the rank
+
+The pre-registration was written against `breakdown.cv`. That field is not a dispersion:
+
+```
+cvBonus = cv > 0.5 ? min(cv, 1.5) × anomalyCvWeight : 0        anomalyCvWeight ships at 0.05
+```
+
+Three transformations before the rank ever sees it — **hard-zeroed** below `cv = 0.5`, **saturated** above
+`cv = 1.5`, and **scaled into a band `0.05` wide** in between. So the rank is ordering a quantity whose resolution
+was destroyed one stage earlier, and a residual standardised *inside* that band would have standardised the three
+transformations rather than the node. The 163 cases would have stayed lost, and the arm would have reported "the
+residual does not help" about a statistic that was never handed the raw quantity.
+
+`AnomalyFeatures.dominantMetric.dispersionCv` now carries the raw `σ/μ` beside the bonus, and
+`computeDispersionResiduals` reads it **or nothing** — no fallback to `breakdown.cv`, because a statistic that
+silently mixed a compressed value with an uncompressed one would be two statistics under one name.
+
+This is the third time in this register that a term's apparent failure was a SCALE question one level down: §6 of
+`self-time-share.md` refused an absolute share against an unseen fleet, §303 found a term with no population at
+all, and this one finds a statistic reading a pre-compressed input. The pattern is worth naming: **before
+concluding that a statistic cannot separate, check what it was handed.**
+
+### 304.2 The binning key, corrected by arithmetic rather than by taste
+
+The pre-registration first said "peers = candidates whose dominant metric LABEL is the same". A case carries **50
+services against 85–87 distinct labels**, so an exact-label bin averages **0.59 members** and almost every node
+would be alone in its family — the term ABSENT **by construction**, which is the failure mode §6 of
+`self-time-share.md` taught us to name before dispatching rather than after. The key is the metric **family**: the
+label's first two dot-separated segments (`k8s.pod`, `jvm.memory`, `container.cpu`, `db.client`, `http.server`), or
+the whole name below that. `k8s.pod.memory.rss` and `k8s.deployment.desired` must not share a reference even though
+both begin with `k8s`, because their `cv` distributions do not live on one scale.
+
+The correction is recorded **in the pre-registration**, not in a commit message: a key chosen after the reading is
+a key chosen after the reading, and this one was chosen before it, from the corpus's own two numbers.
+
+### 304.3 What ships, and what is measured
+
+`stabilityScope: 'rank' | 'fleet' | 'fleet_unbinned'`, shipped at `'rank'` — the statistic every published number
+was taken with. At `stabilityWeight = 0` every scope is bit-identical by construction; at the shipped `0.007352`
+under `'rank'`, the new field is never read. `fleet_unbinned` is a member rather than a boolean because the
+mechanism control has to be dispatchable: it prices the FAMILY KEY, which is the part of the design that costs
+something (binning makes the term ABSENT far more often). If it matches `fleet`, the key is refuted while the
+residual stands.
+
+`DispersionCensus` counts what the pass could see from the same loop that writes the scores — `services`,
+`measured`, `families`, `singletonFamilies`, `scored`, and `absent` decomposed into `peerShort` and `zeroMad` — so
+"the reference was too thin" and "the reference had no spread" are different readings rather than one refusal.
+
+The arms and the falsifier are in `docs-repository:preregistration-302.md`; their readings belong to §6 of
+`docs/stability-dispersion.md`, which is empty until they exist.

@@ -168,6 +168,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // would be testing the refusal rather than the arity — and `fleet` is the arm this flag exists to name, since
   // `absolute` is both the shipped default and the arm `docs/self-time-share.md` §6 already refused.
   '--self-time-scope': 'fleet',
+  // Iteration 302: which STATISTIC the stability weight reads. A word union of three, so `1` is refused; the
+  // probe names `fleet` rather than `fleet_unbinned` because the binned residual is the arm the flag exists to
+  // reach and the unbinned one is its control.
+  '--stability-scope': 'fleet',
   // Iteration 265: which of a candidate's channels the fault-free prior reads. A word union of two, so `1` is
   // refused; `dominant` is the arm this flag exists to be able to name, since `rarest` is the shipped default.
   '--fault-free-selection': 'dominant',

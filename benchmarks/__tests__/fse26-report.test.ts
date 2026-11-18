@@ -70,6 +70,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     latMinRise: 1,
     poolMetricPenaltyWeight: 0,
     stabilityWeight: 0,
+    // The pair travels together here too: the weight alone could belong to either statistic.
+    stabilityScope: 'rank',
     faultFreeWeight: 0,
     faultFreeSelection: 'rarest',
     selfTimeWeight: 0,
@@ -191,6 +193,7 @@ describe('FSE26 report — attribution', () => {
       'latMinRise',
       'poolMetricPenaltyWeight',
       'stabilityWeight',
+      'stabilityScope',
       'faultFreeWeight',
       'faultFreeSelection',
       'selfTimeWeight',
