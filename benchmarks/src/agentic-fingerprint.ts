@@ -66,15 +66,21 @@ import {
  * model reads instead of one of the first nine.
  */
 export const DEFAULT_FINGERPRINT_OPTIONS = {
-  maxCandidates: 5,
   maxChannels: 8,
   sigma: DEFAULT_FAULT_FREE_SIGMA,
 } as const;
 
-/** How the fingerprint is sized and how wide the band it reads is. */
+/**
+ * How a fingerprint is sized, and how wide the band it reads is.
+ *
+ * There is deliberately **no** `maxCandidates` here. The width of the artifact is a property of the ORDER the
+ * caller passes, so the caller states it once, by slicing, and this builder carries what it is given. A cap at
+ * this layer was a second owner of one decision, and the second owner won silently: `--fingerprint-top-k 20`
+ * produced a twenty-wide order that was then truncated to five here, so 1 422 cases reported 7 110 candidates
+ * (exactly five each) and the log printed the width it had asked for. That is the defect this removal closes, and
+ * it is the same shape as `closed-axes-register.md` §307's: an input the record could not see.
+ */
 export interface FingerprintOptions {
-  /** Ranked candidates to carry. Default {@link DEFAULT_FINGERPRINT_OPTIONS.maxCandidates}. */
-  readonly maxCandidates?: number;
   /** Channels per candidate to carry, the most decisive first. Default `8`. */
   readonly maxChannels?: number;
   /**
@@ -211,10 +217,10 @@ function summariseChannel(
  * in the fingerprint calibrated against the case being healthy; both now decide the order.
  *
  * @param input - The case's channels, the engine's ranking, its injection time and the corpus profile.
- * @returns At most `maxCandidates` fingerprints and the census of what was left out.
+ * @returns One fingerprint per candidate of `input.ranking` — no more, no fewer — and the census of what was left
+ *   out.
  */
 export function buildCandidateFingerprints(input: FingerprintInput): FingerprintBuild {
-  const maxCandidates = input.options?.maxCandidates ?? DEFAULT_FINGERPRINT_OPTIONS.maxCandidates;
   const maxChannels = input.options?.maxChannels ?? DEFAULT_FINGERPRINT_OPTIONS.maxChannels;
   const sigma = input.options?.sigma ?? DEFAULT_FINGERPRINT_OPTIONS.sigma;
 
@@ -235,8 +241,7 @@ export function buildCandidateFingerprints(input: FingerprintInput): Fingerprint
   }
 
   const candidates: CandidateFingerprint[] = [];
-  const cappedAt = Math.max(0, Math.min(maxCandidates, input.ranking.length));
-  for (let rank = 0; rank < cappedAt; rank++) {
+  for (let rank = 0; rank < input.ranking.length; rank++) {
     const result = input.ranking[rank]!;
     const measurements: ChannelFingerprint[] = [];
     const labels = new Set<string>();

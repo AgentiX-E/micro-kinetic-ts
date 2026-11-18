@@ -6395,3 +6395,82 @@ Three consequences, and the third is the one that changes the roadmap.
 The care this needs is stated in `agentic-promotion-gate.md` §10.2 and one item is worth repeating here:
 `Retrieval@50 = 100 %` on this corpus, so `92.55 %` is a conditional rate and quoting it without its denominator
 would be the mistake that paper warns about.
+
+## §309 — The width axis gets an instrument, and the instrument had two owners
+
+`agentic-promotion-gate.md` §10 put the gate in the failure decomposition and left one number unanswered: the
+ceiling at width 5 is `87.83 %`, the ceiling at width 20 is `92.12 %`, and the published best is `90.0 %`. So
+"does presentation width help" is not a matter of taste — it is the difference between a road that cannot reach
+the target and one that can. Answering it needs one thing this repository did not have: **an artifact holding
+twenty candidates.**
+
+### 309.1 The flag, and the property it has to have
+
+`--fingerprint-top-k` widens the elimination fingerprint. `docs/agentic-presentation-width.md` owns it; what
+belongs here is the property and the measurement of it.
+
+The arm is differenced against arm G, whose control is `1 156 / 1 422`. A run whose published width could be
+dispatched would move `Top@5` as well as the window, and then no reading of the delta would say which of the two
+moved. So the flag widens the ARTIFACT: the published ranking stays `analyze(graph, 5)`, computed before the field
+is read.
+
+Verified rather than argued, by running both widths over the whole corpus and comparing the artifacts:
+
+| artifact | width 5 | width 20 |
+| --- | --- | --- |
+| `per-case.ndjson` | `2778b294de9f…` | identical |
+| `terms.ndjson` | `4b1dadd057f4…` | identical |
+| `results.json` | `068d1af8d96f…` | identical |
+| `Top@1` / `Top@3` / `Top@5` | 1 156 / 1 228 / 1 249 | identical |
+| candidates carried | 7 110 | **28 440** |
+
+### 309.2 The defect: the width had a second owner, and it won silently
+
+The first run of the widened instrument printed `requested width 20 (published 5)` and wrote **7 110 candidates
+over 1 422 cases — exactly five each.** `buildCandidateFingerprints` capped at
+`DEFAULT_FINGERPRINT_OPTIONS.maxCandidates = 5`, after the widest order the runner could hand it. The flag lost and
+the log reported the number it had asked for.
+
+This is §307's shape one layer down. There the missing input was a profile file the artifact could not name; here
+it was a default inside the flag's own consumer. Both produced a run that reported a configuration it had not
+measured, and neither produced an error.
+
+The repair is removal rather than plumbing: the builder now carries **the order it is given**, so the width has one
+owner — the caller's slice — and its test counts candidates instead of sampling them. A test asserting "the first
+two of a three-candidate order are carried" passed throughout the defect's life; a test asserting the count would
+not have.
+
+### 309.3 What the widened population moves, and what it does not
+
+The dump is the engine's answer **at that width**, and a structural pass permutes *the list it is handed*, so a
+twenty-wide order is not the published five plus fifteen:
+
+| width 5 vs width 20 | cases |
+| --- | ---: |
+| position 1 differs | **0** |
+| position 2 differs | **0** |
+| first difference at position 4 | 2 |
+| first difference at position 5 | 15 |
+| any of the first five differs | **17** |
+
+Seventeen in 1 422, at the same positions as the fingerprint-versus-terms discrepancy `agentic-promotion-gate.md`
+§9.3 recorded. The control is untouched (`engineOrderOf` reads position 1, which never differs, and the gate-off
+arm over this population reads `1 156`), and the arm's prompts are *not* a strict superset of arm G's — on 1.2 %
+of the corpus the last two visible rows are ordered differently. That is stated because a reader who assumed
+otherwise would be reading a cleaner experiment than the one that ran.
+
+### 309.4 The price, corrected before dispatch
+
+`docs-repository:preregistration-305.md` registered `~4.0 M` prompt tokens, extrapolating the width-5 measurement
+of 2 772 tokens per case. The per-case cost is not a constant: it is a function of the table, and the table is what
+the flag changes.
+
+| | width 5 | width 20 |
+| --- | ---: | ---: |
+| table rows over the corpus | 63 897 | 255 181 |
+| ratio | — | **3.99** |
+| projected total prompt tokens | 3.94 M | **15.74 M** |
+
+So the arm costs about four times what was registered. The error is the one this line of work keeps making — a
+quantity measured at one width applied at another — and it is recorded here rather than at the end, because the
+point of pricing an arm is to be able to decline it.

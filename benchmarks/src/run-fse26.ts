@@ -63,6 +63,7 @@ import { buildContainmentPruner, quietEngineOptions } from './containment-pruner
 import { buildContainmentRow } from './containment-row-build.js';
 import { ContainmentRowDump } from './containment-rows.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
+import { fingerprintSourceOrder } from './fingerprint-width.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
 import { DepthDump, formatDepthLadder, readDepthDump } from './ranking-depth.js';
@@ -75,7 +76,7 @@ import {
   summariseBoundaryCensus,
   type BoundaryObservation,
 } from './fse26-boundary-census.js';
-import { parseFSE26Args } from './fse26-cli.js';
+import { parseFSE26Args, PUBLISHED_TOP_K } from './fse26-cli.js';
 import {
   PER_CASE_RANK_LIMIT,
   writePerCaseVerdicts,
@@ -310,7 +311,7 @@ async function main(): Promise<void> {
           benchCase.metrics,
           toFaultGraphOptions(benchCase, benchCase.injectTime),
         );
-        ranking = pruner.analyze(faultGraph, 5);
+        ranking = pruner.analyze(faultGraph, PUBLISHED_TOP_K);
         // The term's own census, taken from the SAME inputs the scorer reads and only when the weight asks for it.
         // A term that ships at 0 has never been exercised on this corpus, and "the arm moved nothing" has two
         // very different causes a ranking cannot separate: the normalisation is silent, or the map was never
@@ -417,9 +418,18 @@ async function main(): Promise<void> {
     // run never made.
     if (fingerprintDump !== undefined && faultFreeProfile !== undefined) {
       const injectTimeMs = benchCase.injectTime > 0 ? benchCase.injectTime : 0;
+      // The width the artifact carries, which is NOT the width the run publishes unless the flag is absent. The
+      // decision is a function so that the default path can be asserted to be the same OBJECT and not merely an
+      // equal array -- see `fingerprint-width.ts` for why that distinction is the arm's whole validity.
+      const source = fingerprintSourceOrder({
+        published: ranking,
+        width: opts.fingerprintTopK,
+        nodeCount: benchCase.callGraph.nodes.size,
+        widen: (k) => (faultGraph === undefined ? [] : pruner.analyze(faultGraph, k)),
+      });
       const built = buildCandidateFingerprints({
         metrics: benchCase.metrics,
-        ranking,
+        ranking: source,
         injectTimeMs,
         profile: faultFreeProfile,
       });
@@ -534,9 +544,13 @@ async function main(): Promise<void> {
     // The census is printed rather than only written: a fingerprint that offered nothing is indistinguishable
     // from a model that abstained, and the four counters are what tell the two apart.
     const summary = fingerprintDump.summary;
+    // The REQUESTED width is printed beside the realised counts, because those two numbers are not the same
+    // sentence: a run that asked for twenty and wrote five because every case was capped is an artifact of a
+    // different population than one that asked for five, and only the request distinguishes them.
     console.log(
       `  Fingerprints: ${summary.cases} cases, ${summary.candidates} candidates, ` +
-        `${summary.channels} channels -> ${summary.path}`,
+        `${summary.channels} channels, requested width ${opts.fingerprintTopK === 0 ? 'every' : String(opts.fingerprintTopK)} ` +
+        `(published ${PUBLISHED_TOP_K}) -> ${summary.path}`,
     );
     console.log(
       `  Fingerprint census: considered=${summary.census.considered} offered=${summary.census.offered} ` +

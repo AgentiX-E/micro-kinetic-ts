@@ -186,9 +186,23 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   '--containment-depth': '5',
 };
 
+/**
+ * Companion flags a value-taking flag needs before the parser will accept it.
+ *
+ * A cross-flag rule turns one accepted flag into a flag that is only accepted IN COMPANY, and a census that drove
+ * every flag alone would then be asserting a property the parser deliberately does not have. Recording the
+ * company here is what keeps "every accepted flag is accepted" a true statement rather than a relaxed one — and
+ * an entry appearing in this map is a statement that the flag has a `requires` rule, so the map cannot quietly
+ * grow to excuse a flag that is simply broken.
+ */
+const COMPANIONS: Readonly<Record<string, readonly string[]>> = {
+  '--fingerprint-top-k': ['--fingerprint-out', 'f.ndjson'],
+};
+
 function argvFor(one: AcceptedFlag): string[] {
-  if (!one.takesValue) return [one.flag];
-  return [one.flag, MODE_VALUES[one.flag] ?? '1'];
+  const company = COMPANIONS[one.flag] ?? [];
+  if (!one.takesValue) return [one.flag, ...company];
+  return [one.flag, MODE_VALUES[one.flag] ?? '1', ...company];
 }
 
 describe('an unrecognised argument fails loudly', () => {

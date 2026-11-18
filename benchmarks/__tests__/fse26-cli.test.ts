@@ -33,11 +33,13 @@ import {
 
 import {
   DEFAULT_CONTAINMENT_DEPTH,
+  DEFAULT_FINGERPRINT_TOP_K,
   DEFAULT_FSE26_LOG_MODE,
   isLogSignalMode,
   parseFSE26Args,
 } from '../src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../src/fse26-engine-options.js';
+import { NOT_REPORTED_FSE26_OPTION_KEYS } from '../src/fse26-run-config.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from '../src/rcaeval-engine-options.js';
 
@@ -278,6 +280,62 @@ describe('parseFSE26Args — other flags', () => {
       for (const value of ['2.5', '-3', 'ten', 'NaN']) {
         expect(() => parseFSE26Args(['--containment-depth', value])).toThrow(/containment-depth/);
       }
+    });
+  });
+
+  describe('the elimination fingerprint width', () => {
+    it('defaults to the five the engine publishes, and says so by not being set', () => {
+      // The default is not a number this flag supplies: it is the ABSENCE of the flag. That is what makes the
+      // default path the same code path it was before the flag existed, which is the only form of
+      // default-preservation a reader can check by reading.
+      expect(parseFSE26Args([]).fingerprintTopK).toBe(DEFAULT_FINGERPRINT_TOP_K);
+      expect(DEFAULT_FINGERPRINT_TOP_K).toBe(5);
+    });
+
+    it('parses a widened width onto its own field', () => {
+      expect(
+        parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', '20'])
+          .fingerprintTopK,
+      ).toBe(20);
+    });
+
+    it('reads 0 as "every candidate", the same sentence its sibling dump flag uses', () => {
+      // Two dump-width flags in one parser must not give `0` two meanings. `--containment-depth` spells it
+      // "every candidate", so this one does too.
+      expect(
+        parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', '0'])
+          .fingerprintTopK,
+      ).toBe(0);
+    });
+
+    it('refuses a non-integer, a negative and a non-numeric width', () => {
+      for (const value of ['2.5', '-3', 'twenty', 'NaN']) {
+        expect(() =>
+          parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', value]),
+        ).toThrow(/fingerprint-top-k/);
+      }
+    });
+
+    it('refuses a width that no writer would use', () => {
+      // A width without the file it widens is a flag that does nothing, and an arm dispatched that way would read
+      // a five-wide artifact and report the width it asked for. The default is not refused, because the default
+      // is the absence of the flag rather than a request.
+      expect(() => parseFSE26Args(['--fingerprint-top-k', '20'])).toThrow(/fingerprint-out/);
+      expect(
+        parseFSE26Args(['--fingerprint-top-k', '5', '--fingerprint-out', 'f.ndjson'])
+          .fingerprintTopK,
+      ).toBe(5);
+      expect(parseFSE26Args(['--fingerprint-out', 'f.ndjson']).fingerprintTopK).toBe(
+        DEFAULT_FINGERPRINT_TOP_K,
+      );
+    });
+
+    it('is NOT part of the reported configuration, and the reason is checkable', () => {
+      // A widening changes the WIDTH of an artifact and not the ranking the run publishes: the ranking is
+      // computed from `analyze(graph, 5)` before this flag is consulted. The list is asserted here rather than
+      // left to the parity test, because a field that leaves the list silently changes every config digest in
+      // `docs/sota-comparison.md`, and an anchor moving is easier to miss than an assertion failing.
+      expect(NOT_REPORTED_FSE26_OPTION_KEYS).toContain('fingerprintTopK');
     });
   });
 

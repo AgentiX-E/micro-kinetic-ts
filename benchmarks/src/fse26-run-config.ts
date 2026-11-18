@@ -84,6 +84,13 @@ export const NO_FAULT_FREE_PROFILE: FaultFreeProfileState = { digest: null };
  * would make byte-equal configurations look different — the opposite defect to the one above, and the reason
  * this is a named list rather than "everything the builder felt like copying".
  *
+ * `fingerprintTopK` is here for a reason worth stating separately, because it is the only member that changes
+ * what an ARTIFACT CONTAINS rather than where it is written: it widens the elimination fingerprint and leaves the
+ * published ranking at `analyze(graph, 5)`. The distinction is checkable rather than argued — the ranking is
+ * computed before the field is read, so a run at any width writes the same `per-case` rows and the same terms
+ * dump. The one thing that does change is the fingerprint's own width, and a dump states that itself: its
+ * `capped` census counts the cases the width cut.
+ *
  * `dropMetrics` is NOT here: it changes the ranking, so it is reported.
  */
 export const NOT_REPORTED_FSE26_OPTION_KEYS = [
@@ -99,6 +106,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'depthOut',
   'containmentOut',
   'containmentDepth',
+  'fingerprintTopK',
   'faultFreeProfilePath',
 ] as const;
 

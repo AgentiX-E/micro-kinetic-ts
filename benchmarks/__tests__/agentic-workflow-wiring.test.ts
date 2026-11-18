@@ -139,6 +139,52 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(invocation).toContain('"${MAX_CASES_ARG[@]}"');
   });
 
+  it('writes the terms dump and carries it to the study, because the gate divides by it', () => {
+    // The gate's denominator is the spread over the FULL scored order, which no other artifact holds: the
+    // fingerprint is cut at the presentation width and the depth row keeps a first-hit index. A workflow that
+    // dispatched `--promotion` without this file would be refused by the parser, so the failure would be loud —
+    // but it would be loud AFTER the measure job spent its twenty-five minutes.
+    expect(WORKFLOW).toContain('--terms-dump artifacts/agentic/terms.ndjson');
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).toContain('artifacts/agentic/terms.ndjson');
+    // And it reaches the study through a conditional array, like every other optional input: `--depth ''` would
+    // be a path to a file called nothing, which is a different failure from an absent flag.
+    expect(WORKFLOW).toContain('DEPTH_ARG=()');
+    expect(WORKFLOW).toContain('DEPTH_ARG=(--depth artifacts/agentic/terms.ndjson)');
+  });
+
+  it('states the presentation width ONCE, and never on the published ranking', () => {
+    // Two inputs for one decision is how a dispatch comes to show a twenty-wide table while scoring the
+    // five-wide one. The width input reaches `run-fse26` as `--fingerprint-top-k` (an artifact), and reaches the
+    // nomination runner as `--max-candidates`/`--max-ranked` (the prompt). It must not appear anywhere else: a
+    // `--top-k` on the engine invocation would change the published ranking and make the arm incomparable with
+    // the one it is differenced against.
+    expect(WORKFLOW).toContain('FINGERPRINT_WIDTH_ARG=()');
+    expect(WORKFLOW).toContain(
+      'FINGERPRINT_WIDTH_ARG=(--fingerprint-top-k "${{ inputs.fingerprint_top_k }}")',
+    );
+    expect(WORKFLOW).toContain(
+      'WIDTH_ARG=(--max-candidates "${{ inputs.fingerprint_top_k }}" --max-ranked "${{ inputs.fingerprint_top_k }}")',
+    );
+    const invocation = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-fse26.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/results.txt'),
+    );
+    expect(invocation).not.toMatch(/--fingerprint-top-k/);
+    expect(invocation).toContain('"${FINGERPRINT_WIDTH_ARG[@]}"');
+    // `0` is the measure step's spelling of "every candidate" and has no counterpart in the nomination parser.
+    expect(WORKFLOW).toContain('"${{ inputs.fingerprint_top_k }}" != "0"');
+  });
+
+  it('forwards the gate as a word or a number, and never as an empty string', () => {
+    // `Number('off')` is NaN, so `off` has to reach the parser as the WORD; an empty input has to reach it as
+    // nothing at all, because an empty threshold would be a band of zero rather than a control.
+    expect(WORKFLOW).toContain('PROMOTION_ARG=()');
+    expect(WORKFLOW).toContain('PROMOTION_ARG=(--promotion "${{ inputs.promotion }}")');
+    expect(WORKFLOW).toContain('if [ -n "${{ inputs.promotion }}" ]; then');
+  });
+
   it('takes the corpus through the one action that owns it, and keeps no second copy', () => {
     // The defect this forbids is the one §0p records one level up: two copies of a gate, one of which goes
     // quiet. The provenance call appears in the action and in no workflow.

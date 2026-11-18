@@ -186,6 +186,27 @@ export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
  */
 export const DEFAULT_CONTAINMENT_DEPTH = 5;
 
+/**
+ * How many candidates the elimination FINGERPRINT carries unless asked otherwise.
+ *
+ * `5` is the width the engine publishes, so the default is the shipped artifact to the candidate and the flag's
+ * absence is the same code path the dump had before the flag existed. Raising it does **not** widen the ranking
+ * the run publishes: the fingerprint is re-derived at a wider cut of the same total order, exactly as the terms
+ * dump already is, and `results.json` — `Top@1`, `Top@3`, `Top@5` — is computed from the five-wide ranking as
+ * before. The flag changes the artifact a presentation-width arm reads, and nothing else.
+ */
+export const DEFAULT_FINGERPRINT_TOP_K = 5;
+
+/**
+ * The width of the ranking a run PUBLISHES.
+ *
+ * A constant and not an option, because every number in `docs/sota-comparison.md` is the accuracy of a ranking
+ * cut here: `Top@1` and `Top@3` are properties of the order, `Top@5` is its length, and a run whose published
+ * width was a flag would print `Top@5` for a five-wide answer and a five-wide answer for a twenty-wide one. It is
+ * named so that the one place that widens an ARTIFACT can say what it is widening relative to.
+ */
+export const PUBLISHED_TOP_K = 5;
+
 /** Parsed command-line options for one benchmark run. */
 export interface Fse26CliOptions {
   readonly dataDir: string;
@@ -269,8 +290,8 @@ export interface Fse26CliOptions {
   /**
    * Path to write the per-case elimination FINGERPRINT to (empty = none).
    *
-   * The artifact an elimination layer is allowed to read: at most five ranked candidates, at most eight channels
-   * each, and five numbers per channel — the case's own medians either side of the injection, the fault-free band
+   * The artifact an elimination layer is allowed to read: as many ranked candidates as `--fingerprint-top-k`
+   * asks for (five unless told otherwise), at most eight channels each, and five numbers per channel — the case's own medians either side of the injection, the fault-free band
    * the corpus profile published, the rate that channel leaves it in clean windows, and when it first did. It
    * carries no label, for the reason `agentic-fingerprint-file.ts` records: an arm that can see a fingerprint and
    * a label in one object can condition on the label by accident.
@@ -279,6 +300,23 @@ export interface Fse26CliOptions {
    * `NON_ENGINE_OPTION_KEYS` and `NOT_REPORTED_FSE26_OPTION_KEYS` both name it.
    */
   readonly fingerprintOut: string;
+  /**
+   * How many candidates the fingerprint carries (0 = every candidate).
+   *
+   * The knob a PRESENTATION-WIDTH arm needs. The arm's question is what a model does when it is shown twenty
+   * candidates instead of five, and the only honest way to ask it is to hand the arm an artifact that holds
+   * twenty: widening the prompt over a five-wide fingerprint would show the model twenty rows it could not
+   * verify, and widening the RUN would move `Top@5` and make the arm incomparable with the one it is differenced
+   * against.
+   *
+   * So this widens the artifact alone. The published ranking is `analyze(graph, 5)` and is computed before this
+   * field is read, which is the invariant that makes it safe to leave the field out of the reported
+   * configuration: a run at `--fingerprint-top-k 20` and one at the default are the same configuration and
+   * differ in what they wrote, which is exactly the relation `NOT_REPORTED_FSE26_OPTION_KEYS` describes.
+   *
+   * `0` means every candidate, the same sentence `--containment-depth` uses for the same word.
+   */
+  readonly fingerprintTopK: number;
   /**
    * Path to write the per-case RANKING DEPTH to (empty = none).
    *
@@ -832,6 +870,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     depthOut: '',
     containmentOut: '',
     containmentDepth: DEFAULT_CONTAINMENT_DEPTH,
+    fingerprintTopK: DEFAULT_FINGERPRINT_TOP_K,
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -948,6 +987,17 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
         );
       }
       opts.containmentDepth = depth;
+    } else if (arg === '--fingerprint-top-k' && hasValue(argv, i + 1)) {
+      // `0` is "every candidate" and is legal; a negative or fractional width is refused rather than rounded,
+      // for the reason `--containment-depth` records above: a clamped value publishes an artifact of a width the
+      // command line did not ask for, and an arm reading it would report a window nobody dispatched.
+      const width = Number(argv[++i]!);
+      if (!Number.isInteger(width) || width < 0) {
+        throw new Error(
+          `--fingerprint-top-k must be 0 (every candidate) or a non-negative integer, got ${String(argv[i])}`,
+        );
+      }
+      opts.fingerprintTopK = width;
     } else if (arg === '--drop-metrics' && hasValue(argv, i + 1))
       opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
@@ -1182,6 +1232,18 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
           'or the flag before it is missing its value',
       );
     }
+  }
+
+  // Cross-flag rules, at the tail because they are about the COMBINATION rather than about either value. This is
+  // the first one in this parser and it is here rather than in the runner so that it can be driven: a rule in
+  // `run-fse26.ts` sits behind a module that calls `main()` at import time, which is the reason this file exists.
+  //
+  // `--fingerprint-top-k` widens a FILE. Asking for a width without asking for the file is a flag that does
+  // nothing, and an arm dispatched with a width and no writer would read a five-wide artifact and report the
+  // width it asked for — the `--log-mode count` defect one surface over, where the value was accepted and
+  // silently did not reach its consumer.
+  if (opts.fingerprintTopK !== DEFAULT_FINGERPRINT_TOP_K && opts.fingerprintOut === '') {
+    throw new Error('--fingerprint-top-k requires --fingerprint-out');
   }
 
   return opts;

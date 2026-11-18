@@ -276,6 +276,12 @@ export default defineConfig({
         // the difference from the outside.
         'src/case-slicing.ts',
         'src/load-stats.ts',
+        // Added with the module: the one decision a presentation-width arm rests on — whether the ordering a
+        // fingerprint is built from is the published one, a slice of it, or a second pass at a wider cut. Its
+        // whole value is the branch that does NOTHING: at the published width the function must hand back the
+        // array it was given, by identity, because a slice that equals it is a different code path and the arm's
+        // control would then be produced by something the treatment does not share.
+        'src/fingerprint-width.ts',
         // Added with the module: obtaining a collector a plain dispatch does not expose. Its whole value is the
         // difference between a release and a reclamation — the runner drops 3 GB of cases per cell and, without a
         // collection, keeps every page until V8 next feels pressure.

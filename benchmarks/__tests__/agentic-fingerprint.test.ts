@@ -320,18 +320,34 @@ describe('buildCandidateFingerprints', () => {
     expect(shown).toEqual(kept.slice(0, 2));
   });
 
-  it('carries only the first `maxCandidates` of the posterior, keeping the engine order and 0-based ranks', () => {
+  it('carries EVERY candidate of the order it is given, keeping the engine order and 0-based ranks', () => {
+    // No cap here, on purpose: the width is the caller's, stated once by slicing the order. A cap at this layer
+    // truncated a deliberately widened `--fingerprint-top-k 20` back to five and the run printed the width it had
+    // asked for — 1 422 cases, 7 110 candidates, exactly five each. A test of "the first two are carried" would
+    // have passed throughout, which is why this one counts instead.
     const built = buildCandidateFingerprints({
       metrics: metricsOf('svc', [series('cpu', [1, 1, 1], [2, 2, 2])]),
       ranking: [result('svc', 1, 3), result('other', 2, 2), result('third', 3, 1)],
       injectTimeMs: T0,
       profile: profileOf({ cpu: { centre: 1, scale: 0.1, rate: 0 } }),
-      options: { maxCandidates: 2 },
     });
     expect(built.candidates.map((candidate) => [candidate.service, candidate.rank])).toEqual([
       ['svc', 0],
       ['other', 1],
+      ['third', 2],
     ]);
+  });
+
+  it('carries a narrowed order as the narrow order it was given', () => {
+    // The other direction, and the one a caller uses to ASK for five: slice first, then build. Two candidates in,
+    // two out — the builder neither re-ranks nor re-widens.
+    const built = buildCandidateFingerprints({
+      metrics: metricsOf('svc', [series('cpu', [1, 1, 1], [2, 2, 2])]),
+      ranking: [result('svc', 1, 3), result('other', 2, 2)],
+      injectTimeMs: T0,
+      profile: profileOf({ cpu: { centre: 1, scale: 0.1, rate: 0 } }),
+    });
+    expect(built.candidates.map((candidate) => candidate.service)).toEqual(['svc', 'other']);
   });
 
   it('falls back to confidence when the producer did not populate a final score', () => {
@@ -371,6 +387,6 @@ describe('buildCandidateFingerprints', () => {
   });
 
   it('publishes the documented defaults, the band width being the profile own constant', () => {
-    expect(DEFAULT_FINGERPRINT_OPTIONS).toEqual({ maxCandidates: 5, maxChannels: 8, sigma: 3 });
+    expect(DEFAULT_FINGERPRINT_OPTIONS).toEqual({ maxChannels: 8, sigma: 3 });
   });
 });

@@ -89,6 +89,31 @@ on:
         description: 'Model the eliminator is asked as. It is an input rather than a constant because the published 2026 tables separate models by more than they separate frameworks, so the arm has to be measurable per model'
         required: false
         default: 'deepseek-chat'
+      # ── The presentation-width arm ────────────────────────────────────────────────────────────────────────────
+      #
+      #   Widens the ELIMINATION FINGERPRINT and nothing else: the run''s published ranking stays at the five the
+      #   engine publishes, so `Top@1`, `Top@3`, `Top@5` and every number in `docs/sota-comparison.md` are computed
+      #   from the same five-wide answer whichever value is dispatched. That is the property that makes the arm
+      #   interpretable — it varies the window the model is shown, and the engine is held fixed.
+      #
+      #   The nomination step reads the same number as `--max-candidates`, so one input states one window. Empty =
+      #   the shipped five. `0` is legal here (every candidate) and is NOT forwarded to the nomination step,
+      #   whose parser has no such sentinel.
+      fingerprint_top_k:
+        description: 'How many candidates the elimination fingerprint carries, and therefore how wide a table the model is shown (empty = 5, the width the run publishes; 0 = every candidate, measure only)'
+        required: false
+        default: ''
+      # ── The promotion gate ────────────────────────────────────────────────────────────────────────────────────
+      #
+      #   `off` is the control and is a WORD rather than a number, because `Number('off')` is NaN and the two
+      #   spellings have to be told apart explicitly or a control would be refused as a malformed threshold.
+      #   A number sets the gate''s band as a fraction of the case''s own spread over the FULL scored order; the
+      #   spread comes from the terms dump this workflow now writes, which is why the threshold and the dump are
+      #   dispatched together. See `docs/agentic-promotion-gate.md` for the registered reading at 0.03.
+      promotion:
+        description: 'Promotion gate threshold as a fraction of the case''s own spread (empty = the gate is not consulted, `off` = the explicit control, a number in (0,1) = the arm)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -211,19 +236,36 @@ jobs:
               CONTAINMENT_ARG=(--no-containment-order)
             fi
           fi
+          #   The fingerprint WIDTH, on the same conditional rule as `--max-cases`: the runner owns its own
+          #   default, and an empty input must not become a flag. It widens an artifact and not the ranking, which
+          #   is why it is safe for a dispatch to state it on a surface whose published numbers are quoted
+          #   elsewhere -- the run's own `Top@1`/`Top@3`/`Top@5` are computed from the five-wide answer either way.
+          FINGERPRINT_WIDTH_ARG=()
+          if [ -n "${{ inputs.fingerprint_top_k }}" ]; then
+            FINGERPRINT_WIDTH_ARG=(--fingerprint-top-k "${{ inputs.fingerprint_top_k }}")
+          fi
+          #   The TERMS dump is new here and it is what the promotion gate divides by. Its array order is the
+          #   engine's answer at the width it was asked for, and the gate reads `full[0]`, `full[1]` and
+          #   `min(score)` -- the answer, the margin and the denominator -- none of which the width of the
+          #   PRESENTED list can move. A gate dispatched without this file is refused by the parser rather than
+          #   scored against the fingerprint's own width, which is the defect `agentic-promotion-gate.md` §3
+          #   records having made three times.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
             --fingerprint-out artifacts/agentic/fingerprints.ndjson \
             --per-case-out artifacts/agentic/per-case.ndjson \
             --depth-out artifacts/agentic/depth.ndjson \
+            --terms-dump artifacts/agentic/terms.ndjson \
             --containment-out artifacts/agentic/containment.ndjson \
             --output artifacts/agentic/results.json \
             "${CONTAINMENT_ARG[@]}" \
+            "${FINGERPRINT_WIDTH_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
           echo "depth lines:       $(wc -l < artifacts/agentic/depth.ndjson)"
+          echo "terms lines:       $(wc -l < artifacts/agentic/terms.ndjson)"
           #   The containment dump is the only artifact that can carry H2's population: ρ is a property of an EDGE
           #   over many cases, and a pair that was never inverted leaves no trace in the published answer. It is
           #   written at the SHIPPED depth (5), because that is the population every containment measurement in
@@ -254,6 +296,7 @@ jobs:
             artifacts/agentic/fingerprints.ndjson
             artifacts/agentic/per-case.ndjson
             artifacts/agentic/depth.ndjson
+            artifacts/agentic/terms.ndjson
             artifacts/agentic/containment.ndjson
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
@@ -547,12 +590,36 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
           set -o pipefail
+          #   THREE derived arguments, each stated by an input rather than by this file:
+          #
+          #   - `--max-candidates` / `--max-ranked` follow `fingerprint_top_k`, so ONE number states one window.
+          #     Two inputs for one decision is how a dispatch comes to show a twenty-wide table while scoring the
+          #     five-wide answer. `0` is not forwarded: it is the measure step's spelling of "every candidate" and
+          #     the nomination parser has no such sentinel, so forwarding it would be read as a malformed width.
+          #   - `--depth` is the terms dump, which the gate divides by. Passed only when it exists, so a study over
+          #     an older artifact still runs its fusion arms; a `--promotion` without it is refused by the parser.
+          #   - `--promotion` is the gate itself. `off` is the control and a number is the arm.
+          WIDTH_ARG=()
+          if [ -n "${{ inputs.fingerprint_top_k }}" ] && [ "${{ inputs.fingerprint_top_k }}" != "0" ]; then
+            WIDTH_ARG=(--max-candidates "${{ inputs.fingerprint_top_k }}" --max-ranked "${{ inputs.fingerprint_top_k }}")
+          fi
+          DEPTH_ARG=()
+          if [ -f artifacts/agentic/terms.ndjson ]; then
+            DEPTH_ARG=(--depth artifacts/agentic/terms.ndjson)
+          fi
+          PROMOTION_ARG=()
+          if [ -n "${{ inputs.promotion }}" ]; then
+            PROMOTION_ARG=(--promotion "${{ inputs.promotion }}")
+          fi
           pnpm exec tsx benchmarks/src/run-agentic-nomination.ts \
             --fingerprints artifacts/agentic/fingerprints.ndjson \
             --verdicts artifacts/agentic/per-case.ndjson \
             --nominations artifacts/agentic/nominations.ndjson \
             --propose \
             --model "${{ inputs.model }}" \
+            "${WIDTH_ARG[@]}" \
+            "${DEPTH_ARG[@]}" \
+            "${PROMOTION_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/nomination.txt
 
       - name: Say why the nomination arm did not run

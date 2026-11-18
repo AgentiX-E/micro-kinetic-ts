@@ -274,6 +274,15 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     'populations of one run rather than two configurations of it: the default is 5 because that is the depth ' +
     'every containment number in `docs/containment-order.md` was measured at, and a depth of 1 is refused by ' +
     'name because it carries no adjacent pair at all',
+  fingerprintTopK:
+    'how many candidates the elimination FINGERPRINT carries (--fingerprint-top-k); a property of the ARTIFACT ' +
+    'rather than of the ranking, on the same rule as the depth above. The published ranking is computed at the ' +
+    'width the run reports — five — before this field is read, so a run at twenty writes the same `per-case` ' +
+    'rows, the same terms dump and the same `Top@1`: verified by running both and comparing the three artifacts ' +
+    'byte for byte, not argued. It is not a knob because it multiplies nothing; it is the input a ' +
+    "PRESENTATION-WIDTH arm needs, because that arm's question is what a model does with a wider table and the " +
+    'only honest way to ask it is to hand the arm an artifact that holds one. `docs/agentic-presentation-width.md` ' +
+    'owns the reading it made possible',
 };
 
 /**
@@ -1403,6 +1412,17 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'containment number in `docs/containment-order.md` was measured at, so a dispatch must not be able to move ' +
     'it and then quote those numbers against a different population; a reader who needs a wider population ' +
     're-runs the local arm, which is also where the profile it needs can be named',
+  // And the fingerprint's WIDTH, under the same caveat as the three dumps above: `benchmark-agentic.yml` DOES
+  // pass it, because the presentation-width arm needs an artifact wider than the ranking the run publishes, and
+  // that workflow is outside this census's scan set. The entry therefore means "no BENCHMARK dispatch reaches
+  // it" — the safe direction, since a benchmark surface that could widen the artifact would be a surface on
+  // which a reader could mistake the arm's window for the run's published width.
+  '--fingerprint-top-k':
+    'how many candidates the elimination fingerprint carries. A property of the ARTIFACT and not of the ranking: ' +
+    "the published answer is computed at the run's own width before this field is read, so the run reports the " +
+    'same `Top@1`, `Top@3` and `Top@5` at any value — verified by running two widths and comparing the `per-case` ' +
+    'rows, the terms dump and the results file byte for byte. A benchmark dispatch must not reach it, because ' +
+    "the arm that needs a wider artifact reads a study workflow's dump and not a benchmark cell",
 };
 
 /**
