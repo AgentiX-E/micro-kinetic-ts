@@ -1490,7 +1490,7 @@ const OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE: Readonly<Record<string, string>> =
  * `faultFreeProfilePath`, filed here because a dispatch that could name a profile could name one fitted on
  * another corpus. That claim survives and is now enforced one table below, where the flag is reachable but no
  * input maps onto it: the FSE'26 surface had to start passing it, because a cell measured without it reports the
- * shipped containment pass as "no change" (78.20 % against 81.29 % on one corpus, register §310.5). An entry
+ * shipped containment pass as "no change" (80.24 % against 81.29 % on one corpus, register §314). An entry
  * leaves this table only when the requirement it states is enforced somewhere stronger, which is why the
  * emptiness is asserted rather than assumed.
  */
@@ -1509,8 +1509,9 @@ const OPERATIONAL_OPTIONS_REACHABLE_FROM_NEITHER: Readonly<Record<string, string
  * unreachability. The FSE'26 benchmark surface had to start passing the flag, because its published cell was
  * measured with the containment pass inert: the pass ships ON and reads the corpus's per-channel excursions, and
  * without a profile it has nothing to read. On one corpus manifest and one set of engine defaults the two cells
- * read **78.20 % (1 112)** without a profile and **81.29 % (1 156)** with one (register §310.5) — a 44-case
- * difference that is a property of a MISSING FILE, not of the engine.
+ * read **80.24 % (1 141)** without a profile and **81.29 % (1 156)** with one (register §314) — a 15-case
+ * difference that is a property of a MISSING FILE, not of the engine. (The first draft of this docblock said
+ * 78.20 % and 44 cases: it quoted an ARM's reading as the control, which `register §314` records.)
  *
  * So the direction is stated as the stronger pair of claims instead: every workflow that reaches the flag calls
  * the action that derives it, and NO input in any workflow maps onto it. A dispatch therefore still cannot name a

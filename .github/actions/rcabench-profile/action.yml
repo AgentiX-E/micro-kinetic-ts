@@ -9,10 +9,11 @@ description: >-
 
   `benchmark-agentic.yml` built the profile inline: derive a cache key, restore, build, save. That was correct
   while it was the only consumer. The FSE'26 benchmark surface is now the second, and it is the one whose
-  published cell needs it: on the SAME corpus manifest, with the SAME engine defaults, the surface that cannot
-  supply a profile reads **1 112 / 1 422 = 78.20 %** and the surface that can reads **1 156 / 1 422 = 81.29 %**
-  -- +44 at Top@1, -7 at Top@5 (register §310.5). A published cell measured with the shipped pass switched off
-  by an ABSENT FILE is not a cell for this engine.
+  published cell needs it: on the SAME corpus manifest and with the SAME engine defaults, the surface that cannot
+  supply a profile reads **1 141 / 1 422 = 80.24 %** and the surface that can reads **1 156 / 1 422 = 81.29 %**
+  -- +15 at Top@1, with Top@3 and Top@5 identical to the digit, because every one of the fifteen is a
+  `rank 2 -> rank 1` swap (register §314). A published cell measured with the shipped pass switched off by an
+  ABSENT FILE is not a cell for this engine.
 
 
   Copying the key derivation into the second workflow is the defect this repository keeps finding one level up

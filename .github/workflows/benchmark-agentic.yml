@@ -178,8 +178,8 @@ jobs:
       #
       #   It is an ACTION rather than four steps here, because the FSE'26 benchmark surface is now the
       #   second consumer and the two must not be able to drift: that surface's published cell was measured
-      #   at 78.20 % with the pass inert (no profile) against 81.29 % with it speaking on the same corpus
-      #   (register §310.5), so both workflows ask the same owner for the same artifact.
+      #   at 80.24 % with the pass inert (no profile) against 81.29 % with it speaking on the same corpus
+      #   (register §314), so both workflows ask the same owner for the same artifact.
       - name: Build the fault-free profile
         uses: ./.github/actions/rcabench-profile
         with:

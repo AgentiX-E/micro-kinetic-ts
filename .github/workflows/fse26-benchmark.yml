@@ -148,13 +148,14 @@ jobs:
       #   The containment pass ships ON (`DEFAULT_CONTAINMENT_ORDER`) and is inert without a profile: it reads
       #   the corpus's per-channel excursions to decide whether an adjacent pair is inverted. A cell measured
       #   without one therefore reports the pass as "no change" — which is a statement about a missing file, not
-      #   about the engine. Measured on one corpus manifest with identical engine defaults (register §310.5):
+      #   about the engine. Measured on one corpus manifest with identical engine defaults (register §314):
       #
-      #     without a profile  1 112 / 1 422 = 78.20 %   Top@3 1 230   Top@5 1 256
+      #     without a profile  1 141 / 1 422 = 80.24 %   Top@3 1 228   Top@5 1 249
       #     with one           1 156 / 1 422 = 81.29 %   Top@3 1 228   Top@5 1 249
       #
-      #   +44 at Top@1 and -7 at Top@5, which is what a pass that permutes the list it is handed does: it moves
-      #   answers up to the front and a few out of the five. The profile is BUILT here from the corpus this job
+      #   +15 at Top@1 and NOTHING at Top@3/Top@5: pairing the two per-case artifacts, fifteen cases move the
+      #   truth from rank 2 to rank 1, two move it from 3 to 2, sixty-four permute only below the reported width,
+      #   and no case loses a position. The profile is BUILT here from the corpus this job
       #   just downloaded — never named by a dispatch, which could name one fitted on another corpus — and the
       #   action derives its cache key from that corpus's converter digest times the builder's own sources.
       - name: Build the fault-free profile

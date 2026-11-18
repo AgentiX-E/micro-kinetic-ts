@@ -156,6 +156,12 @@ const RETIRED = [
   // the reading being retired.
   '659/735',
   '25/30',
+  // ── Retired by the FSE'26 configuration repair (iteration 307, §0p-ix and register §314): the cell now measures
+  // the engine it ships, with the containment pass able to read the fault-free profile. Both forms, because the
+  // document prints both — and the movement is TWO causes at once, which is why §0p-ix tabulates them separately
+  // rather than attributing the whole delta to the repair.
+  '1073/1422',
+  '75.46',
   // ── Retired by iteration 254's ENROLMENT of the emission term under its jurisdiction (§0p-iv). The
   // configuration digest moved with it (`1a67d9681c45` → `a0ed4a8a906e`), so this is the first retirement in the
   // list that is an arm rather than a repair: every reading below was correct for the configuration that

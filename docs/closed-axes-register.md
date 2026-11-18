@@ -6639,6 +6639,14 @@ surface — from the corpus it just downloaded, keyed by the same digest — mak
 engine actually ships, and it costs one engine run and no model calls. It is recorded here as a defect in the
 published cell rather than as an arm, because that is what it is.
 
+> **CORRECTED BY §314, and both readings above are affected.** (a) `44210828265` is not the bare dispatch on
+> `1c11c41`; it is **arm A3** (§305), whose control `44210815387` is the run that reads `1 141`. There is no
+> push-triggered FSE'26 battery on this workflow at all — every run of it in the archive is a `workflow_dispatch` —
+> so the sentence "the push-triggered battery reads `1 112`" describes a run that does not exist and an arm that
+> does. (b) The shipped configuration with the pass inert reads **1 141 (80.24 %)**, not 1 112; the repair is worth
+> **+15**, not +44, and Top@3/Top@5 are identical on both sides. The defect is real and the repair is right; only
+> the price was misread, and it was misread because a run id was taken from a table instead of from the artifact.
+
 ## §311 — What the model is TOLD: the topology brief, built and guarded before the arm runs
 
 `docs-repository:preregistration-306.md`'s decision rule selected arm T on the outcome of arm W: the falsifier fired
@@ -6707,6 +6715,14 @@ whether the run could supply a fault-free profile:
 | `fse26-benchmark.yml` | none | 1 112 (78.20 %) | 1 230 | **1 256** |
 | `benchmark-agentic.yml` measure | built from the corpus | **1 156 (81.29 %)** | 1 228 | 1 249 |
 
+> **THIS TABLE IS WRONG, AND §314 SAYS HOW.** The `none` row is not the shipped configuration. `44210828265` is
+> **arm A3** of §305 — `stabilityScope=fleet_unbinned, stabilityWeight=0.1` — and it was read as a bare dispatch
+> because the run id was quoted from the arm table's last row instead of from the artifact's own `Config:` line. The
+> shipped configuration with the pass inert reads **1 141 (80.24 %)**, so the repair is worth **+15**, not +44, and
+> Top@3/Top@5 do not move at all. The defect is recorded rather than rewritten because the reasoning that produced
+> the repair does not depend on the size of the effect, and because a correction that erases its own wrong number
+> is a correction a later reader cannot check.
+
 The containment pass ships ON (`DEFAULT_CONTAINMENT_ORDER`) and reads the corpus's per-channel excursions to decide
 whether an adjacent pair is inverted. **Without a profile it has nothing to read**, so the published cell was
 reporting the pass as "no change" — a statement about a missing file, not about the engine. The +44 / −7 shape is
@@ -6732,3 +6748,166 @@ The next push-triggered battery produces the number. Writing `81.29 %` into the 
 would be replacing a stale transcript with a projection, and this repository's rule for a cell is that it is quoted
 from an artifact. So this entry records the instrument change, names the reading it expects, and the cell is
 re-anchored by the commit that reads the run — with both figures printed, because Top@5 moves the other way.
+
+**Both of those sentences are corrected by §314.** The run exists (`44333449830`) and it reads `1 156 / 1 422 =
+81.29 %` — the prediction held to the case — but **Top@5 did not move the other way** (`1 249` before and after), and
+the `+44` this entry priced the repair at is `+15`. The repair was right for the reason given here; the size of what
+it buys was read off a control that was an arm.
+## §313 — Arm T reads 1 166: the brief bought precision, not yield, and missed T1 by nine cases
+
+Arm T was dispatched as `44329808264` on `b77e920` — `topology_brief=auto`, `promotion=0.03`,
+`model=deepseek-chat` — and both jobs are green: the measure job derived the brief from the corpus's own call graph,
+the study job asked the model on all 1 422 cases. The instrument is §311's; this entry is the reading, judged against
+`docs-repository:preregistration-306.md`'s T1–T4 and its single falsifier.
+
+### 313.1 The artifact, and the control it is differenced against
+
+|                                 | control — arm G, no brief | arm T, brief `auto` |
+| ------------------------------- | ------------------------: | ------------------: |
+| engine Top@1                    |                     1 156 |               1 156 |
+| band (cases)                    |                       122 |             **122** |
+| engine wrong inside the band    |                        98 |                  98 |
+| model overrides inside the band |                        56 |              **39** |
+| … fix                           |                        15 |                  12 |
+| … break                         |                         6 |               **2** |
+| … neutral                       |                        35 |                  25 |
+| **net**                         |                    **+9** |             **+10** |
+| conditional precision           |            71.4 % (15/21) |  **85.7 % (12/14)** |
+| end to end                      |           1 165 (81.92 %) |  **1 166 (82.0 %)** |
+| half A / half B                 |                   +5 / +4 |             +6 / +4 |
+
+The engine side reproduces arm G's control to the case (`1 156 / 1 422`, band 122, engine-wrong 98), so the two
+columns differ in one thing: whether the prompt carried the section. The brief itself is 4 050 chars (~1 013 tokens)
+over 48 services and 139 call edges, digest `2826885ae00c3238`, byte-identical for all 1 422 cases — the population
+guard of §311.2 printed at the point of use rather than asserted in a test.
+
+### 313.2 T1 fails, and the falsifier does not fire, by one case
+
+T1 asked for **≥ 1 175** (arm G + 10) and the arm read **1 166**: nine cases short. The falsifier was written as
+_"if arm T's `Top@1` is at or below arm G's, the system-level-brief axis closes as a class"_, and `1 166 > 1 165`,
+so **the axis stays open by exactly one case**. That is the least comfortable verdict in this register: a channel
+priced at 1.44 M tokens produced a net indistinguishable from the arm without it, and the sentence that would have
+closed it missed by a single case. Recording the margin rather than the verdict is the point — `docs-repository:preregistration-307.md`
+fixed arm A as the next arm in **all three** of T's branches, so nothing downstream depended on this reading, which
+is exactly the condition under which it can be reported without a thumb on the scale.
+
+### 313.3 What the brief actually did: it made the model decline
+
+T2 predicted the outcome mix would move **toward** overruling — `promoted` up, `agrees` down, `reversed` not up by
+more than 10. The sign is the opposite on the one quantity the two arms share:
+
+| inside the band, threshold 0.03 | arm G (register §4) | arm T (this artifact) |
+| ------------------------------- | ------------------: | --------------------: |
+| model overrides = `promoted`    |                  56 |                **39** |
+| … fix                           |                  15 |                    12 |
+| … break                         |                   6 |                 **2** |
+| … neutral                       |                  35 |                    25 |
+| conditional precision           |              71.4 % |            **85.7 %** |
+| net                             |                  +9 |                   +10 |
+
+Arm G's four counts are quoted from `agentic-promotion-gate.md` §4, which is a reading of its own artifact; arm T's
+are counted from `44329808264`'s. What makes the pair comparable is the other end of each artifact: the engine reads
+`1 156 / 1 422`, the band **122** and `engine wrong inside the band` **98** on both, so the gate's arithmetic and the
+engine's answers are identical and the difference is the prompt. The census row names differ between the two
+renderings (`promoted` versus `overrides`, `band-miss` present only in the newer one), which is why only the
+band-internal counts are tabulated side by side.
+
+Seventeen fewer overrides, four fewer breakages, three fewer fixes. So the brief's effect is **suppression with a
+better hit rate on what survives**: conditional precision `71.4 % → 85.7 %`, and the breaks it prevented (4) are
+worth more than the fixes it lost (3), which is the entire `+1`. The mechanism is legible in the brief's own text:
+it says `A -> B` reads "A calls B" and **does not** say which end is the source (§311's refusal, on purpose), so a
+model given both ends named can see that its candidate is a caller and that nothing in the row makes it the origin —
+a reason to abstain, not a reason to promote. **A channel that raises precision and lowers coverage is a different
+object from the one T1 priced**, and T1 priced coverage.
+
+### 313.4 T3 and T4 hold, and they are the two that could have been defects
+
+T3: the band is **122** and `engine wrong inside the band` is **98**, identical to arm G — the gate's denominator is
+the case's own spread over the full scored order, which a prompt cannot reach. This was the falsifiable half of T3
+and it is the one that would have indicted the gate rather than the brief. T4: `unknown-candidate 0`,
+`duplicate-candidate 0`, `declined 0`, `unreadable 0`, `missing 0`, `refusals 0` — the arm did not win by making the
+model answer more often, because it answered strictly less.
+
+### 313.5 What it cost, measured against the same corpus at the same width
+
+`5 420 769 + 23 866` tokens over 1 422 cases = **3 829 tokens/case**. The width-5 measurement on this same corpus is
+**2 772 tokens/case mean** (`docs/agentic-presentation-width.md` §5), so the brief's marginal cost is **+1 057
+tokens/case = +1.50 M tokens** over the corpus — better than a third of the prompt, and it is the only quantity here
+that is a difference of two measurements rather than a projection.
+
+`docs-repository:preregistration-306.md` priced the brief at "~300–600 tokens per case; at 1 422 cases that is 0.4–0.9 M prompt
+tokens". The measured marginal cost is **1.7–3.8× the registered range**, which is §309's lesson a third time
+(`docs/agentic-presentation-width.md` §5, §311.4): a cost written before the artifact is a guess about its size, and
+this one guessed low for the same reason the width guessed high — the guesser reasoned about tokens per row while the
+quantity is chars of a union graph whose size is the corpus's edge count.
+
+### 313.6 The one thing arm T leaves open, and it is not a rerun at a larger length
+
+The falsifier closed the _derived_ brief "at any length or any rendering" only on failure, and it did not fail. So a
+second rendering is admissible. But the reading says the marginal information is not the missing part — 39 overrides
+at 85.7 % precision means the model, when it moves, is right five times in six, and the constraint is that it moves
+on 39 of the 122 cases where the engine is wrong 80 % of the time. **That is an admission-rule problem, not an
+evidence problem**, and it is `docs-repository:preregistration-307.md`'s arm A: the rule that decides _when_ to overrule is reading
+`relGap`, a property of the pair, while the case carries properties of its own. §313.3's 25 neutral overrides are
+where that arm's headroom is, and arm T's own artifact is the corpus it runs on.
+
+## §314 — The control was an arm, so the repair was priced at three times its worth
+
+§312 shipped a fix and a number. The fix is right: `fse26-benchmark.yml` could not supply a fault-free profile, the
+containment pass ships ON, and without a profile it returns the ranking unchanged and says nothing. The number was
+wrong, and the way it was wrong is the defect this entry records.
+
+### 314.1 What the artifact says, read from the artifact
+
+The claim was that on one corpus manifest (`b7fca80e…`, 1 422 cases) the two workflows differ by `+44` at Top@1
+because one supplies a profile. `44210828265` — quoted as "the push-triggered FSE'26 battery" — is **arm A3 of
+§305**: its own `Config:` line reads `stabilityScope=fleet_unbinned stabilityWeight=0.1`. It is the last row of
+§305's arm table, and it was read as the control because the run ids in that table are four lines long and the bare
+dispatch was not the last of them.
+
+| run                           | what it actually is                         | `Config:` differs from shipped in             |               Top@1 |
+| ----------------------------- | ------------------------------------------- | --------------------------------------------- | ------------------: |
+| `43818561923` (`44df4fa`)     | first run on this manifest                  | `containmentOrder=false`, no profile          |               1 141 |
+| `44134503641`, `44141794481`  | arm A1/A2 of the self-time family           | `selfTimeWeight=0.05`, scope                  |               1 141 |
+| `44141801070`                 | the same family, absolute scope             | `selfTimeWeight=0.05`                         |               1 141 |
+| **`44142865215`** (`2122359`) | **the bare dispatch** — no knob differs     | only the two profile fields                   | **1 141 (80.24 %)** |
+| `44210815387` (`1c11c41`)     | the stability family's `weight=0` CONTROL   | `stabilityWeight=0`                           |               1 141 |
+| `44210828265` (`1c11c41`)     | **arm A3**, quoted as the control           | `stabilityWeight=0.1`, scope `fleet_unbinned` |               1 112 |
+| `44333449830` (`802cf3e`)     | the shipped configuration, profile supplied | nothing                                       | **1 156 (81.29 %)** |
+
+**The shipped configuration reads 1 141 with the pass inert and 1 156 with it speaking, on the same manifest.** That
+is `+15`, and it is the same `+15` `docs/containment-order.md` §20 recorded at `73dc662` — which should have been the
+first clue that `+44` was not a repair's value but an arm's damage: §305 already says A3 costs **−29**, and
+`1 141 − 29 = 1 112`.
+
+### 314.2 The case-level census, which is what makes the +15 a mechanism and not a delta
+
+The two per-case artifacts pair on `datapack` for all 1 422 cases. Differencing them:
+
+| shape (rank of truth: inert → profile) |  cases |
+| -------------------------------------- | -----: |
+| `1 → 1`, tail order differs            |     64 |
+| **`2 → 1`**                            | **15** |
+| `3 → 2`                                |      2 |
+| lost from rank 1                       |  **0** |
+
+So the pass moves **81 of 1 422** rankings and **no case loses a position it held**: fifteen cases gain rank 1 from
+rank 2, two gain a position inside the top three, and the rest are permutations below the reported width. `Top@3` and
+`Top@5` are therefore identical by construction rather than by luck — a `2 → 1` swap cannot change a top-three count,
+and nothing enters or leaves the five. The fifteen are spread over seven fault types (`NetworkPartition` 6,
+`HTTPRequestReplaceMethod` 2, `NetworkBandwidth` 2, `NetworkLoss` 2, and one each of three HTTP types), which is the
+signature of a rule about _adjacent call edges_ rather than about a fault family.
+
+### 314.3 The defect this is, stated as a rule
+
+**A control is a run whose artifact says it is a control, not a run whose id a table puts in a control row.** §305
+wrote the rule for deltas — "the control reproduces the published bare-dispatch reading exactly, so the deltas below
+are same-commit deltas and not remembered ones" — and then this entry quoted a delta from a remembered row. Two
+runs of one manifest with the _same_ engine defaults is what made §312's comparison a controlled pair; the `Config:`
+line is what makes that checkable, and it took one diff of 39 fields to find that the two rows differed in two.
+
+The published consequence is in `docs/sota-comparison.md` §0p-ix: the cell is re-anchored to **1 156 / 1 422 =
+81.29 %**, the inert reading is named as **1 141**, and the `+44` is retired everywhere it was printed — the action's
+header, both workflows' comments, and the census test's docblock. The repair's justification is unaffected: the
+published cell was still the one where the pass was inert, and it is still the case that a dispatch could not name a
+profile. **A right fix priced at three times its value is still a fix; a wrong price is still a wrong number.**
