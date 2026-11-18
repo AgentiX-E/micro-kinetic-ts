@@ -301,22 +301,43 @@ export interface Fse26CliOptions {
    */
   readonly fingerprintOut: string;
   /**
-   * How many candidates the fingerprint carries (0 = every candidate).
+   * How many candidates the PRESENTATION dump carries (0 = every candidate).
    *
-   * The knob a PRESENTATION-WIDTH arm needs. The arm's question is what a model does when it is shown twenty
+   * The knob a presentation-width arm needs. The arm's question is what a model does when it is shown twenty
    * candidates instead of five, and the only honest way to ask it is to hand the arm an artifact that holds
    * twenty: widening the prompt over a five-wide fingerprint would show the model twenty rows it could not
    * verify, and widening the RUN would move `Top@5` and make the arm incomparable with the one it is differenced
    * against.
    *
-   * So this widens the artifact alone. The published ranking is `analyze(graph, 5)` and is computed before this
-   * field is read, which is the invariant that makes it safe to leave the field out of the reported
-   * configuration: a run at `--fingerprint-top-k 20` and one at the default are the same configuration and
-   * differ in what they wrote, which is exactly the relation `NOT_REPORTED_FSE26_OPTION_KEYS` describes.
+   * ## Why this is a SECOND dump and not a wider `--fingerprint-out`
+   *
+   * Because the two files answer different questions and a consumer joins the one it means. `--fingerprint-out`
+   * is *the published ranking, as a fingerprint*: every offline arm — headroom, ceiling, elimination — joins it
+   * against the per-case verdict file and assumes the orders agree case for case, which they do because both come
+   * from `analyze(graph, 5)`.
+   *
+   * A widened dump does not satisfy that assumption, and it cannot: a structural pass permutes **the list it is
+   * handed**, so the twenty-wide order differs from the published five at positions 4 and 5 on 17 of 1 422 cases.
+   * The first attempt put both contracts in one file and the study job failed exactly there, in a guard that was
+   * right to refuse. One file cannot carry two contracts.
+   *
+   * So this field belongs to `--presentation-out`, the published dump is untouched, and every existing consumer
+   * keeps the premise it was written against.
    *
    * `0` means every candidate, the same sentence `--containment-depth` uses for the same word.
    */
   readonly fingerprintTopK: number;
+  /**
+   * Path to write the PRESENTATION dump to (empty = none).
+   *
+   * The engine's answer at `--fingerprint-top-k` candidates, with the same channels and the same census as
+   * `--fingerprint-out`. It exists so a presentation-width arm has an artifact whose width it can state, and it
+   * is separate from `--fingerprint-out` so that no reader has to ask which contract a given file follows.
+   *
+   * The published ranking is computed before this path is read, so a run that writes one is the same
+   * configuration as a run that does not — the relation `NOT_REPORTED_FSE26_OPTION_KEYS` describes.
+   */
+  readonly presentationOut: string;
   /**
    * Path to write the per-case RANKING DEPTH to (empty = none).
    *
@@ -871,6 +892,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentOut: '',
     containmentDepth: DEFAULT_CONTAINMENT_DEPTH,
     fingerprintTopK: DEFAULT_FINGERPRINT_TOP_K,
+    presentationOut: '',
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -987,7 +1009,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
         );
       }
       opts.containmentDepth = depth;
-    } else if (arg === '--fingerprint-top-k' && hasValue(argv, i + 1)) {
+    } else if (arg === '--presentation-out' && hasValue(argv, i + 1))
+      opts.presentationOut = argv[++i]!;
+    else if (arg === '--fingerprint-top-k' && hasValue(argv, i + 1)) {
       // `0` is "every candidate" and is legal; a negative or fractional width is refused rather than rounded,
       // for the reason `--containment-depth` records above: a clamped value publishes an artifact of a width the
       // command line did not ask for, and an arm reading it would report a window nobody dispatched.
@@ -1238,12 +1262,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
   // the first one in this parser and it is here rather than in the runner so that it can be driven: a rule in
   // `run-fse26.ts` sits behind a module that calls `main()` at import time, which is the reason this file exists.
   //
-  // `--fingerprint-top-k` widens a FILE. Asking for a width without asking for the file is a flag that does
-  // nothing, and an arm dispatched with a width and no writer would read a five-wide artifact and report the
-  // width it asked for — the `--log-mode count` defect one surface over, where the value was accepted and
-  // silently did not reach its consumer.
-  if (opts.fingerprintTopK !== DEFAULT_FINGERPRINT_TOP_K && opts.fingerprintOut === '') {
-    throw new Error('--fingerprint-top-k requires --fingerprint-out');
+  // `--fingerprint-top-k` widens a FILE, and the file is `--presentation-out`. Asking for a width without asking
+  // for the writer is a flag that does nothing, and an arm dispatched that way would read a five-wide artifact and
+  // report the width it asked for — the `--log-mode count` defect one surface over, where the value was accepted
+  // and silently did not reach its consumer.
+  if (opts.fingerprintTopK !== DEFAULT_FINGERPRINT_TOP_K && opts.presentationOut === '') {
+    throw new Error('--fingerprint-top-k requires --presentation-out');
   }
 
   return opts;

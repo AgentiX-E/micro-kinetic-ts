@@ -245,6 +245,11 @@ async function main(): Promise<void> {
   // second run onto the first would describe a corpus nobody dispatched.
   const fingerprintDump =
     opts.fingerprintOut === '' ? undefined : new FingerprintDump(opts.fingerprintOut);
+  // The PRESENTATION dump, on the same truncate-once rule and with a different contract: its width is what the
+  // flag asks for, and its array order is the engine's answer AT THAT WIDTH. A consumer that needs the published
+  // answer reads `--fingerprint-out`; a consumer that needs a wider window reads this one.
+  const presentationDump =
+    opts.presentationOut === '' ? undefined : new FingerprintDump(opts.presentationOut);
   // The depth dump, on the same truncate-once rule and for the same reason: it describes a POPULATION.
   // It is also the only artifact that can tell a case ranked too low from a case the order never held, which is
   // the split that decides whether the remaining headroom is a ranking question or a graph question.
@@ -416,30 +421,55 @@ async function main(): Promise<void> {
     // Built from the ranking that was just published, not from a re-rank: the layer's claim is about the answer
     // the run reports, and a fingerprint taken from a wider `topK` would let an offline arm claim a movement this
     // run never made.
-    if (fingerprintDump !== undefined && faultFreeProfile !== undefined) {
+    if (
+      (fingerprintDump !== undefined || presentationDump !== undefined) &&
+      faultFreeProfile !== undefined
+    ) {
       const injectTimeMs = benchCase.injectTime > 0 ? benchCase.injectTime : 0;
-      // The width the artifact carries, which is NOT the width the run publishes unless the flag is absent. The
-      // decision is a function so that the default path can be asserted to be the same OBJECT and not merely an
-      // equal array -- see `fingerprint-width.ts` for why that distinction is the arm's whole validity.
-      const source = fingerprintSourceOrder({
-        published: ranking,
-        width: opts.fingerprintTopK,
-        nodeCount: benchCase.callGraph.nodes.size,
-        widen: (k) => (faultGraph === undefined ? [] : pruner.analyze(faultGraph, k)),
-      });
-      const built = buildCandidateFingerprints({
-        metrics: benchCase.metrics,
-        ranking: source,
-        injectTimeMs,
-        profile: faultFreeProfile,
-      });
-      fingerprintDump.record({
-        datapack: basename(dir),
-        faultType,
-        injectTimeMs,
-        candidates: built.candidates,
-        census: built.census,
-      });
+      // TWO dumps, TWO contracts. `fingerprintDump` is the published ranking AS a fingerprint, and every offline
+      // arm joins it against the per-case verdict file assuming the orders agree case for case. The presentation
+      // dump is the engine at a requested width, and it does not satisfy that assumption -- a structural pass
+      // permutes the list it is handed, so a twenty-wide order differs from the published five at positions 4-5
+      // on 17 cases. Putting both contracts in one file is what made the study job fail in the one guard that was
+      // right to refuse, so the decision of WHICH order a dump carries is made per dump rather than per run.
+      if (fingerprintDump !== undefined) {
+        const built = buildCandidateFingerprints({
+          metrics: benchCase.metrics,
+          ranking,
+          injectTimeMs,
+          profile: faultFreeProfile,
+        });
+        fingerprintDump.record({
+          datapack: basename(dir),
+          faultType,
+          injectTimeMs,
+          candidates: built.candidates,
+          census: built.census,
+        });
+      }
+      // The second pass is spent ONLY when a presentation dump was asked for: a widened order costs one extra
+      // `analyze` per case, and a run that writes no presentation artifact must not pay for it.
+      if (presentationDump !== undefined) {
+        const source = fingerprintSourceOrder({
+          published: ranking,
+          width: opts.fingerprintTopK,
+          nodeCount: benchCase.callGraph.nodes.size,
+          widen: (k) => (faultGraph === undefined ? [] : pruner.analyze(faultGraph, k)),
+        });
+        const presented = buildCandidateFingerprints({
+          metrics: benchCase.metrics,
+          ranking: source,
+          injectTimeMs,
+          profile: faultFreeProfile,
+        });
+        presentationDump.record({
+          datapack: basename(dir),
+          faultType,
+          injectTimeMs,
+          candidates: presented.candidates,
+          census: presented.census,
+        });
+      }
     }
 
     predictionsPerCase.push(ranking.map((r) => r.serviceId));
@@ -556,6 +586,18 @@ async function main(): Promise<void> {
       `  Fingerprint census: considered=${summary.census.considered} offered=${summary.census.offered} ` +
         `unmeasurable=${summary.census.unmeasurable} unprofiled=${summary.census.unprofiled} ` +
         `shadowed=${summary.census.shadowed} capped=${summary.census.capped}`,
+    );
+  }
+  if (presentationDump !== undefined) {
+    // The REQUESTED width is printed beside the realised counts, because those two numbers are not the same
+    // sentence: a run that asked for twenty and wrote five because every case was capped is an artifact of a
+    // different population than one that asked for five, and only the request distinguishes them.
+    const summary = presentationDump.summary;
+    console.log(
+      `  Presentation:  ${summary.cases} cases, ${summary.candidates} candidates, ` +
+        `${summary.channels} channels, requested width ` +
+        `${opts.fingerprintTopK === 0 ? 'every' : String(opts.fingerprintTopK)} ` +
+        `(published ${PUBLISHED_TOP_K}) -> ${summary.path}`,
     );
   }
   if (containmentDump !== undefined) {

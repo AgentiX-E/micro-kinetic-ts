@@ -196,7 +196,9 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
  * grow to excuse a flag that is simply broken.
  */
 const COMPANIONS: Readonly<Record<string, readonly string[]>> = {
-  '--fingerprint-top-k': ['--fingerprint-out', 'f.ndjson'],
+  // The width only has a meaning next to the dump it widens, and that dump is the presentation one: the
+  // published dump stays at the width the engine publishes, because three readers join it case by case.
+  '--fingerprint-top-k': ['--presentation-out', 'p.ndjson'],
 };
 
 function argvFor(one: AcceptedFlag): string[] {

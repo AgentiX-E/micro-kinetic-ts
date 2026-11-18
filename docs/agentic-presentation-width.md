@@ -1,7 +1,8 @@
-# The presentation width — one flag, one artifact, and the arm it prices
+# The presentation width — one flag, two dumps, and the arm it prices
 
 `--fingerprint-top-k` widens the elimination fingerprint and changes nothing else. This document records the
-instrument, the proof that it changes nothing else, what it already costs, and the arm it was built for.
+instrument, the proof that it changes nothing else, the second dump the proof forced into existence, what it
+already costs, and the arm it was built for.
 
 ## 1. Why the width needed an instrument at all
 
@@ -68,6 +69,41 @@ With one owner, the instrument was verified by running both widths and comparing
 
 That is the check a reader should demand: not "the flag should not affect the ranking" but "two runs that differ
 only in this flag wrote the same three files to the byte".
+
+### 3.1 One file could not carry two contracts, and CI was the thing that noticed
+
+The first version of the flag wrote the widened order into `--fingerprint-out`. The arm was dispatched
+(`44284042634`), the measure job succeeded, and the **study job refused to score**:
+
+```
+DISAGREEMENTS: 17 (first: ts0-ts-basic-service-request-abort-5dlq8r)
+Refusing to score: the two artifacts are not from the same run.
+```
+
+The guard was right and the instrument was wrong. `--fingerprint-out` has a contract this document had not written
+down: `headroom`, `ceiling` and `elimination` all **join** it against `per-case.ranked` case by case, so its
+per-case array order *is* the published order. A widened order is not, on exactly the 17 cases §4 counts. One file,
+two contracts, and the join guard is the only reader that could tell.
+
+So there are two dumps, with two contracts:
+
+| flag | what it holds | who reads it |
+| --- | --- | --- |
+| `--fingerprint-out` | the **published** order, as a fingerprint | `agentic-headroom`, `agentic-ceiling`, `agentic-elimination` — by index against the token dumps |
+| `--presentation-out` | the engine at the **requested width** | the presentation arm, which renders a table and needs no join |
+
+`--fingerprint-top-k` therefore widens the second one only, and is refused without it. The repair is not a guard
+relaxation: widening a dump that three readers join by index would make those readers describe a run nobody
+dispatched, and a guard that can be argued away is not a guard.
+
+Two consequences worth naming:
+
+- **The published dump costs nothing when no presentation dump is asked for.** The second `analyze(faultGraph, k)`
+  pass is spent inside `if (presentationDump !== undefined)`, so a default run does exactly the work it did before
+  the flag existed.
+- **The width still has one owner.** `fingerprintSourceOrder` decides which order a dump carries, and it returns
+  the published array **by identity** at the published width — asserted with `toBe`, not `toEqual`, so a future
+  refactor that slices instead of returning cannot quietly spend a second pass.
 
 ## 4. What the widened population does and does not move
 
@@ -141,7 +177,7 @@ pnpm exec tsx benchmarks/src/run-fse26.ts --data-dir <corpus> \
 # a wider artifact, and NOTHING else about the run changes
 pnpm exec tsx benchmarks/src/run-fse26.ts --data-dir <corpus> \
   --fault-free-profile <profile> --fingerprint-out fingerprints.ndjson \
-  --fingerprint-top-k 20
+  --presentation-out presentation.ndjson --fingerprint-top-k 20
 ```
 
 | value | meaning |
@@ -151,8 +187,9 @@ pnpm exec tsx benchmarks/src/run-fse26.ts --data-dir <corpus> \
 | `0` | every candidate — the same sentence `--containment-depth` uses for the same word |
 | negative / fractional / non-numeric | refused by name, not clamped |
 
-`--fingerprint-top-k` without `--fingerprint-out` is refused, because a width that widens no file is a flag that
-does nothing: an arm dispatched that way would read a five-wide artifact and report the width it asked for.
+`--fingerprint-top-k` without `--presentation-out` is refused, because a width that widens no file is a flag that
+does nothing: an arm dispatched that way would read a five-wide artifact and report the width it asked for. The
+companion is the presentation dump and **not** the published one, for the reason §3.1 measured.
 
 ## 7. What this instrument does not do
 

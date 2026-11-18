@@ -294,7 +294,7 @@ describe('parseFSE26Args — other flags', () => {
 
     it('parses a widened width onto its own field', () => {
       expect(
-        parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', '20'])
+        parseFSE26Args(['--presentation-out', 'p.ndjson', '--fingerprint-top-k', '20'])
           .fingerprintTopK,
       ).toBe(20);
     });
@@ -303,7 +303,7 @@ describe('parseFSE26Args — other flags', () => {
       // Two dump-width flags in one parser must not give `0` two meanings. `--containment-depth` spells it
       // "every candidate", so this one does too.
       expect(
-        parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', '0'])
+        parseFSE26Args(['--presentation-out', 'p.ndjson', '--fingerprint-top-k', '0'])
           .fingerprintTopK,
       ).toBe(0);
     });
@@ -311,7 +311,7 @@ describe('parseFSE26Args — other flags', () => {
     it('refuses a non-integer, a negative and a non-numeric width', () => {
       for (const value of ['2.5', '-3', 'twenty', 'NaN']) {
         expect(() =>
-          parseFSE26Args(['--fingerprint-out', 'f.ndjson', '--fingerprint-top-k', value]),
+          parseFSE26Args(['--presentation-out', 'p.ndjson', '--fingerprint-top-k', value]),
         ).toThrow(/fingerprint-top-k/);
       }
     });
@@ -320,11 +320,19 @@ describe('parseFSE26Args — other flags', () => {
       // A width without the file it widens is a flag that does nothing, and an arm dispatched that way would read
       // a five-wide artifact and report the width it asked for. The default is not refused, because the default
       // is the absence of the flag rather than a request.
-      expect(() => parseFSE26Args(['--fingerprint-top-k', '20'])).toThrow(/fingerprint-out/);
+      //
+      // The companion is the PRESENTATION dump and not the published one: `headroom`, `ceiling` and `elimination`
+      // join their own token dumps against the published order case by case, so a widened published dump makes
+      // that join disagree on every case the widening permutes. The width therefore only ever widens the artifact
+      // whose file name says it is a rendering.
+      expect(() => parseFSE26Args(['--fingerprint-top-k', '20'])).toThrow(/presentation-out/);
       expect(
-        parseFSE26Args(['--fingerprint-top-k', '5', '--fingerprint-out', 'f.ndjson'])
+        parseFSE26Args(['--presentation-out', 'p.ndjson', '--fingerprint-top-k', '5'])
           .fingerprintTopK,
       ).toBe(5);
+      expect(parseFSE26Args(['--presentation-out', 'p.ndjson']).fingerprintTopK).toBe(
+        DEFAULT_FINGERPRINT_TOP_K,
+      );
       expect(parseFSE26Args(['--fingerprint-out', 'f.ndjson']).fingerprintTopK).toBe(
         DEFAULT_FINGERPRINT_TOP_K,
       );

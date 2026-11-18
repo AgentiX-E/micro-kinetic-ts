@@ -6474,3 +6474,42 @@ the flag changes.
 So the arm costs about four times what was registered. The error is the one this line of work keeps making — a
 quantity measured at one width applied at another — and it is recorded here rather than at the end, because the
 point of pricing an arm is to be able to decline it.
+
+### 309.5 The arm was dispatched, and the study job refused it — correctly
+
+Run `44284042634` ran the widened instrument over the whole corpus and the study job **exited 1 at step 14**:
+
+```
+DISAGREEMENTS: 17 (first: ts0-ts-basic-service-request-abort-5dlq8r)
+Refusing to score: the two artifacts are not from the same run.
+```
+
+The guard is `agentic-headroom`'s join between the fingerprint dump and `per-case.ranked`, and it is an INDEX
+join: it assumes the two files describe the same order case for case. That assumption was never written down,
+which is why the flag was allowed to break it. A widened order is a different order at positions 4–5 on 17 of
+1 422 cases (§309.3), so the join saw two runs that never coexisted.
+
+**The repair is a second file, not a weaker guard.** `--presentation-out` now carries the widened order and
+`--fingerprint-out` goes back to being the published one, so each dump holds one contract and the join keeps its
+assumption. Three tests hold the split: the parser refuses a width without the presentation dump, the width is
+asserted not to appear on the engine's command line, and the census names the new flag as an artifact only a study
+workflow — never a benchmark cell — may produce.
+
+The general shape is §307 and §309.2's again, at a third layer: **the earlier two failures were a decision with no
+owner and a decision with two; this one was a file with two contracts.** All three produce a run that reports
+something it did not measure, and none of them produces an error the run itself can see — the disagreement had to
+be found by a reader that joined two artifacts.
+
+### 309.6 What the ladder already answers, before any run
+
+`docs/agentic-presentation-width.md` §9 turns `Retrieval@K` into a curve over the whole corpus at `$0` of API
+spend, and it moves the next width arm:
+
+| K | 1 | 2 | 3 | 5 | 10 | 15 | 20 | 25 | 30 | 40 | 50 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| reachable | 1 156 | 1 192 | 1 228 | 1 249 | 1 278 | 1 294 | 1 310 | 1 327 | 1 345 | 1 400 | 1 422 |
+
+Width 5 → 20 buys **61 cases over 15 slots** (4.1 per slot); width 30 → 40 buys **55 over 10** (5.5 per slot), which
+is the shoulder of the curve and the better next arm if the axis survives at all. And the 17-case permutation does
+not change this: the ladder taken over the fingerprint's own order equals the ladder taken over the fifty-wide
+terms dump at every rung, and the set newly reachable between 5 and 20 is *the same 61 cases* by identity.

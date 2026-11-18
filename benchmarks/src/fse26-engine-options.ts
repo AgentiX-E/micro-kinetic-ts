@@ -245,6 +245,7 @@ export const NON_ENGINE_OPTION_KEYS = [
   // the same configuration and the same published answer. It is here rather than omitted because the completeness
   // test is the only thing that makes a new flag say which side of the partition it is on.
   'fingerprintTopK',
+  'presentationOut',
   'dropMetrics',
   // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
   // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the

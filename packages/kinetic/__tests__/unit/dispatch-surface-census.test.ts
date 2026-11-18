@@ -283,6 +283,13 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     "PRESENTATION-WIDTH arm needs, because that arm's question is what a model does with a wider table and the " +
     'only honest way to ask it is to hand the arm an artifact that holds one. `docs/agentic-presentation-width.md` ' +
     'owns the reading it made possible',
+  presentationOut:
+    'writes the second elimination FINGERPRINT, at the width `--fingerprint-top-k` asks for; an OUTPUT PATH, and ' +
+    'the engine never reads it back. It exists as a SEPARATE file because the two dumps carry two contracts: ' +
+    '`--fingerprint-out` is the published order, and three offline readers (`headroom`, `ceiling`, `elimination`) ' +
+    'join it case by case against the token dumps, so a widened published dump makes that join disagree on exactly ' +
+    'the cases a structural pass permutes — the study job refused 17 disagreeing cases before this split existed. ' +
+    'A rendering may hold a different order; the artifact the join reads may not',
 };
 
 /**
@@ -1423,6 +1430,18 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'same `Top@1`, `Top@3` and `Top@5` at any value — verified by running two widths and comparing the `per-case` ' +
     'rows, the terms dump and the results file byte for byte. A benchmark dispatch must not reach it, because ' +
     "the arm that needs a wider artifact reads a study workflow's dump and not a benchmark cell",
+  // And the SECOND dump the width writes into, which exists because one file could not carry two contracts.
+  // `benchmark-agentic.yml` passes it beside `--fingerprint-top-k` for the reason recorded on that entry. The
+  // claim this entry makes is the sharper one: no BENCHMARK dispatch should be able to produce a second
+  // fingerprint, because a benchmark cell is compared to another cell by `per-case`, and a rendering of the same
+  // run sitting next to it is an artifact a reader could mistake for a second measurement.
+  '--presentation-out':
+    'writes the elimination fingerprint AT THE REQUESTED WIDTH, as a separate file from `--fingerprint-out` ' +
+    'because the two carry two contracts: the published dump is joined case by case against the token dumps by ' +
+    '`headroom`, `ceiling` and `elimination`, and a structural pass permutes any list it is given, so widening ' +
+    'the PUBLISHED dump made that join disagree on 17 of 1 422 cases (run `44284042634`, study step 14, ' +
+    '`DISAGREEMENTS: 17`). A rendering may hold an order the run did not publish; the artifact the join reads ' +
+    'may not, and a benchmark dispatch must not be able to write either one of them beside a cell',
 };
 
 /**
