@@ -4,6 +4,8 @@ import type {
   CandidateFingerprint,
   PublishedCandidate,
 } from '../../packages/ai/src/agent/index.js';
+import { DEFAULT_NOMINATION_OPTIONS } from '../../packages/ai/src/agent/index.js';
+import { DEFAULT_FINGERPRINT_OPTIONS } from '../src/agentic-fingerprint.js';
 import type { HeadroomCase } from '../src/agentic-headroom.js';
 import {
   engineOrderOf,
@@ -18,6 +20,7 @@ import {
   spreadOrdersOf,
   type NominationRecord,
 } from '../src/agentic-nomination.js';
+import { DEFAULT_FINGERPRINT_TOP_K } from '../src/fse26-cli.js';
 
 function candidate(service: string, rank: number, score: number): CandidateFingerprint {
   return { service, rank, score, channels: [] };
@@ -610,5 +613,27 @@ describe('formatPromotionReadout', () => {
   it('says so when the arm carried no gate', () => {
     const plain = scoreNomination(GATED, GATED_RECORDS, { strategy: 'rrf', weight: 0 });
     expect(formatPromotionReadout(plain)).toBe('gate: this arm did not carry one');
+  });
+});
+
+describe('the artifact and the prompt must agree about what is available', () => {
+  it('ships the same channel budget on both sides of the join', () => {
+    // THE CLASS GUARD for the defect `closed-axes-register.md` §309.2 records. There, the elimination
+    // fingerprint's CANDIDATE width had two owners — the runner's flag and the builder's default — and the
+    // builder's default silently outranked the flag, so `--fingerprint-top-k 20` wrote five candidates each and
+    // the log printed the width it had asked for.
+    //
+    // The repair removed that owner. This test guards the one remaining pair of numbers that must agree for the
+    // shipped configuration to be coherent: the channels the ARTIFACT carries and the channels the PROMPT shows.
+    // If they drift, a prompt built at the default would silently show fewer channels than the artifact holds —
+    // the same shape one field over, and silent in the same way.
+    expect(DEFAULT_FINGERPRINT_OPTIONS.maxChannels).toBe(DEFAULT_NOMINATION_OPTIONS.maxChannels);
+  });
+
+  it('has exactly one owner for the candidate width, and it is the caller', () => {
+    // The assertion the removal is worth: a `maxCandidates` reappearing in the artifact's defaults would recreate
+    // the second owner, and it would do so without failing any test that builds a fingerprint.
+    expect(Object.keys(DEFAULT_FINGERPRINT_OPTIONS)).not.toContain('maxCandidates');
+    expect(DEFAULT_FINGERPRINT_TOP_K).toBe(DEFAULT_NOMINATION_OPTIONS.maxCandidates);
   });
 });

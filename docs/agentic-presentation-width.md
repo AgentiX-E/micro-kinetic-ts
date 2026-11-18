@@ -87,6 +87,21 @@ Seventeen cases in 1 422 — 1.2 % — and the same 17 that `agentic-promotion-g
 five-wide fingerprint and the fifty-wide terms dump, at the same positions. It is a property of the width, not of
 either writer.
 
+The 17 cases do not move the reachability, though, and that is checkable rather than assumed: the ladder taken over
+the **fingerprint's own order** — the table the model actually reads — agrees with the ladder taken over the
+fifty-wide terms dump to the case at every rung:
+
+| K | from the terms dump | from the 20-wide fingerprint |
+| ---: | ---: | ---: |
+| 1 | 1 156 | 1 156 |
+| 5 | 1 249 | 1 249 |
+| 10 | 1 278 | 1 278 |
+| 20 | 1 310 | **1 310** |
+
+and the set newly reachable between K=5 and K=20 is **the same 61 cases** by identity — not "61" on each side, but
+the same 61. So the arm's table has exactly the reachability the ladder prices, and the permutation difference is
+confined to where it does not matter.
+
 Two consequences, both stated rather than discovered later:
 
 - **The control is untouched.** `engineOrderOf` reads the array order, whose first element never differs, so a
@@ -148,3 +163,69 @@ does nothing: an arm dispatched that way would read a five-wide artifact and rep
   more rows and not of richer ones. An arm that varied both would be two arms.
 - **It does not make width free.** Sixty-one cases in this corpus have their answer at ranks 6–20 and 112 at rank 21
   or deeper; the first group is what a width-20 arm can reach and the second is what no width this side of 50 does.
+
+## 8. What is new here, and what is borrowed
+
+`arXiv:2609.36686` sweeps K — its Table 1 reports **cumulative-budget `Retrieval@K` at K = 5, 10 and 15**, splitting
+the pool across magnitude, onset and state-change signals. It also runs a **retrieval-controlled protocol** that
+pins `Retrieval@K` to 1 by reserving a slot for the true cause, which is the same construction as the "perfect
+reranker" ceiling row in `agentic-promotion-gate.md` §10.
+
+So the pieces are not new, and saying otherwise would be the kind of claim this register exists to refuse. What
+this repository has not seen published — in that paper, in the surveys `docs/sota-populations.md` records, or in any
+of the artefacts `docs/competitor-artefact-availability.md` tracks — is **`Rerank@1` as a function of `K` on a
+microservice corpus**: whether an LLM reranker's *conditional* accuracy survives a wider candidate set, as opposed
+to whether the candidate set contains the answer.
+
+That distinction is the whole of arm W. A retriever's `Retrieval@K` is monotone in K by construction — a bigger
+pool cannot lose an answer — so sweeping it measures the retriever. `Rerank@1` can move **either way** in K, and
+which way it moves decides whether width is a lever or a tax. Arm W measures that direction on 1 422 cases with the
+gate held fixed, and `preregistration-305.md`'s W5 states the two outcomes in advance: unchanged (`1 212 ± 20`) is
+a lever, and below it is the first measured cost of presentation width in this project.
+
+## 9. The ladder, so a width arm can be priced before it is paid for
+
+`Retrieval@K` is monotone in K by construction — a bigger pool cannot lose an answer — so the curve below is not a
+result about any method. It is the **budget** a width arm draws on, and its shape is what makes width worth asking
+about at all.
+
+| K | `Retrieval@K` | share | gain over the row above |
+| ---: | ---: | ---: | ---: |
+| 1 | 1 156 / 1 422 | 81.29 % | — |
+| 2 | 1 192 | 83.83 % | +36 |
+| 3 | 1 228 | 86.36 % | +36 |
+| 5 | 1 249 | 87.83 % | +21 |
+| 10 | 1 278 | 89.87 % | +29 |
+| 15 | 1 294 | 91.00 % | +16 |
+| 20 | 1 310 | 92.12 % | +16 |
+| 25 | 1 327 | 93.32 % | +17 |
+| 30 | 1 345 | 94.59 % | +18 |
+| 40 | 1 400 | 98.45 % | +55 |
+| 50 | 1 422 | **100.00 %** | +22 |
+
+Reproduced from one artifact, with no run:
+
+```python
+# terms.ndjson: one line per case, `candidates` = the whole scored order, `accepted` = the truth set
+hit = sum(1 for r in rows if set(r['accepted']) & {c['id'] for c in r['candidates'][:K]})
+```
+
+Four things it says that the three-point summary in §1 could not:
+
+- **The first position is most of the answer.** K=1 is 81.29 % and K=5 is 87.83 %: five candidates buy 6.5 pp, and
+  the engine's own leader already holds four fifths of the corpus. An arm that reorders among the top five is
+  working on 6.5 pp of reachable mass, which is the number `agentic-promotion-gate.md` §10 puts at +93 cases.
+- **The curve is nearly flat between K=5 and K=20** — +61 cases over fifteen more slots, about four per slot — and
+  then jumps **+55** between K=30 and K=40. A width arm at 20 is therefore buying the flat part, and the jump is
+  where the remaining ones live. That is a statement about what a *width* arm can win, made before dispatching one.
+- **Width 30 → 40 is 55 cases, more than width 5 → 20 (61) in a fifth of the slots.** So "wider" is not one axis
+  with a slope; it is a curve with a shoulder, and the shoulder is the thing to aim at if width is ever the lever.
+- **`Retrieval@50 = 100 %`**, which is the sentence `agentic-promotion-gate.md` §10.2 already requires beside the
+  conditional `Rerank@1`: every case's answer is somewhere in the fifty-wide order, so every miss on this corpus is
+  a placement miss and none is a coverage miss. Any future gap quoted against a corpus where that is not true is a
+  different measurement.
+
+One comparison is deliberately **not** made. `arXiv:2609.36686` reports `Retrieval@15` at 0.98–1.00 for microservice
+benchmarks and ours reads 0.910. Its retriever is its own, on RCAEval, with a K=15 pool it built deliberately;
+this ladder is this engine's total order on RCABench. The two numbers answer different questions, and putting them
+in one row is the error `docs/sota-comparison.md` §0a's contract forbids.
