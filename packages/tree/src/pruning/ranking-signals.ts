@@ -1294,6 +1294,172 @@ export function computeStabilityScores(
   return scores;
 }
 
+/** Which reference a dispersion residual is standardised against. */
+export type DispersionBinning = 'family' | 'none';
+
+/**
+ * What a dispersion-residual pass could see, and what it refused.
+ *
+ * The counters are advanced by the SAME loop that writes the scores, because a census computed anywhere
+ * else is a claim about a population the statistic does not describe. `absent` is decomposed rather than
+ * reported alone: a node can be unmeasurable because its family has too few members (`peerShort`) or
+ * because its peers carry no spread (`zeroMad`), and those are different facts about the statistic — the
+ * first says the corpus is too thin, the second says the reference is degenerate.
+ */
+export interface DispersionCensus {
+  /** Candidates the pass was offered (the case's node count, not the corpus's). */
+  readonly services: number;
+  /** Candidates whose dominant metric published a finite `cv`. */
+  readonly measured: number;
+  /** Metric-family buckets formed, including the ones with a single member. */
+  readonly families: number;
+  /** Buckets holding exactly one measured candidate. */
+  readonly singletonFamilies: number;
+  /** Candidates that received a residual. */
+  readonly scored: number;
+  /** `measured − scored`: every candidate that had a `cv` and no residual. */
+  readonly absent: number;
+  /** Of `absent`: the peer group's MAD was exactly 0, so there was no divisor. */
+  readonly zeroMad: number;
+  /** Of `absent`: fewer than two peers, so there was no spread to standardise against. */
+  readonly peerShort: number;
+}
+
+/** A census of a pass that was never run — every field zero, which is a different statement from a null. */
+export const EMPTY_DISPERSION_CENSUS: DispersionCensus = {
+  services: 0,
+  measured: 0,
+  families: 0,
+  singletonFamilies: 0,
+  scored: 0,
+  absent: 0,
+  zeroMad: 0,
+  peerShort: 0,
+};
+
+/**
+ * The metric FAMILY a dominant-metric label belongs to: its first two dot-separated segments.
+ *
+ * The corpus carries 50 services against 85–87 distinct labels per case, so an exact-label reference
+ * averages 0.59 members and almost every node would be alone in its bin — the term would be ABSENT by
+ * construction, which is the failure mode `self-time-share.md` §6 named. Two segments is the coarsest key
+ * that still separates statistically incomparable channels: `k8s.pod.memory.rss` and
+ * `k8s.deployment.desired` must not share a reference even though both begin with `k8s`, because their
+ * `cv` distributions do not live on one scale.
+ *
+ * A label with fewer than two segments is its own family — `processedLogs` and `queueSize` are counts with
+ * no namespace to share, and inventing one would merge channels the separator never compared.
+ */
+export function metricFamily(label: string): string {
+  const first = label.indexOf('.');
+  if (first < 0) return label;
+  const second = label.indexOf('.', first + 1);
+  return second < 0 ? label : label.slice(0, second);
+}
+
+/**
+ * The decisive-stability statistic read as a RESIDUAL against the fleet, not as a rank.
+ *
+ *   peers(v)    = { u measured, u ≠ v, family(u) = family(v) }
+ *   centre(v)   = median{ cv(u) : u ∈ peers(v) }
+ *   spread(v)   = median{ |cv(u) − centre(v)| : u ∈ peers(v) }        (MAD)
+ *   residual(v) = (centre(v) − cv(v)) / spread(v)
+ *
+ * POSITIVE means steadier than its family, NEGATIVE means more dispersed, 0 means typical. That sign is the
+ * whole difference from `computeStabilityScores`, which maps a rank to `(n−1−rank)/(n−1)` and therefore
+ * cannot express a separation: on a 49-candidate case one rank step is `1/48`, so two nodes whose `cv`
+ * differ by a thousandth and two whose `cv` differ tenfold both move the score by the same amount. Iteration
+ * 301's sweep is the measurement of the cost — the rank needs a multiplier near 350 to close the median
+ * winner-truth gap of 0.53, and by ×160 its own quantisation has become the dominant term.
+ *
+ * Three properties, each of them a design decision rather than an implementation detail:
+ *
+ * 1. **Leave-one-out.** A node is not in its own reference. Including it shrinks the residual by `1/n` in the
+ *    even-peer case and re-introduces exactly the self-flattery this repair removes.
+ * 2. **Peers share a metric family.** `cv` is dimensionless but its distribution is not: a comparison across
+ *    families measures the channel rather than the node.
+ * 3. **ABSENT, not zero, when the reference is unmeasurable** — a node alone in its family, fewer than two
+ *    peers, or a peer group whose MAD is exactly 0. The last is the interesting one: a residual over a zero
+ *    spread is an infinity dressed as a number, and a 0 would claim typicality in a group whose typicality is
+ *    undefined. "Unknown is not a measured zero" applies to the REFERENCE, not only to the value.
+ */
+export function computeDispersionResiduals(
+  dominantMetrics:
+    ReadonlyMap<ServiceId, { readonly label: string; readonly dispersionCv?: number }> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  binning: DispersionBinning,
+): { readonly scores: Map<ServiceId, number>; readonly census: DispersionCensus } {
+  const scores = new Map<ServiceId, number>();
+  if (!dominantMetrics || nodeIds.size === 0) {
+    return { scores, census: { ...EMPTY_DISPERSION_CENSUS, services: nodeIds.size } };
+  }
+  const buckets = new Map<string, { readonly id: ServiceId; readonly cv: number }[]>();
+  for (const nodeId of nodeIds) {
+    const entry = dominantMetrics.get(nodeId);
+    if (entry === undefined) continue;
+    // The RAW `σ/μ`, never `breakdown.cv`: that field is the BONUS — `cv > 0.5 ? min(cv, 1.5) × w : 0` — a band
+    // 0.05 wide at the shipped weight, hard-zeroed below 0.5 and saturated above 1.5. Standardising inside that
+    // band would standardise the three transformations rather than the dispersion, and the repair would inherit
+    // the very resolution loss it was built to remove.
+    const cv = entry.dispersionCv;
+    if (cv === undefined || !Number.isFinite(cv)) continue;
+    const key = binning === 'none' ? '' : metricFamily(entry.label);
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [{ id: nodeId, cv }]);
+    else bucket.push({ id: nodeId, cv });
+  }
+  let measured = 0;
+  let singletonFamilies = 0;
+  let zeroMad = 0;
+  let peerShort = 0;
+  for (const bucket of buckets.values()) {
+    measured += bucket.length;
+    if (bucket.length < 2) {
+      singletonFamilies += 1;
+      peerShort += bucket.length;
+      continue;
+    }
+    for (const node of bucket) {
+      const peers = new Float64Array(bucket.length - 1);
+      let at = 0;
+      for (const other of bucket) {
+        if (other.id === node.id) continue;
+        peers[at] = other.cv;
+        at += 1;
+      }
+      // Two peers is the floor: one peer is a point, and a point has no spread to standardise against.
+      if (peers.length < 2) {
+        peerShort += 1;
+        continue;
+      }
+      const centre = medianOfRange(peers, 0, peers.length);
+      const deviations = new Float64Array(peers.length);
+      for (let index = 0; index < peers.length; index += 1) {
+        deviations[index] = Math.abs(peers[index]! - centre);
+      }
+      const spread = medianOfRange(deviations, 0, deviations.length);
+      if (spread === 0) {
+        zeroMad += 1;
+        continue;
+      }
+      scores.set(node.id, (centre - node.cv) / spread);
+    }
+  }
+  return {
+    scores,
+    census: {
+      services: nodeIds.size,
+      measured,
+      families: buckets.size,
+      singletonFamilies,
+      scored: scores.size,
+      absent: measured - scores.size,
+      zeroMad,
+      peerShort,
+    },
+  };
+}
+
 /**
  * Combine a raw metric direction with the log signal into a single rise
  * contribution in [−1, 1].

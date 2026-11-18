@@ -1509,6 +1509,7 @@ export interface TopologyFaultGraphResult {
       tail: number[];
       transientSkipped: string[];
       breakdown?: MetricBreakdown;
+      dispersionCv?: number;
     }
   >;
   /**
@@ -2242,6 +2243,20 @@ interface AnomalyFeatures {
     transientSkipped: string[];
     /** Raw score decomposition of the dominant metric (diagnostic). */
     breakdown?: MetricBreakdown;
+    /**
+     * The dominant metric's RAW coefficient of variation, `σ/μ`, before the bonus pipeline touches it.
+     *
+     * `breakdown.cv` is NOT this quantity: it is `cvBonus = cv > 0.5 ? min(cv, 1.5) × anomalyCvWeight : 0`,
+     * i.e. a band 0.05 wide at the shipped `anomalyCvWeight`, hard-zeroed below 0.5 and saturated above 1.5.
+     * Anything that reads the bonus inherits all three of those transformations, and a statistic built on a
+     * clamped, thresholded, saturating quantity cannot recover the separation it lost — which is exactly what
+     * `docs/PROGRESS_2026-11-17g.md` §4.4 measured when it found 163 misses riding on this term.
+     *
+     * Carried separately so the dispersion residual can read the untransformed statistic while
+     * `computeStabilityScores` keeps reading the bonus it was solved on. Absent means the case did not
+     * decompose the metric, which is an absence rather than a measured zero.
+     */
+    dispersionCv?: number;
   };
   /** One entry per metric the service carries, in input order. */
   metricDiagnostics: MetricDiagnostic[];
@@ -2364,6 +2379,8 @@ function computeAnomalyFeatures(
   let bestMetricValues: Float64Array | null = null;
   let bestMetricTimestamps: readonly number[] | null = null;
   let bestBreakdown: MetricBreakdown | undefined;
+  /** The dominant metric's raw `cv`, beside its bonus — see `AnomalyFeatures.dominantMetric.dispersionCv`. */
+  let bestDispersionCv: number | undefined;
   // One entry per metric examined, so a consumer can reconcile the outcome list
   // against the service's metric inventory without re-deriving the guards.
   const metricDiagnostics: MetricDiagnostic[] = [];
@@ -2848,6 +2865,7 @@ function computeAnomalyFeatures(
       // corrupted the source/symptom ordering signal used downstream.
       bestMetricOnset = metricOnset;
       bestBreakdown = breakdown;
+      bestDispersionCv = cv;
     }
   }
 
@@ -2905,6 +2923,7 @@ function computeAnomalyFeatures(
         .filter((d) => d.outcome === 'transient-return')
         .map((d) => d.label),
       breakdown: bestBreakdown,
+      dispersionCv: bestDispersionCv,
     },
     metricDiagnostics,
   };

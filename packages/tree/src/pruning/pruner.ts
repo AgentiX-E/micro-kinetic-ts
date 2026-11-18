@@ -121,6 +121,7 @@ import {
   DEFAULT_FAILED_EDGE_OVERRIDE_RULE,
   DEFAULT_LOG_NORMALISATION,
   computeDeepestExceptions,
+  computeDispersionResiduals,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
   computeEmissionScores,
@@ -907,6 +908,31 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly stabilityWeight: number;
   /**
+   * Which STATISTIC that weight reads — the node's rank in the case, or its dispersion read against its
+   * metric family.
+   *
+   *   'rank'            → (n − 1 − rank(v)) / (n − 1) over ascending `cv`        ∈ [0, 1]
+   *   'fleet'           → (median_peers(cv) − cv(v)) / MAD_peers(cv)              signed
+   *   'fleet_unbinned'  → the same residual with peers = every measured candidate  signed
+   *
+   * `'rank'` is the shipped statistic and the one every published number was taken with. It cannot express a
+   * SEPARATION: one rank step is `1/(n−1)`, so on a 49-candidate case two nodes whose `cv` differ by a
+   * thousandth and two whose `cv` differ tenfold both move the score by 0.0208. `docs/PROGRESS_2026-11-17g.md`
+   * §4.4 is the measurement of what that costs — 163 of the 249 recoverable misses have `stability` as their
+   * ONLY advantage, and closing their median 0.53 gap on the rank scale needs a multiplier near 350, at which
+   * point the rank's own quantisation dominates and the corpus loses 65 cases.
+   *
+   * `'fleet'` is the repair: same three design rules as `computeFleetSelfTimeResiduals` (leave-one-out
+   * reference, peers selected by the structural attribute that sets the scale — there the out-degree, here the
+   * metric FAMILY — and ABSENT rather than 0 when the reference cannot be measured).
+   * `'fleet_unbinned'` exists to price the binning rather than the residual: if it matches `'fleet'`, the
+   * family key is not paying for itself.
+   *
+   * OPTIONAL, and absent means `'rank'`: the shipped reading is the one every published number was taken with,
+   * so a caller that does not vary the statistic must not have to state it.
+   */
+  readonly stabilityScope?: StabilityScope | undefined;
+  /**
    * Weight on the SELF-TIME prior: rewards a service for the part of its own latency rise that no
    * callee can explain (see {@link computeSelfTimeScores}).
    *
@@ -1369,6 +1395,43 @@ export function isSelfTimeScope(value: string): value is SelfTimeScope {
  * weight has been 0 throughout, so what this constant protects is the meaning of the field rather than a cell.
  */
 export const DEFAULT_SELF_TIME_SCOPE: SelfTimeScope = 'absolute';
+
+/**
+ * Which statistic the decisive-stability weight reads.
+ *
+ * `'rank'` is `computeStabilityScores`, `'fleet'` and `'fleet_unbinned'` are `computeDispersionResiduals` with
+ * peers selected by metric family and by nothing, respectively. The two fleet words are separate members rather
+ * than a boolean beside `'rank'` because a mechanism control that cannot be dispatched is not a control: the
+ * question "is the gain from the residual or from the binning" is answered by running both.
+ */
+export type StabilityScope = 'rank' | 'fleet' | 'fleet_unbinned';
+
+/**
+ * The scope vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree about
+ * which words the engine accepts.
+ */
+export const STABILITY_SCOPES: Readonly<Record<StabilityScope, true>> = {
+  rank: true,
+  fleet: true,
+  fleet_unbinned: true,
+};
+
+/**
+ * Whether a string names a stability scope the engine accepts.
+ *
+ * @param value - The candidate word, typically straight off a command line.
+ * @returns `true` when it is a member of {@link STABILITY_SCOPES}.
+ */
+export function isStabilityScope(value: string): value is StabilityScope {
+  return Object.hasOwn(STABILITY_SCOPES, value);
+}
+
+/**
+ * The shipped statistic: the rank, which is the reading `DEFAULT_STABILITY_WEIGHT`'s criterion intersection was
+ * solved on. A new statistic invalidates that intersection rather than inheriting it, which is why this default
+ * is a word rather than a weight and why the fleet arms carry their own ladder.
+ */
+export const DEFAULT_STABILITY_SCOPE: StabilityScope = 'rank';
 
 /**
  * The shipped weight of the emission term — see {@link TreePrunerOptions.emissionWeight}.
@@ -2443,6 +2506,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   stabilityWeight: DEFAULT_STABILITY_WEIGHT,
   selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
   selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
+  stabilityScope: DEFAULT_STABILITY_SCOPE,
   emissionWeight: DEFAULT_EMISSION_WEIGHT,
   victimWeight: DEFAULT_VICTIM_WEIGHT,
   dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
@@ -2720,10 +2784,15 @@ export class TreePruner {
     // graph: one owner for "which metric won", and the term is exactly 0 unless the weight is
     // non-zero. Ranked ACROSS the case, because the statistic it reads is a clamped bonus whose
     // magnitude saturates — see `computeStabilityScores`.
-    const stabilityScores = computeStabilityScores(
-      dominantMetrics,
-      new Set(callGraph.nodes.keys()),
-    );
+    const stabilityScope = this.options.stabilityScope ?? DEFAULT_STABILITY_SCOPE;
+    const stabilityScores =
+      stabilityScope === 'rank'
+        ? computeStabilityScores(dominantMetrics, new Set(callGraph.nodes.keys()))
+        : computeDispersionResiduals(
+            dominantMetrics,
+            new Set(callGraph.nodes.keys()),
+            stabilityScope === 'fleet' ? 'family' : 'none',
+          ).scores;
     // The FAULT-FREE FREQUENCY prior. Unlike every other map here it is not derived from this case: it is
     // read off a corpus profile the caller built, so at weight 0 nothing is read at all and the ranking is
     // bit-identical to the engine that had no such term.

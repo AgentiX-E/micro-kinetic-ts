@@ -19,6 +19,7 @@ import {
   DEFAULT_PRISM_POOLING,
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_CLOSURE,
@@ -26,6 +27,8 @@ import {
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TREE_PRUNER_OPTIONS,
   isPrismPooling,
+  isSelfTimeScope,
+  isStabilityScope,
   LOG_SATURATION_COUNT,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
@@ -3641,12 +3644,108 @@ describe('TreePruner — self-time prior', () => {
     expect(graph.selfTimeScores).toBeUndefined();
   });
 
+  it('names both self-time scopes and refuses everything else', () => {
+    // The vocabulary is read by a parser that REFUSES an unknown word rather than defaulting, so the negative
+    // half is the half that matters: a typo must not become the shipped arm. `fleet_unbinned` belongs to the
+    // stability statistic, not to this one, and must be refused here rather than silently accepted.
+    expect(isSelfTimeScope('absolute')).toBe(true);
+    expect(isSelfTimeScope('fleet')).toBe(true);
+    for (const value of [
+      '',
+      'ABSOLUTE',
+      'Fleet',
+      'fleet_unbinned',
+      'rank',
+      'toString',
+      '__proto__',
+    ]) {
+      expect(isSelfTimeScope(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+
   it('defaults to the ABSOLUTE scope, which is the arm every published number ran', () => {
     // The scope is optional and absent means `absolute`, so the two readers of the default — this object and the
     // engine's own fallback — must agree; an absent value that meant `fleet` would change the shipped meaning of
     // a weight the moment somebody set one.
     expect(DEFAULT_SELF_TIME_SCOPE).toBe('absolute');
     expect(DEFAULT_TREE_PRUNER_OPTIONS.selfTimeScope).toBe(DEFAULT_SELF_TIME_SCOPE);
+  });
+});
+
+describe('TreePruner — the decisive-stability statistic', () => {
+  // The rank cannot express a separation: one step is `1/(n−1)`, so the sweep in
+  // `PROGRESS_2026-11-17g.md` §4.4 needs a multiplier near 350 to close a median 0.53 gap and loses the
+  // corpus by ×160. These tests pin the WIRING rather than the statistic — the statistic has its own unit
+  // tests in `ranking-signals.test.ts`, where a `cv` can be stated instead of coaxed out of a time series.
+  const STEADY = 'ts-a-service';
+  const MID = 'ts-b-service';
+  const NOISY = 'ts-c-service';
+
+  /** Three services on ONE channel, so the family bucket holds all three and the residual is defined. */
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [STEADY, [makeTimeSeries('latency-90', [10, 10, 10, 10, 20, 20, 20, 20])]],
+      [MID, [makeTimeSeries('latency-90', [10, 10, 10, 10, 20, 25, 18, 21])]],
+      [NOISY, [makeTimeSeries('latency-90', [10, 10, 10, 10, 20, 60, 5, 35])]],
+    ]);
+    // One edge, because the engine refuses an edgeless graph: the terms under test read the metric
+    // composition, and the topology only has to exist for the pruner to accept the case.
+    return [
+      makeCallGraph(
+        [STEADY, MID, NOISY],
+        [
+          [STEADY, MID],
+          [MID, NOISY],
+        ],
+      ),
+      metrics,
+    ];
+  };
+
+  const finalScores = (options: Record<string, unknown>): Map<string, number> => {
+    const [callGraph, metrics] = makeCase();
+    const pruner = new TreePruner({ topoDiscount: 0, ...options });
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+    return new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!]));
+  };
+
+  it('defaults to the RANK, which is the statistic the shipped weight was solved on', () => {
+    // A new statistic invalidates the criterion intersection `DEFAULT_STABILITY_WEIGHT` came from rather than
+    // inheriting it, so the default is a word and every published number stays on the reading it was taken with.
+    expect(DEFAULT_STABILITY_SCOPE).toBe('rank');
+    expect(DEFAULT_TREE_PRUNER_OPTIONS.stabilityScope).toBe(DEFAULT_STABILITY_SCOPE);
+  });
+
+  it('reads a DIFFERENT statistic under `fleet`, so the branch is reachable at all', () => {
+    // The assertion is inequality rather than a direction: the point is that the scope changes what the weight
+    // multiplies. A test that also asserted the sign here would be testing the statistic through a time series,
+    // which is the fixture-building exercise the unit tests already do exactly.
+    const rank = finalScores({ stabilityWeight: 0.1, stabilityScope: 'rank' });
+    const fleet = finalScores({ stabilityWeight: 0.1, stabilityScope: 'fleet' });
+
+    expect(fleet.get(NOISY)).not.toBeCloseTo(rank.get(NOISY)!, 12);
+  });
+
+  it('is inert at weight 0 under every scope, which is what keeps the published numbers fixed', () => {
+    const rank = finalScores({ stabilityWeight: 0, stabilityScope: 'rank' });
+    const fleet = finalScores({ stabilityWeight: 0, stabilityScope: 'fleet' });
+    const unbinned = finalScores({ stabilityWeight: 0, stabilityScope: 'fleet_unbinned' });
+
+    for (const id of [STEADY, MID, NOISY]) {
+      expect(fleet.get(id)!).toBeCloseTo(rank.get(id)!, 12);
+      expect(unbinned.get(id)!).toBeCloseTo(rank.get(id)!, 12);
+    }
+  });
+
+  it('names all three members and refuses everything else', () => {
+    for (const value of ['rank', 'fleet', 'fleet_unbinned']) {
+      expect(isStabilityScope(value), value).toBe(true);
+    }
+    // A scope typo must not fall back to the shipped reading: the scope decides what the weight multiplies, so a
+    // fallback would publish the refused statistic under the repair's name.
+    for (const value of ['', 'RANK', 'fleet-unbinned', 'absolute', 'family', 'toString']) {
+      expect(isStabilityScope(value), JSON.stringify(value)).toBe(false);
+    }
   });
 });
 

@@ -241,6 +241,7 @@ export {
   DEFAULT_SELF_ANOMALY_WEIGHT,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   DEFAULT_TOPO_DISCOUNT,
@@ -255,6 +256,7 @@ export {
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
   ONSET_SHAPES,
   SELF_TIME_SCOPES,
+  STABILITY_SCOPES,
   TreePruner,
   admitsFailedEdgeTerm,
   classifyTermZero,
@@ -264,6 +266,7 @@ export {
   isFailedEdgeGateMode,
   isOnsetShape,
   isSelfTimeScope,
+  isStabilityScope,
   namesDurationChannel,
   sumScoreTerms,
   toRankingWeights,
@@ -274,6 +277,7 @@ export type {
   FailedEdgeGateMode,
   OnsetShape,
   SelfTimeScope,
+  StabilityScope,
   TreePrunerOptions,
 } from './pruning/pruner.js';
 // The evidence report is a property of the CALL CHANNEL rather than of the engine, so its owner is the core
@@ -296,6 +300,7 @@ export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   EMISSION_MIN_RISE,
+  EMPTY_DISPERSION_CENSUS,
   EMPTY_SELF_TIME_CENSUS,
   FAILED_EDGE_CREDITS,
   FAILED_EDGE_MUTUAL_RULES,
@@ -305,6 +310,7 @@ export {
   LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   computeDeepestExceptions,
+  computeDispersionResiduals,
   computeEdgeLatencyByCallee,
   computeEdgeLatencyScores,
   computeEmissionScores,
@@ -334,12 +340,15 @@ export {
   logLineAdmittedByMode,
   maxInboundRise,
   mergeSelfTimeCensus,
+  metricFamily,
   // The trace vote's fleet baseline, exported because the `[trace-z]` instrument in `packages/kinetic` reports the
   // SAME quantity: a vote that read one median while the artifact beside it printed another would be two answers
   // to one question, and the census that explains a wrong vote would be explaining a number the rule never saw.
   traceFleetDrift,
 } from './pruning/ranking-signals.js';
 export type {
+  DispersionBinning,
+  DispersionCensus,
   FailedEdgeMode,
   HttpEmitterDominance,
   HttpSourceJointContext,

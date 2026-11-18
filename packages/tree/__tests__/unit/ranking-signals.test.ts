@@ -9,6 +9,7 @@ import type {
 } from '@agentix-e/micro-kinetic-core';
 import {
   computeDeepestExceptions,
+  computeDispersionResiduals,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeFleetSelfTimeResiduals,
@@ -32,6 +33,7 @@ import {
   LOG_SATURATION_COUNT,
   LOG_SIGNAL_MODES,
   mergeSelfTimeCensus,
+  metricFamily,
   POOL_METRIC_PREFIX,
   rankNormalizeScores,
   traceFleetDrift,
@@ -2650,6 +2652,204 @@ describe('computeStabilityScores', () => {
     expect(computeStabilityScores(undefined, ids).size).toBe(0);
     expect(computeStabilityScores(new Map(), ids).size).toBe(0);
     expect(computeStabilityScores(dominant({ silent: undefined }), ids).size).toBe(0);
+  });
+});
+
+describe('computeDispersionResiduals', () => {
+  /** The dominant metric's record with the two fields this signal reads. */
+  const labelled = (
+    entries: Record<string, { label: string; cv?: number }>,
+  ): ReadonlyMap<ServiceId, { label: string; dispersionCv?: number }> =>
+    new Map(
+      Object.entries(entries).map(([id, e]) => [
+        id,
+        e.cv === undefined ? { label: e.label } : { label: e.label, dispersionCv: e.cv },
+      ]),
+    );
+
+  const idsOf = (entries: Record<string, unknown>): Set<ServiceId> =>
+    new Set<ServiceId>(Object.keys(entries));
+
+  it('reads a family from the label’s first two segments, and the whole name below that', () => {
+    // The corpus carries 50 services against 85–87 distinct labels, so an exact-label reference is
+    // one member wide on average and the term would be absent by construction. Two segments is the
+    // coarsest key that still keeps `k8s.pod.memory.rss` away from `k8s.deployment.desired`.
+    expect(metricFamily('k8s.pod.memory.rss')).toBe('k8s.pod');
+    expect(metricFamily('jvm.memory.committed')).toBe('jvm.memory');
+    expect(metricFamily('container.cpu.usage')).toBe('container.cpu');
+    expect(metricFamily('db.client.connections.usage')).toBe('db.client');
+    expect(metricFamily('processedLogs')).toBe('processedLogs');
+    expect(metricFamily('queueSize')).toBe('queueSize');
+    expect(metricFamily('a.b')).toBe('a.b');
+    expect(metricFamily('')).toBe('');
+  });
+
+  it('is SIGNED: steady relative to the peers is positive, dispersed is negative, typical is zero', () => {
+    // Peers exclude the node itself, so the reference for `low` is the median of {0.02, 0.03} = 0.025
+    // and its MAD is 0.005. Had the node been left in its own reference the answer would be 1, and the
+    // assertion at 3 is what distinguishes the two designs.
+    const { scores } = computeDispersionResiduals(
+      labelled({
+        low: { label: 'container.cpu.usage', cv: 0.01 },
+        mid: { label: 'container.cpu.usage', cv: 0.02 },
+        high: { label: 'container.cpu.usage', cv: 0.03 },
+      }),
+      idsOf({ low: 1, mid: 1, high: 1 }),
+      'family',
+    );
+
+    expect(scores.get('low')).toBeCloseTo(3, 12);
+    expect(scores.get('mid')).toBeCloseTo(0, 12);
+    expect(scores.get('high')).toBeCloseTo(-3, 12);
+  });
+
+  it('never compares across families, so a node alone in its family is ABSENT rather than flattered', () => {
+    // Three noisy `container.cpu` nodes and one steady `jvm.memory` node. Unbinned, the steady node
+    // would read as the most stable thing in the case; binned, its family has no second member and
+    // the statistic says nothing about it — which is the correct answer, not a zero.
+    const dominant = labelled({
+      a: { label: 'container.cpu.usage', cv: 0.4 },
+      b: { label: 'container.cpu.usage', cv: 0.5 },
+      c: { label: 'container.cpu.usage', cv: 0.6 },
+      quiet: { label: 'jvm.memory.committed', cv: 0.001 },
+    });
+    const ids = idsOf({ a: 1, b: 1, c: 1, quiet: 1 });
+
+    const binned = computeDispersionResiduals(dominant, ids, 'family');
+    expect(binned.scores.has('quiet')).toBe(false);
+    expect(binned.scores.get('a')).toBeGreaterThan(0);
+    expect(binned.scores.get('c')).toBeLessThan(0);
+    expect(binned.census.singletonFamilies).toBe(1);
+    expect(binned.census.absent).toBe(1);
+
+    const unbinned = computeDispersionResiduals(dominant, ids, 'none');
+    expect(unbinned.scores.get('quiet')!).toBeGreaterThan(0);
+    expect(unbinned.census.absent).toBe(0);
+  });
+
+  it('never standardises against a single peer — one comparison is not a scale', () => {
+    const { scores, census } = computeDispersionResiduals(
+      labelled({
+        a: { label: 'k8s.pod.memory.rss', cv: 0.1 },
+        b: { label: 'k8s.pod.memory.rss', cv: 0.2 },
+      }),
+      idsOf({ a: 1, b: 1 }),
+      'family',
+    );
+
+    expect(scores.size).toBe(0);
+    expect(census.peerShort).toBe(2);
+    expect(census.absent).toBe(2);
+  });
+
+  it('is ABSENT when the peers carry no spread at all, because the divisor does not exist', () => {
+    // Three identical dispersions: the median equals every peer, so MAD is exactly 0. A residual here
+    // would be an infinity dressed as a number, and a 0 would claim the node is typical of a group
+    // whose typicality is undefined.
+    const { scores, census } = computeDispersionResiduals(
+      labelled({
+        a: { label: 'jvm.cpu.load', cv: 0.25 },
+        b: { label: 'jvm.cpu.load', cv: 0.25 },
+        c: { label: 'jvm.cpu.load', cv: 0.25 },
+      }),
+      idsOf({ a: 1, b: 1, c: 1 }),
+      'family',
+    );
+
+    expect(scores.size).toBe(0);
+    expect(census.zeroMad).toBe(3);
+  });
+
+  it('omits a service whose dominant metric carries no composition — never a zero', () => {
+    const { scores, census } = computeDispersionResiduals(
+      labelled({
+        a: { label: 'container.cpu.usage', cv: 0.01 },
+        b: { label: 'container.cpu.usage', cv: 0.02 },
+        c: { label: 'container.cpu.usage', cv: 0.03 },
+        silent: { label: 'container.cpu.usage' },
+      }),
+      idsOf({ a: 1, b: 1, c: 1, silent: 1 }),
+      'family',
+    );
+
+    expect(scores.has('silent')).toBe(false);
+    expect(census.measured).toBe(3);
+    expect(census.scored).toBe(3);
+  });
+
+  it('counts every absence under exactly one heading', () => {
+    // The census explains the statistic, so it cannot be able to disagree with it: a node either
+    // scores or is absent for one of the two named reasons.
+    const { scores, census } = computeDispersionResiduals(
+      labelled({
+        scored1: { label: 'container.cpu.usage', cv: 0.01 },
+        scored2: { label: 'container.cpu.usage', cv: 0.02 },
+        scored3: { label: 'container.cpu.usage', cv: 0.04 },
+        alone: { label: 'http.server.requests', cv: 0.9 },
+        flat1: { label: 'jvm.class.loaded', cv: 0.3 },
+        flat2: { label: 'jvm.class.loaded', cv: 0.3 },
+        flat3: { label: 'jvm.class.loaded', cv: 0.3 },
+      }),
+      idsOf({ scored1: 1, scored2: 1, scored3: 1, alone: 1, flat1: 1, flat2: 1, flat3: 1 }),
+      'family',
+    );
+
+    expect(scores.size).toBe(3);
+    expect(census.services).toBe(7);
+    expect(census.measured).toBe(7);
+    expect(census.families).toBe(3);
+    expect(census.singletonFamilies).toBe(1);
+    expect(census.scored).toBe(3);
+    expect(census.absent).toBe(census.measured - census.scored);
+    expect(census.absent).toBe(census.zeroMad + census.peerShort);
+  });
+
+  it('returns an empty map and a zeroed census when nothing was measured', () => {
+    for (const dominant of [undefined, new Map()] as const) {
+      const { scores, census } = computeDispersionResiduals(
+        dominant,
+        idsOf({ a: 1, b: 1 }),
+        'family',
+      );
+      expect(scores.size).toBe(0);
+      expect(census.services).toBe(2);
+      expect(census.measured).toBe(0);
+    }
+  });
+
+  it('has no residual for a node outside the candidate set', () => {
+    const { scores } = computeDispersionResiduals(
+      labelled({
+        a: { label: 'container.cpu.usage', cv: 0.01 },
+        b: { label: 'container.cpu.usage', cv: 0.02 },
+        c: { label: 'container.cpu.usage', cv: 0.03 },
+        outsider: { label: 'container.cpu.usage', cv: 0.5 },
+      }),
+      idsOf({ a: 1, b: 1, c: 1 }),
+      'family',
+    );
+
+    expect(scores.has('outsider')).toBe(false);
+    expect(scores.size).toBe(3);
+  });
+
+  it('never lets a node be its own reference, which a two-member family would hide', () => {
+    // `leave-one-out` is invisible with an ODD peer count but changes every answer with an even one:
+    // with three nodes the two designs differ only by a factor, and this pins the factor.
+    const { scores } = computeDispersionResiduals(
+      labelled({
+        a: { label: 'jvm.buffer.count', cv: 0.0 },
+        b: { label: 'jvm.buffer.count', cv: 0.1 },
+        c: { label: 'jvm.buffer.count', cv: 0.2 },
+      }),
+      idsOf({ a: 1, b: 1, c: 1 }),
+      'family',
+    );
+
+    // peers(a) = {0.1, 0.2}: median 0.15, MAD 0.05, residual (0.15 − 0.0) / 0.05 = 3.
+    expect(scores.get('a')).toBeCloseTo(3, 12);
+    expect(scores.get('b')).toBeCloseTo(0, 12);
+    expect(scores.get('c')).toBeCloseTo(-3, 12);
   });
 });
 
