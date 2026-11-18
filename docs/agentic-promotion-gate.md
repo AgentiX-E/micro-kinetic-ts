@@ -308,3 +308,69 @@ agree, only that they agree about the one candidate a promotion would move.
   **published** order (its top-1 is `1 156`, not the `1 141` of a run whose containment pass had nothing to read),
   and both runs' dumps agree — so the table the model was shown in November and the table it would be shown now are
   the same table.
+
+## 10. Where the gate sits in the failure decomposition, and what that makes reachable
+
+`arXiv:2609.36686` (NeurIPS 2026, Evaluations & Datasets Track) separates a root-cause ranking's accuracy into
+whether the cause entered the candidate set and whether it ranked highly once retrieved:
+
+```
+Top@k = Retrieval@K × Rerank@k
+```
+
+It also insists that the two failure masses be reported over the **whole population** rather than conditionally, so
+that they sum to the total error. That decomposition is already an instrument in this repository
+(`benchmarks/src/ranking-depth.ts` prints `Retrieval@K`), and the gate has never been placed in it. Doing so costs
+one computation over the artifact arm G already replays.
+
+| quantity | reading |
+| --- | ---: |
+| `Retrieval@5` — the answer is inside the presented five | `1 249 / 1 422 = 87.83 %` |
+| `Rerank@1 ∣ Retrieval@5` — the engine's first choice, given that | `1 156 / 1 249 = 92.55 %` |
+| identity check | `0.878340 × 0.925540 = 0.812940` = `Top@1` to six places |
+| `Rerank@1` with the gate | `1 165 / 1 249 = 93.27 %` |
+| **reranking headroom at width 5** | **+93 cases, +6.54 pp** → ceiling `87.83 %` |
+| the gate took | **9 of 93 = 9.7 %** of it |
+
+The identity holds exactly, which is what makes the rest of this section arithmetic rather than analogy.
+
+### 10.1 Three consequences, in increasing order of how much they change the roadmap
+
+**1. A perfect reranker at width 5 does not reach the published best.** `87.83 %` is the ceiling of this axis, and
+`arXiv:2608.21310`'s `90.0 %` is 2.17 pp above it. So the 8.1 pp gap §6 names is **not one gap**: 6.54 pp of it is
+reranking and 2.17 pp cannot be bought by reranking at any threshold, at any model quality, on a five-wide list.
+
+**2. The gate is 9.7 % of the way through its own axis, and the axis is nearly closed.** Nine cases out of a
+reachable ninety-three. That is a sharper statement than "+9 is small": the remaining 84 cases are cases where the
+model's first choice is wrong while the answer is visible at positions 2-5, and §7's conversion rate says the model
+already promotes the right one 36.6 % of the time when it can see it — so a better *admission rule* has room, but a
+better **threshold** has none. Every threshold in the plateau moves single digits (§4.1). This is direct evidence
+that the next lever on this axis is a **verifier**, not a wider band.
+
+**3. Width crosses the published best, and the projection is now derived rather than borrowed.** At width 20,
+`Retrieval@20 = 1 310 / 1 422 = 92.12 %`. Holding `Rerank@1` at the measured `92.55 %`:
+
+```
+0.921238 × 0.925540 = 85.26 %  =  1 212 cases
+```
+
+That is the same `85.3 %` that `preregistration-303.md` projected from a width-5 efficiency of `0.926`, arrived at
+here by a different route — which is the first time that projection has been **independently confirmed**. And it
+says something the earlier route did not: a **perfect** reranker at width 20 reaches `92.12 %`, which is **above**
+the published `90.0 %`. The road to the published best is therefore width plus reranking, not a larger backbone —
+and `Rerank@1` only has to reach `90.0 / 92.12 = 97.7 %` of retrieved cases for the combination to match it.
+
+### 10.2 What this section is careful about
+
+- **`Rerank@1` is not assumed constant across widths.** The `85.26 %` above holds it at the value measured at width
+  5, and a wider list may change it in either direction: more candidates to confuse the model, or more of the
+  answers it demonstrably converts. Arm W measures exactly this, which is why its prediction W3 insists the
+  **denominator** stay fixed while the numerator moves.
+- **`Retrieval@50 = 100 %`** on this corpus — every case's accepted answer is somewhere in the 49- or 50-wide
+  order — so the decomposition's `absent` term is zero and the whole error is reranking error **at width 50**.
+  Reporting `92.55 %` without that sentence would repeat the mistake the cited paper's own §"retrieval has no hits"
+  passage warns about: a conditional rate quoted as if it were an unconditional one.
+- **No gap is read against `arXiv:2609.36686`.** Its population is RCAEval plus three CPS datasets, it is registered
+  `OTHER` in `docs/sota-populations.md`, and its artefact URL 404s
+  (`docs/competitor-artefact-availability.md`). What is taken from it is the **decomposition**, which is why the
+  numbers above are this project's own.

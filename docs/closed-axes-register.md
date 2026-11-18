@@ -6361,3 +6361,37 @@ The `+9` is the same `+9`. A confirmation that moved the number would have refut
 this run is that a second implementation through a different entry point agrees to the case. It is still in-sample:
 the threshold was chosen on this corpus, the halves are the only internal replication, and `81.92 %` remains
 8.1 pp below the published RCABench best.
+
+### 308.5 The gate placed in the failure decomposition, which closes its own axis to 9.7 %
+
+`arXiv:2609.36686` decomposes a ranking's accuracy as `Top@k = Retrieval@K × Rerank@k`. That decomposition is
+already an instrument here (`ranking-depth.ts` prints `Retrieval@K`) and the gate had never been placed in it. On
+the artifact arm G replays:
+
+| quantity | reading |
+| --- | ---: |
+| `Retrieval@5` | `1 249 / 1 422 = 87.83 %` |
+| `Rerank@1 ∣ Retrieval@5`, gate off | `1 156 / 1 249 = 92.55 %` |
+| identity | `0.878340 × 0.925540 = 0.812940` = `Top@1` |
+| `Rerank@1`, gate on | `1 165 / 1 249 = 93.27 %` |
+| reranking headroom at width 5 | **+93 cases, +6.54 pp** |
+| the gate took | **9 of 93 = 9.7 %** |
+
+Three consequences, and the third is the one that changes the roadmap.
+
+1. **A perfect reranker at width 5 stops at `87.83 %`**, which is 2.17 pp below the published `90.0 %`. So the
+   8.1 pp gap is two gaps: 6.54 pp reranking and 2.17 pp that no threshold, at any model quality, can buy on a
+   five-wide list.
+2. **The gate is 9.7 % through its own axis.** Nine of ninety-three. The remaining eighty-four are cases where the
+   answer is visible at positions 2-5 and the model's first choice is wrong, and §7's `36.6 %` conversion says the
+   model does convert them when it can see them — so a better *admission rule* has room and a better *threshold*
+   does not. The next lever on this axis is a verifier, not a wider band.
+3. **Width crosses the published best, and the projection is now derived.** `Retrieval@20 = 92.12 %`, so holding
+   `Rerank@1` at `92.55 %` gives `0.921238 × 0.925540 = 85.26 %` — the same `85.3 %` `preregistration-303.md`
+   projected by a different route, which is the first independent confirmation of it. And a **perfect** reranker at
+   width 20 reaches `92.12 %`, above the published `90.0 %`: the road is width plus reranking, not a larger
+   backbone, and `Rerank@1` needs only `97.7 %` of retrieved cases to match it.
+
+The care this needs is stated in `agentic-promotion-gate.md` §10.2 and one item is worth repeating here:
+`Retrieval@50 = 100 %` on this corpus, so `92.55 %` is a conditional rate and quoting it without its denominator
+would be the mistake that paper warns about.
