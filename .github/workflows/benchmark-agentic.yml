@@ -114,6 +114,21 @@ on:
         description: 'Promotion gate threshold as a fraction of the case''s own spread (empty = the gate is not consulted, `off` = the explicit control, a number in (0,1) = the arm)'
         required: false
         default: ''
+      # ── The topology brief: what the model is TOLD ───────────────────────────────────────────────────────────
+      #
+      #   `fingerprint_top_k` widens the TABLE; this states the GRAPH. `auto` derives one brief per corpus from
+      #   the union of every case''s call graph, at measure time, and stages it beside the dumps. It is ONE string
+      #   for the whole population by construction, and that constancy is the guard rather than a budget: a text
+      #   that differed by case would be a per-case input, and a per-case input can carry the answer without ever
+      #   printing it. The digest changes, so a run with the brief on cannot reuse a claim recorded with it off.
+      #
+      #   `auto` is the only value implemented. A hand-written document is the paper''s own shape and a DIFFERENT
+      #   arm with its own provenance argument (`preregistration-306.md`), so the study step REFUSES any other
+      #   non-empty value rather than deriving one under a name that promised another.
+      topology_brief:
+        description: 'Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus''s own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -250,6 +265,20 @@ jobs:
           if [ -n "${{ inputs.fingerprint_top_k }}" ]; then
             FINGERPRINT_WIDTH_ARG=(--presentation-out artifacts/agentic/presentation.ndjson --fingerprint-top-k "${{ inputs.fingerprint_top_k }}")
           fi
+          #   The TOPOLOGY brief. It is written here, not in `study`, because the call graph is built per case and
+          #   released with it: no artifact this workflow uploads carries an edge, so a consumer could not derive
+          #   the union without a second 25-minute corpus pass. `auto` is the only value implemented, and the
+          #   refusal is here rather than in the runner so a dispatch that named a hand-written document fails
+          #   before it spends 25 minutes measuring an arm it did not ask for.
+          TOPOLOGY_ARG=()
+          if [ -n "${{ inputs.topology_brief }}" ]; then
+            if [ "${{ inputs.topology_brief }}" != "auto" ]; then
+              echo "REFUSING: topology_brief=${{ inputs.topology_brief }} -- only 'auto' is implemented; a hand-written"
+              echo "document is a different arm (preregistration-306.md) and would need its own provenance argument."
+              exit 1
+            fi
+            TOPOLOGY_ARG=(--topology-brief-out artifacts/agentic/topology.ndjson)
+          fi
           #   The TERMS dump is new here and it is what the promotion gate divides by. Its array order is the
           #   engine's answer at the width it was asked for, and the gate reads `full[0]`, `full[1]` and
           #   `min(score)` -- the answer, the margin and the denominator -- none of which the width of the
@@ -267,6 +296,7 @@ jobs:
             --output artifacts/agentic/results.json \
             "${CONTAINMENT_ARG[@]}" \
             "${FINGERPRINT_WIDTH_ARG[@]}" \
+            "${TOPOLOGY_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" 2>&1 | tee artifacts/agentic/results.txt
           echo "fingerprint lines: $(wc -l < artifacts/agentic/fingerprints.ndjson)"
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
@@ -283,6 +313,11 @@ jobs:
           #   written at the SHIPPED depth (5), because that is the population every containment measurement in
           #   `docs/containment-order.md` was taken on — a dump at another depth would explain an arm nobody ran.
           echo "containment lines: $(wc -l < artifacts/agentic/containment.ndjson)"
+          #   One line, because the brief is one record: the union of a corpus has one topology. A count of two
+          #   would mean the flag ran twice into one path, and the reader refuses that rather than picking one.
+          if [ -f artifacts/agentic/topology.ndjson ]; then
+            echo "topology lines:    $(wc -l < artifacts/agentic/topology.ndjson)"
+          fi
 
       # The corpus manifest is STAGED BESIDE THE DUMPS rather than uploaded from the workspace root.
       #   `upload-artifact` computes the least common ancestor of every path it is given, so one path outside
@@ -311,6 +346,7 @@ jobs:
             artifacts/agentic/depth.ndjson
             artifacts/agentic/terms.ndjson
             artifacts/agentic/containment.ndjson
+            artifacts/agentic/topology.ndjson
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
             artifacts/agentic/manifest.json
@@ -624,6 +660,15 @@ jobs:
           if [ -n "${{ inputs.promotion }}" ]; then
             PROMOTION_ARG=(--promotion "${{ inputs.promotion }}")
           fi
+          #   `--topology-brief` names the artifact the measure job staged, and it is passed by PRESENCE for the
+          #   reason `--depth` above is: the file exists only because an input asked for it, so its absence IS the
+          #   default and a study over an older artifact still runs its fusion arms. It is NOT derived from the
+          #   input directly -- a dispatch that named `auto` while the artifact is missing would measure the control
+          #   under the arm's name, which is the one outcome a channel arm cannot survive.
+          BRIEF_ARG=()
+          if [ -f artifacts/agentic/topology.ndjson ]; then
+            BRIEF_ARG=(--topology-brief artifacts/agentic/topology.ndjson)
+          fi
           #   The TABLE comes from the presentation dump when the measure job wrote one, and from the published
           #   fingerprint otherwise. Presence rather than a second reading of the input, on the rule `--depth`
           #   above follows: the file exists only because that input asked for it, so its absence IS the default,
@@ -643,6 +688,7 @@ jobs:
             "${WIDTH_ARG[@]}" \
             "${DEPTH_ARG[@]}" \
             "${PROMOTION_ARG[@]}" \
+            "${BRIEF_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/nomination.txt
 
       - name: Say why the nomination arm did not run

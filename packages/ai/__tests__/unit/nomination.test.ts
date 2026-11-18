@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CandidateFingerprint } from '../../src/agent/hypothesis-space.js';
 import {
+  DEFAULT_NOMINATION_OPTIONS,
   NOMINATION_PROTOCOL,
   NOMINATION_REJECTIONS,
   buildNominationPrompt,
@@ -75,9 +76,53 @@ describe('buildNominationPrompt', () => {
       maxCandidates: 2,
       maxChannels: 8,
       maxRanked: 2,
+      topologyBrief: '',
     });
     expect(narrow.presented).toBe(2);
     expect(narrow.user).not.toContain('ts-seat-service');
+  });
+
+  it('adds nothing at all when no topology brief is supplied', () => {
+    // The empty default is load-bearing: every number this repository has published from this prompt was measured
+    // without a brief, and a section that appears when nobody asked for it would change every digest in the record.
+    expect(DEFAULT_NOMINATION_OPTIONS.topologyBrief).toBe('');
+    expect(prompt.user).not.toContain('SYSTEM (');
+    expect(prompt).toEqual(
+      buildNominationPrompt('HTTPResponseReplaceCode', posterior, {
+        maxCandidates: 5,
+        maxChannels: 8,
+        maxRanked: 5,
+        topologyBrief: '',
+      }),
+    );
+  });
+
+  it('places the brief between the fault type and the candidate table, and carries it verbatim', () => {
+    const briefed = buildNominationPrompt('HTTPResponseReplaceCode', posterior, {
+      maxCandidates: 5,
+      maxChannels: 8,
+      maxRanked: 5,
+      topologyBrief: 'SYSTEM (who calls whom)\n  a -> b',
+    });
+    const lines = briefed.user.split('\n');
+    const faultLine = lines.findIndex((line) => line.startsWith('FAULT TYPE:'));
+    const briefLine = lines.findIndex((line) => line.startsWith('SYSTEM ('));
+    const tableLine = lines.findIndex((line) => line.startsWith('CANDIDATES:'));
+    expect(faultLine).toBe(0);
+    expect(briefLine).toBeGreaterThan(faultLine);
+    expect(tableLine).toBeGreaterThan(briefLine);
+    expect(briefed.user).toContain('  a -> b');
+  });
+
+  it('changes the digest when a brief is added, because a recorded answer belongs to the question asked', () => {
+    const briefed = buildNominationPrompt('HTTPResponseReplaceCode', posterior, {
+      maxCandidates: 5,
+      maxChannels: 8,
+      maxRanked: 5,
+      topologyBrief: 'SYSTEM (who calls whom)\n  a -> b',
+    });
+    expect(briefed.digest).not.toBe(prompt.digest);
+    expect(briefed.presented).toBe(prompt.presented);
   });
 });
 

@@ -339,6 +339,18 @@ export interface Fse26CliOptions {
    */
   readonly presentationOut: string;
   /**
+   * Path to write the TOPOLOGY BRIEF to (empty = none).
+   *
+   * One record: the union of every case's call graph, rendered as the section the nomination prompt can carry.
+   * It is written by the run that measured because only a corpus pass holds the graphs, and it is written rather
+   * than passed as a string because a dispatch must not be able to attach a topology nobody measured.
+   *
+   * It is NOT part of the reported configuration, on the rule every other dump follows: it changes no ranking
+   * and describes no engine option, so the run's `Top@1` is the same with it and without it. What it identifies is
+   * the OFFLINE arm that reads it, and that arm prints its digest.
+   */
+  readonly topologyBriefOut: string;
+  /**
    * Path to write the per-case RANKING DEPTH to (empty = none).
    *
    * `Top@1` and `Top@5` divide the corpus's misses into two families that an average cannot distinguish: a case
@@ -893,6 +905,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentDepth: DEFAULT_CONTAINMENT_DEPTH,
     fingerprintTopK: DEFAULT_FINGERPRINT_TOP_K,
     presentationOut: '',
+    topologyBriefOut: '',
     dropMetrics: [] as string[],
     eventExtraLabels: [] as string[],
     metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
@@ -1011,6 +1024,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.containmentDepth = depth;
     } else if (arg === '--presentation-out' && hasValue(argv, i + 1))
       opts.presentationOut = argv[++i]!;
+    else if (arg === '--topology-brief-out' && hasValue(argv, i + 1))
+      opts.topologyBriefOut = argv[++i]!;
     else if (arg === '--fingerprint-top-k' && hasValue(argv, i + 1)) {
       // `0` is "every candidate" and is legal; a negative or fractional width is refused rather than rounded,
       // for the reason `--containment-depth` records above: a clamped value publishes an artifact of a width the

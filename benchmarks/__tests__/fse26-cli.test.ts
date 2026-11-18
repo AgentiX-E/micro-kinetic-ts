@@ -316,6 +316,16 @@ describe('parseFSE26Args — other flags', () => {
       }
     });
 
+    it('parses the topology-brief path onto its own field, and defaults it to no file', () => {
+      // The brief is a fourth artifact writer and the only one that is not a rendering of the run's own answer:
+      // it is the union of the call graphs every case carried. It is a PATH here and never text, because a
+      // dispatch that could type a topology could attach one nobody measured.
+      expect(parseFSE26Args([]).topologyBriefOut).toBe('');
+      expect(parseFSE26Args(['--topology-brief-out', 't.ndjson']).topologyBriefOut).toBe(
+        't.ndjson',
+      );
+    });
+
     it('refuses a width that no writer would use', () => {
       // A width without the file it widens is a flag that does nothing, and an arm dispatched that way would read
       // a five-wide artifact and report the width it asked for. The default is not refused, because the default

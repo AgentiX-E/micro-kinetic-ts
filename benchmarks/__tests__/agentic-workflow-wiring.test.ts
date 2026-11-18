@@ -205,6 +205,49 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     }
   });
 
+  it('derives the topology brief at measure time, carries it, and lets only `auto` name it', () => {
+    // The brief cannot be derived in `study`: the call graph is built per case and released with it, so no artifact
+    // this workflow uploads carries an edge. It is written where the corpus is and read where the artifacts are,
+    // and the three links below are the arm -- a brief written and not uploaded measures the control, and one
+    // uploaded and not passed measures it too.
+    expect(WORKFLOW).toContain(
+      'TOPOLOGY_ARG=(--topology-brief-out artifacts/agentic/topology.ndjson)',
+    );
+    const measure = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-fse26.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/results.txt'),
+    );
+    expect(measure).toContain('"${TOPOLOGY_ARG[@]}"');
+    // The measure half may name the WRITER and never the reader: `--topology-brief` is the arm's flag, and a
+    // workflow that passed it here would be attaching a brief to a run that never wrote one.
+    expect(measure).not.toMatch(/--topology-brief(?!-out)/);
+    // Uploaded with the measurement, on the same truncate-once rule as every other dump.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    expect(upload.slice(0, upload.indexOf('if-no-files-found'))).toContain(
+      'artifacts/agentic/topology.ndjson',
+    );
+    // The study passes it by PRESENCE, not by re-reading the input, so a study over an older artifact still runs
+    // its fusion arms -- and a dispatch that typed `auto` while the file is missing cannot measure the control
+    // under the arm's name.
+    expect(WORKFLOW).toContain('if [ -f artifacts/agentic/topology.ndjson ]; then');
+    expect(WORKFLOW).toContain('BRIEF_ARG=(--topology-brief artifacts/agentic/topology.ndjson)');
+    const nomination = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-agentic-nomination.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/nomination.txt'),
+    );
+    expect(nomination).toContain('"${BRIEF_ARG[@]}"');
+    // One value is implemented, and the refusal runs BEFORE the 25-minute measurement rather than after it.
+    expect(WORKFLOW).toContain('if [ "${{ inputs.topology_brief }}" != "auto" ]; then');
+    expect(WORKFLOW).toContain('exit 1');
+    expect(inputNames(WORKFLOW)).toContain('topology_brief');
+    // And the refusal is inside the measure job, i.e. ahead of the run it would waste.
+    const measureJob = jobs(WORKFLOW).get('measure')!;
+    expect(measureJob).toContain('inputs.topology_brief');
+    expect(measureJob.indexOf('inputs.topology_brief')).toBeLessThan(
+      measureJob.indexOf('tsx benchmarks/src/run-fse26.ts'),
+    );
+  });
+
   it('forwards the gate as a word or a number, and never as an empty string', () => {
     // `Number('off')` is NaN, so `off` has to reach the parser as the WORD; an empty input has to reach it as
     // nothing at all, because an empty threshold would be a band of zero rather than a control.

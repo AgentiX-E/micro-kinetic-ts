@@ -66,6 +66,18 @@ export interface NominationOptions {
   readonly maxChannels: number;
   /** How many services a reply may rank. Equal to the window unless a caller narrows it. */
   readonly maxRanked: number;
+  /**
+   * The corpus-level topology section, or `''` for a prompt that carries no graph at all.
+   *
+   * It lives on the options rather than in the system message because it is an **ablation**: the shipped default
+   * is empty and every published number from this prompt was measured with it empty. Required rather than
+   * optional, because a caller that meant to send a brief and forgot would silently measure the control — a
+   * mistake whose shape is "no change", which is the one shape a result cannot be distinguished from.
+   *
+   * The caller supplies the text and this module does not read it, so a prompt builder can never make the section
+   * depend on the case. See `topology-brief.ts` for why that constancy is the guard.
+   */
+  readonly topologyBrief: string;
 }
 
 /** Defaults: the same presentation the elimination protocol publishes, and a ranking of the whole window. */
@@ -73,6 +85,7 @@ export const DEFAULT_NOMINATION_OPTIONS: NominationOptions = {
   maxCandidates: 5,
   maxChannels: 8,
   maxRanked: 5,
+  topologyBrief: '',
 };
 
 /** One question, as it will be sent. */
@@ -143,6 +156,9 @@ export function buildNominationPrompt(
   );
   const user = [
     `FAULT TYPE: ${faultType}`,
+    // The topology section sits between the fault type and the table, and only when a caller supplied one: the
+    // empty default leaves this prompt byte-identical to the one every published number was measured on.
+    ...(options.topologyBrief === '' ? [] : ['', options.topologyBrief]),
     `CANDIDATES: ${window.length} (rank 0 is the engine's answer; a higher score is a stronger claim)`,
     '',
     ...(blocks.length === 0

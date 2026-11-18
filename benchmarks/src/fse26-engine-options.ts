@@ -246,6 +246,10 @@ export const NON_ENGINE_OPTION_KEYS = [
   // test is the only thing that makes a new flag say which side of the partition it is on.
   'fingerprintTopK',
   'presentationOut',
+  // The topology-brief writer: a fourth artifact writer on the same rule. It serialises the union of the call
+  // graphs the engine was already given, for a layer that runs after the ranking, and the engine never reads it
+  // back — a run with the brief and a run without it are one configuration and one published answer.
+  'topologyBriefOut',
   'dropMetrics',
   // Where the fault-free profile is read FROM. The profile reaches the engine as a second argument rather than
   // as a parsed field, because reading a file is IO and this module is the pure projection a test checks; the

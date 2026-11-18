@@ -282,6 +282,11 @@ export default defineConfig({
         // array it was given, by identity, because a slice that equals it is a different code path and the arm's
         // control would then be produced by something the treatment does not share.
         'src/fingerprint-width.ts',
+        // Added with the module: the corpus topology brief as an artifact. What is asserted is the part that can
+        // fail silently — that the digest is re-derived rather than trusted, that a file holding two briefs is
+        // REFUSED instead of attributed by name, and that the writer truncates on construction. An arm that read a
+        // stale or half-attributed brief would report a channel it never sent.
+        'src/topology-brief-file.ts',
         // Added with the module: obtaining a collector a plain dispatch does not expose. Its whole value is the
         // difference between a release and a reclamation — the runner drops 3 GB of cases per cell and, without a
         // collection, keeps every page until V8 next feels pressure.

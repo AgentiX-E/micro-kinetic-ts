@@ -283,6 +283,15 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
     "PRESENTATION-WIDTH arm needs, because that arm's question is what a model does with a wider table and the " +
     'only honest way to ask it is to hand the arm an artifact that holds one. `docs/agentic-presentation-width.md` ' +
     'owns the reading it made possible',
+  topologyBriefOut:
+    'writes the corpus TOPOLOGY BRIEF (--topology-brief-out): the union of every case’s call graph, rendered as ' +
+    'the section a nomination prompt can carry. An OUTPUT PATH, and the engine never reads it back — it ' +
+    'multiplies nothing, because the ranking is computed before the path is opened. It is not a knob and it is ' +
+    'not a presentation: it is the one input an OFFLINE arm needs that only a corpus pass can produce, since the ' +
+    'call graph is built per case and released with it. The reason it is one string per corpus rather than one ' +
+    'per case is the guard, not the budget — a text that differed by case would be a per-case input, and a ' +
+    'per-case input can carry the answer without printing it. `docs/agentic-topology-brief.md` owns the reading ' +
+    'it exists for',
   presentationOut:
     'writes the second elimination FINGERPRINT, at the width `--fingerprint-top-k` asks for; an OUTPUT PATH, and ' +
     'the engine never reads it back. It exists as a SEPARATE file because the two dumps carry two contracts: ' +
@@ -1430,6 +1439,17 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'same `Top@1`, `Top@3` and `Top@5` at any value — verified by running two widths and comparing the `per-case` ' +
     'rows, the terms dump and the results file byte for byte. A benchmark dispatch must not reach it, because ' +
     "the arm that needs a wider artifact reads a study workflow's dump and not a benchmark cell",
+  // And the topology brief, under exactly the caveat the width records: `benchmark-agentic.yml` DOES pass it,
+  // because a topology brief is an input to an OFFLINE arm and only a corpus pass holds the call graphs, and that
+  // workflow is outside this census's scan set. The entry therefore means "no BENCHMARK dispatch reaches it" —
+  // the safe direction, since a benchmark cell whose prompt could be given a system description would be a cell
+  // whose published `Top@1` no longer describes the configuration the standing table quotes.
+  '--topology-brief-out':
+    "writes the corpus topology brief: the union of every case's call graph, rendered as the one section a " +
+    'nomination prompt can carry. A property of the CORPUS and of an offline arm, never of the ranking — it is ' +
+    'written after the answer is computed, so a run reports the same `Top@1` with it and without it. A benchmark ' +
+    "dispatch must not reach it, because the arm that needs a graph reads the study workflow's dump and because a " +
+    "brief inside a benchmark cell would be a prompt input inside a number that claims to be the engine's",
   // And the SECOND dump the width writes into, which exists because one file could not carry two contracts.
   // `benchmark-agentic.yml` passes it beside `--fingerprint-top-k` for the reason recorded on that entry. The
   // claim this entry makes is the sharper one: no BENCHMARK dispatch should be able to produce a second

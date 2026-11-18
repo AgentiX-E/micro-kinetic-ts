@@ -94,3 +94,7 @@ export type {
   PromotionOutcome,
   PublishedCandidate,
 } from './promotion.js';
+
+export { TOPOLOGY_BRIEF_HEADING, TopologyUnion, renderTopologyBrief } from './topology-brief.js';
+
+export type { RenderedTopologyBrief, TopologyBriefInput, TopologyEdge } from './topology-brief.js';

@@ -92,6 +92,11 @@ export const NO_FAULT_FREE_PROFILE: FaultFreeProfileState = { digest: null };
  * dump. The one thing that does change is the fingerprint's own width, and a dump states that itself: its
  * `capped` census counts the cases the width cut.
  *
+ * `topologyBriefOut` is a writer's path, and the thing it writes is not even a rendering of this run's answer: it
+ * is the union of the call graphs the engine was handed. It is excluded on the rule that excludes the profile —
+ * "no configuration field is a blob" — while the artifact it produces carries its own digest, which is what a
+ * replay of the OFFLINE arm names.
+ *
  * `dropMetrics` is NOT here: it changes the ranking, so it is reported.
  */
 export const NOT_REPORTED_FSE26_OPTION_KEYS = [
@@ -109,6 +114,7 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
   'containmentOut',
   'containmentDepth',
   'fingerprintTopK',
+  'topologyBriefOut',
   'faultFreeProfilePath',
 ] as const;
 

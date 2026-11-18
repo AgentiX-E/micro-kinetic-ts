@@ -6638,3 +6638,55 @@ corpus and already runs the builder for nothing in the other workflow. Building 
 surface — from the corpus it just downloaded, keyed by the same digest — makes the cell the configuration the
 engine actually ships, and it costs one engine run and no model calls. It is recorded here as a defect in the
 published cell rather than as an arm, because that is what it is.
+
+## §311 — What the model is TOLD: the topology brief, built and guarded before the arm runs
+
+`docs-repository:preregistration-306.md`'s decision rule selected arm T on the outcome of arm W: the falsifier fired
+(`1 165 ≤ 1 165`), so the width class closed and the next lever is not more rows but better evidence for the rows
+already shown. This entry records the instrument — `docs/agentic-topology-brief.md` §1–§7 — and the two things it is
+constructed to make impossible. The readback is a later entry, on the rule §309 and §310 established.
+
+### 311.1 The one input the prompt lacks, and where the engine already encodes it
+
+A prompt row carries the channels that moved, their bands, their rates and their onsets. It carries no edge. The
+engine encodes edges in exactly one place — the containment pass inverts an adjacent pair only when it is a direct
+call edge (`docs/containment-order.md`) — so the missing input is not a modelling opinion about what would help; it
+is a quantity the system already computes and the question does not ask about.
+
+### 311.2 Why the brief is constant over the corpus, and what that buys
+
+A per-case rendering of "the edges among these candidates" is a per-case input, and a per-case input can carry the
+answer without printing it. Auditing such a rendering would mean enumerating every function of the label it might
+have learned. So the brief is the **union** graph, rendered once: one string, byte-identical for every case, asserted
+over a population whose fault types, orders and labels all differ, and asserted again under a relabelling of every
+case's accepted set. The guard is therefore a property of the population and not of a code review, and the digest
+moves with the bytes.
+
+### 311.3 The empty default is load-bearing
+
+`NominationOptions.topologyBrief` defaults to `''` and the prompt is then **byte-identical** to the one every
+published nomination number was measured on — the same digest, asserted against a freshly built options literal
+rather than against a remembered hash. Required rather than optional, for the reason the width's second owner was
+deleted (§309.2): a field a caller may omit is a caller that can silently measure the control, and "no change" is the
+one result that cannot be told apart from a mistake.
+
+### 311.4 What it costs, measured at dispatch rather than assumed
+
+`chars × cases`, and the run prints both numbers beside the digest. The width's first pricing was wrong by 3.99×
+(§309, `docs/agentic-presentation-width.md` §5) because it multiplied a per-case constant that was not constant; this
+instrument's price is a function of the corpus's distinct edge count, so it too is printed rather than claimed.
+
+### 311.5 The instrument is derived, and the falsifier says what that means
+
+`arXiv:2609.36686` moves a reranker +7 to +18 points with a description a human wrote. A brief derived from a union
+graph states structure and cannot state purpose, so a failure here refutes "the derivable part is enough" and not the
+paper. The hand-written document stays open, priced separately, and needs its own provenance argument because no
+dispatch can reproduce it.
+
+### 311.6 What was repaired on the way: the two owners of the prompt options
+
+The nomination runner built `NominationOptions` twice — once inside the proposal branch and once for the digest
+check — and the two literals had to agree or every recorded answer would read as `STALE`, a report about the artifact
+instead of about the build. The brief added a fourth field, i.e. a fourth chance to disagree, so the two literals are
+now one object built before either use. This is §307's shape a fourth time: **a decision with two owners**, found
+because a field was added to both.

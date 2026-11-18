@@ -116,6 +116,20 @@ describe('parseNominationArgs', () => {
     expect(args.delta).toBeCloseTo(0.2, 12);
   });
 
+  it('reads the topology-brief path, and defaults it to a prompt with no graph', () => {
+    expect(parseNominationArgs(['--fingerprints', 'f', '--verdicts', 'v']).topologyBrief).toBe('');
+    expect(
+      parseNominationArgs([
+        '--fingerprints',
+        'f',
+        '--verdicts',
+        'v',
+        '--topology-brief',
+        'topology.ndjson',
+      ]).topologyBrief,
+    ).toBe('topology.ndjson');
+  });
+
   it('refuses a value outside its range', () => {
     const base = ['--fingerprints', 'f', '--verdicts', 'v'];
     expect(() => parseNominationArgs([...base, '--concurrency', '0'])).toThrow(/concurrency/);

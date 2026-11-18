@@ -39,6 +39,7 @@ import { basename } from 'node:path';
 
 import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
 
+import { TopologyUnion } from '../../packages/ai/src/agent/index.js';
 import type { BenchmarkCase, FSE26RawCase } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   buildFSE26Diagnostic,
@@ -69,6 +70,7 @@ import { buildFse26RunConfig } from './fse26-run-config.js';
 import { DepthDump, formatDepthLadder, readDepthDump } from './ranking-depth.js';
 import { formatSelfTimeCensus } from './self-time-census-report.js';
 import { TermDump } from './terms-dump.js';
+import { TopologyBriefDump } from './topology-brief-file.js';
 
 import {
   boundaryPlaceable,
@@ -254,6 +256,13 @@ async function main(): Promise<void> {
   // It is also the only artifact that can tell a case ranked too low from a case the order never held, which is
   // the split that decides whether the remaining headroom is a ranking question or a graph question.
   const depthDump = opts.depthOut === '' ? undefined : new DepthDump(opts.depthOut);
+  // The topology brief, and it is the only dump here that is not a rendering of THIS run's answer: it is the
+  // union of the call graphs every case carried. It is written rather than passed as a string because a corpus
+  // pass is the only thing that holds the graphs — a dispatch that could type a topology could attach one nobody
+  // measured — and it is written ONCE per run because a brief that differed by case would be a per-case input.
+  const topologyUnion = opts.topologyBriefOut === '' ? undefined : new TopologyUnion();
+  const topologyDump =
+    opts.topologyBriefOut === '' ? undefined : new TopologyBriefDump(opts.topologyBriefOut);
   // The containment rows, on the same truncate-once rule and for the same reason: they describe a POPULATION.
   const containmentDump =
     opts.containmentOut === '' ? undefined : new ContainmentRowDump(opts.containmentOut);
@@ -280,6 +289,9 @@ async function main(): Promise<void> {
     }
     if (dropSet.size > 0) raw = dropFSE26MetricNames(raw, dropSet);
     const benchCase = loader.toBenchmarkCase(raw);
+    // The union takes the CASE's edges and nothing else, so there is no argument by which a label, a fault type or
+    // the engine's answer could reach the brief. An edge observed in ten cases is one edge.
+    topologyUnion?.addCase(benchCase.callGraph.edges);
     // Count what the ranking can actually use, from the SAME node set the signal
     // filters on (`callGraph.nodes` is exactly the metric-keyed service set), so
     // the counter cannot disagree with the signal about what was usable.
@@ -491,6 +503,37 @@ async function main(): Promise<void> {
     cell.total++;
     if (ranking.length > 0 && accepted.includes(ranking[0]!.serviceId)) cell.correct++;
     faultCells.set(faultType, cell);
+  }
+
+  // ── The topology brief, rendered once over the whole population ──
+  if (topologyUnion !== undefined && topologyDump !== undefined) {
+    const brief = topologyUnion.render(predictionsPerCase.length);
+    if (brief.text === '') {
+      // Nothing was written, and it is said rather than left to the reader: a file with no record is
+      // indistinguishable from a file the run forgot to write, and the arm that reads it would refuse either way.
+      console.log(
+        `  Topology brief: the corpus carried no call edge, so NO brief was written to ${opts.topologyBriefOut}`,
+      );
+    } else {
+      topologyDump.record({
+        // A label for the file's reader. `basename` of a path that ends in a separator is empty, so the fallback is
+        // not cosmetic: an empty `system` is refused by the reader.
+        system: basename(opts.dataDir) || 'corpus',
+        cases: predictionsPerCase.length,
+        services: brief.services,
+        edges: brief.edges,
+        digest: brief.digest,
+        brief: brief.text,
+      });
+      // The size is printed beside the digest because the brief is priced per case: an arm that shows every case
+      // the union is a channel whose cost is `chars × cases`, and that product is the number the dispatch is
+      // bought with. `estimatedTokens` is `chars / 4` and is named an estimate for the reason the field documents.
+      console.log(
+        `  Topology brief: ${brief.services} services, ${brief.edges} call edges over ` +
+          `${predictionsPerCase.length} cases, ${brief.chars} chars (~${brief.estimatedTokens} tokens estimated), ` +
+          `digest ${brief.digest} -> ${opts.topologyBriefOut}`,
+      );
+    }
   }
 
   // ── Aggregate ────────────────────────────────────────────

@@ -50,6 +50,7 @@ import {
 import { createChatClientFromEnv } from './chat-completions.js';
 import { readPerCaseVerdicts } from './fse26-per-case.js';
 import { parseTermsDump } from './terms-dump.js';
+import { readOneTopologyBrief } from './topology-brief-file.js';
 
 /** A rate as the tables print it. */
 function percent(value: number): string {
@@ -115,6 +116,24 @@ async function main(): Promise<void> {
     return;
   }
 
+  // The brief is read before a single question is asked, and a file that cannot be used as ONE corpus's topology
+  // stops the run: an arm that fell back to no brief would publish the control's number under the arm's name.
+  let topologyBrief = '';
+  if (args.topologyBrief !== '') {
+    const read = readOneTopologyBrief(args.topologyBrief);
+    if (!read.ok) {
+      console.log(`REFUSING: ${read.why}`);
+      process.exitCode = 1;
+      return;
+    }
+    topologyBrief = read.brief;
+    console.log(
+      `Topology:      ${read.record.system} — ${read.record.services} services, ${read.record.edges} edges ` +
+        `over ${read.record.cases} cases, ${read.brief.length} chars (~${Math.ceil(read.brief.length / 4)} tokens ` +
+        `estimated), digest ${read.record.digest}`,
+    );
+  }
+
   const population =
     args.limit > 0
       ? inCaseOrder(join.cases, (one) => one.datapack).slice(0, args.limit)
@@ -133,17 +152,22 @@ async function main(): Promise<void> {
     return;
   }
 
+  // ONE owner for the options, built before either use. Two literals used to stand here, and the digest check
+  // below would have read a divergence between them as every recorded answer being STALE — a report about the
+  // artifact instead of about the build, which is the direction that costs a dispatch rather than a debugger.
+  const nomination = {
+    maxCandidates: args.maxCandidates,
+    maxChannels: args.maxChannels,
+    maxRanked: args.maxRanked,
+    topologyBrief,
+  };
+
   let records = existing.records;
   if (args.propose) {
     const { client, reason } = createChatClientFromEnv(args.model);
     if (client === null) {
       console.log(`${reason}. Scoring the ${records.size} recorded answer(s) only.`);
     } else {
-      const nomination = {
-        maxCandidates: args.maxCandidates,
-        maxChannels: args.maxChannels,
-        maxRanked: args.maxRanked,
-      };
       const summary = await nominateCases(population, {
         client,
         nomination,
@@ -173,12 +197,8 @@ async function main(): Promise<void> {
   }
 
   // A recorded answer belongs to the question that produced it. Comparing the digest the current build would
-  // produce against the one in the artifact is what tells a replay of this question from a replay of another.
-  const nomination = {
-    maxCandidates: args.maxCandidates,
-    maxChannels: args.maxChannels,
-    maxRanked: args.maxRanked,
-  };
+  // produce against the one in the artifact is what tells a replay of this question from a replay of another --
+  // and with a brief in the prompt, that is what tells an arm from the control it is differenced against.
   let stale = 0;
   for (const oneCase of population) {
     const record = records.get(oneCase.datapack);

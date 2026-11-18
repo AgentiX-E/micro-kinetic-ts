@@ -66,6 +66,14 @@ export interface NominationArgs {
   readonly delta: number;
   /** The terms dump a gate reads its spread from, or empty when there is none. */
   readonly depth: string;
+  /**
+   * The corpus topology brief an arm carries, or empty for a prompt with no graph in it.
+   *
+   * A PATH rather than the text: the brief is an artifact a corpus pass wrote, and a dispatch that could type one
+   * could attach a topology nobody measured. The file's digest is printed beside the arm's table, so a replay
+   * names the bytes it used.
+   */
+  readonly topologyBrief: string;
   /** The gate's threshold, or `null` when the arm is a fusion. */
   readonly promotion: number | null;
 }
@@ -91,6 +99,7 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     maxRanked: DEFAULT_NOMINATION_OPTIONS.maxRanked,
     delta: 0.05,
     depth: '',
+    topologyBrief: '',
     promotion: null,
   };
   const numeric = new Map<string, (value: number) => void>([
@@ -161,6 +170,7 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     else if (arg === '--nominations') args.nominations = value;
     else if (arg === '--model') args.model = value;
     else if (arg === '--depth') args.depth = value;
+    else if (arg === '--topology-brief') args.topologyBrief = value;
     else if (arg === '--promotion') {
       if (value === 'off') {
         args.promotion = null;
