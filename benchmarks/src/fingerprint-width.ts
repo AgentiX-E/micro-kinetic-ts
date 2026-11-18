@@ -21,7 +21,8 @@
  *   of it.
  * - **Wider.** A real second pass, because the engine has no answer beyond the width it was asked for. This is
  *   the operation the terms dump already performs for the same reason, and it is the only case that costs
- *   anything.
+ *   anything. Its result must still carry every candidate the run published — a permutation is expected (the
+ *   structural pass reorders the list it is handed) and a dropped candidate is refused.
  * - **Exactly the published width.** The published array **itself**, by identity, so the default path is
  *   literally the code path that existed before the flag: not a slice that equals the array, not a re-rank that
  *   should agree with it, but the same object.
@@ -63,6 +64,7 @@ export interface FingerprintWidthInput {
  *
  * @param input - The published order, the requested width, and how to widen it.
  * @returns The ordering to fingerprint. Identical to `input.published` when the width is the published one.
+ * @throws Error when the second pass returns an order that omits a candidate the run published.
  */
 export function fingerprintSourceOrder(input: FingerprintWidthInput): readonly RootCauseResult[] {
   const available = Math.max(1, input.nodeCount);
@@ -72,5 +74,22 @@ export function fingerprintSourceOrder(input: FingerprintWidthInput): readonly R
   const target = Math.min(asked, available);
   if (target === input.published.length) return input.published;
   if (target < input.published.length) return input.published.slice(0, target);
-  return input.widen(target);
+  const widened = input.widen(target);
+  // A widening must be a SUPERSET VIEW, and this is the one assertion that makes the arm's premise checkable at
+  // the moment the artifact is written rather than after a model has been paid for: a model shown twenty rows is
+  // still able to name everything the run published. Measured true on 1 422 of 1 422 cases, so a violation is a
+  // defect in the instrument and not a fact about a case — and it is stated here, where the extra rows come from,
+  // because no reader downstream can tell a dropped candidate from a case whose answer was never in the order.
+  //
+  // A PERMUTATION is expected and is not a violation: the structural pass reorders the list it is handed, which is
+  // why 17 cases present a first five that differs from the published one (docs/agentic-presentation-width.md §4).
+  const carried = new Set(widened.map((row) => row.serviceId));
+  const dropped = input.published.filter((row) => !carried.has(row.serviceId));
+  if (dropped.length > 0) {
+    throw new Error(
+      `the order at width ${String(target)} drops ${String(dropped.length)} published candidate(s), ` +
+        `first: ${dropped[0]!.serviceId} — a wider fingerprint must still carry everything the run published`,
+    );
+  }
+  return widened;
 }

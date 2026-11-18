@@ -162,7 +162,7 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     // the one it is differenced against.
     expect(WORKFLOW).toContain('FINGERPRINT_WIDTH_ARG=()');
     expect(WORKFLOW).toContain(
-      'FINGERPRINT_WIDTH_ARG=(--fingerprint-top-k "${{ inputs.fingerprint_top_k }}")',
+      'FINGERPRINT_WIDTH_ARG=(--presentation-out artifacts/agentic/presentation.ndjson --fingerprint-top-k "${{ inputs.fingerprint_top_k }}")',
     );
     expect(WORKFLOW).toContain(
       'WIDTH_ARG=(--max-candidates "${{ inputs.fingerprint_top_k }}" --max-ranked "${{ inputs.fingerprint_top_k }}")',
@@ -175,6 +175,34 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(invocation).toContain('"${FINGERPRINT_WIDTH_ARG[@]}"');
     // `0` is the measure step's spelling of "every candidate" and has no counterpart in the nomination parser.
     expect(WORKFLOW).toContain('"${{ inputs.fingerprint_top_k }}" != "0"');
+  });
+
+  it('writes the presentation dump, carries it to the study, and shows the TABLE from it', () => {
+    // Three links, and the arm is broken without any one of them: a width that writes no file (the parser refuses
+    // it), a file that never reaches the study (the study reads the five-wide table and reports the width it was
+    // asked for -- the defect `docs/agentic-presentation-width.md` §3.1 records), and a study that has the file
+    // and reads the other one.
+    expect(WORKFLOW).toContain('artifacts/agentic/presentation.ndjson');
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).toContain('artifacts/agentic/presentation.ndjson');
+    // The nomination arm is the one reader, and it prefers the presentation when it exists. The offline arms keep
+    // the published dump: their join indexes it against the verdict file, and this arm is the only one whose input
+    // is allowed to be a rendering.
+    const nomination = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-agentic-nomination.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/nomination.txt'),
+    );
+    expect(nomination).toContain('--fingerprints "$FINGERPRINTS"');
+    expect(WORKFLOW).toContain('FINGERPRINTS=artifacts/agentic/presentation.ndjson');
+    expect(WORKFLOW).toContain('FINGERPRINTS=artifacts/agentic/fingerprints.ndjson');
+    // The eliminator and the ceiling read the published one by name, and never the presentation.
+    for (const runner of ['run-agentic-eliminator.ts', 'run-agentic-ceiling.ts']) {
+      const step = WORKFLOW.slice(WORKFLOW.indexOf(`tsx benchmarks/src/${runner}`));
+      expect(step.slice(0, step.indexOf('tee '))).toContain(
+        '--fingerprints artifacts/agentic/fingerprints.ndjson',
+      );
+    }
   });
 
   it('forwards the gate as a word or a number, and never as an empty string', () => {

@@ -6495,6 +6495,16 @@ assumption. Three tests hold the split: the parser refuses a width without the p
 asserted not to appear on the engine's command line, and the census names the new flag as an artifact only a study
 workflow — never a benchmark cell — may produce.
 
+The second half of the repair is the part a reader should check. Separating the files leaves the join unable to
+answer *"is this dump from the run being scored?"*, because the field it compared — the candidate array — is the
+one a widening changes. So the presentation records the order the run published beside the order it presents, and
+`joinHeadroom` compares THAT, in full: `published` equals `per-case.ranked` on 1 422 of 1 422 cases, and position 1
+is identical on 1 422 of 1 422. A presentation whose recorded order disagrees is refused exactly as a stale
+published dump is, and a shorter recorded order is refused too — two widths publish different-length orders, and a
+prefix compare would accept one entry against five. The widening's own invariant is enforced where the extra rows
+come from: `fingerprintSourceOrder` refuses an order that DROPS a published candidate, which is the property that
+makes twenty rows a superset view rather than a different one.
+
 The general shape is §307 and §309.2's again, at a third layer: **the earlier two failures were a decision with no
 owner and a decision with two; this one was a file with two contracts.** All three produce a run that reports
 something it did not measure, and none of them produces an error the run itself can see — the disagreement had to

@@ -90,11 +90,41 @@ So there are two dumps, with two contracts:
 | flag | what it holds | who reads it |
 | --- | --- | --- |
 | `--fingerprint-out` | the **published** order, as a fingerprint | `agentic-headroom`, `agentic-ceiling`, `agentic-elimination` — by index against the token dumps |
-| `--presentation-out` | the engine at the **requested width** | the presentation arm, which renders a table and needs no join |
+| `--presentation-out` | the engine at the **requested width**, plus a `published` field holding the order this run published | the presentation arm, which renders a table; the join reads the recorded order |
 
 `--fingerprint-top-k` therefore widens the second one only, and is refused without it. The repair is not a guard
 relaxation: widening a dump that three readers join by index would make those readers describe a run nobody
 dispatched, and a guard that can be argued away is not a guard.
+
+### 3.2 The presentation states which run it came from, because its own array no longer does
+
+Separating the files is only half the repair. The join still has to answer *"is this dump from the run being
+scored?"*, and for a presentation the field it used to answer with — the candidate array — is precisely the field
+the widening changes. So the presentation dump records the order the run published beside the order it presents:
+
+```json
+{"datapack":"ts0-…","faultType":"stress","injectTimeMs":1700000000000,
+ "candidates":[…20 rows…],"census":{…},"published":["ts-basic-service","ts-travel-service",…]}
+```
+
+`joinHeadroom` then has two shapes and neither is weaker than the other:
+
+| dump | what is compared | strength |
+| --- | --- | --- |
+| no `published` field (the published dump) | the candidate array against `per-case.ranked`, prefix-wise | the whole claim the file makes |
+| `published` field (a presentation) | the recorded order against `per-case.ranked`, **in full** | the same claim, aimed at the field that holds it |
+
+A presentation whose recorded order disagrees is refused exactly as a stale published dump is, and a *shorter*
+recorded order is refused too: two runs at different widths publish different-length orders, and a prefix compare
+would accept one entry against five. Measured on the artifact this was built for: `published` equals
+`per-case.ranked` on **1 422 of 1 422** cases and position 1 is identical on **1 422 of 1 422**, so the guard is
+calibrated rather than hopeful.
+
+One further invariant is enforced where the extra rows are produced, not where they are read: `fingerprintSourceOrder`
+refuses a widening that **drops** a published candidate. A permutation is expected (the structural pass reorders
+the list it is handed) and a shrinking window is not — a model shown twenty rows must still be able to name
+everything the run published, which was true on 1 422 of 1 422 cases and is now checked on every case before a
+profile is even read.
 
 Two consequences worth naming:
 

@@ -44,6 +44,20 @@ export interface FingerprintRecord {
   readonly injectTimeMs: number;
   readonly candidates: readonly CandidateFingerprint[];
   readonly census: FingerprintCensus;
+  /**
+   * The order the run PUBLISHED for this case, present only when `candidates` is a WIDER order.
+   *
+   * The published dump does not need it: its candidate array *is* the published order, and a second copy would be
+   * a second place for the two to disagree. A presentation dump holds the engine's answer at the width the arm
+   * asked for, which by construction no longer states what the run published — the structural pass reorders the
+   * list it is handed, so at width 20 the first five differ from the published five on 17 of 1 422 cases.
+   *
+   * Without this field a reader cannot tell a presentation of THIS run from a dump left over from an earlier
+   * commit, because the one property it used to compare — the candidate array — is exactly the one the widening
+   * changes. With it, `joinHeadroom` compares the recorded order in full, which is the same strength of evidence
+   * the prefix compare gives for a dump that needs no field at all.
+   */
+  readonly published?: readonly string[];
 }
 
 /** What a dump wrote, for the run's own log line. */
@@ -95,6 +109,9 @@ export function formatFingerprintRecord(record: FingerprintRecord): string {
       channels: candidate.channels.map(channelToJson),
     })),
     census: Object.fromEntries(CENSUS_FIELDS.map((field) => [field, record.census[field]])),
+    // Absent rather than empty: a published dump writes no `published` key at all, because an empty array would
+    // read as "this run published nothing" and a reader comparing against it would refuse every case.
+    ...(record.published === undefined ? {} : { published: record.published }),
   });
 }
 
@@ -228,6 +245,18 @@ function parseCensus(raw: unknown, line: number): FingerprintCensus {
   };
 }
 
+/** Parses an optional published order, refusing anything that is not a list of service names. */
+function parsePublished(raw: unknown, line: number): readonly string[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) throw new Error(`published on line ${line} is not an array`);
+  return raw.map((service: unknown) => {
+    if (typeof service !== 'string' || service === '') {
+      throw new Error(`published entry on line ${line} is not a non-empty string`);
+    }
+    return service;
+  });
+}
+
 /**
  * Read a dump back.
  *
@@ -263,6 +292,7 @@ export function parseFingerprintDump(text: string): FingerprintRecord[] {
     if (!Array.isArray(record.candidates)) {
       throw new Error(`candidates on line ${lineNumber} is not an array`);
     }
+    const published = parsePublished(record.published, lineNumber);
     records.push({
       datapack: record.datapack,
       faultType: record.faultType,
@@ -271,6 +301,7 @@ export function parseFingerprintDump(text: string): FingerprintRecord[] {
         parseCandidate(candidate, lineNumber),
       ),
       census: parseCensus(record.census, lineNumber),
+      ...(published === undefined ? {} : { published }),
     });
   }
   return records;

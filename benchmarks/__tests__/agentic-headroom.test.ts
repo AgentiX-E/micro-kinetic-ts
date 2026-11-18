@@ -116,6 +116,53 @@ describe('joinHeadroom', () => {
     );
     expect(join.cases).toHaveLength(1);
   });
+
+  it('accepts a PRESENTATION whose wider order permutes the published five, because it states that order', () => {
+    // Arm W's artifact. At width 20 the structural pass reorders the first five on 17 of 1 422 cases, so the
+    // candidate array is no longer the published order and a prefix compare would refuse 17 cases of a corpus
+    // nobody ran twice. The file carries the order the run published beside the order it presented, and the join
+    // compares THAT — the same strength of evidence, aimed at the field that holds the claim.
+    const presented: FingerprintRecord = {
+      ...recordOf(closeCase),
+      candidates: [rareTruth, ordinaryLeader, candidate('svc-z', 2, 0.5, [quiet('cpu')])],
+      published: ['svc-a', 'svc-b'],
+    };
+    const join = joinHeadroom([presented], [verdictOf(closeCase)]);
+    expect(join.disagreements).toEqual([]);
+    expect(join.cases).toHaveLength(1);
+    // And the case keeps the WIDER posterior, which is the table the arm shows a model.
+    expect(join.cases[0]!.candidates.map((entry) => entry.service)).toEqual([
+      'svc-b',
+      'svc-a',
+      'svc-z',
+    ]);
+  });
+
+  it('refuses a presentation whose recorded published order belongs to another run', () => {
+    // The reason the field exists: a stale presentation dump from an earlier commit states ITS order, and the
+    // verdict file states this run's. Comparing the two is exactly the check the prefix compare performs on a
+    // dump that does not need the field at all.
+    const stale: FingerprintRecord = {
+      ...recordOf(closeCase),
+      candidates: [rareTruth, ordinaryLeader],
+      published: ['svc-b', 'svc-a'],
+    };
+    const join = joinHeadroom([stale], [verdictOf(closeCase)]);
+    expect(join.cases).toEqual([]);
+    expect(join.disagreements).toEqual(['case-1']);
+  });
+
+  it('refuses a presentation whose published order is a different LENGTH from the verdict', () => {
+    // Two runs of different widths publish different-length orders. A prefix compare would accept five against
+    // five and one against five, so the recorded order is compared in full rather than up to the shorter side.
+    const narrow: FingerprintRecord = {
+      ...recordOf(closeCase),
+      candidates: [rareTruth, ordinaryLeader],
+      published: ['svc-a'],
+    };
+    const join = joinHeadroom([narrow], [verdictOf(closeCase)]);
+    expect(join.disagreements).toEqual(['case-1']);
+  });
 });
 
 describe('oracleClaims', () => {

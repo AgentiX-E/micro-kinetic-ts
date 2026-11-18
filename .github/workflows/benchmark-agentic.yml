@@ -240,9 +240,15 @@ jobs:
           #   default, and an empty input must not become a flag. It widens an artifact and not the ranking, which
           #   is why it is safe for a dispatch to state it on a surface whose published numbers are quoted
           #   elsewhere -- the run's own `Top@1`/`Top@3`/`Top@5` are computed from the five-wide answer either way.
+          #
+          #   It travels WITH `--presentation-out`, in one array, because the parser refuses the one without the
+          #   other and for a reason this run measured: `--fingerprint-out` is joined case by case against the
+          #   verdict file by `headroom`, `ceiling` and `elimination`, so widening THAT file made the join
+          #   disagree on 17 of 1 422 cases (run `44284042634`, study step 14). One file cannot carry two
+          #   contracts; the wide one is a rendering and gets its own path.
           FINGERPRINT_WIDTH_ARG=()
           if [ -n "${{ inputs.fingerprint_top_k }}" ]; then
-            FINGERPRINT_WIDTH_ARG=(--fingerprint-top-k "${{ inputs.fingerprint_top_k }}")
+            FINGERPRINT_WIDTH_ARG=(--presentation-out artifacts/agentic/presentation.ndjson --fingerprint-top-k "${{ inputs.fingerprint_top_k }}")
           fi
           #   The TERMS dump is new here and it is what the promotion gate divides by. Its array order is the
           #   engine's answer at the width it was asked for, and the gate reads `full[0]`, `full[1]` and
@@ -266,6 +272,12 @@ jobs:
           echo "verdict lines:     $(wc -l < artifacts/agentic/per-case.ndjson)"
           echo "depth lines:       $(wc -l < artifacts/agentic/depth.ndjson)"
           echo "terms lines:       $(wc -l < artifacts/agentic/terms.ndjson)"
+          #   The presentation dump exists only when a width was asked for, and its line count is printed beside the
+          #   published fingerprint's rather than instead of it: two dumps of one run are two artifacts, and a log
+          #   that shows one count leaves a reader unable to tell a widened run from a default one.
+          if [ -f artifacts/agentic/presentation.ndjson ]; then
+            echo "presentation lines: $(wc -l < artifacts/agentic/presentation.ndjson)"
+          fi
           #   The containment dump is the only artifact that can carry H2's population: ρ is a property of an EDGE
           #   over many cases, and a pair that was never inverted leaves no trace in the published answer. It is
           #   written at the SHIPPED depth (5), because that is the population every containment measurement in
@@ -294,6 +306,7 @@ jobs:
           name: agentic-measure
           path: |
             artifacts/agentic/fingerprints.ndjson
+            artifacts/agentic/presentation.ndjson
             artifacts/agentic/per-case.ndjson
             artifacts/agentic/depth.ndjson
             artifacts/agentic/terms.ndjson
@@ -611,8 +624,18 @@ jobs:
           if [ -n "${{ inputs.promotion }}" ]; then
             PROMOTION_ARG=(--promotion "${{ inputs.promotion }}")
           fi
+          #   The TABLE comes from the presentation dump when the measure job wrote one, and from the published
+          #   fingerprint otherwise. Presence rather than a second reading of the input, on the rule `--depth`
+          #   above follows: the file exists only because that input asked for it, so its absence IS the default,
+          #   and a study over an older artifact still runs. The offline arms above and below keep the PUBLISHED
+          #   dump -- their join indexes it against the verdict file, and this arm is the only reader whose input
+          #   is allowed to be a rendering.
+          FINGERPRINTS=artifacts/agentic/fingerprints.ndjson
+          if [ -f artifacts/agentic/presentation.ndjson ]; then
+            FINGERPRINTS=artifacts/agentic/presentation.ndjson
+          fi
           pnpm exec tsx benchmarks/src/run-agentic-nomination.ts \
-            --fingerprints artifacts/agentic/fingerprints.ndjson \
+            --fingerprints "$FINGERPRINTS" \
             --verdicts artifacts/agentic/per-case.ndjson \
             --nominations artifacts/agentic/nominations.ndjson \
             --propose \

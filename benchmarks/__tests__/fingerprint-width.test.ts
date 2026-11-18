@@ -115,4 +115,33 @@ describe('fingerprintSourceOrder', () => {
     expect(result.map((row) => row.serviceId)).toEqual(['s1', 's2', 's3']);
     expect(widen).not.toHaveBeenCalled();
   });
+
+  it('accepts a widening that PERMUTES the published candidates, because the pass permutes what it is handed', () => {
+    // The measured shape: at width 20 the pass reorders the first five on 17 of 1 422 cases. A guard that refused
+    // any difference in the first five would refuse the instrument on the corpus it was built for.
+    const permuted = order(50);
+    [permuted[0], permuted[3]] = [permuted[3]!, permuted[0]!];
+    const result = fingerprintSourceOrder({
+      published: PUBLISHED,
+      width: 20,
+      nodeCount: 50,
+      widen: () => permuted,
+    });
+    expect(result).toBe(permuted);
+  });
+
+  it('refuses a widening that DROPS a published candidate, because a window that shrinks is not a widening', () => {
+    // The premise of the arm is that a wider table is a superset view: a model shown twenty rows must still be
+    // able to name everything the run published. Measured true on 1 422 of 1 422 cases, so a violation is a defect
+    // in the instrument rather than a fact about a case — and it is caught here, before any model is paid for.
+    const dropped = order(50).filter((row) => row.serviceId !== 's3');
+    expect(() =>
+      fingerprintSourceOrder({
+        published: PUBLISHED,
+        width: 20,
+        nodeCount: 50,
+        widen: () => dropped,
+      }),
+    ).toThrow(/s3/);
+  });
 });

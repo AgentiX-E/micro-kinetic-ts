@@ -468,6 +468,11 @@ async function main(): Promise<void> {
           injectTimeMs,
           candidates: presented.candidates,
           census: presented.census,
+          // The order this run published, recorded BESIDE the wider one. It is the only field that lets a reader
+          // tell a presentation of this run from a dump left over from another: the candidate array is exactly
+          // what the widening changes, so comparing it is comparing the wrong thing, and `joinHeadroom` compares
+          // this instead. Written as service ids because that is what the per-case verdict file carries.
+          published: ranking.map((row) => row.serviceId),
         });
       }
     }

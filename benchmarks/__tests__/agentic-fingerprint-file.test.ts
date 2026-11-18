@@ -66,6 +66,19 @@ describe('formatFingerprintRecord', () => {
     const text = formatFingerprintRecord(record());
     expect(parseFingerprintDump(`${text}\n`)).toEqual([record()]);
   });
+
+  it('carries the PUBLISHED order only when the dump is a presentation of a wider one', () => {
+    // The published dump holds the published order as its candidate array, so a second copy would be a second
+    // place for the two to disagree. The presentation dump holds a WIDER order, which by construction no longer
+    // states what the run published, so it records that order beside it — and this is what lets a reader answer
+    // "which run is this file from" for a file whose first five are not the published five.
+    expect(formatFingerprintRecord(record())).not.toContain('"published"');
+    const presented = formatFingerprintRecord(record({ published: ['svc-a', 'svc-b'] }));
+    expect(presented).toContain('"published":["svc-a","svc-b"]');
+    expect(parseFingerprintDump(`${presented}\n`)).toEqual([
+      record({ published: ['svc-a', 'svc-b'] }),
+    ]);
+  });
 });
 
 describe('FingerprintDump', () => {
@@ -240,5 +253,16 @@ describe('parseFingerprintDump', () => {
     expect(() => parseFingerprintDump(`${JSON.stringify(raw)}\n`)).toThrow(
       /census on line 1 is not an object/,
     );
+  });
+
+  it('refuses a published order that is not a list of service names', () => {
+    // The field is the join's only evidence that a presentation belongs to the run being scored, so a malformed
+    // one has to fail by line rather than be skipped: a skipped field turns the strongest check the join has into
+    // the weakest one, silently.
+    for (const bad of [7, ['svc-a', ''], ['svc-a', 3], {}]) {
+      const raw = JSON.parse(good) as Record<string, unknown>;
+      raw.published = bad;
+      expect(() => parseFingerprintDump(`${JSON.stringify(raw)}\n`)).toThrow(/published/);
+    }
   });
 });

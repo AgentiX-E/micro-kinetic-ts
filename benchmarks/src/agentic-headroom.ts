@@ -87,6 +87,15 @@ export interface HeadroomJoin {
  * verdict file from a second dispatch — and scoring one against the other would report an accuracy for a
  * configuration neither of them ran.
  *
+ * ## Two shapes, and why the second one is not a weaker check
+ *
+ * A dump that records `published` is a **presentation**: its candidate array is the engine's answer at a width
+ * wider than the run published, so it does not satisfy the comparison above and cannot — the structural pass
+ * reorders the list it is handed. For that shape the recorded order is compared **in full** against the verdict,
+ * which is the same evidence aimed at the field that holds the claim rather than at the field the widening
+ * changed. A dump that records nothing keeps the prefix comparison, and a check that accepted less than it did
+ * yesterday would be the wrong repair for a flag that was allowed to write into this file in the first place.
+ *
  * @param fingerprints - The dump, in file order.
  * @param verdicts - The per-case verdict file, in file order.
  * @returns The paired cases and every refusal.
@@ -108,16 +117,18 @@ export function joinHeadroom(
       continue;
     }
     byId.delete(record.datapack);
-    const dumped = record.candidates.map((candidate) => candidate.service);
     const published = verdict.ranked;
-    const width = Math.min(dumped.length, published.length);
-    let agrees = true;
-    for (let index = 0; index < width; index++) {
-      if (dumped[index] !== published[index]) {
-        agrees = false;
-        break;
-      }
-    }
+    // The recorded order, when there is one, IS the claim about which run this file came from — and it is compared
+    // over its whole length rather than up to the shorter side, because two runs at different widths publish
+    // orders of different lengths and a prefix compare would accept a one-entry order against a five-entry one.
+    const agrees =
+      record.published === undefined
+        ? prefixAgrees(
+            record.candidates.map((candidate) => candidate.service),
+            published,
+          )
+        : record.published.length === published.length &&
+          record.published.every((service, index) => service === published[index]);
     if (!agrees) {
       disagreements.push(record.datapack);
       continue;
@@ -135,6 +146,15 @@ export function joinHeadroom(
     unpairedVerdicts: [...byId.keys()],
     disagreements,
   };
+}
+
+/** Whether two orders agree over the width both carry. The published dump's whole comparison. */
+function prefixAgrees(dumped: readonly string[], published: readonly string[]): boolean {
+  const width = Math.min(dumped.length, published.length);
+  for (let index = 0; index < width; index++) {
+    if (dumped[index] !== published[index]) return false;
+  }
+  return true;
 }
 
 /** A case's first ranked candidate that the corpus accepts, or `-1` when the posterior does not hold one. */
