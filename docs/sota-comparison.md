@@ -989,6 +989,27 @@ disciplines, which means they are testable against our own loop without adopting
 Grounder's mechanism is the one our own H9 reading called for: an agent that cannot see which channels are
 **empty** will claim evidence it never read.
 
+### 0c-vi. The 2026-11-18 sweep, stated as a negative result
+
+The sweep for the current iteration searched three ways — a leaderboard query on RCABench, a citation query on
+top-1 RCA, and a method query on causal/propagation ranking — and found **one** entry above one of our cells (the
+`90.0 %` in §0c-v) and **nothing else that touches a population we own**. Two of the returns are worth naming so
+that a later session does not spend the same hour:
+
+- **`DeCoR` / `RICE-CM`** (`10.1186/s13677-026-01009-x`) is already on record at §2 and in
+  `competitor-artefact-availability.md`; its `Avg@5 = 0.6000 / 0.7040 / 0.4864` on SS1/SS2/OB is an `Avg@5` over
+  a **300-case** RCAEval subset, not a top-1 over the 735, and `docs/rcaeval-metric-rows.md` already carries the
+  conversion caution. Nothing new.
+- **`MicroInspect`** (IEEE TSC, 2026/05) is new to this record and is filed `OTHER` in `sota-populations.md`: four
+  benchmarks of its own (TrainTicket, SocialNetwork, FAMOS-Mall, GAIA), **metric-level** localisation with a
+  dynamic neural Granger network, reported as `F1`/`HR@1` under paired t-tests. TrainTicket is a system both it and
+  we use — so it is the one to watch — but the unit is a metric rather than a service and the corpus is not our
+  735, so no figure of ours may be differenced against it.
+
+The negative result is the finding: **after three queries, the standing table is unchanged**, our `80.24 %` on
+RCABench's whole 1 422 sits above every framework-band configuration in the one paper that measures that
+population, and the `9.76 pp` to the single Sonnet configuration above us is the only gap on a population we own.
+
 ### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
 
 **OpsHarness**, _From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis_
