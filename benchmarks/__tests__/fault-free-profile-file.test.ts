@@ -215,3 +215,50 @@ describe('the build command line', () => {
     expect(named.maxCases).toBe(12);
   });
 });
+
+/**
+ * The digest, which is the only part of the profile an artifact carries.
+ *
+ * It exists because the profile has a second consumer the record does not describe — the containment order's
+ * per-service excursions — so with `faultFreeWeight` at its shipped `0` two runs that scored against different
+ * bands, or one that scored against none, were identical under every reported field.
+ */
+describe("the profile's content digest", () => {
+  it('is sixteen hex characters, stable across two reads of one file', () => {
+    const dir = tempDir();
+    const path = join(dir, 'profile.json');
+    writeFaultFreeProfileFile(path, profileOf({ adservice: [['cpu', channel('cpu')]] }));
+    const first = readFaultFreeProfileFile(path).digest;
+    const second = readFaultFreeProfileFile(path).digest;
+    expect(first).toMatch(/^[0-9a-f]{16}$/);
+    expect(second).toBe(first);
+  });
+
+  it('changes when one channel number changes, so two bands cannot share an identity', () => {
+    const dir = tempDir();
+    const one = join(dir, 'one.json');
+    const other = join(dir, 'other.json');
+    writeFaultFreeProfileFile(
+      one,
+      profileOf({ adservice: [['cpu', channel('cpu', { centre: 1 })]] }),
+    );
+    writeFaultFreeProfileFile(
+      other,
+      profileOf({ adservice: [['cpu', channel('cpu', { centre: 2 })]] }),
+    );
+    expect(readFaultFreeProfileFile(one).digest).not.toBe(readFaultFreeProfileFile(other).digest);
+  });
+
+  it('is taken over the FILE, so a reformat that changes no channel still changes the identity', () => {
+    // The digest answers "was this the same artifact", not "was this the same profile". A file rewritten with
+    // different whitespace is a different artifact and is reported as one: the alternative is a reader who
+    // cannot tell a re-serialised profile from the one that was actually scored against.
+    const dir = tempDir();
+    const path = join(dir, 'profile.json');
+    writeFaultFreeProfileFile(path, profileOf({ adservice: [['cpu', channel('cpu')]] }));
+    const before = readFaultFreeProfileFile(path).digest;
+    const stored = readFileSync(path, 'utf8');
+    writeFileSync(path, JSON.stringify(JSON.parse(stored)));
+    expect(readFaultFreeProfileFile(path).digest).not.toBe(before);
+  });
+});

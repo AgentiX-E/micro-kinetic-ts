@@ -172,6 +172,29 @@ export interface FSE26RunConfig {
    */
   readonly faultFreeSelection: FaultFreeSelection;
   /**
+   * Content digest of the fault-free profile the run supplied, or `null` when it supplied none.
+   *
+   * Recorded because the profile is an input to **two** consumers and only one of them is a reported field.
+   * The fault-free term reads it and is described by {@link faultFreeWeight}; the containment order reads it
+   * for the per-service latency excursions that license an inversion, and is described by nothing.
+   *
+   * With the shipped weight of `0` the first consumer is silent, so on this corpus a run WITHOUT a profile
+   * and a run WITH one are identical under every other reported field and read `1 141` against `1 156`
+   * Top@1 — 15 cases, 1.06 pp, with no error and no printed line saying the pass did nothing. A digest
+   * rather than the path, because a path is a location (two directories, one configuration) while a digest
+   * is a content identity (two bands, two configurations).
+   */
+  readonly faultFreeProfileDigest: string | null;
+  /**
+   * Whether the containment pass had excursions to read — the CAPABILITY, not the outcome.
+   *
+   * `'absent'` means the pass could not have inverted anything: either it was switched off, or no profile was
+   * supplied and `latencyExcursions` therefore returned an empty map, which makes `inspectContainmentOrder`
+   * return the ranking unchanged. That is a property of the invocation and is why it is printed beside
+   * {@link containmentOrder}: the boolean says the pass was ASKED for, this says whether it could speak.
+   */
+  readonly containmentExcursions: 'measured' | 'absent';
+  /**
    * Weight on the SELF-TIME prior; the shipped value is the engine's 0, i.e. OFF. Printed
    * unconditionally, because the term ships at 0 and an omitted-when-default rule would render the
    * measured arm and the shipped run byte-identically.
@@ -463,6 +486,12 @@ export const REPORTED_CONFIG_FIELDS = [
   'stabilityScope',
   'faultFreeWeight',
   'faultFreeSelection',
+  // The capability, not the identity. This list is obeyed by BOTH runners, and `containmentExcursions` is
+  // derivable from options on both; `faultFreeProfileDigest` is not, because only the FSE 26 runner reads the
+  // profile file before it builds its record. So the digest is a field of that record and not a requirement of
+  // the shared list — and the field that closes the silent no-op is this one, since it is what tells the two
+  // runs of 1 141 and 1 156 apart.
+  'containmentExcursions',
   'selfTimeWeight',
   'selfTimeScope',
   'victimWeight',
@@ -587,6 +616,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // Unconditional on the same rule. The weight ships at 0, so this pair IS the only thing on the artifact that
   // can distinguish a measured arm from the shipped run.
   line += ` faultFreeWeight=${config.faultFreeWeight} faultFreeSelection=${config.faultFreeSelection}`;
+  // Unconditional, and the one field on this line whose omission was measured. The profile feeds the
+  // containment order's excursions as well as the weight above, so a run with the shipped weight of 0 and no
+  // profile was byte-identical on this line to the shipped run while reading 1 141 instead of 1 156 Top@1.
+  // `none` rather than an empty string, because an omitted token would read as "the field was not recorded".
+  line += ` faultFreeProfileDigest=${config.faultFreeProfileDigest ?? 'none'}`;
   // Unconditional on the same rule: the term ships OFF, so the only thing that can distinguish a
   // measured arm from the shipped run on an artifact is this field.
   line += ` selfTimeWeight=${config.selfTimeWeight}`;
@@ -632,6 +666,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // to the shipped run that left it off. Both passes ship off — this comment said "ships ON" until iteration 289,
   // when the constant was read and the comment was not.
   line += ` containmentOrder=${config.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER}`;
+  // Unconditional, and beside the boolean rather than folded into it: `containmentOrder=true` states that the
+  // pass was ASKED for, not that it could speak. Without a profile `latencyExcursions` returns an empty map and
+  // `inspectContainmentOrder` returns the ranking unchanged, so the pass is on and inert — the state this line
+  // exists to make visible, because it cost 15 cases and 1.06 pp on this corpus while every other reported
+  // field said the run was the shipped one.
+  line += ` containmentExcursions=${config.containmentExcursions}`;
   line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
   if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
     line += ` failureAttribution=${config.failureAttribution}`;

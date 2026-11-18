@@ -504,6 +504,12 @@ export function formatSignalLine(opts: CliOptions): string {
     // Reading them from the constants rather than writing the values keeps that from recurring — the line follows
     // a flip without an edit here, and the test asserts the equality rather than the current words.
     ` containmentOrder=${DEFAULT_CONTAINMENT_ORDER} failureContainment=${DEFAULT_FAILURE_CONTAINMENT}` +
-    ` failureAttribution=${DEFAULT_FAILURE_ATTRIBUTION}`
+    ` failureAttribution=${DEFAULT_FAILURE_ATTRIBUTION}` +
+    // …and whether that pass could SPEAK. This half cannot dispatch `containmentOrder` — it runs the engine
+    // default, ON — so the pass is always asked for, and the only thing that can stop it is a missing profile:
+    // without one `latencyExcursions` returns an empty map and the sweep returns the ranking unchanged, silently.
+    // On the FSE 26 corpus that state reads 1 141 against 1 156 Top@1, so the two are different configurations
+    // and this line is the only place that can say which one produced a cell.
+    ` containmentExcursions=${opts.faultFreeProfilePath === undefined ? 'absent' : 'measured'}`
   );
 }

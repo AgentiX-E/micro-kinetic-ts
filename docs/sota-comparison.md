@@ -192,7 +192,7 @@ clause — which is how the defect survived. History belongs in this paragraph, 
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 41fbca20ab8d -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 7438373f894f -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -2568,3 +2568,36 @@ Full protocol, tables and the entry checklist: **`docs/rcatlas-crosswalk.md`**.
 >   (up to `+12 pp` over the best baseline), and its own `undecided` verdict — a case whose answer the ranking never
 >   listed — is that paper's *retrieval* failure, which no re-weighting reaches. v275's reachability module counts
 >   exactly one such case in 1 422.
+
+### 0p-viii. The ninth correction — one field, no behaviour, and a run that could not say it was inert
+
+The digest moved again, `41fbca20ab8d → 7438373f894f`, and again **nothing the ranking does has changed**. The
+line gained one field: `containmentExcursions=absent`.
+
+**Why it has to be printed.** The containment order reads the fault-free profile for its per-service latency
+excursions, and without a profile `latencyExcursions` returns an empty map, so `inspectContainmentOrder` returns
+the ranking **unchanged — silently**. `containmentOrder=true` says the pass was *asked for*; it does not say the
+pass could *speak*. On the FSE 26 corpus those two states differ by 15 cases and 1.06 pp: `1 141` against
+`1 156` Top@1, with Top@3 and Top@5 identical to the digit and every per-channel score bit-identical. That
+measurement is `docs/containment-order.md` §20.
+
+**What the field says about the cells above it.** This workflow does not pass `--fault-free-profile` — only
+`benchmark-agentic.yml` builds one — so **every cell in this document was produced with the containment pass
+inert**, and the field now says so on the artifact rather than leaving a reader to infer it from a workflow file.
+That is not a correction to any number; it is the disclosure of a configuration, and it is disclosed because the
+alternative is a reader who takes `containmentOrder=true` as evidence the pass ran.
+
+**The prediction, stated before the run rather than after it.** With no profile the engine computed an empty
+excursion map before this change and computes the same one after it, so the nine cells must be unmoved:
+`RE1 345/375`, `RE2 249/270`, `RE3 72/90`, `TOTAL 666/735`. The push-triggered RCAEval battery on this commit
+confirms it. A moved cell would mean the field reads something at the default, which it cannot — it is derived,
+`!(containmentOrder ?? DEFAULT_CONTAINMENT_ORDER) || digest === null`.
+
+**What did NOT move, and why.** The marker's `battery`, `revision` and `read` are unchanged: they answer "which
+run produced these nine cells", and that run is still `42636825031` at `1f1b9d14`. Only `config` moved, because
+only the record of the configuration moved.
+
+**The axis this makes visible, priced but not measured.** If the pass is worth 15 cases on FSE 26, the RCAEval
+surface has never been measured with it on. Dispatching that arm is now a one-flag question — build a profile,
+pass `--fault-free-profile`, read the nine cells — and it is the first time the question could be asked without
+editing a workflow to find out what state the artifact was in.

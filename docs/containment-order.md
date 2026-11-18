@@ -1615,3 +1615,76 @@ checked.
 That line exists now: the reading above is from the window before it, and the report prints a `control` row beside
 `decisions` from the next dispatch onward. Every transcript in this document before §19.7 is missing it, and that
 is a statement about when the instrument was built rather than about the walks.
+
+## 20. The pass that was on and inert (iteration 304)
+
+Every number in this document was taken on a run that supplied `--fault-free-profile`. The pass **requires**
+it: `latencyExcursions` returns an empty map when the profile is `undefined` or empty, and
+`inspectContainmentOrder` opens with
+
+```ts
+if (order.length < 2 || input.excursions.size === 0 || input.edges.length === 0)
+  return { order, verdicts };
+```
+
+so with no profile the pass returns the ranking **unchanged**, silently. That is correct as a refusal — a pair
+whose excursions are unmeasured must not be inverted, and §6 is the argument — but it made the pass's
+requirement invisible in the artifact.
+
+### 20.1 What that cost
+
+The 1 422-case corpus was run twice from the same commit (`73dc662`), the same corpus (all seven shard
+`sha256` digests match `manifest.json`), the same Node build and the same command line, differing in one
+thing: one run passed `--fault-free-profile`, the other did not.
+
+|       |    with the profile |      without it |
+| ----- | ------------------: | --------------: |
+| Top@1 | **1 156 (81.29 %)** | 1 141 (80.24 %) |
+| Top@3 |     1 228 (86.36 %) | 1 228 (86.36 %) |
+| Top@5 |     1 249 (87.83 %) | 1 249 (87.83 %) |
+
+Fifteen cases, 1.06 pp, and **Top@3 and Top@5 are identical to the digit** — every one of the fifteen is a
+`rank 1 → rank 2` swap, so the truth never leaves the third position. The per-channel scores are
+_bit-identical_ on both runs: the difference is not scoring, it is the permutation the pass applies after it.
+
+### 20.2 Why the artifact could not say so
+
+`fse26-run-config.ts` excluded the profile from the recorded configuration on this reasoning:
+
+> the artifact's whole content is determined by the profile FILE and by the two fields that ARE reported
+> (`faultFreeWeight`, `faultFreeSelection`), so a record carrying the data would be a multi-megabyte copy of a
+> file the run never quotes.
+
+That is true of **one** consumer and false of the other. The fault-free _term_ reads the profile and is
+described by `faultFreeWeight`; the containment _order_ reads the same profile for its excursions and is
+described by nothing. With the shipped weight of `0` the first consumer is silent, so the two runs above were
+byte-identical under every reported field — the same `config` block, the same `Config:` line — and read 15
+cases apart. The record was complete by its own test and incomplete in fact.
+
+The exclusion also had the right instinct pointing the wrong way: a **path** is a location, which is why
+`dataDir` is not reported, but a **digest** is a content identity, and the whole failure was that two runs
+which scored against different bands (or against none) looked like one configuration.
+
+### 20.3 The two fields, and what they change
+
+| field                    | values                  | what it settles                                                                            |
+| ------------------------ | ----------------------- | ------------------------------------------------------------------------------------------ |
+| `faultFreeProfileDigest` | 16 hex chars, or `null` | which band the run was scored against; `null` is a state, not a missing value              |
+| `containmentExcursions`  | `measured` \| `absent`  | whether the pass could speak — `containmentOrder=true` says only that it was **asked for** |
+
+Both are on the `Config:` line and in the artifact's `config` block, both are on `REPORTED_CONFIG_FIELDS`, and a
+run in the silent state now also prints a one-line warning naming the measured cost. The pair is deliberately
+not folded into one field: `containmentOrder` and `containmentExcursions` answer different questions, and the
+whole defect was a run where the first was `true` and the answer to the second was `absent`.
+
+`absent` is derived, not observed: it is `!(containmentOrder ?? DEFAULT_CONTAINMENT_ORDER) || digest === null`,
+and reading `undefined` as "off" would have reported `absent` for a run that asked for nothing and got the
+shipped behaviour — a second instance of the same class of mistake, inverted.
+
+### 20.4 The general rule this earns
+
+**A recorded configuration must name every input whose absence changes the ranking, not only every input the
+command line carries.** The fault-free profile is the first input of this project that arrives as a file
+rather than as a flag, and the artifact had a rule for flags that did not extend to it. The rule is now stated
+where the exclusion is made (`fse26-run-config.ts`), and the digest is the mechanism: an input you cannot
+serialise into the record, you still identify in it.

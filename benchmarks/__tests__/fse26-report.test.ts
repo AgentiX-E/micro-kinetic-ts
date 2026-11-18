@@ -74,6 +74,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     stabilityScope: 'rank',
     faultFreeWeight: 0,
     faultFreeSelection: 'rarest',
+    faultFreeProfileDigest: null,
+    containmentExcursions: 'absent',
     selfTimeWeight: 0,
     // The pair travels together: the weight alone could belong to either arm.
     selfTimeScope: 'absolute',
@@ -196,6 +198,10 @@ describe('FSE26 report — attribution', () => {
       'stabilityScope',
       'faultFreeWeight',
       'faultFreeSelection',
+      // Added after those runs, and the one that matters most for attribution: with the shipped
+      // `faultFreeWeight` of 0 the profile is invisible in every other field, and it changes the ranking
+      // through the containment order's excursions.
+      'containmentExcursions',
       'selfTimeWeight',
       'selfTimeScope',
       'victimWeight',
@@ -276,7 +282,11 @@ describe('FSE26 report — the two renderings agree', () => {
         'baselineAnchor=whole-file ' +
         'transientGuardTest=hump ' +
         'latWeight=0 poolMetricPenaltyWeight=0 stabilityWeight=0 ' +
-        'faultFreeWeight=0 faultFreeSelection=rarest selfTimeWeight=0 victimWeight=0 ' +
+        // The profile's identity, and whether the containment pass could read it. Both are on the line
+        // because the pass reads the profile too, and a run without one was byte-identical to the
+        // shipped run while reading 15 cases lower.
+        'faultFreeWeight=0 faultFreeSelection=rarest faultFreeProfileDigest=none ' +
+        'selfTimeWeight=0 victimWeight=0 ' +
         'dualFamilyWeight=0 podStateWeight=0 ' +
         `dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +
         `dualFamilyGateMode=${DEFAULT_DUAL_FAMILY_GATE_MODE} ` +
@@ -288,7 +298,7 @@ describe('FSE26 report — the two renderings agree', () => {
         // iteration 291 turned the flow ON) but because an omitted-when-default field would make an arm that
         // switched one OFF byte-identical to the shipped run, on the artifact that is supposed to attribute the
         // difference. Iteration 289 added the second switch here for that reason.
-        'containmentOrder=true failureContainment=true ' +
+        'containmentOrder=true containmentExcursions=absent failureContainment=true ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
     );
     // The attribution is printed only when it is NOT the shipped reading: 'shape' is the default, so printing it

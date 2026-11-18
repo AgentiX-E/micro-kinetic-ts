@@ -75,4 +75,9 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
     'needs a corpus profile artifact that no row of the battery builds, so no row can vary it',
   faultFreeSelection:
     'needs a corpus profile artifact that no row of the battery builds, so no row can vary it',
+  // Iteration 304: the same absent artifact, one consumer further out. The battery cannot vary the containment
+  // pass either (it has no switch for it and no profile to feed it), so a row that named the capability would be
+  // describing a subset of the engine this study never selects.
+  containmentExcursions:
+    'the containment pass is not a battery flag and needs the same corpus profile, so no row reaches this state',
 };

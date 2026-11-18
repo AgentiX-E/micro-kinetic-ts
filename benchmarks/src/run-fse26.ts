@@ -147,7 +147,6 @@ async function main(): Promise<void> {
   // is why the ENGINE mapping was extracted, and the reported record had the
   // same hole — `topoClosure` reached the engine and not the record, so run
   // `41053711414` aggregated by `sum` and printed `topoClosure=max`.
-  const runConfig: FSE26RunConfig = buildFse26RunConfig(opts);
 
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
@@ -165,10 +164,18 @@ async function main(): Promise<void> {
   if (opts.fingerprintOut !== '' && opts.faultFreeProfilePath === undefined) {
     throw new Error('--fingerprint-out requires --fault-free-profile');
   }
-  const faultFreeProfile =
+  const profileRead =
     opts.faultFreeProfilePath === undefined
       ? undefined
-      : readFaultFreeProfileFile(opts.faultFreeProfilePath).profile;
+      : readFaultFreeProfileFile(opts.faultFreeProfilePath);
+  const faultFreeProfile = profileRead?.profile;
+  // Built AFTER the profile is read, because the record now names which profile it was scored against. The
+  // digest is the only part of that input the artifact carries, and it is the only part a reproduction needs:
+  // the containment order reads the profile too, so with the shipped weight of 0 a run that omitted it was
+  // byte-identical on the config line to the shipped run and read 1 141 against 1 156 Top@1.
+  const runConfig: FSE26RunConfig = buildFse26RunConfig(opts, {
+    digest: profileRead?.digest ?? null,
+  });
   const engineOptions = buildFse26EngineOptions(opts, faultFreeProfile);
   const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
 
@@ -176,6 +183,16 @@ async function main(): Promise<void> {
   console.log('═'.repeat(65));
   console.log(`Data:   ${opts.dataDir}`);
   console.log(formatFSE26ConfigLine(runConfig));
+  // The one state that used to be silent: the pass is asked for, has nothing to read, and returns the ranking
+  // unchanged. Named on its own line as well as on the config line, because this is a WARNING about the run
+  // rather than a field of it — a reader who has not memorised the field list would take the run for shipped.
+  if (runConfig.containmentExcursions === 'absent' && runConfig.containmentOrder !== false) {
+    console.log(
+      'Warning: containmentOrder is on and no --fault-free-profile was supplied, so the pass has no ' +
+        'excursions and cannot reorder anything. Measured cost of this state on the FSE 26 corpus: ' +
+        '1 141 against 1 156 Top@1 (15 cases, 1.06 pp).',
+    );
+  }
   if (opts.dropMetrics.length > 0) {
     console.log(`Ablation: dropping metric names [${opts.dropMetrics.join(', ')}]`);
   }

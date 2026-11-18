@@ -30,6 +30,8 @@
  * @module benchmarks/fse26-run-config
  */
 
+import { DEFAULT_CONTAINMENT_ORDER } from '../../packages/tree/src/index.js';
+
 import type { Fse26CliOptions } from './fse26-cli.js';
 import type { FSE26RunConfig } from './fse26-report.js';
 
@@ -38,15 +40,40 @@ import type { FSE26RunConfig } from './fse26-report.js';
  *
  * `faultFreeProfile` is a CORPUS ARTIFACT — hundreds of `(service, channel, centre, scale, rate, windows)`
  * records — handed to the engine as a second argument because the engine is a pure function of its
- * options. It is excluded from the record on the same rule that keeps `dataDir` off it, and with a second
- * reason that list does not have: the artifact's whole content is determined by the profile FILE and by the
- * two fields that ARE reported (`faultFreeWeight`, `faultFreeSelection`), so a record carrying the data
- * would be a multi-megabyte copy of a file the run never quotes.
+ * options. It is excluded from the record on the same rule that keeps `dataDir` off it: a multi-megabyte copy
+ * of a file the run never quotes is not a configuration field.
+ *
+ * **The profile is not, however, fully described by the reported weights.** This docblock used to claim it was
+ * — "determined by the profile FILE and by the two fields that ARE reported (`faultFreeWeight`,
+ * `faultFreeSelection`)" — and that claim is false whenever `faultFreeWeight` is `0`, which is the shipped
+ * value. The profile has a SECOND consumer: `latencyExcursions` reads it to measure the per-service excursion
+ * the containment order inverts on. With the weight at `0` the first consumer is silent and the second is not,
+ * so the profile's *identity* is a configuration field after all — see
+ * {@link FaultFreeProfileState} and `FSE26RunConfig.faultFreeProfileDigest`. The blob stays out of the record;
+ * its digest goes in.
  *
  * It is named here, rather than silently skipped, so that a reader of this module can tell an exclusion
  * from an oversight — and so that the parity test's filter has one owner.
  */
 export const NOT_REPORTED_ENGINE_KEYS = ['faultFreeProfile'] as const;
+
+/**
+ * The one thing an artifact needs to know about the fault-free profile: which one it was scored against.
+ *
+ * A digest and not the path — a path is a location, and two runs of one configuration from two directories are
+ * one configuration, which is why `dataDir` is not reported. A digest is a content identity, so two runs that
+ * differ only in the band they were scored against stop looking identical.
+ *
+ * `null` rather than an empty string, because "no profile" is a distinct state and not a missing value: it is
+ * the state in which the containment pass cannot fire.
+ */
+export interface FaultFreeProfileState {
+  /** First 16 hex characters of the profile file's SHA-256, or `null` when the run supplied none. */
+  readonly digest: string | null;
+}
+
+/** The state of a run that supplied no profile. Named, so a call site says which case it is in. */
+export const NO_FAULT_FREE_PROFILE: FaultFreeProfileState = { digest: null };
 
 /**
  * Options that are deliberately NOT part of the reported configuration.
@@ -82,10 +109,19 @@ export const NOT_REPORTED_FSE26_OPTION_KEYS = [
  * also carry the harness options into it, so the parity test would pass on a record that names the corpus
  * directory — the copy is the point, and the test is what stops it from being forgotten.
  *
+ * `profile` is the second argument because it is the one input the command line does not carry. It is
+ * `{ digest: null }` when the run supplied no profile, and that is not the same configuration as a run that
+ * supplied one: the containment pass reads the profile for its excursions, so with the shipped
+ * `faultFreeWeight` of `0` the two runs are identical under every other field and differ by 15 cases.
+ *
  * @param opts - Parsed command-line options.
+ * @param profile - The content digest of the fault-free profile, or `{ digest: null }` when none was given.
  * @returns The configuration recorded on the header line and in the artifact's `config` block.
  */
-export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
+export function buildFse26RunConfig(
+  opts: Fse26CliOptions,
+  profile: FaultFreeProfileState,
+): FSE26RunConfig {
   return {
     selfAnomalyWeight: opts.selfAnomalyWeight,
     logWeight: opts.logWeight,
@@ -110,6 +146,13 @@ export function buildFse26RunConfig(opts: Fse26CliOptions): FSE26RunConfig {
     stabilityWeight: opts.stabilityWeight,
     faultFreeWeight: opts.faultFreeWeight,
     faultFreeSelection: opts.faultFreeSelection,
+    faultFreeProfileDigest: profile.digest,
+    containmentExcursions:
+      // The ENGINE's default, not `!== false`: the pass ships ON, so reading `undefined` as "off" would
+      // report `absent` for a run that asked for nothing and got the shipped behaviour.
+      (opts.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER) && profile.digest !== null
+        ? 'measured'
+        : 'absent',
     selfTimeWeight: opts.selfTimeWeight,
     selfTimeScope: opts.selfTimeScope,
     stabilityScope: opts.stabilityScope,

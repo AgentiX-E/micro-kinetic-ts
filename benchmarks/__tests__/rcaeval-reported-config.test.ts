@@ -138,6 +138,12 @@ const ENGINE_DEFAULTS_ON_LINE = [
   'containmentOrder',
   'failureContainment',
   'failureAttribution',
+  // Not an engine default but the same category — a name the line renders from something other than a
+  // forwarded option. It is DERIVED from `faultFreeProfilePath`, which this list excludes precisely because a
+  // path is a location; what the line needs to say is whether the pass could speak, and that is a capability.
+  // Without it this half could not distinguish its own two configurations: the pass is always on here, so a run
+  // with no profile is the silent state that reads 1 141 against 1 156 Top@1 on the FSE 26 corpus.
+  'containmentExcursions',
 ].sort();
 
 describe('RCAEval runner configuration ownership', () => {
@@ -606,7 +612,10 @@ describe('the RCAEval configuration line carries the configuration that produced
         // Iteration 291 flipped `failureContainment` under every cell and this line did not move a byte — the
         // artifact could not say which engine produced its nine cells. Printed unconditionally on the rule every
         // field above follows, and read from the constants so the line follows the next flip without an edit here.
-        ' containmentOrder=true failureContainment=true failureAttribution=shape',
+        ' containmentOrder=true failureContainment=true failureAttribution=shape ' +
+        // The pass runs on this half unconditionally (it cannot dispatch the switch), so the only thing that
+        // can silence it is a missing profile — which is the state this field names.
+        'containmentExcursions=absent',
     );
   });
 

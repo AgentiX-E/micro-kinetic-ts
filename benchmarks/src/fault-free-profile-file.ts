@@ -23,6 +23,7 @@
  * @module benchmarks/fault-free-profile-file
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import type { ServiceId } from '../../packages/core/src/index.js';
@@ -143,14 +144,29 @@ export function writeFaultFreeProfileFile(
  * nothing for every candidate, which is indistinguishable from a corpus whose channels all fell below
  * the floor — and the second reading would be published as a measurement of the first.
  *
+ * ## Why the digest is returned
+ *
+ * The profile is an INPUT that changes the ranking through **two** consumers, and only one of them is a
+ * reported field. The fault-free term reads it and is described by `faultFreeWeight`; the containment
+ * order reads it for its per-service latency excursions and is described by nothing. With the shipped
+ * weight of `0` the first consumer is silent, so a run that omits the profile and a run that supplies one
+ * are the *same configuration* under every reported field and read `1 141` against `1 156` on this corpus
+ * — 15 cases, 1.06 pp, with no error and no line saying the pass did nothing.
+ *
+ * So the run records an identity rather than the path. A path is a location and two runs from two
+ * directories are one configuration, which is why `dataDir` is not reported; a digest is a *content*
+ * identity, so two runs that differ only in which band they were scored against stop looking identical.
+ *
  * @param path - Source.
- * @returns The profile, and the thresholds it was built with.
+ * @returns The profile, the thresholds it was built with, and the content digest of the file.
  */
 export function readFaultFreeProfileFile(path: string): {
   profile: FaultFreeProfile;
   stored: StoredProfile;
+  digest: string;
 } {
-  const parsed = JSON.parse(readFileSync(path, 'utf8')) as StoredProfile;
+  const bytes = readFileSync(path);
+  const parsed = JSON.parse(bytes.toString('utf8')) as StoredProfile;
   if (!Array.isArray(parsed.channels)) {
     throw new Error(`${path}: a fault-free profile must carry a \`channels\` array`);
   }
@@ -166,5 +182,9 @@ export function readFaultFreeProfileFile(path: string): {
       throw new Error(`${path}: malformed channel record ${JSON.stringify(record)}`);
     }
   }
-  return { profile: deserialiseFaultFreeProfile(parsed), stored: parsed };
+  return {
+    profile: deserialiseFaultFreeProfile(parsed),
+    stored: parsed,
+    digest: createHash('sha256').update(bytes).digest('hex').slice(0, 16),
+  };
 }

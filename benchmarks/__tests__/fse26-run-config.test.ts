@@ -40,12 +40,22 @@ import { DEFAULT_TOPO_CLOSURE } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../src/fse26-engine-options.js';
-import { formatFSE26ConfigLine } from '../src/fse26-report.js';
+import { formatFSE26ConfigLine, REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import {
   buildFse26RunConfig,
+  NO_FAULT_FREE_PROFILE,
   NOT_REPORTED_ENGINE_KEYS,
   NOT_REPORTED_FSE26_OPTION_KEYS,
 } from '../src/fse26-run-config.js';
+
+/**
+ * A stand-in for a profile's content digest.
+ *
+ * The sweep tests below are about the OPTION-to-record projection, so they need a profile state that is not
+ * the empty one — otherwise `containmentExcursions` reads `absent` in every arm and the field is untested by
+ * the sweep. The two states themselves are tested in their own block.
+ */
+const PROFILE = { digest: '0123456789abcdef' } as const;
 
 const BASE = parseFSE26Args([]);
 
@@ -165,7 +175,7 @@ describe('buildFse26RunConfig', () => {
     for (const [arm, opts] of ARMS) {
       it(`states every option the engine receives, at the same value — ${arm}`, () => {
         const engine = buildFse26EngineOptions(opts);
-        const config: Record<string, unknown> = { ...buildFse26RunConfig(opts) };
+        const config: Record<string, unknown> = { ...buildFse26RunConfig(opts, PROFILE) };
 
         // Key-set sweep, not a hand-written list: `topoClosure` failed exactly here before the fix, with the
         // engine holding `sum` and the record holding nothing.
@@ -185,7 +195,7 @@ describe('buildFse26RunConfig', () => {
     it('names `topoClosure` on the record even when it holds the shipped default', () => {
       // The field is optional on the READ-BACK type so that an artifact written before it existed still
       // parses; a producer that relies on that leniency publishes a `sum` run labelled `max`.
-      const config = buildFse26RunConfig(BASE);
+      const config = buildFse26RunConfig(BASE, PROFILE);
       expect('topoClosure' in config).toBe(true);
       expect(config.topoClosure).toBe(DEFAULT_TOPO_CLOSURE);
     });
@@ -193,9 +203,9 @@ describe('buildFse26RunConfig', () => {
     it('renders the closure it was GIVEN, from argv to the header line', () => {
       // End to end, in the shape the dispatch takes: this is the assertion run `41053711414` would have
       // failed.
-      const line = formatFSE26ConfigLine(buildFse26RunConfig(KNOBBED));
+      const line = formatFSE26ConfigLine(buildFse26RunConfig(KNOBBED, PROFILE));
       expect(line).toContain('topoClosure=sum');
-      expect(formatFSE26ConfigLine(buildFse26RunConfig(BASE))).toContain(
+      expect(formatFSE26ConfigLine(buildFse26RunConfig(BASE, PROFILE))).toContain(
         `topoClosure=${DEFAULT_TOPO_CLOSURE}`,
       );
     });
@@ -203,7 +213,7 @@ describe('buildFse26RunConfig', () => {
 
   describe('every accepted option is accounted for', () => {
     it('is either stated on the record or named as a harness switch', () => {
-      const stated = new Set(Object.keys(buildFse26RunConfig(BASE)));
+      const stated = new Set(Object.keys(buildFse26RunConfig(BASE, PROFILE)));
       // The one alias: the option is called `logMode` on the command line and `logSignalMode` everywhere the
       // engine and the artifact name it.
       const aliases: Readonly<Record<string, string>> = { logMode: 'logSignalMode' };
@@ -224,7 +234,9 @@ describe('buildFse26RunConfig', () => {
     });
 
     it('does not leak a harness switch onto the record', () => {
-      const config: Record<string, unknown> = { ...buildFse26RunConfig({ ...BASE, ...HARNESS }) };
+      const config: Record<string, unknown> = {
+        ...buildFse26RunConfig({ ...BASE, ...HARNESS }, PROFILE),
+      };
       for (const key of Object.keys(HARNESS)) expect(key in config).toBe(false);
       // …while the one switch that changes the RANKING is stated, because two runs that drop different
       // metrics are not the same configuration.
@@ -234,8 +246,8 @@ describe('buildFse26RunConfig', () => {
     it('reports each knob at its parsed value rather than at the shipped one', () => {
       // `Object.entries` rather than an index-signature cast: the record is a typed interface, and the
       // question here is genuinely "which fields differ", so reading it as a map is the honest view.
-      const config = new Map(Object.entries(buildFse26RunConfig(KNOBBED)));
-      const shipped = new Map(Object.entries(buildFse26RunConfig(BASE)));
+      const config = new Map(Object.entries(buildFse26RunConfig(KNOBBED, PROFILE)));
+      const shipped = new Map(Object.entries(buildFse26RunConfig(BASE, PROFILE)));
       const moved = [...config.keys()].filter(
         (key) => JSON.stringify(config.get(key)) !== JSON.stringify(shipped.get(key)),
       );
@@ -250,7 +262,57 @@ describe('buildFse26RunConfig', () => {
 
   it('is a pure function of its input, so two renderings cannot straddle a mutation', () => {
     const opts: Fse26CliOptions = { ...KNOBBED };
-    expect(buildFse26RunConfig(opts)).toEqual(buildFse26RunConfig(opts));
-    expect(buildFse26RunConfig(opts)).not.toBe(buildFse26RunConfig(opts));
+    expect(buildFse26RunConfig(opts, PROFILE)).toEqual(buildFse26RunConfig(opts, PROFILE));
+    expect(buildFse26RunConfig(opts, PROFILE)).not.toBe(buildFse26RunConfig(opts, PROFILE));
+  });
+});
+
+/**
+ * The one input the command line does not carry.
+ *
+ * The bug these tests exist for read `1 141` where the shipped run reads `1 156` on the FSE 26 corpus: with
+ * `faultFreeWeight` at its shipped `0`, a run with no profile and a run with one were byte-identical under
+ * every reported field, and the difference was 15 cases. The containment order reads the profile for its
+ * per-service excursions, so the profile's IDENTITY is a configuration field — not the blob, its digest.
+ */
+describe('the fault-free profile as a recorded input', () => {
+  it('says no profile was supplied, and that the containment pass therefore had nothing to read', () => {
+    const config = buildFse26RunConfig(BASE, NO_FAULT_FREE_PROFILE);
+    expect(config.faultFreeProfileDigest).toBeNull();
+    // The pass ships ON, so the honest reading is "asked for, could not speak" — not "off".
+    expect(config.containmentOrder).not.toBe(false);
+    expect(config.containmentExcursions).toBe('absent');
+  });
+
+  it('names the digest and the fact that the pass could read it', () => {
+    const config = buildFse26RunConfig(BASE, PROFILE);
+    expect(config.faultFreeProfileDigest).toBe(PROFILE.digest);
+    expect(config.containmentExcursions).toBe('measured');
+  });
+
+  it('reads "absent" when the pass is off, whatever profile was supplied', () => {
+    const off = parseFSE26Args(['--no-containment-order']);
+    expect(buildFse26RunConfig(off, PROFILE).containmentOrder).toBe(false);
+    expect(buildFse26RunConfig(off, PROFILE).containmentExcursions).toBe('absent');
+  });
+
+  it('puts both on the config line, and spells an absent profile as `none` rather than omitting it', () => {
+    const bare = formatFSE26ConfigLine(buildFse26RunConfig(BASE, NO_FAULT_FREE_PROFILE));
+    const withOne = formatFSE26ConfigLine(buildFse26RunConfig(BASE, PROFILE));
+    expect(bare).toContain('faultFreeProfileDigest=none');
+    expect(bare).toContain('containmentExcursions=absent');
+    expect(withOne).toContain(`faultFreeProfileDigest=${PROFILE.digest}`);
+    expect(withOne).toContain('containmentExcursions=measured');
+    // The two lines must DIFFER: that is the property the old line did not have, and the reason a
+    // reproduction reading the artifact could report a number 15 cases away from the published one.
+    expect(bare).not.toBe(withOne);
+  });
+
+  it('is listed as a required field, so an artifact that omits it cannot be compared', () => {
+    // The capability is a requirement of the SHARED list, because both runners can be in the silent state.
+    expect(REPORTED_CONFIG_FIELDS).toContain('containmentExcursions');
+    // The identity is not: only this runner reads the profile file before building its record, so only its
+    // record can carry a digest. Asserted as absent so that adding it back to the shared list is a decision.
+    expect(REPORTED_CONFIG_FIELDS).not.toContain('faultFreeProfileDigest');
   });
 });

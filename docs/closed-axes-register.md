@@ -6191,3 +6191,98 @@ RCABench's abstract states **1 430** validated failure cases; this corpus holds 
 shards (HTTP 796, Network 254, Resource 173, Pod 123, JVM 73, Time 2, DNS 1). The difference is **8 cases
 (0.56 %)**, unexplained by the Zenodo record, and it moves no conclusion here. `Time` holds 2 cases and `DNS`
 holds 1, so a per-family claim about either is a claim about two cases and one case.
+
+## §307 — The pass that was on and inert, and the promotion gate that is worth nine cases
+
+| record                      | what it measures                                                            | artifact                                                                  | cost                                        |
+| --------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- |
+| `containment-order.md` §20  | the silent no-op: 15 cases, 1.06 pp, and the two fields that end it         | two full 1 422-case runs, one with `--fault-free-profile` and one without | 13 m 48 s + 13 m 48 s, **zero model calls** |
+| `agentic-promotion-gate.md` | where the model's ranking is worth reading, and the two defects that hid it | replay of the recorded nominations against the engine's own order         | **zero model calls**, ~4 s                  |
+
+Both records came out of one question asked of an artifact that already existed: _why does this sandbox read
+`1 141` where every document in the repository reads `1 156`?_ The answer was not a regression.
+
+### 307.1 Fifteen cases, one missing input, and a record that could not say so
+
+The containment order reads the fault-free profile for its per-service latency excursions. With no profile
+`latencyExcursions` returns an empty map and `inspectContainmentOrder` returns the ranking **unchanged**, without
+an error and without a line saying so. `fse26-run-config.ts` excluded the profile from the recorded configuration
+because — in its own words — the artifact's content "is determined by the profile FILE and by the two fields that
+ARE reported (`faultFreeWeight`, `faultFreeSelection`)". That is true of the fault-free _term_ and false of the
+containment _order_, and with `faultFreeWeight` at its shipped `0` the term is silent, so the two runs were
+byte-identical under every reported field.
+
+|       |    with the profile |      without it |
+| ----- | ------------------: | --------------: |
+| Top@1 | **1 156 (81.29 %)** | 1 141 (80.24 %) |
+| Top@3 |               1 228 |           1 228 |
+| Top@5 |               1 249 |           1 249 |
+
+Top@3 and Top@5 are identical to the digit and every per-channel score is bit-identical: all fifteen are
+`rank 1 → rank 2` swaps. The record now carries `faultFreeProfileDigest` and `containmentExcursions`, both on
+`REPORTED_CONFIG_FIELDS`' capability half, and a run in the silent state prints a warning naming the cost.
+
+**What this cost the investigation.** Three hypotheses were held and discarded before the real cause was found —
+a code regression between two commits, a CI-versus-local environment difference, and a Node or timezone
+difference — and each was testable only because a full run is 14 minutes rather than an afternoon. The 1 156 was
+reproduced bit-for-bit (`tests`, per-fault-type counts, guard lines) by adding one flag.
+
+### 307.2 Two defects in my own instrument, found before the number was reported
+
+**A relative gap divided by a leader's score.** The first version of the promotion gate conditioned on
+`(s₁ − s₂) / s₁`. On this corpus the published order is **not score-sorted** — the containment pass reorders
+adjacent caller/callee pairs after scoring — so on 83 of 1 422 cases the published first candidate scores below
+the second and the ratio is negative; those cases are not "the engine is unsure", they are "a rule already acted".
+The denominator is also unsound because the pool penalty can take a candidate's score to or below zero. The
+statistic is now `(s₁ − s₂) / (s₁ − s_min)`, over the case's own spread.
+
+**A spread taken from a truncated list.** The same rule selects 29 cases from a five-wide artifact and 122 from a
+fifty-wide one. One threshold, two denominators, and the denominator was the artifact — the same class of error
+§306 found one layer up, where a method ceiling turned out to be a reporting width.
+
+### 307.3 The promotion gate, and the first positive reading from a model arm
+
+The model's first choice is taken over the engine's only when the published pair is score-sorted **and** the top
+two are within 3 % of the case's spread.
+
+| override rule                                               |    net |
+| ----------------------------------------------------------- | -----: |
+| **the model's first choice, gated**                         | **+9** |
+| the model's first choice, ungated (191 overrides)           |    −53 |
+| the engine's second candidate, always                       |    −17 |
+| the engine's third candidate, always                        |     −3 |
+| a random candidate among the five shown (mean of 500 draws) |  −14.1 |
+| … its best draw of 500                                      |     −8 |
+
+122 cases fall in the band, the engine is wrong in 98 of them, the gate overrides 56, and 15 of those fix the case
+against 6 that break it — 71.4 % precision on the overrides that change an outcome. Cross-half by case-id hash:
+**+5 / +4**. Bootstrap over the cases: 95 % CI **[+1, +18]**, `P(net > 0) = 0.975`. The threshold is a plateau
+rather than a spike (`0.02` → +6, `0.03` → +9, `0.05` → +7), and the optimum does **not** transfer — tuning on one
+half picks a threshold that reads negative on the other — so the rule is stated as a plateau and the confirmatory
+arm must pre-register a threshold.
+
+This does not contradict `agentic-fusion.md`'s finding that no operator rescues the proposal set; it bounds it. The
+model is at chance globally (1 103 against the engine's 1 156 verbatim) and well above it where the engine is nearly
+undecided and no structural rule has intervened, which is a statement about _where_ to read a ranking rather than
+about which operator to use.
+
+### 307.4 The width axis, priced before it is dispatched
+
+|                                                                    |               reading |
+| ------------------------------------------------------------------ | --------------------: |
+| width-5 ceiling (`Top@5`)                                          |       1 249 (87.83 %) |
+| width-20 ceiling (`Top@20`)                                        |       1 310 (92.12 %) |
+| cases a width-20 arm newly exposes (ranks 6-20)                    |                    61 |
+| the model's conversion on answers it already sees at positions 2-5 | 34 of 93 = **36.6 %** |
+
+The last row is the one that changes a decision: the information a wider list would expose is of a kind the model
+already converts when it can see it, so width is not the binding constraint and the fusion is. The width arm
+remains worth dispatching, but as a joint test with the gate rather than as a standalone.
+
+### 307.5 The deep tail is a different population from the band
+
+112 cases sit beyond rank 20 and **77 of them are two fault types** — `HTTPResponseReplaceCode` (46) and
+`HTTPRequestReplaceMethod` (31), 19.9 % and 16.3 % of their families. Their answers carry a median 0.14-0.30
+against a leader's 0.86: buried, not ambiguous. That is the opposite of the band in §307.3, where the ratio is
+0.60 and the answer is a plausible rival. Two different failures, two different repairs, and reporting them as one
+"deep tail" would have hidden both.
