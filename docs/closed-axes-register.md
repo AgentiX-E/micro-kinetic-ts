@@ -6304,7 +6304,7 @@ the repository already says before writing what the web says.*
 
 ## §308 — The gate reproduces at +9 on production code, and the guard around it was one candidate too strict
 
-§307.3 measured `+9` with an analysis script. `preregistration-304.md` fixed the threshold at `0.03` and named four
+§307.3 measured `+9` with an analysis script. `docs-repository:preregistration-304.md` fixed the threshold at `0.03` and named four
 predictions; this section is the confirmatory run, on the gate as a module (`packages/ai/src/agent/promotion.ts`,
 `gatePromotion`) with a `--promotion` flag and the arm wired into `scoreNomination` so that the control and the
 treatment are one loop rather than two.
@@ -6387,7 +6387,7 @@ Three consequences, and the third is the one that changes the roadmap.
    model does convert them when it can see them — so a better *admission rule* has room and a better *threshold*
    does not. The next lever on this axis is a verifier, not a wider band.
 3. **Width crosses the published best, and the projection is now derived.** `Retrieval@20 = 92.12 %`, so holding
-   `Rerank@1` at `92.55 %` gives `0.921238 × 0.925540 = 85.26 %` — the same `85.3 %` `preregistration-303.md`
+   `Rerank@1` at `92.55 %` gives `0.921238 × 0.925540 = 85.26 %` — the same `85.3 %` `docs-repository:preregistration-303.md`
    projected by a different route, which is the first independent confirmation of it. And a **perfect** reranker at
    width 20 reaches `92.12 %`, above the published `90.0 %`: the road is width plus reranking, not a larger
    backbone, and `Rerank@1` needs only `97.7 %` of retrieved cases to match it.

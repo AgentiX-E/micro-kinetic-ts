@@ -182,7 +182,7 @@ prescription end of a curve whose other two points were measured for other reaso
 
 ## 7. The width axis, priced before it is dispatched
 
-The pre-registration `preregistration-303.md` authorised a width arm from the depth ladder. The same artifacts
+The pre-registration `docs-repository:preregistration-303.md` authorised a width arm from the depth ladder. The same artifacts
 price it more sharply than that projection did.
 
 |                                                                         |                 reading |
@@ -218,7 +218,7 @@ number above is replayable from artifacts already in the repository's `artifacts
 
 ## 9. The confirmatory replay — arm G, on production code
 
-`preregistration-304.md` fixed the threshold at `0.03` and named four predictions before this run. What follows is
+`docs-repository:preregistration-304.md` fixed the threshold at `0.03` and named four predictions before this run. What follows is
 the run, and it differs from §4 in one respect that matters: **it is not the analysis script that produced §4.** The
 gate is now `packages/ai/src/agent/promotion.ts` with a `gatePromotion` entry point, a `--promotion` flag on the
 nomination runner, and the arm pathway wired into `scoreNomination` so the control and the treatment are one loop.
@@ -251,7 +251,7 @@ the same artifact is not a confirmation of anything.
 | **G4** | end to end printed as `1 156 + net` with the fraction | **1 156 → 1 165** | holds |
 
 The falsifier — *"if arm G's net on all 1 422 cases is ≤ 0, the promotion axis closes as a class"* — **does not
-fire**. Arm W is therefore authorised, and it is registered in `preregistration-305.md`.
+fire**. Arm W is therefore authorised, and it is registered in `docs-repository:preregistration-305.md`.
 
 G3 is worth one sentence, because it is a structural guarantee rather than a measurement: a promotion is counted in
 the band before it is counted as an override, so `overrides ≤ band` holds by construction. The runner prints
@@ -299,7 +299,7 @@ agree, only that they agree about the one candidate a promotion would move.
 
 - **No new accuracy.** `1 156 → 1 165` is the same `+9` §4 reported, `81.29 % → 81.92 %`. A confirmation that
   changed the number would have been a refutation of the earlier one.
-- **Still not held out.** The threshold is the one `preregistration-304.md` fixed, but it was chosen by looking at
+- **Still not held out.** The threshold is the one `docs-repository:preregistration-304.md` fixed, but it was chosen by looking at
   this corpus. The halves are the only internal replication and §4.1 states its limit.
 - **The prompt is unchanged, which is checked rather than assumed.** The runner rebuilds each case's prompt and
   compares its digest against the one in the nominations artifact; **0 of 1 422** recorded answers belong to a
@@ -354,7 +354,7 @@ that the next lever on this axis is a **verifier**, not a wider band.
 0.921238 × 0.925540 = 85.26 %  =  1 212 cases
 ```
 
-That is the same `85.3 %` that `preregistration-303.md` projected from a width-5 efficiency of `0.926`, arrived at
+That is the same `85.3 %` that `docs-repository:preregistration-303.md` projected from a width-5 efficiency of `0.926`, arrived at
 here by a different route — which is the first time that projection has been **independently confirmed**. And it
 says something the earlier route did not: a **perfect** reranker at width 20 reaches `92.12 %`, which is **above**
 the published `90.0 %`. The road to the published best is therefore width plus reranking, not a larger backbone —
