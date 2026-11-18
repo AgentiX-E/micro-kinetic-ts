@@ -211,6 +211,16 @@ describe('gatePromotion', () => {
     }
   });
 
+  it('renders a member a caller forgot as zero, and still reports the population', () => {
+    // The typed census cannot omit a member, and a census built by concatenating partial tallies can. The guard is
+    // tested rather than trusted: without it a missing key sums `undefined` into the total and the census reports
+    // the whole population as unaccounted for, which is a wrong explanation of a real omission.
+    const partial = { off: 3 } as unknown as Record<PromotionOutcome, number>;
+    const text = formatPromotionCensus(partial, 5);
+    expect(text).toMatch(/^ {2}evidence-behind +0 +0\.0%$/m);
+    expect(text).toContain('unaccounted      2');
+  });
+
   it('publishes the default threshold the pre-registration fixed', () => {
     expect(DEFAULT_PROMOTION_THRESHOLD).toBe(0.03);
   });
@@ -223,6 +233,10 @@ describe('gatePromotion', () => {
       'reversed',
       'degenerate',
       'band-miss',
+      'evidence-none',
+      'evidence-tie',
+      'evidence-behind',
+      'rarity-miss',
       'promoted',
     ]);
   });
@@ -259,6 +273,10 @@ describe('formatPromotionCensus', () => {
       reversed: 0,
       degenerate: 0,
       'band-miss': 0,
+      'evidence-none': 0,
+      'evidence-tie': 0,
+      'evidence-behind': 0,
+      'rarity-miss': 0,
       promoted: 0,
     };
   }
@@ -277,11 +295,350 @@ describe('formatPromotionCensus', () => {
     expect(formatPromotionCensus({ ...empty(), off: 3 }, 5)).toContain('unaccounted      2');
   });
 
+  it('aligns every row, including the longest outcome name', () => {
+    // The vocabulary grew to include `evidence-behind` (fifteen characters) and the pad was eleven: every row after
+    // it became a column out of line. A reader sees that before a test does, so the test states the invariant rather
+    // than the padding — one width for every line.
+    const text = formatPromotionCensus({ ...empty(), 'evidence-behind': 44 }, 1422);
+    const rows = text.split('\n').filter((line) => !line.includes('unaccounted'));
+    expect(new Set(rows.map((line) => line.length)).size).toBe(1);
+    expect(text).toMatch(/^ {2}evidence-behind +44 +3\.1%$/m);
+  });
+
   it('says nothing extra when they do add up', () => {
     expect(formatPromotionCensus({ ...empty(), off: 5 }, 5)).not.toContain('unaccounted');
   });
 
   it('does not divide by a zero population', () => {
     expect(formatPromotionCensus(empty(), 0)).toContain('0.0%');
+  });
+});
+
+/**
+ * The evidence admission rule, tested on fixtures whose counts are computable by hand.
+ *
+ * The rule is `preregistration-307.md`'s arm A: admit the model's first choice when it owns **strictly more**
+ * out-of-band channels than the leader, counting only channels whose fault-free rate is below the case's median.
+ * The main fixtures carry the SAME sixteen rates in every case and move only the in-band/out-of-band flags, so the
+ * median is one number for the whole block (the lower median of `0.05 … 0.80` over sixteen channels is `0.40`) and a
+ * count that changes cannot be the median moving underneath it.
+ */
+describe('gatePromotion — evidence admission', () => {
+  /** One channel: does it sit outside its fault-free band after the injection, and how often does it swing anyway? */
+  function channel(label: string, rate: number, outside: boolean) {
+    return { label, pre: 1, post: outside ? 10 : 1, band: [0, 5] as const, rate };
+  }
+
+  /** One candidate. `rank` and `score` are explicit because a fixture states its own order. */
+  function candidate(
+    service: string,
+    rank: number,
+    score: number,
+    channels: ReturnType<typeof channel>[],
+  ) {
+    return { service, rank, score, channels };
+  }
+
+  /**
+   * The committee, with flags as the only variable.
+   *
+   * Rates are `0.05 0.10 | 0.15 0.20 0.25 0.70 | 0.30 0.35 0.40 0.45 | 0.50 0.55 0.60 0.65 | 0.75 0.80` over four
+   * candidates — sixteen channels — so the lower median is `0.40` and "rarer than the median" is `rate < 0.40`.
+   *
+   * `mysql` owns two qualifying channels (`0.05`, `0.10`) in every fixture; only `cache`'s flags move, which is
+   * what makes the four readings different answers to the same question rather than four different questions.
+   */
+  function committee(cacheFlags: readonly boolean[]) {
+    const [c0, c1, c2, c3] = cacheFlags as [boolean, boolean, boolean, boolean];
+    return [
+      candidate('mysql', 0, 3.0, [
+        channel('a', 0.05, true),
+        channel('b', 0.1, true),
+        channel('c', 0.75, false),
+        channel('d', 0.8, false),
+      ]),
+      candidate('cache', 1, 2.9, [
+        channel('e', 0.15, c0),
+        channel('f', 0.2, c1),
+        channel('g', 0.25, c2),
+        channel('h', 0.7, c3),
+      ]),
+      candidate('auth', 2, 1.0, [
+        channel('i', 0.3, false),
+        channel('j', 0.35, false),
+        channel('k', 0.4, false),
+        channel('l', 0.45, false),
+      ]),
+      candidate('billing', 3, 0.5, [
+        channel('m', 0.5, false),
+        channel('n', 0.55, false),
+        channel('o', 0.6, false),
+        channel('p', 0.65, false),
+      ]),
+    ];
+  }
+
+  /** Three qualifying channels on the pick against the leader's two. */
+  const AHEAD = committee([true, true, true, true]);
+  /** Two against two: equal, which the strict rule must refuse. */
+  const TIED = committee([true, true, false, false]);
+  /** One against two. */
+  const BEHIND = committee([true, false, false, false]);
+
+  const COUNT = 'count' as const;
+  const RARITY = 'count-and-rarity' as const;
+
+  /** Gate with the evidence rule, over the scores the band would have read. */
+  function evidence(
+    candidates: ReturnType<typeof committee>,
+    nomination: readonly string[],
+    variant: 'count' | 'count-and-rarity',
+  ) {
+    return gatePromotion(
+      candidates.map((row) => ({ service: row.service, score: row.score })),
+      nomination,
+      { threshold: 0.03, evidence: { variant, candidates } },
+    );
+  }
+
+  it('promotes when the pick owns strictly more out-of-band channels', () => {
+    const decision = evidence(AHEAD, ['cache'], COUNT);
+    expect(decision.outcome).toBe('promoted');
+    expect(decision.promotedService).toBe('cache');
+    // The rule's own arithmetic is reported, so a census can say WHY and not only what.
+    expect(decision.evidence).toEqual({
+      pick: 3,
+      leader: 2,
+      median: 0.4,
+      rarestPick: 0.15,
+      rarestLeader: 0.05,
+    });
+    // And the order applied is one move to the front: the challenger first, everything else in the engine's order.
+    expect(decision.order.slice(0, 2)).toEqual(['cache', 'mysql']);
+    expect(decision.order).toHaveLength(4);
+  });
+
+  it('refuses a tie, and says the counts were equal rather than that nothing was measured', () => {
+    const decision = evidence(TIED, ['cache'], COUNT);
+    expect(decision.outcome).toBe('evidence-tie');
+    expect(decision.promote).toBe(false);
+    expect(decision.evidence).toMatchObject({ pick: 2, leader: 2 });
+  });
+
+  it('refuses when the pick is behind, which is a different refusal from a tie', () => {
+    const decision = evidence(BEHIND, ['cache'], COUNT);
+    expect(decision.outcome).toBe('evidence-behind');
+    expect(decision.evidence).toMatchObject({ pick: 1, leader: 2 });
+  });
+
+  it('reports evidence-none when no channel survives the median filter', () => {
+    // Every channel rated at the median or above: the population yields nothing to count, for a reason that is
+    // about the FILTER and not about the two candidates being equally evidenced.
+    const flat = [
+      candidate('mysql', 0, 3.0, [channel('a', 0.5, true), channel('b', 0.5, true)]),
+      candidate('cache', 1, 2.9, [channel('c', 0.5, true), channel('d', 0.5, true)]),
+    ];
+    const decision = evidence(flat, ['cache'], COUNT);
+    expect(decision.outcome).toBe('evidence-none');
+    expect(decision.evidence).toEqual({
+      pick: 0,
+      leader: 0,
+      median: 0.5,
+      rarestPick: null,
+      rarestLeader: null,
+    });
+  });
+
+  it('does not count a channel that is out of band but not below the median', () => {
+    // AHEAD's pick has four out-of-band channels and only three of them are rarer than 0.40, so a rule that
+    // counted "moved" would read 4-2 instead of 3-2 on the same case.
+    const pick = AHEAD[1]!;
+    expect(pick.channels.filter((c) => c.post > 5)).toHaveLength(4);
+    expect(evidence(AHEAD, ['cache'], COUNT).evidence).toMatchObject({ pick: 3 });
+  });
+
+  it('does not count a channel that is below the median but inside its band', () => {
+    // The other half of the conjunction, tested separately: a rule that counted "rare" alone would admit on almost
+    // every candidate in the corpus, because most channels are rare.
+    const silent = committee([false, false, false, false]);
+    const decision = evidence(silent, ['cache'], COUNT);
+    expect(silent[1]!.channels.filter((c) => c.rate < 0.4)).toHaveLength(3);
+    expect(decision.evidence).toMatchObject({ pick: 0 });
+    expect(decision.outcome).toBe('evidence-behind');
+  });
+
+  it('takes the median over EVERY candidate, not over the two being compared', () => {
+    // The discriminating fixture: a third candidate whose channels are all inside their bands but rated low drags
+    // the population's median from 0.25 down to 0.20, and `cache`'s 0.20 channel therefore stops qualifying. Read
+    // over the pair the same case PROMOTES; read over the population it is `evidence-none`. Only the population
+    // reading is arm A.
+    const withThird = [
+      candidate('mysql', 0, 3.0, [channel('a', 0.25, true), channel('b', 0.8, true)]),
+      candidate('cache', 1, 2.9, [channel('c', 0.2, true), channel('d', 0.7, true)]),
+      candidate('auth', 2, 1.0, [channel('e', 0.05, false), channel('f', 0.06, false)]),
+    ];
+    const population = evidence(withThird, ['cache'], COUNT);
+    expect(population.evidence?.median).toBe(0.2);
+    expect(population.outcome).toBe('evidence-none');
+
+    const pairOnly = evidence(withThird.slice(0, 2), ['cache'], COUNT);
+    expect(pairOnly.evidence?.median).toBe(0.25);
+    expect(pairOnly.outcome).toBe('promoted');
+  });
+
+  it('takes the LOWER of two middle rates, so the threshold is always a rate a channel carries', () => {
+    // With an even population an interpolating median is a number no channel carries. `0.1 0.2 0.3 0.4` has the
+    // lower median 0.2 and the interpolated one 0.25; the assertion on the number is what separates them, because
+    // both readings refuse this case.
+    const four = [
+      candidate('mysql', 0, 3.0, [channel('a', 0.1, true), channel('b', 0.2, true)]),
+      candidate('cache', 1, 2.9, [channel('c', 0.3, true), channel('d', 0.4, true)]),
+    ];
+    const decision = evidence(four, ['cache'], COUNT);
+    expect(decision.evidence?.median).toBe(0.2);
+    expect(decision.evidence).toMatchObject({ pick: 0, leader: 1 });
+    expect(decision.outcome).toBe('evidence-behind');
+  });
+
+  it('A2 refuses a win whose rarest channel is not rarer than the leader', () => {
+    // AHEAD is A1's promotion with the pick's rarest qualifying channel at 0.15 against the leader's 0.05, so the
+    // count rule admits and the rarity rule must not: A2 is strictly narrower by construction.
+    expect(evidence(AHEAD, ['cache'], COUNT).outcome).toBe('promoted');
+    const narrow = evidence(AHEAD, ['cache'], RARITY);
+    expect(narrow.outcome).toBe('rarity-miss');
+    expect(narrow.evidence).toEqual({
+      pick: 3,
+      leader: 2,
+      median: 0.4,
+      rarestPick: 0.15,
+      rarestLeader: 0.05,
+    });
+  });
+
+  it('A2 promotes when the pick wins the count AND its rarest channel is rarer', () => {
+    // Its own population, because the comparison needs the pick's rarest rate below the leader's: the median here
+    // is 0.20, `mysql` qualifies on 0.15, `cache` on 0.05 and 0.10.
+    const rarer = [
+      candidate('mysql', 0, 3.0, [channel('a', 0.15, true), channel('b', 0.8, true)]),
+      candidate('cache', 1, 2.9, [channel('c', 0.05, true), channel('d', 0.1, true)]),
+      candidate('auth', 2, 1.0, [channel('e', 0.2, false), channel('f', 0.3, false)]),
+      candidate('billing', 3, 0.5, [channel('g', 0.4, false), channel('h', 0.5, false)]),
+    ];
+    const decision = evidence(rarer, ['cache'], RARITY);
+    expect(decision.evidence).toEqual({
+      pick: 2,
+      leader: 1,
+      median: 0.2,
+      rarestPick: 0.05,
+      rarestLeader: 0.15,
+    });
+    expect(decision.outcome).toBe('promoted');
+  });
+
+  it('reads no score at all, and reports that it did not', () => {
+    // The rule is a property of the CASE, not of the pair: that is the whole claim arm A rests on. Permuting every
+    // score — while keeping the order, which is what names the leader — must not move the decision, and the two
+    // margin fields must be null rather than a number the rule never used.
+    const base = evidence(AHEAD, ['cache'], COUNT);
+    const permuted = AHEAD.map((row, index) => ({ ...row, score: index === 0 ? 0.5 : 99 }));
+    const other = gatePromotion(
+      permuted.map((row) => ({ service: row.service, score: row.score })),
+      ['cache'],
+      { threshold: 0.03, evidence: { variant: COUNT, candidates: permuted } },
+    );
+    expect(other.outcome).toBe(base.outcome);
+    expect(other.order).toEqual(base.order);
+    expect(other.evidence).toEqual(base.evidence);
+    expect(base.relGap).toBeNull();
+    expect(base.spread).toBeNull();
+  });
+
+  it('ignores the threshold, because the evidence rule has none', () => {
+    // `null` is the band's control and means nothing to a rule without a dial: a caller that switches the band off
+    // and asks for the evidence rule gets the evidence rule, which is why the two do not share a setting.
+    for (const threshold of [null, 0, 0.03, 1]) {
+      const decision = gatePromotion(
+        AHEAD.map((row) => ({ service: row.service, score: row.score })),
+        ['cache'],
+        { threshold, evidence: { variant: COUNT, candidates: AHEAD } },
+      );
+      expect(decision.outcome).toBe('promoted');
+    }
+  });
+
+  it('keeps the three shared refusals ahead of the rule', () => {
+    const options = { threshold: 0.03, evidence: { variant: COUNT, candidates: AHEAD } };
+    const rows = AHEAD.map((row) => ({ service: row.service, score: row.score }));
+    // The model named the leader: `agrees`, and the rule is never consulted.
+    expect(gatePromotion(rows, ['mysql'], options).outcome).toBe('agrees');
+    // The model named something the order does not carry: `unranked`.
+    expect(gatePromotion(rows, ['nobody'], options).outcome).toBe('unranked');
+    // A case with no candidate has no leader to compare against.
+    expect(gatePromotion([], ['cache'], options).outcome).toBe('unranked');
+    // And a one-candidate case cannot disagree, which is the same branch the band reports as `agrees`.
+    expect(gatePromotion([rows[0]!], ['mysql'], options).outcome).toBe('agrees');
+  });
+
+  it('refuses a case whose candidates carry no channel at all', () => {
+    // The median's population is empty, so there is no threshold to count against. `null` rather than a default,
+    // because a default of zero would silently make every channel "not rare enough" and turn a missing artifact
+    // into a reading about the engine.
+    const bare = [candidate('mysql', 0, 3.0, []), candidate('cache', 1, 2.9, [])];
+    const decision = evidence(bare, ['cache'], COUNT);
+    expect(decision.outcome).toBe('evidence-none');
+    expect(decision.evidence).toEqual({
+      pick: 0,
+      leader: 0,
+      median: null,
+      rarestPick: null,
+      rarestLeader: null,
+    });
+  });
+
+  it('refuses a case whose leader the fingerprint list does not carry', () => {
+    // The two are projections of one artifact, so this cannot happen in a well-formed run. It is a refusal rather
+    // than an empty side, because "the pick's opponent is absent" must not read as "the pick has more evidence".
+    const rows = AHEAD.map((row) => ({ service: row.service, score: row.score }));
+    const decision = gatePromotion(rows, ['cache'], {
+      threshold: 0.03,
+      evidence: { variant: COUNT, candidates: [AHEAD[1]!] },
+    });
+    expect(decision.outcome).toBe('evidence-none');
+    expect(decision.evidence).toMatchObject({ pick: 0, leader: 0 });
+  });
+
+  it('never returns a band outcome, and never returns an evidence outcome from the band', () => {
+    // The two rules share a vocabulary and must not share a verdict: this is the fence that keeps a reader from
+    // attributing an evidence refusal to the margin, or the other way round.
+    const BAND_ONLY = ['reversed', 'degenerate', 'band-miss', 'off'];
+    const EVIDENCE_ONLY = ['evidence-none', 'evidence-tie', 'evidence-behind', 'rarity-miss'];
+    for (const candidates of [AHEAD, TIED, BEHIND]) {
+      for (const variant of [COUNT, RARITY]) {
+        const decision = evidence(candidates, ['cache'], variant);
+        for (const outcome of BAND_ONLY) expect(decision.outcome).not.toBe(outcome);
+        if (decision.outcome !== 'promoted') expect(EVIDENCE_ONLY).toContain(decision.outcome);
+      }
+      // And the band over the same case reads only the scores it was given, so its evidence reading is null.
+      const band = gatePromotion(
+        candidates.map((row) => ({ service: row.service, score: row.score })),
+        ['cache'],
+        { threshold: 0.03 },
+      );
+      expect(band.evidence).toBeNull();
+      for (const outcome of EVIDENCE_ONLY) expect(band.outcome).not.toBe(outcome);
+    }
+  });
+
+  it('does not let the band read a channel, even when the rows carry one', () => {
+    // A runtime fence rather than a type-level one: `PublishedCandidate` has no `channels`, and this asserts that
+    // nothing on the band's path reaches for a property the type does not declare.
+    const withChannels = AHEAD.map((row) => ({ ...row }));
+    const decision = gatePromotion(withChannels, ['cache'], { threshold: 0.03 });
+    const plain = gatePromotion(
+      AHEAD.map((row) => ({ service: row.service, score: row.score })),
+      ['cache'],
+      { threshold: 0.03 },
+    );
+    expect(decision).toEqual(plain);
   });
 });

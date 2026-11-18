@@ -25,7 +25,11 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
-import { buildNominationPrompt, formatPromotionCensus } from '../../packages/ai/src/agent/index.js';
+import {
+  buildNominationPrompt,
+  formatPromotionCensus,
+  type PublishedCandidate,
+} from '../../packages/ai/src/agent/index.js';
 
 import { inCaseOrder } from '../../packages/kinetic/src/benchmarks/case-order.js';
 
@@ -217,17 +221,33 @@ async function main(): Promise<void> {
   console.log(`All ${population.length} paired cases`);
   console.log(formatNominationStudy(population, sweepNomination(population, records, GRID)));
 
-  if (args.promotion !== null) {
+  if (args.promotion !== null || args.admission !== null) {
     // The gate's spread comes from the full scored order and nowhere else. A population read from a five-wide
     // fingerprint dump carries five candidates, so reading the spread off it would be reading the artifact's width
     // — the error `docs/agentic-promotion-gate.md` §3 records as having been made twice already.
-    const spreadOrder = spreadOrdersOf(parseTermsDump(readFileSync(args.depth, 'utf8')));
+    //
+    // An EVIDENCE arm reads no spread at all, and its control is the engine: the band switched off. The two are
+    // scored by one function with one extra argument, which is the same shape the band's own control uses.
+    const spreadOrder =
+      args.depth === ''
+        ? new Map<string, readonly PublishedCandidate[]>()
+        : spreadOrdersOf(parseTermsDump(readFileSync(args.depth, 'utf8')));
     console.log('');
-    console.log(`Gate over ${population.length} cases — spread from ${args.depth}`);
-    const gated = sweepPromotion(population, records, spreadOrder, [
-      { threshold: null },
-      { threshold: args.promotion },
-    ]);
+    console.log(
+      args.admission === null
+        ? `Gate over ${population.length} cases — spread from ${args.depth}`
+        : `Gate over ${population.length} cases — rule evidence (${args.admission}), no spread read`,
+    );
+    const gated = [
+      ...sweepPromotion(population, records, spreadOrder, [{ threshold: null }]),
+      ...sweepPromotion(
+        population,
+        records,
+        spreadOrder,
+        [{ threshold: args.promotion }],
+        args.admission,
+      ),
+    ];
     console.log(formatPromotionTable(gated));
     console.log('');
     const control = gated[0];
@@ -248,7 +268,9 @@ async function main(): Promise<void> {
       const tally = outcome.promotion;
       if (tally === null) continue;
       console.log('');
-      console.log(`census — ${label} (threshold ${tally.threshold ?? 'off'})`);
+      console.log(
+        `census — ${label} (${tally.admission === null ? `threshold ${tally.threshold ?? 'off'}` : `rule ${tally.admission}`})`,
+      );
       console.log(formatPromotionCensus(tally.census, outcome.cases));
       if (tally.orderMissing > 0 || tally.orderDisagreement > 0) {
         console.log(
@@ -256,9 +278,11 @@ async function main(): Promise<void> {
             ` — a non-zero disagreement means ${args.depth} and ${args.fingerprints} are not one run`,
         );
       }
-      if (tally.overrides > tally.band) {
+      if (tally.admission === null && tally.overrides > tally.band) {
         // Structurally impossible: a promotion is counted in the band before it is counted as an override. The line
-        // exists because the alternative is that one of those two counters stops meaning what it says.
+        // exists because the alternative is that one of those two counters stops meaning what it says. It is guarded
+        // on the BAND because an evidence arm has no band: its promotions are not counted in one, so the invariant
+        // it states does not apply to them and firing there would be a false alarm about a correct reading.
         console.log(`  IMPOSSIBLE: ${tally.overrides} overrides in a ${tally.band}-case band`);
       }
     }
@@ -274,10 +298,16 @@ async function main(): Promise<void> {
       ['A', halves[0]],
       ['B', halves[1]],
     ] as const) {
-      const [controlHalf, treatmentHalf] = sweepPromotion(subset, records, spreadOrder, [
-        { threshold: null },
-        { threshold: args.promotion },
-      ]);
+      const [controlHalf, treatmentHalf] = [
+        ...sweepPromotion(subset, records, spreadOrder, [{ threshold: null }]),
+        ...sweepPromotion(
+          subset,
+          records,
+          spreadOrder,
+          [{ threshold: args.promotion }],
+          args.admission,
+        ),
+      ];
       if (controlHalf === undefined || treatmentHalf === undefined) throw new Error('lost a point');
       const net = treatmentHalf.correct - controlHalf.correct;
       console.log(

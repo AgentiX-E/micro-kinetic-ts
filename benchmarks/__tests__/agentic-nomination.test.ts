@@ -584,6 +584,43 @@ describe('formatPromotionTable', () => {
   });
 });
 
+describe('formatPromotionTable and formatPromotionReadout — evidence arms', () => {
+  it('names the rule instead of a threshold the arm does not use', () => {
+    // An evidence arm's `threshold` is whatever the caller passed and means nothing, so a table that printed it as
+    // the arm's name would be labelling a rule with a number it never reads. The control beside it keeps `off`.
+    const control = scoreNomination(GATED, GATED_RECORDS, {
+      strategy: 'rrf',
+      weight: 0,
+      promotion: { threshold: null },
+    });
+    const treatment = scoreNomination(GATED, GATED_RECORDS, {
+      strategy: 'rrf',
+      weight: 0,
+      promotion: { threshold: 0.03 },
+      admission: 'count-and-rarity',
+    });
+    const lines = formatPromotionTable([control, treatment]).split('\n');
+    expect(lines[1]).toContain('off');
+    expect(lines[2]).toContain('rarity');
+    expect(lines[2]).not.toContain('0.030');
+
+    // The other spelling, so the name column is not a branch one variant can miss.
+    const countArm = scoreNomination(GATED, GATED_RECORDS, {
+      strategy: 'rrf',
+      weight: 0,
+      promotion: { threshold: 0.03 },
+      admission: 'count',
+    });
+    expect(formatPromotionTable([countArm]).split('\n')[1]).toContain('count');
+
+    const readout = formatPromotionReadout(treatment);
+    expect(readout).toContain('rule evidence (count-and-rarity): no band');
+    // And the precision lines are the same arithmetic for any admission rule, because they count outcomes rather
+    // than margins.
+    expect(readout).toContain('net ');
+  });
+});
+
 describe('formatPromotionReadout', () => {
   it('states the conditional precision over the overrides that changed an outcome', () => {
     const outcome = scoreNomination(GATED, GATED_RECORDS, {

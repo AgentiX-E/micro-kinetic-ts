@@ -35,6 +35,7 @@ import {
   parseNominationReply,
   verifyNomination,
   type CandidateFingerprint,
+  type EvidenceVariant,
   type NominationRejection,
   type PromotionDecision,
   type PromotionOptions,
@@ -189,6 +190,14 @@ export interface NominationOutcome {
 export interface PromotionTally {
   /** The threshold the arm ran at. `null` is the control: the gate looked at nothing. */
   readonly threshold: number | null;
+  /**
+   * The admission rule this arm scored, or `null` for the band.
+   *
+   * Read by the two renderings so that neither has to infer the rule from `threshold`: an evidence arm's threshold
+   * is whatever the caller passed and means nothing, and a table that printed it as the arm's name would be
+   * labelling a rule with a number it does not use.
+   */
+  readonly admission: EvidenceVariant | null;
   /** Counts by outcome, over the cases the gate examined. Exhaustive by construction. */
   readonly census: Readonly<Record<PromotionOutcome, number>>;
   /**
@@ -244,6 +253,14 @@ export interface NominationArmOptions {
    * inferring it from whatever it was handed.
    */
   readonly spreadOrder?: ReadonlyMap<string, readonly PublishedCandidate[]>;
+  /**
+   * The admission rule to score instead of the band, or `null`/absent for the band.
+   *
+   * The evidence rules read each case's own channels, which live on the fingerprint dump this loop already holds, so
+   * they need no `spreadOrder` — and the gate they build must not be handed one, or a reader could not tell which
+   * quantity an outcome came from.
+   */
+  readonly admission?: EvidenceVariant | null;
 }
 
 /** An empty refusal tally, as a fresh object so a caller cannot share one. */
@@ -259,6 +276,7 @@ function emptyRefusals(): Record<NominationRejection, number> {
  */
 interface MutableTally {
   threshold: number | null;
+  admission: EvidenceVariant | null;
   census: Record<PromotionOutcome, number>;
   band: number;
   engineWrongInBand: number;
@@ -279,6 +297,10 @@ function emptyCensus(): Record<PromotionOutcome, number> {
     reversed: 0,
     degenerate: 0,
     'band-miss': 0,
+    'evidence-none': 0,
+    'evidence-tie': 0,
+    'evidence-behind': 0,
+    'rarity-miss': 0,
     promoted: 0,
   };
 }
@@ -317,7 +339,13 @@ export function scoreNomination(
   options: NominationArmOptions,
 ): NominationOutcome {
   const gate = options.promotion;
-  if (gate !== undefined && gate.threshold !== null && options.spreadOrder === undefined) {
+  const admission = options.admission ?? null;
+  if (
+    gate !== undefined &&
+    admission === null &&
+    gate.threshold !== null &&
+    options.spreadOrder === undefined
+  ) {
     throw new TypeError(
       'scoreNomination: a promotion threshold needs `spreadOrder`. Without the full scored order the spread ' +
         'would be read from the width of whatever population the caller held, which is the defect ' +
@@ -332,6 +360,7 @@ export function scoreNomination(
       ? null
       : {
           threshold: gate.threshold,
+          admission,
           census: emptyCensus(),
           band: 0,
           engineWrongInBand: 0,
@@ -374,10 +403,14 @@ export function scoreNomination(
         // A switched-off gate reads no score, so it needs no full order: it is handed the population's own order and
         // returns it unchanged, which is what makes the control's number the engine's number. Only a gate that
         // measures needs the artifact whose width its denominator is a property of.
+        //
+        // An evidence arm is the third case: it reads the case's own channels, so its order is the population's and
+        // its options are the ONE object built below. Building it here rather than at each call site is what keeps
+        // the rule and the population it is read against from acquiring two owners.
         const full =
           gate === undefined
             ? undefined
-            : gate.threshold === null
+            : gate.threshold === null || admission !== null
               ? oneCase.candidates.map((row) => ({ service: row.service, score: row.score }))
               : options.spreadOrder?.get(oneCase.datapack);
         if (gate !== undefined && full !== undefined && tally !== null) {
@@ -393,7 +426,18 @@ export function scoreNomination(
           if (!agrees) {
             tally.orderDisagreement += 1;
           } else {
-            decision = gatePromotion(full, verified.order, gate);
+            // One construction, one owner: the band's options are the caller's, and an evidence arm's are the
+            // caller's threshold plus this case's own channels. A `gate.evidence` supplied by a caller is not a
+            // third path — the type allows it and no caller takes it, and a branch nothing can reach is a branch
+            // nothing can test.
+            const gateOptions =
+              admission === null
+                ? gate
+                : {
+                    threshold: gate.threshold,
+                    evidence: { variant: admission, candidates: oneCase.candidates },
+                  };
+            decision = gatePromotion(full, verified.order, gateOptions);
             order = decision.order;
             tally.census[decision.outcome] += 1;
             if (
@@ -583,7 +627,14 @@ export function formatPromotionTable(outcomes: readonly NominationOutcome[]): st
   for (const outcome of gated) {
     const tally = outcome.promotion;
     if (tally === null) continue;
-    const name = tally.threshold === null ? 'off' : tally.threshold.toFixed(3);
+    const name =
+      tally.admission !== null
+        ? tally.admission === 'count'
+          ? 'count'
+          : 'rarity'
+        : tally.threshold === null
+          ? 'off'
+          : tally.threshold.toFixed(3);
     lines.push(
       `${name.padEnd(6)}  ${String(outcome.cases).padStart(5)}  ${String(tally.band).padStart(6)}  ` +
         `${String(tally.engineWrongInBand).padStart(11)}  ${String(tally.overrides).padStart(9)}  ` +
@@ -606,7 +657,9 @@ export function formatPromotionReadout(outcome: NominationOutcome): string {
   if (tally === null) return 'gate: this arm did not carry one';
   const decisive = tally.fix + tally.breaks;
   const lines = [
-    `band ${tally.band} of ${outcome.cases} cases, engine wrong inside it ${tally.engineWrongInBand}`,
+    tally.admission === null
+      ? `band ${tally.band} of ${outcome.cases} cases, engine wrong inside it ${tally.engineWrongInBand}`
+      : `rule evidence (${tally.admission}): no band — this rule reads channels, not a score gap`,
     `overrides ${tally.overrides}: ${tally.fix} fix, ${tally.breaks} break, ${tally.neutral} neutral`,
     decisive === 0
       ? 'conditional precision: no override changed an outcome, so there is no precision to state'

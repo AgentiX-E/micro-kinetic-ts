@@ -34,6 +34,7 @@ import {
   NOMINATION_PROTOCOL,
   buildNominationPrompt,
   parseNominationReply,
+  type EvidenceVariant,
   type NominationOptions,
   type PublishedCandidate,
 } from '../../packages/ai/src/agent/index.js';
@@ -76,6 +77,14 @@ export interface NominationArgs {
   readonly topologyBrief: string;
   /** The gate's threshold, or `null` when the arm is a fusion. */
   readonly promotion: number | null;
+  /**
+   * Which admission rule to score, or `null` for the band — the rule every published number was measured on.
+   *
+   * The evidence rules read the case's channels and no score, so they need no `--depth`; the band reads the spread
+   * and no channel, so it needs one. The two are separate flags because they are separate claims, and one flag with
+   * three spellings would let a reader think the band was one of them.
+   */
+  readonly admission: EvidenceVariant | null;
 }
 
 /**
@@ -101,6 +110,7 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     depth: '',
     topologyBrief: '',
     promotion: null,
+    admission: null,
   };
   const numeric = new Map<string, (value: number) => void>([
     [
@@ -171,7 +181,10 @@ export function parseNominationArgs(argv: readonly string[]): NominationArgs {
     else if (arg === '--model') args.model = value;
     else if (arg === '--depth') args.depth = value;
     else if (arg === '--topology-brief') args.topologyBrief = value;
-    else if (arg === '--promotion') {
+    else if (arg === '--admission') {
+      if (value === 'count' || value === 'count-and-rarity') args.admission = value;
+      else throw new Error(`--admission must be 'count' or 'count-and-rarity', got ${value}`);
+    } else if (arg === '--promotion') {
       if (value === 'off') {
         args.promotion = null;
       } else {
@@ -449,13 +462,17 @@ export function sweepPromotion(
   records: ReadonlyMap<string, NominationRecord>,
   spreadOrder: ReadonlyMap<string, readonly PublishedCandidate[]>,
   grid: readonly GatePoint[] = [{ threshold: null }, { threshold: DEFAULT_PROMOTION_THRESHOLD }],
+  admission: EvidenceVariant | null = null,
 ): readonly NominationOutcome[] {
   return grid.map((point) =>
     scoreNomination(cases, records, {
       strategy: 'rrf',
       weight: 0,
       promotion: { threshold: point.threshold },
-      spreadOrder,
+      // An evidence arm's spread order is deliberately ABSENT: the rule reads no score, and handing it an artifact
+      // it does not use would let a later edit read one without changing anything a reader could see.
+      ...(admission === null ? { spreadOrder } : {}),
+      admission,
     }),
   );
 }

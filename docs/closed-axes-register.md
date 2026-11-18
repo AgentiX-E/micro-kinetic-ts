@@ -6911,3 +6911,83 @@ The published consequence is in `docs/sota-comparison.md` §0p-ix: the cell is r
 header, both workflows' comments, and the census test's docblock. The repair's justification is unaffected: the
 published cell was still the one where the pass was inert, and it is still the case that a dispatch could not name a
 profile. **A right fix priced at three times its value is still a fix; a wrong price is still a wrong number.**
+
+## §315 — Arm A reads 1 144: counting channels measures how much moved, not what caused it
+
+`docs-repository:preregistration-307.md` registered the evidence-differential admission rule after arm T: admit the
+model's first choice when it owns **strictly more** out-of-band channels than the leader, counting only channels
+whose fault-free rate is below the case's median. A1 is the count, A2 adds "and the rarer of the two is rarer still".
+This entry records the implementation (`gatePromotion`'s second mode), the two readings, and the closure.
+
+### 315.1 The readings, on arm T's own artifact, at $0 of model spend
+
+Both arms re-score the 1 422 nominations and fingerprints `44329808264` already holds — no dispatch, no tokens. The
+control is the same run's engine answer, so every delta below is over one denominator.
+
+| arm | overrides | fix | break | neutral | precision | Top@1 | net | half A | half B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| control (gate off) | — | — | — | — | — | **1 156 (81.3 %)** | — | 569 | 587 |
+| **A1 count** | 63 | 13 | 25 | 25 | 34.2 % | 1 144 (80.5 %) | **−12** | 568 | 576 |
+| **A2 count + rarity** | 43 | 9 | 15 | 19 | 37.5 % | 1 150 (80.9 %) | **−6** | 570 | 580 |
+
+Every prediction failed except the one that stated an ordering:
+
+| prediction | registered | measured | verdict |
+| --- | --- | --- | --- |
+| A1-P1 `Top@1 ≥ 1 177` | 1 177 | **1 144** | fails by 33 |
+| A1-P2 overrides `< 56` and `> 20` | 21–55 | **63** | fails — the rule is not stricter than the band |
+| A1-P3 precision `≥ 80 %` | 80 % | **34.2 %** | fails at half the band's 71.4 % |
+| A1-P4 breaks `≤ 6` | ≤ 6 | **25** | fails by 19 |
+| A2 ordering (fewer overrides, higher precision, between A1 and G) | 43 / 37.5 / 1 150 | exact | **holds** |
+
+A2's ordering holding while every absolute claim failed is the shape of a prediction implied by the *construction*
+rather than by the rule: "A2 is A1 with a narrower criterion" is true of any monotone narrowing, including one that
+narrows the wrong quantity.
+
+### 315.2 The falsifier fired, and it is the third arm in a row to lose
+
+> "If arm A1's `Top@1` is at or below arm G's `1 165`, the evidence-differential admission class closes."
+
+`1 144 ≤ 1 165`, so the class closes: no arm that admits on a count of out-of-band channels is dispatched under this
+pre-registration, at any count or any rarity weighting. This is the third model-side arm to lose — `agentic-fusion.md`
+§3–4 (mixed rankings), arm W (width, net-neutral) and now a rule over the model's own answer — and it is the first
+where the loss is **not** attributable to the prompt: the nominations were arm T's, whose overrides the band admitted
+at 85.7 % precision. The same 39 answers, admitted by a different rule, are worth −12.
+
+### 315.3 Why it fails, stated as the mechanism rather than the number
+
+The rule's census is the diagnosis. Of 1 422 cases it declines on 22 ties and 44 where the pick is *behind*, and it
+promotes 63 — four times the band's 39 at the same precision regime. Inside those 63, **25 are neutral and 25 break
+against 13 fixes**: the pick is a service whose channels moved at least as much as the leader's, which on this corpus
+is what *every* candidate in a fault window looks like. Mean out-of-band channels per candidate is **7.31 of 8**, so
+"more moved channels" is not a discriminating statistic — it is the corpus's ambient condition, and the median filter
+on the fault-free rate removes 40 % of it without restoring any discrimination.
+
+The band's statistic is a *margin*, and a margin is comparative by construction: it asks whether the engine's own
+score has separated these two candidates, and the score already integrates magnitude, onset and the caller/callee
+asymmetry the containment pass enforces. A raw count discards all three. **The rule was registered as "the case
+carries properties of its own" and it turns out the case's properties are not the ones that decide the answer** —
+what decides it is the relation between two candidates, which is what the score measures and what the rule refused
+to look at.
+
+### 315.4 What the instrument cost, and what it bought anyway
+
+The implementation is `gatePromotion`'s second mode with its own four outcome names (`evidence-none`,
+`evidence-tie`, `evidence-behind`, `rarity-miss`), a per-case options object built in one place, a `--admission`
+flag, and a table that names the rule rather than a threshold it does not read. Two defects were found by running it
+rather than by reading it: the census's column pad was eleven wide and `evidence-behind` is fifteen characters, which
+silently misaligned every row; and the `IMPOSSIBLE` guard on the band fired on every evidence run, because it asserts
+an invariant of the band and an evidence arm has no band. Both are fixed and both are now tested — the second by
+guarding it, the first by asserting that every census row has one width.
+
+### 315.5 What stays open, named and unpriced
+
+The preregistration's own §"What arm A does not test" named the next rule: **"promote iff the pick is the leader's
+callee"**, which needs an edge list on the scoring path. Arm A's failure is the argument for it — the count is
+direction-blind, and direction is the one thing the corpus's own telemetry states. The union graph is already an
+artifact (§311), so a per-corpus adjacency exists; what does not exist is a per-case admissible version of it, and
+until that is designed the rule is a sentence rather than an arm.
+
+**What this does not license**: reading the closure as "the model has nothing". Arm T's 39 band-admitted overrides
+were worth +10 at 85.7 % precision, which is the best model-side reading this project has. What closed is a rule
+over a statistic — not the model, and not the graph.

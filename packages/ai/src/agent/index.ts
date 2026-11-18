@@ -89,6 +89,9 @@ export {
 } from './promotion.js';
 
 export type {
+  EvidenceOptions,
+  EvidenceReading,
+  EvidenceVariant,
   PromotionDecision,
   PromotionOptions,
   PromotionOutcome,

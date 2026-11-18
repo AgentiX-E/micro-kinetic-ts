@@ -443,6 +443,61 @@ describe('sweepPromotion', () => {
     expect(outcomes[0]!.cases).toBe(outcomes[1]!.cases);
   });
 
+  it('scores an evidence arm with no spread order at all, and reads one the same way if given', () => {
+    // The evidence rule reads channels and no score, so the artifact that supplies the band's denominator must be
+    // irrelevant to it. The two calls below are the same arm with and without that artifact, and the assertion is
+    // that they agree — which is what makes "this rule cannot see a score" a property of the NUMBER rather than of
+    // the code's shape.
+    const evidenceCases = [oneCase('c1', ['b'])];
+    const withoutSpread = sweepPromotion(
+      evidenceCases,
+      records,
+      new Map(),
+      [{ threshold: 0.03 }],
+      'count',
+    );
+    const withSpread = sweepPromotion(
+      evidenceCases,
+      records,
+      spread,
+      [{ threshold: 0.03 }],
+      'count',
+    );
+    expect(withoutSpread[0]!.correct).toBe(withSpread[0]!.correct);
+    expect(withoutSpread[0]!.promotion?.admission).toBe('count');
+    expect(withSpread[0]!.promotion?.admission).toBe('count');
+    // This fixture's channels all sit at 0.01, so nothing survives the median filter and the arm abstains on every
+    // case rather than promoting on noise.
+    expect(withoutSpread[0]!.promotion?.overrides).toBe(0);
+    expect(withoutSpread[0]!.promotion?.census['evidence-none']).toBe(1);
+  });
+
+  it('accepts --admission, and refuses a spelling it does not have', () => {
+    const args = parseNominationArgs([
+      '--fingerprints',
+      'f.ndjson',
+      '--verdicts',
+      'v.ndjson',
+      '--admission',
+      'count-and-rarity',
+    ]);
+    expect(args.admission).toBe('count-and-rarity');
+    expect(args.promotion).toBeNull();
+    // An evidence arm needs no depth, because it reads no spread — which is why the requirement on `--depth` is
+    // attached to `--promotion` alone.
+    expect(args.depth).toBe('');
+    expect(() =>
+      parseNominationArgs([
+        '--fingerprints',
+        'f.ndjson',
+        '--verdicts',
+        'v.ndjson',
+        '--admission',
+        'count-and-rarityy',
+      ]),
+    ).toThrow(/--admission must be/);
+  });
+
   it('honours a caller-supplied grid', () => {
     const outcomes = sweepPromotion(cases, records, spread, [{ threshold: 0 }]);
     expect(outcomes).toHaveLength(1);
