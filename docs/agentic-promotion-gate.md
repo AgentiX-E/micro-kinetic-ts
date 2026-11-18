@@ -140,6 +140,37 @@ So the mismatch is not "the model cannot rank". It is "the model's ranking is wo
 has already said it is nearly undecided, and only where no structural rule has intervened". Both conditions are
 measurable from the artifact, and neither is a property of the model.
 
+## 5.1 The prescription axis, and a corpus that measured the same thing from the other side
+
+`arXiv:2610.35767` (Peking University and BUPT, 2026-10-26) builds **RCAtlas**, 90 curated cases over eight public
+sources, and reports its arms as a function of what it calls the **prescribed-call ratio** — the fraction of a
+system's model calls fixed in code, `0.10` to `1.00` across the published agents it re-runs. Its ordering is
+monotone in that ratio: simple harnesses (ratio `0`) 65-77 % `PR@1`, published agents (ratio `0.10`-`1.00`)
+16-53 %, non-LLM statistical methods 6-39 % with the best (**NSigma**) at **38.9 %**.
+
+This project has three points on the same axis, measured on a different corpus:
+
+| arm | prescription | net |
+| --- | ---: | ---: |
+| the elimination protocol (`agentic-fusion.md`) | every call fixed; the model may only remove | **−602** |
+| the nomination arm, ungated | the model ranks freely; every override applied | **−53** |
+| **the nomination arm, gated (§4)** | the model ranks freely; overrides admitted only where the engine is undecided | **+9** |
+
+The ordering is monotone in prescription, which is the same conclusion RCAtlas reaches from a cross-section of
+other people's systems — and it is reached here from three arms of **one** system on **one** corpus, which is a
+dose-response rather than a comparison between designs.
+
+**What this is not.** A controlled curve. The −602 was measured against an older engine (`1 073` control, not
+`1 156`) and on the claim-set artifact rather than the nomination artifact, and "prescription" is not one scalar
+across the three arms: the elimination protocol prescribes the *form* of an answer, not only the number of fixed
+calls. So the three points are indicative and the direction is the reading; the magnitudes are not comparable to
+each other and none of them is comparable to RCAtlas's `PR@1`, whose population shares no case with RCABench's
+1 422 (`docs/sota-populations.md` files it as `OTHER`).
+
+**What it does change.** It makes the gate's +9 the *end* of a trend rather than an isolated reading, which is the
+strongest available answer to "is +9 a threshold artefact". A threshold artefact would not sit at the minimum
+prescription end of a curve whose other two points were measured for other reasons.
+
 ## 6. What is NOT claimed
 
 - **Not a SOTA move.** +9 cases is 0.63 pp and takes 81.29 % to 81.92 %, still 8.1 pp below the published

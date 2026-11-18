@@ -6286,3 +6286,18 @@ remains worth dispatching, but as a joint test with the gate rather than as a st
 against a leader's 0.86: buried, not ambiguous. That is the opposite of the band in §307.3, where the ratio is
 0.60 and the answer is a plausible rival. Two different failures, two different repairs, and reporting them as one
 "deep tail" would have hidden both.
+
+### 307.6 The prescription axis, and the competitor that names it
+
+`arXiv:2610.35767` (PKU + BUPT, 2026-10-26) reports its arms as a function of the **prescribed-call ratio** and
+finds the ordering monotone: simple harnesses (ratio `0`) 65-77 % `PR@1`, published agents (`0.10`-`1.00`) 16-53 %,
+non-LLM methods 6-39 % with the best at 38.9 %. This project has three points on the same axis, from one system on
+one corpus: elimination **−602**, nomination ungated **−53**, nomination gated **+9**. The direction is the reading
+and the magnitudes are not comparable — different controls, different artifacts, and "prescription" is not one
+scalar — but it makes the gate the end of a monotone trend rather than an isolated threshold, which is the best
+available answer to "is +9 an artefact".
+
+The sweep that found this also **rediscovered an entry already on file**: RCAtlas has been in
+`sota-populations.md` since an earlier iteration, with three root-cause levels and a leakage audit this search did
+not surface. Recording it because the failure mode is the one §307's own §8.8 names one surface over: *read what
+the repository already says before writing what the web says.*
