@@ -157,8 +157,12 @@ Three sentences elsewhere in this repository are now load-bearing and were not:
    table" now has a floor.** 6.54 pp of it is inside the published window and nothing outside the engine
    can reach it either: 51 of 93 are ≥ 20 % behind their winner.
 3. **The next arm is not a fifth value of this operator.** It is a per-edge direction observable built
-   from `traceEdges` / `traceEdgeLatency`, which RCABench does carry and the ranker does not read. See
-   `preregistration-308.md`.
+   from `traceEdges` / `traceEdgeLatency`. That channel is already weighted in the ranking
+   (`latWeight = 0.561495`), but in the **opposite** direction: `edgeLatencyScores` scores a node by the
+   latency its CALLERS waited, which makes a node with slow inbound edges a suspect. The deduction needs
+   the outbound reading — how long this node waited for each callee — which the graph carries only as the
+   inbound aggregate `edgeLatencyByCallee`. See `preregistration-308.md`, whose §2 states the distinction
+   and whose scope is one new field plus one predicate.
 
 ## 6. What this document does not claim
 

@@ -7047,10 +7047,14 @@ have one cause.
 
 `traceEdgeLatency` is `[from, to, baseline, post]` per edge, and on the ten sampled observer wins **nine carry an
 out-edge whose latency multiplied by 185×–1 065×, every one of them pointing at the truth**. That is the same
-physical relation, measured on the channel the corpus actually has. `docs-repository:preregistration-308.md`
-registers the arm: relax `explainsThrough` by **one predicate** — the edge itself must have risen by `θ` — and hold
-rho, gate, closure, scope and precedence at their shipped values. `$0`, two θ values on one battery, acceptance
-`Top@1 ≥ 1 200` with the golden nine cells byte-identical.
+physical relation, measured on the channel the corpus has — in the direction the engine does not read. The engine
+does read this array: `edgeLatencyScores` scores a node by its INBOUND rise (what its callers waited) and feeds
+`latWeight = 0.561495`, which is evidence FOR the node. The deduction needs the OUTBOUND rise (what the node waited
+for), which the graph carries only as `edgeLatencyByCallee`'s inbound aggregate.
+`docs-repository:preregistration-308.md` registers the arm: **one new field** (`edgeLatencyByCaller`) and **one
+predicate** — the edge itself must have risen by `θ` — with rho, gate, closure, scope, precedence and `latWeight`
+held at their shipped values. `$0`, two θ values on one battery, acceptance `Top@1 ≥ 1 200` with the golden nine
+cells byte-identical.
 
 ### Axes this closes
 

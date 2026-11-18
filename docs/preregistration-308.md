@@ -17,15 +17,25 @@ The class the operator was built for is nevertheless the largest one in the cens
 misses (44.1 %) are won by `ts-route-plan-service` (23) or `ts-travel-plan-service` (15)**, both
 fan-out orchestrators, and 51 of 93 sit at a margin of ≥ 20 %.
 
-## 2. The observable this corpus does carry
+## 2. The observable this corpus does carry — in the direction that is not being used
 
-The root cause is a missing channel, not a missing relation. RCABench ships a per-edge response reading
-that the ranker never reads:
+The root cause is a missing ADMISSION channel, not a missing signal. RCABench ships a per-edge response
+reading, and the engine already reads it:
 
 ```
 "traceEdgeLatency": [["ts-route-plan-service", "ts-travel-service", 2.6, 1291.9], …]
                       from                    to                 baseline  post
 ```
+
+**In the direction it is used**, the engine scores a node by what its callers waited: `formatEdgeLatency`'s
+`edgeLatencyScores` is the largest `post/base` over the edges `caller → v`, feeding `latWeight = 0.561495`
+and `latMinRise = 10.3`. That answers "is this node's inbound path slow", which is evidence FOR the node.
+
+**In the direction this arm needs**, the same array answers the opposite question: `v → callee` rising means
+`v` was waiting on `callee`, which is evidence AGAINST `v`. The graph does not carry it — `edgeLatencyByCallee`
+is inbound by construction (`inbound` is in its name, and its docblock says so) — so the arm's first half is
+one new field, `edgeLatencyByCaller: Map<ServiceId, {rise, count}>`, built by the same walk that builds its
+inbound twin.
 
 **On the ten `ts-route-plan-service` near misses, nine carry at least one out-edge whose latency rose by
 185× to 1 065×, and in every one of them the risen edge points at the truth** (a hand reading of the ten
@@ -35,26 +45,35 @@ That is the physical fact the deduction encodes, measured directly: the caller's
 callee's, so an edge whose latency multiplies is a callee explaining its caller. The metric channel cannot
 express it here; the trace channel can.
 
-## 3. The arm — one predicate, nothing else
+## 3. The arm — one field and one predicate, nothing else
 
 ```
-explainsThrough(callee) ⇐ isResponseChannel(dominantLabel)  OR  edgeRise(caller → callee) ≥ θ
+edgeRise(v→c)  = post / baseline  from the case's own traceEdgeLatency, aggregated per CALLER
+explainsThrough(c) ⇐ isResponseChannel(dominantLabel(c))  OR  edgeRise(v → c) ≥ θ
 ```
 
-`edgeRise(u→v) = post / baseline` from the case's own `traceEdgeLatency`, and `θ` is a dispatch
-parameter. **Everything else is held at the shipped value**: `rho = 1`, `gate = 1`, `closure = max`,
-`scope = external`, `precedence = off`, and the aggregation, weight and cap are the ones every published
-number was measured under.
+The field is `edgeLatencyByCaller` — the outbound twin of the existing `edgeLatencyByCallee`, built by the
+same walk and carrying the same `{ rise, count }` shape, because a predicate that had to re-read the raw
+array would be a second owner of "which rise counts".
+
+**Everything else is held at the shipped value**: `rho = 1`, `gate = 1`, `closure = max`,
+`scope = external`, `precedence = off`, `latWeight = 0.561495`, and the aggregation, weight and cap are the
+ones every published number was measured under.
 
 The knob is `--edge-explained <θ>` (default absent = the operator exactly as it ships, bit-identical by
 construction — the same standard `topoDiscountGate = 0` is held to). The arm is `θ = 2` (an edge must at
 least double) and `θ = 10`; both are dispatched, in one battery, against a bare control of the same commit.
 
 **Why a predicate and not a new operator.** A new aggregation would have to be mapped into the anomaly's
-own units, and `docs/topo-deduction.ts`'s population law says exactly what that costs: a ratio applied to a
+own units, and `topo-deduction.ts`'s population law says exactly what that costs: a ratio applied to a
 rank surface reads `rho·w·(n−1)/k` and is linear in the fleet's size. A predicate reads no units — it
 decides WHETHER an existing charge may be applied, which is the one thing `gate` already shows can be
 changed without changing the space.
+
+**Why not simply raise `latWeight`.** It is already 0.561495 and it already points the other way: raising it
+would make every node with slow inbound edges MORE suspicious, which is the opposite of what the census's 41
+cases need. The two readings are both per-edge latency and they are not interchangeable, and that is the
+distinction this arm exists to test.
 
 ## 4. Predictions, each falsifiable and each wrong in a direction that matters
 
