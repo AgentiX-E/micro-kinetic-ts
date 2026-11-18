@@ -6991,3 +6991,72 @@ until that is designed the rule is a sentence rather than an arm.
 **What this does not license**: reading the closure as "the model has nothing". Arm T's 39 band-admitted overrides
 were worth +10 at 85.7 % precision, which is the best model-side reading this project has. What closed is a rule
 over a statistic — not the model, and not the graph.
+
+---
+
+## §316 — The ninety-three near misses, and the operator that cannot fire on this corpus
+
+`docs/near-miss-census.md` is a new instrument (`benchmarks/src/near-miss-census.ts`, **100/100/100/100**, 43
+tests) that reads a depth artifact and says what a `Top@1` miss is worth. On the shipped artifact (`@1 = 1 156`)
+it reports **93 cases at rank 2–5**, worth `+6.54 pp` if every one of them became correct, and it reports two
+things about them that change the next arm.
+
+### 316.1 The margins, and the subtrahend that reversed the verdict
+
+The census reports `(winner − truth) / winner`. Its first draft reported `(top[0] − top[1]) / top[0]` — the gap to
+the runner-up — and on the 72 rank-2/3 cases that reads **22 under 2 %**, which is a tie-break class. Measured
+against the answer:
+
+| band | under 1 % | under 2 % | under 5 % | under 10 % | under 20 % | ≥ 20 % | unmeasurable |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| cases | 1 | 5 | 9 | 15 | 12 | **51** | 0 |
+
+`tie share (under-2pct): 5.38 % — verdict evidence`. **A single wrong subtrahend flips the reading of a whole
+class**, and the tie-break axis that the first draft would have ordered is worth 5 cases and not 22. Recorded as a
+rule: a margin is measured against the quantity a rule would have to move, not against the nearest number in the
+sort.
+
+### 316.2 The class, and the four knobs it does not respond to
+
+Three services win 41 of 93 (`ts-route-plan-service` 23, `ts-travel-plan-service` 15, plus a tail), i.e. the
+observer class `docs/topo-closure.md` §1 named on the golden half. That document refused the `sum` aggregate there
+and recorded **"inert on 1 422 cases"** here. A 20-case local probe (ten observer wins, ten others; a constructed
+sample, so only the DIFFERENCES are readable) measures every knob at once:
+
+| configuration | Top@1 | Top@3 | Top@5 | per-case md5 |
+| --- | ---: | ---: | ---: | --- |
+| `external`, `max` (shipped) | 0 % | 75 % | 100 % | `be9ac3fb…` |
+| `external`, `sum` | 0 % | 75 % | 100 % | `be9ac3fb…` |
+| `caller`, `max` | 0 % | 75 % | 100 % | `be9ac3fb…` |
+| `all`, `max` | 5 % | 65 % | 80 % | `96b0e4a3…` |
+| `all`, `sum` | 0 % | 60 % | 75 % | — |
+
+Three of four knobs move **not one byte**, and the fourth moves `+1 / −2 / −4`.
+
+### 316.3 Why: the corpus has no response channel at all
+
+RCABench's telemetry carries **87 distinct metric names and every one is `container.*` or `k8s.*`** — cpu, memory,
+filesystem, ready, restarts. `isResponseChannel` admits a callee only on `latency*` / event / `delay` / `loss` /
+`socket`, so `explainsThrough(callee)` is **false for every node of every case**, `explained` stays empty, and the
+operator returns its input. The discount is not misconfigured here; it is **undefined**, because the physical fact
+it encodes — a caller's response contains its callees' — is a fact this corpus never measures. Weight, gate, scope
+and closure are four descriptions of a quantity that has no referent, which is why four refusals on two corpora now
+have one cause.
+
+### 316.4 What the corpus does carry, and the arm it licenses
+
+`traceEdgeLatency` is `[from, to, baseline, post]` per edge, and on the ten sampled observer wins **nine carry an
+out-edge whose latency multiplied by 185×–1 065×, every one of them pointing at the truth**. That is the same
+physical relation, measured on the channel the corpus actually has. `docs-repository:preregistration-308.md`
+registers the arm: relax `explainsThrough` by **one predicate** — the edge itself must have risen by `θ` — and hold
+rho, gate, closure, scope and precedence at their shipped values. `$0`, two θ values on one battery, acceptance
+`Top@1 ≥ 1 200` with the golden nine cells byte-identical.
+
+### Axes this closes
+
+| Axis | Verdict |
+| --- | --- |
+| "A tie-break rule is what the near-miss class needs" | **closed as measured false** — 5.38 % of the class is within two percent of its answer, and the reading that said otherwise divided by the wrong quantity |
+| "The topological discount can be tuned for RCABench" | **closed by information set** — the operator's admission predicate has no true instance on the corpus, so no value of `rho`, `gate`, `scope` or `closure` can move it; four refusals, one cause |
+| "The observer class is a golden-half phenomenon" | **closed as false** — it is 44.1 % of the FSE'26 near-miss class |
+| "`sum` is the closure that unblocks the fan-out" | **closed a second time**, now with the reason: the fan-out's explanation lives in an edge's latency, not in a callee's resource reading |

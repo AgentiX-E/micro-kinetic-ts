@@ -332,6 +332,11 @@ export default defineConfig({
         // plausible share in a table, which is the failure mode this repository refuses by name.
         'src/ranking-depth.ts',
         'src/depth-report.ts',
+        // Added with the module: the census of the ranks a `Top@5` presentation can still repair. Measured because
+        // every number in it is one a plan is SIZED against — the anchor is `72 near misses, 41 of them won by
+        // three services` — and a miscount here is not an error anywhere: it is a plausible share in a table, the
+        // failure mode `ranking-depth.ts` is listed for one line up.
+        'src/near-miss-census.ts',
         // Added with the module: the decomposition of a miss into the terms that separate its truth from its
         // winner, which is `docs/depth-reranking-preregistration.md` as arithmetic. Its whole value is that every
         // constant in it is quoted from a document written BEFORE the data — so the population statement, the

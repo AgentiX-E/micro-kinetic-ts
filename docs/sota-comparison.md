@@ -973,10 +973,19 @@ The comparison has to be stated with its populations, because they are not the s
 | backbone | none — a deterministic graph engine | Claude Sonnet |
 | model calls per case | **0** | ~30.5 rounds |
 | tokens per case | **0** | **1 465 ktok** |
-| cost per case | **$0** | **$4.64** |
+| cost per case | **$0** | **$4.64** — see the note below on why the paper's other figure is not this one |
 | `Acc@1` | 80.24 % | 90.0 % |
 
 Two things follow that the table cannot show, and both are load-bearing.
+
+**The cost cell is `$4.64` and the paper prints a second figure that cannot be the same configuration.**
+`v2` body text reads "the top-band agents sustain 45–54 effective rounds, over 1500 ktok, and roughly `$0.2`
+per case" — and `1 465 ktok` at Sonnet's `$3/Mtok` is `$4.4`, so `$4.64` and `1 465 ktok` are one
+configuration and `$0.2` is another. The `$0.2` is the Qwen band (whose per-token price is roughly an order
+of magnitude lower) and the table above cites the Sonnet arm, so the row is `$4.64` and a reader quoting
+`$0.2` against us is quoting the wrong backbone. Read as an order of magnitude rather than as a price, the
+conclusion does not change: **the gap to `90.0 %` costs between two hundred and a few thousand times our
+per-case bill, and ours is exactly zero.**
 
 **The width-5 reading in §0c's predecessor was the wrong yardstick, and this is the paper that proves it.** Our
 `Top@12` oracle is **90.51 %** and our `Top@20` oracle is **92.12 %** (`rank-depth.md` §2) — so a re-ranking layer
@@ -1593,9 +1602,11 @@ configurations** under the benchmark's own scoring rule, which it states explici
 
 Three things follow, and only the third is comfortable:
 
-1. **We are not first on RCABench.** 61.46% sits between the fourth and fifth agentic configurations, and 28.5 pp
-   below the best. The STANDING row's "+24.5 pp over the best" is a margin over a panel that cannot query
-   telemetry; it is not a standing on this benchmark and the row now says so.
+1. **We are not first on RCABench.** `81.29 %` (1 156/1 422) is **second of the eleven configurations in this
+   table** and `8.7 pp` below the best, above every Qwen configuration (79.6 / 79.2 / 77.6 / 65.2) and above
+   every framework the paper classifies as constrained. The number this sentence carried before the corpus
+   rebuild and the containment pass was `61.46 %`, which sat between the fourth and fifth; the ordering
+   sentence moved with it and only that sentence did.
 2. **The population is a 500-case sample**, drawn without replacement from the 1,430 cases, so the two figures are
    not case-for-case comparable — but the direction is not in doubt at this distance.
 3. **Their comparison boundary contains no non-LLM method at all.** The paper compares agent frameworks and
@@ -1609,6 +1620,45 @@ telemetry per case, at $0.01–$4.64 per case (their table). The engine is one d
 pre-extracted feature set with **zero per-case cost**, and the honest summary of the gap is that the pass is
 currently leaving 18–29 pp of retrievable evidence on the table. The two levers that are _measured_ rather than
 assumed are the input-side losses named in §2d.
+
+### 2c-ii. Where the two configurations actually differ, by fault family
+
+The overall difference is `8.7 pp`, and it is not spread evenly. The table below groups the corpus's 25
+families by the mechanism they exercise, with every count read from the shipped depth artifact
+(`pnpm exec tsx benchmarks/src/run-depth-report.ts --depth …` prints the per-family table these rows are
+summed from; the competitor column is the paper's own per-category `Acc@1`, and the two grouping schemes are
+**not** one-to-one — the mapping shown is the nearest category, not an identity):
+
+| group | cases | this engine | nearest paper category |
+| --- | ---: | ---: | --- |
+| `HTTP*` (9 families) | 796 | **78.77 %** (627) | HTTP 87 % |
+| `Network*` (5 families) | 254 | **72.44 %** (184) | NETWORK 89 % |
+| `JVMException` + `JVMReturn` | 64 | **68.75 %** (44) | CODE (JVM) 93 % |
+| `JVMMemoryStress` + `JVMLatency` + `JVMCPUStress` + `JVMMySQLLatency` | 182 | **97.80 %** (178) | RESOURCE 94 % |
+| `ContainerKill` + `PodFailure` + `PodKill` | 123 | **100.00 %** (123) | — |
+| `TimeSkew` + `DNSRandom` | 3 | **0.00 %** (0) | — |
+
+The paper's own attribution makes this less comfortable than "the model is simply better". Its largest
+backbone gain is on RESOURCE (75 % → 94 %) and CODE/JVM (66 % → 93 %); the first is a group this engine reads
+at `97.80 %`, and the second is the group it reads worst (`68.75 %`, a `24.3 pp` gap). So the deficit is
+**partly** in the place the model's advantage is, and partly in a place the model's advantage is not.
+
+**Weighting by cases rather than by percentage is what sizes the work.** Closing the three trailing groups to
+the competitor's rate is worth, case by case:
+
+```
+HTTP           796 × (87.0 − 78.77) % = 65 cases
+NETWORK        254 × (89.0 − 72.44) % = 42 cases
+JVM-exception   64 × (93.0 − 68.75) % = 15 cases
+                                      ─────────
+                                        122 cases  =  +8.58 pp
+```
+
+`1 156 + 122 = 1 278 = 89.87 %`. **A perfect transfer of the competitor's per-category rates lands at
+`89.87 %` — `0.13 pp` short of `90.0 %`.** The remaining margin is not in any family; it is in the order, and
+the order's own bound is `90.51 %` at rank 12 and `92.12 %` at rank 20 with `absent = 0`
+(`docs/rank-depth.md` §2). A configuration that reads twelve candidates correctly beats `90.0 %` without a
+single model call — and the 122 cases above are the ones that make the first 8.58 of those points.
 
 ## 2d. The RCABench archive read through a SECOND path: 42.69% (607/1422) against this row's 61.46% (874/1422)
 
