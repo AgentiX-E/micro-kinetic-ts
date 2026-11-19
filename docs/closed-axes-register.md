@@ -7580,3 +7580,61 @@ bar because it is the whole risk — the prior promotes a node in every case, an
 truth. It must win ≥ 60 of the 155 and lose essentially none of the 1 257, and that is what the arm measures.
 
 **Axes this closes.** None. **Axes this opens.** One: the request-root prior.
+
+## §321 — The failed-edge partition: the mechanism is real, the membership is not specific (−170)
+
+Iteration 311 closed by registering a prior on the entry point. This entry closes it the other way: the prior was
+refused **before implementation**, on two readings of the dump that already existed, and the arm that replaced it
+was measured on the corpus and refused too — with the largest single-family gain of any arm on this operator
+(+56) and a net loss of 170.
+
+### 321.1 The registered prior dies without a run
+
+`docs-repository:preregistration-311.md` §10 asked for credit on "the node with no measured inbound edge other than the synthetic
+load source". Applied to the dump's edge lists that predicate admits **13–15 nodes per case** (median 13; 286 of
+421 at 14): every `ts-admin-*`, `ts-*-delivery`, `ts-wait-order`, `ts-consign` and `ts-execution-*` service has
+in-degree zero, because the graph is built from observed spans and an endpoint nobody exercised was never called.
+
+And the subject's own evidence has the **wrong sign**: over the 421 cases, the entry point's median `selfAnomaly`
+is **0.286 when it is the truth and 0.388 when it is not** (AUC 0.401), and its median rank is **34 against 29**.
+A monotone credit lifts it in 324 cases where it is a proxy and in 97 where it is the cause, and the 97 sit
+deeper. The full AUC table is `docs/failed-edge-jurisdiction.md` §1.
+
+### 321.2 The statisic that does separate, and what it is worth when turned into an order
+
+`failedEdge` separates at 0.848 — the entry point is the callee of `loadgenerator`, so an entry-point fault fails
+the load source's calls. Across the same 421 cases the ledger credits **6.6 % of candidates** and contains the
+truth **99.3 % of the time** (418 of 421), median three members. Partitioning the order so that credited
+candidates precede the rest, keeping the score order inside each half, reads **73.2 % → 86.7 %** on that dump.
+
+### 321.3 On the corpus it is refused, and the decomposition says why
+
+| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| control | **1 156** | 1 228 | 1 249 | — | — |
+| `failedEdgeFirst` | 986 | **1 232** | **1 293** | 71 | **241** |
+
+`HTTPResponseReplaceCode` **+56** (171 → 227) — the family whose truth is the entry point in 58 of its 231 cases,
+converted almost exactly as the dump predicted. Against it: `JVMMemoryStress` **−145** (171 → 26),
+`ContainerKill` **−66**, `PodFailure` **−20**, `PodKill` **−4**. Those four are 235 of the 241 losses and they
+share one property — **their fault does not fail a call at its own site**. A stressed or killed service's inbound
+calls still succeed; the load source's calls to the entry point are what times out, so
+`loadgenerator → ts-ui-dashboard` is the failed edge and the entry point takes the credit.
+
+**The root of the call graph is the first node to see anyone else's timeout.** That is the ledger answering its
+own question correctly, and the partition mistaking membership for causation.
+
+### 321.4 What this closes, and the successor it registers
+
+**Closed:** the request-root prior (never built), and the ledger's membership as a decisive signal. Also settled
+from the other direction: `failedEdgeWeight`'s gate is not merely cautious here — the 235 cases it refuses are
+cases it is right to refuse, and a looser gate would be this arm.
+
+**Opened, with its prediction stated:** rank first the candidates whose **unexplained** failures are positive,
+`unexplainedFailures(v) = max(0, inbound − outgoing)` — the statistic `failureContainment` already trusts. In an
+entry-point fault its inbound calls fail and its outbound ones do not (residual > 0); in a stress or kill
+downstream its inbound *and* outbound calls fail (residual ≈ 0), because the failures it reports are the ones it
+received. Bar: beat 1 156 with no type below its published cell, **keep ≥ 40 of the 56** `HTTPResponseReplaceCode`
+gains, and restore `JVMMemoryStress` **above 160**.
+
+**Axes this closes.** Two. **Axes this opens.** One: the failure flow's *residual* as a membership test.

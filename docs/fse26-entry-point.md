@@ -19,7 +19,7 @@ at it on a guess about the mechanism, and two of them worked, which is what made
 ## 2. The one reading that has to be stated first
 
 The dump was taken **without `--fault-free-profile`**, so the run reads **1 141**, not the published **1 156**. That
-is the first of the three failure modes `preregistration-311.md` §5 named, it is a defect of the dispatch rather
+is the first of the three failure modes `docs-repository:preregistration-311.md` §5 named, it is a defect of the dispatch rather
 than of the read, and its size is measurable rather than arguable: 18 of 1 422 cases carry a different `truthRank`,
 and **2 of them are in this population** — both `HTTPRequestReplaceMethod`, both `1 → 2`, both in the class this
 document calls H2. Every figure below is reported on the audit population and corrected to the published one in the
@@ -41,7 +41,7 @@ Two of the four hypotheses die outright and they are the two that would have bee
   argument would have needed — "no metric moves, so add an observable" — is **false** on this corpus.
 - **H4 is empty.** Every truth resolved to a node in the graph, in every case of both types.
 
-**H5 is the fifth class, and it was not registered.** `preregistration-311.md` offered four mechanisms and the read
+**H5 is the fifth class, and it was not registered.** `docs-repository:preregistration-311.md` offered four mechanisms and the read
 produced a fifth: the truth has a real deviation, the winner is not above it in the call tree, and it sits **20–45
 places down** (median 35 of 50). §6 records the defect rather than smoothing it over.
 
