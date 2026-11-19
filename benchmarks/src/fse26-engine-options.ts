@@ -21,6 +21,7 @@
 
 import type {
   DualFamilyGateMode,
+  FailedEdgeFirstScope,
   FailedEdgeGateMode,
   FailedEdgeMode,
   FailureAttribution,
