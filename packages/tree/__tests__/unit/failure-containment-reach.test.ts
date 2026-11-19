@@ -101,11 +101,14 @@ const ONE_EDGE = edges([['caller', 'callee', 500]]);
 // ── The states ────────────────────────────────────────────
 
 describe('the scope switch', () => {
-  it('ships at `global-measured`, and the three states are a closed vocabulary', () => {
-    // The default is a RECORD rather than a comment: `docs/failure-containment-reach.md` measured it at
-    // 1 156 → 1 186 `Top@1` with thirty gains and no losses, and a change here would restate a published result
-    // under a different traversal. `adjacent` is the pole that reproduces every number measured before it.
-    expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('global-measured');
+  it('ships at `adjacent` in the ENGINE, and the three states are a closed vocabulary', () => {
+    // The engine default does not move with iteration 313's arm, and the reason is ownership rather than doubt:
+    // the wide state reads 1 156 → 1 186 on the RCABench archive and is outcome-identical on the 735 RCAEval cases
+    // across six protocols, so nothing measured argues against it — but an option has ONE default and the engine
+    // owns it, so a runner-side copy would be a number published under a name its owner does not hold. The FSE'26
+    // dispatch therefore STATES `--failure-containment-scope global-measured` on the invocation it runs, and its
+    // artifact prints the token; this constant is what anything that does not ask reads.
+    expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
     expect(FAILURE_CONTAINMENT_SCOPES).toEqual(['adjacent', 'global', 'global-measured']);
     for (const scope of FAILURE_CONTAINMENT_SCOPES)
       expect(isFailureContainmentScope(scope)).toBe(true);
@@ -119,12 +122,12 @@ describe('the scope switch', () => {
     }
   });
 
-  it('is the shipped traversal when the scope is omitted', () => {
-    // Omitted means the DEFAULT, and the default is a wide state — so a pair the fusion placed apart is inverted
-    // by an engine nobody configured, which is the whole point of shipping it.
-    const explicit = order(['caller', 'x', 'callee'], GRADIENT, ONE_EDGE, 'global-measured');
+  it('is the engine default when the scope is omitted', () => {
+    // Omitted means the engine's default, which is the narrow traversal — and the wide readings stay reachable
+    // only by asking for them. That is what makes the runner's default a separate, measurable decision.
+    const explicit = order(['caller', 'x', 'callee'], GRADIENT, ONE_EDGE, 'adjacent');
     expect(order(['caller', 'x', 'callee'], GRADIENT, ONE_EDGE)).toStrictEqual(explicit);
-    expect(explicit).toEqual(['callee', 'caller', 'x']);
+    expect(explicit).toEqual(['caller', 'x', 'callee']);
   });
 });
 

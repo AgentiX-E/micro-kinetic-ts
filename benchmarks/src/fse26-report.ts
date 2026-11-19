@@ -43,6 +43,7 @@ import type {
   TopoEdgeRise,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
+
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,

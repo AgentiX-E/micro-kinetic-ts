@@ -585,12 +585,15 @@ const KNOBS: Readonly<
     rcaeval: null,
   },
   failureContainmentScope: {
-    // Iteration 313: the REACH of the failure-flow order — `adjacent` (the shipped neighbour-only traversal),
-    // `global` (any caller/callee pair on a failing edge) and `global-measured` (`global`, with a candidate the
-    // channel never measured refused). Accepted by the FSE'26 runner and unstatable from a dispatch: the packed
-    // `ranking_knobs` block is at its input budget, the same statement the credit below makes. It is a row
-    // because the three states are three POPULATIONS of pairs rather than three magnitudes — a dispatch that could
-    // name a weight here would be naming something the pass does not have.
+    // Iteration 313: the REACH of the failure-flow order — `adjacent` (the engine's default, the neighbour-only
+    // traversal), `global` (any caller/callee pair on a failing edge) and `global-measured` (`global`, with a
+    // candidate the channel never measured refused). `fse26: null` is about the INPUT, not about the flag: the
+    // packed `ranking_knobs` block is at its budget, so no dispatch can SELECT a scope, and the FSE'26 workflow
+    // instead STATES `--failure-containment-scope global-measured` on the one invocation it runs. That is why the
+    // row is here rather than nowhere: the flag is on the shipped command line, the artifact prints it, and the
+    // ablation pole is dispatched by running the runner locally with `adjacent`. It is a row of its own because
+    // the three states are three POPULATIONS of pairs rather than three magnitudes — a dispatch that could name a
+    // weight here would be naming something the pass does not have.
     flag: '--failure-containment-scope',
     owner: 'failure-containment-reach.md',
     fse26: null,

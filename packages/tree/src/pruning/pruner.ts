@@ -1223,13 +1223,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *                     shipped traversal reads an unmeasured candidate as `unexplainedFailures = 0`, i.e. as
    *                     fully explained, which is the one reading the measurement cannot support.
    *
-   * Ships at `DEFAULT_FAILURE_CONTAINMENT_SCOPE` = `'global-measured'` since iteration 313: **1 156 → 1 186
-   * `Top@1`** on 1 422 cases, 30 gained, none lost, no fault type declining. `'adjacent'` is every earlier
-   * number's traversal and stays reachable as the ablation pole; `docs/failure-containment-reach.md` is the read.
-   *
-   * The golden half is unaffected BY CONSTRUCTION rather than by measurement: its cells carry no per-call failure
-   * column, so `graph.failureFlows` is absent and the pass returns the ranking it was given — the same reason
-   * {@link failureContainment} itself has never moved a golden number.
+   * Ships at `DEFAULT_FAILURE_CONTAINMENT_SCOPE` = `'adjacent'`, and iteration 313 deliberately did not move it.
+   * The wide reach reads **1 156 → 1 186 `Top@1`** on the 1 422-case RCABench archive (30 gained, none lost, no
+   * fault type declining), and it is **outcome-identical** on the 735 RCAEval cases across six protocols — the pass
+   * does build a failure flow there (`run-rcaeval.ts` attaches `failedTraceEdges` from a streaming pass over
+   * `traces.csv`), and the two states simply agree. The arm therefore ships as a **stated flag**: this constant owns
+   * the default, and the FSE'26 dispatch passes `--failure-containment-scope global-measured` on the one invocation
+   * it runs, so its cell is 1 186 with the token printed beside it rather than a runner-side second default.
+   * `docs/failure-containment-reach.md` is the read, §6 the release surface.
    */
   readonly failureContainmentScope: FailureContainmentScope;
   /**

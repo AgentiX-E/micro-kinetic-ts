@@ -335,6 +335,15 @@ describe('FSE26 report — the two renderings agree', () => {
     expect(formatFSE26ConfigLine(makeConfig({ failureAttribution: 'counts' }))).toContain(
       'failureAttribution=counts',
     );
+    // The failure-flow REACH is printed only off the shipped traversal, like the attribution above — and the arm
+    // it ships with is one flag away rather than the default, so an arm that moves the reach names itself on the
+    // line while the published configuration keeps the token stream every earlier cell was measured over.
+    expect(formatFSE26ConfigLine(makeConfig({}))).not.toContain('failureContainmentScope');
+    for (const scope of ['global', 'global-measured'] as const) {
+      expect(formatFSE26ConfigLine(makeConfig({ failureContainmentScope: scope }))).toContain(
+        `failureContainmentScope=${scope}`,
+      );
+    }
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
     );

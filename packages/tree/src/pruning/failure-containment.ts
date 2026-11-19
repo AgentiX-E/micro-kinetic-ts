@@ -146,8 +146,8 @@ export function isFailureAttribution(value: unknown): value is FailureAttributio
  * truth carries no failure record at all. A rule that only ever swaps a caller with its OWN callee is bound to
  * an edge the case measured; a rule that compares two candidates the case never related is not.
  *
- * - `'adjacent'` — neighbouring positions only, and the pair must share a failing edge. The ORIGINAL reading,
- *   kept as the ablation pole: it is the traversal every published number before iteration 313 was measured on.
+ * - `'adjacent'` — neighbouring positions only, and the pair must share a failing edge. The engine default, and
+ *   the traversal every published number on both halves was measured on.
  * - `'global'` — any caller/callee pair that shares a failing edge may be inverted, and the callee is lifted
  *   to immediately above its caller. Strictly more inversions than `'adjacent'`, and the reason it is a
  *   separate state is that adjacency is a property of the FUSION's order, not of the evidence: a correct
@@ -164,17 +164,21 @@ export type FailureContainmentScope = 'adjacent' | 'global' | 'global-measured';
 /**
  * The scope every caller gets unless it asks for another one.
  *
- * `'global-measured'` since iteration 313, on the measurement `docs/failure-containment-reach.md` records:
- * **1 156 → 1 186 `Top@1`** on the 1 422-case RCABench archive, **+30 gained and 0 lost**, eight fault types
- * gaining and none declining. `'adjacent'` is the traversal every earlier number was measured on and is kept as
- * the ablation pole — a run reproduces those cells with `--failure-containment-scope adjacent`.
+ * `'adjacent'`, and it stays there in iteration 313 **because the wide state was measured on one corpus and not
+ * on the other**. On the 1 422-case RCABench archive `'global-measured'` reads **1 156 → 1 186 `Top@1`**, 30
+ * gained and none lost (`docs/failure-containment-reach.md`); on the RCAEval cells it has not been measured, and
+ * that half DOES carry failed-call rows — `run-rcaeval.ts` attaches `failedTraceEdges` from a streaming pass over
+ * `traces.csv` — and the two states were then measured there and agree case for case (735 cases, six protocols).
+ * The arm therefore ships as a **stated flag**, never as a default: one option has one default and its owner is this
+ * constant, so a runner-side second copy of it would be a number published under a name its owner does not hold.
+ * The FSE'26 dispatch states `--failure-containment-scope global-measured` on the invocation it runs, which is why
+ * its published cell is 1 186 and its artifact prints the token.
  *
- * The guarded state rather than the unguarded one because the guard is FREE on this corpus (the two wide states
- * are byte-identical over 1 422 cases) and it refuses the one comparison the measurement says is unsafe: a
- * candidate the channel never measured read as a fully explained one. Iteration 313's partition, which compared
- * exactly such candidates, cost 235 cases on that basis alone.
+ * This default moves the day a reading asks it to; nothing measured so far does. The guard is free on the archive
+ * (the two wide states are byte-identical over 1 422 cases) and it refuses the one comparison the measurement calls
+ * unsafe.
  */
-export const DEFAULT_FAILURE_CONTAINMENT_SCOPE: FailureContainmentScope = 'global-measured';
+export const DEFAULT_FAILURE_CONTAINMENT_SCOPE: FailureContainmentScope = 'adjacent';
 
 /** Every scope, in the order the document reads them. */
 export const FAILURE_CONTAINMENT_SCOPES: readonly FailureContainmentScope[] = [

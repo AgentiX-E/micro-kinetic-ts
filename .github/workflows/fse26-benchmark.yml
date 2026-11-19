@@ -551,9 +551,18 @@ jobs:
               esac
             done
           fi
+          # The failure-flow REACH is STATED here rather than defaulted, and it is stated on this dispatch only.
+          # `docs/failure-containment-reach.md` §6 is the read: `global-measured` takes this corpus from 1 156 to
+          # **1 186 `Top@1`** (30 gained, none lost, eight fault types up and none down), and it is outcome-identical
+          # on all 735 RCAEval cases across six protocols — so the arm is worth stating and costs nothing on the
+          # other half. It is NOT the engine's default (`DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent`, and an
+          # option has one owner), and it is not an input either: `ranking_knobs` is at its budget, so an ablation
+          # pole is dispatched by running the runner with `--failure-containment-scope adjacent` locally. Because
+          # the flag is passed, the artifact's configuration line PRINTS it — the arm cannot travel unlabelled.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
+            --failure-containment-scope global-measured \
             "${LOG_WEIGHT_ARG[@]}" \
             "${LOG_MODE_ARG[@]}" \
             "${RANK_NORM_ARG[@]}" \

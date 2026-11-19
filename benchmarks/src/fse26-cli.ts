@@ -668,17 +668,16 @@ export interface Fse26CliOptions {
    */
   readonly failureAttribution: FailureAttribution;
   /**
-   * How far through the order the failure-flow pass may look for a pair to invert: `adjacent` (neighbours only,
-   * the shipped traversal), `global` (any caller/callee pair on a failing edge), `global-measured` (`global`, and
-   * a candidate the channel did not measure may not take part). Travels in the packed `ranking_knobs` block as
+   * How far through the order the failure-flow pass may look for a pair to invert: `adjacent` (neighbours only),
+   * `global` (any caller/callee pair on a failing edge), `global-measured` (`global`, and a candidate the channel
+   * did not measure may not take part). Travels in the packed `ranking_knobs` block as
    * `failure_containment_scope=…`.
    *
-   * Ships at `DEFAULT_FAILURE_CONTAINMENT_SCOPE` = `global-measured`: **1 156 → 1 186 `Top@1`**, 30 gained and
-   * none lost on 1 422 cases. The narrow traversal is written over the FUSION's neighbours, so an inversion the
-   * fusion placed thirty positions apart is invisible to it — and the guarded wide state exists because iteration
-   * 313 measured what a rule comparing candidates NO edge relates costs (−107 `Top@1`).
-   * `docs/failure-containment-reach.md` is the read; `--failure-containment-scope adjacent` reproduces every
-   * earlier number.
+   * Ships at the ENGINE's default, `adjacent`: this runner does not own a second opinion about an option the
+   * engine declares, and `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` enforces exactly that.
+   * The measured arm is `global-measured` — **1 156 → 1 186 `Top@1`**, 30 gained, none lost on 1 422 cases — and
+   * it is one flag away rather than the default, because that reading has never been taken on the RCAEval cells
+   * and they do carry failed-call rows. `docs/failure-containment-reach.md` §6 states the block.
    */
   readonly failureContainmentScope: FailureContainmentScope;
   /**
