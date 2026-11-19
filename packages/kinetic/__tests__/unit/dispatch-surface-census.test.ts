@@ -584,6 +584,29 @@ const KNOBS: Readonly<
     fse26: 'failed_edge_min_records',
     rcaeval: null,
   },
+  failedEdgeFirst: {
+    // Iteration 313: the PARTITION of the ranking into the nodes the failed edge charged and the rest. A ranking
+    // knob the FSE'26 runner accepts, and one no dispatch can state — the packed block that carries the direction
+    // term's configuration is at its input budget, the same statement the credit below makes. Unlike every row in
+    // this family it is not a weight but an ORDER, which is exactly why it is a row: the arm is refused at the
+    // reading it was measured at (`docs/failed-edge-jurisdiction.md`), and the only way to re-measure a refused
+    // order is to be able to ask for it.
+    flag: '--failed-edge-first',
+    owner: 'failed-edge-jurisdiction.md',
+    fse26: null,
+    rcaeval: null,
+  },
+  failedEdgeFirstScope: {
+    // The MEMBERSHIP rule that partition ranks first — `credited` (the nodes whose own outbound call failed) or
+    // `unexplained` (the nodes whose inbound failures outnumber their outbound, i.e. the sources rather than the
+    // relays). Same surface as the switch above; a separate row because it is a separate axis, and the record
+    // measured the two poles disagreeing on 12 of 12 synthetic relay cases — one row would have let a dispatch
+    // name a switch whose meaning it never chose.
+    flag: '--failed-edge-first-scope',
+    owner: 'failed-edge-jurisdiction.md',
+    fse26: null,
+    rcaeval: null,
+  },
   failedEdgeCredit: {
     // The CREDIT the bar scales, appended in iteration 235 beside the bar it multiplies. Named on every
     // artifact and accepted by the runner, but the packed `anomaly_knobs` block is at its input budget, so no

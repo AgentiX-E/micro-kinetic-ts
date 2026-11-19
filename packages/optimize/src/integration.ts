@@ -83,6 +83,14 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the trace vote\u2019s leader mask, shipped false: it withholds a BINARY unit from one named candidate rather than scaling any term, so a weight search could only move it by accident \u2014 a discrete precondition belongs to a dispatch',
   failedEdgeWeight:
     "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
+  failedEdgeFirst:
+    'the failed-edge PARTITION switch, shipped OFF and refused at the reading it was measured at (-170 on the ' +
+    'corpus: docs/failed-edge-jurisdiction.md), so there is no fusion coefficient here to search - a continuous ' +
+    'search would spend its evaluations interpolating toward an arm the record already rejected',
+  failedEdgeFirstScope:
+    'WHICH membership that partition ranks first (credited | unexplained): a discrete population of candidates ' +
+    'rather than a magnitude, so a search interpolating between the two would be averaging two readings - the ' +
+    'same reason logNormalisation and selfTimeScope are held',
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
   failedEdgeGateMode:

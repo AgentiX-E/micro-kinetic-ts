@@ -239,6 +239,13 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // fixed weight the evidence buys rather than moving the weight, so there is nothing for a search to
       // interpolate between `constant` and `proportional`.
       'failedEdgeCredit',
+      // Iteration 313: the failed-edge PARTITION and its membership rule. Held for the emission weight's
+      // reason — the partition ships OFF and is REFUSED at the reading it was measured at (−170 on the corpus,
+      // `docs/failed-edge-jurisdiction.md`), so there is no fusion coefficient for a search to move; and
+      // `credited | unexplained` is a population of candidates rather than a magnitude, exactly like the
+      // normalisation above.
+      'failedEdgeFirst',
+      'failedEdgeFirstScope',
       'failedEdgeGateMode',
       'failedEdgeGateShare',
       // Iteration 288: the margin bar's OWN share. Held for the gate share's reason and separated from it
