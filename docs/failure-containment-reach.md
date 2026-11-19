@@ -217,6 +217,11 @@ reproduces the iteration-313 control **case for case** — 1 422 of 1 422 per-ca
 the flagged run reproduces the arm **case for case** as well (1 186, `Top@3` 1 236, `Top@5` 1 255, 0 of 1 422 rows
 differing from the pre-refactor arm). The split is therefore a refactor in the strict sense.
 
+**And the golden half was re-read a third time on the commit that ships this**, for the same reason: the Benchmark
+run on that commit (`3742e97`, run `44553978275`) reads RE1 92.0 %, RE2 92.2 %, RE3 80.0 % — 666/735, the published
+90.61 % — with **zero non-timing differences** against the `f48b3de` control. Three trees, three release surfaces,
+one set of golden cells.
+
 Two drafts of this section were wrong before it, and both are kept because both errors are one command away:
 
 > **Error 1 — "the golden half is inert by construction".** The claim was that the RCAEval cells carry no per-call
