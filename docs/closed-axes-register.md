@@ -7704,11 +7704,39 @@ moved at all, so 28 improved inside the top without reaching it (`Top@3` +8, `To
 
 Full read, including the bar and the probe's per-service rows: `docs/failure-containment-reach.md`.
 
-**Shipped as the engine default: `global-measured`.** The two wide states are byte-identical over 1 422 cases, so
-the guard is free — and it refuses the one comparison §322.2 shows is unsafe (a candidate the channel never
-measured read as a fully explained one). `adjacent` remains the ablation pole and reproduces every earlier cell
-with `--failure-containment-scope adjacent`; that includes any published battery row whose `failureContainment`
-pole was `1`, which was measured on the narrow traversal.
+**Release surface: one flag, one owner, two labelled cells.** `DEFAULT_FAILURE_CONTAINMENT_SCOPE` stays `'adjacent'`
+and the **FSE'26 dispatch states `--failure-containment-scope global-measured`** (`.github/workflows/
+fse26-benchmark.yml`), so the published RCABench cell is **1 186 (83.40 %)** and its artifact prints the token, while
+anything that does not ask — including the RCAEval dispatch — reads 1 156 (81.29 %). Two wide states are
+byte-identical over 1 422 cases, so the evidence guard is free, and it refuses the one comparison §322.2 shows is
+unsafe (a candidate the channel never measured read as a fully explained one).
+
+**The objection this entry carried one revision ago — "the golden half is unmeasured" — is now retired by a
+measurement, not an argument.** The Benchmark run dispatched on `accc80d` built a tree whose engine default *was*
+`global-measured`; the run on `f48b3de` is a tree with no scope option at all. Six RCAEval artifacts compared
+byte-for-byte: **735 cases across RE1/RE2/RE3 × {inject-time, no inject-time} plus RE3's novelty signal, and the only
+differing line in any of them is `Total duration`.** So the pass is built and live on that half and its two states
+agree there case for case.
+
+Two drafts were wrong before that, and both corrections are kept because both errors are one command away:
+
+1. The first draft claimed the RCAEval half was inert "by construction". It is not: `run-rcaeval.ts` attaches
+   `failedTraceEdges` from a streaming pass over `traces.csv`. One `grep` refuted it.
+2. The second draft then moved the **runner's** default instead, which
+   `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` refused: an option has one default and the
+   engine owns it, so a runner-side `DEFAULT_FSE26_FAILURE_CONTAINMENT_SCOPE` is a number published under a name its
+   owner does not hold. The census was right; the constant was deleted, and the dispatch states the flag instead.
+
+**The split into `invertAdjacent`/`liftCallers` was verified, not assumed**: a no-flag run of the archive reproduces
+the iteration-313 control **1 422 of 1 422 per-case rows identical** (1 156), and the flagged run reproduces the arm
+**1 422 of 1 422 identical** (1 186).
+
+The configuration line prints the reach **conditionally**, on the rule every other non-boolean field follows: with
+the default unchanged, "absent" names exactly one population (1 156) and 1 186 cannot be read without its token.
+
+`adjacent` remains both the engine default and the ablation pole; the battery builds its options in code from the
+engine defaults, so every published battery row whose `failureContainment` pole was `1` was measured on the narrow
+traversal.
 
 **Axes this closes.** One: the ledger's membership, in both its forms (credit and residual). **Axes this keeps
 open.** None on this channel — the reach is now exhausted as well: a rule that compares only pairs a failing edge
