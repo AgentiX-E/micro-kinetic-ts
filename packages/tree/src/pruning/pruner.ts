@@ -91,6 +91,7 @@ import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
 import { orderFailedEdgeFirst, partitionFirst } from './failed-edge-order.js';
 import {
   DEFAULT_FAILURE_ATTRIBUTION,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   applyFailureContainment,
   failureEdgeKey,
   failureFlows,
@@ -98,6 +99,7 @@ import {
   unexplainedFailures,
   type FailedEdgeRise,
   type FailureAttribution,
+  type FailureContainmentScope,
 } from './failure-containment.js';
 import {
   computeFaultFreeScores,
@@ -1208,6 +1210,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the READING, never the measurement, which is why the graph carries both kinds either way.
    */
   readonly failureAttribution: FailureAttribution;
+  /**
+   * How far through the order the containment rule may look for a pair to invert — see
+   * `FailureContainmentScope`.
+   *
+   *   'adjacent'        (default) neighbouring positions, the shipped traversal: the pair must be adjacent in
+   *                     the FUSION's order as well as related by a failing edge.
+   *   'global'          any caller/callee pair on a failing edge; the callee is lifted to immediately above its
+   *                     caller. The reach the shipped traversal cannot describe: an inversion the fusion placed
+   *                     thirty positions apart is invisible to a neighbour-only pass.
+   *   'global-measured' `'global'`, and a candidate the failure channel did not measure may not take part. The
+   *                     shipped traversal reads an unmeasured candidate as `unexplainedFailures = 0`, i.e. as
+   *                     fully explained, which is the one reading the measurement cannot support.
+   *
+   * Ships at `DEFAULT_FAILURE_CONTAINMENT_SCOPE` = `'global-measured'` since iteration 313: **1 156 → 1 186
+   * `Top@1`** on 1 422 cases, 30 gained, none lost, no fault type declining. `'adjacent'` is every earlier
+   * number's traversal and stays reachable as the ablation pole; `docs/failure-containment-reach.md` is the read.
+   *
+   * The golden half is unaffected BY CONSTRUCTION rather than by measurement: its cells carry no per-call failure
+   * column, so `graph.failureFlows` is absent and the pass returns the ranking it was given — the same reason
+   * {@link failureContainment} itself has never moved a golden number.
+   */
+  readonly failureContainmentScope: FailureContainmentScope;
   /**
    * Whether the failed-edge ledger's candidate set is ranked AHEAD of everything else — a partition of the order,
    * not a term in the score.
@@ -2619,6 +2643,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
   failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+  failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
   failedEdgeFirstScope: DEFAULT_FAILED_EDGE_FIRST_SCOPE,
 };
@@ -3408,6 +3433,7 @@ export class TreePruner {
       flows,
       failingEdges: graph.failingEdges,
       attribution: this.options.failureAttribution,
+      scope: this.options.failureContainmentScope,
     });
     let moved = false;
     for (let i = 0; i < ordered.length; i++) {

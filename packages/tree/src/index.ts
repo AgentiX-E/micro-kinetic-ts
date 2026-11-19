@@ -210,10 +210,13 @@ export type {
 
 export {
   DEFAULT_FAILURE_ATTRIBUTION,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  FAILURE_CONTAINMENT_SCOPES,
   applyFailureContainment,
   failureEdgeKey,
   failureFlows,
   isFailureAttribution,
+  isFailureContainmentScope,
   unexplainedFailures,
 } from './pruning/failure-containment.js';
 export type {
@@ -221,6 +224,7 @@ export type {
   FailingEdge,
   FailureAttribution,
   FailureContainmentInput,
+  FailureContainmentScope,
   FailureFlow,
 } from './pruning/failure-containment.js';
 

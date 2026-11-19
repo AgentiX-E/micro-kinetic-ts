@@ -137,6 +137,66 @@ export function isFailureAttribution(value: unknown): value is FailureAttributio
 }
 
 /**
+ * How far through the order the containment rule may look for a pair to invert.
+ *
+ * The rule is the same in all three readings — a caller above its callee whose callee's failures the caller's
+ * own calls do not account for — and only the POPULATION of pairs it may compare differs. The distinction is
+ * not cosmetic: iteration 313 measured a partition that promoted every residual-positive candidate over every
+ * other one and lost 107 `Top@1` against the control, with the losses landing in the four families whose ground
+ * truth carries no failure record at all. A rule that only ever swaps a caller with its OWN callee is bound to
+ * an edge the case measured; a rule that compares two candidates the case never related is not.
+ *
+ * - `'adjacent'` — neighbouring positions only, and the pair must share a failing edge. The ORIGINAL reading,
+ *   kept as the ablation pole: it is the traversal every published number before iteration 313 was measured on.
+ * - `'global'` — any caller/callee pair that shares a failing edge may be inverted, and the callee is lifted
+ *   to immediately above its caller. Strictly more inversions than `'adjacent'`, and the reason it is a
+ *   separate state is that adjacency is a property of the FUSION's order, not of the evidence: a correct
+ *   inversion that the fusion placed 30 positions apart is invisible to the shipped pass.
+ * - `'global-measured'` — `'global'`, and additionally NEITHER side may be a candidate the failure channel did
+ *   not measure. `unexplainedFailures(undefined) = 0` otherwise reads an unmeasured candidate as a fully
+ *   explained one, so the unguarded rule displaces a node it has no evidence about. The latency pass in
+ *   {@link TreePruner} already refuses pairs on exactly this ground ("an unmeasured candidate read as a
+ *   measured zero would invert on evidence nobody collected"); this state extends the same refusal to the
+ *   failure channel, where it was missing.
+ */
+export type FailureContainmentScope = 'adjacent' | 'global' | 'global-measured';
+
+/**
+ * The scope every caller gets unless it asks for another one.
+ *
+ * `'global-measured'` since iteration 313, on the measurement `docs/failure-containment-reach.md` records:
+ * **1 156 → 1 186 `Top@1`** on the 1 422-case RCABench archive, **+30 gained and 0 lost**, eight fault types
+ * gaining and none declining. `'adjacent'` is the traversal every earlier number was measured on and is kept as
+ * the ablation pole — a run reproduces those cells with `--failure-containment-scope adjacent`.
+ *
+ * The guarded state rather than the unguarded one because the guard is FREE on this corpus (the two wide states
+ * are byte-identical over 1 422 cases) and it refuses the one comparison the measurement says is unsafe: a
+ * candidate the channel never measured read as a fully explained one. Iteration 313's partition, which compared
+ * exactly such candidates, cost 235 cases on that basis alone.
+ */
+export const DEFAULT_FAILURE_CONTAINMENT_SCOPE: FailureContainmentScope = 'global-measured';
+
+/** Every scope, in the order the document reads them. */
+export const FAILURE_CONTAINMENT_SCOPES: readonly FailureContainmentScope[] = [
+  'adjacent',
+  'global',
+  'global-measured',
+];
+
+/**
+ * Whether an untrusted value names a scope. Total, for parsers and for callers holding `string`.
+ *
+ * A parser that mapped an unknown spelling onto the default would publish an arm's numbers under the shipped
+ * configuration's name, which is the one failure the record cannot detect after the fact.
+ *
+ * @param value - Anything a boundary handed over.
+ * @returns Whether it is one of the three scopes.
+ */
+export function isFailureContainmentScope(value: unknown): value is FailureContainmentScope {
+  return value === 'adjacent' || value === 'global' || value === 'global-measured';
+}
+
+/**
  * The edge key this module's set and the containment pass's own set both use.
  *
  * Exported rather than spelled at each site so a caller building a `failingEdges` set cannot disagree with the
@@ -235,6 +295,8 @@ export interface FailureContainmentInput<T> {
   readonly failingEdges: ReadonlyMap<string, FailingEdge> | undefined;
   /** Which reading of the flow decides a pair. Absent means {@link DEFAULT_FAILURE_ATTRIBUTION}. */
   readonly attribution?: FailureAttribution;
+  /** How far to look for a pair. Absent means {@link DEFAULT_FAILURE_CONTAINMENT_SCOPE}, the shipped traversal. */
+  readonly scope?: FailureContainmentScope;
 }
 
 /** The minimum of a candidate and its rank, as the pass reads them. */
@@ -243,14 +305,15 @@ interface RankedService {
 }
 
 /**
- * Invert adjacent caller/callee pairs whose unexplained failure flows are out of order.
+ * Invert caller/callee pairs whose unexplained failure flows are out of order.
  *
  * A pair is inverted when the higher candidate calls the lower one, that edge carried a net rise, and the lower
  * candidate's unexplained flow is strictly greater than the higher one's. The two comparisons are the same
  * quantity in the same unit on the two candidates, so no margin exists to tune and none is offered.
  *
- * @param input - The published ranking, the flows, the edges that failed, and the reading to apply.
- * @returns The same candidates in the same order, with the qualified adjacent pairs inverted.
+ * @param input - The published ranking, the flows, the edges that failed, the reading to apply, and how far to
+ *   look for a pair.
+ * @returns The same candidates in the same order, with the qualified pairs inverted.
  */
 export function applyFailureContainment<T extends RankedService>(
   input: FailureContainmentInput<T>,
@@ -261,41 +324,157 @@ export function applyFailureContainment<T extends RankedService>(
   const attribution = input.attribution ?? DEFAULT_FAILURE_ATTRIBUTION;
   if (order.length < 2 || flows === undefined || flows.size === 0) return order;
   if (failingEdges === undefined || failingEdges.size === 0) return order;
+  const scope = input.scope ?? DEFAULT_FAILURE_CONTAINMENT_SCOPE;
+  if (scope === 'adjacent') return invertAdjacent(order, flows, failingEdges, attribution);
+  return liftCallers(order, flows, failingEdges, attribution, scope === 'global-measured');
+}
 
+/**
+ * The shipped traversal: one forward pass over neighbouring positions.
+ *
+ * A swapped-down candidate is not re-examined, which is a property and not an oversight: the pass is stated as
+ * "invert a qualified adjacent pair" and a second look would make one call invert a pair the caller never
+ * described.
+ *
+ * @param order - The ranking, best first. Mutated.
+ * @param flows - The per-service flow map.
+ * @param failingEdges - The edges that carried a net rise.
+ * @param attribution - Which reading decides a pair.
+ * @returns The same array.
+ */
+function invertAdjacent<T extends RankedService>(
+  order: T[],
+  flows: ReadonlyMap<ServiceId, FailureFlow>,
+  failingEdges: ReadonlyMap<string, FailingEdge>,
+  attribution: FailureAttribution,
+): T[] {
   for (let i = 0; i + 1 < order.length; i++) {
     const upper = order[i]!;
     const lower = order[i + 1]!;
     const edge = failingEdges.get(failureEdgeKey(upper.service, lower.service));
-    if (edge === undefined || edge.rise <= 0) continue;
-    const lowerFlow = flows.get(lower.service);
-    const upperFlow = flows.get(upper.service);
-    if (
-      !(unexplainedFailures(lowerFlow, attribution) > unexplainedFailures(upperFlow, attribution))
-    ) {
-      continue;
-    }
-    // The DEGENERATE RELAY. When every failure the callee saw arrived on this one edge, every failure the caller
-    // reported left on it, and the caller's own inbound count is that same number, the three accounts are one
-    // account: a single count travelling down a chain. The residual asymmetry the rule reads is then an artefact
-    // of where the chain stops rather than a statement about either end, and the pair is refused.
-    //
-    // The test reads the flow in the SAME reading the rule used, and it compares the pair edge's own rise with
-    // its novel part removed when that reading separates the two kinds — a count that arrived on a shape this
-    // edge had never carried is not the same account as the ones that did, so the equality must not be satisfied
-    // by mixing them.
-    const pairRise = attribution === 'counts' ? edge.rise : edge.rise - edge.novel;
-    if (
-      lowerFlow !== undefined &&
-      upperFlow !== undefined &&
-      pairRise > 0 &&
-      relayEqualities(lowerFlow, upperFlow, pairRise, attribution)
-    ) {
-      continue;
-    }
+    if (edge === undefined) continue;
+    if (!qualifies(upper.service, lower.service, flows, edge, attribution, false)) continue;
     order[i] = lower;
     order[i + 1] = upper;
   }
   return order;
+}
+
+/**
+ * The wide traversal: every caller/callee pair that a failed edge relates, to a fixed point.
+ *
+ * The callee is lifted to IMMEDIATELY above its caller rather than to the front, so the pass states one thing —
+ * "this callee's failures are not accounted for by this caller's own calls" — and never a second, larger one
+ * ("and it outranks everything in between"), which is the claim iteration 313 measured at −107 `Top@1`. Two
+ * candidates the case never related are never compared: the population of pairs is the failing edges, so the
+ * pass can only move evidence about an interface, exactly as the shipped one can.
+ *
+ * Terminates because a pair that qualifies can only be lifted while its caller is above it, and a full pass
+ * that moves nothing ends the loop; the bound on passes is the candidate count, which is what guarantees that
+ * even a pathological cycle of qualifying pairs cannot spin.
+ *
+ * @param order - The ranking, best first. Mutated.
+ * @param flows - The per-service flow map.
+ * @param failingEdges - The edges that carried a net rise.
+ * @param attribution - Which reading decides a pair.
+ * @param requireMeasured - Whether a candidate the channel did not measure may take part in a pair.
+ * @returns The same array.
+ */
+function liftCallers<T extends RankedService>(
+  order: T[],
+  flows: ReadonlyMap<ServiceId, FailureFlow>,
+  failingEdges: ReadonlyMap<string, FailingEdge>,
+  attribution: FailureAttribution,
+  requireMeasured: boolean,
+): T[] {
+  const keys = [...failingEdges.keys()].sort();
+  for (let pass = 0; pass <= order.length; pass++) {
+    let moved = false;
+    for (const key of keys) {
+      const edge = failingEdges.get(key)!;
+      const [caller, callee] = splitFailureEdgeKey(key);
+      const at = new Map<ServiceId, number>();
+      for (let i = 0; i < order.length; i++) at.set(order[i]!.service, i);
+      const from = at.get(caller);
+      const to = at.get(callee);
+      if (from === undefined || to === undefined || to < from) continue;
+      if (!qualifies(caller, callee, flows, edge, attribution, requireMeasured)) continue;
+      const [lifted] = order.splice(to, 1);
+      order.splice(from, 0, lifted!);
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return order;
+}
+
+/**
+ * The caller and callee an edge key names.
+ *
+ * The key is this module's own format, so the split is a property of the writer rather than a guess: a key with
+ * no separator cannot have been produced by {@link failureEdgeKey}, and a reader that treated it as a pair would
+ * be comparing two services an edge does not relate.
+ *
+ * @param key - A key from a `failingEdges` map.
+ * @returns The pair, or two empty ids for a malformed key.
+ */
+function splitFailureEdgeKey(key: string): [ServiceId, ServiceId] {
+  const parts = key.split('\u0000');
+  return [(parts[0] ?? '') as ServiceId, (parts[1] ?? '') as ServiceId];
+}
+
+/**
+ * Whether a pair is out of order.
+ *
+ * The one place the rule is written, so the three traversals cannot drift: a difference between them would
+ * otherwise be a difference in the REFUSALS as well as in the reach, which is the confound the scope switch
+ * exists to avoid.
+ *
+ * The DEGENERATE RELAY refusal: when every failure the callee saw arrived on this one edge, every failure the
+ * caller reported left on it, and the caller's own inbound count is that same number, the three accounts are one
+ * account — a single count travelling down a chain. The residual asymmetry the rule reads is then an artefact
+ * of where the chain stops rather than a statement about either end, and the pair is refused.
+ *
+ * The test reads the flow in the SAME reading the rule used, and it compares the pair edge's own rise with its
+ * novel part removed when that reading separates the two kinds — a count that arrived on a shape this edge had
+ * never carried is not the same account as the ones that did, so the equality must not be satisfied by mixing
+ * them.
+ *
+ * @param caller - The higher candidate.
+ * @param callee - The lower candidate.
+ * @param flows - The per-service flow map.
+ * @param edge - The failing edge between them.
+ * @param attribution - Which reading decides the pair.
+ * @param requireMeasured - Whether an unmeasured candidate is refused outright.
+ * @returns Whether the pair should be inverted.
+ */
+function qualifies(
+  caller: ServiceId,
+  callee: ServiceId,
+  flows: ReadonlyMap<ServiceId, FailureFlow>,
+  edge: FailingEdge,
+  attribution: FailureAttribution,
+  requireMeasured: boolean,
+): boolean {
+  if (edge.rise <= 0) return false;
+  const upperFlow = flows.get(caller);
+  const lowerFlow = flows.get(callee);
+  if (requireMeasured && (upperFlow === undefined || lowerFlow === undefined)) return false;
+  if (
+    !(unexplainedFailures(lowerFlow, attribution) > unexplainedFailures(upperFlow, attribution))
+  ) {
+    return false;
+  }
+  const pairRise = attribution === 'counts' ? edge.rise : edge.rise - edge.novel;
+  if (
+    lowerFlow !== undefined &&
+    upperFlow !== undefined &&
+    pairRise > 0 &&
+    relayEqualities(lowerFlow, upperFlow, pairRise, attribution)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**

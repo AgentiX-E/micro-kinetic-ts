@@ -7638,3 +7638,78 @@ received. Bar: beat 1 156 with no type below its published cell, **keep ≥ 40 o
 gains, and restore `JVMMemoryStress` **above 160**.
 
 **Axes this closes.** Two. **Axes this opens.** One: the failure flow's *residual* as a membership test.
+
+---
+
+## §322 Iteration 313 — the failure channel cannot name a role, and the reach it can pay for
+
+### 322.1 The residual membership was built and refused
+
+Iteration 312 registered one successor: rank first the candidates whose **unexplained** failures are positive
+(`unexplainedFailures(v) = max(0, inbound − outgoing)`), on the claim that a relay's own calls account for the
+failures it reports. Measured on 1 422 cases against the same control:
+
+| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| control | 1 156 | 1 228 | 1 249 | — | — |
+| `failedEdgeFirstScope=unexplained` | **1 049** | **1 323** | **1 348** | 135 | **242** |
+
+The narrower membership bought **64 more gains than 312's and one more loss**. The same four families paid:
+`JVMMemoryStress` 171 → 26, `ContainerKill` 89 → 23, `PodFailure` 24 → 4, `PodKill` 10 → 6 — 235 of the 242, at
+the same counts iteration 312 recorded. Full read: `docs/failed-edge-jurisdiction.md`.
+
+### 322.2 The reason, measured in the channel's own units
+
+`scripts/dump-failure-flows.ts` prints the four counts the pass reads, per service, per case (`$0`, 20 cases per
+family):
+
+| fault type | n | ground truth has **no** flow row | truth is a lead |
+| --- | ---: | ---: | ---: |
+| `JVMMemoryStress` | 20 | **20 (100 %)** | 0 |
+| `ContainerKill` | 20 | **20 (100 %)** | 0 |
+| `PodFailure` | 20 | **20 (100 %)** | 0 |
+| `PodKill` | 10 | **10 (100 %)** | 0 |
+| `HTTPResponseReplaceCode` | 20 | 0 | 20 |
+| `HTTPRequestReplaceMethod` | 20 | 0 | 20 |
+
+**In the four loss families the ground truth is not in the ledger at all**: a stress or kill fails no call at its
+own service, so it has no inbound and no outbound failure record, and no rule over that population can promote
+it. Its rank-1 signature is *identical* to an entry-point fault's (inbound > 0, outbound = 0, residual share
+1.00), so no threshold, weight or reading separates them. What separates them is **which fault family the case
+belongs to** — the label.
+
+### 322.3 What that closes, and what it left open
+
+**Closed:** the failure ledger as evidence about *causation*. Any promotion of ledger members over non-members
+trades one family's gain for another's loss at a rate the corpus fixes in advance (312: −170, 313: −107).
+
+**Left open, and this is the arm that paid:** the shipped pass is stated over the **fusion's neighbours**, so a
+correct inversion the fusion placed thirty positions apart is invisible to it. Adjacency is a property of the
+fusion's order; the failing edge is a property of the case.
+
+### 322.4 The reach arm, and what it measured
+
+`failureContainmentScope ∈ {adjacent, global, global-measured}` — the same rule, three populations of pairs:
+
+| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| control (`adjacent`) | 1 156 | 1 228 | 1 249 | — | — |
+| `global` | **1 186** | **1 236** | **1 255** | 30 | **0** |
+| `global-measured` | **1 186** | **1 236** | **1 255** | 30 | **0** |
+
+**30 gained, none lost, eight fault types gaining and none declining**: `NetworkBandwidth` +7,
+`HTTPRequestReplaceMethod` +7, `NetworkPartition` +5, `JVMException`/`HTTPResponseReplaceCode`/`Body`/`NetworkLoss`/
+`HTTPResponseDelay` +2–3 each. Movement shape: 21 cases 3 → 1, 4 cases 4 → 1, and four from 7–41 → 1. 58 cases
+moved at all, so 28 improved inside the top without reaching it (`Top@3` +8, `Top@5` +6).
+
+Full read, including the bar and the probe's per-service rows: `docs/failure-containment-reach.md`.
+
+**Shipped as the engine default: `global-measured`.** The two wide states are byte-identical over 1 422 cases, so
+the guard is free — and it refuses the one comparison §322.2 shows is unsafe (a candidate the channel never
+measured read as a fully explained one). `adjacent` remains the ablation pole and reproduces every earlier cell
+with `--failure-containment-scope adjacent`; that includes any published battery row whose `failureContainment`
+pole was `1`, which was measured on the narrow traversal.
+
+**Axes this closes.** One: the ledger's membership, in both its forms (credit and residual). **Axes this keeps
+open.** None on this channel — the reach is now exhausted as well: a rule that compares only pairs a failing edge
+relates, both of them measured, is the whole of what the channel supports.
