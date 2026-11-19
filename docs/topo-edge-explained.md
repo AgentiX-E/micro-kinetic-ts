@@ -71,7 +71,8 @@ this section.
 | `θ = 5`, `inbound` | 1 140 | 1 216 | 1 238 | 4 | 18 | −16 |
 
 The pre-registration's acceptance was `Top@1 ≥ 1 200` with the golden nine cells identical. **Every arm fails the
-first half by at least 47 cases.** P1 (the observer repair ≥ 12 cases) reads **6** in all four arms. P4 (no fault type
+first half by at least 47 cases.** P1 (the observer repair ≥ 12 cases) reads **6** at both thresholds of the absolute
+form and **3** and **0** in the ratio form — the form added to improve the repair makes it worse. P4 (no fault type
 down by more than one) is violated by `NetworkCorrupt −5` at `θ = 2` and `HTTPResponseReplaceCode −5` at `θ = 5`
 `inbound`.
 

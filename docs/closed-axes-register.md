@@ -7111,7 +7111,7 @@ written, including the one whose recorded expectation went the other way:
 | P1 | ≥ **12** of the observer-class near misses become correct | **6** | **failed** |
 | P2 | `Top@1` between **1 180 and 1 240** | 1 129 (no profile) / 1 129 (profile) at `θ = 2` | **failed**, below the floor by 51 |
 | P3 | the golden nine cells are identical (`641/735`), because the array is absent there | not dispatched — see below | **not reached** |
-| P4 | no fault type ≥ 2 down | `NetworkCorrupt −5`, `NetworkBandwidth −4`, `NetworkPartition −4`, `NetworkPartition −4` | **violated** |
+| P4 | no fault type ≥ 2 down | `NetworkCorrupt −5`, `NetworkBandwidth −4`, `NetworkPartition −4`, `HTTPResponseAbort −3` | **violated** |
 | P5 | the `θ` curve is **NOT** monotone — `θ = 10` moves MORE cases than `θ = 2` | 37 moved against 65 | **refuted in the theory's favour** |
 | A | `Top@1 ≥ 1 200`, golden identical, no family ≥ 2 down | none of the three | **refused** |
 
