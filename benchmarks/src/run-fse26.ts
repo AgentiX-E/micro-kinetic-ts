@@ -81,6 +81,7 @@ import {
 import { parseFSE26Args, PUBLISHED_TOP_K } from './fse26-cli.js';
 import {
   PER_CASE_RANK_LIMIT,
+  poolColumns,
   writePerCaseVerdicts,
   type PerCaseVerdict,
 } from './fse26-per-case.js';
@@ -328,7 +329,14 @@ async function main(): Promise<void> {
           benchCase.metrics,
           toFaultGraphOptions(benchCase, benchCase.injectTime),
         );
-        ranking = pruner.analyze(faultGraph, PUBLISHED_TOP_K);
+        // ── The order at the POOL's width, not the reporting width ────────────────────────────────
+        //
+        // `PUBLISHED_TOP_K` is a reporting width and the verdict line still truncates at it. The ORDER is taken
+        // whole, because the one question this row has to answer about the operator is whether the truth was
+        // ranked low or was never in the pool at all — and a five-wide order answers `absent` for both. The cost
+        // is one sort of at most a hundred entries: the graph is built once either way and `analyze` reuses it.
+        const orderWidth = Math.max(PUBLISHED_TOP_K, benchCase.callGraph.nodes.size);
+        ranking = pruner.analyze(faultGraph, orderWidth);
         // The term's own census, taken from the SAME inputs the scorer reads and only when the weight asks for it.
         // A term that ships at 0 has never been exercised on this corpus, and "the arm moved nothing" has two
         // very different causes a ranking cannot separate: the normalisation is silent, or the map was never
@@ -343,6 +351,11 @@ async function main(): Promise<void> {
     } catch {
       engineErrors++;
     }
+
+    // The PUBLISHED order: the prefix every artifact that says "what this run answered" must be built from, so the
+    // widened order this case now carries cannot leak into a dump whose contract is the five-wide one. One local,
+    // because two slices of the same list are two places that can disagree about the width.
+    const publishedRanking = ranking.slice(0, PUBLISHED_TOP_K);
 
     // ── Optional per-case signal diagnostic (--diagnose) ──
     // Dump the source vs symptom signal inventory for a weak fault type so its
@@ -447,7 +460,7 @@ async function main(): Promise<void> {
       if (fingerprintDump !== undefined) {
         const built = buildCandidateFingerprints({
           metrics: benchCase.metrics,
-          ranking,
+          ranking: publishedRanking,
           injectTimeMs,
           profile: faultFreeProfile,
         });
@@ -463,7 +476,7 @@ async function main(): Promise<void> {
       // `analyze` per case, and a run that writes no presentation artifact must not pay for it.
       if (presentationDump !== undefined) {
         const source = fingerprintSourceOrder({
-          published: ranking,
+          published: publishedRanking,
           width: opts.fingerprintTopK,
           nodeCount: benchCase.callGraph.nodes.size,
           widen: (k) => (faultGraph === undefined ? [] : pruner.analyze(faultGraph, k)),
@@ -483,18 +496,31 @@ async function main(): Promise<void> {
           // The order this run published, recorded BESIDE the wider one. It is the only field that lets a reader
           // tell a presentation of this run from a dump left over from another: the candidate array is exactly
           // what the widening changes, so comparing it is comparing the wrong thing, and `joinHeadroom` compares
-          // this instead. Written as service ids because that is what the per-case verdict file carries.
-          published: ranking.map((row) => row.serviceId),
+          // this instead. Written as service ids because that is what the per-case verdict file carries — and
+          // sliced at the PUBLISHED width, because `ranking` is now the pool's width and a dump that silently
+          // widened would break the join it exists to make.
+          published: publishedRanking.map((row) => row.serviceId),
         });
       }
     }
 
     predictionsPerCase.push(ranking.map((r) => r.serviceId));
+    // The three pool columns, derived by the file's own owner so the runner cannot answer them with a second rule.
+    // The anomaly lookup is the graph's PRE-deduction map — `anomalyScores` is what the builder wrote, before
+    // `analyze` charges anything — and `undefined` for a service the graph does not hold, which the file writes
+    // as `null`. That is what makes `truthRank: 0` readable: `truthAnomalyBefore > 0` is a candidate the
+    // deduction removed, `0` is one that never moved.
+    const columns = poolColumns(ranking, accepted, (serviceId) =>
+      faultGraph === undefined || !faultGraph.callGraph.nodes.has(serviceId)
+        ? undefined
+        : (faultGraph.anomalyScores.get(serviceId) ?? 0),
+    );
     verdicts.push({
       datapack: basename(dir),
       faultType,
       accepted,
       ranked: ranking.slice(0, PER_CASE_RANK_LIMIT).map((r) => r.serviceId),
+      ...columns,
     });
     acceptedPerCase.push(accepted);
     faultTypeOfCase.push(faultType);

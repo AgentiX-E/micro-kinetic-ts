@@ -469,3 +469,34 @@ chargeable at all, and the only form that can do it is a **fleet-normalised shar
 the fleet's distribution of the same ratio (the requirement §5 of `docs/prism-symmetry-mask.md` already states for
 any successor statistic), rather than compare two anomalies on a scale that saturates at the maximum. That is a
 different operator, it needs its own pre-registration, and `docs/closed-axes-register.md` carries it as open.
+
+## 10. The predicate's worth on FSE'26, measured by removing it (it.310)
+
+§9.3 and §9.5 said the same thing twice in different words: on RCABench this term never ran, and "byte-identical"
+was the signature of a term with no reach rather than of a term with no harm. Iteration 310 settles it by running
+the **one** arm that makes the term reach: `topoDiscountScope = all` on the same commit, same corpus, same profile,
+everything else shipped. `$0`, no model call, 1 422 cases.
+
+| arm | `scope` | Top@1 | Top@3 | Top@5 | ΔTop@1 | fault types below control |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| control | `external` | **1 156** | 1 228 | 1 249 | — | — |
+| arm | `all` | 1 103 | 1 209 | 1 235 | **−53** | **12** |
+
+So the channel predicate — one `isResponseChannel` test on the dominant metric of each side — is worth **53 cases,
+3.73 pp, on this corpus**, and it is worth them by *refusing to charge callers whose dominant reading is their own
+work*. The losses are not spread evenly: `HTTPResponseReplaceCode` 171 → 153 and `HTTPRequestReplaceMethod`
+139 → 123 carry thirty-four of the fifty-three, and both are families whose truth is a **response** the caller
+itself produced, which is exactly what an internal-channel charge deletes.
+
+Two consequences, and the second is the larger one:
+
+1. **§5's refusal of `all` is now measured on both corpora**, not inferred from one: −2 on RE3/SockShop and −53 here.
+   `DEFAULT_TOPO_DISCOUNT_SCOPE` stays `external`, and the number that defends it is no longer a cell.
+2. **The arm also refutes the cliff hypothesis this iteration was dispatched to test.** At `gate = 1` with
+   `poolAdmission = positive` the arm should have *deleted* truths; it deleted none, because `rankNormalizeScores`
+   averages a tie group's rank and the operator zeroes nineteen nodes into one tie. `docs/pool-admission.md` §10
+   carries the mechanism, the measurement and why the clamp (`poolAdmission = graph`) is byte-identical to this arm
+   rather than merely close to it.
+
+What is left open is §9.5's fleet-normalised share, unchanged and now with one more reason to be the next arm: the
+only arm in this iteration that *gains* is the one that removes the term entirely.

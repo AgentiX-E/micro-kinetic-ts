@@ -7294,3 +7294,114 @@ Not the threshold, and not the divisor. The two facts this iteration adds are co
 | "The observer class is repaired by an edge predicate" | **closed at 6 / 3 / 0** of a pre-registered 12, by all four arms |
 | "The edge channel can stand in for the missing response channel" | **closed as measured uninformative** — both available statistics rank the harmful and helpful populations in the same order, and the helpful one higher |
 | "The remaining gap on RCABench is a parameter of the deduction" | **closed** — five forms, five refusals, four distinct causes |
+
+## §319 — The clamp: the class of deleted answers is empty on RCABench, and the reason is the SPACE rather than the operator
+
+**Verdict: the clamp is refused as a VACUOUS arm — `poolAdmission = graph` with the charge held fixed is
+byte-identical to the same arm without it, over 1 422 cases — and the vacuity is the finding: on a rank-normalised
+map a deduction cannot create a unique minimum, so it cannot delete. What the iteration measures instead is worth
+more than the arm: `topoDiscountScope = external` is worth `+53` cases (3.73 pp) on this corpus, and the pool axis
+is now closed on BOTH halves with a mechanism rather than a p-value.**
+
+### 319.1 The arm, and why it was the right next one
+
+§318 closed the edge channel and left one sentence standing about the operator rather than about that axis: at
+`rho = 1` with `poolAdmission = positive`, a charged candidate is not ranked last, it is **absent**, and no other
+term can undo a deletion because there is no score left to reorder. The golden-nine record already carried four
+deletions of that shape (`topoClosure` §8), and `poolAdmission`'s own docblock ended on an unmeasured sentence —
+"whether a prior carries a zero-anomaly node is the measurement".
+
+The arm was therefore a **factorial**, because one arm cannot separate "the deduction is wrong" from "the pool
+decision is wrong": the deduction's only visible effect at `rho = 1` *is* the pool decision.
+
+| arm | `scope` | `gate` | `poolAdmission` | what it isolates |
+| --- | --- | ---: | --- | --- |
+| **A0** | `external` | 1 | `positive` | the published cell |
+| **A1** | `all` | 1 | `positive` | the shipped charge, unblocked |
+| **A2** | `all` | 1 | `graph` | **the clamp** — same charge, no candidate may leave the pool |
+| **A3** | `external` | 1 | `graph` | the pool decision alone, nothing to delete |
+| **A4** | `all` | 0 | `positive` | the gentle charge |
+
+`A1 − A0` differs from the published configuration in **one knob**, the scope, because `DEFAULT_TOPO_DISCOUNT = 1`
+and `DEFAULT_TOPO_DISCOUNT_GATE = 1` — the operator ships at full strength and is inert on this corpus for exactly
+one reason, that `external` finds no response channel among the 87 `container.*`/`k8s.*` names.
+
+### 319.2 The measurement
+
+FSE'26, 1 422 cases, one commit, one profile built from the same corpus, `$0`, no model call. The control
+reproduces the published cell to the case.
+
+| arm | Top@1 | Top@3 | Top@5 | ΔTop@1 | fault types below control | truths at `truthRank: 0` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **A0** | **1 156** | 1 228 | 1 249 | — | — | **0** |
+| **A1** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
+| **A2** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
+| **A3** | 1 156 | 1 228 | 1 249 | **0** | 0 | **0** |
+| **A4** | 1 120 | 1 211 | 1 226 | **−36** | 11 | **0** |
+
+Three of the five readings are **exact**, and the exactness is the result:
+
+1. **`md5(A1.ndjson) == md5(A2.ndjson)`.** Not "close": identical over 1 422 rows, every `truthRank`, every `pool`,
+   every `ranked` array. The clamp has nothing to clamp, so the arm cannot be read as a gain or as a loss — it is
+   the *same run*.
+2. **A3 is the control.** `poolAdmission = graph` alone leaves all three headline numbers unchanged; the pool
+   median moves 49 → 50, one node per case, and that node enters at the bottom and stays there. §9's finding
+   (twelve candidates recovered, one answer) reproduces on 1 422 cases and is *more* inert at a wider pool.
+3. **The charge costs at both gates**, and the shipped predicate therefore carries `+53` (3.73 pp) here — the loss
+   concentrates in `HTTPResponseReplaceCode` (171 → 153) and `HTTPRequestReplaceMethod` (139 → 123), two families
+   whose truth is a response the caller itself produced, which is precisely what an internal-channel charge erases.
+
+### 319.3 Why the class is empty: a tie the operator CREATES is not a tie the data has
+
+A deletion needs a **unique** minimum, because `rankNormalizeScores` — the transform `applyAnomalyNormalization`
+maps the operator's output back through, since the builder rank-normalises this corpus — assigns a tie group the
+group's **average** 0-indexed rank:
+
+```ts
+const normalized = (i + j) / 2 / (n - 1);
+```
+
+Measured on one case the arm **lost** (`ts0-ts-basic-service-request-replace-method-gqn7nd`, 50 nodes), on the
+deviation map the operator actually reads:
+
+| map | entries at the minimum | the minimum | after the transform |
+| --- | ---: | ---: | --- |
+| raw | **1** | 1.71e-4 | 1 entry at **0** → the pool loses it (49) |
+| `external` (shipped, inert) | 1 | 1.71e-4 | 1 entry at **0** (49) |
+| `all` | **19** | **0** | 19 entries at **0.1837** → pool 50 |
+
+Nineteen of fifty nodes are zeroed, and the tie average lifts all nineteen to `(0 + 18) / 2 / 49 = 0.1837` — the
+score of the **ninth**-ranked node. Every charged candidate is re-admitted *above the eight least-anomalous nodes
+it was meant to fall below*. The operator's zero is not a zero after the transform: **the tie average is the right
+rule for a tie the data has and the wrong rule for a tie the operator creates.** That is why the clamp is vacuous
+here, and why `gate = 1` (−53) is worse than `gate = 0` (−36): the gate decides how many nodes join the promoted
+tie group.
+
+### 319.4 What this closes, and what it opens
+
+**Closes** the pool question on both halves: `+1` of 735 where a zeroed node can leave (§9 of
+`docs/pool-admission.md`), `+0` of 1 422 where it cannot, with the mechanism named rather than inferred.
+`DEFAULT_POOL_ADMISSION` stays `positive`, and the argument is now structural rather than statistical.
+
+**Closes** `scope = all` on both corpora as well: −2 on RE3/SockShop, −53 here.
+
+**Opens** one thing that is not a knob: the operator's output is expressed in a space that re-quantises it. On a
+rank surface "fully explained" can be written as *0* (deleted, or admitted at the floor) or as the *band's average
+rank* (promoted), and the corpus's own transform chooses the second. A future arm would have to return the charged
+set through a transform that keeps it at the bottom, which is a change of **space** rather than of the operator and
+belongs to whoever measures `rank` against `minmax` first. It is recorded rather than attempted, because the five
+arms above are the measurement that says the question is real.
+
+### 319.5 The instrument that made the question askable, and the denominator this iteration fixed elsewhere
+
+The verdict file's four published fields could not distinguish a deletion from a miss: on the control, **173 of
+1 422** truths sit beyond rank 5 and every one of them was written as the same `absent`. Three columns close it —
+`truthRank` over the whole order, `pool`, and `truthAnomalyBefore` — and they are what turns "the totals moved" into
+"this case's truth was demoted to rank 3". `docs/fse26-per-case-verdicts.md` owns the format; the columns are
+optional on the record and always written by the runner, so an archived four-field file still parses.
+
+The same iteration read the last unconnected suite. `docs/cloud-opsbench-connection.md` sizes it: released, MIT,
+754 cases, **76 metric-bearing** ones — the comparable population is the performance families, not the whole corpus
+— with a published leaderboard whose best component accuracy is 0.88 on Online Boutique and 0.70 on Train Ticket.
+It adds a denominator and no measurement, and it is named here so that the reading is reachable from the register
+rather than from a directory listing.

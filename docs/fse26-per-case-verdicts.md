@@ -59,7 +59,56 @@ sentence as *no case moved*" — is now a measurement rather than an apology.
 
 | layer | symbol |
 | --- | --- |
-| producer | `writePerCaseVerdicts`, `formatPerCaseVerdict`, `PER_CASE_RANK_LIMIT` (`benchmarks/src/fse26-per-case.ts`) |
+| producer | `writePerCaseVerdicts`, `formatPerCaseVerdict`, `poolColumns`, `PER_CASE_RANK_LIMIT` (`benchmarks/src/fse26-per-case.ts`) |
 | dispatch | `--per-case-out fse26-per-case.ndjson` in `Run FSE'26 benchmark`, uploaded with the other artefacts |
 | reader | `scripts/compare_fse26_per_case.py` (`load`, `flips`, `per_type`, `render`) |
-| tests | `scripts/test_compare_fse26_per_case.py` (17 cases, 100% branch) |
+| tests | `scripts/test_compare_fse26_per_case.py` (17 cases, 100% branch), `benchmarks/__tests__/fse26-pool-columns.test.ts` |
+
+## Iteration 310: three columns, because a five-wide row cannot say WHY the truth was missing
+
+The file above answers "what did the engine answer". It could not answer "**was the truth in the pool at all**",
+and the difference is not academic: measured on the control of iteration 310 (shipped configuration, 1 422 cases,
+`$0`), **173 of 1 422 truths sit beyond rank 5** — 12.2 % of the corpus — and every one of them was written as
+`absent` in exactly the same shape as a truth the topological deduction had deleted. The corpus whose published
+cell every arm is scored against could not distinguish a deletion from a miss, which is why four arms on the
+deduction operator were read by watching totals move instead of by reading a mechanism.
+
+The same control also fixes the population the three columns describe, and two of its numbers belong here because
+they bound what a future reader can conclude: the order holds **49 or 50 candidates** on a 50-node tree, and the
+count of truths at `truthRank: 0` is **zero**. So on this corpus the pool is the graph minus the one node at a
+*unique* minimum — and the reason it is a unique minimum, and why the deduction cannot create a second one, is
+`docs/pool-admission.md` §10.
+
+Three columns close it, written after `ranked` and in this fixed order:
+
+```json
+{"datapack":"ts0-mysql-container-kill-9t6n24","faultType":"ContainerKill","accepted":["mysql"],
+ "ranked":["mysql","ts-ticket-office-service","ts-train-service","ts-auth-service","ts-security-service"],
+ "truthRank":1,"pool":49,"truthAnomalyBefore":0.40816326530612246}
+```
+
+| column | what it is | what its absence means |
+| --- | --- | --- |
+| `truthRank` | the best rank among `accepted` over the **whole** order, `0` when the pool held none | the row predates the column → `unmeasured` |
+| `pool` | how many candidates the order held — the set the deduction decided | same |
+| `truthAnomalyBefore` | the accepted answer's anomaly **before** the deduction, `null` when no accepted id is a graph node | same |
+
+Read against zero, they are the split `classifyTruthAbsence` already took on the RCAEval half: `truthRank: 0` with
+`truthAnomalyBefore > 0` is `explained` (the operator deleted a node that had moved), `0` with `0` is `silent`
+(the origin never deviated), a positive `truthRank` is `ranked` at a measured depth, and `null` is `not-in-graph`.
+
+Three properties are load-bearing and each is pinned by a test:
+
+1. **The order is taken at the pool's width, not the reporting width.** `analyze` is called with
+   `max(PUBLISHED_TOP_K, |nodes|)`, and `ranked` is still the five-wide prefix. The published numbers are unchanged
+   by construction — the control of iteration 310 reproduces **1 156 / 1 228 / 1 249** to the case — and the
+   presentation dump's `published` field is sliced at the published width for the reason it exists: a dump that
+   silently widened would break the join it was built to make.
+2. **A column the row does not carry is not written.** A caller with no graph builds a re-serialisation or a
+   fixture; a `0` on its behalf would report a measurement ("nothing moved") where the truth is an absence.
+3. **`null` is a value and is written.** It says none of the accepted ids is a node of the graph, which is a
+   different fact from the column being missing — and the parser refuses anything else by line number, so a row the
+   format would never have written cannot be scored as a case with an odd answer.
+
+An archived four-field file still parses, which is what keeps every number this repository has published
+re-readable, and `parsePerCaseVerdicts` answers `undefined` for the three columns rather than inventing a zero.

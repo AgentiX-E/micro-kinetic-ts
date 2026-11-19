@@ -12,9 +12,17 @@
  * be moved after the fact and the run had to be repeated to ask a second question.
  *
  * A verdict file makes the judgement a POST-processing decision. It records what the engine answered and what
- * the corpus accepted, and nothing else: no score, no judgement, no derived count. A reader who wants strict,
- * loose, Top-3 or `MRR` computes it from the same file, and two engines' files are comparable row by row
+ * the corpus accepted — and, since iteration 310, the three facts about the POOL that answer could be drawn from:
+ * how wide the pool was, where the accepted answer sat in it, and its own anomaly before the topological
+ * deduction charged anything. It still carries no score of the engine's own and no judgement: a reader who wants
+ * strict, loose, Top-3 or `MRR` computes it from the same file, and two engines' files are comparable row by row
  * because the fields are the corpus's own.
+ *
+ * The three pool columns are not a score and are not a judgement, and the distinction is what keeps them inside
+ * the format's argument: they are properties of the ORDER (its width, its position of the accepted set) and of the
+ * case's own anomaly map (a number the builder wrote before `analyze` ran). Their purpose is narrow and stated in
+ * `docs/topo-discount-scope.md` §7.4 — an absent truth and a low-ranked truth are different failures with
+ * different owners — and before them a five-wide row reported both as `absent`.
  *
  * ## Why JSONL and not one array
  *
@@ -26,6 +34,10 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+
+// The direct module rather than the benchmarks barrel: `bestAcceptedRank` has one owner and this file reads it
+// from where it is defined, which is also how every other runner here imports it (`run-rcaeval.ts`).
+import { bestAcceptedRank } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 
 /**
  * How many ranked services a verdict row carries.
@@ -47,11 +59,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
  * — and nothing may read it as a bound on what the ranking contains. `benchmarks/src/ranking-depth.ts` owns the
  * measurement that says what it does contain, and `DEPTH_TOP_LIMIT` now runs to the width of the corpus's orders
  * rather than to this constant (`docs/rank-depth.md` §2: every answer is inside the order, at rank 49 of 49 at the
- * worst).
+ * worst). Since iteration 310 the verdict line carries that depth itself, in {@link PerCaseVerdict.truthRank} and
+ * {@link PerCaseVerdict.pool}: the truncation above is a property of `ranked`, and reading it as a property of the
+ * order is the mistake this paragraph exists to forbid.
  */
 export const PER_CASE_RANK_LIMIT = 5;
 
-/** One case's answer beside the corpus's own label set. */
+/** One case's answer beside the corpus's own label set, and the pool the answer was drawn from. */
 export interface PerCaseVerdict {
   /** The case directory's name, which is the corpus's stable id for the case. */
   readonly datapack: string;
@@ -61,6 +75,46 @@ export interface PerCaseVerdict {
   readonly accepted: readonly string[];
   /** The engine's ranking, best first, truncated to {@link PER_CASE_RANK_LIMIT}. */
   readonly ranked: readonly string[];
+  /**
+   * The best rank among {@link accepted} over the WHOLE order the run computed, `0` when the pool held none.
+   *
+   * A column rather than a judgement: `Top@1` is `truthRank === 1` and `Top@20` no longer needs a second run, and
+   * — the reason it exists — `0` beside a positive {@link truthAnomalyBefore} is a candidate the topological
+   * deduction REMOVED, which a five-wide row reports as the same absence as a truth it ranked ninth.
+   * Absent on a row written before this column existed, and on one a caller built without an order.
+   */
+  readonly truthRank?: number;
+  /** How many candidates the order held — the set the deduction decided. See {@link truthRank}. */
+  readonly pool?: number;
+  /**
+   * The accepted answer's own anomaly BEFORE the deduction, or `null` when none of the accepted ids is a node of
+   * the graph. Read against zero: `0` is a silent origin, `> 0` with {@link truthRank} `0` is an explained one.
+   */
+  readonly truthAnomalyBefore?: number | null;
+}
+
+/**
+ * The pool columns for one case, derived from the order the run computed.
+ *
+ * One owner for the three questions a re-scorable row has to answer about its own pool, so the runner cannot
+ * answer them with a second rule: the rank is {@link bestAcceptedRank} — the same function the accuracy counters
+ * take — and the anomaly is looked up for the service that rank placed, falling back to the first DECLARED
+ * accepted id when nothing was ranked, which is the only way an absent answer can still say whether it moved.
+ *
+ * @param ranking - The engine's order, best first, at its FULL width rather than the reporting width.
+ * @param accepted - The accepted service ids, in the corpus's order.
+ * @param anomalyBefore - The case's pre-deduction anomaly for a service, `undefined` when it is not a node.
+ * @returns `truthRank` (0 = absent), `pool` (the order's width) and `truthAnomalyBefore` (`null` = off-graph).
+ */
+export function poolColumns(
+  ranking: readonly { readonly serviceId: string }[],
+  accepted: readonly string[],
+  anomalyBefore: (serviceId: string) => number | undefined,
+): Pick<PerCaseVerdict, 'truthRank' | 'pool' | 'truthAnomalyBefore'> {
+  const truthRank = bestAcceptedRank(ranking, accepted);
+  const caseTruth = truthRank > 0 ? ranking[truthRank - 1]!.serviceId : accepted[0];
+  const before = caseTruth === undefined ? undefined : anomalyBefore(caseTruth);
+  return { truthRank, pool: ranking.length, truthAnomalyBefore: before ?? null };
 }
 
 /**
@@ -73,12 +127,23 @@ export interface PerCaseVerdict {
  * @returns The JSON text of one line.
  */
 export function formatPerCaseVerdict(verdict: PerCaseVerdict): string {
-  return JSON.stringify({
+  // The four published fields first, always. The pool columns follow, and each is written only when the row
+  // carries it: a caller with no graph and no order builds a re-serialisation or a fixture, and a `0` written on
+  // its behalf would report a measurement ("nothing moved", "nothing was ranked") where the truth is an absence.
+  const line: Record<string, unknown> = {
     datapack: verdict.datapack,
     faultType: verdict.faultType,
     accepted: [...verdict.accepted],
     ranked: verdict.ranked.slice(0, PER_CASE_RANK_LIMIT),
-  });
+  };
+  if (verdict.truthRank !== undefined) line.truthRank = verdict.truthRank;
+  if (verdict.pool !== undefined) line.pool = verdict.pool;
+  // `null` is a VALUE here and is written: it says none of the accepted ids is a node of the graph, which is a
+  // different fact from the column being absent (a row from before the column existed).
+  if (verdict.truthAnomalyBefore !== undefined) {
+    line.truthAnomalyBefore = verdict.truthAnomalyBefore;
+  }
+  return JSON.stringify(line);
 }
 
 /**
@@ -103,6 +168,30 @@ function stringsAt(value: unknown, field: string, line: number): string[] {
     throw new Error(`${field} on line ${line} is not an array of non-empty strings`);
   }
   return value as string[];
+}
+
+/**
+ * One of the two COUNT columns, or `undefined` when the row predates it.
+ *
+ * A count is a non-negative integer and nothing else: `-1` is not "one above absent", and `1.5` is not a rank.
+ * The distinction the two states carry is the module's own rule — absent means the row was written without an
+ * order, so a reader must report `unmeasured` rather than fold it into either answer.
+ */
+function countAt(value: unknown, field: string, line: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  throw new Error(`${field} on line ${line} is not a non-negative integer`);
+}
+
+/**
+ * The pre-deduction anomaly, `null` when the accepted id is not a graph node, `undefined` when the row predates
+ * the column — three states, and the writer emits all three distinctly for exactly that reason.
+ */
+function anomalyAt(value: unknown, field: string, line: number): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  throw new Error(`${field} on line ${line} is neither a finite number nor null`);
 }
 
 /**
@@ -139,11 +228,19 @@ export function parsePerCaseVerdicts(text: string): PerCaseVerdict[] {
     if (typeof row.faultType !== 'string') {
       throw new Error(`faultType on line ${lineNumber} is not a string`);
     }
+    // Read in the file's own field order, and each one validated by its own rule: a row that carries a pool
+    // column the format would never have written is refused here rather than scored as a case with an odd answer.
+    const truthRank = countAt(row.truthRank, 'truthRank', lineNumber);
+    const pool = countAt(row.pool, 'pool', lineNumber);
+    const truthAnomalyBefore = anomalyAt(row.truthAnomalyBefore, 'truthAnomalyBefore', lineNumber);
     verdicts.push({
       datapack: row.datapack,
       faultType: row.faultType,
       accepted: stringsAt(row.accepted, `accepted on line ${lineNumber}`, lineNumber),
       ranked: stringsAt(row.ranked, `ranked on line ${lineNumber}`, lineNumber),
+      ...(truthRank === undefined ? {} : { truthRank }),
+      ...(pool === undefined ? {} : { pool }),
+      ...(truthAnomalyBefore === undefined ? {} : { truthAnomalyBefore }),
     });
   }
   return verdicts;

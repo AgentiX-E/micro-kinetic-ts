@@ -252,3 +252,78 @@ What that points at is the next axis and it is not a knob: a source that is sile
 invisible to a formula whose base term is `log1p(selfAnomaly)` and whose priors are all functions of movement.
 `docs/pool-admission.md` was built to prove the class existed; it now says the class exists, is half silence, and
 cannot be reached by admitting more nodes.
+
+## 10. The FSE'26 reading (it.310): the class is EMPTY there, and the reason is the space
+
+The axis above was measured on the nine cells, where a deviation-space map lets a zeroed node leave the pool. On
+RCABench it has never been measured, because the operator never fired there at all: `external` scope finds no
+response channel among the corpus's 87 `container.*`/`k8s.*` names, so no node is deductible and no candidate can
+be deleted. Iteration 310 removed that obstacle — `topoDiscountScope = all` charges on this corpus — and crossed the
+charge with the pool decision on the same commit, one profile, 1 422 cases, `$0`, no model call.
+
+| arm | `scope` | `gate` | `poolAdmission` | Top@1 | Top@3 | Top@5 | ΔTop@1 | deleted truths |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| **A0** | `external` | 1 | `positive` | **1 156** | 1 228 | 1 249 | — | 0 |
+| **A1** | `all` | 1 | `positive` | 1 103 | 1 209 | 1 235 | **−53** | 0 |
+| **A2** | `all` | 1 | `graph` | 1 103 | 1 209 | 1 235 | **−53** | 0 |
+| **A3** | `external` | 1 | `graph` | 1 156 | 1 228 | 1 249 | **0** | 0 |
+| **A4** | `all` | 0 | `positive` | 1 120 | 1 211 | 1 226 | **−36** | 0 |
+
+Three of the five readings are exact rather than approximate, and the exactness is the finding:
+
+1. **A2 and A1 are byte-identical.** `md5(A1.ndjson) == md5(A2.ndjson)`: 1 422 rows, every `truthRank`, every
+   `pool`, every `ranked` array. The clamp does not help by a small amount; it has **nothing to clamp**. Across
+   1 422 cases there is not one truth with `truthRank: 0`, so the class this axis exists for is **empty on this
+   corpus** — and admitting the graph's remaining nodes (A3) moves nothing either, at any `K`.
+2. **A3 is the control.** `pool = graph` alone leaves Top@1/3/5 at 1 156 / 1 228 / 1 249 to the case. The pool
+   median moves 49 → 50, one node per case, and that node enters at the bottom and stays there: a candidate whose
+   base term is 0 is ordered by priors alone, and on this corpus the priors do not carry it. That is §9's finding
+   reproduced on 1 422 cases instead of 735, and with a wider pool it is *more* inert, not less.
+3. **The charge itself is what costs, at both gates.** `scope = all` at `gate = 1` costs **53** cases and at
+   `gate = 0` costs **36**; the losses concentrate in the two largest cells (`HTTPResponseReplaceCode` 171 → 153,
+   `HTTPRequestReplaceMethod` 139 → 123) and touch twelve fault types. So the shipped `external` predicate is worth
+   **+53 cases (3.73 pp) on this corpus** — the first measurement of that predicate's contribution here, and it is
+   an order of magnitude larger than the two cases it is worth on RE3/SockShop.
+
+### Why the class is empty: a tie the operator creates is not a tie the data has
+
+A deletion requires a **unique** minimum. `rankNormalizeScores` (the transform `applyAnomalyNormalization` maps the
+operator's output back through, because the builder rank-normalises this corpus) assigns a tie group the group's
+**average** 0-indexed rank:
+
+```
+normalized(group starting at i, ending at j, n entries) = ((i + j) / 2) / (n − 1)
+```
+
+Measured on one lost case (`ts0-ts-basic-service-request-replace-method-gqn7nd`, 50 nodes), on the deviation map
+the operator actually reads:
+
+| map | entries at the minimum | value of the minimum | after `rankNormalizeScores` |
+| --- | ---: | ---: | --- |
+| raw | **1** | 1.71e-4 | 1 entry at **0** → the pool loses it (49) |
+| `external` (shipped, inert) | 1 | 1.71e-4 | 1 entry at **0** (49) |
+| `all` | **19** | **0** | 19 entries at **0.1837** → pool 50 |
+
+`scope = all` zeroes **19 of 50** nodes on that case. Nineteen nodes tied at exactly zero receive
+`(0 + 18) / 2 / 49 = 0.1837` — the score of the **ninth**-ranked node — so every charged node is re-admitted *above
+the eight least-anomalous nodes it was meant to fall below*. The operator's zero is not a zero after the transform:
+**the tie-average is the right rule for a tie the data has and the wrong rule for a tie the operator creates.**
+
+That is why the pool axis cannot reach this failure and why the clamp is vacuous here: the charged candidates are
+not missing, they are **promoted**, and no pool decision can demote them. It is also why the loss is larger at
+`gate = 1` (−53) than at `gate = 0` (−36): the gate decides *how many* nodes are charged to exactly zero, and every
+one of them joins the promoted tie group.
+
+### What this closes, and what it opens
+
+**Closes** the pool question on both halves: `+1` of 735 where a zeroed node can leave (`§9`), `+0` of 1 422 where it
+cannot (`§10`), with the mechanism named rather than inferred. `DEFAULT_POOL_ADMISSION` stays `positive`, and the
+argument is now structural instead of statistical.
+
+**Opens** one thing, and it is not a knob: the operator's output is expressed in a space that re-quantises it. On a
+rank surface, "this node is fully explained" can be written as *0* (deleted, or admitted at the floor) or as *the
+band's average rank* (promoted), and the corpus's own transform chooses the second. A future arm would have to
+return the charged set through a transform that keeps it at the bottom — which changes what the ranking reads, so
+it is a change of space rather than of the operator, and it belongs to whoever measures `rank` against `minmax`
+first. It is recorded here rather than attempted, because the two arms above are the measurement that says the
+question is real.
