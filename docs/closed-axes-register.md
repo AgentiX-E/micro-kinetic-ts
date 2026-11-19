@@ -7337,7 +7337,7 @@ reproduces the published cell to the case.
 | **A1** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
 | **A2** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
 | **A3** | 1 156 | 1 228 | 1 249 | **0** | 0 | **0** |
-| **A4** | 1 120 | 1 211 | 1 226 | **−36** | 11 | **0** |
+| **A4** | 1 120 | 1 211 | 1 226 | **−36** | 12 | **0** |
 
 Three of the five readings are **exact**, and the exactness is the result:
 
@@ -7405,3 +7405,102 @@ The same iteration read the last unconnected suite. `docs/cloud-opsbench-connect
 — with a published leaderboard whose best component accuracy is 0.88 on Online Boutique and 0.70 on Train Ticket.
 It adds a denominator and no measurement, and it is named here so that the reading is reachable from the register
 rather than from a directory listing.
+
+### 319.6 The space arm: the intervention that turns the mechanism into a measurement
+
+§319.3 explains the vacuity with a mechanism. A mechanism that is only *explained* is an inference; this is the
+intervention. The same three arms, the same corpus, the same profile, one flag — `--no-rank-normalization` — so the
+map the ranking reads is the deviation map the operator writes:
+
+| arm | flags | Top@1 | Top@3 | Top@5 | pool median | truths at `truthRank: 0` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| **B0** | `--no-rank-normalization` | 1 122 | 1 223 | 1 242 | 49 | **0** |
+| **B1** | `… --topo-discount-scope all` | 733 | 783 | 797 | **27** | **588** |
+| **B2** | `… --scope all --pool-admission graph` | 1 067 | 1 200 | 1 229 | 50 | **0** |
+
+Four readings, and they settle the question the rank-space factorial could only pose:
+
+1. **The class is real, and the space is what hides it.** B1 deletes **588 of 1 422** truths — 41.4 % of the corpus —
+   against **0** in the rank-normalised population. Same operator, same corpus, same weights: the only difference is
+   the transform the output is read through. §319.3's sentence is now a measurement rather than an explanation.
+2. **The clamp is decisive exactly where it can act.** B2 restores **588 of 588**: **336 to rank 1**, 52 to rank 2,
+   424 inside Top@5. `Top@1` moves **733 → 1 067, +334 cases (+23.5 pp)** — the largest single movement any arm on
+   this operator has produced, and it is produced by refusing to let a charge *delete*.
+3. **The operator's space-independent cost is 55 cases.** B2 still reads 55 below B0 (1 067 vs 1 122), and the
+   rank-space pair reads 53 below its own control (1 103 vs 1 156). Two different mechanisms — deletion in one,
+   tie-promotion in the other — land on the same residual, which is therefore the part of the charge that is
+   *reordering* rather than removing: **86 % of the deviation-space damage is deletion (334 of 389) and 14 % is the
+   reordering that survives the clamp.**
+4. **The published normalisation is itself worth +34.** B0 reads 1 122 against A0's 1 156 on the same corpus, so
+   `rankNormalization = true` is a +34-case configuration choice — a number this repository has never measured,
+   because it has never run the corpus without it.
+
+**Verdict, revised and stated as one sentence:** the clamp is **vacuous on the published configuration** (A2 ≡ A1,
+byte for byte) and **worth +334 cases on the same corpus once the transform stops hiding the deletion** (B2 vs B1) —
+so it is refused as a *default* (B2 is still 55 short of B0, and B0 is 34 short of the published cell) and enrolled
+in the record as the **largest measured contribution of any arm on this operator**, with the decomposition 334
+deletion / 55 reordering. `DEFAULT_POOL_ADMISSION` stays `positive` and `rankNormalization` stays `true`; what
+changes is that both are now defended by a measurement rather than by a published number nobody had decomposed.
+
+**What this opens, in priority order.** (a) The 55-case reordering residual is the operator's real price, and it is
+the only quantity a successor arm has to beat; (b) a transform that keeps a charged set at the bottom instead of
+averaging it into the tie band would make the clamp's +334 available *without* changing the normalisation — that is
+the change of space §319.4 names, and it is now worth a pre-registration rather than a paragraph; (c) the +34 the
+normalisation is worth must be checked for `minmax`, which is the third value of the same axis and has never been
+measured on this corpus.
+
+### 319.6.1 The residual has an address, and the charge is not always the culprit
+
+The four readings above are aggregate. The per-case columns make the same numbers decomposable to the case, and the
+decomposition changes what the next arm should be:
+
+| quantity | count | derivation |
+| --- | ---: | --- |
+| truths B1 deletes | **588** | `truthRank: 0 ∧ truthAnomalyBefore > 0` |
+| … of which B0 ranks **1** | **393** | the charge destroys 393 top answers, not 588 top answers |
+| … of which B0 puts inside Top@5 | **441** | 96.1 % of what the clamp recovers was recoverable |
+| B2 returns to **rank 1** | **336** | 85.5 % of 393 |
+| B2 returns inside **Top@5** | **424** | 96.1 % of 441 |
+| B0 → B2 `Top@1` | **−75 / +20 = −55** | the residual is net, not gross |
+
+Two consequences that the aggregate table hides:
+
+1. **The clamp recovers the *order*, not just the membership.** If admission were a floor with an arbitrary order,
+   the 588 would return near the bottom of a 50-node pool and `Top@1` would not move; it returns 336 to rank 1
+   because the restored candidates are ranked by `selfScore`, i.e. by their own deviation — the quantity the charge
+   never touched. That is the mechanism §319.1 claimed for the axis and it is now read off 588 cases.
+2. **The gross cost is 75, not 55.** The clamp loses 75 answers relative to B0 and wins 20 back. A residual quoted
+   as "55" is a *net*; the operator's gross reordering damage in deviation space is 75 and the 20 are cases where
+   the charge is *right* — worth separating because they are the only direct evidence that the charge carries
+   signal at all.
+
+**And the residual is not spread evenly.** `Top@1(B2) − Top@1(B0)` per fault type, over the 25 types present:
+
+| fault type | B0 | B1 | B2 | B2 − B0 | n |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HTTPResponseReplaceCode | 161 | 81 | 142 | **−19** | 231 |
+| HTTPRequestReplaceMethod | 132 | 73 | 121 | **−11** | 190 |
+| HTTPResponseAbort | 39 | 17 | 33 | −6 | 44 |
+| HTTPRequestDelay | 70 | 44 | 65 | −5 | 88 |
+| HTTPResponseReplaceBody | 49 | 24 | 44 | −5 | 51 |
+| HTTPRequestAbort | 49 | 29 | 45 | −4 | 60 |
+| NetworkCorrupt | 33 | 24 | 29 | −4 | 46 |
+| HTTPRequestReplacePath | 39 | 23 | 36 | −3 | 39 |
+| NetworkBandwidth | 19 | 19 | 17 | −2 | 42 |
+| JVMReturn / TimeSkew | 12 / 1 | 9 / 0 | 11 / 0 | −1 / −1 | 21 / 2 |
+| HTTPResponseDelay | 66 | 50 | **70** | **+4** | 89 |
+| JVMException | 31 | 24 | **33** | **+2** | 43 |
+| the other 13 types | — | — | — | **0** | 518 |
+
+The residual is **HTTP-shaped**: every fault type that changes a *value* on an existing request path loses cases
+(`ReplaceCode` −19, `ReplaceMethod` −11, `ReplaceBody` −5), every fault type that changes *reachability* loses none
+(`ContainerKill`, `PodKill`, `PodFailure`, `NetworkPartition`, `NetworkLoss` all read exactly B0). The charge is a
+parent-to-child transfer along the call topology; a code replacement does not sever an edge, so the propagation
+term is spent reordering nodes whose deviation is genuinely close, and the 20 net-minus-55 cases where the charge
+*helps* are the ones where the truth sits downstream of a louder neighbour.
+
+**The larger number this puts on the table.** The same read gives the corpus's remaining Top@1 misses in the
+published configuration: 1 422 − 1 156 = **266**, of which `HTTPResponseReplaceCode` (60) and
+`HTTPRequestReplaceMethod` (51) are **111 — 42 % of everything still wrong**. The clamp's whole residual is 55. The
+value-replacement class is twice as large as the axis this iteration closed, and it is where a successor arm should
+be aimed.
