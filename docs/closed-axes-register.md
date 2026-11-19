@@ -307,6 +307,7 @@ declare it |
 |`trace-share.md`| **the trace vote's rise is the ONE variable that cannot separate its right votes from its wrong ones** — the fifteen hits carry`growth 1.17-2.22`and the five misses`1.16-1.47`, so every refused refinement of this family (a weight, a leader mask, a tail-only restriction, a materiality floor, a Poisson significance bar) was a function of a variable whose two classes overlap. What separates them is the **fleet's own move**: `drift 0.05-0.11`under every hit and`0.79-0.99`under every miss, so`growth / drift`— the candidate's change of SHARE — reads`10.7-36.3`for the sources against`1.26-1.86`for the votes that were wrong, with the largest non-source share measured at`4.3`. The census sweeps four floors over that empty interval and prints `withdrawn`against`surrendered`, which is the only pair the decision may be read on. **Then it was enrolled, and it is the only member of this family that was**: the sweep returned byte-identical counts at all four floors (`withdrawn=5 surrendered=0`on TrainTicket,`1 / 0`on OnlineBoutique) and the loss census resolved the upper bound case by case — the truth stood at rank 2 of 68 on two of the six withdrawn votes, so withdrawing the unit promotes it, and at rank 6 / 13 / 20 on the other three — which makes`minFleetShare = 2`the fourth threshold of the rule and the first trace refinement in six to survive.`0`disables it,`2`is the smallest integer above the largest measured miss (1.85) and far below the smallest hit (10.56). **This row stays in the register because the AXIS it closes is not the floor but the rise**: no function of`growth` alone, and no selector on the Poisson axis above it, can be tried again |
 |`prior-floor.md`| **the baseline is a READING now, not a paragraph a session restates by hand, and `Top@5`is retired as a headline by the INSTRUMENT rather than by prose.** Iteration 153 read the label space off the 735 loss-census rows and found that`RE3`is prior-heavy while the six`RE1`/`RE2`cells are five-way and balanced; the numbers have been quoted from a doc section ever since, so every run restated them and nothing checked the restatement.`createPriorFloorCensus`/`accumulatePriorFloor`/`formatPriorFloorLine`make each RCAEval cell print its own floor on the line beside its own rate, over BOTH closed forms —`uniform`(what a blind guess pays) and`frequency`(what a majority-class rule pays, which is the stronger baseline wherever the truths are imbalanced) — with`lift = (engine - prior) / (1 - prior)`as the one quantity comparable across cells. Two cells are read so far.`RE3:SockShop`is the one that changed a priority: 30 cases and three truths, so the frequency prior is **40.0%** (majority`carts`, 12) against a uniform 33.3%, and the `Avg@5`floor is 80.0% — the engine reaches a 63.3%`AC@1`for a **lift of 38.9% of the reachable margin above the 40.0% frequency prior**, with 7 of 12`carts`cases missed while`front-end`is 9 of 9 — so on its own majority class the engine is behind a blind guess. **And the instrument then found the same defect in itself**: the first version printed both baselines and divided by the WEAKER one, reporting`45.0%`here,`77.8%`on`RE3:OnlineBoutique`(whose frequency prior is 50.0% against a uniform 25.0%) and`46.7%`on`RE3:TrainTicket`, where the two coincide — the error was largest exactly where the corpus gives the most away, and it is recorded as a measured correction (`docs/prior-floor.md`§3.2) rather than fixed quietly. The cell's entire lead over the prior therefore comes from the class the prior cannot NAME, which is why the ordering of the remaining work moved to`RE3`rather than to the largest raw miss count.`RE1:OnlineBoutique`is the control where the five-way balance makes the two priors coincide to twelve digits. And the reason this is filed as an instrument rather than a table:`S <= 5`holds in all nine cells, so the`Top@5`floor is`1.000`and the artifact prints`SATURATED` on that cell instead of a number a reader would compare — the headline metric this project used for several iterations is uninformative by construction here, and it says so itself |
 |`trace-weight-default.md`| **the trace weight's default was a fact of a YAML `else`branch, and it was worth 44 points on the one cell that has spans.** A local run of`RE3:TrainTicket`printed 30.6% for the cell CI calls 74.5% — same source, same commit, the difference a`--trace-weight 1`inside`benchmark-rcaeval.yml`'s guard — so the published configuration was not a point in the battery's cube and `productionFlags`had to return three vectors. The unconfounded nine-cell A/B (both arms with`injectTime`on) moved the value into`DEFAULT_TRACE_WEIGHT = 1`: 13 cases gained on that cell, none lost, and **not one case flipped on the seven other cells** — six of which cannot see the term at all because their packs carry no `traces.csv`. The same document records the two facts that bound it: `RE3:TrainTicket`'s 189,488 spans carry **no `statusCode` at all**, so the only direction-carrying term (`failedEdge`, weight 3) is data-inert on the cell that needs direction most; and the trace term is a VOLUME prior whose cost is that eight of the nine remaining misses are one service losing to a trace hub. §6 is a pre-screen that CLOSED the obvious repair — ranking a dependency-connected error emitter above a silent leader — at **9 gains against 68 losses**, because a victim floods the same channel in RE2) |
+|`topo-edge-explained.md`| **the missing response channel cannot be replaced by the per-edge latency rise, in either of the two units available.** The corpus's 87 metric names are all `container.*`/`k8s.*`, so the deduction's admission predicate has no true instance (§316.3) — but `traceEdgeLatency` is `[from, to, baseline, post]` per edge and encodes the same physical fact, so the arm reads it in the direction nothing else reads it: the graph's `edgeLatencyScores` scores a node by its INBOUND rise (what its callers waited, feeding `latWeight = 0.561495`) and the deduction needs the OUTBOUND one (what the node waited for). Both sides of the operator consult ONE predicate, because relaxing the callee side alone is inert on exactly the corpus the arm was built for (amendment A1). Two forms were measured on 1 422 FSE'26 cases at `$0`: an absolute threshold reads **1 129 / 1 153** against a reproduced control of **1 156** at θ = 2 and θ = 10, and the queueing divisor `rise(edge) ≥ θ · inbound(caller)` reads **1 129 / 1 140** at θ = 2 and θ = 5. Both are refused by the pre-registered rule (`Top@1 ≥ 1 200`, golden nine cells identical), and the reason is not the threshold: a census of **71 560 measured edges** — 5 942 of them leaving a ground-truth service — shows the harmful and helpful populations have the same rise distribution (median **0.91×** against **0.94×**, the helpful one LARGER) and the same ratio distribution (**0.65** against **0.76**), so the divisor is **26× less pure** at θ = 10 (15.7 % of its admissions charge the truth, against 0.6 %) because a service few callers wait on has a small inbound measurement and dividing by it selects for sources. What outlives the axis is the cost function it exposed: at the shipped `rho = 1` with `poolAdmission = positive` an admitted edge does not DEMOTE a candidate, it DELETES it — 16 answers that were correct at rank 1 are absent from the ranked list under the inbound form at θ = 2, against a structural floor of zero in the control |
 
 ## The shared kill criterion
 
@@ -7064,3 +7065,232 @@ cells byte-identical.
 | "The topological discount can be tuned for RCABench" | **closed by information set** — the operator's admission predicate has no true instance on the corpus, so no value of `rho`, `gate`, `scope` or `closure` can move it; four refusals, one cause |
 | "The observer class is a golden-half phenomenon" | **closed as false** — it is 44.1 % of the FSE'26 near-miss class |
 | "`sum` is the closure that unblocks the fan-out" | **closed a second time**, now with the reason: the fan-out's explanation lives in an edge's latency, not in a callee's resource reading |
+
+---
+
+## §317 — The edge channel, first form: the threshold is refused by its own falsifier, and the refusal is not about the threshold
+
+**Verdict: `Top@1` falls at both thresholds, the pre-registered acceptance is missed by 47 cases, and the repair
+prediction is met at half its floor. The arm is refused. What the refusal buys is a number the axis was never
+registered against: the two populations the predicate is supposed to separate — a caller that is a symptom and a
+caller that is the source — have the same distribution of edge rise.**
+
+### 317.1 What was dispatched
+
+`docs/preregistration-308.md` registered one new field (`edgeLatencyRises`, aligned with `callGraph.edges`) and one
+predicate: an edge may carry an explanation when its own latency rise clears `θ`, with `rho`, `gate`, `closure`,
+`scope`, `precedence` and `latWeight` held at their shipped values. The predicate is consulted on **both** sides of
+the deduction — the callee side reads that edge, the caller side reads the maximum over the node's out-edges — because
+on this corpus the channel predicate is false on both sides for one reason (`§316.3`), and relaxing one side alone
+would have been inert on exactly the corpus the arm was built for. That correction is amendment A1 of the
+pre-registration and it was written before the first dispatch.
+
+Four runs, all local, `$0`, no model call anywhere:
+
+| arm | `Top@1` | `Top@3` | `Top@5` | up | down | net |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| control (shipped + profile) | **1 156** | 1 228 | 1 249 | — | — | — |
+| `θ = 2` | 1 117 | 1 207 | 1 237 | 20 | 48 | −39 |
+| `θ = 10` | 1 141 | 1 222 | 1 246 | 21 | 19 | −15 |
+| control, with the profile | **1 156** | 1 228 | 1 249 | — | — | — |
+| `θ = 2`, with the profile | 1 129 | 1 207 | 1 237 | 17 | 48 | −27 |
+| `θ = 10`, with the profile | 1 153 | 1 222 | 1 246 | 18 | 19 | −3 |
+
+The first pair is the same battery without the fault-free profile, taken because the profile's worth (`+15`) was
+established two iterations earlier and it would have been an assumption to score the arm against the profile-less
+control. The two controls agree at 1 156 and the two `θ = 2` arms agree on `Top@3` and `Top@5` to the case, which is
+what makes the four arms one axis rather than two builds.
+
+### 317.2 The falsifier
+
+The pre-registration wrote five predictions and one acceptance before the first run. They are quoted as they were
+written, including the one whose recorded expectation went the other way:
+
+| # | written before the run | measured | verdict |
+| --- | --- | --- | --- |
+| P1 | ≥ **12** of the observer-class near misses become correct | **6** | **failed** |
+| P2 | `Top@1` between **1 180 and 1 240** | 1 129 (no profile) / 1 129 (profile) at `θ = 2` | **failed**, below the floor by 51 |
+| P3 | the golden nine cells are identical (`641/735`), because the array is absent there | not dispatched — see below | **not reached** |
+| P4 | no fault type ≥ 2 down | `NetworkCorrupt −5`, `NetworkBandwidth −4`, `NetworkPartition −4`, `NetworkPartition −4` | **violated** |
+| P5 | the `θ` curve is **NOT** monotone — `θ = 10` moves MORE cases than `θ = 2` | 37 moved against 65 | **refuted in the theory's favour** |
+| A | `Top@1 ≥ 1 200`, golden identical, no family ≥ 2 down | none of the three | **refused** |
+
+`P5` is the one prediction that was wrong in the arm's favour, and it is the one that matters for what came next: the
+threshold DOES do what a threshold does — fewer admissions, fewer movements, `−3` against `−27` — so the rise
+carries *some* information and the failure is not that the comparison is meaningless. That is what made a second
+**form** worth measuring rather than a second threshold, and `§318` measures it.
+
+`P3` was not reached, and the reason is not cost: the acceptance conjunct on the golden half is an AND, so a battery
+refused by its own `Top@1` needs no second half to be refused. The inertness it would have tested is a construction
+rather than a hope — RCAEval's datapacks carry no span duration, so `edgeLatencyRises` is `undefined` and the
+operator's first line returns before any edge is visited — and it is pinned by
+`__tests__/causal/topo-edge-admission.test.ts`'s "`null` is inert" describe instead of by a dispatch.
+
+### 317.3 Why: the two populations are one population
+
+Admitting `from → to` is a decision to **charge `from`**, and the decision has a truth value. It is helpful when
+`from` is a symptom of a fault downstream; it is harmful when `from` is the ground-truth source, which is demoted for
+waiting on the faults it caused. So the axis is a classifier over the corpus's measured edges, and the classifier can
+be scored without running the engine at all: 71 560 measured edges in the FSE'26 corpus, 5 942 of them leaving a
+ground-truth service.
+
+| statistic | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
+| --- | --- | --- |
+| edge rise `post/pre`, p10 / p25 / **p50** / p75 / p90 | 0.47 / 0.68 / **0.91** / 1.24 / 1.91 | 0.48 / 0.70 / **0.94** / 1.38 / 2.91 |
+
+The medians differ by 3 %, and the helpful class is the one with the **larger** values. A fault multiplies the latency
+of every call the faulty node makes, so a high out-rise is as much a property of the source as of the symptom. There
+is no cut to place, and the arm's low-θ results are what a coin-flip classifier costs: at `θ = 2` it admits enough
+edges to charge almost every caller, gains 20 cases and loses 48.
+
+### 317.4 What the failure pointed at, and why the pointer was wrong
+
+The 37 cases `θ = 10` moved split cleanly by a quantity the absolute form cannot name: in the losses the charged node
+had **no out-edge at all** in 15 of 19 cases, and in the wins it had one whose rise was large. That reads as a
+queueing split — *how long did this node wait relative to how long it was waited for* — and it motivated the second
+form of the axis (`§318`). It is a real asymmetry in the corpus and it is not a usable one, which is the subject of
+the next chapter.
+
+### Axes this closes
+
+| Axis | Verdict |
+| --- | --- |
+| "The topological discount can be made to fire on RCABench by reading the edge channel" | **closed** — it fires, at 10 227 admissions at `θ = 2`, and `Top@1` falls by 27 |
+| "A single absolute threshold on the per-edge rise separates sources from symptoms" | **closed as measured uninformative** — the two populations have the same median (0.91× against 0.94×) and the helpful one has the larger tail |
+
+---
+
+## §318 — The edge channel, second form: the queueing divisor is 26× less pure than the constant, and `rho = 1` turns a false positive into a deletion
+
+**Verdict: the second form is refused, and it is refused *relative* to the first — the same threshold on the same
+corpus admits a population that charges the truth three times as often. The form was worth measuring because the
+mechanism it encodes is real; the measurement says the mechanism runs in the direction that makes the arm worse. The
+chapter closes the family of five forms and records the one mechanism that outlives it: at the shipped weight, an
+admitted edge does not demote a candidate, it deletes it.**
+
+### 318.1 The form
+
+`TopoEdgeRise` is `{ threshold, against: 'absolute' | 'inbound' } | null`:
+
+| `against` | predicate | what it says |
+| --- | --- | --- |
+| `absolute` | `rise(edge) ≥ θ` | the call got this much slower |
+| `inbound` | `rise(edge) ≥ θ · maxInRise(caller)` | the call got slower relative to how much this **caller** was itself slowed |
+
+The motivation is stated as a falsifiable claim rather than as a preference: §317's failing is that the corpus's
+ambient rise varies by two orders of magnitude between cases, so a constant admits both the edge that *is* the fault
+and the edge the network multiplied along with everything else. Dividing by the caller's own inbound measurement is
+"the same fact in the units the case provides". A source has little or no inbound traffic, so the divisor should
+charge symptoms and leave sources alone.
+
+It runs the other way. One pass over one array builds both maxima, and one function decides:
+
+```ts
+const admitted = (nodeId: ServiceId, rise: number): boolean => {
+  if (edgeRise === null) return false;
+  const against = edgeRise.against === 'inbound' ? maxInRise.get(nodeId) : 1;
+  if (against === undefined) return false;
+  return rise >= edgeRise.threshold * against;
+};
+```
+
+`undefined` returns `false` rather than dividing by one: a node nothing was seen waiting on has not been shown to be a
+victim, and reading the absence as a unit baseline would charge it on the strength of a measurement the corpus does
+not contain. That branch is the one this chapter's census endorses — and it is the only part of the form that does.
+
+### 318.2 The measurement
+
+Same corpus, same commit, same control artifact — **1 156 / 1 228 / 1 249**, reproduced to the case:
+
+| arm | `Top@1` | `Top@3` | `Top@5` | up | down | net | P1 repaired | truth deleted |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| control | **1 156** | 1 228 | 1 249 | — | — | — | — | 0 |
+| `θ = 2`, `absolute` | 1 129 | 1 207 | 1 237 | 17 | 48 | −27 | 6 | 9 |
+| `θ = 10`, `absolute` | 1 153 | 1 222 | 1 246 | 18 | 19 | −3 | 6 | 2 |
+| `θ = 2`, `inbound` | 1 129 | 1 205 | 1 232 | 16 | 38 | −27 | **3** | **16** |
+| `θ = 5`, `inbound` | 1 140 | 1 216 | 1 238 | 4 | 18 | −16 | **0** | **12** |
+
+Three readings, and the third is the one that decides the form:
+
+1. **The net is not better at a matched `Top@1`.** `θ = 2 inbound` and `θ = 2 absolute` both read 1 129; the inbound
+   form gets there with fewer losses (38 against 48) and fewer gains (16 against 17), i.e. by admitting fewer edges of
+   both kinds rather than more of the right kind.
+2. **The repair prediction collapses.** P1 was the arm's reason for existing — 38 observer-class near misses, ≥ 12
+   repaired. Absolute reads 6 at both thresholds; inbound reads **3** and **0**.
+3. **The deletions double.** 16 of the 38 losses at `θ = 2 inbound` are answers that were right at rank 1 and are
+   *absent from the ranked list* afterwards, against 9 for the absolute form at the same threshold.
+
+### 318.3 Why the divisor inverts: it selects for sources
+
+The census of §317.3 can be split by threshold and by form, because the decision is per edge and the truth value is
+per edge:
+
+| θ | `absolute`: admitted / of which charge the truth | `inbound`: admitted / of which charge the truth |
+| ---: | --- | --- |
+| 2 | 10 227 / 533 (5.2 %) | 5 151 / 434 (8.4 %) |
+| 5 | 4 568 / 78 (1.7 %) | 1 240 / 157 (**12.7 %**) |
+| 10 | 3 125 / 18 (**0.6 %**) | 510 / 80 (**15.7 %**) |
+
+At `θ = 10` the constant admits 3 125 edges of which 18 charge the truth — **0.6 % impurity**. The divisor admits 510
+of which 80 do — **15.7 %**, i.e. **26× less pure on a population 6× smaller**. The mechanism is arithmetic and not a
+threshold: `maxInRise` is small or absent for exactly the services with few callers, which on TrainTicket is the
+backend edge of the call graph and on every system includes the injected ones. Dividing by a small number is a
+multiplier, so the form concentrates on the population it was introduced to spare.
+
+| statistic | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
+| --- | --- | --- |
+| rise ÷ caller's inbound rise, p10 / **median** / p90 | 0.03 / **0.65** / 1.62 | 0.08 / **0.76** / 1.70 |
+
+The ratio does not separate the classes either — 17 % apart at the median, with the helpful class again the *larger* —
+so the form's failure is not a bad threshold on a good statistic. It is the same statistic, reweighted toward the
+harmful tail.
+
+### 318.4 What outlives the form: at `rho = 1` a false positive is a deletion
+
+The purity above would be survivable if a wrong charge cost one rank position. It does not:
+
+| arm | truth absent from the ranked list | of those, correct at rank 1 in the control |
+| --- | ---: | ---: |
+| control | 173 | 0 |
+| `θ = 2`, `absolute` | 185 | 9 |
+| `θ = 10`, `absolute` | 176 | 2 |
+| `θ = 2`, `inbound` | 190 | 16 |
+| `θ = 5`, `inbound` | 184 | 12 |
+
+The 173 is the structural floor — cases `poolAdmission = positive` already excludes, present in the control and in
+every arm, and unchanged by this axis. What the arms add is the column beside it. `ts-preserve-service` is
+`1 → 99` in `ts0-ts-preserve-service-response-replace-body-644lf4`: it is the truth, it is charged through its own
+out-edge, its anomaly is reduced to a non-positive score, and the pool filter drops it. No other term can undo that,
+because there is no score left to reorder.
+
+Two consequences, and the second is not about this axis:
+
+1. **The family closes at five.** Weight (`§316`'s weight/gate/scope/closure quadruple), precedence, and now the
+   edge-explained predicate in two forms. Each was refused by a different measurement, and the last two say the
+   remaining gap is not a parameter: the statistic the corpus carries does not distinguish a source from a symptom,
+   in either of the two units available.
+2. **The deletion channel is live wherever the deduction runs.** `rho = 1` is the shipped value on both corpora, and
+   on RCAEval the deduction is worth +10 net (`docs/topo-share.md` §8–9) — so the cliff is not a defect in itself.
+   But any future arm that *widens* admission is measured against a cost function with a cliff in it, and 0.6 %
+   impurity is enough to lose 19 cases when each false positive can remove an answer rather than demote it.
+
+### 318.5 What a next arm would have to change
+
+Not the threshold, and not the divisor. The two facts this iteration adds are constraints on any successor:
+
+- **the statistic has to be one that separates the classes**, and neither `post/pre` nor `post/pre ÷ inbound` does.
+  The remaining candidate in this corpus is the *shape* of the rise — whether the edge's post-distribution moved as a
+  step at the injection boundary or as a ramp — because a fault's own calls step and a network's ambient does not.
+- **admission must not be a deletion.** A charge that can push a candidate out of the pool makes every false positive
+  cost a whole answer. A successor that subtracts a bounded share, or that re-orders instead of zeroing, would be
+  measured against a different cost function — and `rho < 1` on the current form is the cheapest version of that
+  experiment, which `§318.4`'s table now prices.
+
+### Axes this closes
+
+| Axis | Verdict |
+| --- | --- |
+| "Dividing by the caller's own inbound rise is the same fact in the case's units" | **closed as false, and worse than the null** — 26× less pure at `θ = 10`, and 16 correct answers deleted at `θ = 2` |
+| "The observer class is repaired by an edge predicate" | **closed at 6 / 3 / 0** of a pre-registered 12, by all four arms |
+| "The edge channel can stand in for the missing response channel" | **closed as measured uninformative** — both available statistics rank the harmful and helpful populations in the same order, and the helpful one higher |
+| "The remaining gap on RCABench is a parameter of the deduction" | **closed** — five forms, five refusals, four distinct causes |
