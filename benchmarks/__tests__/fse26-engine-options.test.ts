@@ -21,6 +21,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_FIRST,
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
@@ -64,6 +65,9 @@ describe('buildFse26EngineOptions', () => {
       // Read from BASE, which is `parseFSE26Args([])` — so this is the SHIPPED default and not a literal a
       // future flip would have to remember to edit twice.
       failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
+      // The partition's switch, at its shipped `false`. Asserted because it ships OFF: a dropped forwarding would
+      // make `--failed-edge-first` a silent no-op whose only symptom is an arm that reads like its control.
+      failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
       latWeight: DEFAULT_LAT_WEIGHT,

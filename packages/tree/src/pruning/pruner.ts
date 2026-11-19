@@ -88,6 +88,7 @@ import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { applyContainmentOrder, latencyExcursions } from './containment-order.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
+import { orderFailedEdgeFirst } from './failed-edge-order.js';
 import {
   DEFAULT_FAILURE_ATTRIBUTION,
   applyFailureContainment,
@@ -1206,6 +1207,25 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the READING, never the measurement, which is why the graph carries both kinds either way.
    */
   readonly failureAttribution: FailureAttribution;
+  /**
+   * Whether the failed-edge ledger's candidate set is ranked AHEAD of everything else — a partition of the order,
+   * not a term in the score.
+   *
+   * The ledger charges every failed call to its CALLEE, and on the 421 value-replacement datapacks of
+   * `docs/fse26-entry-point.md` that set is **1 372 of 20 632 candidates (6.6 %)** and contains the truth in
+   * **418 of 421 cases (99.3 %)** — median three members of a forty-nine-node graph. The engine reads the same map
+   * through {@link failedEdgeWeight}'s gate, which may substitute the champion when the champion itself qualifies;
+   * that form decides about the answer the ranking already chose and cannot change the question, and on this
+   * corpus the gate refuses almost every case.
+   *
+   * The partition changes the question: "which of the candidates an inbound call failed against" instead of
+   * "which of forty-nine nodes". It deletes nothing — a truth the ledger missed is displaced by the candidates it
+   * named, never removed — and it invents no magnitude, because it compares membership rather than credit.
+   *
+   * Ships at {@link DEFAULT_FAILED_EDGE_FIRST} = `false`: the switch exists so the arm is measurable on one
+   * commit, and `docs/failed-edge-jurisdiction.md` carries the corpus-wide reading that decides the default.
+   */
+  readonly failedEdgeFirst: boolean;
 }
 
 /**
@@ -1650,6 +1670,16 @@ const NO_FAILED_INTERFACES: ReadonlyMap<string, unknown> = new Map();
  * dispatchable as the ablation, which is what the +68 is measured against.
  */
 export const DEFAULT_FAILURE_CONTAINMENT = true;
+
+/**
+ * The shipped {@link TreePrunerOptions.failedEdgeFirst}.
+ *
+ * `false`, and the reason is the rule this project applies to every switch: a pass that reorders the answer for
+ * every case is enrolled on a corpus reading with no family regression, not on a mechanism. The switch ships off
+ * so the arm and the control run on the SAME commit — the pattern `topoDiscountScope` and `poolAdmission`
+ * established, and the reason a comparison never has to trust that two commits rank identically.
+ */
+export const DEFAULT_FAILED_EDGE_FIRST = false;
 
 // Re-exported beside the option that consumes it, for the same reason as the gate vocabulary below: the runners
 // import this module directly rather than the barrel, and a vocabulary a CLI cannot import is a vocabulary no flag
@@ -2549,6 +2579,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
   failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+  failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
 };
 
 /**
@@ -4287,7 +4318,7 @@ function performTreeRCA(
   // it overturned carried NO emission reading. So the term reorders the stratum it MEASURED and leaves every
   // other position where the base ranking put it. With `emissionScores` undefined — the shipped configuration —
   // this is the plain score sort, unchanged to the last comparison.
-  const rankedNodes =
+  const baseRankedNodes =
     emissionScores === undefined
       ? [...scoredNodes].sort(byFinalScore)
       : orderWithEmissionJurisdiction(
@@ -4309,6 +4340,18 @@ function performTreeRCA(
             };
           }),
         ).map((row) => row.node);
+
+  // The failed-edge ledger's JURISDICTION, applied to the order the terms produced. The partition is coarser than
+  // any weight and is therefore applied LAST: a candidate an inbound call FAILED against precedes one it did not,
+  // and inside each half the score order above survives untouched. With the switch off — the shipped
+  // configuration — the array is the one the line above built, unchanged to the last comparison.
+  //
+  // The map is read here rather than through the term's own lookup because the two answer different questions:
+  // the term asks "how much credit", this asks "credited at all", and the first is gated by a weight the second
+  // must not inherit.
+  const rankedNodes = options.failedEdgeFirst
+    ? orderFailedEdgeFirst(baseRankedNodes, failedEdgeScores)
+    : baseRankedNodes;
 
   // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];

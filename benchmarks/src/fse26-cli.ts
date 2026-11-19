@@ -65,6 +65,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_FIRST,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
@@ -661,6 +662,16 @@ export interface Fse26CliOptions {
    */
   readonly failureAttribution: FailureAttribution;
   /**
+   * Rank the failed-edge ledger's candidate set AHEAD of everything else — a partition of the order rather than a
+   * term in the score. Travels in the packed `ranking_knobs` block as `failed_edge_first=1|0`.
+   *
+   * The ledger contains the truth in 418 of 421 value-replacement datapacks while naming 6.6 % of candidates, and
+   * the shipped gate can only substitute a champion rather than change the question. Ships at
+   * `DEFAULT_FAILED_EDGE_FIRST` = false so the arm and its control run on ONE commit; the corpus reading that
+   * decides the default is `docs/failed-edge-jurisdiction.md`.
+   */
+  readonly failedEdgeFirst: boolean;
+  /**
    * Which bar decides whether the failed-call direction term may speak at all.
    *
    * Ships at `DEFAULT_FAILED_EDGE_GATE_MODE` = `absolute`, the constant every published cell ran. The FSE'26
@@ -958,6 +969,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+    failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
     failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
@@ -1272,6 +1284,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--no-containment-order') opts.containmentOrder = false;
     else if (arg === '--failure-containment') opts.failureContainment = true;
     else if (arg === '--no-failure-containment') opts.failureContainment = false;
+    else if (arg === '--failed-edge-first') opts.failedEdgeFirst = true;
+    else if (arg === '--no-failed-edge-first') opts.failedEdgeFirst = false;
     else if (arg === '--failure-attribution' && hasValue(argv, i + 1)) {
       // A closed vocabulary, and an unknown value falls back to the SHIPPED one on the rule every option here
       // follows: a typo reproduces a published configuration rather than inventing a third reading.

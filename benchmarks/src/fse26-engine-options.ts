@@ -174,6 +174,12 @@ export interface Fse26SignalOptions {
   readonly failureContainment: boolean;
   /** Which reading that pass applies. See `Fse26CliOptions.failureAttribution`. */
   readonly failureAttribution: FailureAttribution;
+  /**
+   * Whether the failed-edge ledger's candidate set is ranked ahead of everything else. Required for the reason
+   * every field here is — a PARTIAL would make the flag a silent no-op, and this one is a reordering pass that
+   * ships OFF, so the failure mode is "the arm ran the control while the `Config:` line reported the arm".
+   */
+  readonly failedEdgeFirst: boolean;
   /** Which bar lets the failed-call direction term speak. See `Fse26CliOptions.failedEdgeGateMode`. */
   readonly failedEdgeGateMode: FailedEdgeGateMode;
   readonly topoWeight: number;
@@ -313,6 +319,7 @@ export function buildFse26EngineOptions(
       containmentMargin: opts.containmentMargin,
       failureContainment: opts.failureContainment,
       failureAttribution: opts.failureAttribution,
+      failedEdgeFirst: opts.failedEdgeFirst,
       failedEdgeGateMode: opts.failedEdgeGateMode,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,

@@ -188,6 +188,7 @@ export function buildFse26RunConfig(
     containmentMargin: opts.containmentMargin,
     failureContainment: opts.failureContainment,
     failureAttribution: opts.failureAttribution,
+    failedEdgeFirst: opts.failedEdgeFirst,
     failedEdgeGateMode: opts.failedEdgeGateMode,
     topoWeight: opts.topoWeight,
     topoDiscount: opts.topoDiscount,

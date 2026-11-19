@@ -32,6 +32,9 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
     'an FSE-26-only ranking weight: the RCAEval corpora carry no pod-lifecycle channel, so the ' +
     'golden runner has nothing to pass it to and a line that printed it would name a knob this half ' +
     'cannot turn',
+  failedEdgeFirst:
+    'an FSE-26-only partition: the RCAEval cells carry no per-call failure column, so the ledger it reads is ' +
+    'never built on that half and a line that printed it would name a knob this half cannot turn',
 };
 
 /**
@@ -113,4 +116,10 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
   // probe reads one case at a time.
   topoEdgeRise:
     'no row of the battery varies the admission threshold, and its shipped `null` is the absence of the axis rather than a value of it, so no row can reach a state this field describes',
+  // Iteration 312: the failed-edge partition. Exempt because the battery has no row for it and the battery is not
+  // the surface it was measured on — the FSE'26 archive is, where the ledger's candidate set covers 99.3 % of
+  // truths. A row that flipped the switch on the RCAEval cells would measure whether those corpora carry failed
+  // calls at all, which is a statement about the corpus wearing the label of a statement about the pass.
+  failedEdgeFirst:
+    'the battery has no row for the partition and its cells are not the surface it was measured on, so no row can reach the state this field describes',
 };

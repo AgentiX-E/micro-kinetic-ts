@@ -189,6 +189,8 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export { orderWithEmissionJurisdiction } from './pruning/emission-jurisdiction.js';
 export type { EmissionJurisdictionRow } from './pruning/emission-jurisdiction.js';
 
+export { orderFailedEdgeFirst } from './pruning/failed-edge-order.js';
+
 export {
   applyContainmentOrder,
   inspectContainmentOrder,
@@ -228,6 +230,7 @@ export {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_EMISSION_WEIGHT,
+  DEFAULT_FAILED_EDGE_FIRST,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_MARGIN_SHARE,

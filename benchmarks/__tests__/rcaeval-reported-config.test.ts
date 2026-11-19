@@ -512,6 +512,9 @@ describe('the RCAEval configuration line carries the configuration that produced
     // false the moment a construction site did.
     expect(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS).sort()).toEqual([
       'dropMetrics',
+      // Iteration 312: the failed-edge partition, unreachable on this half for the same structural reason
+      // `podStateWeight` is — the cells carry no per-call failure column, so the ledger it reads is never built.
+      'failedEdgeFirst',
       'failedEdgeMinRecords',
       'failedEdgeMode',
       'metricFleetBaseline',

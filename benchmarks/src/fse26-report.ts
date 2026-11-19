@@ -256,6 +256,13 @@ export interface FSE26RunConfig {
   readonly containmentMargin?: number;
   /** The failure-flow order's switch, rendered for the same reason the containment order's is. */
   readonly failureContainment?: boolean;
+  /**
+   * Whether the failed-edge ledger's candidate set was ranked ahead of everything else.
+   *
+   * Rendered only when it is ON, because the switch ships OFF: the failure the unconditional renderings guard
+   * against is an ON run that reads as the shipped one, and here the ON value is the one that must be visible.
+   */
+  readonly failedEdgeFirst?: boolean;
   /** Which reading of the failure flow that pass applied. */
   readonly failureAttribution?: FailureAttribution;
   /**
@@ -514,6 +521,7 @@ export const REPORTED_CONFIG_FIELDS = [
   // the shared list — and the field that closes the silent no-op is this one, since it is what tells the two
   // runs of 1 141 and 1 156 apart.
   'containmentExcursions',
+  'failedEdgeFirst',
   'selfTimeWeight',
   'selfTimeScope',
   'victimWeight',
@@ -696,6 +704,7 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // field said the run was the shipped one.
   line += ` containmentExcursions=${config.containmentExcursions}`;
   line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
+  if (config.failedEdgeFirst === true) line += ' failedEdgeFirst=true';
   if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
     line += ` failureAttribution=${config.failureAttribution}`;
   }
