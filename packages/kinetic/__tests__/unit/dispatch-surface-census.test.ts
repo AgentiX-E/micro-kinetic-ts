@@ -39,6 +39,7 @@
  * @module __tests__/unit/dispatch-surface-census
  */
 
+import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2248,6 +2249,65 @@ describe('the dispatch surface has one owner per knob', () => {
         (knob.fse26 !== null && !(knob.fse26 in SHARED_INPUTS)),
     );
     expect(walked.length).toBeGreaterThan(10);
+  });
+
+  it('parses every packed block as SHELL, so a missing `;;` cannot reach a dispatch', () => {
+    // Measured, in iteration 309, on a real dispatch: a key was added to the `anomaly_knobs` block and its
+    // `case` arm was inserted between the neighbour's `esac` and that neighbour's `;;`. The seven copies all
+    // FAILED the same way and every assertion above passed, because they ask whether a flag's TEXT appears in
+    // the file — and it did. The run died in `bash` with `syntax error near unexpected token ')'` at the
+    // generated script's line 120, i.e. in the `case` statement of a step that had already passed
+    // `reaches()`: the worst shape of failure available, one level below the one the copy census closed.
+    //
+    // So the unit of this claim is the SHELL, not the text. `bash -n` parses without executing, so a fragment
+    // needs nothing but the loop header to be a complete program, and no array the body appends to has to
+    // exist for the parse to succeed.
+    // Two loop SHAPES, because the two workflows read their blocks differently: the golden half splits the
+    // string with `tr` inside the loop header, and the FSE'26 half reads it into an array first. A single
+    // extraction would have found one of them and reported the other as clean.
+    const spans = (yml: string, header: string, terminator: RegExp): string[] => {
+      const found: string[] = [];
+      let at = yml.indexOf(header);
+      while (at !== -1) {
+        const end = yml.slice(at).search(terminator);
+        if (end === -1) throw new Error(`unterminated loop at byte ${at}`);
+        found.push(yml.slice(at, at + end));
+        at = yml.indexOf(header, at + header.length);
+      }
+      return found;
+    };
+    const shapes = [
+      {
+        file: RCAEVAL_WORKFLOW,
+        input: 'anomaly_knobs',
+        header: `for kv in $(echo "\${{ inputs.anomaly_knobs }}" | tr ',' ' ')`,
+        terminator: /\n\s{10}done\b/,
+      },
+      {
+        file: FSE26_WORKFLOW,
+        input: 'ranking_knobs',
+        header: 'for pair in "${KNOB_PAIRS[@]}"; do',
+        terminator: /\n\s{12}done\b/,
+      },
+    ] as const;
+    const checked: string[] = [];
+    for (const shape of shapes) {
+      const yml = readFileSync(shape.file, 'utf8');
+      const copies = spans(yml, shape.header, shape.terminator);
+      expect(copies.length, `${shape.input} has no copies to check`).toBeGreaterThanOrEqual(1);
+      for (const [index, span] of copies.entries()) {
+        const parsed = spawnSync('bash', ['-n'], { input: `${span}\ndone\n`, encoding: 'utf8' });
+        expect(
+          parsed.stderr,
+          `${shape.input} copy ${index + 1} of ${shape.file.split('/').pop()} is not valid shell`,
+        ).toBe('');
+        expect(parsed.status, `${shape.input} copy ${index + 1} did not parse`).toBe(0);
+        checked.push(`${shape.file.split('/').pop()}:${shape.input}#${index + 1}`);
+      }
+    }
+    // Non-vacuity on the POPULATION: the seven golden copies plus the one FSE'26 block are what this test
+    // exists for, and an extraction that found none would satisfy every assertion above while parsing nothing.
+    expect(checked.length).toBeGreaterThanOrEqual(2);
   });
 
   it('never lets a step PIN a flag that an array it expands also sets', () => {

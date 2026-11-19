@@ -399,6 +399,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -715,6 +716,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -1045,6 +1047,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -1359,6 +1362,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -1696,6 +1700,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -2002,6 +2007,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
@@ -2309,6 +2315,7 @@ jobs:
                   max|sum) RANKING_ARG+=(--topo-closure "${kv#topoclosure=}") ;;
                   *) echo "::error::anomaly_knobs: topoclosure takes max or sum, got '${kv#topoclosure=}'"; exit 1 ;;
                 esac
+                ;;
               # The deduction's ADMISSION threshold on the EDGE reading. Reachable here for one reason: an arm has
               # to be held at the same configuration on both halves of one suite, and this half is where its
               # inertness is DEMONSTRATED — RCAEval records no span durations, so the array is absent on all 735
