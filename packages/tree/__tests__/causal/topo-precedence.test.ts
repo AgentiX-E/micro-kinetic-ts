@@ -88,6 +88,7 @@ const deduct = (
     options.gate ?? 0,
     options.closure ?? 'max',
     precedence,
+    null,
   );
 
 describe('the boundary a call cannot carry backwards', () => {
@@ -210,6 +211,7 @@ describe('the boundary a call cannot carry backwards', () => {
         0,
         'max',
         'earliest' as unknown as TopoPrecedence,
+        null,
       ),
     ).toThrow(/topoPrecedence/);
   });

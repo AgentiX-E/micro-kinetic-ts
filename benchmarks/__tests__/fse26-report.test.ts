@@ -26,6 +26,7 @@ import {
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRANSIENT_GUARD_TEST,
 } from '../../packages/tree/src/index.js';
@@ -111,6 +112,9 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // under a zero weight on the LINE and its presence here is what makes `missingReportedConfigFields` an
     // answer about the line rather than about the object.
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    // The deduction's ADMISSION threshold, at the shipped `null`: this fixture stays the published
+    // configuration, and the field is present so `missingReportedConfigFields` answers about the line.
+    topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
     // The set the ranking covers. Present for the same reason: it prints unconditionally, so the object and
     // the line agree about it and `missingReportedConfigFields` is an answer about the line.
     poolAdmission: DEFAULT_POOL_ADMISSION,
@@ -221,6 +225,10 @@ describe('FSE26 report — attribution', () => {
       // …and the closure is the fourth: an artifact that carried a `sum` deduction could not be read back
       // without it, because the aggregation is invisible on a tree and decisive on a fan-out.
       'topoClosure',
+      // …and the sixth: the ADMISSION threshold, which is `null` on every published run and must still be
+      // read back, because a run that set it moved an operator the artifact would otherwise describe as
+      // inert. It postdates these artifacts like the four above.
+      'topoEdgeRise',
       // The fifth postdating field is not a member of that family at all: `poolAdmission` is the SET the
       // ranking covers, so an artifact that admitted the whole graph cannot be read back into a run whose
       // ranking was a subset — the two have different denominators, and `pool` alone cannot say which.
@@ -666,6 +674,37 @@ describe('summariseFailedEdgeCoverage', () => {
     expect(formatFSE26ConfigLine(legacy as Parameters<typeof formatFSE26ConfigLine>[0])).toContain(
       `topoDiscountGate=${DEFAULT_TOPO_DISCOUNT_GATE}`,
     );
+  });
+
+  it('renders the edge-rise axis with the quantity it is measured against', () => {
+    // The axis gained a SECOND half in iteration 308: `2` compares an edge's rise to a constant and
+    // `2:inbound` compares it to the caller's own inbound rise — the same threshold, a different rule, and
+    // different units. The renderer tested `typeof … === 'number'`, so an inbound arm would have printed
+    // NOTHING, on the one field whose absence is a rule: the line would have reported the absence of an axis
+    // that was set. Two dispatches, one artifact, byte-identical.
+    //
+    // Nested under the weight it belongs to, like the gate and the closure above it: a threshold combined
+    // with a zero deduction is not a configuration the engine can distinguish, because the map is never built.
+    const absolute: Partial<FSE26RunConfig> = {
+      topoDiscount: 0.5,
+      topoEdgeRise: { threshold: 2, against: 'absolute' },
+    };
+    const inbound: Partial<FSE26RunConfig> = {
+      topoDiscount: 0.5,
+      topoEdgeRise: { threshold: 2, against: 'inbound' },
+    };
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('topoEdgeRise');
+    expect(formatFSE26ConfigLine(makeConfig(absolute))).toContain('topoEdgeRise=2');
+    expect(formatFSE26ConfigLine(makeConfig(inbound))).toContain('topoEdgeRise=2:inbound');
+    // …and the two renderings DIFFER, which is what the record keeping the pair rather than the number buys:
+    // the configurations differ by a divisor, so an artifact that collapsed them could not attribute either.
+    expect(formatFSE26ConfigLine(makeConfig(absolute))).not.toEqual(
+      formatFSE26ConfigLine(makeConfig(inbound)),
+    );
+    // The `absolute` suffix is OMITTED rather than printed — it is the axis's first form, every artifact that
+    // carries one was taken with it, and a line that grew a suffix would break the round trip through
+    // `parseTopoEdgeRise` that the configuration line is supposed to have.
+    expect(formatFSE26ConfigLine(makeConfig(absolute))).not.toContain(':absolute');
   });
 
   it('prints the four guard poles, including the one whose shipped value is the silent pole', () => {

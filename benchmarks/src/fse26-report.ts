@@ -38,6 +38,7 @@ import type {
   StabilityScope,
   TopoClosure,
   TopoDiscountScope,
+  TopoEdgeRise,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
@@ -51,6 +52,8 @@ import {
   DEFAULT_STABILITY_SCOPE,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
+  DEFAULT_TOPO_EDGE_RISE,
+  formatTopoEdgeRise,
 } from '../../packages/tree/src/index.js';
 
 /**
@@ -287,6 +290,25 @@ export interface FSE26RunConfig {
    */
   readonly topoClosure?: TopoClosure;
   /**
+   * The smallest out-edge latency rise at which an edge stood in for a response channel, and the quantity
+   * it was measured AGAINST, or `null` for the shipped reading that consults no edge — see `TopoEdgeRise`.
+   *
+   * Optional for the reason the closure records: an artifact published before the field existed must
+   * still parse. Rendered only when a threshold is set, because `null` is the operator AS IT SHIPS and a
+   * line that printed it would alter the configuration of every published run retroactively — the one
+   * direction in which "print the default" is wrong, since here the default is the absence of a knob
+   * rather than a value of it.
+   *
+   * **Both halves of the pair are in the field, not just the threshold.** `2` and `2:inbound` are the same
+   * number and different rules — one compares an edge's rise to a constant, the other to the caller's own
+   * inbound measurement — so a record that kept only `threshold` would render two configurations that
+   * differ by a divisor as one line, which is the `topoClosure` defect (a value that reached the engine and
+   * not the record) on the axis where the two readings are not even the same units. Rendered through
+   * `formatTopoEdgeRise`, the same function the CLI parses with, so the spelling cannot drift between the
+   * flag and the line that attributes it.
+   */
+  readonly topoEdgeRise?: TopoEdgeRise | null;
+  /**
    * Which SET of nodes the ranking covered — see `PoolAdmission`.
    *
    * Optional for the reason the gate and the closure record: a run published before the field existed must
@@ -506,6 +528,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'topoDiscountScope',
   'topoDiscountGate',
   'topoClosure',
+  'topoEdgeRise',
   'poolAdmission',
   'transientGuardTest',
 ] as const;
@@ -702,6 +725,19 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // even at the shipped `max`, because an omitted-when-default value would render the `sum` arm and the
     // shipped run identically on the artifact whose whole job is to attribute the difference between them.
     line += ` topoClosure=${config.topoClosure ?? DEFAULT_TOPO_CLOSURE}`;
+    // The threshold that lets an EDGE stand in for a response channel, printed only when one was set —
+    // unlike the three knobs above, whose shipped values are VALUES of their axis. `null` here is the
+    // absence of the axis, so printing it would rewrite the configuration line of every published run;
+    // printing it when set is what makes an arm's artifact able to attribute its own number.
+    //
+    // `formatTopoEdgeRise` and not a template, because the axis now has TWO members: `2` and `2:inbound`
+    // agree on the threshold and disagree on what it is compared to, so a line built from the number alone
+    // would attribute an inbound arm's number to the absolute reading and the two dispatches would be
+    // byte-identical on the one artifact whose job is to tell them apart.
+    const edgeRise = formatTopoEdgeRise(config.topoEdgeRise ?? DEFAULT_TOPO_EDGE_RISE);
+    if (edgeRise !== '') {
+      line += ` topoEdgeRise=${edgeRise}`;
+    }
   }
   // OUTSIDE the deduction block, because the pool is not a property of the deduction: the filter applies at
   // every weight, and a line that printed it only when the deduction ran would make a `graph` run at weight 0

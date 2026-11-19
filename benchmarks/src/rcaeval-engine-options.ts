@@ -52,6 +52,7 @@ import type {
   StabilityScope,
   TopoClosure,
   TopoDiscountScope,
+  TopoEdgeRise,
   TopoPrecedence,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
@@ -59,6 +60,7 @@ import {
   DEFAULT_CONTAINMENT_ORDER,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
+  formatTopoEdgeRise,
 } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
@@ -173,6 +175,8 @@ export interface RCAEvalSignalOptions {
   readonly topoClosure: TopoClosure;
   /** Whether a call boundary may carry a movement backwards in time — see `TopoPrecedence`. */
   readonly topoPrecedence: TopoPrecedence;
+  /** The smallest out-edge rise at which an edge stands in for a response channel — see `TopoEdgeRise`. */
+  readonly topoEdgeRise: TopoEdgeRise | null;
   /** Which SET of nodes the ranking may answer with — see `PoolAdmission`. */
   readonly poolAdmission: PoolAdmission;
   readonly logWeight: number;
@@ -356,6 +360,7 @@ export function buildRCAEvalEngineOptions(
       topoDiscountGate: opts.topoDiscountGate,
       topoClosure: opts.topoClosure,
       topoPrecedence: opts.topoPrecedence,
+      topoEdgeRise: opts.topoEdgeRise,
       poolAdmission: opts.poolAdmission,
       logWeight: opts.logWeight,
       logSignalMode: opts.logSignalMode,
@@ -408,6 +413,10 @@ export function buildRCAEvalEngineOptions(
  * @returns The line the banner prints and the dump stores verbatim.
  */
 export function formatSignalLine(opts: CliOptions): string {
+  // The one field on this line whose rendering is not a template: the axis carries a second half
+  // (`absolute` / `inbound`) and only the shared formatter knows its spelling. Computed once and hoisted, so
+  // the line cannot render two spellings of one option and the parse/format pair stays the only definition.
+  const edgeRise = formatTopoEdgeRise(opts.topoEdgeRise);
   return (
     `signals: stabilityWeight=${opts.stabilityWeight} faultFreeWeight=${opts.faultFreeWeight} faultFreeSelection=${opts.faultFreeSelection} collisionWeight=${opts.collisionWeight} ` +
     `topoWeight=${opts.topoWeight} topoDiscount=${opts.topoDiscount} topoDiscountScope=${opts.topoDiscountScope} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} logNormalisation=${opts.logNormalisation} ` +
@@ -492,6 +501,18 @@ export function formatSignalLine(opts: CliOptions): string {
     // VALUE the published corpus ran under, so a line that omitted it on the default would render the `onset`
     // arm and the published run identically on the one artifact whose job is to say which guard was armed.
     ` topoPrecedence=${opts.topoPrecedence}` +
+    // The ONE field on this line that is CONDITIONAL, and the exception is the axis's own shape: every other
+    // field here ships at a VALUE of its axis, so omitting it on the default would render an arm and the
+    // published run identically. This one ships at the ABSENCE of its axis, so printing `topoEdgeRise=null`
+    // would rewrite the configuration line of every published run — while printing it when a threshold was
+    // set is what lets an arm's artifact say, on its own header, that the golden half ran with an operator it
+    // could not reach.
+    //
+    // Rendered through `formatTopoEdgeRise` because the axis carries a SECOND half: `2` and `2:inbound` share
+    // a threshold and differ in what it is divided by, so a line built from the number alone would attribute
+    // an inbound arm's number to the absolute reading, and the two dispatches would be byte-identical on the
+    // one artifact whose job is to tell them apart.
+    (edgeRise === '' ? '' : ` topoEdgeRise=${edgeRise}`) +
     // APPENDED on the same rule as every field above, and unconditional because 0 is the shipped weight: a
     // line that omitted it on the default would render the measured arm and the shipped run identically.
     ` emissionWeight=${opts.emissionWeight}` +

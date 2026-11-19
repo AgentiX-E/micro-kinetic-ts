@@ -67,7 +67,7 @@ function pair(
 
 /** The discounted anomaly of the fixture's caller, at the maximal weight and no gate. */
 const charged = (input: TopoDeductionInput, scope: TopoDiscountScope): number =>
-  deductExplainedAnomalies(input, 1, scope, 0, 'max', 'off').discounted.get('caller')!;
+  deductExplainedAnomalies(input, 1, scope, 0, 'max', 'off', null).discounted.get('caller')!;
 
 describe('isResponseChannel', () => {
   it('admits every channel a call boundary carries', () => {
@@ -251,7 +251,13 @@ describe('the deduction formula, fenced at the source', () => {
     //   `all`      — explainsThrough: always        deductibleOn: always
     //   `external` — explainsThrough: response only  deductibleOn: response only
     //   `caller`   — explainsThrough: always        deductibleOn: response only
-    expect(deduction).toMatch(/const explainsThrough = \(nodeId: ServiceId\): boolean =>/);
+    // The callee side takes the EDGE since iteration 308, because the third admission question is about a
+    // call rather than about a node: an edge predicate that read a per-node maximum would admit a callee on a
+    // rise measured on a different call (`topo-edge-admission.test.ts` holds the difference). The caller side
+    // still takes a node, because "is this reading partly somebody else's work" is a property of the node.
+    expect(deduction).toMatch(
+      /const explainsThrough = \(edge: CallEdge, index: number\): boolean =>/,
+    );
     expect(deduction).toMatch(/const deductibleOn = \(nodeId: ServiceId\): boolean =>/);
     // The matrix, pinned by which scope name appears in which predicate: `external` is the only scope that
     // restricts the CALLEE side, and `all` the only one that frees the CALLER side. A single predicate cannot
@@ -269,7 +275,7 @@ describe('the deduction formula, fenced at the source', () => {
     expect(deduction).toMatch(/isResponseChannel\(dominant\.label, input\.eventLabels\)/);
     // The callee side must be consulted where the explanation is FOLDED, and the caller side where the charge
     // is applied: a swapped pair would compile, pass every same-channel fixture, and only a corpus would see it.
-    expect(deduction).toMatch(/if \(!explainsThrough\(edge\.to\)\) continue;/);
+    expect(deduction).toMatch(/if \(!explainsThrough\(edge, i\)\) continue;/);
     expect(deduction).toMatch(/if \(!deductibleOn\(nodeId\)\) \{/);
   });
 });

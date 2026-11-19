@@ -2442,6 +2442,78 @@ export function computeEdgeLatencyByCallee(
 }
 
 /**
+ * The key one edge is looked up by, in both directions of the same physical relation.
+ *
+ * `\u0000` is not a legal character in a service id, so no pair can collide with another pair by
+ * concatenation — the defect a `from + '->' + to` key has on a fleet whose ids contain the separator.
+ *
+ * @param caller - The calling service.
+ * @param callee - The called service.
+ * @returns A string identifying the ordered pair.
+ * @internal
+ */
+function edgePairKey(caller: ServiceId, callee: ServiceId): string {
+  return `${caller}\u0000${callee}`;
+}
+
+/**
+ * Per-EDGE latency rise, raw, aligned with the call graph the engine ranks over.
+ *
+ * ## Why this is an aligned array and not a third map
+ *
+ * The two maps beside it answer questions about a NODE: how much a node's callers waited for it
+ * (`edgeLatencyByCallee`) and how much the case's worst caller waited (`maxInboundRise`). Both are
+ * maxima over one endpoint, so both discard the other — and the operator this field exists for
+ * needs the PAIR. "This caller waited on THIS callee, and that callee's response multiplied" is a
+ * statement about an edge, and a per-endpoint maximum cannot make it: it would admit a callee on
+ * a rise measured on an edge that does not exist.
+ *
+ * The array is indexed exactly as `callGraph.edges`, which is the array the topological deduction
+ * already walks, so a consumer reads `rises[i]` in the loop it was running rather than looking
+ * anything up. That alignment is the contract, and it is why the function takes the call graph as
+ * an argument instead of returning a map a caller could index wrongly.
+ *
+ * ## The two values that are not a number
+ *
+ * A row whose `preMeanMs` is zero yields `Infinity`, and such a row is DROPPED rather than stored:
+ * `Infinity >= θ` is true for every θ, so a single zero-baseline row would admit an edge no
+ * measurement supports. An edge the dump does not mention reads `NaN` rather than `0`, because a
+ * rise of zero is a measured decrease and an absent measurement is not one — the same distinction
+ * `maxInboundRise` draws one level up.
+ *
+ * Repeated rows for one pair keep the LARGEST rise, on `aggregateInboundLatency`'s rule: the dump
+ * can carry one row per observed window, and averaging a sustained rise against identical repeats
+ * would dilute the measurement that matters.
+ *
+ * @param edges - Per-edge latency records, or `undefined` when the case carried none.
+ * @param callEdges - The call graph's edges, which the returned array is indexed by.
+ * @returns One rise per call-graph edge (`NaN` where unmeasured), or `undefined` when the case
+ *   carried no per-edge measurement at all — the absence an operator reads as "this corpus cannot
+ *   answer the question".
+ */
+export function computeEdgeLatencyRises(
+  edges: ReadonlyArray<FaultEdgeLatency> | undefined,
+  callEdges: readonly CallEdge[],
+): Float64Array | undefined {
+  if (edges === undefined || edges.length === 0) return undefined;
+  const measured = new Map<string, number>();
+  for (const row of edges) {
+    const rise = row.postMeanMs / row.preMeanMs;
+    if (!Number.isFinite(rise)) continue;
+    const key = edgePairKey(row.caller, row.callee);
+    const previous = measured.get(key);
+    measured.set(key, previous === undefined ? rise : Math.max(previous, rise));
+  }
+  const rises = new Float64Array(callEdges.length).fill(Number.NaN);
+  for (let i = 0; i < callEdges.length; i++) {
+    const edge = callEdges[i]!;
+    const rise = measured.get(edgePairKey(edge.from, edge.to));
+    if (rise !== undefined) rises[i] = rise;
+  }
+  return rises;
+}
+
+/**
  * The case's own strongest inbound rise — the CHAMPION a fleet-relative gate is a share of.
  *
  * ## Why this is a function of the map rather than a second pass over the edges

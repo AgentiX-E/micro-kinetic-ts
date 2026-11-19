@@ -35,6 +35,31 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The reported fields an engine runner's line prints ONLY off their shipped value, with the reason.
+ *
+ * A second record rather than a sixth entry in the one above, because it answers a different question.
+ * "The engine runners cannot print this at all" and "the engine runners print this exactly when it is
+ * not the shipped reading" are two mechanisms, and collapsing them would let a field that IS printed
+ * take cover behind a record whose entries are never printed.
+ *
+ * ## Why the exception exists at all, when the golden half's rule is "print the shipped value"
+ *
+ * That rule protects against a real failure: a field that ships at a VALUE of its axis renders an arm
+ * and the published run identically when it is omitted, and `topoClosure` is the case that found it.
+ * An axis that ships at its own ABSENCE is the mirror case. `topoEdgeRise = null` is not a value of the
+ * threshold's range — it is the statement that no threshold exists — so a line that printed it would
+ * rewrite the header of every published artifact, invalidating configuration fingerprints and every
+ * document that quotes one, in exchange for saying "nothing here". Printing it when a threshold IS set
+ * gives the property the rule was for: an arm's artifact names its arm.
+ */
+export const UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT: Readonly<Record<string, string>> = {
+  topoEdgeRise:
+    'ships at `null`, which is the absence of the edge-admission axis rather than a value of it; the ' +
+    'golden runner prints it whenever a threshold is set, so an arm names itself and a shipped run ' +
+    'keeps the header every published fingerprint was taken over',
+};
+
+/**
  * The reported fields the ABLATION artifact may omit BEYOND {@link UNREPORTED_BY_ENGINE_RUNNERS}.
  *
  * The shared record's own docblock argues that one record is right because "both runners reach the engine
@@ -80,4 +105,12 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
   // describing a subset of the engine this study never selects.
   containmentExcursions:
     'the containment pass is not a battery flag and needs the same corpus profile, so no row reaches this state',
+  // Iteration 308: the deduction's FIFTH field, owed by the fourth's arrival rather than by its own. The entry
+  // above added the family one member at a time and this one had to be added to a list that already had three,
+  // which is the shape iteration 164's defect had: a record is edited when the LARGEST member changes and every
+  // smaller one is assumed to travel with it. No row of the battery varies the admission threshold, and the
+  // battery cannot even build the measurement it reads — the FSE'26 rows would need `traceEdgeLatency` and the
+  // probe reads one case at a time.
+  topoEdgeRise:
+    'no row of the battery varies the admission threshold, and its shipped `null` is the absence of the axis rather than a value of it, so no row can reach a state this field describes',
 };

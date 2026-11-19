@@ -99,6 +99,15 @@
  * case moved", and it is the only quantity that can be read on a case the deduction REMOVED from the
  * candidate pool, since such a node has no post-deduction score to report at all.
  *
+ * ## The channel, which is a NAME, and the edge, which is a MEASUREMENT
+ *
+ * Every form above decides admission by `isResponseChannel` — a vocabulary test on a metric label. It is
+ * the right test where the telemetry names responses, and it is unavailable where it does not: FSE'26's 87
+ * metric names are all `container.*` or `k8s.*`, so the predicate is false for every node of every case and
+ * the operator returns its input unchanged. {@link TopoEdgeRise} is the reading that survives that corpus —
+ * an out-edge whose span duration multiplied is a response that degraded, observed rather than named — and
+ * it relaxes both sides of admission because one measurement answers both questions.
+ *
  * @module causal/topo-deduction
  */
 
@@ -150,6 +159,15 @@ export interface TopoDeductionInput {
    * `__tests__/causal/event-family-admission.test.ts`.
    */
   readonly eventLabels?: ReadonlySet<string>;
+  /**
+   * Per-EDGE observed latency rise, raw, indexed exactly as `edges` — how much the caller of each
+   * edge waited for that callee, `NaN` where the case measured nothing for it.
+   *
+   * A property of the CASE rather than of the run, which is why it lives here and not beside the
+   * threshold that reads it: absent means the corpus cannot answer the question (every RCAEval case
+   * records no span durations), and a run cannot supply a measurement it was not given.
+   */
+  readonly edgeLatencyRises?: Float64Array;
 }
 
 /**
@@ -253,6 +271,151 @@ export function isTopoPrecedence(value: string): value is TopoPrecedence {
   return Object.prototype.hasOwnProperty.call(TOPO_PRECEDENCES, value);
 }
 
+/**
+ * The smallest observed out-edge rise at which an edge may stand in for a response channel — or
+ * `null`, which is the shipped reading and reads no edge at all.
+ *
+ * ## The gap this closes, and why it is an ADMISSION rule rather than a weight
+ *
+ * {@link TopoDiscountScope}'s `external` asks whether a node's dominant channel is a response
+ * channel, because a response is the only thing a call boundary transmits. On a corpus measured
+ * through `container.*` and `k8s.*` counters that predicate is false for every node of every case:
+ * the operator returns its input unchanged and every one of its four knobs (weight, gate, scope,
+ * closure) is a description of a quantity with no referent. Four refusals on two corpora turned out
+ * to have one cause — the channel does not exist in that telemetry.
+ *
+ * The channel itself does exist in the TRACE. `traceEdgeLatency` records, per edge, the mean span
+ * duration before and after the injection, measured by the caller; an edge whose duration
+ * multiplied is a response that degraded, observed directly. So the admission question becomes
+ * answerable without the metric vocabulary:
+ *
+ *     explainsThrough(v → c) ⇐ isResponseChannel(dominant(c))  OR  rise(v → c) ≥ θ
+ *     deductibleOn(v)        ⇐ isResponseChannel(dominant(v))  OR  max out-rise(v) ≥ θ
+ *
+ * ## Why BOTH sides, when the arm was first written with one
+ *
+ * The two sides are two questions — see the `external` scope's own note — but here they are
+ * answered by ONE measurement, and that is not a coincidence: `rise(v → c) ≥ θ` says the caller
+ * waited on that callee, which is at the same time evidence that the callee's deviation is
+ * transmissible (the callee side) and that the caller's own reading contains someone else's work
+ * (the caller side). Relaxing only the callee side would leave `deductibleOn` false for every node
+ * of a `container.*` corpus and the operator inert again — a predicate that cannot fire is not an
+ * arm, it is a spelling. The asymmetry `external` encodes is about CHANNELS; on the edge reading
+ * the channel has been replaced by a measurement, and the measurement has one direction.
+ *
+ * ## Why the caller side reads a MAXIMUM and the callee side reads the EDGE
+ *
+ * They ask different questions of the same array. The callee side asks "did THIS call degrade",
+ * and a maximum over the caller's out-edges would admit callee `c` on a rise measured on
+ * `v → c'`. The caller side asks "is this node's reading somebody else's work", and one degraded
+ * response is enough for that; the identity of the callee is not part of the question.
+ *
+ * ## Why it is a predicate and not a weight
+ *
+ * {@link TopoClosure}'s population law says what a new additive term costs: a ratio applied to a
+ * rank surface reads `rho·w·(n−1)/k`, linear in the fleet's size. A predicate reads no units — it
+ * decides WHETHER an existing charge may be applied, which `gate` already shows can be changed
+ * without changing the space.
+ *
+ * ## The shipped value, and what it is held to
+ *
+ * `null` means the predicate is not consulted, so both sides reduce to the channel test they had:
+ * `isResponseChannel` on the callee for `external`, and the scope's own matrix otherwise. That is
+ * the same standard `topoDiscountGate = 0` is held to — inert by construction, no branch that can
+ * be reached on a shipped run, and a corpus that carries no per-edge measurement
+ * ({@link TopoDeductionInput.edgeLatencyRises} absent, which is every RCAEval case) cannot reach it
+ * either.
+ */
+export interface TopoEdgeRise {
+  /** The smallest admitted rise, in units of `against`. */
+  readonly threshold: number;
+  /**
+   * What the threshold is measured AGAINST.
+   *
+   * - `absolute` divides by 1 and is the first form this axis was measured in: an edge is admitted when its
+   *   rise reaches `threshold`. On FSE'26 it is **refused** (`docs/closed-axes-register.md` §317): the corpus's
+   *   ambient rise varies by two orders of magnitude between cases, so a constant that admits the 199× edge
+   *   that IS the fault also admits the 3.9× edge that is the network multiplying everything. Measured over
+   *   the 37 cases the absolute arm moved, the charged node's out-rise was ~200× where the charge was right and
+   *   ~4× where it was wrong.
+   * - `inbound` divides by the CALLER's own inbound rise — the largest rise measured on the edges `u → v`.
+   *   The statement it encodes is the queueing split rather than a magnitude: a caller whose own response
+   *   slowed has its OWN work in the reading, so a dependent's degradation cannot account for it; a caller
+   *   whose response did not slow while its waiting did is a victim. On the same 37 cases the ratio separates
+   *   them — the correct charges median 3.69, the wrong ones 1.19, and 14 of the 19 wrong ones have no inbound
+   *   measurement at all, i.e. nothing was ever seen waiting on them.
+   *
+   *   `inbound` requires that measurement to EXIST: a node with no inbound edge has not been shown to be
+   *   anything, and an absent divisor is not a divisor of one.
+   */
+  readonly against: 'absolute' | 'inbound';
+}
+
+/** The reachable values of {@link TopoEdgeRise.against}. */
+export const TOPO_EDGE_RISE_AGAINST: Readonly<Record<TopoEdgeRise['against'], true>> = {
+  absolute: true,
+  inbound: true,
+};
+
+/** Whether a string names a {@link TopoEdgeRise.against}. */
+export function isTopoEdgeRiseAgainst(value: string): value is TopoEdgeRise['against'] {
+  return Object.prototype.hasOwnProperty.call(TOPO_EDGE_RISE_AGAINST, value);
+}
+
+/**
+ * Parse a dispatch's spelling of {@link TopoEdgeRise} — `2` or `2:inbound` — or answer `null`.
+ *
+ * ## Why this lives with the type rather than in the two parsers that call it
+ *
+ * The two benchmark CLIs each parse their own flags, and both need this axis: an arm has to be held at the same
+ * configuration on both halves of one suite, and a second implementation of the spelling would be free to
+ * disagree with the first about what `2:inbound` means — the defect this repository's census exists to find,
+ * one level below the flag table. The vocabulary belongs to the type, so the reader of the vocabulary lives
+ * beside it and the parsers keep only their own fallback rule.
+ *
+ * `null` answers "not a usable value", which both callers turn into the shipped reading. A threshold of zero or
+ * less is unusable on the same ground the invariant refuses it: it would admit edges that got FASTER.
+ *
+ * @param value - The argument text, as a dispatch or a shell would carry it.
+ * @returns The parsed axis, or `null` when the text names neither a positive threshold nor a known divisor.
+ */
+export function parseTopoEdgeRise(value: string): TopoEdgeRise | null {
+  const [thresholdText, against, ...rest] = value.split(':');
+  if (thresholdText === undefined || rest.length > 0) return null;
+  const threshold = Number(thresholdText);
+  if (!Number.isFinite(threshold) || threshold <= 0) return null;
+  if (against === undefined) return { threshold, against: 'absolute' };
+  if (!isTopoEdgeRiseAgainst(against)) return null;
+  return { threshold, against };
+}
+
+/**
+ * Render {@link TopoEdgeRise} the way {@link parseTopoEdgeRise} reads it, so a configuration line can be handed
+ * back to a dispatch unchanged.
+ *
+ * The `absolute` suffix is OMITTED rather than printed: it is the axis's first form, every artifact that carries
+ * one was taken with it, and a line that grew a suffix would break the round trip it is supposed to have.
+ *
+ * @param edgeRise - The axis, or `null` for the shipped reading.
+ * @returns The dispatch spelling; empty when the axis is absent.
+ */
+export function formatTopoEdgeRise(edgeRise: TopoEdgeRise | null): string {
+  if (edgeRise === null) return '';
+  return edgeRise.against === 'absolute'
+    ? String(edgeRise.threshold)
+    : `${edgeRise.threshold}:${edgeRise.against}`;
+}
+
+/**
+ * The shipped {@link TopoEdgeRise}: no edge rise, so the channel predicate decides alone.
+ *
+ * Kept as a named constant rather than as a literal in the option table because the census that
+ * reads {@link DEFAULT_TREE_PRUNER_OPTIONS} requires every default to be declared by name — a
+ * literal and a constant are two answers to one question, and only a census over both sites can
+ * see them disagree.
+ */
+export const DEFAULT_TOPO_EDGE_RISE: TopoEdgeRise | null = null;
+
 /** Fold one callee's contribution into a caller's explanation by taking the largest. @internal */
 function keepLargest(into: Map<ServiceId, number>, from: ServiceId, value: number): void {
   const current = into.get(from);
@@ -327,10 +490,16 @@ export interface TopoDeductionAudit {
  * @param precedence - Whether a call boundary may carry a movement backwards in time — see
  *   {@link TopoPrecedence}. Required on the same rule as the three arguments above: it changes which edges the
  *   explanation is built from, and a caller that omitted it would be running a configuration nobody declared.
+ * @param edgeRise - The smallest observed out-edge rise at which an edge may stand in for a response channel,
+ *   or `null` for the shipped reading that consults no edge — see {@link TopoEdgeRise}. Required on the same
+ *   rule as the four above, and here the omission would be particularly quiet: the operator would run its
+ *   channel predicate on a corpus where that predicate has no true instance, and report a deduction that never
+ *   fired as a deduction that found nothing to explain.
  * @returns The discounted map and the share it was discounted by, both in the SAME space as
  *   `input.anomalies`; the input is untouched.
- * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, or if the weight vector is not
- *   aligned with the edges, or if `closure` is not a reachable value.
+ * @throws RangeError if `rho` or `gate` is outside [0, 1] or not finite, if `edgeRise` is neither `null` nor a
+ *   positive finite number, if the weight vector is not aligned with the edges, or if `closure` or
+ *   `precedence` is not a reachable value.
  */
 export function deductExplainedAnomalies(
   input: TopoDeductionInput,
@@ -339,6 +508,7 @@ export function deductExplainedAnomalies(
   gate: number,
   closure: TopoClosure,
   precedence: TopoPrecedence,
+  edgeRise: TopoEdgeRise | null,
 ): TopoDeductionResult {
   // `invariantFinite` first: `invariantRange` cannot see NaN — `NaN < 0` and `NaN > 1` are both false,
   // so a NaN weight would pass a range check and poison every anomaly downstream.
@@ -370,6 +540,26 @@ export function deductExplainedAnomalies(
     input.propagationWeights.length === input.edges.length,
     `propagationWeights must match edges length (${input.propagationWeights.length} vs ${input.edges.length})`,
   );
+  // The edge rises are aligned by the same argument, and the failure they would otherwise hide is
+  // quieter than the weights': a short array reads `undefined` at the tail, which the admission test
+  // turns into "this edge did not rise" — an arm that silently stops admitting halfway through a graph
+  // and reports the same number as a corpus with no measurements.
+  invariant(
+    input.edgeLatencyRises === undefined || input.edgeLatencyRises.length === input.edges.length,
+    `edgeLatencyRises must match edges length (${String(input.edgeLatencyRises?.length)} vs ${input.edges.length})`,
+  );
+  // The threshold is checked for the reason the gate is, one level down: `NaN` would make every
+  // comparison false — the arm would report itself ON while admitting nothing — and a non-positive
+  // value would admit every edge the dump mentions, including the ones that got FASTER, which is the
+  // opposite of the physical statement. `null` is the shipped reading and bypasses both checks.
+  invariant(
+    edgeRise === null ||
+      (Number.isFinite(edgeRise.threshold) &&
+        edgeRise.threshold > 0 &&
+        isTopoEdgeRiseAgainst(edgeRise.against)),
+    `topoEdgeRise must be null or { threshold: a positive finite number, against: one of ` +
+      `${Object.keys(TOPO_EDGE_RISE_AGAINST).join('|')} }, got '${JSON.stringify(edgeRise)}'`,
+  );
 
   // ── The channel scope: TWO questions, and only one of them is about a call boundary ──────────────
   //
@@ -393,13 +583,87 @@ export function deductExplainedAnomalies(
     const dominant = input.dominantMetrics?.get(nodeId);
     return dominant !== undefined && isResponseChannel(dominant.label, input.eventLabels);
   };
-  const explainsThrough = (nodeId: ServiceId): boolean => {
-    if (scope === 'external') return isResponseChannelOf(nodeId);
+  // ── The EDGE reading: one measurement, both sides, one direction ───────────────────────────────
+  //
+  // The two channel predicates below were the whole of the admission question while the only evidence
+  // available was a metric family. On a corpus whose metrics are all `container.*`/`k8s.*` they are
+  // false everywhere, and the operator is then a description of a quantity with no referent rather
+  // than a misconfigured one — four knobs refused on two corpora, one cause.
+  //
+  // `edgeLatencyRises[i]` is that missing evidence, read in the direction nothing else reads it: how
+  // long the caller of edge `i` waited for that callee. The reading is the same statement the channel
+  // predicate encodes — a caller's response contains its callee's — measured instead of named, so it
+  // answers BOTH sides of the question at once. That is why the arm relaxes both and why relaxing
+  // only the callee side would have been inert on exactly the corpus it was built for.
+  //
+  // `NaN` is the "not measured" answer throughout: an edge the dump does not mention cannot satisfy a
+  // threshold, and `NaN >= θ` is false for every θ. Converted to a local rather than tested at each
+  // use, so the three reads below cannot disagree about what an absent measurement means.
+  const riseOf = (index: number): number => {
+    const value = input.edgeLatencyRises?.[index];
+    return value !== undefined && Number.isFinite(value) ? value : Number.NaN;
+  };
+  // The caller side's statistic: this node's largest out-edge rise, i.e. the worst it waited. Built
+  // only when the arm is on, so a shipped run does no work for a predicate it never consults — the
+  // same zero-cost rule `topoDiscountGate = 0` is held to. It is a MAXIMUM rather than a per-edge test
+  // because the question is "is this node's reading partly somebody else's work", which one degraded
+  // response settles and whose identity is not part of it.
+  const maxOutRise = new Map<ServiceId, number>();
+  // The inbound twin, built by the same walk and read only by the `inbound` divisor — one pass over one array,
+  // so the two sides of a node cannot be read from two differently-filtered populations.
+  const maxInRise = new Map<ServiceId, number>();
+  if (edgeRise !== null) {
+    for (let i = 0; i < input.edges.length; i++) {
+      const rise = riseOf(i);
+      if (Number.isNaN(rise)) continue;
+      keepLargest(maxOutRise, input.edges[i]!.from, rise);
+      keepLargest(maxInRise, input.edges[i]!.to, rise);
+    }
+  }
+  /**
+   * Whether a rise on an edge LEAVING `nodeId` clears the threshold, against the axis this run named.
+   *
+   * `absolute` divides by one, which is the first form of this axis; `inbound` divides by the caller's own
+   * inbound rise, which is the queueing split: a caller whose own response slowed has its own work in the
+   * reading and a dependent's degradation cannot account for it. The second form exists because the first was
+   * measured and refused (`docs/closed-axes-register.md` §317): on FSE'26 the ambient rise differs by two
+   * orders of magnitude between cases, so one constant admits both the edge that IS the fault and the one the
+   * network multiplied along with everything else.
+   *
+   * An absent inbound measurement returns FALSE rather than dividing by one. A node nothing was seen waiting
+   * on has not been shown to be a victim, and reading the absence as a unit baseline would charge it on the
+   * strength of a measurement the corpus does not contain — which is what 14 of the 19 wrong charges in the
+   * absolute arm's census were.
+   */
+  const admitted = (nodeId: ServiceId, rise: number): boolean => {
+    if (edgeRise === null) return false;
+    const against = edgeRise.against === 'inbound' ? maxInRise.get(nodeId) : 1;
+    if (against === undefined) return false;
+    return rise >= edgeRise.threshold * against;
+  };
+  /**
+   * Whether this node was SEEN waiting on a callee whose response multiplied.
+   *
+   * One predicate, both sides of the operator: the caller side reads it as "this node's own reading is partly
+   * somebody else's work", and the callee side reads the same array one edge at a time. `undefined` is not a
+   * measurement — an absent array and an absent entry both mean the case cannot answer, and a caller whose
+   * worst out-edge is unknown has not been seen waiting.
+   */
+  const waitedOn = (nodeId: ServiceId): boolean => {
+    const out = maxOutRise.get(nodeId);
+    return out !== undefined && admitted(nodeId, out);
+  };
+  // The EDGE, not the node: "did THIS call degrade" cannot be answered by a maximum over the caller's other
+  // calls, which is the one thing that separates this side from `waitedOn` one level down.
+  const explainsThrough = (edge: CallEdge, index: number): boolean => {
+    if (scope === 'external') {
+      return isResponseChannelOf(edge.to) || admitted(edge.from, riseOf(index));
+    }
     return true;
   };
   const deductibleOn = (nodeId: ServiceId): boolean => {
     if (scope === 'all') return true;
-    return isResponseChannelOf(nodeId);
+    return isResponseChannelOf(nodeId) || waitedOn(nodeId);
   };
   // ── The boundary's THIRD question: which way the movement travelled ────────────────────────────
   //
@@ -437,7 +701,7 @@ export function deductExplainedAnomalies(
   const explained = new Map<ServiceId, number>();
   for (let i = 0; i < input.edges.length; i++) {
     const edge = input.edges[i]!;
-    if (!explainsThrough(edge.to)) continue;
+    if (!explainsThrough(edge, i)) continue;
     const weight = input.propagationWeights[i]!;
     if (!(weight > 0)) continue;
     // A callee CAN be an edge endpoint and carry no anomaly at all — a node with no telemetry explains

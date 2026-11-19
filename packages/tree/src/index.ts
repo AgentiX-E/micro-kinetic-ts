@@ -151,16 +151,22 @@ export type {
 // and map the result back, and the two halves of that round trip are separable problems.
 export {
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TOPO_PRECEDENCE,
   TOPO_CLOSURES,
+  TOPO_EDGE_RISE_AGAINST,
   TOPO_PRECEDENCES,
   applyAnomalyNormalization,
   deductExplainedAnomalies,
+  formatTopoEdgeRise,
   isTopoClosure,
+  isTopoEdgeRiseAgainst,
   isTopoPrecedence,
+  parseTopoEdgeRise,
   type TopoClosure,
   type TopoDeductionInput,
   type TopoDeductionResult,
+  type TopoEdgeRise,
   type TopoPrecedence,
 } from './causal/topo-deduction.js';
 // `minMaxNormalizeScores` and `scoreRange` are public for the same reason `rankNormalizeScores` is:
@@ -312,6 +318,7 @@ export {
   computeDeepestExceptions,
   computeDispersionResiduals,
   computeEdgeLatencyByCallee,
+  computeEdgeLatencyRises,
   computeEdgeLatencyScores,
   computeEmissionScores,
   computeFailedEdgeLedger,

@@ -115,6 +115,7 @@ import type {
   SelfTimeScope,
   StabilityScope,
   TopoClosure,
+  TopoEdgeRise,
   TopoPrecedence,
 } from '../../packages/tree/src/index.js';
 import {
@@ -137,6 +138,7 @@ import {
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TOPO_PRECEDENCE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRANSIENT_GUARD_TEST,
@@ -149,6 +151,7 @@ import {
   isTopoClosure,
   isTopoPrecedence,
   isTransientGuardTest,
+  parseTopoEdgeRise,
   TRANSIENT_GUARD_TESTS,
   type TransientGuardTest,
 } from '../../packages/tree/src/index.js';
@@ -602,6 +605,18 @@ export interface CliOptions {
    */
   topoPrecedence: TopoPrecedence;
   /**
+   * The smallest OUT-EDGE latency rise at which an edge may stand in for a response channel (see
+   * `TopoEdgeRise`).
+   *
+   * Reachable on this half for one reason: an arm has to be held at the SAME configuration on both halves of
+   * one suite, and a flag the golden parser rejected would make "the golden cells did not move" a claim about
+   * a battery that could not have run there. It is provably inert here — RCAEval records no span durations, so
+   * `FaultPropagationGraph.edgeLatencyRises` is absent on all 735 cases and the predicate is unreachable —
+   * and the value is printed on the configuration line when set precisely so that inertness is a measurement
+   * on the artifact rather than an argument in a document.
+   */
+  topoEdgeRise: TopoEdgeRise | null;
+  /**
    * Which SET of nodes the ranking may answer with (see `PoolAdmission`).
    *
    * A field of its own rather than a hard-wired filter, because the filter is a decision: the ranking admits
@@ -933,6 +948,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     topoClosure: DEFAULT_TOPO_CLOSURE,
     topoPrecedence: DEFAULT_TOPO_PRECEDENCE,
+    topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
     poolAdmission: DEFAULT_POOL_ADMISSION,
     logWeight: DEFAULT_LOG_WEIGHT,
     // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
@@ -1179,6 +1195,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // unnameable guard must reproduce a published corpus rather than invent a third ordering rule.
       const precedence = args[++i]!;
       opts.topoPrecedence = isTopoPrecedence(precedence) ? precedence : DEFAULT_TOPO_PRECEDENCE;
+    } else if (args[i] === '--edge-explained' && hasValue(args, i + 1)) {
+      // Falls back to the SHIPPED reading on an unusable value, on the rule the three flags above follow —
+      // and the shipped reading here is `null`, because the axis is an absence rather than a value. A
+      // threshold of zero or less would admit edges that got FASTER, which is the opposite of the statement.
+      // The shared reader, so this half and the FSE'26 half cannot disagree about what `2:inbound` means.
+      opts.topoEdgeRise = parseTopoEdgeRise(args[++i]!) ?? DEFAULT_TOPO_EDGE_RISE;
     } else if (args[i] === '--pool-admission' && hasValue(args, i + 1)) {
       // Falls back to the SHIPPED admission on an unusable value, on the rule the scope and closure above
       // follow: a typo must reproduce a published corpus rather than widen the set a rank can index into.

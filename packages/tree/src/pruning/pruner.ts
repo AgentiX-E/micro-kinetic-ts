@@ -59,9 +59,15 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import type { TopoClosure, TopoDeductionAudit, TopoPrecedence } from '../causal/topo-deduction.js';
+import type {
+  TopoClosure,
+  TopoDeductionAudit,
+  TopoEdgeRise,
+  TopoPrecedence,
+} from '../causal/topo-deduction.js';
 import {
   DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TOPO_PRECEDENCE,
   applyAnomalyNormalization,
   deductExplainedAnomalies,
@@ -123,6 +129,7 @@ import {
   computeDeepestExceptions,
   computeDispersionResiduals,
   computeEdgeLatencyByCallee,
+  computeEdgeLatencyRises,
   computeEdgeLatencyScores,
   computeEmissionScores,
   computeFailedEdgeLedger,
@@ -510,6 +517,29 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default {@link DEFAULT_TOPO_PRECEDENCE} = **off**.
    */
   readonly topoPrecedence: TopoPrecedence;
+  /**
+   * The smallest observed OUT-EDGE latency rise at which an edge may stand in for a response channel —
+   * see {@link TopoEdgeRise}.
+   *
+   * `null` is the shipped reading: admission is decided by `isResponseChannel` alone, which is the
+   * predicate every published number was measured under. A number turns the same question into a
+   * measurement: an edge whose span duration multiplied is a response that degraded, and a node that
+   * waited on a degraded callee may be explained by it — on both sides of the operator, because one
+   * measurement answers both.
+   *
+   * The population it exists for is the one where the vocabulary fails: FSE'26 records 87 metric names,
+   * every one `container.*` or `k8s.*`, so `external` scope's channel test is false for every node and
+   * the operator is inert there by construction rather than by configuration. The corpus does carry the
+   * measurement — `traceEdgeLatency`, read by nothing in this direction — and 41 of its 93 near misses
+   * are won by two fan-out orchestrators whose out-edges multiply while their children carry no
+   * response channel at all.
+   *
+   * Read only when `topoDiscount > 0`, on the rule every other member of this family follows: there is
+   * no admission decision to make at `rho = 0`, because the map is never built.
+   *
+   * Default {@link DEFAULT_TOPO_EDGE_RISE} = **null**.
+   */
+  readonly topoEdgeRise: TopoEdgeRise | null;
   /**
    * Which SET of nodes the ranking may answer with — see {@link PoolAdmission}.
    *
@@ -2482,6 +2512,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
   topoClosure: DEFAULT_TOPO_CLOSURE,
   topoPrecedence: DEFAULT_TOPO_PRECEDENCE,
+  topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
   poolAdmission: DEFAULT_POOL_ADMISSION,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
@@ -2890,6 +2921,12 @@ export class TreePruner {
     // about a quantity the code never used. See `computeEdgeLatencyByCallee` for why this map is
     // deliberately wider than the term's population.
     const edgeLatencyByCallee = computeEdgeLatencyByCallee(options?.edgeLatency);
+    // The OUTBOUND twin of that map, aligned with the call graph — the direction nothing else reads, and
+    // the one `topoEdgeRise` decides on. Built here rather than inside the deduction because it is a
+    // property of the CASE and the deduction is a property of the RUN: a graph built once must carry the
+    // measurement whether or not the run that reads it has the arm on, or an artifact and a re-analysis of
+    // that artifact would disagree about what the case contained.
+    const edgeLatencyRises = computeEdgeLatencyRises(options?.edgeLatency, topologyGraph.edges);
 
     // The CONTAINMENT excursions: how far each service's post-injection latency median sits outside the band it
     // occupied while nothing was wrong. Not a term — the pass that reads them is relational — and a MEASUREMENT
@@ -3038,6 +3075,7 @@ export class TreePruner {
       failedEdgeEvidence: failedEdgeLedger.evidence,
       edgeLatencyScores,
       edgeLatencyByCallee,
+      edgeLatencyRises,
       poolMetricScores,
       stabilityScores,
       faultFreeScores,
@@ -3396,12 +3434,17 @@ export class TreePruner {
         // running — the defect the deduction's own `off` branch exists to avoid.
         onsets: graph.anomalyOnsetTimes,
         eventLabels: this.eventFamily,
+        // The case's own per-edge measurements, handed over unconditionally for the reason the onsets are:
+        // the operator reads them only when `topoEdgeRise` is set, and a caller that filtered them here
+        // would be a second place that knows which arm is running.
+        edgeLatencyRises: graph.edgeLatencyRises,
       },
       rho,
       this.options.topoDiscountScope,
       this.options.topoDiscountGate,
       this.options.topoClosure,
       this.options.topoPrecedence,
+      this.options.topoEdgeRise,
     );
     // The share is reported in the space the operator computed it in and NOT mapped through the
     // normalisation below: `rankNormalizeScores` would turn it into a rank share, which is a different

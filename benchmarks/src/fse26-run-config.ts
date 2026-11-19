@@ -196,6 +196,11 @@ export function buildFse26RunConfig(
     // The deduction's CLOSURE, and the field whose absence from this object is the defect in the module
     // docblock: the engine aggregated by `sum` while the line reported the shipped `max`.
     topoClosure: opts.topoClosure,
+    // The ADMISSION threshold, carried for the same reason the closure is: an arm that reads an edge the
+    // shipped run does not read must be able to attribute its own number, and `null` (the shipped reading)
+    // is recorded rather than omitted so the JSON says "the channel predicate decided alone" instead of
+    // leaving a reader to infer it from an absence.
+    topoEdgeRise: opts.topoEdgeRise,
     // …and the SET the ranking covered, which is the field `docs/topo-discount-scope.md` §7.4 makes
     // load-bearing: a node the deduction explains in full is absent rather than last, so a run that widened the
     // set must say so on its own line rather than leave it to be inferred from the score column.

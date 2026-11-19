@@ -41,6 +41,7 @@ import {
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_TRANSIENT_GUARD_TEST,
@@ -131,6 +132,11 @@ describe('buildFse26EngineOptions', () => {
       // The fourth field of the same family, on the same rule: read by the pruner from `signals`, and its
       // shipped value is the maximum, which is the reading every published number was measured under.
       topoClosure: DEFAULT_TOPO_CLOSURE,
+      // The fifth, and the only one whose shipped value is an ABSENCE: `null` means the channel predicate decides
+      // admission alone, which is the reading every published number was measured under. It must land in
+      // `signals` for the reason the four above must, and the absence is exactly why a silent drop would be
+      // invisible — the engine and this object would agree that no threshold was set.
+      topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
       // …and the SET the ranking covers, which is not a property of the deduction: the filter applies at every
       // weight, so a run that widened the pool must be distinguishable from a published one at weight 0.
       poolAdmission: DEFAULT_POOL_ADMISSION,

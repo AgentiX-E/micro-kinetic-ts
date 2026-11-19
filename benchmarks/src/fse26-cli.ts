@@ -45,6 +45,7 @@ import type {
   StabilityScope,
   TopoClosure,
   TopoDiscountScope,
+  TopoEdgeRise,
   TransientGuardTest,
 } from '../../packages/tree/src/index.js';
 import {
@@ -98,6 +99,7 @@ import {
   DEFAULT_TOPO_DISCOUNT,
   DEFAULT_TOPO_DISCOUNT_GATE,
   DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TOPO_EDGE_RISE,
   DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_SKIPS_LEADER,
   DEFAULT_TRACE_WEIGHT,
@@ -120,6 +122,7 @@ import {
   isTopoClosure,
   isTopoDiscountScope,
   isTransientGuardTest,
+  parseTopoEdgeRise,
   SELF_TIME_SCOPES,
   STABILITY_SCOPES,
   TRANSIENT_GUARD_TESTS,
@@ -715,6 +718,19 @@ export interface Fse26CliOptions {
    */
   readonly topoClosure: TopoClosure;
   /**
+   * The smallest OUT-EDGE latency rise at which an edge may stand in for a response channel — see
+   * `TopoEdgeRise`.
+   *
+   * The third topological knob this half needed and the golden half cannot use: RCAEval records no span
+   * durations, so the field is absent there and the predicate unreachable, while FSE'26 records
+   * `traceEdgeLatency` per edge and its 87 metric names are all `container.*`/`k8s.*` — which is why the
+   * deduction is inert on that corpus and why this is the only reading that can move it.
+   *
+   * `null` is the shipped value: admission is decided by `isResponseChannel` alone. A number is the arm,
+   * and the run's `signals:` line prints it so an artifact can attribute its own number.
+   */
+  readonly topoEdgeRise: TopoEdgeRise | null;
+  /**
    * Which SET of nodes the ranking may answer with — see `PoolAdmission`.
    *
    * The ranking admits only nodes whose post-deduction anomaly is positive, which makes a node the deduction
@@ -948,6 +964,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
     topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
     topoClosure: DEFAULT_TOPO_CLOSURE,
+    topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
     poolAdmission: DEFAULT_POOL_ADMISSION,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     prismWeight: DEFAULT_PRISM_WEIGHT,
@@ -1181,6 +1198,13 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // the shipped configuration on both halves of one suite, not to two different aggregations.
       const closure = argv[++i]!;
       opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (arg === '--edge-explained' && hasValue(argv, i + 1)) {
+      // A THRESHOLD rather than a vocabulary, so the fallback cannot be the shipped `null`: an unusable
+      // value must resolve to the shipped configuration on both halves of one suite, and a run that
+      // silently kept a threshold the operator would never consult is the defect the closure's fallback
+      // records one branch up. The spelling is read by ONE function, shared with the golden half, because
+      // `2:inbound` is an axis and two readers of it would be two answers to what it means.
+      opts.topoEdgeRise = parseTopoEdgeRise(argv[++i]!) ?? DEFAULT_TOPO_EDGE_RISE;
     } else if (arg === '--pool-admission' && hasValue(argv, i + 1)) {
       // The golden half's fallback rule, for the reason the scope and closure above record: an unusable value
       // must resolve to the shipped configuration on both halves of one suite.

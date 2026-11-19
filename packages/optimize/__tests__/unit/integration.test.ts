@@ -305,6 +305,12 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // record declares them in.
       'topoDiscountGate',
       'topoDiscountScope',
+      // Iteration 308: the deduction's fifth question — on WHAT EVIDENCE an edge may carry a charge. Held for
+      // the scope's reason one step further out: the field names a threshold AND the quantity it is divided by,
+      // so `absolute` and `inbound` are two admission rules rather than two settings of one, and a search
+      // interpolating between them would be averaging two populations of evidence. Both are measured and refused
+      // (`docs/topo-edge-explained.md`), so there is also no coefficient here whose benefit is established.
+      'topoEdgeRise',
       // The deduction's FIFTH member and the second to sort before `topoDiscountScope`: `topoPrecedence` is a
       // relation in time between two nodes, held for the same reason the four above it are — it names an
       // operator, not a coefficient a continuous search can interpolate.

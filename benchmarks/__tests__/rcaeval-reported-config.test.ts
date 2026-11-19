@@ -70,7 +70,10 @@ import {
   formatSignalLine,
   NON_ENGINE_OPTION_KEYS,
 } from '../src/rcaeval-engine-options.js';
-import { UNREPORTED_BY_ENGINE_RUNNERS } from '../src/reported-config.js';
+import {
+  UNREPORTED_BY_ENGINE_RUNNERS,
+  UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT,
+} from '../src/reported-config.js';
 // The engine's interfaces are read by a SHARED helper: the ablation artifact is held to the same two
 // constructor arguments, and two readers of one interface would be two answers to the same question.
 import {
@@ -402,11 +405,45 @@ describe('the RCAEval engine arguments are the TWO objects the constructor takes
 describe('the RCAEval configuration line carries the configuration that produced the run', () => {
   it('names exactly the options it forwards, in both directions', () => {
     const named = namedOn(formatSignalLine(shipped)).sort();
+    // The one category the equality has to separate, and separating it is a STRENGTHENING rather than a
+    // relaxation: an axis that ships at its own ABSENCE is not nameable on a shipped line without rewriting
+    // the header every published fingerprint was taken over (see `UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT`),
+    // so the population is the forwarded fields PLUS the engine defaults this half cannot dispatch MINUS the
+    // conditional fields — and the second assertion below proves the conditional half really is conditional
+    // rather than merely absent, by building the line with the value set.
+    const conditional = new Set(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT));
+    const omittedAtShipped = shippedForwarded.filter(
+      (field) => conditional.has(field) && !named.includes(field),
+    );
+    // Exactly the conditional record, no more: a forwarded field may not silently join the exception.
+    expect(omittedAtShipped.sort()).toEqual(
+      [...conditional].filter((field) => shippedForwarded.includes(field)).sort(),
+    );
     // Both directions in one equality: a forwarded option the line omits is an artifact that cannot
     // be attributed, and a name the line invents is a configuration nobody ran. The population is therefore the
     // forwarded fields PLUS the three engine defaults this half cannot dispatch, and not a byte more.
-    expect(named).toEqual([...shippedForwarded, ...ENGINE_DEFAULTS_ON_LINE].sort());
+    expect([...named, ...omittedAtShipped].sort()).toEqual(
+      [...shippedForwarded, ...ENGINE_DEFAULTS_ON_LINE].sort(),
+    );
     expect(named).not.toEqual(shippedForwarded);
+    // …and the conditional field IS printed once it carries a threshold: an exception that never printed it
+    // would be an omission wearing a rule's clothes.
+    const armed = namedOn(formatSignalLine(parseRCAEvalArgs(['--edge-explained', '2'])));
+    for (const field of conditional) expect(armed).toContain(field);
+    // The conditional field's SECOND half. `2` and `2:inbound` share a threshold and differ in what it is
+    // divided by, so a line built from the number alone would print the inbound arm as `topoEdgeRise=2` —
+    // attributing its number to the absolute reading on the one artifact whose job is to tell them apart.
+    // The value is asserted through the pair rather than through a substring, because `topoEdgeRise=2` is a
+    // PREFIX of `topoEdgeRise=2:inbound` and a `toContain` on the shorter one passes on both.
+    const inboundLine = formatSignalLine(parseRCAEvalArgs(['--edge-explained', '2:inbound']));
+    const absoluteLine = formatSignalLine(parseRCAEvalArgs(['--edge-explained', '2']));
+    expect(inboundLine).toContain('topoEdgeRise=2:inbound');
+    expect(absoluteLine).toContain('topoEdgeRise=2');
+    // The `absolute` suffix is omitted rather than printed: it is the axis's first form and every artifact that
+    // carries one was taken with it, so a line that grew a suffix would break the round trip through
+    // `parseTopoEdgeRise` that makes the line handable back to a dispatch unchanged.
+    expect(absoluteLine).not.toContain(':absolute');
+    expect(inboundLine).not.toEqual(absoluteLine);
     // …and their VALUES are read from the constants, asserted as an equality against the constants themselves
     // rather than against the words they hold today. A literal would satisfy a `toContain('failureContainment=true')`
     // on the day it was written and lie on the day the default moved; this cannot, because the expectation moves
@@ -431,7 +468,13 @@ describe('the RCAEval configuration line carries the configuration that produced
     // omitted only while its shipped value is neutral AND the omission is named with a reason —
     // otherwise two different shipped configurations can render the same line.
     const named = new Set(namedOn(formatSignalLine(shipped)));
-    const exempt = new Set(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS));
+    // Two exemption records, because they name two mechanisms: the five that are never printed at all,
+    // and the one that is printed exactly when it is not the shipped reading. The partition below is over
+    // their UNION, so a field cannot escape by being moved from one record to the other.
+    const exempt = new Set([
+      ...Object.keys(UNREPORTED_BY_ENGINE_RUNNERS),
+      ...Object.keys(UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT),
+    ]);
     // The partition, restricted to the REPORTED set: the line names options the report has never
     // heard of (it is the engine's whole option surface), so the comparison is over the fields the
     // report requires rather than over everything the line prints.
@@ -448,9 +491,20 @@ describe('the RCAEval configuration line carries the configuration that produced
     }
     // Every exemption is stated rather than implied, and the key set is exact so a NEW exemption has
     // to be added deliberately.
-    for (const [field, reason] of Object.entries(UNREPORTED_BY_ENGINE_RUNNERS)) {
-      expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
+    for (const record of [UNREPORTED_BY_ENGINE_RUNNERS, UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT]) {
+      for (const [field, reason] of Object.entries(record)) {
+        expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
+      }
     }
+    // …and the two are disjoint: a field in both would be described as never printed AND as printed
+    // off its default, which is a contradiction a reader would have to resolve by running the code.
+    const never = new Set(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS));
+    for (const field of Object.keys(UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT)) {
+      expect(never.has(field), `${field} is exempt twice`).toBe(false);
+    }
+    // The conditional record holds exactly the one axis that ships at its own absence, asserted as an
+    // EXACT key set so a second member has to be argued for rather than appended.
+    expect(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS_ON_DEFAULT).sort()).toEqual(['topoEdgeRise']);
     // Four, not five: iteration 141 made the golden runner FORWARD `metricRiseCeiling`, so the standard no
     // longer permits its omission and the exemption is GONE rather than reworded — the same rule iteration
     // 124 applied to `failedEdgeWeight`. An exemption that outlives the reason for it is how a required

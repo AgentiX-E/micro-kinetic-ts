@@ -398,6 +398,30 @@ export interface FaultPropagationGraph {
     { readonly rise: number; readonly count: number }
   >;
   /**
+   * Per-EDGE observed latency rise, **RAW** and indexed as `callGraph.edges` — the OUTBOUND twin
+   * of the map above, and the only per-edge form the graph carries.
+   *
+   * The distinction between this and the two maps around it is a direction, and the direction is
+   * the whole of it. `edgeLatencyByCallee` says how much a node's CALLERS waited for it: evidence
+   * FOR the node, which is what `edgeLatencyScores` and `latWeight` are built on.
+   * `edgeLatencyRises[i]` says how much the caller of edge `i` waited for that particular callee:
+   * evidence AGAINST the caller, because a caller's response contains its callee's. Measured on
+   * FSE'26, the second reading is the one that separates the corpus's fan-out orchestrators from
+   * their children — `ts-route-plan-service`'s out-edges multiply by 185×–1 065× while its children
+   * carry `container.*` readings no response channel can describe.
+   *
+   * A per-caller maximum cannot serve the same purpose: it would say that SOME callee explained the
+   * caller without saying WHICH, and an operator that charges a caller for a callee it did not wait
+   * on is charging the wrong edge. Hence an array aligned with the call graph rather than a third
+   * map: the alignment is the statement, and a row that no measurement covers reads `NaN` rather
+   * than `0`, because a rise of zero is a decrease and an unmeasured edge is not one.
+   *
+   * Optional: absent when the case carried no per-edge measurements, which is every RCAEval case —
+   * that loader records no span durations — and the absence is what makes an operator that reads
+   * this field inert on the golden population by construction.
+   */
+  readonly edgeLatencyRises?: Float64Array;
+  /**
    * Per-service topological-source score (0-1) — `1 − maxParentExplanation`,
    * where `maxParentExplanation` is the largest `propagationWeight(p→v) ×
    * anomaly(p)` over a node's upstream parents. A source (no strongly

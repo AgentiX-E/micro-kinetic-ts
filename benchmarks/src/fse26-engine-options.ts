@@ -35,6 +35,7 @@ import type {
   StabilityScope,
   TopoClosure,
   TopoDiscountScope,
+  TopoEdgeRise,
   TopologyFaultGraphConfig,
 } from '../../packages/tree/src/index.js';
 
@@ -184,6 +185,8 @@ export interface Fse26SignalOptions {
   readonly topoDiscountGate: number;
   /** How the deduction's explanation is aggregated over a caller's callees — see `TopoClosure`. */
   readonly topoClosure: TopoClosure;
+  /** The smallest out-edge rise at which an edge stands in for a response channel — see `TopoEdgeRise`. */
+  readonly topoEdgeRise: TopoEdgeRise | null;
   /** Which SET of nodes the ranking may answer with — see `PoolAdmission`. */
   readonly poolAdmission: PoolAdmission;
   readonly collisionWeight: number;
@@ -316,6 +319,7 @@ export function buildFse26EngineOptions(
       topoDiscountScope: opts.topoDiscountScope,
       topoDiscountGate: opts.topoDiscountGate,
       topoClosure: opts.topoClosure,
+      topoEdgeRise: opts.topoEdgeRise,
       poolAdmission: opts.poolAdmission,
       collisionWeight: opts.collisionWeight,
       prismWeight: opts.prismWeight,

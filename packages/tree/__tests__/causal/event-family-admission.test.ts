@@ -110,6 +110,9 @@ describe('the topological discount can see the spelling it is given', () => {
       1, // gate: charge only when the callee explains it in full
       'max',
       'off',
+      // No edge reading: this fixture is about the CHANNEL family, and a threshold here would admit a
+      // second reason for the same charge.
+      null,
     );
   };
 

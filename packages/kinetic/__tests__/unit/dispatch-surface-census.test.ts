@@ -427,6 +427,12 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // RCAEval populations carry no pod-lifecycle channel, which is why this flag is absent from the RCAEval
     // half's block rather than merely unreached there.
     '--pod-state-weight',
+    // Iteration 308: the deduction's FIFTH question — on WHAT EVIDENCE an edge may carry an explanation. Packed
+    // for the reason every post-ceiling knob is, and it is the member of this family whose measurement is the
+    // reason the family exists: the channel the deduction reads is absent from RCABench's metric names (§316.3)
+    // and the per-edge latency rise is the one measurement that encodes the same physical fact. The arm was
+    // measured on THIS corpus (`docs/topo-edge-explained.md` §4) and refused (§5).
+    '--edge-explained',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -483,6 +489,13 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // rule as every post-ceiling knob, and it is the first member of this family that is a RELATION between
     // two nodes rather than a property of one.
     '--topo-precedence',
+    // Iteration 308: the deduction's FIFTH question — on WHAT EVIDENCE an edge may carry an explanation. Packed
+    // on the same rule as every post-ceiling knob, and it is the only member of the family this half can state
+    // and the corpus cannot answer: the golden datapacks carry no span duration, so the edge array is absent and
+    // the arm is inert here BY CONSTRUCTION rather than by weight. That is exactly why it must be dispatchable —
+    // the golden half is the control that proves the FSE'26 reading is about the edge channel and not about the
+    // deduction moving for a reason of its own.
+    '--edge-explained',
     // Iteration 214: the transient guard's QUESTION, packed on the same rule and for one further reason — the
     // guard consumes the injection boundary this half's cases carry and FSE'26's do not, so the knob has no
     // meaningful FSE'26 state to expose.
@@ -852,6 +865,24 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'topoclosure',
   },
+  topoEdgeRise: {
+    flag: '--edge-explained',
+    // The deduction's FIFTH question, and the fifth document, for the reason the closure and the precedence
+    // have their own: the four fields above ask HOW MUCH, WHETHER, THROUGH WHICH CHANNEL and WHEN; the closure
+    // asks HOW the explanations add up; this asks on WHAT EVIDENCE an edge is allowed to carry one at all —
+    // specifically whether the per-edge latency rise the corpus DOES measure can stand in for the response
+    // channel it does not. `docs/topo-edge-explained.md` owns the two forms, the admission census over 71 560
+    // measured edges, and the refusal.
+    //
+    // BOTH halves, unlike `topoPrecedence`, and the asymmetry is the point: the axis FIRES on FSE'26 (10 227
+    // admitted edges at theta = 2) and is INERT on the golden corpus, whose datapacks carry no span duration
+    // and therefore no edge array. An axis only the firing half could name would leave the other half's
+    // zero as an assumption, and inertness is the one thing an ablation has to MEASURE on this operator —
+    // four refusals have already been mistaken for one.
+    owner: 'topo-edge-explained.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
   topoPrecedence: {
     flag: '--topo-precedence',
     // The deduction's FOURTH question, and its own document for the reason the closure has one: the three
@@ -1054,6 +1085,11 @@ const KNOBS: Readonly<
  */
 const NON_DERIVABLE_OPTIONS: readonly string[] = [
   'anomalyNormalizeNodeThreshold',
+  // Iteration 308, and a FIFTH mechanism: an abbreviation of the axis rather than of the flag. The flag names
+  // the question (`--edge-explained`) and the field names the quantity that answers it (`topoEdgeRise`), so no
+  // camel-casing of one reaches the other. Recorded rather than renamed for the reason every other entry is —
+  // the flag is what a dispatcher types and the field is what a reader meets in `TopoDeductionInput`.
+  'topoEdgeRise',
   // The third `no-` prefix: a guard that ships ON is spelled by its NEGATION, so the flag's own camel case
   // (`noSuppressDemandMetrics`) is not the option's name. `rankNormalization` was the first, and the shape is
   // now common enough that a reader meets it rather than deriving it.
@@ -1184,6 +1220,13 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'topoDiscountScope',
   'topoDiscountGate',
   'topoClosure',
+  // Iteration 308: the deduction's FIFTH question — on WHAT EVIDENCE an edge may carry an explanation. On both
+  // halves for the criterion's reason and for one of its own: the axis FIRES on the FSE'26 corpus, where the
+  // missing response channel was diagnosed (§316.3), and it is INERT on the golden corpus because the datapacks
+  // carry no span duration. An axis only one half could name would leave the other half's inertness an assumption
+  // — and inertness is the one thing an ablation must MEASURE, since it is exactly what four refusals on this
+  // operator have been mistaken for.
+  'topoEdgeRise',
   'topoWeight',
   'traceWeight',
   'traceSkipsLeader',
