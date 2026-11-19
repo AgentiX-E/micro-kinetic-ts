@@ -35,6 +35,8 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
   failedEdgeFirst:
     'an FSE-26-only partition: the RCAEval cells carry no per-call failure column, so the ledger it reads is ' +
     'never built on that half and a line that printed it would name a knob this half cannot turn',
+  failedEdgeFirstScope:
+    'the reading the partition above applies, and unreadable on this half for the same missing column',
 };
 
 /**
@@ -122,4 +124,6 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
   // calls at all, which is a statement about the corpus wearing the label of a statement about the pass.
   failedEdgeFirst:
     'the battery has no row for the partition and its cells are not the surface it was measured on, so no row can reach the state this field describes',
+  failedEdgeFirstScope:
+    'the reading the partition above applies, and the battery has no row for the partition at all',
 };

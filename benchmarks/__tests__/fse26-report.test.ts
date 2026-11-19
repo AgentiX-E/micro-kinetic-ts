@@ -53,6 +53,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // it is on the census list: a field that reorders every case must be in the record, and a fixture that
     // left it out would describe a configuration the engine never ships.
     failedEdgeFirst: false,
+    failedEdgeFirstScope: 'credited',
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     // Shipped composition. The four are REQUIRED fields rather than optional ones so that a test fixture
     // cannot omit them: an optional field here is a fixture that silently describes a different engine.
@@ -213,6 +214,7 @@ describe('FSE26 report — attribution', () => {
       // The failure-flow partition's switch. On the list because it REORDERS the answer for every case, so a
       // record that omitted it could not be compared with one that carried it — the list's own admission test.
       'failedEdgeFirst',
+      'failedEdgeFirstScope',
       'selfTimeWeight',
       'selfTimeScope',
       'victimWeight',

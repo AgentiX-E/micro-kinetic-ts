@@ -36,6 +36,7 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/in
 import type {
   BaselineAnchor,
   DropDeviationMode,
+  FailedEdgeFirstScope,
   FailedEdgeMode,
   FaultFreeSelection,
   LogNormalisation,
@@ -66,6 +67,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_FAILED_EDGE_FIRST,
+  DEFAULT_FAILED_EDGE_FIRST_SCOPE,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_MIN_RECORDS,
   DEFAULT_FAILED_EDGE_MODE,
@@ -110,6 +112,7 @@ import {
   isBaselineAnchor,
   isDropDeviationMode,
   isDualFamilyGateMode,
+  isFailedEdgeFirstScope,
   isFailedEdgeGateMode,
   isFailureAttribution,
   isFaultFreeSelection,
@@ -672,6 +675,15 @@ export interface Fse26CliOptions {
    */
   readonly failedEdgeFirst: boolean;
   /**
+   * Which membership that partition ranks first: `credited` (an inbound call failed against it) or `unexplained`
+   * (its own calls do not account for the failures reported at it). Travels in the packed `ranking_knobs` block as
+   * `failed_edge_first_scope=…`.
+   *
+   * `credited` is the measured reading and it is REFUSED (−170, `docs/failed-edge-jurisdiction.md`); `unexplained`
+   * is the arm registered against it, and its prediction is written down before it runs.
+   */
+  readonly failedEdgeFirstScope: FailedEdgeFirstScope;
+  /**
    * Which bar decides whether the failed-call direction term may speak at all.
    *
    * Ships at `DEFAULT_FAILED_EDGE_GATE_MODE` = `absolute`, the constant every published cell ran. The FSE'26
@@ -970,6 +982,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
     failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
+    failedEdgeFirstScope: DEFAULT_FAILED_EDGE_FIRST_SCOPE,
     failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
     topoWeight: DEFAULT_TOPO_WEIGHT,
     topoDiscount: DEFAULT_TOPO_DISCOUNT,
@@ -1284,7 +1297,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--no-containment-order') opts.containmentOrder = false;
     else if (arg === '--failure-containment') opts.failureContainment = true;
     else if (arg === '--no-failure-containment') opts.failureContainment = false;
-    else if (arg === '--failed-edge-first') opts.failedEdgeFirst = true;
+    else if (arg === '--failed-edge-first-scope' && hasValue(argv, i + 1)) {
+      // A closed vocabulary with the shipped fallback, on the rule every option here follows: a typo reproduces a
+      // published configuration rather than inventing a third reading.
+      const value = argv[++i]!;
+      opts.failedEdgeFirstScope = isFailedEdgeFirstScope(value)
+        ? value
+        : DEFAULT_FAILED_EDGE_FIRST_SCOPE;
+    } else if (arg === '--failed-edge-first') opts.failedEdgeFirst = true;
     else if (arg === '--no-failed-edge-first') opts.failedEdgeFirst = false;
     else if (arg === '--failure-attribution' && hasValue(argv, i + 1)) {
       // A closed vocabulary, and an unknown value falls back to the SHIPPED one on the rule every option here

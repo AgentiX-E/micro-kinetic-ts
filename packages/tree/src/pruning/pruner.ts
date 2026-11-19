@@ -88,13 +88,14 @@ import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { applyContainmentOrder, latencyExcursions } from './containment-order.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { orderWithEmissionJurisdiction } from './emission-jurisdiction.js';
-import { orderFailedEdgeFirst } from './failed-edge-order.js';
+import { orderFailedEdgeFirst, partitionFirst } from './failed-edge-order.js';
 import {
   DEFAULT_FAILURE_ATTRIBUTION,
   applyFailureContainment,
   failureEdgeKey,
   failureFlows,
   isFailureAttribution,
+  unexplainedFailures,
   type FailedEdgeRise,
   type FailureAttribution,
 } from './failure-containment.js';
@@ -1226,6 +1227,23 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * commit, and `docs/failed-edge-jurisdiction.md` carries the corpus-wide reading that decides the default.
    */
   readonly failedEdgeFirst: boolean;
+  /**
+   * WHICH membership {@link failedEdgeFirst} ranks first: the ledger's credit, or the failure flow's residual.
+   *
+   * - `credited` (default): every candidate an inbound call failed against. Measured on the corpus at **−170**
+   *   (`docs/failed-edge-jurisdiction.md`): it converts 56 of the 58 entry-point `HTTPResponseReplaceCode` cases
+   *   and loses 235 across the four families whose fault does not fail a call at its own site, because the entry
+   *   point is the callee of the load source and is credited for every timeout anyone downstream produces.
+   * - `unexplained`: every candidate whose failures its own outgoing calls do NOT account for —
+   *   `unexplainedFailures(v) = max(0, inbound(v) − outgoing(v))`, the statistic `failureContainment` already
+   *   trusts. In an entry-point fault its inbound calls fail and its outbound calls succeed, so the residual
+   *   survives; in a stress or kill downstream both sides fail, so the residual does not.
+   *
+   * The second reading is a different statistic rather than a threshold on the first, which is what the failure of
+   * the first says is needed: the relay in a stress case is credited 1.000, exactly as a true entry-point fault is,
+   * so no threshold on the credit could have separated them.
+   */
+  readonly failedEdgeFirstScope: FailedEdgeFirstScope;
 }
 
 /**
@@ -1680,6 +1698,28 @@ export const DEFAULT_FAILURE_CONTAINMENT = true;
  * established, and the reason a comparison never has to trust that two commits rank identically.
  */
 export const DEFAULT_FAILED_EDGE_FIRST = false;
+
+/** Which membership {@link TreePrunerOptions.failedEdgeFirst} ranks ahead of everything else. */
+export type FailedEdgeFirstScope = 'credited' | 'unexplained';
+
+/** The reachable values of {@link FailedEdgeFirstScope}, as a lookup so a parser cannot invent a third. */
+export const FAILED_EDGE_FIRST_SCOPES: Readonly<Record<FailedEdgeFirstScope, true>> = {
+  credited: true,
+  unexplained: true,
+};
+
+/** Whether a string names a {@link FailedEdgeFirstScope}. */
+export function isFailedEdgeFirstScope(value: string): value is FailedEdgeFirstScope {
+  return Object.prototype.hasOwnProperty.call(FAILED_EDGE_FIRST_SCOPES, value);
+}
+
+/**
+ * The shipped {@link TreePrunerOptions.failedEdgeFirstScope}.
+ *
+ * `credited`, because it is the reading that was measured. The residual is an arm and must name itself on the
+ * artifact, on the rule every coefficient here follows.
+ */
+export const DEFAULT_FAILED_EDGE_FIRST_SCOPE: FailedEdgeFirstScope = 'credited';
 
 // Re-exported beside the option that consumes it, for the same reason as the gate vocabulary below: the runners
 // import this module directly rather than the barrel, and a vocabulary a CLI cannot import is a vocabulary no flag
@@ -2580,6 +2620,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
   failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
   failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
+  failedEdgeFirstScope: DEFAULT_FAILED_EDGE_FIRST_SCOPE,
 };
 
 /**
@@ -3163,6 +3204,11 @@ export class TreePruner {
     // nothing was measured and an evidence row reporting a zero share would be a reading of a run that
     // never looked.
     const deduction = this.discountedAnomalies(graph);
+    // The residual membership — which candidates' failures their OWN calls do not account for. Computed once, here,
+    // so the baseline ranking and the final one read the same set: a set derived twice is a set that can disagree
+    // with itself between the two passes the gate is defined across. `undefined` when the run did not select this
+    // reading, so the scoring path cannot mistake "the run did not ask" for "no candidate leads".
+    const flowLeads = this.residualLeads(graph);
     const anomalyScores = deduction.scores;
 
     // Prune ALL cycles — significant and insignificant alike. Breaking the
@@ -3193,6 +3239,7 @@ export class TreePruner {
       graph.traceActivityScores,
       graph.prismScores,
       graph.failedEdgeScores,
+      flowLeads,
       graph.edgeLatencyScores,
       graph.poolMetricScores,
       graph.stabilityScores,
@@ -3279,6 +3326,7 @@ export class TreePruner {
           graph.traceActivityScores,
           graph.prismScores,
           graph.failedEdgeScores,
+          flowLeads,
           graph.edgeLatencyScores,
           graph.poolMetricScores,
           graph.stabilityScores,
@@ -3310,6 +3358,27 @@ export class TreePruner {
    * @param results - The ranking the fusion produced, best first.
    * @returns `results` itself when neither pass moved anything, otherwise the reordered and renumbered list.
    */
+  /**
+   * The candidates whose own outgoing failures do not account for the failures reported at them.
+   *
+   * `undefined` when the run did not select the residual reading — a MISSING set rather than an empty one, because
+   * the two mean different things to the partition: an empty set says "this case has no lead", which is a
+   * measurement, and an absent one says "nobody asked", which is a configuration.
+   *
+   * @param graph - The graph whose failure flow the reading consumes.
+   * @returns The lead set, or `undefined` when the arm that reads it is off.
+   */
+  private residualLeads(graph: FaultPropagationGraph): ReadonlySet<ServiceId> | undefined {
+    if (!this.options.failedEdgeFirst || this.options.failedEdgeFirstScope !== 'unexplained') {
+      return undefined;
+    }
+    const leads = new Set<ServiceId>();
+    for (const [serviceId, flow] of graph.failureFlows ?? []) {
+      if (unexplainedFailures(flow, this.options.failureAttribution) > 0) leads.add(serviceId);
+    }
+    return leads;
+  }
+
   private contained(graph: FaultPropagationGraph, results: RootCauseResult[]): RootCauseResult[] {
     return this.flowOrdered(graph, this.containmentOrdered(graph, results));
   }
@@ -3704,6 +3773,7 @@ function performTreeRCA(
   traceActivityScores?: ReadonlyMap<ServiceId, number>,
   prismScores?: ReadonlyMap<ServiceId, number>,
   failedEdgeScores?: ReadonlyMap<ServiceId, number>,
+  flowLeads?: ReadonlySet<ServiceId>,
   edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
   stabilityScores?: ReadonlyMap<ServiceId, number>,
@@ -4349,9 +4419,15 @@ function performTreeRCA(
   // The map is read here rather than through the term's own lookup because the two answer different questions:
   // the term asks "how much credit", this asks "credited at all", and the first is gated by a weight the second
   // must not inherit.
-  const rankedNodes = options.failedEdgeFirst
-    ? orderFailedEdgeFirst(baseRankedNodes, failedEdgeScores)
-    : baseRankedNodes;
+  const rankedNodes = !options.failedEdgeFirst
+    ? baseRankedNodes
+    : options.failedEdgeFirstScope === 'unexplained'
+      ? // The residual reading: a candidate leads when the failures reported at it are not the failures it
+        // reported. `flowLeads` is ABSENT when the run did not ask for this reading, and an absent set is
+        // "nothing leads" rather than "everyone does" — the partition is then the identity, which is the same
+        // statement an absent map makes for the credit reading.
+        partitionFirst(baseRankedNodes, (id) => flowLeads?.has(id) === true)
+      : orderFailedEdgeFirst(baseRankedNodes, failedEdgeScores);
 
   // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];

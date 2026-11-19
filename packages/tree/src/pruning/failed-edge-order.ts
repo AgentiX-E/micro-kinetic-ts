@@ -59,18 +59,38 @@ export function orderFailedEdgeFirst<T extends { readonly serviceId: ServiceId }
   credits: ReadonlyMap<ServiceId, number> | undefined,
 ): readonly T[] {
   if (credits === undefined || credits.size === 0) return ranking;
-  const credited: T[] = [];
+  // `> 0` rather than a truthiness test: a credit of `-0` is a zero, and `NaN > 0` is false, so a broken ledger
+  // entry is treated as no evidence rather than as evidence for whichever side a comparison happens to fall on.
+  return partitionFirst(ranking, (id) => {
+    const credit = credits.get(id);
+    return credit !== undefined && credit > 0;
+  });
+}
+
+/**
+ * Order the candidates so that every candidate {@link isLead} admits precedes every candidate it does not.
+ *
+ * The general form of the rule, and the form the two membership tests share: the ledger's CREDIT (`> 0`) and the
+ * failure flow's RESIDUAL (`unexplainedFailures > 0`) answer different questions about a candidate, and the
+ * partition is indifferent to which one named the lead. Expressing the rule once is what keeps the two arms
+ * comparable: a second copy of a stable partition is a second chance for one of them to stop being stable.
+ *
+ * @param ranking - The scored candidates, best first. Not mutated.
+ * @param isLead - The membership test. Called once per candidate, in ranking order.
+ * @returns `ranking` itself when the partition would move nothing, otherwise a new array.
+ */
+export function partitionFirst<T extends { readonly serviceId: ServiceId }>(
+  ranking: readonly T[],
+  isLead: (serviceId: ServiceId) => boolean,
+): readonly T[] {
+  const leads: T[] = [];
   const rest: T[] = [];
   for (const candidate of ranking) {
-    const credit = credits.get(candidate.serviceId);
-    // `> 0` rather than a truthiness test: a credit of `-0` is a zero, and `NaN > 0` is false, so a broken
-    // ledger entry is treated as no evidence rather than as evidence for whichever side a comparison happens to
-    // fall on.
-    if (credit !== undefined && credit > 0) credited.push(candidate);
+    if (isLead(candidate.serviceId)) leads.push(candidate);
     else rest.push(candidate);
   }
-  // The degenerate cases are the ones that must cost nothing: no credited node (the rule has nothing to lift) and
-  // no uncredited node (everything is already lifted) both return the caller's array rather than a copy of it.
-  if (credited.length === 0 || rest.length === 0) return ranking;
-  return [...credited, ...rest];
+  // The degenerate cases are the ones that must cost nothing: no lead (the rule has nothing to lift) and no other
+  // candidate (everything is already lifted) both return the caller's array rather than a copy of it.
+  if (leads.length === 0 || rest.length === 0) return ranking;
+  return [...leads, ...rest];
 }

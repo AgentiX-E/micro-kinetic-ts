@@ -28,6 +28,7 @@ import type {
   BaselineAnchor,
   DropDeviationMode,
   DualFamilyGateMode,
+  FailedEdgeFirstScope,
   FailedEdgeGateMode,
   FailureAttribution,
   FaultFreeSelection,
@@ -44,6 +45,7 @@ import type {
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_FAILED_EDGE_FIRST_SCOPE,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
@@ -263,6 +265,8 @@ export interface FSE26RunConfig {
    * against is an ON run that reads as the shipped one, and here the ON value is the one that must be visible.
    */
   readonly failedEdgeFirst?: boolean;
+  /** Which membership that partition ranked first, rendered only when it is not the shipped `credited`. */
+  readonly failedEdgeFirstScope?: FailedEdgeFirstScope;
   /** Which reading of the failure flow that pass applied. */
   readonly failureAttribution?: FailureAttribution;
   /**
@@ -522,6 +526,7 @@ export const REPORTED_CONFIG_FIELDS = [
   // runs of 1 141 and 1 156 apart.
   'containmentExcursions',
   'failedEdgeFirst',
+  'failedEdgeFirstScope',
   'selfTimeWeight',
   'selfTimeScope',
   'victimWeight',
@@ -705,6 +710,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   line += ` containmentExcursions=${config.containmentExcursions}`;
   line += ` failureContainment=${config.failureContainment ?? DEFAULT_FAILURE_CONTAINMENT}`;
   if (config.failedEdgeFirst === true) line += ' failedEdgeFirst=true';
+  if (
+    (config.failedEdgeFirstScope ?? DEFAULT_FAILED_EDGE_FIRST_SCOPE) !==
+    DEFAULT_FAILED_EDGE_FIRST_SCOPE
+  ) {
+    line += ` failedEdgeFirstScope=${config.failedEdgeFirstScope}`;
+  }
   if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
     line += ` failureAttribution=${config.failureAttribution}`;
   }

@@ -515,6 +515,7 @@ describe('the RCAEval configuration line carries the configuration that produced
       // Iteration 312: the failed-edge partition, unreachable on this half for the same structural reason
       // `podStateWeight` is — the cells carry no per-call failure column, so the ledger it reads is never built.
       'failedEdgeFirst',
+      'failedEdgeFirstScope',
       'failedEdgeMinRecords',
       'failedEdgeMode',
       'metricFleetBaseline',

@@ -99,6 +99,65 @@ function fixture(): [ServiceCallGraph, MetricMap] {
   ];
 }
 
+/**
+ * A RELAY and a SOURCE on one path: `gateway → relay → source`, with failures on both edges.
+ *
+ * The relay has the largest deviation in the case and a failure on each side of it — the shape a stress or a kill
+ * downstream produces at the entry point. The source has only an inbound failure, which is the shape a genuine
+ * fault at a leaf produces. The two readings of the partition have to disagree about which one leads, because a
+ * reading that cannot tell them apart is the reading that measured −170.
+ */
+function relayFixture(): [ServiceCallGraph, MetricMap] {
+  return [
+    makeCallGraph([
+      [GATEWAY, CALLER],
+      [CALLER, CALLEE],
+    ]),
+    new Map<string, readonly TimeSeries[]>([
+      [GATEWAY, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 1.1, 1.1, 1.1, 1.1])]],
+      [CALLER, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 8, 8, 8, 8])]],
+      [CALLEE, [makeTimeSeries(RESOURCE, [1, 1, 1, 1, 2, 2, 2, 2])]],
+    ]),
+  ];
+}
+
+const BOTH_EDGES_FAILED = [
+  { caller: GATEWAY, callee: CALLER, failed: 10, baseline: 0 },
+  { caller: CALLER, callee: CALLEE, failed: 10, baseline: 0 },
+];
+
+/** The ranking the relay fixture produces under a given configuration. */
+function rankRelay(options: ConstructorParameters<typeof TreePruner>[0]): string[] {
+  const pruner = new TreePruner(options);
+  const [callGraph, metrics] = relayFixture();
+  const graph = pruner.buildFaultGraph(callGraph, metrics, { failedTraceEdges: BOTH_EDGES_FAILED });
+  return pruner.analyze(graph, 3).map((result) => result.serviceId);
+}
+
+describe('the residual reading separates a source from a relay', () => {
+  it('puts the RELAY first under the credited reading — the failure this arm was measured on', () => {
+    expect(rankRelay({ failedEdgeFirst: true })[0]).toBe(CALLER);
+  });
+
+  it('puts the SOURCE first under the residual reading', () => {
+    // `CALLER` reports a failure inbound AND outbound, so its residual is zero: it is the conduit, not the cause.
+    // `CALLEE` receives one and emits none, so its residual is the whole rise.
+    expect(rankRelay({ failedEdgeFirst: true, failedEdgeFirstScope: 'unexplained' })[0]).toBe(
+      CALLEE,
+    );
+  });
+
+  it('demotes the relay without deleting it', () => {
+    const order = rankRelay({ failedEdgeFirst: true, failedEdgeFirstScope: 'unexplained' });
+    expect(order).toHaveLength(3);
+    expect(order).toEqual([CALLEE, CALLER, GATEWAY]);
+  });
+
+  it('is inert when the switch is off, whatever the scope says', () => {
+    expect(rankRelay({ failedEdgeFirstScope: 'unexplained' })).toEqual(rankRelay({}));
+  });
+});
+
 describe('the switch is a switch, and it ships off', () => {
   it('ships off, and off is the score order', () => {
     expect(DEFAULT_FAILED_EDGE_FIRST).toBe(false);

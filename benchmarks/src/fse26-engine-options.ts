@@ -180,6 +180,8 @@ export interface Fse26SignalOptions {
    * ships OFF, so the failure mode is "the arm ran the control while the `Config:` line reported the arm".
    */
   readonly failedEdgeFirst: boolean;
+  /** Which membership that partition ranks first. Required for the reason every field here is. */
+  readonly failedEdgeFirstScope: FailedEdgeFirstScope;
   /** Which bar lets the failed-call direction term speak. See `Fse26CliOptions.failedEdgeGateMode`. */
   readonly failedEdgeGateMode: FailedEdgeGateMode;
   readonly topoWeight: number;
@@ -320,6 +322,7 @@ export function buildFse26EngineOptions(
       failureContainment: opts.failureContainment,
       failureAttribution: opts.failureAttribution,
       failedEdgeFirst: opts.failedEdgeFirst,
+      failedEdgeFirstScope: opts.failedEdgeFirstScope,
       failedEdgeGateMode: opts.failedEdgeGateMode,
       topoWeight: opts.topoWeight,
       topoDiscount: opts.topoDiscount,

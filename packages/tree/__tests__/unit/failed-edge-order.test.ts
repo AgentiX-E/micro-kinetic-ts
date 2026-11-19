@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { orderFailedEdgeFirst } from '../../src/pruning/failed-edge-order.js';
+import { orderFailedEdgeFirst, partitionFirst } from '../../src/pruning/failed-edge-order.js';
 
 /** A candidate as the ranking hands it over: an id and nothing else the rule may read. */
 const row = (serviceId: string): { serviceId: string } => ({ serviceId });
@@ -140,5 +140,43 @@ describe('the partition is monotone and idempotent', () => {
       'd',
       'e',
     ]);
+  });
+});
+
+describe('partitionFirst is the rule both memberships share', () => {
+  // The general form exists so the two membership tests cannot drift apart: a stable partition written twice is a
+  // second chance for one of them to stop being stable. These tests state the rule once, on the predicate.
+  const ids = (rows: readonly { serviceId: string }[]) => rows.map((r) => r.serviceId);
+
+  it('lifts every lead, in ranking order, ahead of every other candidate', () => {
+    const leads = new Set(['b', 'e']);
+    expect(ids(partitionFirst(ranking, (id) => leads.has(id)))).toEqual(['b', 'e', 'a', 'c', 'd']);
+  });
+
+  it('returns the caller\u2019s array when nothing leads', () => {
+    expect(partitionFirst(ranking, () => false)).toBe(ranking);
+  });
+
+  it('returns the caller\u2019s array when everything leads', () => {
+    expect(partitionFirst(ranking, () => true)).toBe(ranking);
+  });
+
+  it('calls the predicate once per candidate, in ranking order', () => {
+    const seen: string[] = [];
+    partitionFirst(ranking, (id) => {
+      seen.push(id);
+      return false;
+    });
+    expect(seen).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
+  it('agrees with the credit reader on the same input', () => {
+    const credits = new Map([
+      ['c', 1],
+      ['e', 0.004],
+    ]);
+    expect(ids(partitionFirst(ranking, (id) => (credits.get(id) ?? 0) > 0))).toEqual(
+      ids(orderFailedEdgeFirst(ranking, credits)),
+    );
   });
 });

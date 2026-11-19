@@ -189,6 +189,7 @@ export function buildFse26RunConfig(
     failureContainment: opts.failureContainment,
     failureAttribution: opts.failureAttribution,
     failedEdgeFirst: opts.failedEdgeFirst,
+    failedEdgeFirstScope: opts.failedEdgeFirstScope,
     failedEdgeGateMode: opts.failedEdgeGateMode,
     topoWeight: opts.topoWeight,
     topoDiscount: opts.topoDiscount,

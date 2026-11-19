@@ -189,7 +189,8 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export { orderWithEmissionJurisdiction } from './pruning/emission-jurisdiction.js';
 export type { EmissionJurisdictionRow } from './pruning/emission-jurisdiction.js';
 
-export { orderFailedEdgeFirst } from './pruning/failed-edge-order.js';
+export { orderFailedEdgeFirst, partitionFirst } from './pruning/failed-edge-order.js';
+export type { FailedEdgeFirstScope } from './pruning/pruner.js';
 
 export {
   applyContainmentOrder,
@@ -231,6 +232,7 @@ export {
   DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_EMISSION_WEIGHT,
   DEFAULT_FAILED_EDGE_FIRST,
+  DEFAULT_FAILED_EDGE_FIRST_SCOPE,
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILED_EDGE_GATE_SHARE,
   DEFAULT_FAILED_EDGE_MARGIN_SHARE,
@@ -260,6 +262,7 @@ export {
   DEFAULT_TRACE_WEIGHT,
   DEFAULT_TREE_PRUNER_OPTIONS,
   DEFAULT_VICTIM_WEIGHT,
+  FAILED_EDGE_FIRST_SCOPES,
   FAILED_EDGE_GATE_MODES,
   FAILED_EDGE_RANK_ONE_LAT_RISE_FLOOR,
   FAILED_EDGE_RANK_ONE_LAT_RISE_PLATEAU,
@@ -272,6 +275,7 @@ export {
   computeOnsetSlopes,
   computeTemporalEarliness,
   failedEdgeBoundary,
+  isFailedEdgeFirstScope,
   isFailedEdgeGateMode,
   isOnsetShape,
   isSelfTimeScope,
