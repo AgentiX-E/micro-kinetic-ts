@@ -7504,3 +7504,79 @@ published configuration: 1 422 − 1 156 = **266**, of which `HTTPResponseReplac
 `HTTPRequestReplaceMethod` (51) are **111 — 42 % of everything still wrong**. The clamp's whole residual is 55. The
 value-replacement class is twice as large as the axis this iteration closed, and it is where a successor arm should
 be aimed.
+
+## §320 — The entry point: 58 % of the remaining error is one node, and no coefficient reaches it
+
+Iteration 310 pointed here by arithmetic: 266 Top@1 misses remain, and 111 of them are two fault types. This entry
+records the audit of that class, its pre-registration (`docs-repository:preregistration-311.md`), and the
+axis it opens. The full reading, with the population, the instrument and the by-service table, is
+`docs/fse26-entry-point.md`.
+
+The dump was taken **without `--fault-free-profile`**, so it reads 1 141 rather than 1 156 — the first of the three
+failure modes the pre-registration itself named. Its size is measured: 18 cases change `truthRank`, **2** are in
+this population (both `HTTPRequestReplaceMethod`, both `1 → 2`, both in H2), and every figure below is stated on the
+published population with the correction applied.
+
+### 320.1 Two of the four registered hypotheses die, and they were the actionable two
+
+| class | published (111) | share |
+| --- | ---: | ---: |
+| **H1** truth's anomaly absent or off-graph | **0** | 0 % |
+| **H2** the winner is the truth's **caller** | 13 | 11.7 % |
+| **H3** in band (rank ≤ 5) | 8 | 7.2 % |
+| **H4** instrument artifact | **0** | 0 % |
+| **H5** real anomaly, not a caller, rank 6–45 | **90** | 81.1 % |
+
+H1 is empty on all 421 dumped cases — the truth always carries a nonzero `selfAnomaly` — so "no observable exists,
+add a channel" is false here and the corpus's own status-code column is not the missing piece. H4 is empty: every
+truth resolved to a node. H5 is a class the pre-registration had no slot for, and it is recorded as a defect of that
+document rather than folded into H3: its members sit at rank 6–45 (median 35 of 50), which is not a tie band.
+
+### 320.2 The class is one service, and the fault types were a proxy for it
+
+Grouping the **whole corpus** by truth service, off the per-case artifact rather than the dump:
+
+| truth service | cases | Top@1 | rate |
+| --- | ---: | ---: | ---: |
+| **`ts-ui-dashboard`** | **165** | **10** | **6.1 %** |
+| `ts-basic-service` (next largest) | 202 | 188 | 93.1 % |
+| the other 28 services | 1 055 | 958 | 90.8 % |
+| corpus | 1 422 | 1 156 | 81.3 % |
+
+**155 of the 266 misses — 58 % — are one node: the request entry point.** No second outlier exists among the
+thirty services with a population worth quoting; `ts-price-service` is next worst at 8 cases. Inside the dashboard's
+165 cases the misses span every family it carries (`response-replace-code` 57/58, `request-replace-method` 39/39,
+`request-delay` 15/16, `request-abort` 10/10, `partition` 8/9, `response-delay` 15/18, `loss` 5/7, `response-abort`
+4/4, `corrupt` 2/3, `bandwidth` 0/1), so the class is a **node** and the fault types were a sample of it.
+
+### 320.3 Why no coefficient recovers it, in one case
+
+`ts0-ts-ui-dashboard-request-replace-method-2lnwn5`: the truth is rank 18 with `selfAnomaly 0.673`, decisive
+`http.server.request.duration = 1.020` (`dev` 0.517), **onset 0**; the winner `ts-verification-code-service` is rank 1
+with `container.cpu.usage = 1.240` (`dev` 0.958), onset 22 007. The entry point is the earliest node in the case and
+eighteen downstream nodes out-score it on their own JVM and CPU deviations.
+
+The onset prior is the natural correction and it is **already closed on this corpus** (`docs/fse26-onset-verdict.md`:
+no admissible weight on either shape, gain 0 over `[0, 0.005361]`, capped by a lead of `0.010050`). This audit
+supplies the population that shows why that interval is narrow and why widening it is not the answer: the signal is
+right on **80 of the 111** misses (67 of the 90 H5; winner earlier on 20; 3 ties, 10 absent), and it still cannot
+act, because the class sits 18–45 metric ranks down — a log-space gap of ≈ 0.18–0.45 against a term whose
+admissible contribution is ≤ 0.005. **A tie-break bounded by one step cannot close a thirty-rank gap.**
+
+### 320.4 What is refused, and what is opened
+
+**Refused by the record, in this entry:** every form of "make the entry point's own numbers louder" — the onset
+prior (§320.3), the log term (silent on both sides of these cases), the dispersion residual (−411, §305), the
+external-channel predicate (−53, §319). And one refusal is a correction: `failedEdgeScore` **already** credits the
+callee of failed calls, pays this entry point `1.000` on the case above, and ships at weight 3 worth +41 with zero
+regressed types — the right edge is already read and already paid.
+
+**Opened — a prior, not a term:** the engine has no concept of a **request root**. `ts-ui-dashboard` is the unique
+callee of `loadgenerator` in every case of this corpus — a structural fact of the graph, not a service name — and
+nothing in the scoring treats "requests enter here" as evidence. The arm that follows is an additive credit to the
+node with no measured inbound edge other than the synthetic load source, **gated on that node's own deviation being
+nonzero**, and its bar is the standing one: beat 1 156 with no fault type below its published cell. Stated with the
+bar because it is the whole risk — the prior promotes a node in every case, and in 1 257 cases that node is not the
+truth. It must win ≥ 60 of the 155 and lose essentially none of the 1 257, and that is what the arm measures.
+
+**Axes this closes.** None. **Axes this opens.** One: the request-root prior.
