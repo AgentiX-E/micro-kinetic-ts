@@ -38,6 +38,7 @@ import type {
   DropDeviationMode,
   FailedEdgeFirstScope,
   FailedEdgeMode,
+  FailureContainmentScope,
   FaultFreeSelection,
   LogNormalisation,
   LogSignalMode,
@@ -74,6 +75,7 @@ import {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_FAULT_FREE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -115,6 +117,7 @@ import {
   isFailedEdgeFirstScope,
   isFailedEdgeGateMode,
   isFailureAttribution,
+  isFailureContainmentScope,
   isFaultFreeSelection,
   isLogNormalisation,
   isLogSignalMode,
@@ -665,6 +668,20 @@ export interface Fse26CliOptions {
    */
   readonly failureAttribution: FailureAttribution;
   /**
+   * How far through the order the failure-flow pass may look for a pair to invert: `adjacent` (neighbours only,
+   * the shipped traversal), `global` (any caller/callee pair on a failing edge), `global-measured` (`global`, and
+   * a candidate the channel did not measure may not take part). Travels in the packed `ranking_knobs` block as
+   * `failure_containment_scope=…`.
+   *
+   * Ships at `DEFAULT_FAILURE_CONTAINMENT_SCOPE` = `global-measured`: **1 156 → 1 186 `Top@1`**, 30 gained and
+   * none lost on 1 422 cases. The narrow traversal is written over the FUSION's neighbours, so an inversion the
+   * fusion placed thirty positions apart is invisible to it — and the guarded wide state exists because iteration
+   * 313 measured what a rule comparing candidates NO edge relates costs (−107 `Top@1`).
+   * `docs/failure-containment-reach.md` is the read; `--failure-containment-scope adjacent` reproduces every
+   * earlier number.
+   */
+  readonly failureContainmentScope: FailureContainmentScope;
+  /**
    * Rank the failed-edge ledger's candidate set AHEAD of everything else — a partition of the order rather than a
    * term in the score. Travels in the packed `ranking_knobs` block as `failed_edge_first=1|0`.
    *
@@ -981,6 +998,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+    failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
     failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
     failedEdgeFirstScope: DEFAULT_FAILED_EDGE_FIRST_SCOPE,
     failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
@@ -1304,6 +1322,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       opts.failedEdgeFirstScope = isFailedEdgeFirstScope(value)
         ? value
         : DEFAULT_FAILED_EDGE_FIRST_SCOPE;
+    } else if (arg === '--failure-containment-scope' && hasValue(argv, i + 1)) {
+      // Closed vocabulary with the shipped fallback, on the rule every option here follows. The three states are
+      // three POPULATIONS of pairs rather than three magnitudes, so an unknown word must reproduce the shipped
+      // traversal rather than pick the nearest one.
+      const value = argv[++i]!;
+      opts.failureContainmentScope = isFailureContainmentScope(value)
+        ? value
+        : DEFAULT_FAILURE_CONTAINMENT_SCOPE;
     } else if (arg === '--failed-edge-first') opts.failedEdgeFirst = true;
     else if (arg === '--no-failed-edge-first') opts.failedEdgeFirst = false;
     else if (arg === '--failure-attribution' && hasValue(argv, i + 1)) {

@@ -22,6 +22,7 @@ import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
@@ -54,6 +55,11 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     // left it out would describe a configuration the engine never ships.
     failedEdgeFirst: false,
     failedEdgeFirstScope: 'credited',
+    // The failure-flow pass's REACH, at its shipped reading since iteration 313 (`global-measured`, measured at
+    // 1 156 → 1 186 `Top@1` with no loss). Carried for the same reason the partition's two fields are: it decides
+    // which candidate pairs may be compared, so a fixture that omitted it would describe a configuration no run
+    // ships — and a fixture pinned to `adjacent` would print a field the shipped line does not.
+    failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     // Shipped composition. The four are REQUIRED fields rather than optional ones so that a test fixture
     // cannot omit them: an optional field here is a fixture that silently describes a different engine.
@@ -215,6 +221,10 @@ describe('FSE26 report — attribution', () => {
       // record that omitted it could not be compared with one that carried it — the list's own admission test.
       'failedEdgeFirst',
       'failedEdgeFirstScope',
+      // And the reach of the pass that partition belongs to. Postdates those runs like everything above it, and
+      // it is the field that says WHICH pairs the pass was allowed to compare — a record that omitted it could
+      // carry two runs whose orders were produced by different rules under one name.
+      'failureContainmentScope',
       'selfTimeWeight',
       'selfTimeScope',
       'victimWeight',

@@ -37,6 +37,10 @@ export const UNREPORTED_BY_ENGINE_RUNNERS: Readonly<Record<string, string>> = {
     'never built on that half and a line that printed it would name a knob this half cannot turn',
   failedEdgeFirstScope:
     'the reading the partition above applies, and unreadable on this half for the same missing column',
+  failureContainmentScope:
+    'the same missing column one pass over: the failure-flow order reads the per-call failure ledger, which the ' +
+    'RCAEval cells do not carry, so the traversal is unreadable on that half and a line that printed it would ' +
+    'name a knob this half cannot turn',
 };
 
 /**
@@ -126,4 +130,6 @@ export const UNREPORTED_BY_ABLATION_BATTERY: Readonly<Record<string, string>> = 
     'the battery has no row for the partition and its cells are not the surface it was measured on, so no row can reach the state this field describes',
   failedEdgeFirstScope:
     'the reading the partition above applies, and the battery has no row for the partition at all',
+  failureContainmentScope:
+    'the battery varies the pass it belongs to as a single switch, so no row can reach a state this field describes',
 };

@@ -25,6 +25,7 @@ import type {
   FailedEdgeGateMode,
   FailedEdgeMode,
   FailureAttribution,
+  FailureContainmentScope,
   FaultFreeProfile,
   FaultFreeSelection,
   LogNormalisation,
@@ -176,6 +177,12 @@ export interface Fse26SignalOptions {
   /** Which reading that pass applies. See `Fse26CliOptions.failureAttribution`. */
   readonly failureAttribution: FailureAttribution;
   /**
+   * How far that pass looks for a pair to invert. Required for the reason every field here is — a PARTIAL would
+   * make the flag a silent no-op, and this one changes which candidates may be compared at all, so the failure
+   * mode is "the arm ran the shipped traversal while the `Config:` line reported the wide one".
+   */
+  readonly failureContainmentScope: FailureContainmentScope;
+  /**
    * Whether the failed-edge ledger's candidate set is ranked ahead of everything else. Required for the reason
    * every field here is — a PARTIAL would make the flag a silent no-op, and this one is a reordering pass that
    * ships OFF, so the failure mode is "the arm ran the control while the `Config:` line reported the arm".
@@ -322,6 +329,7 @@ export function buildFse26EngineOptions(
       containmentMargin: opts.containmentMargin,
       failureContainment: opts.failureContainment,
       failureAttribution: opts.failureAttribution,
+      failureContainmentScope: opts.failureContainmentScope,
       failedEdgeFirst: opts.failedEdgeFirst,
       failedEdgeFirstScope: opts.failedEdgeFirstScope,
       failedEdgeGateMode: opts.failedEdgeGateMode,

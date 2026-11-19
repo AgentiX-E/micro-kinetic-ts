@@ -584,6 +584,18 @@ const KNOBS: Readonly<
     fse26: 'failed_edge_min_records',
     rcaeval: null,
   },
+  failureContainmentScope: {
+    // Iteration 313: the REACH of the failure-flow order — `adjacent` (the shipped neighbour-only traversal),
+    // `global` (any caller/callee pair on a failing edge) and `global-measured` (`global`, with a candidate the
+    // channel never measured refused). Accepted by the FSE'26 runner and unstatable from a dispatch: the packed
+    // `ranking_knobs` block is at its input budget, the same statement the credit below makes. It is a row
+    // because the three states are three POPULATIONS of pairs rather than three magnitudes — a dispatch that could
+    // name a weight here would be naming something the pass does not have.
+    flag: '--failure-containment-scope',
+    owner: 'failure-containment-reach.md',
+    fse26: null,
+    rcaeval: null,
+  },
   failedEdgeFirst: {
     // Iteration 313: the PARTITION of the ranking into the nodes the failed edge charged and the rest. A ranking
     // knob the FSE'26 runner accepts, and one no dispatch can state — the packed block that carries the direction

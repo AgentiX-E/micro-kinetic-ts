@@ -137,6 +137,11 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the SECOND relational pass, and the same kind of object as the containment order: it inverts an adjacent caller/callee pair when the callee own interface failures are not explained by its own calls while the caller own are, so what it changes is which of two candidates is above the other and never a term magnitude — a discrete axiom belongs to a dispatch, and a continuous search interpolating it would average two populations',
   failureAttribution:
     'the READING the failure-flow pass applies, not a magnitude: shape charges a rise that arrived on a request shape the edge had never carried to the caller that sent it, counts charges every counted rise where the count lands, so what it changes is which of two candidates is above the other — a discrete axiom on the same rule as the pass, and a continuous search interpolating between the two readings would be averaging two populations',
+  failureContainmentScope:
+    'the REACH of the failure-flow pass, and the same kind of axis as the reading above: adjacent, global and ' +
+    'global-measured are three POPULATIONS of candidate pairs rather than three magnitudes, so a search ' +
+    'interpolating between them would be averaging three orderings - exactly the reason logNormalisation and ' +
+    'selfTimeScope are held',
   podStateWeight:
     'the pod-state corroboration term, whose value is a DISPATCH question rather than a fusion coefficient: the term reads a 0/1 STATE transition per pod-lifecycle channel and pays for the share of channels that crossed the injection boundary, so what its weight buys is one number per arm (docs/pod-state-term.md records the sweep) and a continuous search over it would have no gradient to follow on corpora that carry no pod-lifecycle channel at all',
 };

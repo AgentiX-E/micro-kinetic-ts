@@ -26,6 +26,7 @@ import {
   DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -113,6 +114,7 @@ describe('buildFse26EngineOptions', () => {
       // The reading that pass applies, asserted here for the same reason: 'counts' next to a `false` switch
       // would look like an ablation of a lever nobody has measured.
       failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+      failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
       // The BAR that lets the direction term speak at all. It belongs in `signals` for the same reason the two
       // rows above do, and its shipped value is the one every published cell ran — so a silent drop would be
       // invisible in every number and visible only here.

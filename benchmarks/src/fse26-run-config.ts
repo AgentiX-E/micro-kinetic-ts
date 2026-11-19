@@ -188,6 +188,7 @@ export function buildFse26RunConfig(
     containmentMargin: opts.containmentMargin,
     failureContainment: opts.failureContainment,
     failureAttribution: opts.failureAttribution,
+    failureContainmentScope: opts.failureContainmentScope,
     failedEdgeFirst: opts.failedEdgeFirst,
     failedEdgeFirstScope: opts.failedEdgeFirstScope,
     failedEdgeGateMode: opts.failedEdgeGateMode,

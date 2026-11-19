@@ -518,6 +518,9 @@ describe('the RCAEval configuration line carries the configuration that produced
       'failedEdgeFirstScope',
       'failedEdgeMinRecords',
       'failedEdgeMode',
+      // Iteration 313: the REACH of the failure-flow order, unreadable on this half for the same missing
+      // column — with no per-call failure rows there is no ledger, and the traversal has nothing to traverse.
+      'failureContainmentScope',
       'metricFleetBaseline',
       'podStateWeight',
     ]);

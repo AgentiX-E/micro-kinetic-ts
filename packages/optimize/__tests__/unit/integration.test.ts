@@ -273,6 +273,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // there is no coefficient for a search to interpolate and no arm to interpolate toward.
       'failureAttribution',
       'failureContainment',
+      // Iteration 313: the REACH of the pass above. Held for the reading's reason one step out — the three states
+      // are three populations of candidate pairs, not three magnitudes, so there is nothing for a search to
+      // interpolate and a coefficient would report an average of three orderings.
+      'failureContainmentScope',
       'faultFreeProfile',
       'faultFreeSelection',
       'faultFreeWeight',

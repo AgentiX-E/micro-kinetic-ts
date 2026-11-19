@@ -31,6 +31,7 @@ import type {
   FailedEdgeFirstScope,
   FailedEdgeGateMode,
   FailureAttribution,
+  FailureContainmentScope,
   FaultFreeSelection,
   OnsetShape,
   PoolAdmission,
@@ -49,6 +50,7 @@ import {
   DEFAULT_FAILED_EDGE_GATE_MODE,
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_STABILITY_SCOPE,
@@ -269,6 +271,16 @@ export interface FSE26RunConfig {
   readonly failedEdgeFirstScope?: FailedEdgeFirstScope;
   /** Which reading of the failure flow that pass applied. */
   readonly failureAttribution?: FailureAttribution;
+  /**
+   * How far the failure-flow pass looked for a pair to invert, rendered only when it is not the shipped
+   * `adjacent`.
+   *
+   * Conditional for the gate-mode reason below: a traversal that is not the shipped one can always be read off
+   * the artifact, so the failure an unconditional rendering guards against — a wide run that renders byte-identically
+   * to the shipped one — is unreachable, and the shipped byte stream stays what every published cell was measured
+   * on.
+   */
+  readonly failureContainmentScope?: FailureContainmentScope;
   /**
    * Which bar let the failed-call direction term speak, rendered only when it is not the shipped one.
    *
@@ -527,6 +539,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'containmentExcursions',
   'failedEdgeFirst',
   'failedEdgeFirstScope',
+  'failureContainmentScope',
   'selfTimeWeight',
   'selfTimeScope',
   'victimWeight',
@@ -718,6 +731,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   if ((config.failureAttribution ?? DEFAULT_FAILURE_ATTRIBUTION) !== DEFAULT_FAILURE_ATTRIBUTION) {
     line += ` failureAttribution=${config.failureAttribution}`;
+  }
+  if (
+    (config.failureContainmentScope ?? DEFAULT_FAILURE_CONTAINMENT_SCOPE) !==
+    DEFAULT_FAILURE_CONTAINMENT_SCOPE
+  ) {
+    line += ` failureContainmentScope=${config.failureContainmentScope}`;
   }
   if (
     (config.failedEdgeGateMode ?? DEFAULT_FAILED_EDGE_GATE_MODE) !== DEFAULT_FAILED_EDGE_GATE_MODE
