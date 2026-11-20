@@ -196,7 +196,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 | the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
-| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision. **v2 read 0.229 on 48 decided and fired the falsifier**, which closed the FREE shape; §325.9 then showed the arm had been a reranker of max ratio (55.0 % echo) and that the same text ordered by robust z carries the truth on 69.2 % of the engine's misses instead of 25.8 %, so the shape reopens as a SEEDED arm whose floor is the engine's own accuracy. **Both seeded falsifiers then fired (§325.10)**, and the reading that survived inverted the design question: the model overrides a correct prior on 55 % of cases at precision 0.263 against 4.3 % and 0.475 for the table arm, so the surface is an UNGATED OVERRIDE and not a free investigation. **§325.11 gates it and the gate is worth +16 cases**: enforcing "an override must be investigated" moves the arm 62 → 73 and refusing the overrides that descend from a correct prior but name something outside its callee cone moves it to **78 against the engine's 80** — precision 0.450, retention 0.863, **no repair refused in 21 refusals (p = 0.0047)** — with one refusal in the whole run and a rule whose ANNOUNCEMENT alone moved the model's own answers 62 → 72 | an arm whose admitted overrides keep losing cases the prior had right: the 11 remaining breaks are all cited and all in-cone, which is downstream misattribution, and topology cannot price it — so the row now turns on a CONTRAST gate (the callee's evidence louder than the prior's, or a failing edge carrying the loss) rather than on another map |
+| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision. **v2 read 0.229 on 48 decided and fired the falsifier**, which closed the FREE shape; §325.9 then showed the arm had been a reranker of max ratio (55.0 % echo) and that the same text ordered by robust z carries the truth on 69.2 % of the engine's misses instead of 25.8 %, so the shape reopens as a SEEDED arm whose floor is the engine's own accuracy. **Both seeded falsifiers then fired (§325.10)**, and the reading that survived inverted the design question: the model overrides a correct prior on 55 % of cases at precision 0.263 against 4.3 % and 0.475 for the table arm, so the surface is an UNGATED OVERRIDE and not a free investigation. **§325.11 gates it and the gate is worth +16 cases**: enforcing "an override must be investigated" moves the arm 62 → 73 and refusing the overrides that descend from a correct prior but name something outside its callee cone moves it to **78 against the engine's 80** — precision 0.450, retention 0.863, **no repair refused in 21 refusals (p = 0.0047)** — with one refusal in the whole run and a rule whose ANNOUNCEMENT alone moved the model's own answers 62 → 72 | an arm whose admitted overrides keep losing cases the prior had right: the 11 remaining breaks are all cited and all in-cone, which is downstream misattribution, and topology cannot price it. **§325.12 supplies the missing axis and it works**: `contrast` (cone ∧ the interface into the answer failing, or the answer logging its FIRST error earlier) reads **87 against the engine's 80** at 6 rounds and **90 against 80 with retention 1.000** when re-scored on a 12-round artifact, at precision 0.733 / 1.000 against 0.542 / 0.550 ungated — the first paired reading in this line of work above the engine. **Registered `C4` (zero repairs refused) failed at both depths (2 and 1)**, so per the pre-registered adjudication no default changed, and `F2` fired as designed. The residual is now SALIENCE and not time or direction: both refused repairs are cases where the prior logged first and was still wrong (`MIS2`) | an arm that cannot separate a source from a loud victim on 2 of 13 repairs, which needs a residual model (LagRCA's trained $s_{i}=\mathrm{ReLU}(r_{i}-\beta p_{i})$) or the base term rather than another predicate on two scalars |
 
 ## What this register holds besides its axes
 
@@ -8359,3 +8359,87 @@ printed by `TOOL failed` and `TOOL metric`, so one boolean per row prices the wh
 One limitation, stated rather than used: every number is one run of 160 cases at temperature 0, and the 62 → 72
 movement is one paired comparison on one sample. A repetition costs ¥2.5 and is the cheapest open item in the
 register.
+
+### §325.12 The contrast gate: 87 against 80, and the threshold that was wrong to register
+
+§325.11 closed `cone` at 78 against the engine's 80 and named the residual: 11 admitted-and-wrong edits, every one a
+model that descended from a correct prior into a callee. Position is necessary and not sufficient, so this iteration
+demands **evidence**.
+
+**The theory, twice confirmed.** LagRCA (`10.1145/3803437.3805219`, FSE Companion '26 Industry Track Distinguished
+Paper, 88.3 % AC@5) names the failure mode — causes and symptoms are *misaligned in time*, and synchronous reading
+"dilutes true upstream culprits while over-ranking downstream victims" — and its **18.49 %** synchronous-incident
+rate forces a **disjunction** rather than a conjunction. Sharper still, `arXiv:2608.21310` codes the 50 failed
+trajectories of the **Sonnet arm that reaches 90.0 Acc@1**: `MIS3` *"fault direction reversed between caller and
+callee sides"* at **86.0 %** and `OMIT6` *"no check that proposed cause precedes the symptom"* at **4.0 %**. The
+strongest published agent reverses direction in most of its failures and almost never checks order — **neither is a
+capability, both are procedure**, which is why the harness imposes them.
+
+**The predicate.** `contrast` = `cone` ∧ (E1 ∨ E2), read off the case and not the transcript:
+
+* **E1** net failures on `prior → answer` exceed those on `answer → prior` — a failing interface is a call that
+  failed, and the callee is the end it reached;
+* **E2** the candidate logged its first `ERROR`/`FATAL` strictly earlier (LagRCA's $\tau>0$), with a silent prior
+  treated as no counter-evidence rather than as a veto.
+
+Two rejections are part of the design. **E3** (deepest collapse) was pre-registered and **dropped**, because this
+package's own fixture refutes it: `checkout`'s traffic falls from 100 to 20 *because* `payment` is down. And the
+degenerate `z(answer) > z(prior)` is rejected in writing: this repository's statistic is a robust z against a
+service's own pre-window, amplification makes a victim's z exceed its source's, so that form would collapse
+`contrast` into `cone`.
+
+**Two arms, ¥7.67.** `44773762451` dispatched `--gate contrast` at 6 rounds; `44773776750` dispatched `--gate cited`
+at **12 rounds** because §325.11's census showed the round cap and not the call cap binds.
+
+| policy | 6-round: adm / ref / rep / brk / prec / Top@1 / ret | 12-round: same |
+| --- | --- | --- |
+| `none` | 41 / 0 / 13 / 11 / 0.542 / 82 / 0.863 | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887 |
+| `cited` | 40 / 1 / 13 / 10 / 0.565 / 83 / 0.875 | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887 |
+| `cone` | 35 / 6 / 13 / 10 / 0.565 / 83 / 0.875 | 33 / 18 / 11 / 6 / 0.647 / 85 / 0.925 |
+| **`contrast`** | **19 / 22 / 11 / 4 / 0.733 / 87 / 0.950** | **12 / 39 / 10 / 0 / 1.000 / 90 / 1.000** |
+
+**Adjudicated against thresholds registered before the artifact:**
+
+| id | threshold | 6 rounds | 12 rounds | verdict |
+| --- | --- | ---: | ---: | --- |
+| C1 | precision ≥ 0.50 | 0.733 | 1.000 | pass |
+| C2 | retention ≥ 0.95 | 0.950 | 1.000 | pass |
+| C3 | Top@1 ≥ 84 | **87** | **90** | pass |
+| C4 | repairs refused = 0 | **2** | **1** | **FAIL** |
+| D1 | 12-round repairs ≥ 11 | — | 11 | pass (at the line) |
+| D2 | 12-round precision ≥ 0.50 | — | 0.550 | pass |
+| F2 | ≥ 1 repair refused | **2** | **1** | **FIRES** |
+
+**`C4` fails and `F2` fires, so the registered shipping rule selects nothing and no default changes.** Three
+honesties belong beside that, because the headline is easy to over-read:
+
+1. **The dispatched reading is not yet separable from the engine.** 87 vs 80 is McNemar `+11/−4`, **p = 0.121**;
+   Wilson 95 % on 87/160 is `[0.466, 0.619]`. It is worth **+5 over the ungated arm on the same cases** and it is
+   **not** a significant advantage over the engine on 160 cases.
+2. **The 90 is a re-score, not a reading.** The 12-round artifact was produced under a `cited` prompt, and §10.8
+   measured that announcing a rule moves the override rate 55 % → 31.9 %, so a `contrast` prompt would produce a
+   different population. 90 with retention 1.000 and zero breaks (McNemar `+10/−0`, p = 0.0044) is an **upper
+   bound with its confound named**, not a measurement.
+3. **The two refused repairs are the designed behaviour and they are wrong.** Both are `MIS2`: the prior logged at
+   +0.7 s / +0.8 s and the correct answer at +90.5 s / +8.9 s, so the predicate refused a repair because the victim
+   really did log later. Nothing about ordering the two onsets settles that case.
+
+**The law, corrected.** §325.11 said a gate is judged by the repairs it refuses and that a gate refusing none has
+non-negative gain by construction. The first half holds; the second is too strong:
+
+> A gate's gain is `breaks refused − repairs refused`, and the only gate with gain ≥ 0 **by construction** refuses
+> nothing at all. What a gate needs is `repairs refused < breaks refused` — the fallback is the prior, right on half
+> this population — and nothing stronger. `C4 = 0` was the wrong threshold to register.
+
+Measured: six rounds `+7 − 2 = +5`; twelve rounds `+9 − 1 = +8`. Both positive, neither free.
+
+**Depth, priced.** The 12-round arm cost ¥5.19 and moved `none` from 82 to 82, repairs from 13 to 11, rounds from
+6.00 to 9.72. It bought **more overrides and no more repairs** — RCAtlas's finding reproduced (*"reasoning budget
+does not predict quality"*). What it did buy is worth stating precisely: the twelve-round override population is
+*more filterable* (39 of 51 refused), so depth made the **gate** look better by making the model's overrides worse,
+which is not the same as making the arm better.
+
+**What is left is salience, not time and not direction.** Both refused repairs are `MIS2`, and the residual is the
+2-of-13 rate at which a loud victim is preferred to a quiet source. LagRCA solves it with a trained residual model.
+The cheapest untried lever here is the **base term** (236 misses, 126 never repaired) rather than a fourth predicate
+on two scalars.

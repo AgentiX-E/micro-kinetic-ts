@@ -686,3 +686,175 @@ by construction, so the predicate that separates the two cases cannot be "how mu
 the callee's evidence beats the prior's on a statistic the victim cannot inflate, or whether a failing edge carries
 the loss**. That is a contrast, it is computable from two tool results this arm already prints, and it is the one
 thing no competitor's paper supplies.
+
+## 11. A gate judged by the evidence it demands, not by the position it checks
+
+§10 closed at "two cases short of its own floor", and the sentence that named the cause was:
+
+> `cone` admitted 11 of the 17 overrides on engine hits, and **all 11 were wrong**. Every one was cited and in-cone
+> — the model descended from a correct prior into a callee and blamed the callee.
+
+Position is necessary and not sufficient. This iteration replaces it with **evidence**.
+
+### 11.1 The theory, from the paper that named the failure mode first
+
+**LagRCA** (*Bridging the Delay: Lag-Aware Spatio-Temporal Causal Inference for Microservice Root Cause Analysis*,
+FSE Companion '26, Industry Track Distinguished Paper, Nankai × Alibaba × Tsinghua, `10.1145/3803437.3805219`, code
+public at `github.com/kjhjk566/LagRCA`, **88.3 % AC@5**) states it exactly:
+
+> upstream failures rarely trigger downstream alerts immediately … methods still analyze service interactions
+> synchronously and fail to explicitly account for such multi-lag propagation, **which misaligns causes and symptoms
+> and can dilute true upstream culprits while over-ranking downstream victims**.
+
+Its industrial measurement decides the **shape** of the predicate: **18.49 %** of incidents erupt synchronously, so
+**81.5 %** carry a lag of ≥ 2 minutes (up to > 6). A conjunction would refuse every override in a fifth of cases;
+the rule therefore has to be a **disjunction**.
+
+The mechanism is confirmed from a second direction, and more sharply. `arXiv:2608.21310` codes all 50 failed
+trajectories of the **Sonnet arm that reaches 90.0 Acc@1**, and two of its twelve codes are this iteration's whole
+subject:
+
+| code | what it names | prevalence (Sonnet, n = 50) |
+| --- | --- | ---: |
+| `MIS3` | *"Fault direction reversed between caller and callee sides"* | **86.0 %** |
+| `OMIT6` | *"No check that proposed cause precedes the symptom"* | **4.0 %** |
+| `MIS2` | *"Loudest anomaly over-trusted without cause–symptom distinction"* | 42.0 % |
+
+So the strongest published agent reverses the caller/callee direction in **86 %** of its failures, and almost never
+checks whether its cause precedes its symptom. **Neither of those is a model capability; both are procedure**, which
+is why they are imposed by the harness here.
+
+### 11.2 What a gate can demand that a model cannot fake
+
+`contrast` = `cone` ∧ (E1 ∨ E2), both read off the **case**, not the transcript:
+
+* **E1, the interface.** Net failures on `prior → answer` exceed those on `answer → prior`. A failing interface is a
+  *call that failed*, and the callee is the end the call reached — so the side the failure ran into is a source
+  before it is a victim.
+* **E2, the lag.** The candidate logged its first `ERROR`/`FATAL` **strictly earlier** than the prior. A caller
+  cannot report a callee's failure before the callee produces it. A prior that logged nothing is not
+  counter-evidence, and is therefore not a veto.
+
+A third axis was **pre-registered and then dropped**: the deepest series collapse. This package's own fixture refutes
+it — `checkout`'s traffic falls from 100 to 20 *because* `payment` is down — so a deeper collapse admits the victim.
+The negative result is asserted in the suite (`leadsEvidence` refuses that exact pair) so it cannot be re-invented.
+
+**The degenerate form is also rejected in writing.** LagRCA's score is $s_{t,i}=\mathrm{ReLU}(r_{t,i}-\beta p_{t,i})$
+over a *reconstruction residual*; this repository's statistic is a robust z against a service's own pre-window, and
+under amplification a victim's z exceeds its source's. A predicate `z(answer) > z(prior)` would therefore admit
+almost everything and collapse `contrast` into `cone` — priced as a rejection before the run rather than explained
+away after it.
+
+### 11.3 Two arms, ¥7.67, and the first paired reading above the engine
+
+Run `44773762451` dispatched `--gate contrast` at 6 rounds; run `44773776750` dispatched `--gate cited` at
+**12 rounds** (§10.8 showed the round cap, not the call cap, is what binds). Both on the same 160 cases,
+`deepseek-chat`, `--seed engine`, engine Top@1 = 80 on the sample.
+
+**Six rounds, `contrast` dispatched:**
+
+| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | 41 | 0 | 13 | 11 | 0.542 | 82 | 0.863 |
+| `cited` | 40 | 1 | 13 | 10 | 0.565 | 83 | 0.875 |
+| `cone` | 35 | 6 | 13 | 10 | 0.565 | 83 | 0.875 |
+| **`contrast`** | 19 | **22** | 11 | **4** | **0.733** | **87** | **0.950** |
+
+**Twelve rounds, `cited` dispatched, `contrast` re-scored from the same artifact at ¥0:**
+
+| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | 51 | 0 | 11 | 9 | 0.550 | 82 | 0.887 |
+| `cited` | 51 | 0 | 11 | 9 | 0.550 | 82 | 0.887 |
+| `cone` | 33 | 18 | 11 | 6 | 0.647 | 85 | 0.925 |
+| **`contrast`** | 12 | **39** | 10 | **0** | **1.000** | **90** | **1.000** |
+
+**What this says, in the order the evidence supports it.**
+
+**1. The predicate selects, and selects in the direction it was built for.** Precision moves `0.542 → 0.733` at six
+rounds and `0.550 → 1.000` at twelve, on **fewer** admissions each time (19 of 41; 12 of 51). The measured law from
+§10 — precision falls as intervention rises — is inverted here, which is the first time in four iterations that a
+change moved both axes the right way at once.
+
+**2. The 22 refusals at six rounds cost 2 repairs and bought 7 breaks.** Composition of the refused set:
+`2 repairs, 7 breaks, 13 neutral`. Net **+5** on the sample (82 → 87), and the two refused repairs are visible in
+the artifact:
+
+| case | prior (wrong) | answer (right, refused) | onset prior | onset answer |
+| --- | --- | --- | ---: | ---: |
+| `ts4-…-basic-service-response-delay` | `ts-route-plan-service` | `ts-basic-service` | **+0.7 s** | +90.5 s |
+| `ts4-…-seat-service-response-delay` | `ts-travel-plan-service` | `ts-seat-service` | **+0.8 s** | +8.9 s |
+
+Both are the predicate's **designed** behaviour and both are **wrong** on this data: the prior logged first and was
+still the wrong service. That is `MIS2` from the table above — salience, not direction — and no ordering of the two
+onsets can settle it, because in a TrainTicket case a healthy callee can log an upstream timeout later than the
+upstream service logs its own. **This is the honest cost of the predicate, named rather than hidden.**
+
+**3. The twelve-round artifact prices a stronger claim that this iteration does not own.** Re-scored, `contrast`
+reads **90 against the engine's 80, retention 1.000, zero breaks** — McNemar `+10/−0`, p = 0.0044. But it was **not
+dispatched**, so its 51 overrides are the ones a `cited` prompt produced; §10.8 already measured that the
+*announcement* of a rule moves the override rate (55 % → 31.9 %), so a `contrast` prompt would produce a different
+population. **90 is therefore a re-score of another arm's behaviour, not a reading of this one**, and it is reported
+as an upper bound with its confound stated.
+
+**4. The dispatched reading is not yet statistically separable from the engine.** 87 against 80 is McNemar
+`+11/−4`, **p = 0.121**; Wilson 95 % interval on 87/160 is `[0.466, 0.619]`. The gain is in the predicted direction
+and is worth +5 over the ungated arm on the same cases, and it is **not** a significant advantage over the engine on
+160 cases. Saying otherwise would be the exact error this register exists to prevent.
+
+### 11.4 Thresholds, adjudicated against the numbers registered before them
+
+| id | threshold | six rounds | twelve rounds | verdict |
+| --- | --- | ---: | ---: | --- |
+| **C1** | precision ≥ 0.50 | 0.733 | 1.000 | **pass** |
+| **C2** | retention ≥ 0.95 | 0.950 | 1.000 | **pass** |
+| **C3** | Top@1 ≥ 84 | **87** | **90** | **pass** |
+| **C4** | repairs refused = 0 | **2** | **1** | **FAIL** |
+| **D1** | 12-round repairs ≥ 11 | — | **11** | **pass (at the line)** |
+| **D2** | 12-round precision ≥ 0.50 | — | 0.550 | **pass** |
+| **F1** | Top@1 ≤ 78 | 87 | 90 | does not fire |
+| **F2** | ≥ 1 repair refused | **2** | **1** | **FIRES** |
+| **F3** | repairs < 11 ∧ cost > ¥4 | — | 11, ¥5.19 | does not fire |
+
+**`F2` fires and `C4` fails, so the registered shipping rule selects nothing and no default changes.** That is the
+rule working as designed: the adjudication line was fixed before the number, and a reading that is good is not a
+reading that is exempt.
+
+Predictions: **P1** (15–30 refusals) → 22, **hit**. **P2** (≥ 8 of cone's admitted breaks refused) → 6 of 10,
+**miss**. **P3** (better than cone's 78) → 87 > 83, **hit**. **P4** (12-round repairs > 6-round, precision not
+significantly better) → repairs 11 vs 11 and precision 0.550 vs 0.550, **hit**; rounds 6.00 → 9.72. **P5**
+(announcing E1/E2 moves the raw column by ≥ 3) → raw 82 against 319's 72 and 318's 62, **hit**.
+
+### 11.5 The law this iteration corrects
+
+§10 stated: *a gate is judged by the repairs it refuses, not by the breaks it catches*, and priced a gate that
+refuses no repair as having non-negative gain by construction. This iteration shows that the first half is right and
+the second half is too strong:
+
+> **A gate's gain is `breaks refused − repairs refused`, and the only gate with gain ≥ 0 by construction is one that
+> refuses nothing at all.** The useful question is not whether a refusal was free but whether the exchange rate
+> beats the fallback — and the fallback is the prior, which is right on 50 % of this population, so a gate needs
+> `repairs refused < breaks refused` and nothing stronger.
+
+Under that reading the six-round arm is `+7 − 2 = +5` and the twelve-round re-score is `+9 − 1 = +8`; both positive,
+neither free. **`C4 = 0` was the wrong threshold to register**, and the correction is recorded here rather than
+applied retroactively to a threshold that had already been published.
+
+### 11.6 Depth, priced
+
+The 12-round arm cost **¥5.19** and moved `none` from 82 to 82, `repairs` from 13 to 11, and `rounds` from 6.00 to
+9.72. Depth bought **more overrides (41 → 51) and no more repairs**. This is RCAtlas's finding reproduced
+(`arXiv`, October 2026: *"reasoning budget does not predict quality"*; simple harnesses at 65–77 % PR@1 beating
+published agents at 16–53 %): a multi-turn harness buys the **ceiling**, and this arm's ceiling was not the binding
+constraint. What depth did buy is worth stating: the twelve-round artifact's override population is *more*
+filterable — 39 of 51 refused — which is why its re-scored `contrast` reads higher. **Depth made the gate look
+better by making the model's overrides worse**, which is not the same as making the arm better.
+
+### 11.7 What is left
+
+The predicate now reads `precision 0.733` and `retention 0.950` at six rounds with **2 repairs refused**, and both
+of those repairs are `MIS2` cases where the prior logged first and was still wrong. So the remaining error is not
+temporal and not directional: it is **salience** — deciding whether the loudest rise belongs to the source or to the
+victim. LagRCA solves that with a trained residual model; the cheapest thing this repository can try that no
+competitor's paper supplies is the **base term** (236 misses, 126 never repaired) rather than another gate, because
+the gate's own numbers now say the gate is doing what it can.
