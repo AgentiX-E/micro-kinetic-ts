@@ -577,6 +577,15 @@ export const DEFAULT_QUERY_BUDGET: QueryBudget = {
   transcriptChars: 9_000,
 };
 
+/**
+ * How much of the investigation an artifact row carries.
+ *
+ * The v2 pilot answered 160 of 160 cases and was still 26 cases worse than the engine, and the artifact could not
+ * say why: a row carried rounds, calls and tokens but not one exchange. Smaller than the prompt's own budget,
+ * because this is a record of the END of the investigation — the part the answer was made from.
+ */
+export const TRACE_CHARS = 2_000;
+
 /** What one case's investigation produced. */
 export interface QueryOutcome {
   /** The service the model named, or `null` when it never named one this case carries. */
@@ -584,6 +593,8 @@ export interface QueryOutcome {
   /** Why the last answer was refused, when one was. */
   readonly answerRefused: string | null;
   readonly exchanges: readonly QueryExchange[];
+  /** The end of the investigation, as the artifact keeps it. */
+  readonly trace: string;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
@@ -680,6 +691,7 @@ export async function runQueryAgent(
     answer,
     answerRefused,
     exchanges,
+    trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
     rounds,
     toolCalls,
     promptTokens,
@@ -705,10 +717,14 @@ export async function runQueryAgent(
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
     const call = parseCall(completion.text);
+    // The terminal act is rendered with its own keyword, not as `TOOL answer`: a transcript that spells the answer
+    // the same way it spells a query cannot be read to say when the investigation stopped.
     const directive =
       call.kind === 'unparsed'
         ? `UNPARSED: ${call.text.slice(0, 80)}`
-        : `TOOL ${call.tool}${call.argument === '' ? '' : ` ${call.argument}`}`;
+        : call.tool === 'answer'
+          ? `ANSWER ${call.argument}`
+          : `TOOL ${call.tool}${call.argument === '' ? '' : ` ${call.argument}`}`;
     if (forcing) {
       // The runway is gone either way, and WHICH one ran out is what the artifact reports.
       stop = callsLeft === 0 ? 'tool-calls' : 'rounds';
@@ -758,6 +774,8 @@ export interface QueryArmRow {
    * and a precision that counted the first as a break would report the endpoint's mood as the model's accuracy.
    */
   readonly stop: QueryOutcome['stop'] | 'error';
+  /** The end of the investigation as it ran, so a wrong answer can be looked inside. */
+  readonly trace: string;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;

@@ -16,6 +16,7 @@ import {
   METRIC_LINES,
   QUERY_SYSTEM_PROMPT,
   QUERY_TOOLS,
+  TRACE_CHARS,
   buildTelemetry,
   buildUserPrompt,
   executeTool,
@@ -795,6 +796,31 @@ function scriptedClient(
   };
 }
 
+describe('the trace the artifact keeps', () => {
+  it('carries what was asked and what came back, so a wrong answer is diagnosable', async () => {
+    // The v2 pilot answered all 160 cases and was still 26 cases worse than the engine, and NOTHING in the artifact
+    // could say why: the row carried rounds and tokens but not one exchange. A reading nobody can look inside is a
+    // reading that cannot be acted on.
+    const client = scriptedClient(['TOOL fleet', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.trace).toContain('TOOL fleet');
+    expect(outcome.trace).toContain('ANSWER payment');
+    expect(outcome.trace.length).toBeLessThanOrEqual(TRACE_CHARS + 40);
+  });
+
+  it('keeps the END of a long transcript, because the end is what the answer was made from', async () => {
+    const many = Array.from({ length: 40 }, (_, index) => `TOOL metric s${index}`);
+    const client = scriptedClient([...many, 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()), {
+      ...DEFAULT_QUERY_BUDGET,
+      maxRounds: 41,
+      maxToolCalls: 40,
+    });
+    expect(outcome.trace).toContain('ANSWER payment');
+    expect(outcome.trace).toContain('elided');
+  });
+});
+
 describe('runQueryAgent', () => {
   const telemetry = buildTelemetry(makeCase());
 
@@ -943,6 +969,7 @@ describe('summariseQueryArm', () => {
     answer: 'a',
     correct: true,
     stop: 'answered',
+    trace: 'TOOL fleet\n=> fleet: 1 service',
     rounds: 2,
     toolCalls: 1,
     promptTokens: 100,
