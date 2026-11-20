@@ -19,7 +19,9 @@ import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
 import {
   DEFAULT_QUERY_BUDGET,
   buildTelemetry,
+  netBetween,
   onPriorCone,
+  onsetOf,
   runQueryAgent,
   stride,
   summariseGatePolicies,
@@ -71,8 +73,9 @@ function parseArgs(argv: readonly string[]): Args {
   // A gate is a policy a run states, and an unknown one is refused rather than defaulted: a typo that silently
   // measured the ungated control would publish a gated reading that no gate produced.
   const gate = map.get('gate') ?? 'none';
-  if (gate !== 'none' && gate !== 'cited' && gate !== 'cone') {
-    throw new Error('--gate must be `none`, `cited` or `cone`');
+  const gates: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast'];
+  if (!gates.includes(gate as GatePolicy)) {
+    throw new Error('--gate must be `none`, `cited`, `cone` or `contrast`');
   }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
@@ -89,7 +92,7 @@ function parseArgs(argv: readonly string[]): Args {
     correct: number('sample-correct', 100),
     concurrency: Math.max(1, number('concurrency', 4)),
     seed,
-    gate,
+    gate: gate as GatePolicy,
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -182,6 +185,10 @@ async function investigate(
       answeredBy: null,
       calls: [],
       inCone: false,
+      answerOnset: null,
+      priorOnset: null,
+      intoAnswer: null,
+      intoPrior: null,
       gateRefusals: 0,
     };
   }
@@ -206,6 +213,20 @@ async function investigate(
     // The cone is a property of the CASE, so it is recorded for the model's own answer whether or not the dispatched
     // policy read it: that is what lets the two unshipped policies be priced from this artifact at ¥0.
     inCone: outcome.rawAnswer !== null && onPriorCone(telemetry, outcome.rawAnswer, verdict.winner),
+    // The evidence is read from the CASE, not from the transcript: a service the model never queried still has
+    // telemetry, and a policy that could only judge what the model happened to look at would be pricing the
+    // model's curiosity rather than the case's shape.
+    answerOnset:
+      outcome.rawAnswer === null ? null : (onsetOf(telemetry, outcome.rawAnswer) ?? null),
+    priorOnset: verdict.winner === null ? null : (onsetOf(telemetry, verdict.winner) ?? null),
+    intoAnswer:
+      outcome.rawAnswer === null || verdict.winner === null
+        ? null
+        : netBetween(telemetry, verdict.winner, outcome.rawAnswer),
+    intoPrior:
+      outcome.rawAnswer === null || verdict.winner === null
+        ? null
+        : netBetween(telemetry, outcome.rawAnswer, verdict.winner),
     gateRefusals: outcome.gateRefusals,
   };
 }

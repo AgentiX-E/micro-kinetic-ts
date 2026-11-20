@@ -23,10 +23,14 @@ import {
   executeTool,
   formatNumber,
   gateAdmits,
+  leadsEvidence,
   median,
+  netBetween,
   onPriorCone,
+  onsetOf,
   parseCall,
   renderBudget,
+  renderGate,
   renderSeed,
   renderTranscript,
   runQueryAgent,
@@ -38,6 +42,7 @@ import {
 
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type {
+  ContrastEvidence,
   GateContext,
   QueryAgentClient,
   QueryArmRow,
@@ -1007,6 +1012,10 @@ describe('summariseQueryArm', () => {
     answeredBy: 'model',
     calls: [],
     inCone: false,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
     gateRefusals: 0,
     ...over,
   });
@@ -1741,6 +1750,10 @@ describe('three policies priced from one artifact', () => {
     answeredBy: 'model',
     calls: [],
     inCone: false,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
     gateRefusals: 0,
     ...over,
   });
@@ -1836,6 +1849,10 @@ describe('three policies priced from one artifact', () => {
         correct: outcome.answer !== null && outcome.answer === 'db',
         calls: outcome.investigated,
         inCone: onPriorCone(telemetry, outcome.rawAnswer ?? '', 'payment'),
+        answerOnset: { firstError: null, fall: null },
+        priorOnset: { firstError: null, fall: null },
+        intoAnswer: null,
+        intoPrior: null,
         gateRefusals: outcome.gateRefusals,
       });
     const offline = summariseGatePolicies([toRow(gated)]).find(
@@ -1867,6 +1884,10 @@ describe('a case the model never answered, under each policy', () => {
     answeredBy: null,
     calls: [],
     inCone: false,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
     gateRefusals: 0,
     ...over,
   });
@@ -1912,5 +1933,306 @@ describe('a case the model never answered, under each policy', () => {
       expect(reading.repairs).toBe(0);
       expect(reading.precision).toBeNull();
     }
+  });
+});
+
+describe('the two numbers a victim cannot manufacture', () => {
+  const telemetry = buildTelemetry(makeCase());
+
+  it('reads the earliest error line, which is the FATAL and not the later ERROR', () => {
+    expect(onsetOf(telemetry, 'payment')).toEqual({ firstError: 1200, fall: null });
+  });
+
+  it('reads a collapse with no error line at all, because a victim can fall silent', () => {
+    // checkout carries one ERROR at +1900 and an rps series that falls from 100 to 20: the shape this iteration
+    // records precisely because it does NOT admit it — see the test below that refuses it.
+    expect(onsetOf(telemetry, 'checkout')).toEqual({ firstError: 1900, fall: -80 });
+  });
+
+  it('reports a service with neither logs nor metrics as two nulls rather than as a healthy zero', () => {
+    expect(onsetOf(telemetry, 'db')).toEqual({ firstError: null, fall: null });
+  });
+
+  it('has no reading for a name the case does not carry', () => {
+    expect(onsetOf(telemetry, 'ghost')).toBeUndefined();
+  });
+
+  it('reads the net failures on an interface, in the direction asked for', () => {
+    expect(netBetween(telemetry, 'checkout', 'payment')).toBe(38);
+    expect(netBetween(telemetry, 'payment', 'checkout')).toBeNull();
+    expect(netBetween(telemetry, 'payment', 'db')).toBe(0);
+  });
+});
+
+describe('leads evidence, the predicate `contrast` is built on', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const payment = onsetOf(telemetry, 'payment')!;
+  const checkout = onsetOf(telemetry, 'checkout')!;
+
+  it('admits the callee the prior called and the interface says failed', () => {
+    expect(
+      leadsEvidence(payment, checkout, netBetween(telemetry, 'checkout', 'payment'), null),
+    ).toBe(true);
+  });
+
+  it('admits the side that logged its first error earlier, which a caller cannot do for its callee', () => {
+    // No failing interface in the case at all: the lag alone has to decide, and the earlier onset is the caller's
+    // own admission that the callee failed first.
+    expect(leadsEvidence(payment, checkout, null, null)).toBe(true);
+  });
+
+  it('admits a silent prior, because a prior that logged nothing is not counter-evidence', () => {
+    expect(leadsEvidence(payment, { firstError: null, fall: null }, null, null)).toBe(true);
+  });
+
+  it('refuses a candidate that logged later, which is what a victim of its own callee looks like', () => {
+    expect(leadsEvidence(checkout, payment, null, null)).toBe(false);
+  });
+
+  it('refuses a candidate whose interface failure points back UP at the prior and that logged later', () => {
+    // The only failing interface runs from the candidate into the prior, and the candidate logged AFTER it: that is
+    // a caller reporting its own callee's failure, which is a victim and not a source.
+    expect(leadsEvidence(checkout, payment, -5, 40)).toBe(false);
+  });
+
+  it('refuses a candidate with no evidence on either axis', () => {
+    const silent = { firstError: null, fall: null };
+    expect(leadsEvidence(silent, silent, null, null)).toBe(false);
+  });
+
+  it('does NOT admit on a collapse alone, because this case is the counter-example that rejects it', () => {
+    // checkout's traffic fell by 80 while payment rose. A deeper collapse is exactly what a victim of a stopped
+    // callee looks like, so the E3 axis registered in the pre-registration was dropped rather than shipped: it
+    // would have admitted this. Recorded here so the negative result cannot be re-invented later.
+    expect(leadsEvidence(checkout, payment, null, null)).toBe(false);
+    expect(checkout.fall).toBeLessThan(payment.fall ?? 0);
+  });
+});
+
+describe('the contrast policy, as a predicate', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const evidence = (over: Partial<ContrastEvidence> = {}): ContrastEvidence => ({
+    answer: onsetOf(telemetry, 'payment')!,
+    prior: onsetOf(telemetry, 'checkout')!,
+    intoAnswer: 38,
+    intoPrior: null,
+    ...over,
+  });
+  const context = (over: Partial<GateContext> = {}): GateContext => ({
+    priorTop: 'checkout',
+    cited: new Set(['payment']),
+    onCone: true,
+    evidence: evidence(),
+    ...over,
+  });
+
+  it('admits an override that is cited, in cone, and leads on evidence', () => {
+    expect(gateAdmits('contrast', 'payment', context())).toBe(true);
+  });
+
+  it('refuses a cited, in-cone override whose evidence does not lead', () => {
+    const contradicted = evidence({
+      answer: onsetOf(telemetry, 'checkout')!,
+      prior: onsetOf(telemetry, 'payment')!,
+      intoAnswer: null,
+      intoPrior: 38,
+    });
+    expect(gateAdmits('contrast', 'payment', context({ evidence: contradicted }))).toBe(false);
+  });
+
+  it('refuses when the harness cannot compute the evidence, rather than admitting on absence', () => {
+    // Fail-closed: a policy that admitted when its own input was missing would be a wider `cone` under a
+    // narrower name, and the pre-registration priced `contrast` as strictly narrower.
+    expect(gateAdmits('contrast', 'payment', context({ evidence: undefined }))).toBe(false);
+  });
+
+  it('still requires the cone, so contrast can never admit what cone refuses', () => {
+    expect(gateAdmits('contrast', 'payment', context({ onCone: false }))).toBe(false);
+  });
+
+  it('still requires the record, so contrast can never admit what cited refuses', () => {
+    expect(gateAdmits('contrast', 'payment', context({ cited: new Set() }))).toBe(false);
+  });
+
+  it('is strictly narrower than cone on the same context', () => {
+    const contradicted = evidence({
+      answer: onsetOf(telemetry, 'checkout')!,
+      prior: onsetOf(telemetry, 'payment')!,
+      intoAnswer: null,
+      intoPrior: 38,
+    });
+    const narrower = context({ evidence: contradicted });
+    expect(gateAdmits('cone', 'payment', narrower)).toBe(true);
+    expect(gateAdmits('contrast', 'payment', narrower)).toBe(false);
+  });
+});
+
+describe('the contrast rule, as the model reads it', () => {
+  it('names both axes and the tool shapes that carry them', () => {
+    const text = renderGate('contrast', 'payment');
+    expect(text).toContain('TOOL failed');
+    expect(text).toContain('TOOL logs');
+    expect(text).toContain('net=');
+    expect(text).toMatch(/earlier/i);
+  });
+
+  it('says nothing without a prior, exactly as the other policies do', () => {
+    expect(renderGate('contrast', null)).toBe('');
+  });
+});
+
+describe('four policies priced from one artifact', () => {
+  const row = (over: Partial<QueryArmRow> = {}): QueryArmRow => ({
+    datapack: 'case-1',
+    faultType: 'cpu',
+    truth: ['payment'],
+    engineRank: 1,
+    engineWinner: 'payment',
+    answer: 'payment',
+    correct: true,
+    stop: 'answered',
+    trace: '',
+    seeded: true,
+    rounds: 2,
+    toolCalls: 1,
+    promptTokens: 10,
+    completionTokens: 5,
+    rawAnswer: 'payment',
+    answeredBy: 'model',
+    calls: [],
+    inCone: false,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
+    gateRefusals: 0,
+    ...over,
+  });
+
+  it('prices a break cone admits and contrast refuses, which is the whole point', () => {
+    // The model descended from a correct prior into a callee, queried it, and the callee logged later: cone
+    // admits (position) and contrast refuses (evidence).
+    const rows = [
+      row({
+        rawAnswer: 'checkout',
+        answer: 'checkout',
+        correct: false,
+        calls: ['checkout'],
+        inCone: true,
+        answerOnset: { firstError: 900, fall: null },
+        priorOnset: { firstError: 400, fall: null },
+        intoAnswer: null,
+        intoPrior: 30,
+      }),
+    ];
+    const byPolicy = new Map(
+      summariseGatePolicies(rows).map((reading) => [reading.policy, reading]),
+    );
+    expect(byPolicy.get('cone')!.admitted).toBe(1);
+    expect(byPolicy.get('cone')!.breaks).toBe(1);
+    expect(byPolicy.get('cone')!.correct).toBe(0);
+    expect(byPolicy.get('contrast')!.admitted).toBe(0);
+    expect(byPolicy.get('contrast')!.refused).toBe(1);
+    expect(byPolicy.get('contrast')!.correct).toBe(1);
+    expect(byPolicy.get('contrast')!.retention).toBe(1);
+  });
+
+  it('keeps a repair that leads, so narrowing costs nothing that pays', () => {
+    const rows = [
+      row({
+        engineRank: 3,
+        engineWinner: 'checkout',
+        truth: ['payment'],
+        rawAnswer: 'payment',
+        answer: 'payment',
+        correct: true,
+        calls: ['payment'],
+        inCone: true,
+        answerOnset: { firstError: 300, fall: null },
+        priorOnset: { firstError: 800, fall: null },
+        intoAnswer: 12,
+        intoPrior: null,
+      }),
+    ];
+    const contrast = summariseGatePolicies(rows).find((reading) => reading.policy === 'contrast')!;
+    expect(contrast.admitted).toBe(1);
+    expect(contrast.repairs).toBe(1);
+    expect(contrast.precision).toBe(1);
+  });
+
+  it('reports contrast in the same order as the others, so a table over the result is stable', () => {
+    const policies = summariseGatePolicies([row({})]).map((reading) => reading.policy);
+    expect(policies).toEqual(['none', 'cited', 'cone', 'contrast']);
+  });
+});
+
+describe('the contrast gate in the loop', () => {
+  const telemetry = buildTelemetry(makeCase());
+  // `checkout` is the prior, so `payment` is one hop down its cone and `db` is two.
+  const seed: QuerySeed = { source: 'engine', candidates: ['checkout'] };
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('refuses an override the case’s own evidence says nothing about', async () => {
+    // `db` carries no metrics and logs nothing: cited, in cone, and still no evidence that it leads.
+    const client = scriptedClient(['TOOL metric db', 'ANSWER db']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'contrast');
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.answeredBy).toBe('prior');
+    expect(outcome.gateRefusals).toBe(3);
+    expect(outcome.exchanges[1]!.ok).toBe(false);
+    expect(outcome.exchanges[1]!.result).toMatch(/earlier|interface|LEAD/i);
+  });
+
+  it('admits an override that logged first AND whose interface into it is the one that failed', async () => {
+    // payment logged at +1200 against checkout's +1900, and checkout->payment carries net +38 failures.
+    const client = scriptedClient(['TOOL metric payment', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'contrast');
+    expect(outcome.answer).toBe('payment');
+    expect(outcome.answeredBy).toBe('model');
+    expect(outcome.gateRefusals).toBe(0);
+  });
+});
+
+describe('the two ways the evidence can be absent', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const payment = onsetOf(telemetry, 'payment')!;
+
+  it('refuses when the candidate itself has no reading, because absence is not a lead', () => {
+    expect(leadsEvidence(undefined, payment, null, null)).toBe(false);
+  });
+
+  it('prices a row whose answer names a service the case does not carry as fail-closed', () => {
+    const row: QueryArmRow = {
+      datapack: 'x',
+      faultType: 'cpu',
+      truth: ['payment'],
+      engineRank: 1,
+      engineWinner: 'payment',
+      answer: 'ghost',
+      correct: false,
+      stop: 'answered',
+      trace: '',
+      seeded: true,
+      rounds: 3,
+      toolCalls: 2,
+      promptTokens: 10,
+      completionTokens: 5,
+      rawAnswer: 'ghost',
+      answeredBy: 'model',
+      calls: ['ghost'],
+      inCone: true,
+      answerOnset: null,
+      priorOnset: null,
+      intoAnswer: null,
+      intoPrior: null,
+      gateRefusals: 0,
+    };
+    const contrast = summariseGatePolicies([row]).find((reading) => reading.policy === 'contrast')!;
+    // `cone` admits it on position alone; `contrast` cannot read the evidence and so refuses, falling back.
+    const cone = summariseGatePolicies([row]).find((reading) => reading.policy === 'cone')!;
+    expect(cone.admitted).toBe(1);
+    expect(contrast.admitted).toBe(0);
+    expect(contrast.refused).toBe(1);
+    expect(contrast.retention).toBe(1);
   });
 });

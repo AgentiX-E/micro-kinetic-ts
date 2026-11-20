@@ -822,10 +822,110 @@ export function renderSeed(seed: QuerySeed, telemetry: Telemetry): string {
  *   transcript is the record, so this is decidable with no second model call and no judge.
  * * `cone` — `cited`, plus the direction the domain already knows: the named service must sit on the prior's
  *   **callee side**, because a root cause is reached by descending and a caller that reports errors is the victim.
+ * * `contrast` — `cone`, plus the evidence that separates a source from a victim at the same position
+ *   ({@link leadsEvidence}). Strictly narrower than `cone`, so it can never admit what `cone` refuses.
  */
-export type GatePolicy = 'none' | 'cited' | 'cone';
+export type GatePolicy = 'none' | 'cited' | 'cone' | 'contrast';
 
-/** What a gate is checked against: the prior, the record, and the direction. */
+/**
+ * What one service's own telemetry says, in terms a victim cannot forge.
+ *
+ * Two quantities, both read off the case rather than off the transcript, because a service that a model never
+ * queried still has telemetry and the harness owns it either way.
+ *
+ * * `firstError` — milliseconds from the injection to its first `ERROR`/`FATAL` line, or `null` when it logged none.
+ * * `fall` — its deepest series collapse as a delta, or `null` when nothing fell.
+ */
+export interface Onset {
+  readonly firstError: number | null;
+  readonly fall: number | null;
+}
+
+/**
+ * Read one service's own evidence.
+ *
+ * @param telemetry - The case's tool view.
+ * @param id - The service.
+ * @returns Its evidence, or `undefined` when the case does not carry the name.
+ */
+export function onsetOf(telemetry: Telemetry, id: string): Onset | undefined {
+  const service = telemetry.services.get(id);
+  if (service === undefined) return undefined;
+  let fall: number | null = null;
+  for (const one of service.metrics) {
+    if (one.delta < 0 && (fall === null || one.delta < fall)) fall = one.delta;
+  }
+  return { firstError: service.firstErrorOffset ?? null, fall };
+}
+
+/**
+ * Net failures on one directed interface during the fault, or `null` when the case carries no such interface.
+ *
+ * @param telemetry - The case's tool view.
+ * @param caller - The calling side.
+ * @param callee - The called side.
+ * @returns `failed - baseline`, so a positive number is an interface that began failing.
+ */
+export function netBetween(telemetry: Telemetry, caller: string, callee: string): number | null {
+  const edge = telemetry.failed.find((one) => one.caller === caller && one.callee === callee);
+  return edge === undefined ? null : edge.failed - edge.baseline;
+}
+
+/**
+ * Whether a candidate's own evidence says it is the source rather than the victim.
+ *
+ * ## The theory, and the one axis that was registered and then refused
+ *
+ * **LagRCA** (FSE Companion '26, `10.1145/3803437.3805219`) states the failure this predicate exists for: causes and
+ * symptoms are *misaligned in time*, so a method that reads them synchronously "can dilute true upstream culprits
+ * while over-ranking downstream victims". Its own industrial measurement fixes the shape of the rule — **18.49 %**
+ * of incidents erupt synchronously, so the lag is real but absent in a fifth of cases, and a conjunction would
+ * refuse every override there.
+ *
+ * So this is a disjunction of the two axes a victim cannot manufacture:
+ *
+ * * **the interface** — the failing interface between the two runs from the prior INTO the candidate and not back
+ *   out of it. A failing interface is a *call that failed*, and the callee is the end the call reached.
+ * * **the lag** — the candidate logged its first error **strictly earlier**. A caller cannot report a callee's
+ *   failure before the callee produces it; that is LagRCA's $\tau > 0$, and it is also why a prior that logged
+ *   nothing at all is not counter-evidence.
+ *
+ * A third axis — the deepest series collapse — was pre-registered as `E3` and **dropped**, because this package's
+ * own fixture refutes it: `checkout`'s traffic falls from 100 to 20 precisely *because* `payment` is down, so a
+ * deeper collapse admits the victim. The negative result is kept in the test suite so it cannot be re-invented.
+ *
+ * Note what is deliberately absent: any comparison of the two sides' anomaly z. Under amplification a victim's z
+ * exceeds its source's, so `z(answer) > z(prior)` would admit almost everything and collapse `contrast` into
+ * `cone` — the degenerate form is rejected here rather than discovered afterwards.
+ *
+ * @param answer - The candidate's evidence.
+ * @param prior - The prior's evidence.
+ * @param intoAnswer - Net failures on `prior -> answer`, or `null` when no such interface is recorded.
+ * @param intoPrior - Net failures on `answer -> prior`.
+ * @returns Whether the candidate leads.
+ */
+export function leadsEvidence(
+  answer: Onset | undefined,
+  prior: Onset | undefined,
+  intoAnswer: number | null,
+  intoPrior: number | null,
+): boolean {
+  if (intoAnswer !== null && intoAnswer > 0 && intoAnswer > (intoPrior ?? 0)) return true;
+  if (answer === undefined) return false;
+  if (answer.firstError === null) return false;
+  if (prior === undefined || prior.firstError === null) return true;
+  return answer.firstError < prior.firstError;
+}
+
+/** Everything `contrast` reads: both sides' own telemetry, and which way the interface between them failed. */
+export interface ContrastEvidence {
+  readonly answer: Onset | undefined;
+  readonly prior: Onset | undefined;
+  readonly intoAnswer: number | null;
+  readonly intoPrior: number | null;
+}
+
+/** What a gate is checked against: the prior, the record, the direction, and — for `contrast` — the evidence. */
 export interface GateContext {
   /** The service the prior puts first, or `null` when the arm has no prior. */
   readonly priorTop: string | null;
@@ -833,6 +933,8 @@ export interface GateContext {
   readonly cited: ReadonlySet<string>;
   /** Whether the candidate sits on the prior's callee-side cone. */
   readonly onCone: boolean;
+  /** The evidence `contrast` reads. Required by that policy and ignored by the other three. */
+  readonly evidence?: ContrastEvidence;
 }
 
 /**
@@ -854,8 +956,18 @@ export function gateAdmits(policy: GatePolicy, answer: string, context: GateCont
   if (context.priorTop === null) return true;
   if (answer === context.priorTop) return true;
   if (!context.cited.has(answer)) return false;
-  if (policy === 'cone' && !context.onCone) return false;
-  return true;
+  if (policy === 'cited') return true;
+  if (!context.onCone) return false;
+  if (policy === 'cone') return true;
+  // `contrast` FAILS CLOSED on a missing evidence block: a policy that admitted when its own input was absent would
+  // be a wider `cone` under a narrower name, and 320's pre-registration priced it as strictly narrower.
+  if (context.evidence === undefined) return false;
+  return leadsEvidence(
+    context.evidence.answer,
+    context.evidence.prior,
+    context.evidence.intoAnswer,
+    context.evidence.intoPrior,
+  );
 }
 
 /**
@@ -915,7 +1027,12 @@ export function renderGate(policy: GatePolicy, priorTop: string | null): string 
   const cone =
     policy === 'cone'
       ? ` X must also sit on ${priorTop}'s callee side: a caller that reports errors is usually the victim.`
-      : '';
+      : policy === 'contrast'
+        ? ` X must also sit on ${priorTop}'s callee side AND its own telemetry must show it LEADS ${priorTop}: ` +
+          `either \`TOOL failed\` shows the interface ${priorTop} -> X failing (its net= above 0) and not the ` +
+          `reverse, or \`TOOL logs X\` shows X's first error EARLIER than ${priorTop}'s. ` +
+          'Position alone is not evidence: a callee can be its own callee’s victim.'
+        : '';
   return [
     rule + cone,
     'A refused answer is replaced by the prior, so a guess costs a turn and gains nothing: spend it on a query.',
@@ -1018,19 +1135,50 @@ export async function runQueryAgent(
    * round spent twice. The direction test is only computed under the policy that reads it: a cone nobody consults is
    * a graph walk nobody needs.
    */
+  /**
+   * Everything a gate reads about one candidate.
+   *
+   * The evidence block is built for `contrast` only, because the other policies must not pay for it: an arm whose
+   * prompt is the same as 319's must read the same as 319's, or the two runs are not comparable.
+   */
+  const gateContextFor = (candidate: string): GateContext => {
+    const onCone =
+      policy === 'cone' || policy === 'contrast'
+        ? onPriorCone(telemetry, candidate, priorTop)
+        : false;
+    if (policy !== 'contrast' || priorTop === null) return { priorTop, cited, onCone };
+    return {
+      priorTop,
+      cited,
+      onCone,
+      evidence: {
+        answer: onsetOf(telemetry, candidate),
+        prior: onsetOf(telemetry, priorTop),
+        intoAnswer: netBetween(telemetry, priorTop, candidate),
+        intoPrior: netBetween(telemetry, candidate, priorTop),
+      },
+    };
+  };
+
   const admit = (resolved: string): { ok: boolean; text: string } => {
     if (rawAnswer === null) rawAnswer = resolved;
-    const onCone = policy === 'cone' ? onPriorCone(telemetry, resolved, priorTop) : false;
-    if (gateAdmits(policy, resolved, { priorTop, cited, onCone })) return { ok: true, text: '' };
+    const context = gateContextFor(resolved);
+    if (gateAdmits(policy, resolved, context)) return { ok: true, text: '' };
     gateRefusals += 1;
     // A refusal is only reachable with a prior in hand — `gateAdmits` admits whatever it is given when there is
     // none — so this is an assertion rather than a fallback, and a `??` here would be a branch no case can take.
     const prior = priorTop!;
-    const text = cited.has(resolved)
-      ? `refused by the gate: ${resolved} is not on ${prior}'s callee side, and a caller that reports errors is ` +
-        `usually the victim. Query the callee side, or answer \`${prior}\`.`
-      : `refused by the gate: an override must be investigated first. Run \`TOOL metric ${resolved}\`, ` +
-        `\`TOOL logs ${resolved}\` or \`TOOL edges ${resolved}\`, or answer \`${prior}\`.`;
+    const text = !cited.has(resolved)
+      ? `refused by the gate: an override must be investigated first. Run \`TOOL metric ${resolved}\`, ` +
+        `\`TOOL logs ${resolved}\` or \`TOOL edges ${resolved}\`, or answer \`${prior}\`.`
+      : !context.onCone
+        ? `refused by the gate: ${resolved} is not on ${prior}'s callee side, and a caller that reports errors is ` +
+          `usually the victim. Query the callee side, or answer \`${prior}\`.`
+        : // Only `contrast` can reach this branch: `cone` admits whatever is cited and on the cone.
+          `refused by the gate: ${resolved} sits below ${prior} but its own telemetry does not LEAD — the interface ` +
+          `${prior} -> ${resolved} did not fail, and ${resolved} did not log its first error earlier than ` +
+          `${prior}. A callee can be its own callee's victim. Check \`TOOL failed\` and \`TOOL logs ${resolved}\`, ` +
+          `or answer \`${prior}\`.`;
     answerRefused = text;
     return { ok: false, text };
   };
@@ -1176,6 +1324,14 @@ export interface QueryArmRow {
   readonly calls: readonly string[];
   /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
   readonly inCone: boolean;
+  /** The raw answer's own evidence, or `null` when the case does not carry that name. */
+  readonly answerOnset: Onset | null;
+  /** The prior's own evidence, or `null` when there is no prior or the case does not carry it. */
+  readonly priorOnset: Onset | null;
+  /** Net failures on `prior -> raw answer`, or `null` when no such interface is recorded. */
+  readonly intoAnswer: number | null;
+  /** Net failures on `raw answer -> prior`, or `null` when no such interface is recorded. */
+  readonly intoPrior: number | null;
   /** Answers the gate refused on this case. */
   readonly gateRefusals: number;
   readonly rounds: number;
@@ -1292,7 +1448,7 @@ export interface GateReading {
 export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly GateReading[] {
   const measured = rows.filter((row) => row.stop !== 'error');
   const engineHits = measured.filter((row) => row.engineRank === 1).length;
-  const policies: readonly GatePolicy[] = ['none', 'cited', 'cone'];
+  const policies: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast'];
   return policies.map((policy) => {
     let admitted = 0;
     let refused = 0;
@@ -1308,6 +1464,12 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
           priorTop: row.engineWinner,
           cited: new Set(row.calls),
           onCone: row.inCone,
+          evidence: {
+            answer: row.answerOnset ?? undefined,
+            prior: row.priorOnset ?? undefined,
+            intoAnswer: row.intoAnswer,
+            intoPrior: row.intoPrior,
+          },
         });
       if (override && stands) admitted += 1;
       if (override && !stands) refused += 1;

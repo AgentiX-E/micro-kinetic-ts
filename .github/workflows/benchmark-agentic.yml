@@ -153,7 +153,7 @@ on:
         required: false
         default: ''
       query_gate:
-        description: "What an OVERRIDE of the prior must show before it is accepted: `cited` = the investigation executed a query about the service it names, `cone` = that plus the service sitting on the prior's callee side, empty/`none` = ungated (the surface iteration 318 measured, where the model overrode 55% of cases at precision 0.263). A refused override falls back to the prior, so the gated arm cannot score below the engine by refusing — only by admitting a wrong edit. `arXiv:2611.05390` prices the mechanism: an evidence gate cuts corruption of correct proposals while keeping most repairs, and a gate whose rule lives only in the prompt does not hold"
+        description: "What an OVERRIDE of the prior must show before it is accepted: `cited` = the investigation executed a query about the service it names, `cone` = that plus the service sitting on the prior's callee side, `contrast` = that plus the candidate's OWN telemetry showing it LEADS the prior (the interface prior->X failed, or X logged its first error earlier — the lag axis of arXiv 10.1145/3803437.3805219), empty/`none` = ungated (the surface iteration 318 measured, where the model overrode 55% of cases at precision 0.263). A refused override falls back to the prior, so the gated arm cannot score below the engine by refusing — only by admitting a wrong edit. `arXiv:2611.05390` prices the mechanism: an evidence gate cuts corruption of correct proposals while keeping most repairs, and a gate whose rule lives only in the prompt does not hold"
         required: false
         default: ''
       topology_brief:
