@@ -8132,7 +8132,7 @@ and 78 of the 80 "breaks" are cases where the arm never spoke. The pre-registere
    single-service calls could reach a fifth of the directory that produces it.
 
 **Surface v2 repairs all three, and the repair is registered as an instrument change with its own threshold**
-(`preregistration-317.md`): `renderBudget` states the budget in every prompt and turns the last turn into an order;
+(`docs-repository:preregistration-317.md`): `renderBudget` states the budget in every prompt and turns the last turn into an order;
 a turn taken with the call budget spent accepts only an answer, so the calls already paid for are not discarded by a
 loop that ends itself; `TOOL fleet` ranks the whole directory in one call and every metric answer carries the
 deepest collapses, because the prompt told the model that a service which went quiet can be the root cause while a
