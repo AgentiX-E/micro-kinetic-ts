@@ -627,6 +627,16 @@ describe('summariseQueryArm', () => {
     expect(summary.agentCorrect).toBe(2);
   });
 
+  it('reports a case it could not measure rather than scoring it as a break', () => {
+    const summary = summariseQueryArm([
+      row({ answer: null, correct: false, engineRank: 1, stop: 'error', promptTokens: 0 }),
+    ]);
+    expect(summary.failed).toBe(1);
+    expect(summary.cases).toBe(0);
+    expect(summary.breaks).toBe(0);
+    expect(summary.precision).toBeNull();
+  });
+
   it('reports no precision when the arm changed nothing', () => {
     expect(summariseQueryArm([row({})]).precision).toBeNull();
   });

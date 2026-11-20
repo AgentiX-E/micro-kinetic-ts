@@ -135,7 +135,7 @@ async function investigate(
       engineWinner: verdict.winner,
       answer: null,
       correct: false,
-      stop: 'rounds',
+      stop: 'error',
       rounds: 0,
       toolCalls: 0,
       promptTokens: 0,

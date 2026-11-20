@@ -611,7 +611,13 @@ export interface QueryArmRow {
   readonly engineWinner: string | null;
   readonly answer: string | null;
   readonly correct: boolean;
-  readonly stop: QueryOutcome['stop'];
+  /**
+   * How the investigation ended, or `'error'` when the CALL failed.
+   *
+   * The distinction is not cosmetic: a transport failure and a wrong answer both leave the arm without an answer,
+   * and a precision that counted the first as a break would report the endpoint's mood as the model's accuracy.
+   */
+  readonly stop: QueryOutcome['stop'] | 'error';
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
@@ -628,6 +634,8 @@ export interface QueryArmSummary {
   readonly repairs: number;
   /** Cases the model moved from right to wrong. */
   readonly breaks: number;
+  /** Cases the arm could not measure at all, reported rather than scored. */
+  readonly failed: number;
   /** `repairs / (repairs + breaks)`, or `null` when the arm changed nothing. */
   readonly precision: number | null;
   readonly promptTokens: number;
@@ -645,22 +653,27 @@ export interface QueryArmSummary {
  * @returns The reading.
  */
 export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary {
-  const answered = rows.filter((row) => row.answer !== null).length;
-  const agentCorrect = rows.filter((row) => row.correct).length;
-  const engineCorrect = rows.filter((row) => row.engineRank === 1).length;
-  const repairs = rows.filter((row) => row.correct && row.engineRank !== 1).length;
-  const breaks = rows.filter((row) => !row.correct && row.engineRank === 1).length;
+  // A case the arm could not measure is REPORTED and not scored. Folding a 401 into "the engine was right and the
+  // arm was wrong" would put the endpoint's availability in a precision, which is the class of error the
+  // `unauditable` count exists to prevent elsewhere in this repository.
+  const measured = rows.filter((row) => row.stop !== 'error');
+  const answered = measured.filter((row) => row.answer !== null).length;
+  const agentCorrect = measured.filter((row) => row.correct).length;
+  const engineCorrect = measured.filter((row) => row.engineRank === 1).length;
+  const repairs = measured.filter((row) => row.correct && row.engineRank !== 1).length;
+  const breaks = measured.filter((row) => !row.correct && row.engineRank === 1).length;
   const decided = repairs + breaks;
   return {
-    cases: rows.length,
+    cases: measured.length,
     answered,
     agentCorrect,
     engineCorrect,
     repairs,
     breaks,
+    failed: rows.length - measured.length,
     precision: decided === 0 ? null : repairs / decided,
-    promptTokens: rows.reduce((sum, row) => sum + row.promptTokens, 0),
-    completionTokens: rows.reduce((sum, row) => sum + row.completionTokens, 0),
+    promptTokens: measured.reduce((sum, row) => sum + row.promptTokens, 0),
+    completionTokens: measured.reduce((sum, row) => sum + row.completionTokens, 0),
   };
 }
 
