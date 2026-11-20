@@ -8142,3 +8142,53 @@ ending on an answer.** Only behind that gate do the unchanged `0.55 / 0.35 / 0.3
 The dispatch also regained two budget inputs (`query_max_rounds`, `query_max_tool_calls`) that the runner accepted
 and no workflow step could state — the same "declared, parsed, unreachable" shape as §300, one level up. They ship
 empty, so the default 6/10 is what the pilot used and the next run differs from it only where a dispatch says so.
+
+### §325.8 Surface v2: the instrument passes, the shape does not — and the falsifier fired this time
+
+Run `44704530268`, the same 160-case sample and the same 6-round/10-call budget as §325.6's pilot, after the three
+harness repairs:
+
+| quantity | v1 | **v2** |
+| --- | ---: | ---: |
+| answered share | 0.031 | **1.000** (160 of 160) |
+| agent Top@1 | 4 | **54** (33.75 %) |
+| engine Top@1 on the same 160 | 80 | 80 (50.0 %) |
+| repairs / breaks | 2 / 78 | **11 / 37** |
+| precision | 0.025 *(not adjudicable)* | **0.229** on 48 decided |
+| cost | ¥1.42 | **¥1.90** |
+
+**I1 passes at 1.000**, which settles §325.6's question: the pilot's 3.1 % was the harness, not the arm. **I2 passes
+formally and not in substance** — every case reached the cap and the cap is a forcing turn, so the model never chose
+to stop early. **Q1, Q2 and Q3 fail**; **Q4 and Q5 pass**; and **the falsifier fires**: precision 0.229 on 48 decided
+cases is below the 0.30 `docs-repository:preregistration-316.md` pre-committed. With 160 answers and 48 decisions the
+choice is the arm's, so the evidence-shape row **closes on this implementation**.
+
+**The reading that keeps the row honest is a ¥0 ladder on the arm's own 160 cases**, because the §6.1 census's 38.3 %
+was taken in the corpus's natural class balance and the arm ran on 80 misses plus 80 hits:
+
+| read | correct |
+| --- | ---: |
+| fleet max-ratio, answer the top service | 30.6 % |
+| truth inside the fleet's top 3 | 41.9 % |
+| truth inside the fleet's top 8 | **63.1 %** |
+| **the arm, five investigative turns** | **33.75 %** |
+| the engine, same cases | 50.0 % |
+
+So the queries bought **+3.1 pp over a read that investigates nothing** (the arm is not merely echoing the first
+ordering), while the truth was reachable on **63.1 %** — a **29.4-point selection gap, not an evidence gap**. The
+family profile says the same thing from another side: this arm's only clear gains are `NetworkLoss` +3 and the
+bandwidth/corrupt pair, which are the width-30 table arm's clearest LOSSES, and its worst loss is
+`HTTPRequestReplaceMethod` −8, where the table arm repairs 2 and breaks 10. **Two evidence channels with opposite
+family profiles is what a meta-decision is for** — no arm in this repository decides which channel a case wants, and
+that is now the missing mechanism rather than "a better harness".
+
+**What this does not close.** The budget: `RCAtlas`'s winning harnesses spend 100 calls per case against this arm's
+six, and five investigative turns over a median of 50 services is the width the census priced. The two dispatch
+inputs the runner always accepted and no step could state (`query_max_rounds`, `query_max_tool_calls`) now exist, so
+a 100-call arm is a dispatch costing roughly ¥25–40 rather than a code change.
+
+**A record gap, closed in the same iteration.** The artifact carried rounds, calls and tokens and **not one
+exchange**, which is why the selection gap above is a ladder and not a diagnosis. `QueryArmRow.trace` now carries the
+last 2 000 characters of every investigation, and the terminal act renders as `ANSWER <service>` rather than
+`TOOL answer`, so a transcript can be read to say when an investigation stopped. Coverage on the module: **99.65
+statements / 98.90 branches / 97.77 functions / 99.57 lines** on 87 tests.

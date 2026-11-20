@@ -253,3 +253,113 @@ All three are instrument fixes, so the next run's first threshold is not accurac
 works: **≥ 90 % of investigations must end on an answer.** Only after that does a precision mean anything, and the
 0.55 / 0.35 / 0.30 thresholds of §5 stand unchanged behind it.
 
+### 7.1 What `TOOL fleet` does not fix, stated before the reading rather than after
+
+The ranking is by **ratio**, and a ratio is not comparable across metric labels: a series whose baseline is 0.004
+and whose peak is 0.4 reads 100 beside a `cpu` that doubled. The census's 38.3 % is exactly that read's ceiling, so
+`fleet` inherits a known error mode rather than removing it — a loud, small-baseline series can outrank the fault.
+Two things follow, and neither is a defence:
+
+- the tool is an **entry point**, not an answer: `metric <service>` and `edges <service>` are what confirm a
+  candidate, and the arm's precision will say whether the model used them;
+- if the v2 reading lands at the fleet ceiling rather than above it, the finding is that the arm **replaced** its
+  judgement with the tool's ordering, which is a different failure from the table's and would need its own arm
+  (`fleet` ranked by deviation from each series' own pre-injection variance, rather than by ratio).
+
+
+
+## 8. Surface v2, read
+
+Run `44704530268`, same sample (80 misses + 80 hits), same budget, `deepseek-chat`. The instrument worked and the
+arm did not close the gap.
+
+| quantity | v1 | **v2** |
+| --- | ---: | ---: |
+| **answered share (I1, ≥ 0.90)** | 0.031 | **1.000** |
+| rounds per case (I2, ≥ 2.5) | 6.00 | 6.00 |
+| agent Top@1 on the 160 | 4 | **54** |
+| engine Top@1 on the same 160 | 80 | 80 |
+| repairs / breaks | 2 / 78 | **11 / 37** |
+| decided | 80 | **48** |
+| precision (Q1, ≥ 0.55) | 0.025 *(not adjudicable)* | **0.229** |
+| tokens | 685 150 + 6 507 | 928 610 + 5 145 |
+| cost (Q4, ≤ ¥10) | ¥1.42 | **¥1.90** |
+| completion tokens per turn | 6.8 | **5.4** |
+
+### 8.1 Thresholds, adjudicated
+
+| # | threshold | reading | verdict |
+| --- | --- | --- | --- |
+| I1 | answered ≥ 0.90 | **1.000** | **pass** — the harness now ends on a decision, and the pilot's 3.1 % was the instrument |
+| I2 | rounds ≥ 2.5 | 6.00 | **pass formally, and the number is not the one it was meant to be**: every case reached the cap and the cap is a forcing turn, so the model never chose to stop early |
+| Q1 | precision ≥ 0.55 | **0.229** | **fail**, by more than the width-30 arm failed it (0.475) |
+| Q2 | arm beats the engine on its sample | 54 against 80 | **fail** |
+| Q3 | no family worse than −5 net | `HTTPRequestReplaceMethod` **−8** | **fail** |
+| Q4 | ≤ ¥10 | ¥1.90 | **pass** |
+| Q5 | the switches are honoured | sample, model and both budgets named in the artifact's own header | **pass** |
+| P5 | the falsifier: precision < 0.30 on ≥ 20 decided | 0.229 on 48 | **TRIGGERED** |
+
+**The falsifier fired this time, and it is allowed to.** With 160 of 160 cases answered and 48 decided, the arm's
+choices are the arm's; a precision of 0.229 says a query surface **as built here** does not repair more than it
+breaks. The register's evidence-shape row closes on that reading.
+
+### 8.2 What the number is, exactly — and why 0.229 is not the whole finding
+
+Two readings sit beside the verdict and neither is decoration.
+
+**The arm's accuracy sits just above the fleet read's ceiling — measured on the arm's own cases.** On these 160
+cases the arm answers **54 (33.75 %)**. The §6.1 census priced a fleet-wide max-ratio answer at 38.3 % on 60 corpus
+cases in the corpus's natural class balance, which is **not** the arm's denominator: the arm was measured on 80
+misses plus 80 hits. Recomputed on the arm's own 160 cases (same probe, no model), the ladder reads:
+
+| read, on the pilot's own 160 cases | correct |
+| --- | ---: |
+| fleet max-ratio, answer the top service | **30.6 %** |
+| fleet max-ratio, truth inside the top 3 | 41.9 % |
+| fleet max-ratio, truth inside the top 8 | **63.1 %** |
+| **this arm, five investigative turns** | **33.75 %** |
+| the engine, same 160 | 50.0 % |
+
+Three statements follow, and only the first is comfortable for the shape.
+
+1. **The queries bought 3.1 pp over a read that investigates nothing** — the arm is above the max-ratio floor, so it
+   is not simply copying the first ordering it saw. The gain is small and it is positive.
+2. **The information is reachable and the arm does not reach it.** The truth is inside the fleet's top 8 on **63.1 %**
+   of these cases; the arm answers 33.75 %. The 29.4-point distance is a **selection** gap, not an evidence gap.
+3. **No transcript was recorded for this run**, so *why* the selection fails cannot be recovered from it: `TOOL fleet`
+   called first with the follow-up tools rarely used is the hypothesis that fits two independent readings (the small
+   gain over the floor, the large distance to the ceiling), and it is the hypothesis `QueryArmRow.trace` (§8.3) is
+   there to test next time.
+
+**The family profile is the complement of the table arm's.** Net repairs by family:
+
+| family | this arm | width-30 table arm |
+| --- | ---: | ---: |
+| `NetworkLoss` | **+3** | −4 |
+| `NetworkBandwidth` / `NetworkCorrupt` | **+1 / +1** | — |
+| `JVMMemoryStress` | −4 | — |
+| `HTTPResponseDelay` | −3 | +3 |
+| `HTTPResponseReplaceCode` | −2 | **+8** |
+| `JVMException` | 0 | **+8** |
+| `HTTPRequestReplaceMethod` | **−8** | **−7** |
+
+The two shapes lose on different families and gain on different families: the network families are this arm's only
+clear gain, and they are the table arm's clearest loss. That is what two different evidence channels should look
+like — and it means the missing mechanism is not a better harness but a **meta-decision about which channel a case
+wants**, which no arm in this repository has.
+
+### 8.3 What closed, and what did not
+
+**Closed:** a free-investigation surface with six rounds, ten calls, a fleet-first prompt and this model does not
+beat the engine on this corpus. The register records the precision and the sample.
+
+**Not closed, and named rather than implied:** the budget. `RCAtlas`'s winning harnesses spend **100 calls per case**
+against this arm's six, and its own ablation says more rounds buy aptitude. This arm spent five investigative turns
+on cases with a median of **fifty** services, and the family table says it found something in the network families
+anyway. `query_max_rounds` and `query_max_tool_calls` now exist as dispatch inputs; a 100-call arm at 160 cases costs
+roughly **¥25–40** and is the next purchase if this axis is reopened.
+
+**A record gap, closed in this iteration.** The artifact carried rounds, calls and tokens and **not one exchange**, so
+"the model ignored the evidence" had to be inferred from a model we cannot see. `QueryArmRow.trace` now carries the
+last 2 000 characters of each investigation, and `ANSWER` is rendered with its own keyword rather than as
+`TOOL answer`, so a transcript can be read to say when the investigation stopped.
