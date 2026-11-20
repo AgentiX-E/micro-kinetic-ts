@@ -665,4 +665,20 @@ describe('the free-investigation arm’s wiring', () => {
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/query-agent.ts'))).toBe(true);
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
   });
+
+  it('lets a dispatch state the arm’s budget, which the runner has always accepted', () => {
+    // The runner has parsed `--max-rounds` and `--max-tool-calls` since it was written and NO step could spell
+    // either: the arm's budget was a constant a dispatch could not vary, so "the arm needs more turns" was not a
+    // question this workflow could ask. Both inputs ship empty, so the shipped budget stays 6 rounds / 10 calls.
+    for (const [input, flag] of [
+      ['query_max_rounds', '--max-rounds'],
+      ['query_max_tool_calls', '--max-tool-calls'],
+    ] as const) {
+      expect(inputNames(WORKFLOW), input).toContain(input);
+      expect(measure, input).toContain(`inputs.${input}`);
+      expect(measure, flag).toContain(flag);
+    }
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('"${BUDGET_ARG[@]}"');
+  });
 });
