@@ -53,16 +53,17 @@ export interface TelemetryMetric {
   /** `peak / |baseline|` when the baseline is non-zero, else the peak itself. */
   readonly ratio: number;
   /**
-   * The peak in units of the pre-window's OWN spread — `(peak − median) / σ̂`, with `σ̂ = 1.4826 · MAD`.
+   * The peak in units of the pre-window's OWN spread — `(peak − median) / max(1.4826 · MAD, |median| · 10⁻³)`.
    *
-   * The ratio compares a rise to a LEVEL, so it rewards whatever was already large, and a series that has never
-   * moved by more than a rounding error looks calm until the moment it matters. On this corpus the two statistics
-   * are not two opinions about the same thing: ranked by ratio, a fleet of eight carries the truth on **74.3 %** of
-   * cases; ranked by this, **84.9 %** — and on the 159 cases the engine itself misses, **25.8 %** against
-   * **69.2 %**. Reach is what a candidate LIST is for, so the list is ordered by this.
+   * The ratio compares a rise to a LEVEL, so it rewards whatever was already large. This compares it to the series'
+   * own fluctuation, which is the reading a candidate list needs when the metric families carry unrelated units.
    *
-   * `undefined` when the pre-window holds fewer than three samples, because a spread cannot be estimated from two
-   * of anything and a fabricated one would rank a series on a number the case never carried.
+   * `undefined` in two cases, both of them a refusal rather than a default: a pre-window of fewer than three
+   * samples cannot support a spread estimate, and a pre-window whose median is zero has no level to standardise
+   * against. The second case is not hypothetical — 100 % of the arm's own 160 cases carry such a series (error
+   * rates, class-loading counters) and an earlier version of this function, which floored the spread at `1e-9`,
+   * reported **5e10** for them and let them occupy **88.5 %** of every fleet list. `bySurprise` orders an undefined
+   * series last and falls back to the ratio, which is the statement the case actually supports.
    */
   readonly surprise?: number;
   /** Milliseconds from the injection to the peak sample; negative when the peak precedes it. */
@@ -210,12 +211,19 @@ export function summariseSeries(
  * engine's own onset detector uses the same pair: a baseline window that contains one spike would otherwise inflate
  * its own spread and hide the fault it is measuring against.
  *
- * The floor on the spread is a thousandth of the level rather than zero, and it is a decision with a cost that is
- * measured rather than hoped for. A perfectly flat series would divide by zero; flooring at zero-width instead
- * would let it win on any numeric noise at all. At a thousandth of the level, a series that never moved still
- * outranks a volatile one after a one-percent step — which is why this statistic is used to ORDER A LIST and not to
- * pick its first element: as a top-1 read it is worse than the ratio (25.0 % against 30.6 % on the sample), and as
- * a top-8 read it is much better.
+ * ## The zero level, and a claim this function had to withdraw
+ *
+ * A first version floored the spread at a thousandth of the level and let the level be zero, so the floor became
+ * `1e-9` and a series that sat at zero and became 50 reported a surprise of **5e10**. A census over the arm's own
+ * 160 cases then found that **100 %** of them carry such a series and that **88.5 %** of the fleet list's slots were
+ * occupied by them — error rates and class-loading counters, which belong to VICTIMS rather than to sources. The
+ * recall that ordering produced (76.9 % against the ratio's 63.1 %) was therefore not dispersion normalisation at
+ * work; it was an error-rate sort wearing its name.
+ *
+ * A standardised reading needs a level to standardise against. When the pre-window's median is zero there is none,
+ * and the honest answer is `undefined` — the ordering then falls back to the ratio, which is the observation the
+ * case actually supports ("it was silent and then it was not"). Returning a fabricated infinity instead is how a
+ * statistic comes to rank the blast radius above the source.
  *
  * @param pre - The samples before the injection, in time order.
  * @param peak - The largest sample at or after it.
@@ -224,9 +232,10 @@ export function summariseSeries(
 export function surpriseOf(pre: readonly number[], peak: number): number | undefined {
   if (pre.length < 3) return undefined;
   const mid = median(pre);
+  // No level, no standardised reading. See the note above: this is the case that produced 5e10.
+  if (mid === 0) return undefined;
   const mad = median(pre.map((value) => Math.abs(value - mid)));
-  const floor = Math.max(Math.abs(mid) * 1e-3, 1e-9);
-  return (peak - mid) / Math.max(1.4826 * mad, floor);
+  return (peak - mid) / Math.max(1.4826 * mad, Math.abs(mid) * 1e-3);
 }
 
 /** A log line, trimmed to a length a prompt can carry. */

@@ -1199,9 +1199,18 @@ describe('surprise, the dispersion-normalised amplitude', () => {
     expect(collapsing.surprise).toBeLessThanOrEqual(0);
   });
 
-  it('floors the spread at a fraction of the level, so a perfectly flat series cannot divide by zero', () => {
-    const flat = series([0, 0, 0, 0, 0]);
-    expect(Number.isFinite(flat.surprise ?? 0)).toBe(true);
+  it('refuses a standardised reading when the pre-window is zero, rather than report 5e10 for a 0 to 50 step', () => {
+    // The first version floored the spread at a thousandth of the level and let the level be zero, so this series
+    // scored 5e10 and outranked every real rise in its case. It is not a surprise of 5e10; it is a different
+    // observation -- silence, then noise -- and the ratio is the statistic that says so.
+    expect(series([0, 0, 0, 0, 50]).surprise).toBeUndefined();
+    expect(series([0, 0, 0, 0, 0]).surprise).toBeUndefined();
+    // A zero MEDIAN inside a window that did move is the same case: no level, no standardised reading.
+    expect(series([0, 0, 0, 4, 50]).surprise).toBeUndefined();
+  });
+
+  it('still standardises a flat window that has a level, because there the level is the reference', () => {
+    const flat = series([10, 10, 10, 10, 10]);
     expect(flat.surprise).toBe(0);
   });
 });
