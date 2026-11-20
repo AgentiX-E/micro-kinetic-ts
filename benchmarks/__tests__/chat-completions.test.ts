@@ -134,6 +134,21 @@ describe('createChatClient', () => {
     ]);
   });
 
+  it('omits the JSON constraint when the arm parses something that is not JSON', async () => {
+    // DeepSeek answers 400 to `json_object` on a prompt that never says "json", so an arm with a line-oriented
+    // grammar cannot use the default. Omitting the field is the fix; adding the word to the prompt would be
+    // measuring a model that had been asked for JSON.
+    const endpoint = await endpointWith(async () => ({ status: 200, body: completion }));
+    const client = createChatClient({
+      apiKey: KEY,
+      model: 'deepseek-chat',
+      endpoint: endpoint.endpoint,
+      responseFormat: 'text',
+    });
+    await client.complete({ system: 'sys', user: 'usr' });
+    expect(endpoint.seen[0]!.body).not.toHaveProperty('response_format');
+  });
+
   it('retries a busy endpoint and counts the attempts', async () => {
     const endpoint = await endpointWith(async (_request, _body, index) =>
       index === 0

@@ -647,10 +647,12 @@ describe('the free-investigation arm’s wiring', () => {
   it('does not buy a second nomination pass in the same dispatch', () => {
     // Two paid arms in one dispatch is two bills, and a document that reports one arm's cost must not contain the
     // other's tokens. The offline arms still run, so the dispatch still reads its control rows.
-    const nomination = study.slice(study.indexOf('Ask the model to rank'));
-    expect(nomination.slice(0, nomination.indexOf('run:'))).toContain(
-      "inputs.query_agent_sample == ''",
-    );
+    // BOTH paid study arms, because the workflow has three and a dispatch that buys one must not buy the others:
+    // the elimination pass is the one that was missed first, and a run of this iteration paid for it.
+    for (const step of ['Ask the model to rank', 'Ask the model to eliminate']) {
+      const arm = study.slice(study.indexOf(step));
+      expect(arm.slice(0, arm.indexOf('run:')), step).toContain("inputs.query_agent_sample == ''");
+    }
     expect(study).toContain('this dispatch asked for the free-investigation arm');
   });
 

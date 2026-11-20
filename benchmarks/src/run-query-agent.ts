@@ -126,7 +126,12 @@ async function investigate(
   try {
     outcome = await runQueryAgent(client, buildTelemetry(bench), budget);
   } catch (error) {
-    process.stderr.write(`\r${raw.datapack}: ${(error as Error).message.slice(0, 80)}\n`);
+    // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
+    // guess, and the sentence is not a secret.
+    const detail = (error as { detail?: string }).detail ?? '';
+    process.stderr.write(
+      `\r${raw.datapack}: ${(error as Error).message.slice(0, 80)} — ${detail.slice(0, 160)}\n`,
+    );
     return {
       datapack: raw.datapack,
       faultType: raw.faultType ?? 'unknown',
@@ -213,6 +218,10 @@ async function main(): Promise<void> {
     model: args.model,
     maxTokens: 200,
     temperature: 0,
+    // The directive grammar is one line of text, not JSON. Saying `json_object` here would be a 400 on this
+    // endpoint for a prompt that never mentions the word, and adding the word would be measuring a model that had
+    // been asked for JSON.
+    responseFormat: 'text',
   });
   let done = 0;
   const rows = await pool(sample, args.concurrency, async (datapack) => {

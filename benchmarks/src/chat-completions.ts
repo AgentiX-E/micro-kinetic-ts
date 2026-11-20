@@ -75,6 +75,16 @@ export interface ChatClientOptions {
   readonly backoffMs?: number;
   /** Injected delay, so a test of the retry path costs microseconds instead of seconds. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * What the endpoint is told to enforce on the reply.
+   *
+   * `json` is the default and it is a CONSTRAINT, not a preference: DeepSeek answers **400** to a request that
+   * states `json_object` while the prompt never says "json", so an arm whose grammar is line-oriented cannot use
+   * this client at all — and an arm that added the word "json" to its prompt to satisfy the sampler would be
+   * measuring a model that had been asked for JSON. `text` omits the field, which is the whole of the fix: the
+   * constraint belongs to the arm that wants JSON, not to the transport.
+   */
+  readonly responseFormat?: 'json' | 'text';
 }
 
 /** Resolved defaults: a 20 s wall clock, four attempts, and a 250 ms backoff base. */
@@ -190,6 +200,7 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_CHAT_LIMITS.maxAttempts);
   const backoffMs = Math.max(0, options.backoffMs ?? DEFAULT_CHAT_LIMITS.backoffMs);
   const sleep = options.sleep ?? realSleep;
+  const responseFormat = options.responseFormat ?? 'json';
   const headers = {
     'content-type': 'application/json',
     authorization: `Bearer ${options.apiKey}`,
@@ -205,7 +216,10 @@ export function createChatClient(options: ChatClientOptions): ChatClient {
         max_tokens: maxTokens,
         // The protocol asks for JSON, and stating it to the endpoint is the one server-side enforcement of that:
         // a model that would otherwise answer with prose is constrained at the sampler rather than corrected later.
-        response_format: { type: 'json_object' },
+        //
+        // ABSENT, not empty, when the arm's grammar is not JSON: a `json_object` a prompt does not mention is a 400
+        // at this endpoint, and the arms that parse a line-oriented directive must be able to say so.
+        ...(responseFormat === 'json' ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: turn.system },
           { role: 'user', content: turn.user },

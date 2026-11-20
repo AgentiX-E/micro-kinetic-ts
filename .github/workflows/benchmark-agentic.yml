@@ -618,8 +618,11 @@ jobs:
       #
       #   The corpus is not here and cannot be: this job reads artifacts only. That is the property that keeps a
       #   number from being an accident of the data a machine happened to hold.
+      #   Skipped on a query-arm dispatch for the same reason the nomination step is: this is the third paid arm in
+      #   the workflow, and a dispatch that buys one arm must not buy three. The offline arms it scores beside still
+      #   run, so the control rows survive.
       - name: Ask the model to eliminate, then score every arm
-        if: env.HAS_MODEL_KEY == 'true'
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == ''
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
@@ -721,11 +724,16 @@ jobs:
       #   visible: the offline arms still run, and the reason the fourth one did not is printed by name rather than
       #   left as a missing row a reader would take for a refusal.
       - name: Say why the model arm did not run
-        if: env.HAS_MODEL_KEY != 'true'
+        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != ''
         run: |
-          echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the model arm was NOT MEASURED"
-          echo "MODEL ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
-            | tee artifacts/agentic/eliminator.txt
+          if [ "${{ inputs.query_agent_sample }}" != "" ]; then
+            echo "MODEL ARM NOT MEASURED: this dispatch asked for the free-investigation arm, and the paid arms" \
+              "are independent" | tee artifacts/agentic/eliminator.txt
+          else
+            echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the model arm was NOT MEASURED"
+            echo "MODEL ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
+              | tee artifacts/agentic/eliminator.txt
+          fi
 
       - name: Score the offline arms beside it
         if: env.HAS_MODEL_KEY != 'true'
