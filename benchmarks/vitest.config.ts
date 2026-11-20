@@ -81,6 +81,12 @@ export default defineConfig({
         // score gap, an absent truth is NAMED instead of decomposed, and a tie is NAMED instead of resolved — and
         // every branch that could silently turn one of the three into a different claim is asserted here.
         'src/miss-anatomy.ts',
+        // Added with the module: the ceiling a reranker is shown, as a function of the presentation's WIDTH. Its
+        // whole value is that an arm measured under a ceiling below the target cannot succeed, so the four
+        // statements that make the number a gate rather than a description — monotone in the width, an absent
+        // truth unreachable at every width, the SMALLEST width that reaches a target, and a refusal for a rank the
+        // artifact could not have written — are asserted by name here.
+        'src/presentation-ceiling.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
