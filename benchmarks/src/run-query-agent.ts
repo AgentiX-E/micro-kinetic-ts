@@ -22,6 +22,7 @@ import {
   netBetween,
   onPriorCone,
   onsetOf,
+  projectOntoCorpus,
   runQueryAgent,
   stride,
   summariseGatePolicies,
@@ -73,9 +74,9 @@ function parseArgs(argv: readonly string[]): Args {
   // A gate is a policy a run states, and an unknown one is refused rather than defaulted: a typo that silently
   // measured the ungated control would publish a gated reading that no gate produced.
   const gate = map.get('gate') ?? 'none';
-  const gates: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast'];
+  const gates: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast', 'lag'];
   if (!gates.includes(gate as GatePolicy)) {
-    throw new Error('--gate must be `none`, `cited`, `cone` or `contrast`');
+    throw new Error('--gate must be `none`, `cited`, `cone`, `contrast` or `lag`');
   }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
@@ -348,16 +349,25 @@ async function main(): Promise<void> {
   );
   // The three policies, from ONE artifact. `dispatched` is the arm that ran; the other two are re-scores, so the
   // table costs nothing and the shipped surface is checkable against the priced one.
+  // The sample is half misses and half hits BY CONSTRUCTION, so a reading on it is an EXCHANGE RATE and not an
+  // effect. The last two columns transfer it to the population the arm ships on; the difference between them is
+  // the misreading iteration 320 had to withdraw.
   console.log('gate policies (re-scored from this artifact):');
-  console.log('  policy  admitted refused repairs breaks precision correct retention');
+  console.log(
+    '  policy  admitted refused repairs breaks precision correct retention  net@corpus  top1@corpus',
+  );
+  const population = { misses: misses.length, hits: correct.length };
   for (const reading of summariseGatePolicies(kept)) {
+    const projection = projectOntoCorpus(reading, args.misses, args.correct, population);
     console.log(
       `  ${reading.policy.padEnd(7)} ${String(reading.admitted).padStart(8)} ` +
         `${String(reading.refused).padStart(7)} ${String(reading.repairs).padStart(7)} ` +
         `${String(reading.breaks).padStart(6)} ` +
         `${(reading.precision === null ? 'n/a' : reading.precision.toFixed(3)).padStart(9)} ` +
         `${String(reading.correct).padStart(7)} ` +
-        `${(reading.retention === null ? 'n/a' : reading.retention.toFixed(3)).padStart(9)}` +
+        `${(reading.retention === null ? 'n/a' : reading.retention.toFixed(3)).padStart(9)} ` +
+        `${(projection.net === null ? 'n/a' : projection.net.toFixed(1)).padStart(10)} ` +
+        `${(projection.top1 === null ? 'n/a' : `${projection.top1.toFixed(2)}%`).padStart(11)}` +
         `${reading.policy === args.gate ? '  <- dispatched' : ''}`,
     );
   }

@@ -824,8 +824,24 @@ export function renderSeed(seed: QuerySeed, telemetry: Telemetry): string {
  *   **callee side**, because a root cause is reached by descending and a caller that reports errors is the victim.
  * * `contrast` — `cone`, plus the evidence that separates a source from a victim at the same position
  *   ({@link leadsEvidence}). Strictly narrower than `cone`, so it can never admit what `cone` refuses.
+ * * `lag` — `cone`, plus the ORDER axis of {@link leadsEvidence} alone ({@link lagLeads}). Strictly narrower than
+ *   `contrast`, and it exists because `contrast`'s interface axis was **refuted as a source test** by the 160-case
+ *   pricing: a failing interface `prior -> answer` is what a failing CALLER looks like on every one of its callees,
+ *   so the axis admits the prior's victims. On that artifact it admitted 4 breaks against 1 repair, while the order
+ *   axis alone admitted 10 repairs and 0 breaks (precision 1.000, retention 1.000). Both policies stay: `contrast`
+ *   is the registered arm whose reading is documented, and a rule that changed under a published name would
+ *   invalidate every number taken under it.
  */
-export type GatePolicy = 'none' | 'cited' | 'cone' | 'contrast';
+export type GatePolicy = 'none' | 'cited' | 'cone' | 'contrast' | 'lag';
+
+/**
+ * The policies whose admission test reads the case's own evidence.
+ *
+ * Named once so the prompt cannot offer a rule the harness does not enforce, and so the evidence block is built for
+ * exactly these two: building it for a policy that ignores it would charge that arm a graph walk and an onset
+ * comparison for nothing, and NOT building it for one that reads it fails the gate closed on every override.
+ */
+const EVIDENCE_POLICIES: readonly GatePolicy[] = ['contrast', 'lag'];
 
 /**
  * What one service's own telemetry says, in terms a victim cannot forge.
@@ -911,6 +927,32 @@ export function leadsEvidence(
   intoPrior: number | null,
 ): boolean {
   if (intoAnswer !== null && intoAnswer > 0 && intoAnswer > (intoPrior ?? 0)) return true;
+  return lagLeads({ answer, prior, intoAnswer, intoPrior });
+}
+
+/**
+ * The ORDER axis alone: the candidate logged its first error strictly before the prior did.
+ *
+ * ## Why this is a policy and not the second half of one
+ *
+ * `contrast` is a disjunction, and a disjunction cannot say which of its terms did the work. The 160-case pricing
+ * separated them: of the four breaks `contrast` admitted, **all four** entered through the interface term, and the
+ * interface term bought one repair for them. The order term alone admitted **ten repairs and no break** on the same
+ * artifact, at precision 1.000 and retention 1.000.
+ *
+ * The reason is a property of the graph rather than of this corpus: an interface that fails from `prior` into
+ * `answer` is exactly what a **failing caller** produces on every callee it has left, so the term admits the prior's
+ * own victims whenever the prior is the source. Order is not ambiguous in that way — a caller cannot report a
+ * callee's failure before the callee produces it.
+ *
+ * The two branches this inherits are stated rather than defaulted: a candidate that logged **nothing** is refused
+ * (absence is not a lead), and a **prior** that logged nothing is not counter-evidence, so the candidate is admitted.
+ *
+ * @param evidence - Both sides' onsets.
+ * @returns Whether the candidate's first error precedes the prior's.
+ */
+export function lagLeads(evidence: ContrastEvidence): boolean {
+  const { answer, prior } = evidence;
   if (answer === undefined) return false;
   if (answer.firstError === null) return false;
   if (prior === undefined || prior.firstError === null) return true;
@@ -959,9 +1001,11 @@ export function gateAdmits(policy: GatePolicy, answer: string, context: GateCont
   if (policy === 'cited') return true;
   if (!context.onCone) return false;
   if (policy === 'cone') return true;
-  // `contrast` FAILS CLOSED on a missing evidence block: a policy that admitted when its own input was absent would
-  // be a wider `cone` under a narrower name, and 320's pre-registration priced it as strictly narrower.
+  // Both remaining policies read evidence and both FAIL CLOSED on a missing block: a policy that admitted when its
+  // own input was absent would be a wider `cone` under a narrower name, and 320's pre-registration priced
+  // `contrast` as strictly narrower.
   if (context.evidence === undefined) return false;
+  if (policy === 'lag') return lagLeads(context.evidence);
   return leadsEvidence(
     context.evidence.answer,
     context.evidence.prior,
@@ -1032,7 +1076,14 @@ export function renderGate(policy: GatePolicy, priorTop: string | null): string 
           `either \`TOOL failed\` shows the interface ${priorTop} -> X failing (its net= above 0) and not the ` +
           `reverse, or \`TOOL logs X\` shows X's first error EARLIER than ${priorTop}'s. ` +
           'Position alone is not evidence: a callee can be its own callee’s victim.'
-        : '';
+        : policy === 'lag'
+          ? ` X must also sit on ${priorTop}'s callee side AND \`TOOL logs X\` must show X's first error EARLIER ` +
+            `than ${priorTop}'s own first error. A caller cannot report a callee's failure before the callee ` +
+            `produces it, so a callee that logs later — or not at all — is a victim so far. Position and a failing ` +
+            'interface are not enough: a caller that has failed fails its calls to everything below it.'
+          : // `cited` states a record requirement and no direction: the empty string is that policy's statement, not
+            // a fallback for a branch no policy takes.
+            '';
   return [
     rule + cone,
     'A refused answer is replaced by the prior, so a guess costs a turn and gains nothing: spend it on a query.',
@@ -1138,15 +1189,19 @@ export async function runQueryAgent(
   /**
    * Everything a gate reads about one candidate.
    *
-   * The evidence block is built for `contrast` only, because the other policies must not pay for it: an arm whose
-   * prompt is the same as 319's must read the same as 319's, or the two runs are not comparable.
+   * The evidence block is built for the two EVIDENCE policies only, because the others must not pay for it: an arm
+   * whose prompt is the same as 319's must read the same as 319's, or the two runs are not comparable.
    */
   const gateContextFor = (candidate: string): GateContext => {
+    // The three DIRECTION policies read the cone; `cited` does not, and a cone nobody consults is a graph walk
+    // nobody needs. The list is written out rather than derived, because the fact being stated is which policies
+    // the domain's direction belongs to, not which ones happen to read evidence.
     const onCone =
-      policy === 'cone' || policy === 'contrast'
+      policy === 'cone' || policy === 'contrast' || policy === 'lag'
         ? onPriorCone(telemetry, candidate, priorTop)
         : false;
-    if (policy !== 'contrast' || priorTop === null) return { priorTop, cited, onCone };
+    if (!EVIDENCE_POLICIES.includes(policy) || priorTop === null)
+      return { priorTop, cited, onCone };
     return {
       priorTop,
       cited,
@@ -1174,11 +1229,18 @@ export async function runQueryAgent(
       : !context.onCone
         ? `refused by the gate: ${resolved} is not on ${prior}'s callee side, and a caller that reports errors is ` +
           `usually the victim. Query the callee side, or answer \`${prior}\`.`
-        : // Only `contrast` can reach this branch: `cone` admits whatever is cited and on the cone.
-          `refused by the gate: ${resolved} sits below ${prior} but its own telemetry does not LEAD — the interface ` +
-          `${prior} -> ${resolved} did not fail, and ${resolved} did not log its first error earlier than ` +
-          `${prior}. A callee can be its own callee's victim. Check \`TOOL failed\` and \`TOOL logs ${resolved}\`, ` +
-          `or answer \`${prior}\`.`;
+        : // Only the two evidence policies reach this branch: `cone` admits whatever is cited and on the cone. The
+          // text names the axis the DISPATCHED policy reads, because a refusal the model cannot act on costs two
+          // rounds — the one it spent and the one it re-spends on the same guess.
+          policy === 'lag'
+          ? `refused by the gate: ${resolved} sits below ${prior} but did not log its first error EARLIER than ` +
+            `${prior}. A caller cannot report a callee's failure before the callee produces it, so a callee that ` +
+            `logs later — or not at all — is a victim so far. Check \`TOOL logs ${resolved}\` and \`TOOL logs ` +
+            `${prior}\`, or answer \`${prior}\`.`
+          : `refused by the gate: ${resolved} sits below ${prior} but its own telemetry does not LEAD — the interface ` +
+            `${prior} -> ${resolved} did not fail, and ${resolved} did not log its first error earlier than ` +
+            `${prior}. A callee can be its own callee's victim. Check \`TOOL failed\` and \`TOOL logs ${resolved}\`, ` +
+            `or answer \`${prior}\`.`;
     answerRefused = text;
     return { ok: false, text };
   };
@@ -1437,18 +1499,19 @@ export interface GateReading {
 /**
  * Price every gate policy from one artifact.
  *
- * The three policies differ in exactly one place — whether an override stands — so they are a re-score of the same
- * rows and not three purchases. The control is scored at the model's own answer with **no** fallback, because that
+ * The five policies differ in exactly one place — whether an override stands — so they are a re-score of the same
+ * rows and not five purchases. The control is scored at the model's own answer with **no** fallback, because that
  * is the surface iteration 318 measured; the gated policies fall back to the prior, because that is what the runner
  * does. A case the arm could not measure is out of the population for every policy, as in {@link summariseQueryArm}.
  *
  * @param rows - The artifact's rows.
- * @returns One reading per policy, in the order `none`, `cited`, `cone`.
+ * @returns One reading per policy, in the order `none`, `cited`, `cone`, `contrast`, `lag`.
  */
 export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly GateReading[] {
   const measured = rows.filter((row) => row.stop !== 'error');
   const engineHits = measured.filter((row) => row.engineRank === 1).length;
-  const policies: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast'];
+  // Ordered by STRICTNESS, so the table reads as a ladder: each policy refuses everything the one before it refuses.
+  const policies: readonly GatePolicy[] = ['none', 'cited', 'cone', 'contrast', 'lag'];
   return policies.map((policy) => {
     let admitted = 0;
     let refused = 0;
@@ -1500,6 +1563,53 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
       retention: engineHits === 0 ? null : retained / engineHits,
     };
   });
+}
+
+/**
+ * What one reading would do on the corpus it ships in, from the sample it was measured on.
+ *
+ * ## The mistake this function exists to make impossible
+ *
+ * The arm is measured on a sample drawn **half from the engine's misses and half from its hits**, because the two
+ * quantities that decide it are repairs and breaks and a sample drawn from the misses alone has no denominator for
+ * precision. That construction is a diagnostic, not a population: on this corpus 81.3 % of cases are hits the engine
+ * already had right, so an edit that breaks one costs exactly what a repair gains, and there are 4.3 times as many
+ * opportunities to break.
+ *
+ * Iteration 320 read **+7** on its sample and reported it as a gain. Projected here, the same exchange rates read
+ * **−21 cases**, because 4 breaks per 80 hits is 57.8 breaks against 1 156, while 11 repairs per 80 misses is only
+ * 36.6 against 266. Neither number is wrong; the sample's is the exchange rate and the corpus's is the effect. A
+ * table that printed the first without the second invited the reading that had to be withdrawn.
+ *
+ * The projection is a **rate transfer**, not an estimate with an interval: it assumes the per-stratum rates hold on
+ * the corpus, which the full-corpus run is what tests. Its honesty is in the nulls — a stratum the sample did not
+ * carry has no rate, and inventing zero there would report the sample's composition as a property of the gate.
+ *
+ * @param reading - One policy's reading on the sample.
+ * @param sampledMisses - Cases the sample drew from the engine's misses.
+ * @param sampledHits - Cases the sample drew from the engine's hits.
+ * @param corpus - The population the arm ships on, by stratum.
+ * @returns The projected repairs, breaks, net change and resulting Top@1, or nulls when a stratum is absent.
+ */
+export function projectOntoCorpus(
+  reading: GateReading,
+  sampledMisses: number,
+  sampledHits: number,
+  corpus: { readonly misses: number; readonly hits: number },
+): {
+  readonly repairs: number | null;
+  readonly breaks: number | null;
+  readonly net: number | null;
+  readonly top1: number | null;
+} {
+  const total = corpus.misses + corpus.hits;
+  if (sampledMisses <= 0 || sampledHits <= 0 || total <= 0) {
+    return { repairs: null, breaks: null, net: null, top1: null };
+  }
+  const repairs = (reading.repairs / sampledMisses) * corpus.misses;
+  const breaks = (reading.breaks / sampledHits) * corpus.hits;
+  const net = repairs - breaks;
+  return { repairs, breaks, net, top1: ((corpus.hits + net) / total) * 100 };
 }
 
 /**

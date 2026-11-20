@@ -29,6 +29,7 @@ import {
   onPriorCone,
   onsetOf,
   parseCall,
+  projectOntoCorpus,
   renderBudget,
   renderGate,
   renderSeed,
@@ -44,6 +45,7 @@ import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loader
 import type {
   ContrastEvidence,
   GateContext,
+  GateReading,
   QueryAgentClient,
   QueryArmRow,
   QueryBudget,
@@ -2160,9 +2162,9 @@ describe('four policies priced from one artifact', () => {
     expect(contrast.precision).toBe(1);
   });
 
-  it('reports contrast in the same order as the others, so a table over the result is stable', () => {
+  it('reports every policy in a stable order, so a table over the result reads as a ladder', () => {
     const policies = summariseGatePolicies([row({})]).map((reading) => reading.policy);
-    expect(policies).toEqual(['none', 'cited', 'cone', 'contrast']);
+    expect(policies).toEqual(['none', 'cited', 'cone', 'contrast', 'lag']);
   });
 });
 
@@ -2234,5 +2236,229 @@ describe('the two ways the evidence can be absent', () => {
     expect(contrast.admitted).toBe(0);
     expect(contrast.refused).toBe(1);
     expect(contrast.retention).toBe(1);
+  });
+});
+
+describe('the lag policy, as a predicate', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const evidence = (over: Partial<ContrastEvidence> = {}): ContrastEvidence => ({
+    answer: onsetOf(telemetry, 'payment')!,
+    prior: onsetOf(telemetry, 'checkout')!,
+    intoAnswer: 38,
+    intoPrior: null,
+    ...over,
+  });
+  const context = (over: Partial<GateContext> = {}): GateContext => ({
+    priorTop: 'checkout',
+    cited: new Set(['payment']),
+    onCone: true,
+    evidence: evidence(),
+    ...over,
+  });
+
+  it('admits an override whose first error precedes the prior’s, which no caller can forge', () => {
+    // payment logged at +1200 and checkout at +1900: the callee produced the failure, then the caller reported it.
+    expect(gateAdmits('lag', 'payment', context())).toBe(true);
+  });
+
+  it('refuses an override the interface alone would admit, and that is the whole difference from contrast', () => {
+    // checkout -> payment carries net +38 failures, so a failing interface points INTO the answer. It points into
+    // every callee of a caller that has failed, which is why it cannot separate a source from a victim: the answer
+    // here logged at +2500, long after the prior's +1000.
+    const interfaceOnly = evidence({
+      answer: { firstError: 2_500, fall: null },
+      prior: { firstError: 1_000, fall: null },
+      intoAnswer: 38,
+      intoPrior: null,
+    });
+    expect(gateAdmits('contrast', 'payment', context({ evidence: interfaceOnly }))).toBe(true);
+    expect(gateAdmits('lag', 'payment', context({ evidence: interfaceOnly }))).toBe(false);
+  });
+
+  it('refuses a candidate that logged nothing at all, however its interface behaved', () => {
+    const silent = evidence({ answer: { firstError: null, fall: null }, intoAnswer: 38 });
+    expect(gateAdmits('lag', 'payment', context({ evidence: silent }))).toBe(false);
+  });
+
+  it('admits when the PRIOR logged nothing, because a silent prior is not counter-evidence', () => {
+    const quietPrior = evidence({ prior: { firstError: null, fall: null } });
+    expect(gateAdmits('lag', 'payment', context({ evidence: quietPrior }))).toBe(true);
+  });
+
+  it('still requires the cone, so lag can never admit what cone refuses', () => {
+    expect(gateAdmits('lag', 'payment', context({ onCone: false }))).toBe(false);
+  });
+
+  it('still requires the record, so lag can never admit what cited refuses', () => {
+    expect(gateAdmits('lag', 'payment', context({ cited: new Set() }))).toBe(false);
+  });
+
+  it('fails closed on a missing evidence block, exactly as contrast does', () => {
+    expect(gateAdmits('lag', 'payment', context({ evidence: undefined }))).toBe(false);
+  });
+});
+
+describe('the lag rule, as the model reads it', () => {
+  it('names the order axis and the tool that carries it, and not the interface axis it dropped', () => {
+    const text = renderGate('lag', 'payment');
+    expect(text).toContain('TOOL logs');
+    expect(text).toMatch(/earlier/i);
+    expect(text).not.toContain('TOOL failed');
+  });
+
+  it('says nothing without a prior, exactly as the other policies do', () => {
+    expect(renderGate('lag', null)).toBe('');
+  });
+});
+
+describe('five policies priced from one artifact', () => {
+  const row = (over: Partial<QueryArmRow> = {}): QueryArmRow => ({
+    datapack: 'case-1',
+    faultType: 'cpu',
+    truth: ['payment'],
+    engineRank: 1,
+    engineWinner: 'payment',
+    answer: 'payment',
+    correct: true,
+    stop: 'answered',
+    trace: '',
+    seeded: true,
+    rounds: 2,
+    toolCalls: 1,
+    promptTokens: 10,
+    completionTokens: 5,
+    rawAnswer: 'payment',
+    answeredBy: 'model',
+    calls: [],
+    inCone: false,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
+    gateRefusals: 0,
+    ...over,
+  });
+
+  it('prices a break contrast admits and lag refuses — the case that made E1 an admission axis no more', () => {
+    // A correct prior, an override one hop down, queried, the interface into it failing, and the answer logging
+    // LATE. On this repository's own 160 cases that shape accounted for four of the four breaks `contrast`
+    // admitted and one of its eleven repairs.
+    const rows = [
+      row({
+        rawAnswer: 'checkout',
+        answer: 'checkout',
+        correct: false,
+        calls: ['checkout'],
+        inCone: true,
+        answerOnset: { firstError: 2_500, fall: null },
+        priorOnset: { firstError: 1_000, fall: null },
+        intoAnswer: 30,
+        intoPrior: null,
+      }),
+    ];
+    const byPolicy = new Map(
+      summariseGatePolicies(rows).map((reading) => [reading.policy, reading]),
+    );
+    expect(byPolicy.get('contrast')!.admitted).toBe(1);
+    expect(byPolicy.get('contrast')!.breaks).toBe(1);
+    expect(byPolicy.get('lag')!.admitted).toBe(0);
+    expect(byPolicy.get('lag')!.refused).toBe(1);
+    expect(byPolicy.get('lag')!.correct).toBe(1);
+    expect(byPolicy.get('lag')!.retention).toBe(1);
+  });
+
+  it('keeps a repair whose first error precedes the prior’s, so the narrowing costs nothing that pays', () => {
+    const rows = [
+      row({
+        engineRank: 3,
+        engineWinner: 'checkout',
+        truth: ['payment'],
+        rawAnswer: 'payment',
+        answer: 'payment',
+        correct: true,
+        calls: ['payment'],
+        inCone: true,
+        answerOnset: { firstError: 300, fall: null },
+        priorOnset: { firstError: 800, fall: null },
+        intoAnswer: null,
+        intoPrior: null,
+      }),
+    ];
+    const lag = summariseGatePolicies(rows).find((reading) => reading.policy === 'lag')!;
+    expect(lag.admitted).toBe(1);
+    expect(lag.repairs).toBe(1);
+    expect(lag.precision).toBe(1);
+    // The row's engine rank is 3, so this sample carries no engine hit and retention is undefined rather than 1:
+    // a retention over no hits would be a division the case cannot supply.
+    expect(lag.retention).toBeNull();
+  });
+
+  it('orders the policies by strictness, so a table over the result reads as a ladder', () => {
+    const policies = summariseGatePolicies([row({})]).map((reading) => reading.policy);
+    expect(policies).toEqual(['none', 'cited', 'cone', 'contrast', 'lag']);
+  });
+});
+
+describe('the lag gate in the loop', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed: QuerySeed = { source: 'engine', candidates: ['checkout'] };
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('refuses an override that logged after the prior and falls back to it', async () => {
+    const client = scriptedClient(['TOOL metric db', 'TOOL logs db', 'ANSWER db']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'lag');
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.answeredBy).toBe('prior');
+    expect(outcome.gateRefusals).toBeGreaterThan(0);
+  });
+
+  it('admits an override that logged first', async () => {
+    const client = scriptedClient(['TOOL metric payment', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'lag');
+    expect(outcome.answer).toBe('payment');
+    expect(outcome.answeredBy).toBe('model');
+    expect(outcome.gateRefusals).toBe(0);
+  });
+});
+
+describe('a balanced sample projected onto the corpus it ships in', () => {
+  const reading = (over: Partial<GateReading> = {}): GateReading => ({
+    policy: 'contrast',
+    admitted: 19,
+    refused: 22,
+    repairs: 11,
+    breaks: 4,
+    precision: 11 / 15,
+    correct: 87,
+    retention: 0.95,
+    ...over,
+  });
+  const corpus = { misses: 266, hits: 1_156 };
+
+  it('turns a +7 sample gain into the loss it is at corpus base rate', () => {
+    // The 320 artifact, projected: 11 repairs over 80 sampled misses and 4 breaks over 80 sampled hits. On a corpus
+    // that is 81.3 % hits the same rates read −21 cases, which is why the balanced sample's +7 was reported as a
+    // diagnostic and not as a shipping gain.
+    const projection = projectOntoCorpus(reading(), 80, 80, corpus);
+    expect(projection.repairs).toBeCloseTo(36.575, 3);
+    expect(projection.breaks).toBeCloseTo(57.8, 3);
+    expect(projection.net).toBeCloseTo(-21.225, 3);
+    expect(projection.top1).toBeCloseTo(79.8, 2);
+  });
+
+  it('keeps a reading with no breaks positive, and says by how much', () => {
+    const projection = projectOntoCorpus(reading({ repairs: 10, breaks: 0 }), 80, 80, corpus);
+    expect(projection.breaks).toBe(0);
+    expect(projection.net).toBeCloseTo((10 / 80) * 266, 6);
+    expect(projection.top1).toBeCloseTo(((1_156 + (10 / 80) * 266) / 1_422) * 100, 6);
+  });
+
+  it('refuses to divide by a stratum the sample did not carry', () => {
+    // A sample with no misses has no repair rate, and a projection that invented 0 there would report "the arm
+    // repairs nothing" as a property of the gate rather than of the sample.
+    const projection = projectOntoCorpus(reading(), 0, 80, corpus);
+    expect(projection.repairs).toBeNull();
+    expect(projection.net).toBeNull();
+    expect(projection.top1).toBeNull();
   });
 });

@@ -707,10 +707,10 @@ describe('the free-investigation arm’s wiring', () => {
     // The runner is where an unknown policy is refused, so the flag and the refusal are both in the source.
     const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
     expect(runner).toContain("map.get('gate')");
-    expect(runner).toContain('`none`, `cited`, `cone` or `contrast`');
+    expect(runner).toContain('`none`, `cited`, `cone`, `contrast` or `lag`');
     // Every policy the runner accepts is offered on the dispatch surface, or a reader of the workflow would not
     // know the newest one exists and the ablation would be unreachable from the UI.
-    for (const policy of ['cited', 'cone', 'contrast']) {
+    for (const policy of ['cited', 'cone', 'contrast', 'lag']) {
       expect(WORKFLOW).toContain(`\`${policy}\``);
     }
   });
