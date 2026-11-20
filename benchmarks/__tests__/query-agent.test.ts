@@ -96,7 +96,7 @@ function makeCase(overrides: Partial<BenchmarkCase> = {}): BenchmarkCase {
         { from: 'payment', to: 'payment', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
       ],
     },
-    groundTruth: { serviceId: 'payment' },
+    groundTruth: { serviceId: 'payment', faultType: 'HTTPResponseReplaceCode' },
     logs: [
       {
         timestamp: INJECT - 5_000,
