@@ -363,3 +363,85 @@ roughly **¥25–40** and is the next purchase if this axis is reopened.
 "the model ignored the evidence" had to be inferred from a model we cannot see. `QueryArmRow.trace` now carries the
 last 2 000 characters of each investigation, and `ANSWER` is rendered with its own keyword rather than as
 `TOOL answer`, so a transcript can be read to say when the investigation stopped.
+
+## 9. Why the arm reads below a free engine — two censuses, ¥0
+
+§8 left the most uncomfortable number in this document unexplained: **54 correct against the engine's 80**, on the
+same cases, at ¥1.90. The two readings below come from artifacts iterations 315–317 already paid for and cost
+nothing. Neither explanation is about the model.
+
+### 9.1 The echo census — the arm is a copy of whatever it is shown first
+
+Run `44704530268`'s own artifact, 160 cases, all answered:
+
+| the arm's answer equals | share of the answered cases |
+| --- | ---: |
+| `TOOL fleet`'s first line, i.e. the largest ratio | **55.0 %** |
+| the engine's rank-1 | **36.3 %** |
+
+The arm scored **33.75 %** between a max-ratio first line worth **30.6 %** and an engine first line worth
+**50.0 %**. That is a noisy reranker of the *weaker* list, and it is what the design asked for: §4 makes `TOOL fleet`
+the first move, so the first thing the model ever sees is a max-ratio ranking — a prescribed answer, which is the
+exact shape `arXiv:2610.35767` prices at 16–53 % against 65–77 % for harnesses that prescribe none of the model's
+calls. A free arm whose first tool prints a ranking is not free; it is seeded with the wrong prior.
+
+The table arm reads the same way by arithmetic rather than by census. Width 30 moved **61 of 1 422** cases, so
+**1 361 picks (95.7 %) were identical to the engine's rank-1**, and the 61 edits were 29 repairs against 32 breaks.
+A copy with 61 noisy edits scores **1 153** against its source's **1 156**.
+
+> **"LLM accuracy below the non-LLM engine" is not counterintuitive and not a mystery.** It is the arithmetic of
+> copying: an arm can only beat the list it is shown by making edits whose precision exceeds the share it needs, and
+> no arm in this repository has ever been shown the strongest list it has.
+
+### 9.2 The normalisation census — the fleet list is sorted by the wrong statistic
+
+The same 160 cases, five single reads, no model. Top-1 is "answer the first element"; top-8 is "does the list carry
+the truth", which is the question a candidate list is actually asked:
+
+| ordering | top-1 | top-3 | top-8 |
+| --- | ---: | ---: | ---: |
+| the engine | **50.0 %** | 62.5 % | — |
+| max **ratio** to the pre-injection level | 30.6 % | 41.9 % | 63.1 % |
+| max **z** against the pre-window's σ | 13.1 % | 35.6 % | 71.9 % |
+| max **robust z** — median / MAD, the pair the onset detector already uses | 25.0 % | 48.8 % | **76.9 %** |
+| how far outside the pre-window's own envelope | 13.1 % | 35.6 % | 66.9 % |
+| max absolute rise | 20.0 % | 23.8 % | 34.4 % |
+
+Ratio is a good **ranker** and a poor **recall** statistic; dispersion is the reverse. The whole corpus, top-8 lists,
+1 422 cases:
+
+| read | truth inside the 8 | of the engine's 159 misses |
+| --- | ---: | ---: |
+| the engine's own order | **88.8 %** | 0 % by definition |
+| robust z | 84.9 % | **69.2 %** |
+| max ratio | 74.3 % | 25.8 % |
+| union(engine, robust z) | **96.6 %** | — |
+
+**110 of the engine's 159 misses are inside one `TOOL fleet` call if that call is ordered by robust z; under the
+shipped ratio ordering, 41 are.** That is the largest single improvement this surface has had, and it is a sorting
+key rather than a new tool.
+
+### 9.3 What was changed, and why the two changes do not confound
+
+1. **A prior.** The engine's own top-5 is printed before the first turn, labelled a prior and not an answer. Off by
+   default; `--seed engine` turns it on and `query_seed` states it at dispatch. The arm's **floor becomes the engine's
+   accuracy** instead of the first list a tool printed.
+2. **The fleet and metric lists are ordered by robust z**, and every metric line prints both statistics so the model
+   can see them disagree. One rule for the surface rather than two.
+
+They act on **disjoint populations**, and the reading is decomposed:
+
+| stratum | size | question | which change acts |
+| --- | ---: | --- | --- |
+| the engine's own hits | 80 | retention — does the arm keep what it was given? | the prior |
+| the engine's misses | 80 | repair — does it find what it was not given? | the fleet ordering |
+
+`QueryArmSummary` now reports `retained X/80 · repaired Y/80` beside the average, because one number called accuracy
+averages two populations whose floors differ and can hide either.
+
+### 9.4 Registered before the artifact
+
+`docs-repository:preregistration-318.md`, with **I3 retention ≥ 0.90** as a new threshold and two falsifiers:
+retention below 0.90 kills the prior (showing a model an order is not a way to keep it), and precision below 0.30 on
+at least 20 decided cases closes the free-investigation row for good — at which point the remaining 6.6 pp is not a
+channel problem at all, and the base term's definition is the only thing left.

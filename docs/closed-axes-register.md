@@ -196,7 +196,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 | the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
-| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision | a query surface whose precision still lands below 0.30 on 20 decided cases, which would move the gap back to the base term's definition |
+| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision. **v2 read 0.229 on 48 decided and fired the falsifier**, which closed the FREE shape; §325.9 then showed the arm had been a reranker of max ratio (55.0 % echo) and that the same text ordered by robust z carries the truth on 69.2 % of the engine's misses instead of 25.8 %, so the shape reopens as a SEEDED arm whose floor is the engine's own accuracy | a seeded arm whose retention falls below 0.90 (the prior is not kept) or whose precision stays below 0.30 (the channel does not pay even when the prior is right), which would move the gap to the base term and close the row for good |
 
 ## What this register holds besides its axes
 
@@ -8192,3 +8192,43 @@ exchange**, which is why the selection gap above is a ladder and not a diagnosis
 last 2 000 characters of every investigation, and the terminal act renders as `ANSWER <service>` rather than
 `TOOL answer`, so a transcript can be read to say when an investigation stopped. Coverage on the module: **99.65
 statements / 98.90 branches / 97.77 functions / 99.57 lines** on 87 tests.
+
+### §325.9 The arm was a copy of the weaker list, and the list was sorted by the wrong statistic
+
+Two ¥0 censuses over artifacts iterations 315–317 already bought, run before any new spending.
+
+**The echo census (run `44704530268`, 160 answered cases).** The arm's answer is `TOOL fleet`'s first line — the
+largest ratio — in **55.0 %** of cases and the engine's rank-1 in **36.3 %**. Its 33.75 % therefore sits between a
+max-ratio first line worth 30.6 % and an engine first line worth 50.0 %, which is what a noisy reranker of the weaker
+list scores. The table arm reads the same way arithmetically: width 30 moved 61 of 1 422 cases, so **1 361 picks
+(95.7 %) were identical to the engine's rank-1** and the 61 edits were 29 repairs against 32 breaks.
+
+**That closes the "why is the LLM below the engine" question with arithmetic rather than a narrative.** A copy with
+noisy edits cannot beat its source; an arm can only beat the list it is shown if its edits' precision exceeds what
+the width needs; and no arm in this repository had ever been shown the strongest list it has. §4's `TOOL fleet`
+first move made the free arm a reranker of max ratio — the shape `arXiv:2610.35767` prices at 16–53 %.
+
+**The normalisation census (same 160 cases, no model).** Ordered by ratio the fleet list carries the truth on
+**63.1 %**; by max z 71.9 %; by robust z (median/MAD) **76.9 %**; by max rise 34.4 %. Top-1 goes the other way —
+ratio 30.6 %, robust z 25.0 % — so the statistic that RANKS well is not the statistic that RECALLS well, and a
+candidate list is read for recall. On the whole corpus, top-8: engine 88.8 %, robust z 84.9 %, ratio 74.3 %,
+union 96.6 %; and of the engine's **159 misses**, robust z carries the truth on **69.2 %** against ratio's **25.8 %**
+— **110 cases inside one tool call, against 41.**
+
+**What shipped, and how it is kept honest.** The engine's top-5 becomes a `QuerySeed` printed as a prior (off by
+default, `--seed engine` / `query_seed` at dispatch), so the seeded arm's floor is the engine's accuracy rather than
+the first list a tool printed; and `TOOL fleet` and `TOOL metric` order by the dispersion-normalised surprise while
+printing both statistics. The two changes act on disjoint populations — the prior on the engine's own hits, the
+ordering on its misses — so the reading is decomposed into **retention** over the 80 hits and **repair** over the 80
+misses, and `QueryArmSummary` reports both beside the average they sum to.
+
+**Registered before the artifact exists** (`docs-repository:preregistration-318.md`): I1 answered ≥ 0.90, **I3
+retention ≥ 0.90** as a new threshold, Q1 precision ≥ 0.55, Q2 the arm at or above the engine's 80, Q4 ≤ ¥10, and
+two falsifiers — retention below 0.90 kills the prior outright, precision below 0.30 on ≥ 20 decided cases closes
+the free-investigation row for good.
+
+**A statement the register should carry about the last eleven iterations.** Every "the model cannot choose" reading
+from §300 onwards was taken under a surface whose first line was a ranking this repository supplied, and the model
+copied it. That does not retire those readings — they were true of those surfaces, which is what a surface
+measurement is — but it does mean the phrase "the model cannot choose" was never measured. It is measured now, and
+the answer is that it chooses what it is shown.
