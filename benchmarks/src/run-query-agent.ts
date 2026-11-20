@@ -25,6 +25,7 @@ import {
   type QueryArmRow,
   type QueryBudget,
   type QueryOutcome,
+  type QuerySeed,
 } from './query-agent.js';
 
 /** Declared prices, per million tokens, in CNY. Estimates: the arm's own report carries the token counts. */
@@ -40,6 +41,8 @@ interface Args {
   readonly correct: number;
   readonly concurrency: number;
   readonly budget: QueryBudget;
+  /** `none` for the free arm, `engine` to show the engine's own order before the first turn. */
+  readonly seed: 'none' | 'engine';
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -58,6 +61,8 @@ function parseArgs(argv: readonly string[]): Args {
       throw new Error(`--${name} must be a non-negative number`);
     return value;
   };
+  const seed = map.get('seed') ?? 'none';
+  if (seed !== 'none' && seed !== 'engine') throw new Error('--seed must be `none` or `engine`');
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -72,6 +77,7 @@ function parseArgs(argv: readonly string[]): Args {
     misses: number('sample-misses', 100),
     correct: number('sample-correct', 100),
     concurrency: Math.max(1, number('concurrency', 4)),
+    seed,
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -83,10 +89,12 @@ function parseArgs(argv: readonly string[]): Args {
   };
 }
 
-/** One line of the verdict file, in the two fields this runner reads. */
+/** One line of the verdict file, in the fields this runner reads. */
 interface Verdict {
   readonly rank: number;
   readonly winner: string | null;
+  /** The engine's order, truncated by the artifact that wrote it — the seed, when one is asked for. */
+  readonly ranked: readonly string[];
 }
 
 /** Read the engine's per-case verdicts. */
@@ -99,7 +107,11 @@ function readVerdicts(path: string): Map<string, Verdict> {
       truthRank: number;
       ranked: readonly string[];
     };
-    verdicts.set(row.datapack, { rank: row.truthRank, winner: row.ranked[0] ?? null });
+    verdicts.set(row.datapack, {
+      rank: row.truthRank,
+      winner: row.ranked[0] ?? null,
+      ranked: row.ranked,
+    });
   }
   return verdicts;
 }
@@ -110,6 +122,7 @@ async function investigate(
   verdict: Verdict,
   client: ReturnType<typeof createChatClient>,
   budget: QueryBudget,
+  seeding: 'none' | 'engine',
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -122,9 +135,13 @@ async function investigate(
   if (bench.callGraph.edges.length === 0) return null;
   const truth =
     raw.groundTruthServices.length > 0 ? raw.groundTruthServices : [bench.groundTruth.serviceId];
+  // The seed is the engine's own order, and only the part the artifact carried: a runner that recomputed a ranking
+  // here would be seeding an arm with an order no other artifact can reproduce.
+  const seed: QuerySeed | null =
+    seeding === 'engine' ? { source: 'engine', candidates: verdict.ranked } : null;
   let outcome: QueryOutcome;
   try {
-    outcome = await runQueryAgent(client, buildTelemetry(bench), budget);
+    outcome = await runQueryAgent(client, buildTelemetry(bench), budget, seed);
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
     // guess, and the sentence is not a secret.
@@ -142,6 +159,7 @@ async function investigate(
       correct: false,
       stop: 'error',
       trace: '',
+      seeded: seed !== null,
       rounds: 0,
       toolCalls: 0,
       promptTokens: 0,
@@ -158,6 +176,7 @@ async function investigate(
     correct: outcome.answer !== null && truth.includes(outcome.answer),
     stop: outcome.stop,
     trace: outcome.trace,
+    seeded: seed !== null,
     rounds: outcome.rounds,
     toolCalls: outcome.toolCalls,
     promptTokens: outcome.promptTokens,
@@ -232,6 +251,7 @@ async function main(): Promise<void> {
       verdicts.get(datapack)!,
       client,
       args.budget,
+      args.seed,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -246,7 +266,11 @@ async function main(): Promise<void> {
       summary.completionTokens * PRICES.completionPerMillion) /
     1_000_000;
   process.stderr.write('\n');
-  console.log(`Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds`);
+  const seededWidth = sample.length === 0 ? 0 : (verdicts.get(sample[0]!)?.ranked.length ?? 0);
+  console.log(
+    `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
+      `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}`,
+  );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,
   );
@@ -262,6 +286,13 @@ async function main(): Promise<void> {
   console.log(
     `repairs ${summary.repairs} · breaks ${summary.breaks} · precision ` +
       `${summary.precision === null ? 'n/a' : summary.precision.toFixed(3)}`,
+  );
+  // The two strata are the two halves of the reading: what the arm KEPT of what it was given, and what it FOUND of
+  // what it was not. One number called accuracy averages them and can hide either.
+  console.log(
+    `retained ${summary.engineHitsRetained}/${summary.engineHits} of the engine's own ` +
+      `(${summary.retention === null ? 'n/a' : summary.retention.toFixed(3)}) · ` +
+      `repaired ${summary.repairs}/${summary.cases - summary.engineHits} of its misses`,
   );
   console.log(
     `tokens ${summary.promptTokens}+${summary.completionTokens} · est. ¥${cost.toFixed(2)} at the declared prices`,

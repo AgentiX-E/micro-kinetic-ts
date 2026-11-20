@@ -66,7 +66,7 @@ on:
   workflow_dispatch:
     inputs:
       shard_tag:
-        description: 'rcabench-data release tag holding the shards (never `latest`). EMPTY = resolve it from this checkout''s converter digest, which is the only property that identifies a usable cache: the action lists every released cache, reads its manifest digest, and selects the one this converter produced (refusing when none or several match). An explicit tag PINS the cache and is still refused by the provenance gate unless its manifest was built from this checkout'
+        description: "rcabench-data release tag holding the shards (never `latest`). EMPTY = resolve it from this checkout's converter digest, which is the only property that identifies a usable cache: the action lists every released cache, reads its manifest digest, and selects the one this converter produced (refusing when none or several match). An explicit tag PINS the cache and is still refused by the provenance gate unless its manifest was built from this checkout"
         required: false
         default: ''
       categories:
@@ -82,7 +82,7 @@ on:
         required: false
         default: ''
       weight:
-        description: 'Elimination weight the study applies to a recorded claim (empty = the study''s own default, which is 1). It is a POST-processing parameter: the same fingerprints re-scored at 0 are the control arm, so a weight sweep costs no run and no tokens'
+        description: "Elimination weight the study applies to a recorded claim (empty = the study's own default, which is 1). It is a POST-processing parameter: the same fingerprints re-scored at 0 are the control arm, so a weight sweep costs no run and no tokens"
         required: false
         default: ''
       model:
@@ -111,7 +111,7 @@ on:
       #   spread comes from the terms dump this workflow now writes, which is why the threshold and the dump are
       #   dispatched together. See `docs/agentic-promotion-gate.md` for the registered reading at 0.03.
       promotion:
-        description: 'Promotion gate threshold as a fraction of the case''s own spread (empty = the gate is not consulted, `off` = the explicit control, a number in (0,1) = the arm)'
+        description: "Promotion gate threshold as a fraction of the case's own spread (empty = the gate is not consulted, `off` = the explicit control, a number in (0,1) = the arm)"
         required: false
         default: ''
       # ── The topology brief: what the model is TOLD ───────────────────────────────────────────────────────────
@@ -148,8 +148,12 @@ on:
         description: 'Tool calls the free-investigation arm may EXECUTE per case (empty = the runner default, 10). A corpus case carries ~50 services and each single-service tool spends one call on one of them, so this is the width of the investigation and the axis `TOOL fleet` was added against'
         required: false
         default: ''
+      query_seed:
+        description: "Which order to show the free-investigation arm BEFORE its first turn: `engine` = the engine's own top-5 (a prior, and the arm's floor becomes the engine's accuracy) or empty/`none` = a free arm, whose first sight of the case is its first tool call. The two arms have different floors, so this is an ablation switch and not a quality knob"
+        required: false
+        default: ''
       topology_brief:
-        description: 'Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus''s own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)'
+        description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
         default: ''
 
@@ -344,6 +348,11 @@ jobs:
           if [ -n "${{ inputs.query_max_tool_calls }}" ]; then
             BUDGET_ARG+=(--max-tool-calls "${{ inputs.query_max_tool_calls }}")
           fi
+          # A seed is stated or it is absent: `none` is the free arm, and any other word is refused by the runner.
+          SEED_ARG=()
+          if [ -n "${{ inputs.query_seed }}" ]; then
+            SEED_ARG+=(--seed "${{ inputs.query_seed }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -352,6 +361,7 @@ jobs:
             --sample-misses "${{ inputs.query_agent_sample }}" \
             --sample-correct "${{ inputs.query_agent_sample }}" \
             "${BUDGET_ARG[@]}" \
+            "${SEED_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run

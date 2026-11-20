@@ -681,4 +681,17 @@ describe('the free-investigation arm’s wiring', () => {
     const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
     expect(arm).toContain('"${BUDGET_ARG[@]}"');
   });
+
+  it('lets a dispatch choose whether the arm is shown a prior, because the two arms have different floors', () => {
+    // A seeded arm's floor is its seed's accuracy and a free arm's floor is the first list a tool printed, so
+    // `--seed` is an ablation switch. It ships empty, which the runner reads as `none`: the free arm is what a
+    // dispatch gets by saying nothing, so a run is never seeded by accident.
+    expect(inputNames(WORKFLOW)).toContain('query_seed');
+    expect(measure).toContain('inputs.query_seed');
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('SEED_ARG+=(--seed');
+    expect(arm).toContain('"${SEED_ARG[@]}"');
+    // The flag reaches the runner that reads it, and the runner refuses a word it does not know.
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
+  });
 });

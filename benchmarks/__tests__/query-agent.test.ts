@@ -19,11 +19,13 @@ import {
   TRACE_CHARS,
   buildTelemetry,
   buildUserPrompt,
+  bySurprise,
   executeTool,
   formatNumber,
   median,
   parseCall,
   renderBudget,
+  renderSeed,
   renderTranscript,
   runQueryAgent,
   stride,
@@ -37,6 +39,8 @@ import type {
   QueryArmRow,
   QueryBudget,
   QueryExchange,
+  QuerySeed,
+  TelemetryMetric,
 } from '../src/query-agent.js';
 
 const INJECT = 1_700_000_000_000;
@@ -970,6 +974,7 @@ describe('summariseQueryArm', () => {
     correct: true,
     stop: 'answered',
     trace: 'TOOL fleet\n=> fleet: 1 service',
+    seeded: false,
     rounds: 2,
     toolCalls: 1,
     promptTokens: 100,
@@ -989,6 +994,24 @@ describe('summariseQueryArm', () => {
     expect(summary.precision).toBe(0.5);
     expect(summary.engineCorrect).toBe(2);
     expect(summary.agentCorrect).toBe(2);
+  });
+
+  it('reports retention on the cases the engine already had, because that is a seeded arm floor', () => {
+    const summary = summariseQueryArm([
+      row({}),
+      row({ answer: 'b', correct: false }),
+      row({ engineRank: 7, engineWinner: 'b', answer: 'b', correct: false }),
+      row({ engineRank: 4, engineWinner: 'b', answer: 'a', correct: true }),
+    ]);
+    expect(summary.engineHits).toBe(2);
+    expect(summary.engineHitsRetained).toBe(1);
+    expect(summary.retention).toBe(0.5);
+  });
+
+  it('reports no retention when the engine had nothing to retain', () => {
+    const summary = summariseQueryArm([row({ engineRank: 5, engineWinner: 'b' })]);
+    expect(summary.engineHits).toBe(0);
+    expect(summary.retention).toBeNull();
   });
 
   it('reports a case it could not measure rather than scoring it as a break', () => {
@@ -1042,5 +1065,349 @@ describe('stride', () => {
   it('spreads the sample over the population rather than taking a prefix', () => {
     const population = Array.from({ length: 20 }, (_, index) => `c${index}`);
     expect(stride(population, 4)).toEqual(['c0', 'c5', 'c10', 'c15']);
+  });
+});
+
+describe('the seed', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed = (candidates: readonly string[]): QuerySeed => ({ source: 'engine', candidates });
+
+  it('numbers the engine order from one and keeps the order it was given', () => {
+    const text = renderSeed(seed(['payment', 'checkout']), telemetry);
+    expect(text).toContain('1. payment');
+    expect(text).toContain('2. checkout');
+    expect(text.indexOf('payment')).toBeLessThan(text.indexOf('checkout'));
+  });
+
+  it('says the order is a prior that evidence may contradict, because a seed read as an answer is a copy', () => {
+    const text = renderSeed(seed(['payment']), telemetry);
+    expect(text).toMatch(/prior/i);
+    expect(text).toMatch(/wrong|contradict/i);
+  });
+
+  it('names where the order came from, so a transcript can say which arm produced it', () => {
+    expect(renderSeed(seed(['payment']), telemetry)).toContain('engine');
+  });
+
+  it('drops a name the case does not carry rather than print evidence a model cannot verify', () => {
+    expect(renderSeed(seed(['ghost']), telemetry)).toBe('');
+    const mixed = renderSeed(seed(['ghost', 'payment']), telemetry);
+    expect(mixed).toContain('payment');
+    expect(mixed).not.toContain('ghost');
+  });
+
+  it('renumbers after a drop, so a gap cannot be read as a missing rank', () => {
+    const text = renderSeed(seed(['ghost', 'payment', 'checkout']), telemetry);
+    expect(text).toContain('1. payment');
+    expect(text).toContain('2. checkout');
+    expect(text).not.toContain('3.');
+  });
+
+  it('renders nothing for an empty order instead of an empty prior', () => {
+    expect(renderSeed(seed([]), telemetry)).toBe('');
+    expect(renderSeed(seed(['']), telemetry)).toBe('');
+  });
+});
+
+describe('the seeded prompt', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed: QuerySeed = { source: 'engine', candidates: ['payment', 'checkout'] };
+
+  it('carries the prior into the question, after the case size and before the transcript', () => {
+    const prompt = buildUserPrompt(telemetry, [], undefined, seed);
+    expect(prompt).toContain('carries 3 services');
+    expect(prompt).toContain('1. payment');
+    expect(prompt.indexOf('1. payment')).toBeGreaterThan(prompt.indexOf('carries 3 services'));
+  });
+
+  it('keeps the budget line and the prior together, so a seeded turn still knows its runway', () => {
+    const prompt = buildUserPrompt(
+      telemetry,
+      [],
+      { round: 1, maxRounds: 6, callsLeft: 10, forcing: false },
+      seed,
+    );
+    expect(prompt).toContain('round 1 of 6');
+    expect(prompt).toContain('1. payment');
+  });
+
+  it('says nothing about a prior when the arm is unseeded', () => {
+    expect(buildUserPrompt(telemetry, [])).not.toContain('prior');
+  });
+});
+
+describe('the seeded investigation', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed: QuerySeed = { source: 'engine', candidates: ['payment', 'checkout'] };
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 3 };
+
+  it('shows the prior on every turn, not only the first', async () => {
+    const client = scriptedClient(['TOOL services', 'TOOL services', 'ANSWER payment']);
+    await runQueryAgent(client, telemetry, budget, seed);
+    expect(client.seen).toHaveLength(3);
+    for (const prompt of client.seen) expect(prompt).toContain('1. payment');
+  });
+
+  it('answers inside the seeded order when the model takes the prior', async () => {
+    const client = scriptedClient(['ANSWER checkout']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed);
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.stop).toBe('answered');
+  });
+
+  it('still refuses an answer the case does not carry, seeded or not', async () => {
+    const client = scriptedClient(['ANSWER ghost', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed);
+    expect(outcome.answer).toBe('payment');
+    expect(outcome.answerRefused).toContain('ghost');
+  });
+
+  it('keeps the prior out of the transcript, which records what was ASKED and not what was shown', async () => {
+    const seeded = await runQueryAgent(scriptedClient(['ANSWER payment']), telemetry, budget, seed);
+    const free = await runQueryAgent(scriptedClient(['ANSWER payment']), telemetry, budget);
+    expect(seeded.trace).toBe(free.trace);
+  });
+});
+
+describe('surprise, the dispersion-normalised amplitude', () => {
+  const series = (values: number[], start = INJECT - 4_000, step = 1_000): TelemetryMetric =>
+    summariseSeries(
+      'cpu',
+      values.map((_, index) => start + index * step),
+      values,
+      INJECT,
+    );
+
+  it("measures the peak in units of the pre-window's own spread, not of its level", () => {
+    // Pre-window 10, 10, 10, 10 → median 10, MAD 0, so the floor is 1 % of the level; the peak of 20 is 100
+    // floors out, which is the reading a series that never moved deserves.
+    const flat = series([10, 10, 10, 10, 20]);
+    expect(flat.surprise).toBeGreaterThan(50);
+    // The same doubling against a noisy pre-window is a much smaller surprise, and the ratio cannot say so.
+    const noisy = series([4, 18, 6, 14, 20]);
+    expect(noisy.surprise).toBeLessThan(flat.surprise!);
+    expect(noisy.ratio).toBeCloseTo(20 / 10, 5);
+  });
+
+  it('is undefined when the pre-window is too short to estimate a spread', () => {
+    const one = series([10, 20], INJECT - 1_000);
+    expect(one.surprise).toBeUndefined();
+  });
+
+  it('is zero for a peak that never rose above the pre-window median', () => {
+    const collapsing = series([20, 20, 20, 10, 5]);
+    expect(collapsing.surprise).toBeLessThanOrEqual(0);
+  });
+
+  it('floors the spread at a fraction of the level, so a perfectly flat series cannot divide by zero', () => {
+    const flat = series([0, 0, 0, 0, 0]);
+    expect(Number.isFinite(flat.surprise ?? 0)).toBe(true);
+    expect(flat.surprise).toBe(0);
+  });
+});
+
+describe('the fleet read orders by surprise, not by ratio', () => {
+  const twoServices = (): BenchmarkCase =>
+    makeCase({
+      metrics: new Map([
+        // Doubles, but against a pre-window that swings by a factor of four: ordinary for this series.
+        [
+          'payment',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [
+                INJECT - 4_000,
+                INJECT - 3_000,
+                INJECT - 2_000,
+                INJECT - 1_000,
+                INJECT + 1_000,
+              ],
+              values: Float64Array.from([4, 18, 6, 14, 20]),
+            },
+          ],
+        ],
+        // Barely moves, but it has never moved before: the one thing that changed.
+        [
+          'checkout',
+          [
+            {
+              label: 'p99',
+              unit: 'ms',
+              timestamps: [
+                INJECT - 4_000,
+                INJECT - 3_000,
+                INJECT - 2_000,
+                INJECT - 1_000,
+                INJECT + 1_000,
+              ],
+              values: Float64Array.from([100, 100, 100, 100, 106]),
+            },
+          ],
+        ],
+      ]),
+    });
+
+  it('puts the quiet series that moved first, although its ratio is smaller', () => {
+    const telemetry = buildTelemetry(twoServices());
+    const payment = telemetry.services.get('payment')!.metrics[0]!;
+    const quiet = telemetry.services.get('checkout')!.metrics[0]!;
+    expect(payment.ratio).toBeGreaterThan(quiet.ratio);
+    const result = executeTool(telemetry, { kind: 'tool', tool: 'fleet', argument: '' });
+    expect(result.text.indexOf('checkout')).toBeLessThan(result.text.indexOf('payment'));
+  });
+
+  it('still prints the ratio, so the model can see both readings and disagree with the order', () => {
+    const result = executeTool(buildTelemetry(twoServices()), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.text).toContain('ratio=');
+    expect(result.text).toContain('z=');
+  });
+
+  it('places a series with no estimable spread last rather than first', () => {
+    const short = makeCase({
+      metrics: new Map([
+        [
+          'payment',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [INJECT + 1_000],
+              values: Float64Array.from([99]),
+            },
+          ],
+        ],
+        [
+          'gateway',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [INJECT - 4_000, INJECT - 3_000, INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([10, 10, 10, 12]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const result = executeTool(buildTelemetry(short), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.text.indexOf('gateway')).toBeLessThan(result.text.indexOf('payment'));
+  });
+});
+
+describe('bySurprise, the comparator that orders a list', () => {
+  const metric = (over: Partial<TelemetryMetric>): TelemetryMetric => ({
+    label: 'cpu',
+    baseline: 1,
+    peak: 2,
+    delta: 1,
+    ratio: 2,
+    peakOffset: 0,
+    ...over,
+  });
+
+  it('puts an estimable series before one whose spread cannot be estimated, whatever their ratios', () => {
+    const known = metric({ surprise: -50, ratio: 1 });
+    const unknown = metric({ surprise: undefined, ratio: 99 });
+    expect(bySurprise(known, unknown)).toBeLessThan(0);
+    expect(bySurprise(unknown, known)).toBeGreaterThan(0);
+  });
+
+  it('orders two estimable series by surprise, largest first', () => {
+    expect(bySurprise(metric({ surprise: 3 }), metric({ surprise: 9 }))).toBeGreaterThan(0);
+    expect(bySurprise(metric({ surprise: 9 }), metric({ surprise: 3 }))).toBeLessThan(0);
+  });
+
+  it('falls back to the ratio when neither series has an estimable spread', () => {
+    expect(bySurprise(metric({ ratio: 1 }), metric({ ratio: 5 }))).toBeGreaterThan(0);
+  });
+
+  it('falls back to the label when the ratio ties too, so the text is a function of the data', () => {
+    expect(bySurprise(metric({ label: 'cpu' }), metric({ label: 'rps' }))).toBeLessThan(0);
+    expect(bySurprise(metric({ label: 'rps' }), metric({ label: 'cpu' }))).toBeGreaterThan(0);
+  });
+
+  it('returns zero for two series that are the same in every field it reads', () => {
+    expect(bySurprise(metric({}), metric({}))).toBe(0);
+  });
+
+  it('ties on surprise and breaks the tie on the ratio', () => {
+    expect(
+      bySurprise(metric({ surprise: 4, ratio: 1 }), metric({ surprise: 4, ratio: 6 })),
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('the fleet read when nothing collapsed', () => {
+  it('omits the falling section rather than print an empty one', () => {
+    const rising = makeCase({
+      metrics: new Map([
+        [
+          'payment',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000],
+              values: Float64Array.from([5, 5, 5, 55]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const text = executeTool(buildTelemetry(rising), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    }).text;
+    expect(text).toContain('fleet:');
+    expect(text).not.toContain('falling');
+  });
+});
+
+describe('the fleet read with more than one collapse', () => {
+  it('sorts them by the depth of the fall, deepest first', () => {
+    const two = makeCase({
+      metrics: new Map([
+        [
+          'payment',
+          [
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000],
+              values: Float64Array.from([100, 100, 100, 80]),
+            },
+          ],
+        ],
+        [
+          'checkout',
+          [
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000],
+              values: Float64Array.from([100, 100, 100, 10]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const text = executeTool(buildTelemetry(two), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    }).text;
+    const falling = text.slice(text.indexOf('falling:'));
+    expect(falling.indexOf('checkout')).toBeLessThan(falling.indexOf('payment'));
   });
 });

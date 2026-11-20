@@ -52,6 +52,19 @@ export interface TelemetryMetric {
   readonly delta: number;
   /** `peak / |baseline|` when the baseline is non-zero, else the peak itself. */
   readonly ratio: number;
+  /**
+   * The peak in units of the pre-window's OWN spread — `(peak − median) / σ̂`, with `σ̂ = 1.4826 · MAD`.
+   *
+   * The ratio compares a rise to a LEVEL, so it rewards whatever was already large, and a series that has never
+   * moved by more than a rounding error looks calm until the moment it matters. On this corpus the two statistics
+   * are not two opinions about the same thing: ranked by ratio, a fleet of eight carries the truth on **74.3 %** of
+   * cases; ranked by this, **84.9 %** — and on the 159 cases the engine itself misses, **25.8 %** against
+   * **69.2 %**. Reach is what a candidate LIST is for, so the list is ordered by this.
+   *
+   * `undefined` when the pre-window holds fewer than three samples, because a spread cannot be estimated from two
+   * of anything and a fabricated one would rank a series on a number the case never carried.
+   */
+  readonly surprise?: number;
   /** Milliseconds from the injection to the peak sample; negative when the peak precedes it. */
   readonly peakOffset: number;
 }
@@ -185,8 +198,35 @@ export function summariseSeries(
     peak: resolvedPeak,
     delta: resolvedPeak - baseline,
     ratio: scale > 0 ? resolvedPeak / scale : resolvedPeak,
+    surprise: surpriseOf(pre, resolvedPeak),
     peakOffset: peakAt - injectTime,
   };
+}
+
+/**
+ * The peak in units of the pre-window's own dispersion.
+ *
+ * The estimator is the median and the MAD rather than the mean and the standard deviation, for the reason the
+ * engine's own onset detector uses the same pair: a baseline window that contains one spike would otherwise inflate
+ * its own spread and hide the fault it is measuring against.
+ *
+ * The floor on the spread is a thousandth of the level rather than zero, and it is a decision with a cost that is
+ * measured rather than hoped for. A perfectly flat series would divide by zero; flooring at zero-width instead
+ * would let it win on any numeric noise at all. At a thousandth of the level, a series that never moved still
+ * outranks a volatile one after a one-percent step — which is why this statistic is used to ORDER A LIST and not to
+ * pick its first element: as a top-1 read it is worse than the ratio (25.0 % against 30.6 % on the sample), and as
+ * a top-8 read it is much better.
+ *
+ * @param pre - The samples before the injection, in time order.
+ * @param peak - The largest sample at or after it.
+ * @returns The surprise, or `undefined` when the pre-window cannot support an estimate.
+ */
+export function surpriseOf(pre: readonly number[], peak: number): number | undefined {
+  if (pre.length < 3) return undefined;
+  const mid = median(pre);
+  const mad = median(pre.map((value) => Math.abs(value - mid)));
+  const floor = Math.max(Math.abs(mid) * 1e-3, 1e-9);
+  return (peak - mid) / Math.max(1.4826 * mad, floor);
 }
 
 /** A log line, trimmed to a length a prompt can carry. */
@@ -356,11 +396,33 @@ export function parseCall(reply: string): ParsedCall {
  * @returns The line.
  */
 function renderMetricLine(id: string, one: TelemetryMetric): string {
+  const z = one.surprise === undefined ? 'n/a' : formatNumber(one.surprise);
   return (
     `${id} ${one.label}: base=${formatNumber(one.baseline)} peak=${formatNumber(one.peak)} ` +
-    `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} ` +
+    `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} z=${z} ` +
     `at=${Math.round(one.peakOffset / 1000)}s`
   );
+}
+
+/**
+ * Order two series as a candidate LIST should be ordered.
+ *
+ * By surprise first, because a list is read for what it CONTAINS; by ratio second, because the two statistics
+ * disagree most on exactly the series a list needs to carry; and by label last, so the text is a function of the
+ * data rather than of the producer's ordering.
+ *
+ * @param a - The first series.
+ * @param b - The second.
+ * @returns A negative number when `a` should come first.
+ */
+export function bySurprise(a: TelemetryMetric, b: TelemetryMetric): number {
+  const left = a.surprise;
+  const right = b.surprise;
+  if (left !== undefined && right === undefined) return -1;
+  if (left === undefined && right !== undefined) return 1;
+  if (left !== undefined && right !== undefined && left !== right) return right - left;
+  if (a.ratio !== b.ratio) return b.ratio - a.ratio;
+  return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
 }
 
 /**
@@ -390,13 +452,13 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
     for (const [id, service] of telemetry.services) {
       let best: TelemetryMetric | undefined;
       for (const one of service.metrics) {
-        if (best === undefined || one.ratio > best.ratio) best = one;
+        if (best === undefined || bySurprise(one, best) < 0) best = one;
       }
       if (best !== undefined) entries.push({ id, metric: best });
     }
     if (entries.length === 0) return { ok: true, text: 'no metric series in this case' };
     const rises = [...entries]
-      .sort((a, b) => b.metric.ratio - a.metric.ratio)
+      .sort((a, b) => bySurprise(a.metric, b.metric) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .slice(0, FLEET_LINES);
     // The collapse axis is NOT the rise axis read backwards: a service can have its strongest RISE on cpu while
     // its traffic fell through the floor, and the second is the shape the prompt tells the model to take
@@ -453,7 +515,7 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
     if (service.metrics.length === 0)
       return { ok: true, text: `${service.id}: no metrics in this case` };
     const ranked = [...service.metrics]
-      .sort((a, b) => b.ratio - a.ratio)
+      .sort(bySurprise)
       .slice(0, METRIC_LINES)
       .map((one) => renderMetricLine(service.id, one));
     // The rises alone would hide the one shape the prompt tells the model to take seriously: a service whose
@@ -636,11 +698,66 @@ export function renderTranscript(
 /** The stand-in a transcript uses for a result it no longer carries. */
 const ELIDED = '[earlier results elided]';
 
+/**
+ * An order handed to the model BEFORE it investigates.
+ *
+ * ## Why this exists, and why it is a parameter rather than a decision
+ *
+ * `docs/free-investigation.md` §5 pins the arm's design to a measured floor: whatever ranking the harness shows
+ * first is what the arm scores, because the model copies it. The first two readings priced that exactly. With no
+ * order at all, the first thing the arm sees is `TOOL fleet`, so it reranks a max-ratio list and scores **33.75 %**
+ * against the engine's **50.0 %**; asked to rerank a 30-wide engine list it moves 61 of 1 422 cases at precision
+ * 0.475 and scores **1 153** against the engine's **1 156**. Both numbers are what a copy with noisy edits scores.
+ *
+ * So the arm's floor is not a property of the model. It is the accuracy of the first list it is shown, which makes
+ * seeding a design variable with its OWN floor and its own falsifier — and that is why it is here as an option that
+ * a dispatch turns on, not as a constant.
+ */
+export interface QuerySeed {
+  /** The order's name, as a transcript should record it. `engine` for this repository's own ranker. */
+  readonly source: string;
+  /** Candidate service ids, strongest first. Only the ones the case carries survive rendering. */
+  readonly candidates: readonly string[];
+}
+
+/**
+ * Render the prior for a prompt.
+ *
+ * Three properties, each asserted rather than assumed:
+ *
+ * * **A name the case does not carry is dropped, not printed.** A prior quoting a service no tool can describe is
+ *   evidence the model cannot check, and an answer to it would be refused at the terminal step anyway.
+ * * **The numbering restarts after a drop**, so a gap in the list cannot be read as a rank the harness withheld.
+ * * **The block says what it is.** A prior presented as an answer is a copy with extra steps, which is the exact
+ *   failure the two earlier readings measured; the sentence that calls it a prior is the whole difference.
+ *
+ * @param seed - The order.
+ * @param telemetry - The case, for the existence test.
+ * @returns The block, or `''` when nothing survives — an empty prior teaches the model nothing and costs a prompt.
+ */
+export function renderSeed(seed: QuerySeed, telemetry: Telemetry): string {
+  const kept: string[] = [];
+  for (const name of seed.candidates) {
+    if (name === '') continue;
+    if (!telemetry.services.has(name)) continue;
+    if (kept.includes(name)) continue;
+    kept.push(name);
+  }
+  if (kept.length === 0) return '';
+  const lines = [
+    `The ${seed.source} order, strongest first. This is a PRIOR, not an answer — the engine is wrong on some cases,`,
+    'and evidence that contradicts it is the reason to investigate.',
+  ];
+  for (const [index, name] of kept.entries()) lines.push(`  ${index + 1}. ${name}`);
+  return lines.join('\n');
+}
+
 /** The per-case question. */
 export function buildUserPrompt(
   telemetry: Telemetry,
   exchanges: readonly QueryExchange[],
   state?: BudgetState,
+  seed?: QuerySeed | null,
 ): string {
   const names = [...telemetry.services.keys()].sort();
   const head = [
@@ -648,6 +765,10 @@ export function buildUserPrompt(
     'Deliverable: one `ANSWER <service>` line.',
   ];
   if (state !== undefined) head.push(renderBudget(state));
+  if (seed !== undefined && seed !== null) {
+    const prior = renderSeed(seed, telemetry);
+    if (prior !== '') head.push('', prior);
+  }
   const opening = head.join('\n');
   const transcript = renderTranscript(exchanges);
   return transcript === '' ? `${opening}\n\nNo queries yet.` : `${opening}\n\n${transcript}`;
@@ -672,12 +793,14 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  * @param client - The model.
  * @param telemetry - The case's tool view.
  * @param budget - Rounds, calls and transcript size.
+ * @param seed - An order to show the model before it investigates, or `null` for a free arm.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
   client: QueryAgentClient,
   telemetry: Telemetry,
   budget: QueryBudget = DEFAULT_QUERY_BUDGET,
+  seed: QuerySeed | null = null,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   let rounds = 0;
@@ -707,12 +830,17 @@ export async function runQueryAgent(
     const forcing = rounds === budget.maxRounds || callsLeft === 0;
     const completion = await client.complete({
       system: QUERY_SYSTEM_PROMPT,
-      user: buildUserPrompt(telemetry, exchanges, {
-        round: rounds,
-        maxRounds: budget.maxRounds,
-        callsLeft,
-        forcing,
-      }),
+      user: buildUserPrompt(
+        telemetry,
+        exchanges,
+        {
+          round: rounds,
+          maxRounds: budget.maxRounds,
+          callsLeft,
+          forcing,
+        },
+        seed,
+      ),
     });
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
@@ -776,6 +904,14 @@ export interface QueryArmRow {
   readonly stop: QueryOutcome['stop'] | 'error';
   /** The end of the investigation as it ran, so a wrong answer can be looked inside. */
   readonly trace: string;
+  /**
+   * Whether this case was investigated with a prior shown up front.
+   *
+   * Recorded per row rather than assumed from the command line, because the two arms have different FLOORS — a
+   * seeded arm's floor is its seed's accuracy and a free arm's floor is the first list a tool printed — and a
+   * precision that mixed the two populations would average two different measurements.
+   */
+  readonly seeded: boolean;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
@@ -796,6 +932,18 @@ export interface QueryArmSummary {
   readonly failed: number;
   /** `repairs / (repairs + breaks)`, or `null` when the arm changed nothing. */
   readonly precision: number | null;
+  /** Cases the engine already had right — the population a seeded arm must not lose. */
+  readonly engineHits: number;
+  /** Of those, the ones the arm kept. */
+  readonly engineHitsRetained: number;
+  /**
+   * `engineHitsRetained / engineHits`, or `null` when the sample carried none.
+   *
+   * The complement of precision, and the number a seeded arm's floor is stated against: a seeded arm that reads
+   * 0.475 precision and 1.000 retention has made edits that pay for themselves, and one that reads 0.475 precision
+   * and 0.86 retention has lost more than it found.
+   */
+  readonly retention: number | null;
   readonly promptTokens: number;
   readonly completionTokens: number;
 }
@@ -821,6 +969,8 @@ export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary
   const repairs = measured.filter((row) => row.correct && row.engineRank !== 1).length;
   const breaks = measured.filter((row) => !row.correct && row.engineRank === 1).length;
   const decided = repairs + breaks;
+  const engineHits = measured.filter((row) => row.engineRank === 1).length;
+  const engineHitsRetained = measured.filter((row) => row.engineRank === 1 && row.correct).length;
   return {
     cases: measured.length,
     answered,
@@ -830,6 +980,9 @@ export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary
     breaks,
     failed: rows.length - measured.length,
     precision: decided === 0 ? null : repairs / decided,
+    engineHits,
+    engineHitsRetained,
+    retention: engineHits === 0 ? null : engineHitsRetained / engineHits,
     promptTokens: measured.reduce((sum, row) => sum + row.promptTokens, 0),
     completionTokens: measured.reduce((sum, row) => sum + row.completionTokens, 0),
   };
