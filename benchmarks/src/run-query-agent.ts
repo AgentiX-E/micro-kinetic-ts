@@ -248,6 +248,12 @@ async function main(): Promise<void> {
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,
   );
+  // The instrumentation reading, before any accuracy reading: a run that ends most investigations on the budget
+  // measured the budget. It is printed first because it decides whether the two lines under it mean anything.
+  console.log(
+    `answered share ${((summary.answered / Math.max(summary.cases, 1)) * 100).toFixed(1)}% · ` +
+      `rounds per case ${(kept.reduce((sum, row) => sum + row.rounds, 0) / Math.max(kept.length, 1)).toFixed(2)}`,
+  );
   console.log(
     `agent Top@1 ${summary.agentCorrect} · engine Top@1 on the same cases ${summary.engineCorrect}`,
   );

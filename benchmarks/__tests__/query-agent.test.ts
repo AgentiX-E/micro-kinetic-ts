@@ -22,6 +22,7 @@ import {
   formatNumber,
   median,
   parseCall,
+  renderBudget,
   renderTranscript,
   runQueryAgent,
   stride,
@@ -160,6 +161,95 @@ describe('buildTelemetry', () => {
     const db = telemetry.services.get('db')!;
     expect(db.metrics).toEqual([]);
     expect(db.callers).toEqual(['payment']);
+  });
+
+  it('trims a log line to a length a prompt can carry, and says it did', () => {
+    const long = makeCase({
+      logs: [
+        {
+          timestamp: INJECT + 500,
+          service: 'payment',
+          level: 'ERROR',
+          message: 'x'.repeat(400),
+        },
+      ],
+    });
+    const line = buildTelemetry(long).services.get('payment')!.errorLines[0]!;
+    expect(line).toHaveLength(141);
+    expect(line.endsWith('…')).toBe(true);
+  });
+
+  it('ignores an edge whose endpoint the snapshot does not carry, instead of inventing one', () => {
+    const partial = makeCase({
+      callGraph: {
+        systemLoad: 0,
+        nodes: new Map([
+          ['payment', { id: 'payment', name: 'payment', namespace: 'shop', labels: {} }],
+        ]),
+        edges: [
+          {
+            from: 'ghost',
+            to: 'payment',
+            type: 'REST',
+            callRate: 1,
+            p99Latency: 1,
+            errorRate: 0,
+          },
+          {
+            from: 'payment',
+            to: 'ghost',
+            type: 'REST',
+            callRate: 1,
+            p99Latency: 1,
+            errorRate: 0,
+          },
+        ],
+      },
+    });
+    const telemetry = buildTelemetry(partial);
+    expect(telemetry.services.get('payment')!.callers).toEqual([]);
+    expect(telemetry.services.get('payment')!.callees).toEqual([]);
+    expect(telemetry.services.has('ghost')).toBe(false);
+  });
+
+  it('summarises an empty series as zero rather than as a non-number', () => {
+    const empty = makeCase({
+      metrics: new Map([
+        [
+          'payment',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [],
+              values: Float64Array.from([]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const series = buildTelemetry(empty).services.get('payment')!.metrics[0]!;
+    expect(series.baseline).toBe(0);
+    expect(series.peak).toBe(0);
+    expect(series.delta).toBe(0);
+    expect(series.ratio).toBe(0);
+  });
+
+  it('lists a repeated edge once, because a duplicate is a producer artefact and not a second caller', () => {
+    const doubled = makeCase();
+    const edge = {
+      from: 'checkout',
+      to: 'payment',
+      type: 'REST' as const,
+      callRate: 10,
+      p99Latency: 5,
+      errorRate: 0,
+    };
+    const telemetry = buildTelemetry({
+      ...doubled,
+      callGraph: { ...doubled.callGraph, edges: [...doubled.callGraph.edges, edge] },
+    });
+    expect(telemetry.services.get('payment')!.callers).toEqual(['checkout']);
   });
 
   it('drops self-edges from the caller and callee lists without dropping the node', () => {
@@ -305,7 +395,9 @@ describe('parseCall', () => {
 
   it('knows every tool in the prompt list', () => {
     for (const tool of QUERY_TOOLS) {
-      const argument = tool === 'services' || tool === 'failed' ? '' : ' payment';
+      // Three tools take no argument because they are questions about the CASE rather than about one service.
+      const argument =
+        tool === 'services' || tool === 'failed' || tool === 'fleet' ? '' : ' payment';
       expect(parseCall(`TOOL ${tool}${argument}`)).toEqual({
         kind: 'tool',
         tool,
@@ -466,6 +558,220 @@ describe('buildUserPrompt', () => {
     expect(prompt).not.toContain('No queries yet.');
     expect(prompt).toContain('TOOL services');
   });
+
+  it('carries the budget the model is planning against', () => {
+    const prompt = buildUserPrompt(buildTelemetry(makeCase()), [], {
+      round: 2,
+      maxRounds: 6,
+      callsLeft: 5,
+      forcing: false,
+    });
+    expect(prompt).toContain('round 2 of 6');
+    expect(prompt).toContain('5 tool calls left');
+  });
+});
+
+describe('renderBudget', () => {
+  it('names the round, the calls left, and that an unanswered case scores zero', () => {
+    const text = renderBudget({ round: 3, maxRounds: 6, callsLeft: 4, forcing: false });
+    expect(text).toContain('round 3 of 6');
+    expect(text).toContain('4 tool calls left');
+    expect(text).toContain('scores zero');
+  });
+
+  it('turns into an order on the last round rather than a report', () => {
+    const text = renderBudget({ round: 6, maxRounds: 6, callsLeft: 0, forcing: true });
+    expect(text).toContain('LAST turn');
+    expect(text).toContain('ANSWER <service>');
+  });
+
+  it('says `1 tool call` rather than `1 tool calls`', () => {
+    expect(renderBudget({ round: 1, maxRounds: 6, callsLeft: 1, forcing: false })).toContain(
+      '1 tool call left',
+    );
+  });
+});
+
+describe('TOOL fleet', () => {
+  it('is a directive the grammar admits with no argument', () => {
+    expect(parseCall('TOOL fleet')).toEqual({ kind: 'tool', tool: 'fleet', argument: '' });
+  });
+
+  it('refuses an argument, because the fleet is the whole case', () => {
+    expect(parseCall('TOOL fleet payment').kind).toBe('unparsed');
+  });
+
+  it('ranks every service by its strongest rise, in one call', () => {
+    const result = executeTool(buildTelemetry(makeCase()), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.ok).toBe(true);
+    // `payment` carries the injected rise; `checkout`'s best ratio is a 1.05 on cpu, so it must not lead.
+    expect(result.text.indexOf('payment')).toBeLessThan(result.text.indexOf('checkout'));
+    expect(result.text).toContain('ratio=');
+  });
+
+  it('says so when the case carries no metric series at all', () => {
+    const bare = makeCase({ metrics: new Map() });
+    const result = executeTool(buildTelemetry(bare), { kind: 'tool', tool: 'fleet', argument: '' });
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain('no metric series');
+  });
+
+  it('shows the collapse as well as the rises, because a root cause can be the service that went quiet', () => {
+    const result = executeTool(buildTelemetry(makeCase()), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.text).toContain('falling');
+    expect(result.text).toContain('rps');
+  });
+
+  it('never prints a rank the engine computed, because this arm is not a reranker of it', () => {
+    const result = executeTool(buildTelemetry(makeCase()), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.text).not.toContain('rank');
+  });
+
+  it('omits the collapse section when nothing collapsed', () => {
+    const rising = makeCase({
+      metrics: new Map([
+        [
+          'payment',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([5, 55]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const result = executeTool(buildTelemetry(rising), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    expect(result.text).not.toContain('falling');
+  });
+
+  it('picks each service\u2019s deepest fall, not the delta of its best rise', () => {
+    const twin = makeCase({
+      metrics: new Map([
+        [
+          'checkout',
+          [
+            {
+              label: 'cpu',
+              unit: 'percent',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([10, 12]),
+            },
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([100, 20]),
+            },
+            {
+              label: 'throughput',
+              unit: 'calls',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([50, 1]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const result = executeTool(buildTelemetry(twin), {
+      kind: 'tool',
+      tool: 'fleet',
+      argument: '',
+    });
+    const falling = result.text.slice(result.text.indexOf('falling:'));
+    // One service contributes one fall — its deepest — so the 49-point drop on `throughput` is not printed beside
+    // the 80-point drop on `rps`: the section answers "which services lost the most", not "which series did".
+    expect(falling).toContain('rps');
+    expect(falling).not.toContain('throughput');
+    expect(falling).not.toContain('cpu');
+  });
+});
+
+describe('TOOL metric, both directions', () => {
+  it('reports a collapsing metric beside the rises instead of hiding it', () => {
+    const result = executeTool(buildTelemetry(makeCase()), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'checkout',
+    });
+    expect(result.text).toContain('falling');
+    expect(result.text).toContain('rps');
+  });
+
+  it('says nothing about a collapse when every series in the service rose', () => {
+    const result = executeTool(buildTelemetry(makeCase()), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'payment',
+    });
+    expect(result.text).not.toContain('falling');
+  });
+
+  it('orders two collapses by how far each one fell, deepest first', () => {
+    const twin = makeCase({
+      metrics: new Map([
+        [
+          'checkout',
+          [
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([100, 20]),
+            },
+            {
+              label: 'throughput',
+              unit: 'calls',
+              timestamps: [INJECT - 2_000, INJECT + 1_000],
+              values: Float64Array.from([50, 1]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const result = executeTool(buildTelemetry(twin), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'checkout',
+    });
+    const falling = result.text.slice(result.text.indexOf('falling:'));
+    expect(falling).toContain('falling:');
+    // rps fell 80 of 100 and throughput 49 of 50, so the deeper absolute fall leads.
+    expect(falling.indexOf('rps')).toBeLessThan(falling.indexOf('throughput'));
+  });
+});
+
+describe('the forcing turn', () => {
+  it('records a rejected answer and ends there, rather than spending a turn it does not have', async () => {
+    const client = scriptedClient(['TOOL services', 'ANSWER ghost']);
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()), {
+      ...DEFAULT_QUERY_BUDGET,
+      maxRounds: 2,
+      maxToolCalls: 10,
+    });
+    expect(outcome.answer).toBeNull();
+    expect(outcome.stop).toBe('rounds');
+    expect(outcome.answerRefused).toContain('ghost');
+    expect(outcome.rounds).toBe(2);
+  });
 });
 
 /** A model that replays a scripted list of replies and records what it was asked. */
@@ -535,7 +841,25 @@ describe('runQueryAgent', () => {
     expect(outcome.answer).toBeNull();
     expect(outcome.stop).toBe('rounds');
     expect(outcome.rounds).toBe(3);
-    expect(outcome.toolCalls).toBe(3);
+    // The last round is an ORDER to answer, so a tool call there is refused instead of executed — two calls were
+    // spent and the third was not.
+    expect(outcome.toolCalls).toBe(2);
+    expect(outcome.exchanges.at(-1)!.result).toContain('last turn');
+  });
+
+  it('tells the model which round it is on, and orders an answer on the last one', async () => {
+    const client = scriptedClient(['TOOL services', 'TOOL services', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, telemetry, {
+      ...DEFAULT_QUERY_BUDGET,
+      maxRounds: 3,
+      maxToolCalls: 10,
+    });
+    expect(client.seen[0]).toContain('round 1 of 3');
+    expect(client.seen[0]).toContain('10 tool calls left');
+    expect(client.seen[1]).toContain('round 2 of 3');
+    expect(client.seen[1]).toContain('9 tool calls left');
+    expect(client.seen[2]).toContain('LAST turn');
+    expect(outcome.answer).toBe('payment');
   });
 
   it('stops on the call budget even when rounds remain', async () => {
@@ -547,7 +871,20 @@ describe('runQueryAgent', () => {
     });
     expect(outcome.stop).toBe('tool-calls');
     expect(outcome.toolCalls).toBe(2);
-    expect(outcome.exchanges.at(-1)!.result).toBe('budget: no tool calls left');
+    // The round that spent the last call is followed by one more turn, and that turn only accepts an answer: a
+    // budget that executes its own termination is a budget the model never gets to answer inside.
+    expect(outcome.exchanges.at(-1)!.result).toContain('last turn');
+  });
+
+  it('still accepts an answer on the forcing turn, so the spent calls are not wasted', async () => {
+    const client = scriptedClient(['TOOL services', 'TOOL services', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, telemetry, {
+      ...DEFAULT_QUERY_BUDGET,
+      maxRounds: 10,
+      maxToolCalls: 2,
+    });
+    expect(outcome.stop).toBe('answered');
+    expect(outcome.answer).toBe('payment');
   });
 
   it('reports the refusal that ended it when the budget runs out after a bad answer', async () => {

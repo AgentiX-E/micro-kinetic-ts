@@ -140,6 +140,14 @@ on:
         description: 'Run the free-investigation arm on this many engine-misses AND this many engine-hits (empty = do not run; the arm costs tokens per case)'
         required: false
         default: ''
+      query_max_rounds:
+        description: 'Rounds the free-investigation arm may take per case (empty = the runner default, 6). The 6 is what the first pilot spent in FULL on all 160 cases while answering 5 of them, so this input exists to separate "the arm needs more turns" from "the arm never knew it had to answer" — a budget axis the artifact could not state until now'
+        required: false
+        default: ''
+      query_max_tool_calls:
+        description: 'Tool calls the free-investigation arm may EXECUTE per case (empty = the runner default, 10). A corpus case carries ~50 services and each single-service tool spends one call on one of them, so this is the width of the investigation and the axis `TOOL fleet` was added against'
+        required: false
+        default: ''
       topology_brief:
         description: 'Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus''s own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)'
         required: false
@@ -326,6 +334,16 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
           set -o pipefail
+          # The budget is a dispatch input rather than a constant, because the first pilot spent the default in
+          # full and answered 5 of 160 cases: whether that is a budget that is too small or a prompt that never
+          # asked for an answer is a question only a second budget can separate.
+          BUDGET_ARG=()
+          if [ -n "${{ inputs.query_max_rounds }}" ]; then
+            BUDGET_ARG+=(--max-rounds "${{ inputs.query_max_rounds }}")
+          fi
+          if [ -n "${{ inputs.query_max_tool_calls }}" ]; then
+            BUDGET_ARG+=(--max-tool-calls "${{ inputs.query_max_tool_calls }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -333,6 +351,7 @@ jobs:
             --model "${{ inputs.model }}" \
             --sample-misses "${{ inputs.query_agent_sample }}" \
             --sample-correct "${{ inputs.query_agent_sample }}" \
+            "${BUDGET_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run

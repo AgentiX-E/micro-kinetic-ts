@@ -103,11 +103,25 @@ export const METRIC_LINES = 6;
 /** How many failing interfaces one `failed` call may print. */
 export const FAILED_LINES = 6;
 
+/** How many services one `fleet` call may print, largest rise first. */
+export const FLEET_LINES = 8;
+
+/** How many collapsing series a `fleet` or `metric` answer carries beside the rises. */
+export const COLLAPSE_LINES = 2;
+
 /** The longest message fragment a log line may contribute to a prompt. */
 const MESSAGE_CHARS = 140;
 
 /** The names a directive may use. One list, so the prompt and the dispatcher cannot disagree. */
-export const QUERY_TOOLS = ['services', 'metric', 'logs', 'edges', 'failed', 'answer'] as const;
+export const QUERY_TOOLS = [
+  'services',
+  'fleet',
+  'metric',
+  'logs',
+  'edges',
+  'failed',
+  'answer',
+] as const;
 
 /** A directive's name. */
 export type QueryTool = (typeof QUERY_TOOLS)[number];
@@ -196,10 +210,14 @@ export function buildTelemetry(bench: BenchmarkCase): Telemetry {
   }
   for (const edge of bench.callGraph.edges) {
     if (edge.from === edge.to) continue;
+    // BOTH endpoints must be in the directory. A snapshot can carry a dangling edge, and honouring it would put a
+    // caller into a service's list that `TOOL services` never named — a name the model could then answer with and
+    // the case does not contain.
     const out = callees.get(edge.from);
-    if (out !== undefined && !out.includes(edge.to)) out.push(edge.to);
     const into = callers.get(edge.to);
-    if (into !== undefined && !into.includes(edge.from)) into.push(edge.from);
+    if (out === undefined || into === undefined) continue;
+    if (!out.includes(edge.to)) out.push(edge.to);
+    if (!into.includes(edge.from)) into.push(edge.from);
   }
 
   const services = new Map<string, TelemetryService>();
@@ -322,12 +340,27 @@ export function parseCall(reply: string): ParsedCall {
     const name = parts[1]!.toLowerCase();
     if (!(QUERY_TOOLS as readonly string[]).includes(name)) return { kind: 'unparsed', text: line };
     const argument = parts.slice(2).join(' ');
-    const argumentFree = name === 'services' || name === 'failed';
+    const argumentFree = name === 'services' || name === 'failed' || name === 'fleet';
     if (argumentFree && argument !== '') return { kind: 'unparsed', text: line };
     if (!argumentFree && argument === '') return { kind: 'unparsed', text: line };
     return { kind: 'tool', tool: name as QueryTool, argument };
   }
   return { kind: 'unparsed', text: reply.trim().slice(0, 200) };
+}
+
+/**
+ * One metric as a line a prompt can carry.
+ *
+ * @param id - The service the series belongs to.
+ * @param one - The series' window summary.
+ * @returns The line.
+ */
+function renderMetricLine(id: string, one: TelemetryMetric): string {
+  return (
+    `${id} ${one.label}: base=${formatNumber(one.baseline)} peak=${formatNumber(one.peak)} ` +
+    `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} ` +
+    `at=${Math.round(one.peakOffset / 1000)}s`
+  );
 }
 
 /**
@@ -348,6 +381,44 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
   if (tool === 'services') {
     const names = [...telemetry.services.keys()].sort();
     return { ok: true, text: `services (${names.length}): ${names.join(', ')}` };
+  }
+  if (tool === 'fleet') {
+    // The fleet read exists because of a measured width: a corpus case carries ~50 services, and a budget of ten
+    // single-service calls could not cover a tenth of it. One call has to be able to see the whole fleet, or the
+    // arm's precision is a statement about how many services the budget reached.
+    const entries: { id: string; metric: TelemetryMetric }[] = [];
+    for (const [id, service] of telemetry.services) {
+      let best: TelemetryMetric | undefined;
+      for (const one of service.metrics) {
+        if (best === undefined || one.ratio > best.ratio) best = one;
+      }
+      if (best !== undefined) entries.push({ id, metric: best });
+    }
+    if (entries.length === 0) return { ok: true, text: 'no metric series in this case' };
+    const rises = [...entries]
+      .sort((a, b) => b.metric.ratio - a.metric.ratio)
+      .slice(0, FLEET_LINES);
+    // The collapse axis is NOT the rise axis read backwards: a service can have its strongest RISE on cpu while
+    // its traffic fell through the floor, and the second is the shape the prompt tells the model to take
+    // seriously. So this reads each service's WORST delta rather than the delta of its best ratio.
+    const collapses: { id: string; metric: TelemetryMetric }[] = [];
+    for (const [id, service] of telemetry.services) {
+      let worst: TelemetryMetric | undefined;
+      for (const one of service.metrics) {
+        if (one.delta < 0 && (worst === undefined || one.delta < worst.delta)) worst = one;
+      }
+      if (worst !== undefined) collapses.push({ id, metric: worst });
+    }
+    const falls = collapses
+      .sort((a, b) => a.metric.delta - b.metric.delta)
+      .slice(0, COLLAPSE_LINES);
+    const lines = [`fleet: ${entries.length} services with metrics, ${rises.length} largest rises`];
+    for (const entry of rises) lines.push(`  ${renderMetricLine(entry.id, entry.metric)}`);
+    if (falls.length > 0) {
+      lines.push(`falling: ${falls.length} of ${entries.length} services`);
+      for (const entry of falls) lines.push(`  ${renderMetricLine(entry.id, entry.metric)}`);
+    }
+    return { ok: true, text: lines.join('\n') };
   }
   if (tool === 'failed') {
     if (telemetry.failed.length === 0)
@@ -381,18 +452,20 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
   if (tool === 'metric') {
     if (service.metrics.length === 0)
       return { ok: true, text: `${service.id}: no metrics in this case` };
-    const ranked = [...service.metrics].sort((a, b) => b.ratio - a.ratio).slice(0, METRIC_LINES);
-    return {
-      ok: true,
-      text: ranked
-        .map(
-          (one) =>
-            `${service.id} ${one.label}: base=${formatNumber(one.baseline)} peak=${formatNumber(one.peak)} ` +
-            `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} ` +
-            `at=${Math.round(one.peakOffset / 1000)}s`,
-        )
-        .join('\n'),
-    };
+    const ranked = [...service.metrics]
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, METRIC_LINES)
+      .map((one) => renderMetricLine(service.id, one));
+    // The rises alone would hide the one shape the prompt tells the model to take seriously: a service whose
+    // traffic COLLAPSED is a candidate even when it reports nothing, and its ratio is at the bottom of a
+    // rise-sorted list by construction.
+    const falls = [...service.metrics]
+      .filter((one) => one.delta < 0)
+      .sort((a, b) => a.delta - b.delta)
+      .slice(0, COLLAPSE_LINES)
+      .map((one) => renderMetricLine(service.id, one));
+    if (falls.length > 0) ranked.push('falling:', ...falls);
+    return { ok: true, text: ranked.join('\n') };
   }
   if (tool === 'logs') {
     // The OFFSET is the existence test rather than the count: a bucket exists only because a line did, so the two
@@ -430,14 +503,18 @@ export const QUERY_SYSTEM_PROMPT = [
   '',
   'You may query the case. Answer with ONE line, every time:',
   '  TOOL services            list every service in this case',
+  '  TOOL fleet               every service ranked by its strongest metric rise, in one call',
   "  TOOL metric <service>    that service's strongest metric rises against its own pre-injection baseline",
   "  TOOL logs <service>      that service's ERROR/FATAL lines after the injection",
   "  TOOL edges <service>     that service's callers, callees, and the latency on those edges",
   '  TOOL failed              interfaces that failed during the fault, by callee',
   '  ANSWER <service>         your final answer, naming one service from `TOOL services`',
   '',
-  'Rules: one directive per reply, with no text before it. You have a small budget, so query what decides the',
-  'answer. `at=` and `first at +` are seconds relative to the injection; a negative offset precedes it.',
+  'Rules: one directive per reply, with no text before it. `at=` and `first at +` are seconds relative to the',
+  'injection; a negative offset precedes it.',
+  '',
+  'Your budget is stated in every turn. An investigation that ends without an answer scores ZERO, so when a turn',
+  'says LAST the only accepted reply is ANSWER: spend the turns before it on what decides the answer.',
 ].join('\n');
 
 /** One exchange: the directive, and the text it produced. */
@@ -446,6 +523,41 @@ export interface QueryExchange {
   readonly directive: string;
   readonly result: string;
   readonly ok: boolean;
+}
+
+/** How much of the budget is left, in the two currencies the model plans with. */
+export interface BudgetState {
+  /** The turn about to be taken, counting from one. */
+  readonly round: number;
+  readonly maxRounds: number;
+  /** Tool calls that may still be EXECUTED. */
+  readonly callsLeft: number;
+  /** Whether this turn only accepts an answer. */
+  readonly forcing: boolean;
+}
+
+/**
+ * The budget as a line the model reads before it decides.
+ *
+ * A wall the model cannot see is not a budget, it is an ambush: the first pilot ended **155 of 160** investigations
+ * on the round cap with no answer given, because nothing in the prompt said how many turns were left or that an
+ * unanswered case scores zero. The model did not fail to choose — it was never told it had to.
+ *
+ * @param state - The round, the calls left, and whether answering is compulsory.
+ * @returns The line.
+ */
+export function renderBudget(state: BudgetState): string {
+  const calls = state.callsLeft === 1 ? '1 tool call left' : `${state.callsLeft} tool calls left`;
+  if (state.forcing) {
+    return (
+      `Budget: round ${state.round} of ${state.maxRounds} — LAST turn. ` +
+      'No tool call is accepted now. Reply with one line: ANSWER <service>.'
+    );
+  }
+  return (
+    `Budget: round ${state.round} of ${state.maxRounds}, ${calls}. ` +
+    'Answer before either runs out — an unanswered case scores zero.'
+  );
 }
 
 /** The budget, all of it caps rather than hopes. */
@@ -514,14 +626,20 @@ export function renderTranscript(
 const ELIDED = '[earlier results elided]';
 
 /** The per-case question. */
-export function buildUserPrompt(telemetry: Telemetry, exchanges: readonly QueryExchange[]): string {
+export function buildUserPrompt(
+  telemetry: Telemetry,
+  exchanges: readonly QueryExchange[],
+  state?: BudgetState,
+): string {
   const names = [...telemetry.services.keys()].sort();
   const head = [
     `Incident: a fault was injected at t=0. This case carries ${names.length} services.`,
     'Deliverable: one `ANSWER <service>` line.',
-  ].join('\n');
+  ];
+  if (state !== undefined) head.push(renderBudget(state));
+  const opening = head.join('\n');
   const transcript = renderTranscript(exchanges);
-  return transcript === '' ? `${head}\n\nNo queries yet.` : `${head}\n\n${transcript}`;
+  return transcript === '' ? `${opening}\n\nNo queries yet.` : `${opening}\n\n${transcript}`;
 }
 
 /** What the loop needs from a model, so it is testable against a fake that never touches a network. */
@@ -533,6 +651,9 @@ export interface QueryAgentClient {
     completionTokens: number;
   }>;
 }
+
+/** What a turn that accepts only an answer says when it is given anything else. */
+const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <service>` is accepted';
 
 /**
  * Investigate one case.
@@ -553,6 +674,7 @@ export async function runQueryAgent(
   let promptTokens = 0;
   let completionTokens = 0;
   let answerRefused: string | null = null;
+  let stop: QueryOutcome['stop'] = 'rounds';
 
   const settle = (stop: QueryOutcome['stop'], answer: string | null): QueryOutcome => ({
     answer,
@@ -567,9 +689,18 @@ export async function runQueryAgent(
 
   while (rounds < budget.maxRounds) {
     rounds += 1;
+    const callsLeft = Math.max(0, budget.maxToolCalls - toolCalls);
+    // Two ways to be out of runway: the rounds, or the calls. Either one turns this turn into the turn where the
+    // only thing worth saying is the answer, and both are ANNOUNCED in the prompt that asks for it.
+    const forcing = rounds === budget.maxRounds || callsLeft === 0;
     const completion = await client.complete({
       system: QUERY_SYSTEM_PROMPT,
-      user: buildUserPrompt(telemetry, exchanges),
+      user: buildUserPrompt(telemetry, exchanges, {
+        round: rounds,
+        maxRounds: budget.maxRounds,
+        callsLeft,
+        forcing,
+      }),
     });
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
@@ -578,13 +709,22 @@ export async function runQueryAgent(
       call.kind === 'unparsed'
         ? `UNPARSED: ${call.text.slice(0, 80)}`
         : `TOOL ${call.tool}${call.argument === '' ? '' : ` ${call.argument}`}`;
+    if (forcing) {
+      // The runway is gone either way, and WHICH one ran out is what the artifact reports.
+      stop = callsLeft === 0 ? 'tool-calls' : 'rounds';
+      if (call.kind === 'unparsed' || call.tool !== 'answer') {
+        exchanges.push({ round: rounds, directive, result: LAST_TURN_ONLY, ok: false });
+        break;
+      }
+      const accepted = executeTool(telemetry, call);
+      exchanges.push({ round: rounds, directive, result: accepted.text, ok: accepted.ok });
+      if (accepted.resolved !== undefined) return settle('answered', accepted.resolved);
+      answerRefused = accepted.text;
+      break;
+    }
     if (call.kind === 'unparsed') {
       exchanges.push({ round: rounds, directive, result: call.text, ok: false });
       continue;
-    }
-    if (call.tool !== 'answer' && toolCalls >= budget.maxToolCalls) {
-      exchanges.push({ round: rounds, directive, result: 'budget: no tool calls left', ok: false });
-      return settle('tool-calls', null);
     }
     const result = executeTool(telemetry, call);
     exchanges.push({ round: rounds, directive, result: result.text, ok: result.ok });
@@ -596,7 +736,7 @@ export async function runQueryAgent(
     toolCalls += 1;
   }
 
-  return settle('rounds', null);
+  return settle(stop, null);
 }
 
 /** A chat client satisfies the port without adaptation; named so the wiring states it once. */
