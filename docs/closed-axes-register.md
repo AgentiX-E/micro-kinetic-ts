@@ -195,6 +195,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the count as a linear program over the artifact** — whether `Top@1` can be maximised as an LP | `gate-fit.md` §1, §7 | **closed twice.** The zero vector answers the published run — `1 073` of `1 422`, every case by tie — so the count has a spurious optimum at the origin; and with a mandatory subsystem the problem is Max FLS, NP-hard for homogeneous bipolar systems (Amaldi & Kann, TCS 147, 1995), with no constant-factor guarantee surviving the subsystem |
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
+| the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
 
 ## What this register holds besides its axes
 
@@ -7833,7 +7834,7 @@ and is therefore capped at **1.000**. On the 25 misses `log` decided, the winner
 25**, the truth's is 0.000 on 22, and the median base gap is **−0.017 — the base term had already chosen correctly.**
 No `logWeight` above 0.693 can stop the term from out-weighing a maximal base contribution, so this is a ceiling to
 fix rather than a weight to tune, and every published `logWeight` reading was taken with the property in it. It is
-recorded and NOT changed here: it moves every cell the golden half publishes and needs its own pre-registration.
+recorded and NOT changed here: it moves every cell the golden half publishes and needs its own pre-registration. **Closed in §324.1**: priced exactly, the fix is worth one flip and is algebraically a weight cut to 0.693.
 
 Full read, including the reproduction commands: `docs/miss-anatomy.md`. Pre-registration and outcome:
 `docs-repository:preregistration-314.md`.
@@ -7843,3 +7844,125 @@ containment reach was the last thing the failure channel could pay for" — the 
 and the ceiling is `selfAnomalyLog1p`. **Axes this keeps open.** Three, each with a measurement behind it: the
 `log` term's ceiling (§323.5), the `failedEdge` gate on a corpus with no call denominator (§323.3), and the base
 term's definition itself (§323.2, where the truth is visible to the channel and ranked second).
+
+## §324 Iteration 315 — the ceiling that was the WIDTH, and the two items closed by arithmetic before a run
+
+Three plan items were standing at the end of iteration 314: the `log` term's ceiling (§323.5), the `failedEdge`
+gate on a corpus with no call denominator (§323.3), and the base term's definition (§323.2). This iteration closes
+the first two **without a run**, because a run's outcome for each was computable from artifacts already on disk,
+and it replaces the third with a measured statement about the presentation rather than about the score.
+
+It also produces the one number that reframes ten failed agentic arms, and that number is not about the model.
+
+### §324.1 The `log` ceiling cannot be fixed by a ceiling — 1 flip at best, and the map it is equivalent to is a weight cut the sweep already priced at −7
+
+§323.5 recorded a real dimensional defect and predicted the fix was "either a matching ceiling or a log contribution
+expressed in the base term's units". Both shapes are now priced exactly, from the 236 miss rows the previous
+iteration dumped, with no run:
+
+| cap on the `log` contribution | misses of the 25 that flip |
+| ----------------------------: | -------------------------: |
+|                     **0.693** |                      **1** |
+|                         0.588 |                          2 |
+|                         0.550 |                          4 |
+|                         0.500 |                          6 |
+|                         0.300 |                         10 |
+|                         0.100 |                         19 |
+|                         0.015 |                         21 |
+
+The reason is in the same rows: on the 25 misses `log` decided, the **sum of every other term already favoured the
+truth** on 21 of them, by at most **0.5878**. Capping the term at the base's ceiling leaves the winner a margin of
+`0.693 × 1.000 − 0.5878 = 0.105`, so the cap cannot move the case it was proposed for. The cap only starts to act at
+**0.588**, i.e. 15 % below the ceiling the defect names.
+
+And the linear shape is not a new axis at all: `c × s = (c × w) × s`, so a ceiling of `c` at weight 1 **is**
+`logWeight = c`. `fse26-logweight-sweep-verdict.md` read that axis: `w = 0.5` is **−7 cases**, `w = 0.25` is −62,
+`w = 0` is −460, and the optimum is at `w = 1` with a shallow neighbourhood. A ceiling at 0.693 therefore lands
+between 0 and −7 on a curve whose only interior optimum is the shipped point.
+
+The nonlinear shape (pass the share through `log1p`, so its ceiling matches the base's) is a **ratio-compressing**
+map, which is the direction `log-volume-scale.md` §3.3 measured as the losing one: `saturating` at κ = 25 compresses
+the champion's lead and reads **−34** while `share`, which preserves every ratio exactly, reads −10.
+
+**Verdict: refused, by two independent measurements and one algebraic identity, at `$0` and in one page.** The
+dimensional observation in §323.5 stands as a description of the score; it is not a lever.
+
+### §324.2 The failed-edge admission re-derived from the evidence's own shape — and refused a third time
+
+§323.3 and §320 left the gate on the reading that `failedEdge`'s input is empty when it matters. The census over all
+1 422 cases says the input is not empty: **`failedEdgeEvidence` is present on 1 422 of 1 422**, and it is
+informative in isolation — the callee it names is the truth on **521 of 794** cases at a concentration bar of 0.5,
+and on **161 of 256** at 0.99. The term contributes nothing on 234 of the 236 misses, so the walk runs and the gate
+withholds.
+
+Two admission rules were priced from that census before any code was written, and both fail on the same structure:
+
+| rule                                              | population admitted | the callee is the truth on a case the engine has WRONG | the callee is neither the truth nor the winner on a case the engine has RIGHT |
+| ------------------------------------------------- | ------------------: | -----------------------------------------------------: | ----------------------------------------------------------------------------: |
+| one source-fed callee                             |                 741 |                                                    102 |                                                                           597 |
+| one source-fed callee **and** one credited callee |                 130 |                                                 **61** |                                                                        **65** |
+
+The narrow rule is the sharpest form of the idea — the channel names exactly one interface and the failures enter
+the graph from a client outside the topology, which is the cleanest statement of "this interface failed" the corpus
+can make — and it is **61 against 65**. The engine's own `boundary` mode is the same rule at case granularity and it
+was already measured: **+21**, with four network families losing 8 to 16 apiece, refused. The same rule at CANDIDATE
+granularity was measured as an order: **−170** (`failed-edge-jurisdiction.md`), refused.
+
+So the direction channel is refused in three independent presentations — as a weight, as a case-level gate, and as
+a per-candidate order — and the census says why: the population it is right about (102, of which 93 are the two
+replacement families) is a subset of a population it is wrong about of the same size and the same families (95
+replacement + 74 request-method cases where a credited callee is not the truth). **No scalar on the case and no
+membership rule on the map separates them**, which is the register's recurring shape for the fifth time.
+
+### §324.3 The number that reframes ten arms: at the width they used, 90 % was unreachable
+
+`benchmarks/src/presentation-ceiling.ts` (100/100/100/100, 19 tests) prices the width of a reranker's presentation
+from the run's own `truthRank` column. On the published run:
+
+|  width |      ceiling | candidates it makes reachable |
+| -----: | -----------: | ----------------------------: |
+|      1 |      83.40 % |                         1 186 |
+|      3 |      86.92 % |                         1 236 |
+|  **5** |  **88.26 %** |                     **1 255** |
+|      8 |      89.31 % |                         1 270 |
+| **10** |  **90.30 %** |                     **1 284** |
+|     15 |      91.63 % |                         1 303 |
+|     20 |      92.83 % |                         1 320 |
+|     30 |      95.57 % |                         1 359 |
+|     44 | **100.00 %** |                         1 422 |
+
+Every agentic arm this project has run presented the model with the engine's top five. **At `K = 5` the ceiling is
+88.26 %, i.e. 1.74 pp BELOW the 90.0 % leader**, so those arms were structurally incapable of reaching SOTA and
+their refutations are silent about the model. The smallest width at which 90 % is reachable at all is 10, and only
+by a perfect reranker (a 0.30 pp margin). The full set has a ceiling of 100 % because the truth is in the results
+on 236 of 236 misses — the corpus never hides the answer, the presentation does.
+
+The width is not free: widening the list gives the model more chances to move a case the engine already had right.
+The requirement it has to meet is therefore a pair, and the pair is what the next arm is registered on:
+
+|  width | reachable misses | precision needed for 90.02 % |
+| -----: | ---------------: | ---------------------------: |
+|      5 |               69 |                      > 100 % |
+|     10 |               98 |                       95.9 % |
+|     20 |              134 |                       70.1 % |
+| **30** |          **173** |                   **54.3 %** |
+|     44 |              236 |                       39.8 % |
+
+### §324.4 The `trace` term is idle because the corpus has no producer, and that is not a code defect
+
+`trace` carries weight 1 and is present on 0 of 1 422 cases (§286b). The cause was recorded as "no loader fills the
+input", which reads as an omission in this repository. It is not: the engine's input is a **pre/post span COUNT per
+service**, and the converted RCABench case carries `traceEdges` (caller-callee pairs), `failedTraceEdges` (caller,
+callee, net failures) and `traceEdgeLatency` (caller, callee, pre, post) — three per-EDGE statistics and no
+per-service count anywhere. A loader that filled `traceActivity` from those files would be inventing the quantity
+the term exists to read. Recorded, so the next reader does not spend an iteration wiring a producer the corpus
+cannot feed.
+
+**Axes this closes.** Three: the `log` ceiling as a lever (§324.1, and with it the "matching ceiling or common
+units" family); the `failedEdge` admission rule in its last available presentation (§324.2); and "the agentic arms
+failed because the model was weak" as a _complete_ explanation (§324.3).
+**Axes this keeps open, with the numbers now attached.** The base term's definition (§323.2), unchanged and still
+the largest single block of misses at 126 of 236; and the agentic layer at a width ≥ 20, which is the only
+mechanism in the record whose ceiling clears the target — `docs-repository:preregistration-315.md`.
+
+Full read: `docs/presentation-ceiling.md`. Census: `docs/miss-anatomy.md`.
