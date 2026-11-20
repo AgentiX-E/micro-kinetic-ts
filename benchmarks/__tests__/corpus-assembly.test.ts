@@ -79,6 +79,11 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   // have made this exact set a superset of what the census can find, which is the same drift in the other
   // direction.
   'fault-free-profile-build.ts',
+  // Iteration 316: the free-investigation arm's runner. It loads FSE'26 cases for the same reason the profile
+  // builder does — a tool surface built from the case's own telemetry — and it assembles no corpus: every case it
+  // reads is scored on its own, against the engine's verdict on that case, so there is no corpus to share an owner
+  // with. `query-agent.ts`, its library half, loads nothing and does not appear here.
+  'run-query-agent.ts',
 ];
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {

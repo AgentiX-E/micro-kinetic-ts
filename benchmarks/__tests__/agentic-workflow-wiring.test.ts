@@ -538,19 +538,27 @@ describe('the model arm’s wiring', () => {
     expect(study).not.toContain('rcabench');
   });
 
-  it('never puts the key on a command line, only in the job environment', () => {
-    // The secret CONTEXT is read exactly twice, and both reads are `env:` assignments: the key itself and the
-    // boolean the paid step gates on. A third read would be the secret reaching a place a log can see — a `run:`
-    // line is echoed on failure, copied into an issue by whoever reads it, and kept in the transcript for months.
-    const reads = [...WORKFLOW.matchAll(/secrets\.DEEPSEEK_API_KEY/g)].map(
-      (match) => match.index ?? 0,
-    );
-    expect(reads).toHaveLength(2);
+  it('never puts the key on a command line, only in a job environment', () => {
+    // The secret CONTEXT is read as a PAIR — the key itself, and the boolean a paid step gates on — and the pair
+    // appears once per job that has a paid arm. The PAIR is the invariant rather than the count: `2` was the right
+    // reading while one job spent money, and the free-investigation arm needs the corpus, which only the measure
+    // job has. So the assertion is "four reads, two of each name, and every one an `env:` assignment", which is
+    // the property a `run:` line would break — a `run:` line is echoed on failure, copied into an issue by whoever
+    // reads it, and kept in the transcript for months.
     const lines = WORKFLOW.split('\n').filter((line) => line.includes('secrets.DEEPSEEK_API_KEY'));
     expect(lines.map((line) => line.trim())).toEqual([
       'DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}',
       "HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}",
+      'DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}',
+      "HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}",
     ]);
+    // And each pair sits in a job that has a paid arm, so a second read cannot appear somewhere nothing spends.
+    const spent = jobs(WORKFLOW);
+    for (const name of ['measure', 'study'] as const) {
+      const job = spent.get(name) ?? '';
+      expect(job).toContain('DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}');
+      expect(job).toContain("HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}");
+    }
     // And no step passes a key as an argument, which is the shape that ends up in a log.
     expect(WORKFLOW_CODE).not.toMatch(/--api-key/);
     expect(WORKFLOW_CODE).not.toMatch(/\bsk-[a-z0-9]/i);
@@ -597,5 +605,60 @@ describe('the model arm’s wiring', () => {
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-claims.ts'))).toBe(true);
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-proposer.ts'))).toBe(true);
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/chat-completions.ts'))).toBe(true);
+  });
+});
+
+/**
+ * The free-investigation arm's wiring, which is a different job from the table arms and for a reason that is
+ * visible in one line: the arm needs the CORPUS, and the corpus lives in the measure job. Everything else follows
+ * from that — the pairing against verdicts the same job just wrote, the gate on an input that costs money, and the
+ * exclusion of a second paid pass in the same dispatch.
+ */
+describe('the free-investigation arm’s wiring', () => {
+  const measure = jobs(WORKFLOW).get('measure') ?? '';
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('runs in the job that holds the corpus, after the verdicts it is paired against', () => {
+    expect(measure).toContain('benchmarks/src/run-query-agent.ts');
+    expect(measure).toContain('--data-dir "$HOME/rcabench/json"');
+    expect(measure).toContain('--verdicts artifacts/agentic/per-case.ndjson');
+    // Ordering is the reading: a sample drawn before the verdicts existed could not say which cases the engine had
+    // wrong, and the arm's two numbers are repairs and breaks against exactly that.
+    expect(measure.indexOf('run-query-agent.ts')).toBeGreaterThan(
+      measure.indexOf('--per-case-out artifacts/agentic/per-case.ndjson'),
+    );
+  });
+
+  it('is gated on the sample input and on the key, and says so when the key is absent', () => {
+    const step = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    const head = step.slice(0, step.indexOf('run:'));
+    expect(head).toContain("env.HAS_MODEL_KEY == 'true'");
+    expect(head).toContain("inputs.query_agent_sample != ''");
+    expect(measure).toContain('QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job');
+  });
+
+  it('states the sample as a size per stratum, because the two readings need both', () => {
+    expect(measure).toContain('--sample-misses "${{ inputs.query_agent_sample }}"');
+    expect(measure).toContain('--sample-correct "${{ inputs.query_agent_sample }}"');
+  });
+
+  it('does not buy a second nomination pass in the same dispatch', () => {
+    // Two paid arms in one dispatch is two bills, and a document that reports one arm's cost must not contain the
+    // other's tokens. The offline arms still run, so the dispatch still reads its control rows.
+    const nomination = study.slice(study.indexOf('Ask the model to rank'));
+    expect(nomination.slice(0, nomination.indexOf('run:'))).toContain(
+      "inputs.query_agent_sample == ''",
+    );
+    expect(study).toContain('this dispatch asked for the free-investigation arm');
+  });
+
+  it('uploads the arm beside the measurement it was scored against', () => {
+    expect(measure).toContain('artifacts/agentic/query-agent.ndjson');
+    expect(measure).toContain('artifacts/agentic/query-agent.txt');
+  });
+
+  it('keeps both modules the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/query-agent.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
   });
 });

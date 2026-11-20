@@ -125,6 +125,21 @@ on:
       #   `auto` is the only value implemented. A hand-written document is the paper''s own shape and a DIFFERENT
       #   arm with its own provenance argument (`preregistration-306.md`), so the study step REFUSES any other
       #   non-empty value rather than deriving one under a name that promised another.
+      # ── The free-investigation arm ────────────────────────────────────────────────────────────────────────────
+      #
+      #   Every arm in this workflow shows the model a TABLE and asks it to choose. `arXiv:2608.21310`'s ten-
+      #   configuration table prices that shape at 45.8 % Acc@1 for the pre-extracted-feature design and 77.6-90.0 %
+      #   for the adaptive ones, and `RCAtlas` reports the same ordering from the other side (65-77 % PR@1 for
+      #   harnesses that prescribe none of the model's calls, 16-53 % for five that do). This input runs the shape
+      #   those two papers put on top: five retrieval tools over the case's own telemetry and a terminal answer.
+      #
+      #   The number is a SAMPLE SIZE PER STRATUM, not a case count: the arm pays roughly six rounds per case, so a
+      #   full corpus is a different purchase from a 200-case pass, and the two strata are sampled because the
+      #   quantities that decide the arm are REPAIRS and BREAKS against the engine on the same cases.
+      query_agent_sample:
+        description: 'Run the free-investigation arm on this many engine-misses AND this many engine-hits (empty = do not run; the arm costs tokens per case)'
+        required: false
+        default: ''
       topology_brief:
         description: 'Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus''s own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)'
         required: false
@@ -138,6 +153,12 @@ jobs:
     name: measure (engine + elimination dumps)
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      #   The key is materialised once, exactly as the study job does, because a `secrets` context is not readable
+      #   from a step's `if`. Measured here rather than there because the free-investigation arm needs the CORPUS
+      #   on disk, and the corpus is this job's; the study job has the key and not the corpus.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -296,6 +317,31 @@ jobs:
           fi
           ls -l artifacts/agentic
 
+      #   The arm runs AFTER the engine's verdicts exist, because its reading is PAIRED: what a free investigation
+      #   repairs and what it breaks is measured against the engine on the same cases, and a sample drawn before the
+      #   verdicts existed could not state either.
+      - name: Free-investigation arm (sample)
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample != ''
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-query-agent.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            --out artifacts/agentic/query-agent.ndjson \
+            --model "${{ inputs.model }}" \
+            --sample-misses "${{ inputs.query_agent_sample }}" \
+            --sample-correct "${{ inputs.query_agent_sample }}" \
+            --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
+
+      - name: Say why the free-investigation arm did not run
+        if: env.HAS_MODEL_KEY != 'true' && inputs.query_agent_sample != ''
+        run: |
+          echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the free-investigation arm was NOT MEASURED"
+          echo "QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
+            | tee artifacts/agentic/query-agent.txt
+
       - name: Upload the measurement
         if: always()
         uses: actions/upload-artifact@v4
@@ -312,6 +358,8 @@ jobs:
             artifacts/agentic/results.txt
             artifacts/agentic/results.json
             artifacts/agentic/manifest.json
+            artifacts/agentic/query-agent.ndjson
+            artifacts/agentic/query-agent.txt
           if-no-files-found: warn
 
   study:
@@ -595,8 +643,12 @@ jobs:
       #
       #   A nomination is verified, not trusted: a service the posterior does not carry is refused by name, a repeat
       #   is refused, and a refused case keeps its engine answer so the denominator stays the corpus.
+      #   The nomination arm is skipped when the dispatch asked for the free-investigation arm, because the two are
+      #   PAID and independent: a dispatch that wants the query arm is not also buying a second 1 422-case
+      #   nomination pass, and a bill that names one arm must not contain the other. The offline arms below still
+      #   run, so a query-arm dispatch still reads the elimination and fusion control rows.
       - name: Ask the model to rank, then score the nomination arm
-        if: env.HAS_MODEL_KEY == 'true'
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == ''
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
@@ -654,11 +706,16 @@ jobs:
             --concurrency 6 2>&1 | tee artifacts/agentic/nomination.txt
 
       - name: Say why the nomination arm did not run
-        if: env.HAS_MODEL_KEY != 'true'
+        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != ''
         run: |
-          echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the nomination arm was NOT MEASURED"
-          echo "NOMINATION ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
-            | tee artifacts/agentic/nomination.txt
+          if [ "${{ inputs.query_agent_sample }}" != "" ]; then
+            echo "NOMINATION ARM NOT MEASURED: this dispatch asked for the free-investigation arm, and the" \
+              "two are paid and independent" | tee artifacts/agentic/nomination.txt
+          else
+            echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the nomination arm was NOT MEASURED"
+            echo "NOMINATION ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
+              | tee artifacts/agentic/nomination.txt
+          fi
 
       #   Without a key the model arm is NOT MEASURED, and the difference between that and a bad score has to be
       #   visible: the offline arms still run, and the reason the fourth one did not is printed by name rather than
