@@ -196,7 +196,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 | the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
-| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one | a query surface whose precision still lands below 0.30 on 20 decided cases, which would move the gap back to the base term's definition |
+| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision | a query surface whose precision still lands below 0.30 on 20 decided cases, which would move the gap back to the base term's definition |
 
 ## What this register holds besides its axes
 
@@ -8100,3 +8100,45 @@ sampler and measured a model that had been asked for JSON, which is the same def
 
 The same dispatch also exposed a budget leak: the study job has **three** paid arms and only the nomination was gated
 on the query-arm input, so that run paid for a full 1 422-case elimination pass as well. Both are gated now.
+
+### §325.7 The second reading was a reading of the wall — 155 of 160 investigations ended without an answer
+
+Run `44692141852`, `query_agent_sample = 80` (80 engine-misses + 80 engine-hits), `deepseek-chat`, 6 rounds and 10
+tool calls per case:
+
+| quantity | value |
+| --- | ---: |
+| answered | **5 of 160** |
+| stops | `{"rounds": 155, "answered": 5}` |
+| agent Top@1 | 4 |
+| engine Top@1 on the same 160 | 80 |
+| repairs / breaks | 2 / 78 |
+| completion tokens per turn | **6.8** |
+
+The artifact's precision is **0.025** and it must not be read as one: a case with no answer is not a wrong answer,
+and 78 of the 80 "breaks" are cases where the arm never spoke. The pre-registered falsifier (`< 0.30`) is therefore
+**NOT TRIGGERED** — a falsifier cannot be fired by a run that measured nothing, which is the same distinction
+`docs/free-investigation.md` §6 makes about the whole artifact.
+
+**Both causes are in the harness, and neither is the model.**
+
+1. **The budget was invisible.** No prompt stated the round, the calls left, or that an unanswered case scores zero.
+   All 160 cases spent their budget exactly (median 6 rounds / 6 calls) and the 5 answers all arrived on turn six —
+   the cap, not a decision.
+2. **The surface was one service wide against a fifty-service case.** A zero-cost census (`buildTelemetry` over 60
+   corpus cases, no model) reads median **50** services, metric series on the truth service 100 %, `failed` edges
+   90 % (median 2), `edgeLatency` 100 % (median 54), an `ERROR` line on the truth **65 %**, and a fleet-wide
+   max-ratio answer **38.3 %**. The last number is the cheapest possible investigation's ceiling, and ten
+   single-service calls could reach a fifth of the directory that produces it.
+
+**Surface v2 repairs all three, and the repair is registered as an instrument change with its own threshold**
+(`preregistration-317.md`): `renderBudget` states the budget in every prompt and turns the last turn into an order;
+a turn taken with the call budget spent accepts only an answer, so the calls already paid for are not discarded by a
+loop that ends itself; `TOOL fleet` ranks the whole directory in one call and every metric answer carries the
+deepest collapses, because the prompt told the model that a service which went quiet can be the root cause while a
+rise-sorted answer put exactly those last. **The next threshold is not accuracy — it is `≥ 90 %` of investigations
+ending on an answer.** Only behind that gate do the unchanged `0.55 / 0.35 / 0.30` readings mean anything.
+
+The dispatch also regained two budget inputs (`query_max_rounds`, `query_max_tool_calls`) that the runner accepted
+and no workflow step could state — the same "declared, parsed, unreachable" shape as §300, one level up. They ship
+empty, so the default 6/10 is what the pilot used and the next run differs from it only where a dispatch says so.

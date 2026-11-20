@@ -169,3 +169,86 @@ artifact exists. Three outcomes are pre-committed, and the middle one is the lik
 
 The second row is where the two papers point: `RCAtlas`'s own ablation says a stronger model buys reliability and
 more rounds buy aptitude, and its winning harnesses spend 100 calls per case against this arm's six.
+
+## 6. The first pilot measured the wall, not the model
+
+Run `44692141852`, `query_agent_sample=80` (80 engine-misses + 80 engine-hits), `deepseek-chat`, budget 6 rounds /
+10 calls. The artifact is `query-agent.ndjson` and its own summary reads:
+
+| quantity | value |
+| --- | ---: |
+| cases | 160 |
+| **answered** | **5** |
+| stops | `{"rounds": 155, "answered": 5}` |
+| agent Top@1 | 4 |
+| engine Top@1 on the same 160 | 80 |
+| repairs / breaks | 2 / 78 |
+| precision | **0.025** |
+| tokens | 685 150 prompt + 6 507 completion = **¥1.42** |
+
+**A precision computed over this artifact is not a reading of the model.** 155 of 160 investigations ended on the
+round cap without naming a service at all; the harness scored those as breaks because the engine had been right.
+The number measures one thing: the model spent every turn it had asking, and was never told the last turn was the
+last. Median rounds is 6 and median calls 6 — the budget was consumed exactly, by every case, and the four correct
+answers came from the two cases that happened to reach `ANSWER` on turn six.
+
+The pre-registered predictions are therefore adjudicated by the artifact's SHAPE rather than by its score:
+
+| # | prediction | reading | verdict |
+| --- | --- | --- | --- |
+| P1 | ≥ 90 % of investigations end on an answer rather than on the budget | **3.1 %** | **falsified** — and it is the instrument, not the arm |
+| P2 | precision 0.35–0.55 | 0.025 | **not adjudicable**: 78 of 80 breaks are cases with no answer to be wrong |
+| P3 | the arm beats the engine on the sample | 4 against 80 | **not adjudicable**, same reason |
+| P4 | repairs land in `ReplaceCode` / `ReplaceMethod` / `JVM*`, breaks in the network families | — | **not adjudicable** |
+| P5 | the falsifier: precision < 0.30 closes the axis | 0.025 | **NOT TRIGGERED** — a falsifier cannot be fired by a run that measured nothing |
+
+That last row is the one worth stating in full. §5 pre-committed `precision < 0.30` as the reading that would close
+the evidence-shape axis. Firing it here would be the exact error this document spends its length arguing against:
+**a case the arm could not measure is reported, not scored.** The row stays open, and the run is filed as an
+instrument failure with two named causes.
+
+### 6.1 Two causes, both in the harness
+
+**The budget was invisible.** Nothing in the prompt said how many turns were left, and nothing said that an
+unanswered case scores zero. A model told "you have a small budget" answers when it believes it is done; a model
+told "round 5 of 6, 1 tool call left, an unanswered case scores zero" plans. The completion side of the bill is the
+proof of the shape: **6.8 tokens per turn** — every reply was one bare directive, for six turns, forty thousand
+times.
+
+**The surface was one service wide against a fifty-service case.** A zero-cost census of the corpus
+(`/tmp` probe, 60 cases, `buildTelemetry` only, no model) reads:
+
+| what the tools would return | reading |
+| --- | --- |
+| services per case | median **50**, max 50 |
+| at least one service with metric series | 100 % |
+| the TRUTH service has metric series | 100 % |
+| failed-interface edges non-empty | 90 % (median 2 edges) |
+| edge-latency edges non-empty | 100 % (median 54 edges) |
+| any service with an `ERROR` line | 100 % |
+| the TRUTH service has an `ERROR` line | **65 %** |
+| truth wins a max-ratio read over the whole fleet | **38.3 %** |
+
+The information is there — and the last row is the ceiling of the cheapest possible investigation: rank every
+service by its strongest rise, answer the top one, and 38.3 % of cases are right. But `TOOL metric <service>` and
+`TOOL logs <service>` each spend one call on one service, so ten calls cover a fifth of the directory. The arm was
+asked to investigate fifty suspects with ten questions.
+
+## 7. Surface v2: three changes, and none of them is a model change
+
+1. **The budget is rendered into every prompt.** `renderBudget` states the round, the calls left, and that an
+   unanswered case scores zero; on the last turn it stops being a status line and becomes an order (`LAST turn …
+   the only accepted reply is ANSWER`).
+2. **Running out of runway no longer ends the investigation.** A turn taken with the call budget spent is a turn
+   that only accepts an answer, so the calls already paid for are not thrown away by a loop that terminates itself.
+   The stop reason still distinguishes `tool-calls` from `rounds`, because which wall was hit is a fact about the
+   arm's appetite.
+3. **`TOOL fleet` reads the whole directory in one call**, and every metric answer now carries the collapses as
+   well as the rises. The second half is a consistency repair: the system prompt tells the model that a service
+   which stopped receiving traffic can be the root cause, while a rise-sorted `metric` answer sorted exactly those
+   services last by construction.
+
+All three are instrument fixes, so the next run's first threshold is not accuracy — it is whether the instrument
+works: **≥ 90 % of investigations must end on an answer.** Only after that does a precision mean anything, and the
+0.55 / 0.35 / 0.30 thresholds of §5 stand unchanged behind it.
+
