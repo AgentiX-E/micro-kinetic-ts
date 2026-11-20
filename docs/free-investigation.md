@@ -656,3 +656,33 @@ the answer* — prices the whole hypothesis from the next run at ¥0, the way th
 One caveat, stated rather than used as an excuse: every number above is one run of 160 cases at temperature 0. The
 62 → 72 movement is one paired comparison on one sample; a repetition costs ¥2.5 and was not in this iteration's
 purchase, and the register lists it as the cheapest open item.
+
+### 10.8 What the budget and the deference actually did — four censuses on the same ¥2.48
+
+The artifact answers three questions this document has been guessing at, and the third one reframes the next
+purchase.
+
+**The round cap binds; the call cap does not.** Every one of the 160 cases ran **6 rounds and 5 tool calls**, with
+`rounds = calls + 1` exactly: the arm answered on the **forcing turn** every time and never earlier, leaving **5 of
+its 10** calls unused. So "the arm needs more calls" was never the constraint — the dispatch input that would double
+this investigation's depth is `query_max_rounds`, and it costs about ¥5 rather than the ¥6–10 a 100-call arm was
+priced at.
+
+**The named investigation is one to three services wide.** Distinct services named in `metric`/`logs`/`edges`: **1**
+on 45 cases, **2** on 110, **3** on 5, against ~50 services per case. `TOOL fleet` is what supplies the breadth, and
+the model reads it; the increase in depth would have to come from rounds, not from a wider single call.
+
+**The rule turned an overrider into a verifier.** The model queried the prior's own rank-1 on **141 of 160** cases
+(75/80 engine hits, 66/80 misses), kept it on **109** — a **31.9 %** override rate against 318's **55 %** — and the
+10 extra correct cases are exactly what that deference is worth when the prior is right half the time. This is the
+mechanism behind the +10, and it is the opposite of a capability change: the same model, one sentence, half the
+interventions.
+
+**And the same deference is what a miss costs.** On the engine's 80 misses the arm kept the **wrong** prior on
+**46** of them. A gate with a symmetric fallback protects a hit and protects a miss equally, so it can only trade
+repair against retention at a fixed exchange rate; 318 bought repairs and paid breaks, 319 bought retention and paid
+repairs. Breaking that symmetry is the whole content of the next design: on a miss the prior's own evidence is weak
+by construction, so the predicate that separates the two cases cannot be "how much did you look" — it is **whether
+the callee's evidence beats the prior's on a statistic the victim cannot inflate, or whether a failing edge carries
+the loss**. That is a contrast, it is computable from two tool results this arm already prints, and it is the one
+thing no competitor's paper supplies.

@@ -8339,6 +8339,23 @@ statistic that resists victimhood, or a failing edge carrying the loss), not ano
 printed by `TOOL failed` and `TOOL metric`, so one boolean per row prices the whole hypothesis from the next run at
 **¥0** — the way this run priced its three policies.
 
+**Four censuses on the same artifact, and the fourth reframes the next purchase.**
+
+* **The round cap binds; the call cap does not.** All 160 cases ran **6 rounds and 5 calls** with `rounds = calls + 1`
+  exactly — the arm answered on the forcing turn every time and left **5 of its 10 calls** unused. "More calls" was
+  never the constraint; `query_max_rounds` is the input that doubles the depth, at about ¥5 rather than the ¥6–10 a
+  100-call arm was priced at.
+* **The named investigation is one to three services wide** (1 on 45 cases, 2 on 110, 3 on 5, against ~50 per case).
+  Breadth comes from `TOOL fleet`; depth would have to come from rounds.
+* **The rule turned an overrider into a verifier**: the model queried the prior's rank-1 on **141/160** and kept it
+  on **109** — a **31.9 %** override rate against 318's **55 %** — and that deference is what the +10 is worth when
+  the prior is right half the time.
+* **The same deference is what a miss costs**: on the engine's 80 misses the arm kept the **wrong** prior on **46**.
+  A symmetric fallback protects a hit and a miss equally, so a gate can only trade repair against retention; 318
+  bought repairs and paid breaks, 319 bought retention and paid repairs. **Breaking that symmetry is the next
+  design**, and it cannot be "how much did you look" — it is whether the callee's evidence beats the prior's on a
+  statistic a victim cannot inflate, or whether a failing edge carries the loss.
+
 One limitation, stated rather than used: every number is one run of 160 cases at temperature 0, and the 62 → 72
 movement is one paired comparison on one sample. A repetition costs ¥2.5 and is the cheapest open item in the
 register.
