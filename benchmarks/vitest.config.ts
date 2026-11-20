@@ -94,6 +94,10 @@ export default defineConfig({
         // consulted. Every branch of those four is asserted here, and the model is a fake at the port, so what is
         // measured is the loop and the tools rather than an endpoint's mood.
         'src/query-agent.ts',
+        // Added with the module: the arm's misses, coded. Its whole value is the LADDER — a refusal outranks the
+        // direction it also has, a null answer is not a refusal by a prior that is also null, and a wrong branch the
+        // model LOOKED at is a different finding from one it never queried — so every rung is asserted by name.
+        'src/agentic-failure-codes.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

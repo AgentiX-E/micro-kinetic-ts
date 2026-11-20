@@ -84,6 +84,10 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   // reads is scored on its own, against the engine's verdict on that case, so there is no corpus to share an owner
   // with. `query-agent.ts`, its library half, loads nothing and does not appear here.
   'run-query-agent.ts',
+  // Iteration 321: the failure-code census. It loads FSE'26 cases to read each one's DIRECT callers and callees of
+  // the truth — one hop, because two would blur the reversal/overshoot distinction the codes exist to draw — and it
+  // assembles no corpus: the population it counts is the ARTIFACT's rows, scored one case at a time.
+  'run-agentic-failure-codes.ts',
 ];
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {
