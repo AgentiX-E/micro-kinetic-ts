@@ -8232,3 +8232,52 @@ from §300 onwards was taken under a surface whose first line was a ranking this
 copied it. That does not retire those readings — they were true of those surfaces, which is what a surface
 measurement is — but it does mean the phrase "the model cannot choose" was never measured. It is measured now, and
 the answer is that it chooses what it is shown.
+
+### §325.10 The 88.5 % that wore the name of a statistic — and the arm that overrides a correct prior
+
+§325.9 shipped a fleet ordering by "dispersion-normalised surprise" and priced it with a recall gain (63.1 % → 76.9 %
+on the sample; 110 of the engine's 159 misses inside one call). **Both numbers were real and the mechanism was not.**
+The first `surpriseOf` floored the pre-window spread at a thousandth of the *level* and let the level be zero, so the
+floor was `1e-9` and a series that sat at zero and became 50 scored **5e10**. A census on the arm's own 160 cases:
+
+| | |
+| --- | ---: |
+| cases carrying a zero-baseline series | **160 of 160** |
+| cases where one owns the top of the fleet list | **160 of 160** |
+| top-8 slots held by a `z > 1e6` series | **1 133 of 1 280 (88.5 %)** |
+
+Zero-baseline series are error rates and class-loading counters, and they belong to **victims**. So the ordering that
+scored 76.9 % was an **error-rate sort**: it found the blast radius and called itself dispersion. The fix is a
+refusal rather than a wider floor — a median of zero leaves no level to standardise against, `surprise` is
+`undefined`, and `bySurprise` falls back to the ratio, which says the true thing ("it was silent, then it was not").
+
+**The seeded arm, run `44724631904`, same 160 cases, `--seed engine`.** The engine's top-5 is printed as a prior.
+
+| quantity | v2 free | v3 seeded | threshold |
+| --- | ---: | ---: | --- |
+| answered (I1) | 1.000 | **1.000** | ≥ 0.90 — pass |
+| retention over the engine's 80 hits (I3) | 0.538 | **0.650** | ≥ 0.90 — **fail** |
+| agent Top@1 | 54 | **62** | ≥ 80 — **fail** |
+| repairs / breaks | 11 / 37 | **10 / 28** | — |
+| precision (Q1) | 0.229 | **0.263** | ≥ 0.55 — **fail** |
+| cost | ¥1.90 | **¥2.16** | ≤ ¥10 — pass |
+
+**Both falsifiers fired.** Retention 0.650 means that on **28 of the 80 cases the engine had right** the arm answered
+something else and was wrong, with the correct service printed at position 1 of the prior. Precision 0.263 means its
+edits were worth less than the 0.500 break-even.
+
+**The reading worth keeping is behavioural, and it inverts the design question:**
+
+> **The model does not copy what it is shown. It overrides it, and its overrides are worse than copying.** Seeded
+> with the engine's top-5, agreement with the engine's rank-1 rose only to **45.0 %** — the model still substituted
+> its own answer on **55 %** of cases — at precision 0.263. The width-30 table arm, asked only to RANK, moved
+> **4.3 %** of cases at precision 0.475. The two surfaces differ by **13× in how often they intervene, and precision
+> falls as intervention rises.** "Free investigation" is therefore not the opposite of a prescription; in this
+> implementation it is an **ungated override of the strongest prior the repository owns**.
+
+**What closes and what does not, stated so it cannot be read as an excuse.** The falsifiers fire against **this
+implementation**, which carried the §325.10 defect, and the row is closed *as built*. A corrected statistic is a
+different surface: it will be measured once, under a pre-registration whose instrument checks precede its thresholds,
+and the surface that replaces "free" is **gated** — an override is accepted only when the model names the evidence
+that discriminates it from the prior, and a case where it cannot is answered with the prior. This is the second time
+in three iterations that a defect let a row escape closure; the register says so, and a third would be a pattern.

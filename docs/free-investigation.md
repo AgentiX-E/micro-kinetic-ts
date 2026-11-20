@@ -393,7 +393,7 @@ A copy with 61 noisy edits scores **1 153** against its source's **1 156**.
 > copying: an arm can only beat the list it is shown by making edits whose precision exceeds the share it needs, and
 > no arm in this repository has ever been shown the strongest list it has.
 
-### 9.2 The normalisation census — the fleet list is sorted by the wrong statistic
+### 9.2 The normalisation census — and the claim it appeared to support, withdrawn
 
 The same 160 cases, five single reads, no model. Top-1 is "answer the first element"; top-8 is "does the list carry
 the truth", which is the question a candidate list is actually asked:
@@ -403,31 +403,46 @@ the truth", which is the question a candidate list is actually asked:
 | the engine | **50.0 %** | 62.5 % | — |
 | max **ratio** to the pre-injection level | 30.6 % | 41.9 % | 63.1 % |
 | max **z** against the pre-window's σ | 13.1 % | 35.6 % | 71.9 % |
-| max **robust z** — median / MAD, the pair the onset detector already uses | 25.0 % | 48.8 % | **76.9 %** |
+| max **robust z** — median / MAD | 25.0 % | 48.8 % | **76.9 %** |
 | how far outside the pre-window's own envelope | 13.1 % | 35.6 % | 66.9 % |
 | max absolute rise | 20.0 % | 23.8 % | 34.4 % |
 
-Ratio is a good **ranker** and a poor **recall** statistic; dispersion is the reverse. The whole corpus, top-8 lists,
-1 422 cases:
+The whole corpus, top-8 lists, 1 422 cases: engine **88.8 %**, robust z 84.9 %, ratio 74.3 %, union **96.6 %**; and of
+the engine's **159 misses**, robust z was reported to carry the truth on **69.2 %** against the ratio's **25.8 %**.
 
-| read | truth inside the 8 | of the engine's 159 misses |
-| --- | ---: | ---: |
-| the engine's own order | **88.8 %** | 0 % by definition |
-| robust z | 84.9 % | **69.2 %** |
-| max ratio | 74.3 % | 25.8 % |
-| union(engine, robust z) | **96.6 %** | — |
+**That reading was withdrawn the same day, and the withdrawal is the useful part.** The first implementation floored
+the pre-window spread at a thousandth of the *level* and let the level be zero, so the floor became `1e-9` and a
+series that sat at zero and became 50 scored a surprise of **5e10**. A census over the arm's own 160 cases:
 
-**110 of the engine's 159 misses are inside one `TOOL fleet` call if that call is ordered by robust z; under the
-shipped ratio ordering, 41 are.** That is the largest single improvement this surface has had, and it is a sorting
-key rather than a new tool.
+| | |
+| --- | ---: |
+| cases carrying a zero-baseline series | **160 of 160** |
+| cases where such a series owns the top of the fleet list | **160 of 160** |
+| of the 1 280 top-8 slots, slots held by a `z > 1e6` series | **1 133 (88.5 %)** |
+
+Those series are error rates and class-loading counters, and they belong to **victims**: a caller that starts
+erroring is where the fault arrived, not where it started. So the ordering that scored 76.9 % was, in substance, an
+**error-rate sort** — and the prompt itself tells the model to distrust exactly that ("a caller that reports errors
+is usually a victim"). The statistic did not measure dispersion; it measured "was silent, then was not", and it
+scored well on a *recall* metric while pointing at the blast radius rather than at the source.
+
+**The shipped statistic refuses that reading instead of flooring it.** When the pre-window's median is zero there is
+no level to standardise against, `surprise` is `undefined`, and `bySurprise` orders it last and falls back to the
+ratio. A standardised amplitude needs a level; without one the honest statement is "it went from silence to noise",
+which is the ratio's own statement and is now the one printed.
+
+> This is the second time in three iterations that a defect let a row escape closure, and the register says so in as
+> many words. A third would be a pattern rather than a coincidence, which is why the next arm is registered with the
+> corrected statistic AND with a rule that its instrument checks precede its thresholds.
 
 ### 9.3 What was changed, and why the two changes do not confound
 
 1. **A prior.** The engine's own top-5 is printed before the first turn, labelled a prior and not an answer. Off by
    default; `--seed engine` turns it on and `query_seed` states it at dispatch. The arm's **floor becomes the engine's
    accuracy** instead of the first list a tool printed.
-2. **The fleet and metric lists are ordered by robust z**, and every metric line prints both statistics so the model
-   can see them disagree. One rule for the surface rather than two.
+2. **The fleet and metric lists are ordered by the dispersion-normalised surprise**, and every metric line prints
+   both statistics so the model can see them disagree. One rule for the surface rather than two. §9.2 records what
+   the first version of that statistic actually measured, and why it now refuses a zero level.
 
 They act on **disjoint populations**, and the reading is decomposed:
 
@@ -445,3 +460,45 @@ averages two populations whose floors differ and can hide either.
 retention below 0.90 kills the prior (showing a model an order is not a way to keep it), and precision below 0.30 on
 at least 20 decided cases closes the free-investigation row for good — at which point the remaining 6.6 pp is not a
 channel problem at all, and the base term's definition is the only thing left.
+
+### 9.5 The seeded arm, read
+
+Run `44724631904`, the same 160 cases (80 engine misses + 80 engine hits), the same 6-round / 10-call budget,
+`deepseek-chat`, `--seed engine`.
+
+| quantity | v2 free | **v3 seeded** | threshold |
+| --- | ---: | ---: | --- |
+| answered share (I1) | 1.000 | **1.000** | ≥ 0.90 — **pass** |
+| **retention over the engine's 80 hits (I3)** | 0.538 (43/80) | **0.650** (52/80) | ≥ 0.90 — **fail** |
+| agent Top@1 | 54 | **62** | ≥ 80 (Q2) — **fail** |
+| repairs / breaks | 11 / 37 | **10 / 28** | — |
+| precision (Q1) | 0.229 | **0.263** on 38 decided | ≥ 0.55 — **fail** |
+| rounds per case (P4) | 6.00 | 6.00 | ≤ 4.50 — **fail** |
+| cost (Q4) | ¥1.90 | **¥2.16** | ≤ ¥10 — **pass** |
+
+**Both pre-registered falsifiers fired.** Retention **0.650** is below 0.90: on **28 of the 80 cases the engine had
+right**, the arm answered something else and was wrong — with the correct service printed at position 1 of the
+prior. Precision **0.263** is below 0.30 on 38 decided cases.
+
+**The arm improved by eight cases (54 → 62), almost all of it retention (+9 kept, −1 repaired), and the improvement
+is not the one that was registered.** The registered
+mechanism was the dispersion statistic, and §9.2 shows that statistic was measuring an error-rate sort. What the
+reading actually shows is behavioural and is worth more than the eight cases:
+
+> **The model does not copy the list it is shown. It overrides it, and its overrides are worse than copying.**
+> Seeded with the engine's top-5, agreement with the engine's rank-1 rose only from 36.3 % to **45.0 %** — the model
+> still substituted its own answer on **55 %** of cases — and the substitutions had precision 0.263 against a
+> break-even of 0.500. The width-30 table arm, asked only to RANK, moved **4.3 %** of cases at precision 0.475. So
+> the two surfaces differ by **13× in how often they intervene**, and precision falls as intervention rises.
+
+That is a law this repository can act on, and it inverts the design question. "Free investigation" was registered as
+the opposite of a prescription; what it is, in this implementation, is an **ungated override** of the strongest prior
+the repository has. The next surface is therefore not freer or more seeded — it is **gated**: an override is
+accepted only when the model names the evidence that discriminates it from the prior, and a case where it cannot is
+answered with the prior.
+
+**One caveat that must not be used as an excuse, and is stated to be checked later.** The surface this arm ran on
+carried the zero-baseline defect of §9.2, and a fleet list that sorts by error rate gives the model a reason to look
+away from a correct prior. So the falsifiers fire **against this implementation**, and the row is closed *as built* —
+but a corrected statistic is a different surface and will be measured as one, once, under a pre-registration that
+puts its instrument checks before its thresholds.
