@@ -135,6 +135,7 @@ is the register's recurring shape one more time, now at the level of the MODEL's
 | tool | what the model gets |
 | --- | --- |
 | `TOOL services` | the case's service directory |
+| `TOOL fleet` | every service ranked by its strongest rise, in **one** call, with the deepest collapses beside it (added in v2; §7) |
 | `TOOL metric <service>` | that service's strongest metric rises against **its own** pre-injection baseline |
 | `TOOL logs <service>` | its `ERROR`/`FATAL` lines after the injection, oldest first, with the first offset |
 | `TOOL edges <service>` | callers, callees, and the latency either side of the injection on those edges |
