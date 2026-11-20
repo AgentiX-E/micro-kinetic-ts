@@ -87,6 +87,13 @@ export default defineConfig({
         // truth unreachable at every width, the SMALLEST width that reaches a target, and a refusal for a rank the
         // artifact could not have written — are asserted by name here.
         'src/presentation-ceiling.ts',
+        // Added with the module: the free-investigation arm, which is the first agent surface in this repository
+        // that does not ask a model to choose from a table. Its whole value is the two refusals it makes — a
+        // directive its grammar does not admit is not a call, and a service the case does not carry is refused BY
+        // NAME rather than answered with an empty list — plus the budget that stops the loop instead of being
+        // consulted. Every branch of those four is asserted here, and the model is a fake at the port, so what is
+        // measured is the loop and the tools rather than an endpoint's mood.
+        'src/query-agent.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
