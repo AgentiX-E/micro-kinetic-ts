@@ -7741,3 +7741,105 @@ traversal.
 **Axes this closes.** One: the ledger's membership, in both its forms (credit and residual). **Axes this keeps
 open.** None on this channel — the reach is now exhausted as well: a rule that compares only pairs a failing edge
 relates, both of them measured, is the whole of what the channel supports.
+
+## §323 Iteration 314 — three channels the score did not use, and the two the arm could not make pay
+
+**The instrument first, because every reading below is its output.** `benchmarks/src/miss-anatomy.ts` decomposes a
+miss into the formula's own terms: every result the engine returns carries `RootCauseResult.terms`, which sum
+exactly to its `finalScore`, and the difference between the winner's rows and the truth's rows is a decomposition
+of the miss with no re-derivation anywhere. Read on the published configuration (1 186), it reproduces the run
+**236 of 236 `truthRank` and 236 of 236 winner** — the probe's numbers are the run's numbers by measurement rather
+than by construction. The 14 tests hold three statements: the differences sum to the score gap, an absent truth is
+NAMED rather than decomposed, and a tie is NAMED rather than resolved.
+
+**§323.1 — what decided the 236.**
+
+| term | cases | share |
+| --- | ---: | ---: |
+| `selfAnomalyLog1p` | 126 | 53.4 % |
+| `dualFamily` | 42 | 17.8 % |
+| `lat` | 41 | 17.4 % |
+| `log` | 25 | 10.6 % |
+| `failedEdge` / `pool` | 1 / 1 | 0.4 % each |
+| truth absent from the results | **0** | **0.0 %** |
+
+No miss is a membership decision and none is a tie: the decisive term's contribution is a **median 40.4 % of the
+winner's score** and only 14 of 236 (5.9 %) are under 5 %. The signature also **changes with depth** — at rank 2–3
+`log` decides 32 %, while beyond rank 10 the base term decides 65 % and `log` 2 % — so the near misses and the deep
+ones want different work and a single arm cannot address both.
+
+**§323.2 — the base term does not lose by a hair.** Read back out of the two contributions (`expm1`, because the
+term is `weight × log1p(self)` at weight 1), `truthSelf / winnerSelf` has **median 0.413**; 45 of the 126 sit under
+0.30 and only 14 are within 10 %. The truth is never at exactly zero, so on this corpus the metric channel **sees**
+the fault everywhere and prefers something louder — which is the 2026 agent literature's **MIS2**
+("significance bias, trusting the loudest anomaly without separating cause from symptom") reproduced by a
+deterministic engine, and it means a rescaling of the base term cannot move these cases without moving every case
+the scale was calibrated on.
+
+**§323.3 — three channels the score did not use.**
+
+| term | weight | candidates it reached (of 236) | why |
+| --- | ---: | ---: | --- |
+| `failedEdge` | **3** | **2** | the gate's name half refuses every candidate whose dominant metric is not duration-shaped (1 030 of 1 422 before any bar), and `evidence` mode needs a call denominator this corpus does not publish. **157 of the 236 carry the rows it reads** — `HTTPResponseReplaceCode` 58/58, `HTTPRequestReplaceMethod` 44/44, `JVMReturn` 9/9, `JVMException` 8/8 |
+| `trace` | 1 | **0** | the FSE'26 loader fills no `traceActivity`; the corpus ships `traceEdges` (pairs, no counts) and `traceEdgeLatency`. The term's input is ABSENT, not zero — `lat` is the same data read as a node statistic, which is why 69 candidates do score on it |
+| `faultFree` | 0 | 0 | weight is the ablation, and §323.4 is why the weight alone was not the whole story |
+
+**The `failedEdge` row was measured before the arm was priced**, and the price is why no arm shipped: on 1 222 cases
+whose net-failed-call leader exists, that leader is the truth **57.7 % of the time on cases the engine already gets
+right** and 73.2 % on the ones it misses. The channel is *better* on misses and still far below the base term's
+83.4 % overall, so a partition that promoted its leader would take the archive to roughly 730 — a loss of ~450, not
+a gain. The measurement is the arm's ceiling and it was taken for `$0` rather than paid for in a run.
+
+**§323.4 — the fault-free prior: one aggregation degenerate, one refused.**
+
+| arm | `Top@1` | `Top@3` | `Top@5` | gained / lost at rank 1 |
+| --- | ---: | ---: | ---: | ---: |
+| control (`w = 0`) | **1 186** | 1 236 | 1 255 | — |
+| `rarest`, `w` = 0.1 / 0.3 / 1.0 | **1 186** | 1 236 | 1 255 | 0 / 0 |
+| `dominant`, `w = 0.3` | 1 175 | 1 249 | **1 279** | 15 / 26 |
+| `dominant`, `w = 1.0` | 1 143 | 1 247 | 1 278 | 28 / 71 |
+
+**`rarest` is DEGENERATE here and the statement is arithmetic.** The aggregation reads the minimum `rate` over
+EVERY channel a service carries, and 150 of the profile's 2 080 channels have `rate = 0`; a service with 39
+channels therefore almost always holds one that never fires when nothing is wrong. A 60-case systematic sample
+found **2 distinct `faultFree` scores per case in 60 of 60** — on `ts0-mysql-loss-67k278`, 50 scored services
+collapse onto two values and 49 of them are `1.000`. A term that pays the whole fleet the same is a constant, and
+the weight sweep moved **0 ranks on 1 422 cases** while moving 40 / 51 / 83 scores: the sweep is a measurement of a
+constant, not of a prior.
+
+**`dominant` is not degenerate and is still refused.** It reads the `rate` of the channel the candidate's anomaly
+came from, which is the reading the term's docblock describes. Its shape is a FLATTENING: at `w = 0.3` the largest
+single movement is `1 → 2` on **20 cases** against `2 → 1` on 9, `Top@3` gains 17 and loses 4, `Top@5` gains 24 —
+and `Top@1` falls 11. By family the loss is concentrated and the gain is not: `NetworkPartition` **−7 / +0**,
+`NetworkDelay −5 / +0`, `NetworkBandwidth −5 / +0`, against `JVMException +5 / −0` and `HTTPResponseDelay +2 / −0`.
+A partition makes a *reachability* channel fire, and that channel is noisy in the fault-free window too, so `1 − r`
+is small exactly where the fault is loudest in its own units — the term prefers a quieter neighbour, which is the
+mechanism the register named for `NetworkPartition` in §322 from the other direction.
+
+Refused on the five gates written before the arms were read: **B1** (net ≥ +10) failed at both weights, **B2** (no
+family −2) failed on three families, **B3** (half the gain in the rare-channel families) was not reached because the
+net gain is negative, **B4** (monotone) passed, **B5** (`Top@3`/`Top@5` may not fall) passed. `faultFreeWeight`
+stays `0` and `rarest` stays the default; every published cell reproduces with no flag.
+
+**What the refusal keeps.** `Top@5` rising while `Top@1` falls is the signature of a **second opinion rather than a
+better one**, and it is now the third independent measurement of that shape on this corpus — after `dualFamily`'s
+gate (§181) and the containment reach (§322.4). A prior that agrees with the base term is worth nothing and a prior
+that disagrees with it loses; that is the standing finding, and it is the reason the next arm is aimed at the base
+term's own definition rather than at a fourth correction applied to it.
+
+**§323.5 — the dimensional defect the decomposition exposed, kept open on purpose.** The base term is `log1p`-shaped
+and therefore capped at **0.693** at weight 1; the `log` term is a max-normalised share in `[0, 1]` at weight **1**
+and is therefore capped at **1.000**. On the 25 misses `log` decided, the winner's contribution is **1.000 on 25 of
+25**, the truth's is 0.000 on 22, and the median base gap is **−0.017 — the base term had already chosen correctly.**
+No `logWeight` above 0.693 can stop the term from out-weighing a maximal base contribution, so this is a ceiling to
+fix rather than a weight to tune, and every published `logWeight` reading was taken with the property in it. It is
+recorded and NOT changed here: it moves every cell the golden half publishes and needs its own pre-registration.
+
+Full read, including the reproduction commands: `docs/miss-anatomy.md`. Pre-registration and outcome:
+`docs-repository:preregistration-314.md`.
+
+**Axes this closes.** Two: the fault-free prior's value on this corpus, in both its aggregations; and "the
+containment reach was the last thing the failure channel could pay for" — the ledger now reads its own ceiling,
+and the ceiling is `selfAnomalyLog1p`. **Axes this keeps open.** Three, each with a measurement behind it: the
+`log` term's ceiling (§323.5), the `failedEdge` gate on a corpus with no call denominator (§323.3), and the base
+term's definition itself (§323.2, where the truth is visible to the channel and ranked second).

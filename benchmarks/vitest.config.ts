@@ -76,6 +76,11 @@ export default defineConfig({
         // predicates. Every branch is measured because the instrument's whole claim is that a family it cannot
         // reach is a defect in the PREDICATE and not a clean bill — so the branch that produces a finding, the
         // branch that withholds one, and the branch that reports an unauditable case are all asserted by name.
+        // Added with the module: the decomposition of a miss into the ranking formula's own terms. Three
+        // statements are what make it a decomposition rather than a description — the differences sum to the
+        // score gap, an absent truth is NAMED instead of decomposed, and a tie is NAMED instead of resolved — and
+        // every branch that could silently turn one of the three into a different claim is asserted here.
+        'src/miss-anatomy.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
