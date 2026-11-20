@@ -196,7 +196,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 | the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
-| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision. **v2 read 0.229 on 48 decided and fired the falsifier**, which closed the FREE shape; §325.9 then showed the arm had been a reranker of max ratio (55.0 % echo) and that the same text ordered by robust z carries the truth on 69.2 % of the engine's misses instead of 25.8 %, so the shape reopens as a SEEDED arm whose floor is the engine's own accuracy | a seeded arm whose retention falls below 0.90 (the prior is not kept) or whose precision stays below 0.30 (the channel does not pay even when the prior is right), which would move the gap to the base term and close the row for good |
+| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one. **The first free-investigation pilot then measured the HARNESS, not the arm: 155 of 160 investigations ended without an answer, because the budget was invisible in every prompt and the surface was one service wide against a fifty-service case (§325.7).** Surface v2 repairs both, and its first threshold is an instrument one — at least 90 % of investigations ending on an answer — before any reading of precision. **v2 read 0.229 on 48 decided and fired the falsifier**, which closed the FREE shape; §325.9 then showed the arm had been a reranker of max ratio (55.0 % echo) and that the same text ordered by robust z carries the truth on 69.2 % of the engine's misses instead of 25.8 %, so the shape reopens as a SEEDED arm whose floor is the engine's own accuracy. **Both seeded falsifiers then fired (§325.10)**, and the reading that survived inverted the design question: the model overrides a correct prior on 55 % of cases at precision 0.263 against 4.3 % and 0.475 for the table arm, so the surface is an UNGATED OVERRIDE and not a free investigation. **§325.11 gates it and the gate is worth +16 cases**: enforcing "an override must be investigated" moves the arm 62 → 73 and refusing the overrides that descend from a correct prior but name something outside its callee cone moves it to **78 against the engine's 80** — precision 0.450, retention 0.863, **no repair refused in 21 refusals (p = 0.0047)** — with one refusal in the whole run and a rule whose ANNOUNCEMENT alone moved the model's own answers 62 → 72 | an arm whose admitted overrides keep losing cases the prior had right: the 11 remaining breaks are all cited and all in-cone, which is downstream misattribution, and topology cannot price it — so the row now turns on a CONTRAST gate (the callee's evidence louder than the prior's, or a failing edge carrying the loss) rather than on another map |
 
 ## What this register holds besides its axes
 
@@ -8281,3 +8281,64 @@ different surface: it will be measured once, under a pre-registration whose inst
 and the surface that replaces "free" is **gated** — an override is accepted only when the model names the evidence
 that discriminates it from the prior, and a case where it cannot is answered with the prior. This is the second time
 in three iterations that a defect let a row escape closure; the register says so, and a third would be a pattern.
+
+### §325.11 The gate: an override admitted only against a record — and the 21 refusals that cost nothing
+
+§325.10 closed the seeded arm *as built* and named the surface that would replace it: **gated**. This iteration
+builds it, on the institution `arXiv:2611.05390` prices — an override is binding only after *"a mechanically valid
+record"* — and with its warning taken seriously: a rule that lives in a prompt is a request, because
+`arXiv:2611.05662` shows a judge that has already gathered the decisive evidence still reverses up to 40 % of correct
+verdicts under one authority-toned sentence. So the rule is enforced **by the harness, after the model has spoken**,
+against the record the harness already owns: the transcript.
+
+Three policies, one run, one artifact (`summariseGatePolicies` re-scores the two that were not dispatched at ¥0, and
+a test asserts the online surface equals the priced one):
+
+| policy | admitted when | admitted | refused | repairs | breaks | precision | Top@1 | retention |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | always (control) | 51 | 0 | 9 | 17 | 0.346 | 72 | 0.787 |
+| `cited` | the service it names was queried | 50 | **1** | 9 | 16 | 0.360 | 73 | 0.800 |
+| `cone` | `cited` **and** on the prior's callee-side cone | 30 | **21** | 9 | 11 | **0.450** | **78** | **0.863** |
+
+Run `44749523006`, the same 160 cases as 317–318, `deepseek-chat`, 6 rounds / 10 calls, `--seed engine --gate cited`,
+**¥2.48**. A refused override falls back to the prior, which is what makes the arm **monotone**: a case the engine
+had right can be lost only by an ADMITTED wrong edit, never by a refusal.
+
+**`I6` passes at 1.000** (160/160 answered). **`G1` and `G2` fail for every policy** — best precision 0.450 against
+0.50, best retention 0.863 against 0.95 — and **neither falsifier fired** (`G1` is not below 0.35 everywhere, and no
+policy is inert at 30–51 admitted). So the registered shipping rule selects nothing and **no default changes**.
+`cone` dominates `cited` on all three axes at once, which is the direction the measured law points, but adopting it
+from this artifact would be post-hoc selection; it is **registered as the primary surface of the next iteration**.
+
+**Three findings survive the numbers.**
+
+1. **The effort gate is inert by measurement.** 50 of the 51 overrides had been cited: told the rule, the model
+   investigates what it names **98 %** of the time. "Being investigated" is a constant on this surface, not a signal,
+   and that is a stronger statement than the paper's warning that a prompt-level gate can fail.
+2. **The direction gate refuses only what is free to refuse.** Of the 21 refusals, **0 were repairs** and 6 were
+   breaks — it discarded none of the 9 edits that gained a case and 6 of the 17 that lost one. Under random removal
+   of 21 from 51, losing no repair has probability **0.0047**. It does not *find* breaks (33 % of the override
+   population, 29 % of the refused set); it **never vetoes a repair**, which with a fallback is the only property a
+   gate needs.
+3. **Announcing the jurisdiction moved the behaviour more than exercising it.** The run contains **one** refusal,
+   yet the model's own answers moved **62 → 72** against 318 on the same cases, for 0.3 s of extra prompt per turn.
+   This is measurable only because the artifact keeps the ungated answer beside the gated one.
+
+**The law, stated so the next gate is judged the same way:**
+
+> A gate is judged by the repairs it refuses, not by the breaks it catches. A fallback makes every refusal free
+> unless the refused edit was a repair, so its gain is `breaks refused − repairs refused`, and a gate that refuses no
+> repair has non-negative gain by construction. Precision is the wrong lens on a **refunded** refusal — `SPLIT`'s
+> precision ceiling governs an irrevocable verifier, and this one is not.
+
+**What remains is 2 cases and it is not topology.** `cone` reads 78 against the engine's 80; the 80 engine hits were
+overridden 17 times, `cone` admitted 11, and **all 11 were wrong** — cited, in-cone, and still the wrong service,
+because the model descended from a correct prior into a callee and blamed the callee. Separating "the callee is the
+cause" from "the callee is fine" needs a **contrast** (the callee's own evidence louder than the prior's on a
+statistic that resists victimhood, or a failing edge carrying the loss), not another map. Both facts are already
+printed by `TOOL failed` and `TOOL metric`, so one boolean per row prices the whole hypothesis from the next run at
+**¥0** — the way this run priced its three policies.
+
+One limitation, stated rather than used: every number is one run of 160 cases at temperature 0, and the 62 → 72
+movement is one paired comparison on one sample. A repetition costs ¥2.5 and is the cheapest open item in the
+register.

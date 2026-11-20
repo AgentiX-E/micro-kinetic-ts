@@ -502,3 +502,157 @@ carried the zero-baseline defect of §9.2, and a fleet list that sorts by error 
 away from a correct prior. So the falsifiers fire **against this implementation**, and the row is closed *as built* —
 but a corrected statistic is a different surface and will be measured as one, once, under a pre-registration that
 puts its instrument checks before its thresholds.
+
+## 10. The institution, not the capability: an override admitted only against a record
+
+Iteration 318 closed the seeded arm and left one sentence that is not about the model:
+
+> The model does not copy the list it is shown. It overrides it, and its overrides are worse than copying — 55 % of
+> cases substituted, at precision 0.263, against 4.3 % substitution at precision 0.475 for the table arm.
+
+Two surfaces, **13× apart in how often they intervene**, and precision falls as intervention rises. That is not a
+capability observation, so the next surface is neither freer nor more seeded. It is **gated**.
+
+### 10.1 Three 2026 papers make the gate a law rather than a metaphor
+
+**`arXiv:2611.05390`** (*Who May Overrule the Agent? Evidence-Gated Authority in LLM Review Institutions*, September
+2026) studies exactly this decision — a second party that may replace a prior decision, and the institution that
+governs when the replacement is binding. It compares **broad override authority** with an **evidence gate**:
+replacement permitted only after *"a mechanically valid record of a binding-constraint violation and a compliant
+repair"*. Two of its numbers are the two this iteration has to pay:
+
+* the gate *"sharply reduces corruption of correct proposals while retaining most repairs of violations"* — the
+  exchange rate a regime of 28 breaks against 10 repairs needs;
+* and it is **not a model-independent safeguard**: in the prospective arm, Qwen's corruption of correct proposals
+  falls to zero while *"Mistral still replaces all 48 correct proposals"*. **A rule that lives in a prompt is a
+  request, not a gate.**
+
+**`arXiv:2611.05662`** (November 2026) says why, from the reviewer's side: a judge that has *already gathered the
+decisive evidence* still reverses up to **40 %** of correct verdicts when one authority-toned sentence is inserted
+into its context, and **over-trust** is the dominant mechanism for the stronger models. Grounding does not immunise
+a decision against a prior; jurisdiction does.
+
+The **SPLIT** paper (October 2026) supplies the arithmetic that makes the gate a threshold rather than a hope:
+*verified success saturates at the verifier's precision* — more attempts raise **coverage** and leave the **ceiling**
+where the verifier put it. An arm whose overrides are admitted by a gate is that object exactly: its accuracy is
+`engine + (admitted repairs − admitted breaks)`, so the ratio governing those two terms is a **precision**, and that
+is why this iteration registered `G1` on precision rather than on accuracy.
+
+### 10.2 What is mechanically checkable in an RCA case
+
+The paper's gate needs a "mechanically valid record". An RCA case gives this repository one that a review setting
+does not have: **the transcript**. Every claim the model makes about a service is either backed by an executed tool
+result about that service or it is not, and the harness knows which. So the rule is enforced after the model has
+spoken, against a record the harness already owns, at zero extra tokens:
+
+| policy | an override is admitted when | what it prices |
+| --- | --- | --- |
+| `none` | always | the control: 318's ungated surface |
+| `cited` | the investigation executed `metric`/`logs`/`edges` on the service it names | does **effort** select? |
+| `cone` | `cited`, and the service sits on the prior's **callee-side cone** | does effort **plus direction** select? |
+
+The third is the topological statement used everywhere else here: a fault propagates **down** the call graph, so a
+root cause is reached by descending and a caller that reports errors is the victim. It is an `O(V+E)` walk over
+`callees` that terminates on cycles, and it is a property of the case, not of the model.
+
+**A refused override falls back to the prior.** That is the design's spine: the arm becomes **monotone**, because a
+case the engine had right can now be lost only by an override that was *admitted* and wrong — never by a refusal.
+Retention stops measuring the model's willingness to intervene and starts measuring the gate's selectivity.
+
+**The rule is printed in every gated prompt**, because `renderBudget`'s lesson from iteration 316 applies unchanged
+to a rule that discards answers: a wall the model cannot see is an ambush, and 155 of 160 investigations once ended
+without an answer because nothing said the answer was compulsory.
+
+### 10.3 One run, three policies, ¥2.48
+
+The artifact records, per case, the model's **first** resolved answer before any gate, every service it executed a
+query against, and whether that answer sits on the prior's cone — so the two policies that were not dispatched are
+re-scored from the same file at **¥0**. A test asserts the online surface equals the priced one, because a table in
+a document that describes an arm nobody ran is the defect this register exists to prevent.
+
+Registered in `docs-repository:preregistration-319.md` with `I6` (answered ≥ 0.99), `G1` (admitted precision ≥ 0.50
+on ≥ 12 decided) and `G2` (retention ≥ 0.95), five predictions and two falsifiers, before the artifact existed.
+
+### 10.4 The read — run `44749523006`
+
+The same 160 cases as 317 and 318 (80 engine misses by stride, 80 engine hits by stride; the engine's Top@1 on the
+sample is 80 in both readings), `deepseek-chat`, 6 rounds, 10 calls, `--seed engine`, `--gate cited`.
+
+| quantity | 318 seeded | **319 gated, dispatched** | threshold |
+| --- | ---: | ---: | --- |
+| answered (I6) | 1.000 | **1.000** (160/160) | ≥ 0.99 — **pass** |
+| agent Top@1 | 62 | **73** | — |
+| repairs / breaks | 10 / 28 | **9 / 16** | — |
+| precision (G1) | 0.263 | **0.360** | ≥ 0.50 — **fail** |
+| retention (G2) | 0.650 | **0.800** | ≥ 0.95 — **fail** |
+| rounds per case | 6.00 | 6.00 | — |
+| cost | ¥2.16 | **¥2.48** | ≤ ¥10 — pass |
+
+And the three policies, re-scored from the same artifact:
+
+| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | 51 | 0 | 9 | 17 | 0.346 | 72 | 0.787 |
+| **`cited`** (dispatched) | 50 | **1** | 9 | 16 | 0.360 | 73 | 0.800 |
+| **`cone`** | 30 | **21** | **9** | **11** | **0.450** | **78** | **0.863** |
+
+Three findings, and the third is the one worth the ¥2.48.
+
+**1. The effort gate is inert, by measurement.** Of the 51 overrides, **50 had been cited**: told that an override
+must be investigated first, the model investigates what it names **98 %** of the time. "Being investigated" is
+therefore nearly a constant on this surface, not a signal — the first policy is priced and refused by its own data,
+which is a stronger statement than the paper's warning that a prompt-level gate can fail.
+
+**2. The direction gate is selective in the one direction that matters.** `cone` refuses 21 of the 51 overrides, and
+of those 21, **0 were repairs** and 6 were breaks: it discarded **none** of the 9 edits that gained a case while
+discarding 6 of the 17 that lost one. Under random removal of 21 from 51, losing no repair has probability
+**0.0047**. Note what it does *not* do: breaks are 33 % of the override population and 29 % of the refused set, so
+the test does not *find* breaks — it **never vetoes a repair**, and with the fallback that is the only property a
+gate needs.
+
+**3. Announcing the jurisdiction moved the behaviour more than exercising it did.** The whole run contains **one**
+refusal. Yet the model's own answers moved **62 → 72** against 318's ungated arm on the same cases — the raw column
+of the table above — for one extra refusal and 0.3 s of extra prompt per turn. The rule was read and complied with
+before it ever had to fire, which is the opposite of what the enforcement-only reading of `arXiv:2611.05390`
+predicts, and it is measurable only because the artifact keeps the ungated answer beside the gated one.
+
+### 10.5 Thresholds, adjudicated
+
+`I6` passes at 1.000. **`G1` fails for every policy** — 0.346, 0.360, 0.450 against 0.50 — and **`G2` fails for
+every policy**, best 0.863 against 0.95. **Neither falsifier fired**: `G1` is not below 0.35 for every policy (two
+of three are above it), and no policy is inert (30–51 admitted). So the registered shipping rule — clearest
+`G1`/`G2` reader wins — **selects nothing**, and this iteration ships no default change.
+
+What it does ship is a **dominance**: `cone` is better than `cited` on all three axes at once (precision 0.450 vs
+0.360, Top@1 78 vs 73, retention 0.863 vs 0.800) while admitting 20 fewer overrides, which is the direction the
+measured law points — precision falls as intervention rises. Choosing it *now* would be a post-hoc selection, so it
+is **registered as the primary surface of the next iteration** and not adopted from this artifact.
+
+### 10.6 The law this iteration produces
+
+> **A gate is judged by the repairs it refuses, not by the breaks it catches.** A fallback makes every refusal free
+> unless the refused edit was a repair, so a gate's gain is `breaks refused − repairs refused`, and a gate that
+> never refuses a repair has non-negative gain by construction. Precision is the wrong lens on a refunded refusal.
+
+That inverts the usual reading of a verifier. `SPLIT`'s precision ceiling is a ceiling on an **irrevocable**
+verifier: a rejected candidate is gone. Here a rejected candidate is replaced by a prior that is right on half the
+population, so the relevant quantity is the **composition of the refused set** — and the composition this gate
+produced is `0 repairs, 6 breaks, 15 neutral`.
+
+### 10.7 What is left, exactly
+
+`cone` reads 78 against the engine's 80 on the same cases, so the arm is **two cases short of its own floor**, and
+both are visible in the artifact: the 80 engine hits were overridden 17 times, `cone` admitted 11 of those 17, and
+**all 11 were wrong**. Every one of them was cited and in-cone — the model descended from a correct prior into a
+callee and blamed the callee.
+
+That is a **downstream misattribution**, and topology cannot separate "the callee is the cause" from "the callee is
+fine". The next surface is therefore a **contrast**, not another map: admit a step down the cone only when the
+callee's own evidence is *louder* than the prior's on a statistic that resists victimhood, or when the failing edge
+`prior → answer` carries the loss. Both are already in the tool surface (`TOOL failed` prints `net=` per interface,
+`TOOL metric` prints `z=` per series), so recording one boolean per row — *did a failing edge run from the prior into
+the answer* — prices the whole hypothesis from the next run at ¥0, the way this one priced its three policies.
+
+One caveat, stated rather than used as an excuse: every number above is one run of 160 cases at temperature 0. The
+62 → 72 movement is one paired comparison on one sample; a repetition costs ¥2.5 and was not in this iteration's
+purchase, and the register lists it as the cheapest open item.
