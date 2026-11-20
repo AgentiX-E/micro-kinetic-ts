@@ -8443,3 +8443,107 @@ which is not the same as making the arm better.
 2-of-13 rate at which a loud victim is preferred to a quiet source. LagRCA solves it with a trained residual model.
 The cheapest untried lever here is the **base term** (236 misses, 126 never repaired) rather than a fourth predicate
 on two scalars.
+
+## 325.13 The base rate decides, and the interface axis is not a source test (iteration 321)
+
+**Two things were wrong with how 320 read its own result, and both are arithmetic rather than modelling.**
+
+### The law: what precision an override gate needs is set by the population, not by 0.5
+
+The arm is measured on a sample drawn **half from the engine's misses and half from its hits** — deliberately, because
+the two quantities that decide it are repairs and breaks and a sample drawn from the misses alone has no denominator
+for precision. That construction is a **diagnostic exchange rate**. It is not the population: on this corpus
+**1 156 of 1 422 cases are hits** (81.29 %), so there are 4.35 times as many opportunities to break as to repair.
+
+Let `m` be the miss share. A gate that admits overrides at rates `a_m` (on misses) and `a_h` (on hits) with precision
+`p` among the decided changes the corpus score by
+
+```
+net = m · a_m · p  −  (1 − m) · a_h · (1 − p)
+```
+
+which is non-negative iff
+
+```
+p  ≥  (1 − m) · a_h / ( m · a_m + (1 − m) · a_h )
+```
+
+With equal admission rates this collapses to **`p ≥ 1 − m` = the engine's own accuracy = 0.813**. The 0.50 that
+iteration 319 registered as the break-even is the balanced sample's break-even, and it is off by 31 points.
+
+**What that does to the readings already published.** Transferring the observed per-stratum rates to the corpus:
+
+| policy | adm / ref / rep / brk | precision | sample Top@1 | projected net@corpus | projected corpus Top@1 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `none` | 41 / 0 / 13 / 11 | 0.542 | 82 | −115.7 | 73.16 |
+| `cited` | 40 / 1 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 |
+| `cone` | 35 / 6 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 |
+| `contrast` (320's arm) | 19 / 22 / 11 / 4 | 0.733 | **87** | **−21.2** | **79.80** |
+| **`lag`** (this iteration) | **14 / 27 / 10 / 0** | **1.000** | **90** | **+33.2** | **83.63** |
+
+`contrast`'s +7 is real as an exchange rate and **negative as an effect**: 4 breaks per 80 hits is 57.8 breaks against
+1 156, while 11 repairs per 80 misses is 36.6 against 266. This is the arithmetic that answers the question the
+project has been asking since 318 — *why does enabling the model read below the engine?* — and the answer is not the
+model. It is that a gate at precision 0.73 buys repairs in the stratum that is 18.7 % of the population and pays for
+them in the stratum that is 81.3 %.
+
+**The projection is a rate transfer, not an interval**, and its honesty is in the nulls: a stratum the sample did not
+carry has no rate (`projectOntoCorpus` returns `null` rather than 0). The full-corpus run is what tests the transfer.
+
+### `E1` is a reachability test, not a source test
+
+`contrast` is `E1 ∨ E2`. The 160-case artifact separates the two terms for the first time, because the artifact
+carries both onsets and the interface nets:
+
+| term | admitted | repairs | breaks | precision |
+| --- | ---: | ---: | ---: | ---: |
+| `E1` only (interface `prior → answer` failed) | 5 | 1 | **4** | 0.200 |
+| `E2` only (answer's first error strictly earlier) | 14 | **10** | **0** | **1.000** |
+| both (`contrast`) | 19 | 11 | 4 | 0.733 |
+
+**`E1` buys one repair with four breaks at corpus base rate it is worse than that.** The reason is structural and not
+a property of this corpus: an interface that fails from `prior` into `answer` is **what a failing caller produces on
+every callee it has left**. Whenever the prior is the source — the case where an override is most expensive — `E1`
+points at its victims. It measures reachability, i.e. whether the call got through, and the call does not get through
+on a system whose caller has failed.
+
+`E2` has no such ambiguity: a caller cannot report a callee's failure before the callee produces it. It is the
+$\tau$ of the collision model used as an **ordering**, and it admits 10 repairs and no break.
+
+**So the shipped policy becomes `lag`** — `cited ∧ cone ∧ E2` — and `contrast` is kept unchanged as the registered
+arm 320 published, because a rule that changes under a published name invalidates every number taken under it.
+`lag ⊂ contrast` strictly, and the pricing table now prints five policies per artifact at ¥0.
+
+### The three axes that were proposed for the residue, and what the same artifact says about them
+
+1. **Lag decay (LagRCA's exponential kernel).** Swept over `τ_min ∈ {1, 2, 5, 10, 20, 30, 60}` s: **identical at every
+   threshold up to 30 s**, and at 60 s it **loses one repair and buys no break**. The gaps are not small — median
+   `prior − answer` is **0 ms**, p90 **9.4 s** — so the decay has nothing to separate. What carries the information is
+   the **sign**, not the magnitude. Closed as an admission axis.
+2. **Fault-free self-residual (`E4`).** The healthy band exists (`~/.fault-free-profile.json`, 2 080 channels, built
+   from the corpus), so each service's departure from its own healthy shape is computable at ¥0. It **fails, and it
+   fails by pointing the wrong way**: the strongest self-channel residual of the truth is
+
+   | stratum | truth p50 | engine's answer p50 | model's answer p50 |
+   | --- | ---: | ---: | ---: |
+   | engine misses (80) | **32.1** | 79.4 | 55.9 |
+   | engine hits (80) | 220.8 | 210.4 | 193.9 |
+
+   **The cases the engine misses are the cases whose root cause is QUIET in its own channels** — a silent source,
+   not a loud victim. Every variant of the axis (absolute threshold 3…50, with and without "leads the prior") adds
+   breaks faster than repairs: the best reads 22 admitted / 9 repairs / 5 breaks / 0.643, projected −42.3. Closed,
+   with the negative result kept because 320 had named it "the single most promising untried use".
+3. **The prior's own margin** (from `depth.ndjson`, ¥0 for all 1 422). A small engine margin is a licence to
+   override: at the 10 % quantile the gate reads **91 / 0 breaks / precision 1.000 (p = 0.0010, net@corpus +36.6)**,
+   and at the 20 %, 30 % and 50 % cuts it degrades monotonically to 89 / 2, 90 / 3, 88 / 5. That is a **hint and not
+   a result**: four cuts were swept on the same 160 rows, so the 91 is the best of four draws. It is registered for
+   iteration 322 as a pre-committed single threshold (the 10 % quantile, stated before the artifact), to be priced on
+   the **1 422-row corpus artifact** rather than on 160.
+
+### The corroboration from outside
+
+`arXiv:2609.13463` (Continual Search, Scale AI, Sept 2026) reports the mirror image of this project's depth result
+from the other direction: on **short-flow** benchmarks, *additional search rounds do not help and actively hurt —
+they force the judge to re-examine an answer it has already read and overturn correct judgments into wrong ones*. The
+12-round artifact in §325.12 shows exactly that shape from inside: 9 breaks against 6 at six rounds, and `none`
+staying at 82. Two independent measurements now say the round cap is not where this population's headroom is.
