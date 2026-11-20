@@ -274,12 +274,17 @@ async function main(): Promise<void> {
     .filter(([, verdict]) => verdict.rank === 1)
     .map(([datapack]) => datapack)
     .sort();
-  const sample = [...stride(misses, args.misses), ...stride(correct, args.correct)].filter((pack) =>
-    dirs.has(pack),
-  );
+  // The two strata are counted AFTER the corpus filter, because the projection divides by them: a sample that
+  // names 100 misses and can only load 84 has a repair rate over 84, and dividing by the request rather than by
+  // the population would overstate every repair it found. A full-corpus dispatch (`--sample-misses` at the miss
+  // count) makes both numbers the population, and the projection then collapses to identity by construction.
+  const sampledMisses = stride(misses, args.misses).filter((pack) => dirs.has(pack));
+  const sampledHits = stride(correct, args.correct).filter((pack) => dirs.has(pack));
+  const sample = [...sampledMisses, ...sampledHits];
   process.stderr.write(
     `population ${verdicts.size} (${misses.length} miss / ${correct.length} correct); ` +
-      `sample ${sample.length}; model ${args.model}\n`,
+      `sample ${sample.length} (${sampledMisses.length} miss / ${sampledHits.length} correct); ` +
+      `model ${args.model}\n`,
   );
 
   const client = createChatClient({
@@ -358,7 +363,12 @@ async function main(): Promise<void> {
   );
   const population = { misses: misses.length, hits: correct.length };
   for (const reading of summariseGatePolicies(kept)) {
-    const projection = projectOntoCorpus(reading, args.misses, args.correct, population);
+    const projection = projectOntoCorpus(
+      reading,
+      sampledMisses.length,
+      sampledHits.length,
+      population,
+    );
     console.log(
       `  ${reading.policy.padEnd(7)} ${String(reading.admitted).padStart(8)} ` +
         `${String(reading.refused).padStart(7)} ${String(reading.repairs).padStart(7)} ` +
