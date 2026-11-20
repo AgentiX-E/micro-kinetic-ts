@@ -8076,3 +8076,27 @@ does not close the layer either. The pilot that tests the shape is `docs-reposit
 thresholds Q1–Q5 and a falsifier at precision 0.30 on 20 decided cases.
 
 Full read: `docs/free-investigation.md`.
+
+### §325.6 The first pilot measured nothing, and the reason was a defect in the transport
+
+The pilot was dispatched once and returned **160 of 160 cases with `the endpoint answered 400`**. Every case, first
+round, no tokens spent. That zero would have been written down as "the query surface repairs nothing" — the same
+number the arm would produce if the surface were useless.
+
+The cause was one line in the shared client: `response_format: { type: 'json_object' }` was stated on **every**
+request. DeepSeek answers 400 to `json_object` when the prompt never says "json", so an arm whose grammar is a
+line-oriented directive could not call the endpoint at all. The nomination and elimination arms never hit it because
+their prompts contain the word.
+
+Two repairs, and the second is the one that matters:
+
+* `response_format` is now an option (`'json' | 'text'`, default `'json'`), so every existing arm is bit-identical
+  and the query arm states `text`. The constraint belongs to the arm that parses JSON, not to the transport.
+* the runner prints the endpoint's own sentence beside the status. A 400 with no detail turned this into a guess
+  about our own prompt, and the sentence was available the whole time.
+
+Adding the word "json" to the arm's prompt was the cheap alternative and it was refused: it would have satisfied the
+sampler and measured a model that had been asked for JSON, which is the same defect with the evidence deleted.
+
+The same dispatch also exposed a budget leak: the study job has **three** paid arms and only the nomination was gated
+on the query-arm input, so that run paid for a full 1 422-case elimination pass as well. Both are gated now.
