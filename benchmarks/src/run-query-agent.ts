@@ -19,9 +19,12 @@ import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
 import {
   DEFAULT_QUERY_BUDGET,
   buildTelemetry,
+  onPriorCone,
   runQueryAgent,
   stride,
+  summariseGatePolicies,
   summariseQueryArm,
+  type GatePolicy,
   type QueryArmRow,
   type QueryBudget,
   type QueryOutcome,
@@ -43,6 +46,8 @@ interface Args {
   readonly budget: QueryBudget;
   /** `none` for the free arm, `engine` to show the engine's own order before the first turn. */
   readonly seed: 'none' | 'engine';
+  /** What an override must show before it replaces the prior. `none` is the ungated control. */
+  readonly gate: GatePolicy;
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -63,6 +68,12 @@ function parseArgs(argv: readonly string[]): Args {
   };
   const seed = map.get('seed') ?? 'none';
   if (seed !== 'none' && seed !== 'engine') throw new Error('--seed must be `none` or `engine`');
+  // A gate is a policy a run states, and an unknown one is refused rather than defaulted: a typo that silently
+  // measured the ungated control would publish a gated reading that no gate produced.
+  const gate = map.get('gate') ?? 'none';
+  if (gate !== 'none' && gate !== 'cited' && gate !== 'cone') {
+    throw new Error('--gate must be `none`, `cited` or `cone`');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -78,6 +89,7 @@ function parseArgs(argv: readonly string[]): Args {
     correct: number('sample-correct', 100),
     concurrency: Math.max(1, number('concurrency', 4)),
     seed,
+    gate,
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -123,6 +135,7 @@ async function investigate(
   client: ReturnType<typeof createChatClient>,
   budget: QueryBudget,
   seeding: 'none' | 'engine',
+  gate: GatePolicy,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -139,9 +152,10 @@ async function investigate(
   // here would be seeding an arm with an order no other artifact can reproduce.
   const seed: QuerySeed | null =
     seeding === 'engine' ? { source: 'engine', candidates: verdict.ranked } : null;
+  const telemetry = buildTelemetry(bench);
   let outcome: QueryOutcome;
   try {
-    outcome = await runQueryAgent(client, buildTelemetry(bench), budget, seed);
+    outcome = await runQueryAgent(client, telemetry, budget, seed, gate);
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
     // guess, and the sentence is not a secret.
@@ -164,6 +178,11 @@ async function investigate(
       toolCalls: 0,
       promptTokens: 0,
       completionTokens: 0,
+      rawAnswer: null,
+      answeredBy: null,
+      calls: [],
+      inCone: false,
+      gateRefusals: 0,
     };
   }
   return {
@@ -181,6 +200,13 @@ async function investigate(
     toolCalls: outcome.toolCalls,
     promptTokens: outcome.promptTokens,
     completionTokens: outcome.completionTokens,
+    rawAnswer: outcome.rawAnswer,
+    answeredBy: outcome.answeredBy,
+    calls: outcome.investigated,
+    // The cone is a property of the CASE, so it is recorded for the model's own answer whether or not the dispatched
+    // policy read it: that is what lets the two unshipped policies be priced from this artifact at ¥0.
+    inCone: outcome.rawAnswer !== null && onPriorCone(telemetry, outcome.rawAnswer, verdict.winner),
+    gateRefusals: outcome.gateRefusals,
   };
 }
 
@@ -252,6 +278,7 @@ async function main(): Promise<void> {
       client,
       args.budget,
       args.seed,
+      args.gate,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -269,7 +296,8 @@ async function main(): Promise<void> {
   const seededWidth = sample.length === 0 ? 0 : (verdicts.get(sample[0]!)?.ranked.length ?? 0);
   console.log(
     `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
-      `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}`,
+      `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
+      `gate ${args.gate}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,
@@ -296,6 +324,27 @@ async function main(): Promise<void> {
   );
   console.log(
     `tokens ${summary.promptTokens}+${summary.completionTokens} · est. ¥${cost.toFixed(2)} at the declared prices`,
+  );
+  // The three policies, from ONE artifact. `dispatched` is the arm that ran; the other two are re-scores, so the
+  // table costs nothing and the shipped surface is checkable against the priced one.
+  console.log('gate policies (re-scored from this artifact):');
+  console.log('  policy  admitted refused repairs breaks precision correct retention');
+  for (const reading of summariseGatePolicies(kept)) {
+    console.log(
+      `  ${reading.policy.padEnd(7)} ${String(reading.admitted).padStart(8)} ` +
+        `${String(reading.refused).padStart(7)} ${String(reading.repairs).padStart(7)} ` +
+        `${String(reading.breaks).padStart(6)} ` +
+        `${(reading.precision === null ? 'n/a' : reading.precision.toFixed(3)).padStart(9)} ` +
+        `${String(reading.correct).padStart(7)} ` +
+        `${(reading.retention === null ? 'n/a' : reading.retention.toFixed(3)).padStart(9)}` +
+        `${reading.policy === args.gate ? '  <- dispatched' : ''}`,
+    );
+  }
+  const fallbacks = kept.filter((row) => row.answeredBy === 'prior').length;
+  console.log(
+    `answered by the model ${kept.filter((row) => row.answeredBy === 'model').length} · ` +
+      `by the prior ${fallbacks} · unanswered ${kept.filter((row) => row.answeredBy === null).length} · ` +
+      `gate refusals ${kept.reduce((sum, row) => sum + row.gateRefusals, 0)}`,
   );
   const byFamily = new Map<string, { cases: number; repairs: number; breaks: number }>();
   for (const row of kept) {

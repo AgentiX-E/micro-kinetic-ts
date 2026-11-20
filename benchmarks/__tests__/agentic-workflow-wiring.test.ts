@@ -694,4 +694,19 @@ describe('the free-investigation arm’s wiring', () => {
     // The flag reaches the runner that reads it, and the runner refuses a word it does not know.
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
   });
+
+  it('lets a dispatch choose what an override must show, because that is the axis iteration 318 opened', () => {
+    // The gate is a POLICY and not a quality knob: `none` is the ungated control whose 0.263 precision iteration
+    // 318 published, and the two gated policies admit an override only against a record the harness owns. It ships
+    // empty, so a dispatch that says nothing measures the surface every earlier reading measured.
+    expect(inputNames(WORKFLOW)).toContain('query_gate');
+    expect(measure).toContain('inputs.query_gate');
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('GATE_ARG+=(--gate');
+    expect(arm).toContain('"${GATE_ARG[@]}"');
+    // The runner is where an unknown policy is refused, so the flag and the refusal are both in the source.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('gate')");
+    expect(runner).toContain('`none`, `cited` or `cone`');
+  });
 });

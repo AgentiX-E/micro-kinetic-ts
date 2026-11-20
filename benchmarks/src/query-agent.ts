@@ -659,8 +659,21 @@ export const TRACE_CHARS = 2_000;
 
 /** What one case's investigation produced. */
 export interface QueryOutcome {
-  /** The service the model named, or `null` when it never named one this case carries. */
+  /** The service the arm answers with: the model's own when admitted, else the prior. */
   readonly answer: string | null;
+  /**
+   * The model's FIRST answer that resolved to a service the case carries, before any gate.
+   *
+   * Kept because it is what an ungated arm would have returned on this case, and the three gate policies are
+   * therefore priced from one artifact rather than from three runs. `null` when the model never named one.
+   */
+  readonly rawAnswer: string | null;
+  /** Who produced {@link answer}: the model, or the prior the gate fell back to. */
+  readonly answeredBy: 'model' | 'prior' | null;
+  /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
+  readonly gateRefusals: number;
+  /** Services the investigation executed a per-service query against, in first-query order. */
+  readonly investigated: readonly string[];
   /** Why the last answer was refused, when one was. */
   readonly answerRefused: string | null;
   readonly exchanges: readonly QueryExchange[];
@@ -730,12 +743,45 @@ export interface QuerySeed {
 }
 
 /**
+ * The prior's names that this case can actually describe.
+ *
+ * Two filters, and the first is a correctness one rather than a cosmetic one: **a name the case does not carry is
+ * dropped, not printed.** A prior quoting a service no tool can describe is evidence the model cannot check, and an
+ * answer to it would be refused at the terminal step anyway. The de-duplication is the second: a repeated name
+ * would consume a rank, and the rank is what a gate reads to know which name it is defending.
+ *
+ * @param seed - The order.
+ * @param telemetry - The case, for the existence test.
+ * @returns The surviving names, strongest first.
+ */
+export function seedNames(seed: QuerySeed, telemetry: Telemetry): string[] {
+  const kept: string[] = [];
+  for (const name of seed.candidates) {
+    if (name === '') continue;
+    if (!telemetry.services.has(name)) continue;
+    if (kept.includes(name)) continue;
+    kept.push(name);
+  }
+  return kept;
+}
+
+/**
+ * The prior's first name, which is the one thing a gate has to defend.
+ *
+ * @param seed - The order, or `null` for a free arm.
+ * @param telemetry - The case, for the existence test.
+ * @returns The name, or `null` when the arm has no prior whose first name this case carries.
+ */
+export function priorTopOf(seed: QuerySeed | null, telemetry: Telemetry): string | null {
+  if (seed === null) return null;
+  return seedNames(seed, telemetry)[0] ?? null;
+}
+
+/**
  * Render the prior for a prompt.
  *
- * Three properties, each asserted rather than assumed:
+ * Two properties beside the filter in {@link seedNames}, each asserted rather than assumed:
  *
- * * **A name the case does not carry is dropped, not printed.** A prior quoting a service no tool can describe is
- *   evidence the model cannot check, and an answer to it would be refused at the terminal step anyway.
  * * **The numbering restarts after a drop**, so a gap in the list cannot be read as a rank the harness withheld.
  * * **The block says what it is.** A prior presented as an answer is a copy with extra steps, which is the exact
  *   failure the two earlier readings measured; the sentence that calls it a prior is the whole difference.
@@ -745,13 +791,7 @@ export interface QuerySeed {
  * @returns The block, or `''` when nothing survives — an empty prior teaches the model nothing and costs a prompt.
  */
 export function renderSeed(seed: QuerySeed, telemetry: Telemetry): string {
-  const kept: string[] = [];
-  for (const name of seed.candidates) {
-    if (name === '') continue;
-    if (!telemetry.services.has(name)) continue;
-    if (kept.includes(name)) continue;
-    kept.push(name);
-  }
+  const kept = seedNames(seed, telemetry);
   if (kept.length === 0) return '';
   const lines = [
     `The ${seed.source} order, strongest first. This is a PRIOR, not an answer — the engine is wrong on some cases,`,
@@ -761,12 +801,134 @@ export function renderSeed(seed: QuerySeed, telemetry: Telemetry): string {
   return lines.join('\n');
 }
 
+/**
+ * What an override has to show before it replaces the prior.
+ *
+ * ## Why this is a policy rather than a sentence in a prompt
+ *
+ * Iteration 318 measured the arm's failure and it was not a capability: seeded with the engine's top-5, the model
+ * agreed with the engine's rank-1 on **45.0 %** of cases and substituted its own answer on the other 55 %, at
+ * precision **0.263** against a 0.500 break-even. The width-30 table arm, asked only to RANK, moved **4.3 %** of
+ * cases at precision 0.475. Two surfaces, **13× apart in how often they intervene**, and precision falls as
+ * intervention rises.
+ *
+ * `arXiv:2611.05390` names the missing object and prices it: an override authority that is *gated* by "a mechanically
+ * valid record of a binding-constraint violation" cuts corruption of correct proposals while keeping most repairs —
+ * and, in its prospective arm, a gate whose rule lived in the prompt did not hold for every model. So the rule is
+ * enforced here, in the harness, after the model has spoken, against a record the harness already owns.
+ *
+ * * `none` — the control. Every override is admitted, which is the surface 318 measured.
+ * * `cited` — an override is admitted only if the investigation executed a query about the service it names. The
+ *   transcript is the record, so this is decidable with no second model call and no judge.
+ * * `cone` — `cited`, plus the direction the domain already knows: the named service must sit on the prior's
+ *   **callee side**, because a root cause is reached by descending and a caller that reports errors is the victim.
+ */
+export type GatePolicy = 'none' | 'cited' | 'cone';
+
+/** What a gate is checked against: the prior, the record, and the direction. */
+export interface GateContext {
+  /** The service the prior puts first, or `null` when the arm has no prior. */
+  readonly priorTop: string | null;
+  /** Services the investigation executed a per-service query against. A REFUSED query is not a record. */
+  readonly cited: ReadonlySet<string>;
+  /** Whether the candidate sits on the prior's callee-side cone. */
+  readonly onCone: boolean;
+}
+
+/**
+ * Decide whether an answer may replace the prior.
+ *
+ * Three exemptions, each a statement rather than a convenience:
+ *
+ * * `none` admits everything, because a control that gated would not be a control.
+ * * An arm with **no prior** has nothing to defend — the gate is a rule about overriding, so it admits.
+ * * An answer that **is** the prior's first name is not an override at all.
+ *
+ * @param policy - The rule.
+ * @param answer - The service the model named, already resolved to one the case carries.
+ * @param context - The prior, the record and the direction.
+ * @returns Whether the answer may stand.
+ */
+export function gateAdmits(policy: GatePolicy, answer: string, context: GateContext): boolean {
+  if (policy === 'none') return true;
+  if (context.priorTop === null) return true;
+  if (answer === context.priorTop) return true;
+  if (!context.cited.has(answer)) return false;
+  if (policy === 'cone' && !context.onCone) return false;
+  return true;
+}
+
+/**
+ * Whether a service sits on another's callee-side cone — the direction a fault travels.
+ *
+ * Strict in the sense that matters: the origin is not on its own cone, because "downstream of itself" is not a
+ * direction. The walk is breadth-first over `callees` with a visited set, because a real call graph carries cycles
+ * (this package's own fixture carries a self-call) and a recursive walk without one would not terminate.
+ *
+ * @param telemetry - The case's call graph.
+ * @param candidate - The service to reach.
+ * @param priorTop - The origin, or `null` when there is no prior.
+ * @returns Whether the candidate is reachable from the origin by descending.
+ */
+export function onPriorCone(
+  telemetry: Telemetry,
+  candidate: string,
+  priorTop: string | null,
+): boolean {
+  if (priorTop === null) return false;
+  if (candidate === priorTop) return false;
+  if (!telemetry.services.has(candidate)) return false;
+  const seen = new Set<string>([priorTop]);
+  const queue = [priorTop];
+  while (queue.length > 0) {
+    const here = queue.shift()!;
+    // The assertion is the argument, not a shortcut: `priorTop` was tested against this directory and every node
+    // pushed below came out of a `callees` list that `buildTelemetry` seeded from the same key set, so a miss here
+    // is unreachable. A `?? []` would be a branch no case can take, reported as coverage rather than read as one.
+    for (const next of telemetry.services.get(here)!.callees) {
+      if (next === candidate) return true;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return false;
+}
+
+/**
+ * The gate as a line the model reads BEFORE it answers.
+ *
+ * A rule the model discovers by refusal is an ambush, and iteration 316 priced exactly that: 155 of 160
+ * investigations ended without an answer because nothing in the prompt said the answer was compulsory. The same
+ * argument applies to a rule that discards answers, so the policy, the name it protects and the tool shapes that
+ * satisfy it are printed on every turn the gate is on.
+ *
+ * @param policy - The rule.
+ * @param priorTop - The prior's first name, or `null` when there is no prior to defend.
+ * @returns The line, or `''` when the arm is ungated.
+ */
+export function renderGate(policy: GatePolicy, priorTop: string | null): string {
+  if (policy === 'none' || priorTop === null) return '';
+  const rule =
+    `Gate: \`ANSWER X\` is accepted only if X is \`${priorTop}\` — the prior's first — or you have already queried ` +
+    'X itself in this investigation, with `TOOL metric X`, `TOOL logs X` or `TOOL edges X`.';
+  const cone =
+    policy === 'cone'
+      ? ` X must also sit on ${priorTop}'s callee side: a caller that reports errors is usually the victim.`
+      : '';
+  return [
+    rule + cone,
+    'A refused answer is replaced by the prior, so a guess costs a turn and gains nothing: spend it on a query.',
+  ].join('\n');
+}
+
 /** The per-case question. */
 export function buildUserPrompt(
   telemetry: Telemetry,
   exchanges: readonly QueryExchange[],
   state?: BudgetState,
   seed?: QuerySeed | null,
+  policy: GatePolicy = 'none',
 ): string {
   const names = [...telemetry.services.keys()].sort();
   const head = [
@@ -774,10 +936,13 @@ export function buildUserPrompt(
     'Deliverable: one `ANSWER <service>` line.',
   ];
   if (state !== undefined) head.push(renderBudget(state));
+  const priorTop = seed === undefined || seed === null ? null : priorTopOf(seed, telemetry);
   if (seed !== undefined && seed !== null) {
     const prior = renderSeed(seed, telemetry);
     if (prior !== '') head.push('', prior);
   }
+  const gate = renderGate(policy, priorTop);
+  if (gate !== '') head.push('', gate);
   const opening = head.join('\n');
   const transcript = renderTranscript(exchanges);
   return transcript === '' ? `${opening}\n\nNo queries yet.` : `${opening}\n\n${transcript}`;
@@ -803,6 +968,7 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  * @param telemetry - The case's tool view.
  * @param budget - Rounds, calls and transcript size.
  * @param seed - An order to show the model before it investigates, or `null` for a free arm.
+ * @param policy - What an override must show before it replaces the prior.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -810,17 +976,31 @@ export async function runQueryAgent(
   telemetry: Telemetry,
   budget: QueryBudget = DEFAULT_QUERY_BUDGET,
   seed: QuerySeed | null = null,
+  policy: GatePolicy = 'none',
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
+  const investigated: string[] = [];
+  const cited = new Set<string>();
+  const priorTop = priorTopOf(seed, telemetry);
   let rounds = 0;
   let toolCalls = 0;
   let promptTokens = 0;
   let completionTokens = 0;
   let answerRefused: string | null = null;
   let stop: QueryOutcome['stop'] = 'rounds';
+  let rawAnswer: string | null = null;
+  let gateRefusals = 0;
 
-  const settle = (stop: QueryOutcome['stop'], answer: string | null): QueryOutcome => ({
+  const settle = (
+    stop: QueryOutcome['stop'],
+    answer: string | null,
+    answeredBy: QueryOutcome['answeredBy'],
+  ): QueryOutcome => ({
     answer,
+    rawAnswer,
+    answeredBy,
+    gateRefusals,
+    investigated,
     answerRefused,
     exchanges,
     trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
@@ -830,6 +1010,30 @@ export async function runQueryAgent(
     completionTokens,
     stop,
   });
+
+  /**
+   * Ask the gate about one resolved answer, recording the model's first one as the raw answer.
+   *
+   * The refusal text names the rule and the two ways to satisfy it, because a refusal the model cannot act on is a
+   * round spent twice. The direction test is only computed under the policy that reads it: a cone nobody consults is
+   * a graph walk nobody needs.
+   */
+  const admit = (resolved: string): { ok: boolean; text: string } => {
+    if (rawAnswer === null) rawAnswer = resolved;
+    const onCone = policy === 'cone' ? onPriorCone(telemetry, resolved, priorTop) : false;
+    if (gateAdmits(policy, resolved, { priorTop, cited, onCone })) return { ok: true, text: '' };
+    gateRefusals += 1;
+    // A refusal is only reachable with a prior in hand — `gateAdmits` admits whatever it is given when there is
+    // none — so this is an assertion rather than a fallback, and a `??` here would be a branch no case can take.
+    const prior = priorTop!;
+    const text = cited.has(resolved)
+      ? `refused by the gate: ${resolved} is not on ${prior}'s callee side, and a caller that reports errors is ` +
+        `usually the victim. Query the callee side, or answer \`${prior}\`.`
+      : `refused by the gate: an override must be investigated first. Run \`TOOL metric ${resolved}\`, ` +
+        `\`TOOL logs ${resolved}\` or \`TOOL edges ${resolved}\`, or answer \`${prior}\`.`;
+    answerRefused = text;
+    return { ok: false, text };
+  };
 
   while (rounds < budget.maxRounds) {
     rounds += 1;
@@ -849,6 +1053,7 @@ export async function runQueryAgent(
           forcing,
         },
         seed,
+        policy,
       ),
     });
     promptTokens += completion.promptTokens;
@@ -870,8 +1075,18 @@ export async function runQueryAgent(
         break;
       }
       const accepted = executeTool(telemetry, call);
+      if (accepted.resolved !== undefined) {
+        const gated = admit(accepted.resolved);
+        exchanges.push({
+          round: rounds,
+          directive,
+          result: gated.ok ? accepted.text : gated.text,
+          ok: gated.ok,
+        });
+        if (gated.ok) return settle('answered', accepted.resolved, 'model');
+        break;
+      }
       exchanges.push({ round: rounds, directive, result: accepted.text, ok: accepted.ok });
-      if (accepted.resolved !== undefined) return settle('answered', accepted.resolved);
       answerRefused = accepted.text;
       break;
     }
@@ -880,16 +1095,43 @@ export async function runQueryAgent(
       continue;
     }
     const result = executeTool(telemetry, call);
+    if (call.tool === 'answer' && result.resolved !== undefined) {
+      const gated = admit(result.resolved);
+      exchanges.push({
+        round: rounds,
+        directive,
+        result: gated.ok ? result.text : gated.text,
+        ok: gated.ok,
+      });
+      if (gated.ok) return settle('answered', result.resolved, 'model');
+      // A refused override is NOT the end of the investigation: the model may satisfy the rule on the next turn,
+      // which is the whole reason the rule is announced before it is enforced.
+      continue;
+    }
     exchanges.push({ round: rounds, directive, result: result.text, ok: result.ok });
     if (call.tool === 'answer') {
-      if (result.resolved !== undefined) return settle('answered', result.resolved);
       answerRefused = result.text;
       continue;
     }
     toolCalls += 1;
+    // The RECORD the gate reads is the executed per-service queries and nothing else: `fleet`, `services` and
+    // `failed` are argument-free, and a refused call showed the model nothing it could cite. The argument IS the
+    // directory key — `executeTool` resolves these three tools by exact key and `buildTelemetry` sets `id` from that
+    // key — so no second lookup is needed and none is written, because a guard no case can reach is a branch that
+    // reports coverage rather than correctness.
+    if (result.ok && (call.tool === 'metric' || call.tool === 'logs' || call.tool === 'edges')) {
+      if (!cited.has(call.argument)) {
+        cited.add(call.argument);
+        investigated.push(call.argument);
+      }
+    }
   }
 
-  return settle(stop, null);
+  // The fallback, and the reason the arm is MONOTONE: a case the engine had right can only be lost by an override
+  // that was ADMITTED and wrong, never by a refusal. `none` has no fallback by construction — a control that
+  // answered for the model would not be the surface iteration 318 measured.
+  if (policy !== 'none' && priorTop !== null) return settle(stop, priorTop, 'prior');
+  return settle(stop, null, null);
 }
 
 /** A chat client satisfies the port without adaptation; named so the wiring states it once. */
@@ -921,6 +1163,21 @@ export interface QueryArmRow {
    * precision that mixed the two populations would average two different measurements.
    */
   readonly seeded: boolean;
+  /**
+   * The model's own answer, before any gate — what an ungated arm would have returned on this case.
+   *
+   * Recorded so the three gate policies are priced from ONE artifact: the online run applies the dispatched policy
+   * and the other two are re-scored from these fields at no cost.
+   */
+  readonly rawAnswer: string | null;
+  /** Who produced {@link answer}: the model, the prior the gate fell back to, or nobody. */
+  readonly answeredBy: 'model' | 'prior' | null;
+  /** Services the investigation executed a per-service query against, in first-query order. */
+  readonly calls: readonly string[];
+  /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
+  readonly inCone: boolean;
+  /** Answers the gate refused on this case. */
+  readonly gateRefusals: number;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
@@ -998,8 +1255,93 @@ export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary
 }
 
 /**
- * Every `stride`-th member of a sorted population, so a sample is reproducible without a random seed.
+ * One gate policy's reading, re-scored from the artifact rather than from a run.
  *
+ * `correct` is the sample's Top@1 under the policy, which is the number a corpus score is made of; `precision` is
+ * the exchange rate of the edits the policy ADMITTED, which is the number that says whether gating selects.
+ */
+export interface GateReading {
+  readonly policy: GatePolicy;
+  /** Overrides the policy let stand. */
+  readonly admitted: number;
+  /** Overrides the policy refused, and which therefore fell back to the prior. */
+  readonly refused: number;
+  /** Admitted overrides the engine had wrong — the gain. */
+  readonly repairs: number;
+  /** Admitted overrides the engine had right — the loss. */
+  readonly breaks: number;
+  /** `repairs / (repairs + breaks)`, or `null` when the policy admitted nothing decided. */
+  readonly precision: number | null;
+  /** Top@1 on the sample under this policy. */
+  readonly correct: number;
+  /** Of the engine's own hits, the share the policy keeps. */
+  readonly retention: number | null;
+}
+
+/**
+ * Price every gate policy from one artifact.
+ *
+ * The three policies differ in exactly one place — whether an override stands — so they are a re-score of the same
+ * rows and not three purchases. The control is scored at the model's own answer with **no** fallback, because that
+ * is the surface iteration 318 measured; the gated policies fall back to the prior, because that is what the runner
+ * does. A case the arm could not measure is out of the population for every policy, as in {@link summariseQueryArm}.
+ *
+ * @param rows - The artifact's rows.
+ * @returns One reading per policy, in the order `none`, `cited`, `cone`.
+ */
+export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly GateReading[] {
+  const measured = rows.filter((row) => row.stop !== 'error');
+  const engineHits = measured.filter((row) => row.engineRank === 1).length;
+  const policies: readonly GatePolicy[] = ['none', 'cited', 'cone'];
+  return policies.map((policy) => {
+    let admitted = 0;
+    let refused = 0;
+    let repairs = 0;
+    let breaks = 0;
+    let correct = 0;
+    let retained = 0;
+    for (const row of measured) {
+      const override = row.rawAnswer !== null && row.rawAnswer !== row.engineWinner;
+      const stands =
+        !override ||
+        gateAdmits(policy, row.rawAnswer!, {
+          priorTop: row.engineWinner,
+          cited: new Set(row.calls),
+          onCone: row.inCone,
+        });
+      if (override && stands) admitted += 1;
+      if (override && !stands) refused += 1;
+      // An ADMITTED override answers with the model's own name. A refused one — and, under a gated policy, a case
+      // the model never answered at all — falls back to the prior, which is what makes the arm monotone rather than
+      // merely selective. The control has no fallback by construction: a control that answered for the model would
+      // not be the surface iteration 318 measured.
+      const standing = override && !stands ? null : row.rawAnswer;
+      const effective = standing ?? (policy === 'none' ? null : row.engineWinner);
+      const hit = effective !== null && row.truth.includes(effective);
+      if (hit) {
+        correct += 1;
+        if (row.engineRank === 1) retained += 1;
+        if (row.engineRank !== 1) repairs += 1;
+      } else if (override && stands && row.engineRank === 1) {
+        breaks += 1;
+      }
+    }
+    const decided = repairs + breaks;
+    return {
+      policy,
+      admitted,
+      refused,
+      repairs,
+      breaks,
+      precision: decided === 0 ? null : repairs / decided,
+      correct,
+      retention: engineHits === 0 ? null : retained / engineHits,
+    };
+  });
+}
+
+/**
+ * Every `stride`-th member of a sorted population, so a sample is reproducible without a random seed.
  * A seeded RNG would also be reproducible, and it would additionally make the sample a different one whenever the
  * population order changed. The stride is a deterministic function of the sorted population and nothing else, so
  * two runs that name the same size measure the same cases.

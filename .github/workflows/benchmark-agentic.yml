@@ -152,6 +152,10 @@ on:
         description: "Which order to show the free-investigation arm BEFORE its first turn: `engine` = the engine's own top-5 (a prior, and the arm's floor becomes the engine's accuracy) or empty/`none` = a free arm, whose first sight of the case is its first tool call. The two arms have different floors, so this is an ablation switch and not a quality knob"
         required: false
         default: ''
+      query_gate:
+        description: "What an OVERRIDE of the prior must show before it is accepted: `cited` = the investigation executed a query about the service it names, `cone` = that plus the service sitting on the prior's callee side, empty/`none` = ungated (the surface iteration 318 measured, where the model overrode 55% of cases at precision 0.263). A refused override falls back to the prior, so the gated arm cannot score below the engine by refusing — only by admitting a wrong edit. `arXiv:2611.05390` prices the mechanism: an evidence gate cuts corruption of correct proposals while keeping most repairs, and a gate whose rule lives only in the prompt does not hold"
+        required: false
+        default: ''
       topology_brief:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
@@ -353,6 +357,12 @@ jobs:
           if [ -n "${{ inputs.query_seed }}" ]; then
             SEED_ARG+=(--seed "${{ inputs.query_seed }}")
           fi
+          # A gate is a POLICY, and an unstated one is the ungated control rather than a default worth having. The
+          # runner refuses an unknown value, so a typo cannot silently publish a gated reading no gate produced.
+          GATE_ARG=()
+          if [ -n "${{ inputs.query_gate }}" ]; then
+            GATE_ARG+=(--gate "${{ inputs.query_gate }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -362,6 +372,7 @@ jobs:
             --sample-correct "${{ inputs.query_agent_sample }}" \
             "${BUDGET_ARG[@]}" \
             "${SEED_ARG[@]}" \
+            "${GATE_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run

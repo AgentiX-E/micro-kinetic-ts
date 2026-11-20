@@ -22,19 +22,23 @@ import {
   bySurprise,
   executeTool,
   formatNumber,
+  gateAdmits,
   median,
+  onPriorCone,
   parseCall,
   renderBudget,
   renderSeed,
   renderTranscript,
   runQueryAgent,
   stride,
+  summariseGatePolicies,
   summariseQueryArm,
   summariseSeries,
 } from '../src/query-agent.js';
 
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type {
+  GateContext,
   QueryAgentClient,
   QueryArmRow,
   QueryBudget,
@@ -324,6 +328,26 @@ describe('summariseSeries', () => {
     const summary = summariseSeries('cpu', [INJECT - 5, INJECT - 1, INJECT + 1], [8, 9, 2], INJECT);
     expect(summary.peak).toBe(2);
     expect(summary.peakOffset).toBe(1);
+  });
+});
+
+describe('a series the producer under-filled', () => {
+  it('reads a series with no samples as a flat zero rather than as an invented baseline', () => {
+    // A metric family can be declared and carry nothing, and the two degenerate branches here are the difference
+    // between "no rise" and a division by a number that was never measured.
+    const empty = summariseSeries('cpu', [], [], INJECT);
+    expect(empty.baseline).toBe(0);
+    expect(empty.peak).toBe(0);
+    expect(empty.delta).toBe(0);
+    expect(empty.ratio).toBe(0);
+    expect(empty.surprise).toBeUndefined();
+  });
+
+  it('places a sample that carries no timestamp at the injection, which is the earliest time it can be about', () => {
+    const short = summariseSeries('cpu', [INJECT - 1_000], [1, 2], INJECT);
+    expect(short.baseline).toBe(1);
+    expect(short.peak).toBe(2);
+    expect(short.peakOffset).toBe(0);
   });
 });
 
@@ -979,6 +1003,11 @@ describe('summariseQueryArm', () => {
     toolCalls: 1,
     promptTokens: 100,
     completionTokens: 10,
+    rawAnswer: 'a',
+    answeredBy: 'model',
+    calls: [],
+    inCone: false,
+    gateRefusals: 0,
     ...over,
   });
 
@@ -1106,6 +1135,13 @@ describe('the seed', () => {
   it('renders nothing for an empty order instead of an empty prior', () => {
     expect(renderSeed(seed([]), telemetry)).toBe('');
     expect(renderSeed(seed(['']), telemetry)).toBe('');
+  });
+
+  it('names a repeated service once, because a repeat would consume a rank the gate reads', () => {
+    const text = renderSeed(seed(['payment', 'payment', 'checkout']), telemetry);
+    expect(text).toContain('1. payment');
+    expect(text).toContain('2. checkout');
+    expect(text.match(/payment/g)).toHaveLength(1);
   });
 });
 
@@ -1418,5 +1454,463 @@ describe('the fleet read with more than one collapse', () => {
     }).text;
     const falling = text.slice(text.indexOf('falling:'));
     expect(falling.indexOf('checkout')).toBeLessThan(falling.indexOf('payment'));
+  });
+});
+
+describe('the gate rule, as a predicate', () => {
+  const context = (over: Partial<GateContext> = {}): GateContext => ({
+    priorTop: 'payment',
+    cited: new Set(['checkout']),
+    onCone: false,
+    ...over,
+  });
+
+  it('admits every override when no policy is asked for, because `none` is the control and not a lax gate', () => {
+    expect(gateAdmits('none', 'checkout', context())).toBe(true);
+    expect(gateAdmits('none', 'ghost', context({ priorTop: null }))).toBe(true);
+  });
+
+  it('admits an answer that IS the prior, because taking the prior is not an override', () => {
+    expect(gateAdmits('cited', 'payment', context({ cited: new Set() }))).toBe(true);
+    expect(gateAdmits('cone', 'payment', context({ onCone: false }))).toBe(true);
+  });
+
+  it('refuses an override the investigation never queried', () => {
+    expect(gateAdmits('cited', 'checkout', context({ cited: new Set(['payment']) }))).toBe(false);
+  });
+
+  it('admits an override the investigation did query, which is the whole of the `cited` rule', () => {
+    expect(gateAdmits('cited', 'checkout', context({ cited: new Set(['checkout']) }))).toBe(true);
+  });
+
+  it('refuses a CITED override that points at a caller when the direction is asked for', () => {
+    expect(
+      gateAdmits('cone', 'checkout', context({ cited: new Set(['checkout']), onCone: false })),
+    ).toBe(false);
+  });
+
+  it('admits a cited override that sits on the prior callee-side cone', () => {
+    expect(gateAdmits('cone', 'db', context({ cited: new Set(['db']), onCone: true }))).toBe(true);
+  });
+
+  it('has no prior to defend when the arm was not seeded, so it admits what it would otherwise refuse', () => {
+    expect(gateAdmits('cited', 'checkout', context({ priorTop: null, cited: new Set() }))).toBe(
+      true,
+    );
+    expect(gateAdmits('cone', 'checkout', context({ priorTop: null }))).toBe(true);
+  });
+});
+
+describe('the callee-side cone', () => {
+  const telemetry = buildTelemetry(makeCase());
+
+  it('reaches a direct callee', () => {
+    expect(onPriorCone(telemetry, 'payment', 'checkout')).toBe(true);
+  });
+
+  it('reaches a callee of a callee, because a root cause is not always one hop below', () => {
+    expect(onPriorCone(telemetry, 'db', 'checkout')).toBe(true);
+  });
+
+  it('does not reach a caller, because the caller reporting errors is the victim', () => {
+    expect(onPriorCone(telemetry, 'checkout', 'payment')).toBe(false);
+  });
+
+  it('is strict: the prior itself is not on its own cone', () => {
+    expect(onPriorCone(telemetry, 'payment', 'payment')).toBe(false);
+  });
+
+  it('terminates on a cycle, because this case carries a self-call on payment', () => {
+    expect(onPriorCone(telemetry, 'db', 'payment')).toBe(true);
+  });
+
+  it('refuses a name the case does not carry rather than answering about a service it never saw', () => {
+    expect(onPriorCone(telemetry, 'ghost', 'payment')).toBe(false);
+  });
+
+  it('has no cone without a prior', () => {
+    expect(onPriorCone(telemetry, 'db', null)).toBe(false);
+  });
+
+  it('revisits nothing on a diamond, which is the shape that makes a walk terminate', () => {
+    // Two paths to one service is the ordinary case in a call graph, not an edge case: `a` calls `b` and `c`, both
+    // call `d`, and `d` calls `e`. The answer has to be below the join for the revisit to happen at all — asking for
+    // `d` returns on the first path — and without the visited set the second arrival at `d` is a second enqueue,
+    // which on a real graph is a loop rather than a slow answer.
+    const diamond = makeCase({
+      callGraph: {
+        systemLoad: 0,
+        nodes: new Map(
+          ['a', 'b', 'c', 'd', 'e'].map((id) => [
+            id,
+            { id, name: id, namespace: 'shop', labels: {} },
+          ]),
+        ),
+        edges: [
+          { from: 'a', to: 'b', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'a', to: 'c', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'b', to: 'd', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'c', to: 'd', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'd', to: 'e', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+        ],
+      },
+    });
+    const graph = buildTelemetry(diamond);
+    expect(onPriorCone(graph, 'e', 'a')).toBe(true);
+    expect(onPriorCone(graph, 'a', 'd')).toBe(false);
+  });
+});
+
+describe('the gate in the loop', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed: QuerySeed = { source: 'engine', candidates: ['payment', 'db', 'checkout'] };
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('refuses an override the model has not queried, and the refusal asks for the query', async () => {
+    const client = scriptedClient(['ANSWER checkout']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'cited');
+    expect(outcome.answer).toBe('payment');
+    expect(outcome.answeredBy).toBe('prior');
+    expect(outcome.gateRefusals).toBe(4);
+    expect(outcome.exchanges[0]!.ok).toBe(false);
+    expect(outcome.exchanges[0]!.result).toContain('TOOL metric');
+  });
+
+  it('admits the override once the service it names has been queried', async () => {
+    const client = scriptedClient(['ANSWER checkout', 'TOOL metric checkout', 'ANSWER checkout']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'cited');
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.answeredBy).toBe('model');
+    expect(outcome.gateRefusals).toBe(1);
+    expect(outcome.investigated).toEqual(['checkout']);
+  });
+
+  it('keeps the model’s FIRST answer as the raw one, because that is what an ungated arm would have said', async () => {
+    // The first answer is refused and the second is admitted, and the artifact must remember both: `rawAnswer` is
+    // the ungated arm's answer and `answer` is the shipped one. Reporting only the second would make the control
+    // unrecoverable from the artifact, which is what the three-policy table is re-scored from.
+    const client = scriptedClient(['ANSWER checkout', 'TOOL metric db', 'ANSWER db']);
+    const outcome = await runQueryAgent(client, telemetry, budget, seed, 'cited');
+    expect(outcome.rawAnswer).toBe('checkout');
+    expect(outcome.answer).toBe('db');
+  });
+
+  it('records each service once, however often it was queried', async () => {
+    const client = scriptedClient([
+      'TOOL metric checkout',
+      'TOOL logs checkout',
+      'TOOL fleet',
+      'ANSWER payment',
+    ]);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxRounds: 5 },
+      seed,
+      'cited',
+    );
+    expect(outcome.investigated).toEqual(['checkout']);
+    expect(outcome.answer).toBe('payment');
+  });
+
+  it('does not count a REFUSED query as a record, because nothing was shown', async () => {
+    const client = scriptedClient(['TOOL logs ghost', 'ANSWER checkout']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxRounds: 3 },
+      seed,
+      'cited',
+    );
+    expect(outcome.investigated).toEqual([]);
+    expect(outcome.answer).toBe('payment');
+  });
+
+  it('refuses a cited caller under the cone policy and admits the callee', async () => {
+    const client = scriptedClient([
+      'TOOL metric checkout',
+      'ANSWER checkout',
+      'TOOL metric db',
+      'ANSWER db',
+    ]);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 },
+      seed,
+      'cone',
+    );
+    expect(outcome.answer).toBe('db');
+    expect(outcome.gateRefusals).toBe(1);
+    expect(outcome.exchanges[0]!.ok).toBe(true);
+    expect(outcome.exchanges[1]!.ok).toBe(false);
+    expect(outcome.exchanges[1]!.result).toContain('callee');
+  });
+
+  it('leaves the arm ungated when the policy is `none`, which is what makes it the control', async () => {
+    const outcome = await runQueryAgent(
+      scriptedClient(['ANSWER checkout']),
+      telemetry,
+      budget,
+      seed,
+      'none',
+    );
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.answeredBy).toBe('model');
+    expect(outcome.gateRefusals).toBe(0);
+    expect(outcome.rawAnswer).toBe('checkout');
+  });
+
+  it('has nothing to gate when the arm was not seeded, and does not invent a prior to fall back to', async () => {
+    const outcome = await runQueryAgent(
+      scriptedClient(['ANSWER checkout']),
+      telemetry,
+      budget,
+      null,
+      'cone',
+    );
+    expect(outcome.answer).toBe('checkout');
+    expect(outcome.answeredBy).toBe('model');
+    expect(outcome.gateRefusals).toBe(0);
+  });
+
+  it('reports `answeredBy: null` when neither the model nor a prior could answer', async () => {
+    const outcome = await runQueryAgent(
+      scriptedClient(['TOOL services']),
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxRounds: 2 },
+      null,
+      'cited',
+    );
+    expect(outcome.answer).toBeNull();
+    expect(outcome.answeredBy).toBeNull();
+    expect(outcome.rawAnswer).toBeNull();
+  });
+});
+
+describe('the gate is stated in the prompt, not discovered by refusal', () => {
+  const telemetry = buildTelemetry(makeCase());
+  const seed: QuerySeed = { source: 'engine', candidates: ['payment', 'checkout'] };
+
+  it('names the rule, the prior’s first name, and the tool shape that satisfies it', () => {
+    const text = buildUserPrompt(telemetry, [], undefined, seed, 'cited');
+    expect(text).toMatch(/only if/i);
+    expect(text).toContain('TOOL metric');
+    expect(text).toContain('1. payment');
+  });
+
+  it('adds the direction test only under the cone policy', () => {
+    expect(buildUserPrompt(telemetry, [], undefined, seed, 'cone')).toMatch(/callee side/i);
+    expect(buildUserPrompt(telemetry, [], undefined, seed, 'cited')).not.toMatch(/callee side/i);
+  });
+
+  it('says nothing when the gate is off, because an ungated arm has no rule to read', () => {
+    expect(buildUserPrompt(telemetry, [], undefined, seed, 'none')).not.toMatch(/only if/i);
+    expect(buildUserPrompt(telemetry, [], undefined, seed)).not.toMatch(/only if/i);
+  });
+
+  it('says nothing when there is no prior to defend', () => {
+    expect(buildUserPrompt(telemetry, [], undefined, null, 'cited')).not.toMatch(/only if/i);
+  });
+
+  it('carries no gate line when the prior is empty after the existence filter, because there is no name to defend', () => {
+    const ghostSeed: QuerySeed = { source: 'engine', candidates: ['ghost'] };
+    const text = buildUserPrompt(telemetry, [], undefined, ghostSeed, 'cited');
+    expect(text).not.toMatch(/only if/i);
+    expect(text).not.toContain('The engine order');
+  });
+});
+
+describe('three policies priced from one artifact', () => {
+  const row = (over: Partial<QueryArmRow>): QueryArmRow => ({
+    datapack: 'case-1',
+    faultType: 'cpu',
+    truth: ['payment'],
+    engineRank: 1,
+    engineWinner: 'payment',
+    answer: 'payment',
+    correct: true,
+    stop: 'answered',
+    trace: '',
+    seeded: true,
+    rounds: 2,
+    toolCalls: 1,
+    promptTokens: 10,
+    completionTokens: 5,
+    rawAnswer: 'payment',
+    answeredBy: 'model',
+    calls: [],
+    inCone: false,
+    gateRefusals: 0,
+    ...over,
+  });
+
+  it('scores the control at the raw answer and a gated policy at the prior when it refuses', () => {
+    // The model overrode a correct prior without asking anything about the service it named.
+    const rows = [
+      row({ rawAnswer: 'checkout', answer: 'checkout', correct: false, calls: [], inCone: false }),
+    ];
+    const readings = summariseGatePolicies(rows);
+    const byPolicy = new Map(readings.map((reading) => [reading.policy, reading]));
+    expect(byPolicy.get('none')!.correct).toBe(0);
+    expect(byPolicy.get('none')!.breaks).toBe(1);
+    expect(byPolicy.get('cited')!.correct).toBe(1);
+    expect(byPolicy.get('cited')!.admitted).toBe(0);
+    expect(byPolicy.get('cited')!.refused).toBe(1);
+    expect(byPolicy.get('cited')!.retention).toBe(1);
+  });
+
+  it('counts an admitted repair against the engine and an admitted break against the prior', () => {
+    const rows = [
+      // A miss the model repaired after querying the service it named.
+      row({
+        datapack: 'a',
+        engineRank: 4,
+        engineWinner: 'checkout',
+        truth: ['payment'],
+        rawAnswer: 'payment',
+        answer: 'payment',
+        correct: true,
+        calls: ['payment'],
+        inCone: true,
+      }),
+      // A hit the model broke after querying the service it named.
+      row({
+        datapack: 'b',
+        engineRank: 1,
+        engineWinner: 'payment',
+        truth: ['payment'],
+        rawAnswer: 'db',
+        answer: 'db',
+        correct: false,
+        calls: ['db'],
+        inCone: false,
+      }),
+    ];
+    const cited = summariseGatePolicies(rows).find((reading) => reading.policy === 'cited')!;
+    expect(cited.admitted).toBe(2);
+    expect(cited.repairs).toBe(1);
+    expect(cited.breaks).toBe(1);
+    expect(cited.precision).toBe(0.5);
+    // The cone policy refuses the second one — a cited caller — so it keeps the prior's hit.
+    const cone = summariseGatePolicies(rows).find((reading) => reading.policy === 'cone')!;
+    expect(cone.admitted).toBe(1);
+    expect(cone.repairs).toBe(1);
+    expect(cone.breaks).toBe(0);
+    expect(cone.precision).toBe(1);
+    expect(cone.correct).toBe(2);
+  });
+
+  it('reports no precision rather than one when nothing was admitted', () => {
+    const rows = [row({ rawAnswer: 'payment', answer: 'payment', correct: true })];
+    for (const reading of summariseGatePolicies(rows)) {
+      expect(reading.admitted).toBe(0);
+      expect(reading.precision).toBeNull();
+    }
+  });
+
+  it('leaves a case the arm could not measure out of every policy, exactly as the summary does', () => {
+    const rows = [row({ stop: 'error', rawAnswer: null, answer: null, correct: false })];
+    for (const reading of summariseGatePolicies(rows)) {
+      expect(reading.correct).toBe(0);
+      expect(reading.admitted).toBe(0);
+      expect(reading.retention).toBeNull();
+    }
+  });
+
+  it('agrees with the ONLINE run under the policy that was dispatched', async () => {
+    // The shipped surface and the priced one must be the same surface: the counterfactual is a re-score of the
+    // artifact, so a divergence between the two would mean the table in the document describes an arm nobody ran.
+    const telemetry = buildTelemetry(makeCase());
+    const seed: QuerySeed = { source: 'engine', candidates: ['payment', 'db', 'checkout'] };
+    const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+    const script = ['ANSWER db', 'TOOL metric db', 'ANSWER db'];
+    const gated = await runQueryAgent(scriptedClient(script), telemetry, budget, seed, 'cone');
+    const toRow = (outcome: typeof gated): QueryArmRow =>
+      row({
+        engineRank: 2,
+        engineWinner: 'payment',
+        truth: ['db'],
+        rawAnswer: outcome.rawAnswer,
+        answer: outcome.answer,
+        correct: outcome.answer !== null && outcome.answer === 'db',
+        calls: outcome.investigated,
+        inCone: onPriorCone(telemetry, outcome.rawAnswer ?? '', 'payment'),
+        gateRefusals: outcome.gateRefusals,
+      });
+    const offline = summariseGatePolicies([toRow(gated)]).find(
+      (reading) => reading.policy === 'cone',
+    )!;
+    expect(offline.correct).toBe(gated.answer === 'db' ? 1 : 0);
+    expect(offline.admitted).toBe(1);
+    expect(offline.repairs).toBe(1);
+  });
+});
+
+describe('a case the model never answered, under each policy', () => {
+  const unanswered = (over: Partial<QueryArmRow> = {}): QueryArmRow => ({
+    datapack: 'u',
+    faultType: 'cpu',
+    truth: ['payment'],
+    engineRank: 2,
+    engineWinner: 'checkout',
+    answer: null,
+    correct: false,
+    stop: 'rounds',
+    trace: '',
+    seeded: true,
+    rounds: 6,
+    toolCalls: 10,
+    promptTokens: 10,
+    completionTokens: 5,
+    rawAnswer: null,
+    answeredBy: null,
+    calls: [],
+    inCone: false,
+    gateRefusals: 0,
+    ...over,
+  });
+
+  it('scores the control as a miss, because it has nothing to fall back to', () => {
+    const none = summariseGatePolicies([unanswered()]).find(
+      (reading) => reading.policy === 'none',
+    )!;
+    expect(none.correct).toBe(0);
+    expect(none.admitted).toBe(0);
+  });
+
+  it('scores a gated policy at the prior, because that is what the runner would have answered', () => {
+    const rows = [unanswered({ engineRank: 2, engineWinner: 'checkout', truth: ['checkout'] })];
+    const cited = summariseGatePolicies(rows).find((reading) => reading.policy === 'cited')!;
+    expect(cited.correct).toBe(1);
+    expect(cited.repairs).toBe(1);
+    expect(cited.admitted).toBe(0);
+  });
+
+  it('keeps a hit when the fallback lands on the engine’s own answer', () => {
+    const rows = [unanswered({ engineRank: 1, engineWinner: 'payment' })];
+    const cone = summariseGatePolicies(rows).find((reading) => reading.policy === 'cone')!;
+    expect(cone.correct).toBe(1);
+    expect(cone.retention).toBe(1);
+  });
+
+  it('scores a wrong answer that was never an override as neither a repair nor a break', () => {
+    // The model answered the prior's own name and the prior was wrong: an admitted override neither way, so the
+    // policy's precision must not be charged for it.
+    const rows = [
+      unanswered({
+        rawAnswer: 'checkout',
+        answer: 'checkout',
+        engineWinner: 'checkout',
+        engineRank: 2,
+        truth: ['payment'],
+      }),
+    ];
+    for (const reading of summariseGatePolicies(rows)) {
+      expect(reading.admitted).toBe(0);
+      expect(reading.breaks).toBe(0);
+      expect(reading.repairs).toBe(0);
+      expect(reading.precision).toBeNull();
+    }
   });
 });
