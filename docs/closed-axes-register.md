@@ -196,6 +196,7 @@ measured against, not the current number. Both are still reachable as ablations 
 | **the solver's silent pivot budget** — whether `maximise` can return an unfinished tableau as an optimum | `gate-fit.md` §2 | **a DEFECT, fixed.** A 592-row program returned `‖w‖₁ = 10.9` against a box of `1` and was read as "the gate cannot be cleared". It now throws, and the contract is asserted |
 | the **`failedEdge` weight as a single value** — whether "the shipped configuration" is one configuration | `weight-reachability.md` §4, `recorded-configuration.md` §2 | **CLOSED at iteration 277, and it was not a mixture.** `failedEdge` ships at 3 and the engine records `configured × admitted(case)`, so the `0` on 1 114 cases is the gate REFUSING that case, not a configuration. Hence `w = max S` over the coefficients a dump records, and `|S| > 1` is proof a name is a decision rather than a weight. The vector every screen reported (`1 031`) never ran; the run is `1 073`, and the coefficients in the dump rebuild it exactly (0 residual mismatches in 69 688 candidates) |
 | the **WIDTH of a reranker's presentation** — whether an agentic arm shown the engine's top K can reach the benchmark leader, as opposed to whether the model is strong enough | `presentation-ceiling.md` | **measured, and it is the constraint that reframes ten arms.** `ceiling(K)` — the share of cases whose truth sits at 1…K — reads 83.40 % at K = 1, **88.26 % at the K = 5 every arm used** — 1.74 pp BELOW the 90.0 % leader — 90.30 % at K = 10 (the smallest width at which the target is reachable at all, and only by a perfect reranker) and 100 % at K = 44, because the truth is in the results on 236 of 236 misses. The width also fixes the precision a model must deliver: 95.9 % at K = 10, 70.1 % at 20, 54.3 % at 30 | a presentation whose width clears the target at a precision a measured model has already demonstrated |
+| the **SHAPE of the agent's evidence** — whether an arm that SHOWS a table and one that LETS the model query can reach the leader, as opposed to how wide the table is or which model reads it | `free-investigation.md` | **measured, and the shape is the constraint the width analysis could not see.** `arXiv:2608.21310` reads the pre-extracted-feature design at 45.8 % Acc@1 against 77.6–90.0 % for the adaptive ones on the same corpus and scorer; `RCAtlas` reads 65–77 % PR@1 for harnesses that prescribe none of the model's calls against 16–53 % for five that do. Every arm here is the first row's shape. At width 30 the model repairs 29 and breaks 32 — **precision 0.475** against the 0.543 the target needs — so the layer is NOT closed by its own falsifier and the remaining gap is a precision gap rather than a capability one | a query surface whose precision still lands below 0.30 on 20 decided cases, which would move the gap back to the base term's definition |
 
 ## What this register holds besides its axes
 
@@ -7966,3 +7967,112 @@ the largest single block of misses at 126 of 236; and the agentic layer at a wid
 mechanism in the record whose ceiling clears the target — `docs-repository:preregistration-315.md`.
 
 Full read: `docs/presentation-ceiling.md`. Census: `docs/miss-anatomy.md`.
+
+## §325 Iteration 316 — the table was the constraint, and the width was not the table
+
+§324 closed three axes and left one: "the agentic layer at a width of at least 20, the only mechanism in the record
+whose ceiling clears the target". That arm was run. It reads **precision 0.475** against the **0.543** the target
+needs, and the number that matters is not the shortfall — it is that the falsifier which would have closed the layer
+named **0.30**, and the arm cleared it.
+
+The same iteration priced the **shape** of the evidence from two 2026 papers, built the surface they put on top, and
+registered its own pilot.
+
+### §325.1 The shape, priced by the two papers that measured it
+
+| framework (RCABench, `arXiv:2608.21310`) | Acc@1 | what it does |
+| --- | ---: | --- |
+| OpsAgent | **45.8 %** | **no telemetry queries of its own — reasons over a pre-extracted feature set** |
+| OpenRCA | 46.6 % | commits as soon as it can answer |
+| AIQ | 77.6 % | requeries telemetry as evidence emerges |
+| ThinkDepth.ai | **90.0 %** | the same, on the strongest backbone |
+
+`RCAtlas` reaches the same ordering from the other side: Codex-with-a-filesystem 77.2 %, SQL agent 72.8 %, one call
+65.3 %, best published agent 53.3 %, NSigma 38.9 %, random 5.5 % — and its ablation prices the levers separately: **a
+stronger model buys reliability, more rounds buy aptitude, reasoning effort buys a few points for up to seven times
+the runtime.**
+
+Every arm in this repository sits in the first row. `packages/ai/src/agent/` is nine modules and all nine read
+`table.ts`; there is no query, no round in which the model decides what to look at. That is a statement about the
+layer rather than about any module, and it is the reason eleven refutations were all refutations of the same shape.
+
+### §325.2 Arm W30, and the number the registration was really asking for
+
+`deepseek-chat` at `--fingerprint-top-k 30`, one pass over 1 422 cases, `--promotion off`:
+
+| arm | Top@1 | moved |
+| --- | ---: | ---: |
+| engine (this dispatch's control) | **81.29 %** (1 156) | — |
+| **the model's own order** | **81.08 % (1 153)** | 61 |
+| rrf, weight 0.30 | 81.19 % (1 155) | 41 |
+| borda, weight 1.00 | 81.08 % (1 153) | 48 |
+| **oracle (engine ∪ arm)** | **94.5 %** | — |
+
+| quantity | value |
+| --- | ---: |
+| repairs (engine wrong, model right) | **29** |
+| breaks (engine right, model wrong) | **32** |
+| **precision** | **0.475** |
+| requirement at this width (§324.3) | 0.543 |
+| falsifier that would close the layer | 0.30 |
+
+**B1 fails** (1 153 against 1 216, and 3 below its own control, so the failure is not the 30 cases between the two
+containment scopes), **B2 fails by 0.075**, **B3 fails** (`HTTPRequestReplaceMethod −7`, `HTTPResponseAbort −6`),
+**B4 is not established** (20 616 533 + 28 267 tokens: ¥41.46 at the list input price, ¥10.53 at the cache-hit price,
+against an envelope written for ~2 k-token tables), **B5 passes**.
+
+**The finding is the falsifier that did not fire.** Before this run the record said a model shown a feature table
+cannot choose — `z = −9.26` on 5 335 claims, eleven arms at 30–35 %. At width 30 it chooses correctly on 29 of the 61
+cases it moves. The layer is alive, and the gap is arithmetic: **0.475 against 0.543**, i.e. 14 % more precision at
+the same width, or a wider presentation with a better reader.
+
+### §325.3 The family asymmetry, at the level of the model's own decisions
+
+| family | repairs | breaks | net |
+| --- | ---: | ---: | ---: |
+| `HTTPResponseReplaceCode` | 8 | — | **+8** |
+| `JVMException` | 8 | — | **+8** |
+| `HTTPResponseDelay` | 4 | 1 | +3 |
+| `HTTPRequestDelay` | 2 | — | +2 |
+| `NetworkLoss` | 2 | 6 | −4 |
+| `NetworkPartition` | — | 4 | −4 |
+| `HTTPRequestAbort` | — | 2 | −2 |
+| `HTTPResponseAbort` | — | 6 | −6 |
+| `HTTPRequestReplaceMethod` | — | 7 | **−7** |
+
+The two families the failed-edge channel was built for split almost exactly: `ReplaceCode` +8 and `ReplaceMethod`
+−7. That is §324.2's census — a population a rule is right about inside a population of the same size it is wrong
+about — reproduced at the level of the model rather than of a term, which is the sixth appearance of the shape.
+
+### §325.4 The model's ordering is a lossy read of the presentation
+
+The 30-wide ceiling is **95.57 %** (1 359 cases); the model's own list contains the truth somewhere on **1 254
+(88.19 %)**. A harness that asks a model to RANK pays twice: once for the table, once for the ranking, and the second
+payment is 105 cases. It also explains why the fusion weights are flat: a fusion can only reorder what the ranking
+kept.
+
+Two smaller readings, recorded because they belong to any future arm that names a model:
+
+* the endpoint served **`deepseek-flash`** for all 1 422 requests that named `deepseek-chat`, and that is the model
+  `RCAtlas` calls DeepSeek V4.1 Flash — one of its three mid-tier models, where its SQL agent reads 72.8 % PR@1;
+* `--agent` off reproduces the engine's own column exactly, so the switch the product exposes is the switch the arm
+  was measured under (B5).
+
+### §325.5 The surface, built rather than described
+
+`benchmarks/src/query-agent.ts` (100/96.52/100/100, 62 tests) is five retrieval tools over a case's own telemetry and
+a terminal answer: `services`, `metric <service>`, `logs <service>`, `edges <service>`, `failed`, `ANSWER <service>`.
+It does **not** show the engine's ranking, because seeding an investigation with the strongest prior in the
+repository makes the arm a reranker of that prior — the shape measured eleven times.
+
+Four properties are asserted rather than trusted: a directive the grammar does not admit is not a call; a service the
+case does not carry is refused **by name** and never answered with an empty list; the budget **stops** the loop
+rather than being consulted; and an answer must resolve to a service the case contains. The model is a fake at the
+port, so what is measured is the loop and the tools.
+
+**Axes this opens.** The shape of the agent's evidence, as a measured axis with a number on both sides.
+**Axes this closes.** None — and that is the honest reading of W30: the width alone does not move the corpus, and it
+does not close the layer either. The pilot that tests the shape is `docs-repository:preregistration-316.md`, with
+thresholds Q1–Q5 and a falsifier at precision 0.30 on 20 decided cases.
+
+Full read: `docs/free-investigation.md`.

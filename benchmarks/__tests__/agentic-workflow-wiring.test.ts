@@ -634,7 +634,9 @@ describe('the free-investigation arm’s wiring', () => {
     const head = step.slice(0, step.indexOf('run:'));
     expect(head).toContain("env.HAS_MODEL_KEY == 'true'");
     expect(head).toContain("inputs.query_agent_sample != ''");
-    expect(measure).toContain('QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job');
+    expect(measure).toContain(
+      'QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job',
+    );
   });
 
   it('states the sample as a size per stratum, because the two readings need both', () => {
