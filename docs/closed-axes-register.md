@@ -8842,3 +8842,33 @@ copied the prior and the prior is not the entry. Their answers concentrate on `t
 because it cannot tell "this service is working hard as a victim" from "this service is working hard". That is the
 symptom-versus-self split again, and it now needs the **direction** of the work rather than its size: a victim's CPU
 follows its callers' arrivals, a source's does not.
+
+### 325.14h The failed-interface confirmation is refuted too, and the entry prior's residue is now a named wall
+
+The second candidate for the 110 refused entry cases was the **confirmation** use of the failed-interface record:
+if every interface that began failing lands on the entry and none lands below it, the failures were collected at the
+front door, so the entry is the source. It is the mirror image of the promotion rule 321 refuted — same instrument,
+opposite direction — and it is refuted as well:
+
+| rule | additional moves | fixed | broken | net against the shipped rule |
+| --- | ---: | ---: | ---: | ---: |
+| every failing interface lands on the entry | 101 | 39 | **60** | **−21** |
+
+**And it does not even reach the cases it was built for.** None of the 101 additional moves is an
+`HTTPRequestReplaceMethod` case: the 39 that motivated the rule carry failing interfaces **below** the entry, which is
+exactly why their `entryChildErrors > 0` and exactly why the fault is genuinely propagating. The premise of the entry
+prior is false for them, and no re-reading of the failure topology changes that.
+
+**Why the rule loses elsewhere.** 65 of the 186 entry-truth cases have all their failing interfaces on the entry's
+inbound edge, but so does a large population of **non-entry** cases — a deep fault under a synchronous call chain
+leaves the caller-side failures at the top and the callee's own counters below, so "the failures are all at the front
+door" is a statement about where failures are *counted*, not about where the fault *is*. This is 321's refutation of
+`E1` arriving from the other side: the failed-interface record is a reachability instrument, and a reachability
+instrument cannot localise a source.
+
+**What the wall is made of.** Two independent readings now fail on the same 110 cases: the magnitude of the rise, and
+the topology of the failures. Both fail for the same reason — the evidence they read is about *where the failure was
+observed*, and the cases need evidence about *who did the work*. The arm's telemetry carries `baseline`, `peak`,
+`delta` and `surprise`, all of which are **rises**; a victim of an upstream failure is a service whose arrivals
+**fell**, and a fall is not representable in this view. That is the next extension, it is a telemetry field rather
+than a predicate, and it is the only one of the three candidates whose mechanism is not already refuted.
