@@ -8969,3 +8969,29 @@ cone reads a containment, the entry prior reads a non-existence ("nothing below 
 comparison, the failure topology and the entry's own rise all read a level, and all four lose. That is now strong
 enough to be a screen rather than an observation: a candidate should be classified before it is priced, and a
 level-reading candidate should be expected to fail.
+
+### 325.14l Showing the model a fall changes nothing, which says where the next instrument has to act
+
+Iteration 324 made the collapse axis correct — selection by `fall`, ordering by `byFall`, the trough printed on the
+falling lines — and pre-registered the hypothesis that an investigator who can see a service lose its traffic will stop
+answering that service's caller. One dispatch (`44890115507`, ¥23.23) and one ¥0 replay that reproduces it to the case
+(1 222, 90 renames) say it does not:
+
+| reading | 44874383089 (before) | 44890115507 (after) |
+| --- | ---: | ---: |
+| Top@1 | 1 223 (86.01 %) | 1 222 (85.94 %) |
+| `lag`, re-scored | 1 173 | 1 171 |
+| misses naming a **direct callee of the truth** | **72 / 199 = 36.18 %** | **73 / 200 = 36.50 %** |
+| tokens | 11 343 352 + 52 238 | 11 406 428 + 52 111 |
+| rounds per case | 6.00 | 6.00 |
+
+**The comparison is not exact and the file had claimed it would be.** The tools are deterministic; the **endpoint is
+not**. The ungated arm reads **1 067** here against **1 050** before, and the stop distribution moves from
+`{answered 1 256, rounds 166}` to `{answered 1 273, rounds 149}`, so ±10 cases is the run-to-run band and the −1 is
+inside it. What is *outside* any band is the overshoot rate: 36.18 % and 36.50 % are the same number measured twice.
+
+**The consequence is a design rule.** The two instruments that worked in this programme **enforce** a relation — `lag`
+refuses an answer unless the candidate logged first, the entry prior refuses unless nothing below the entry rose.
+This iteration **displayed** a relation instead, and display did nothing. Evidence the tools carry is not the same
+thing as evidence the loop acts on, and the next instrument has to act: the interface record for the 39
+`HTTPRequestReplaceMethod` cases, applied as a check inside the gate rather than as a line in a prompt.
