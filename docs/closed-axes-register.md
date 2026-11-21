@@ -8797,3 +8797,48 @@ only because the artifact records the evidence **per row**, and both were repair
 the rule means — reachability for the entry, a single exit for the settlement. A rule priced from an artifact is not
 the same object as a rule shipped in a loop, and the difference between the two is exactly what a row-level artifact
 is for.
+
+### 325.14g The 110 refused entry cases, and the magnitude comparison that does not buy them
+
+The rule answers 76 of the 186 entry-truth cases and refuses 110. The refusals split cleanly: **41 because a callee
+of the entry raised an error rate**, **69 because the answer carried its own self-departure above τ**. The two are
+different problems and the first was priced and **refuted** in the same artifact, at zero cost.
+
+| refusal reason | cases | dominant fault types |
+| --- | ---: | --- |
+| a callee rose (`entryChildErrors > 0`) | 41 | `HTTPRequestReplaceMethod` **39**, `NetworkPartition` 2 |
+| the answer departed (`answerSurprise > 300`) | 69 | `HTTPResponseReplaceCode` **36**, `HTTPRequestDelay` 7, `HTTPResponseDelay` 7, `NetworkPartition` 7 |
+
+**The axis that failed: compare the two rises.** The natural continuation is that the entry is still the source when
+its **own** inbound error rise is at least as large as the largest rise below it — a partial-propagation test rather
+than a zero-propagation one. Priced over all 1 422 cases with the entry's own symptom channels on one side and its
+callees' on the other:
+
+| threshold | additional moves | fixed | net against the shipped rule |
+| --- | ---: | ---: | ---: |
+| `entry ≥ 1 × child` | 63 | **4** | **−53** |
+| `entry ≥ 1.5 × child` | 21 | 0 | −21 |
+| `entry ≥ 2 × child` | 17 | 0 | −17 |
+
+Every additional move loses. The reason is a **definition** defect and it is worth recording as one: the two sides of
+that comparison are not on the same scale. The entry's maximum is taken over every label matching `/error/i`, which on
+this corpus includes `k8s.pod.network.errors` — a cumulative counter — while a callee's maximum is dominated by its own
+HTTP error rate. A rule that compares a counter to a rate does not test propagation; it tests which family has the
+larger units. The zero-propagation form of the same condition is immune to this because it reads **`≤ 0`**, a value
+that means the same thing in every family.
+
+**What is left, and it is one fault type.** 39 of the 41 child-refusals are `HTTPRequestReplaceMethod`, and the census
+of the corpus says why that type is special: replacing the request's method at the entry makes the entry **reject**
+requests, and the replay recorded the rejection one hop down. Those cases therefore have a real rise below the entry
+and the premise of the rule is genuinely false for them — the fault is at the entry and it *did* propagate. Reaching
+them needs a test of a different kind: which interfaces recorded failures, not which services did. The failed-interface
+record was refuted in 321 as a **promotion** rule (it points at every callee a failing caller has left); as a
+**confirmation** rule for the entry — "the failures are recorded on the entry's inbound edge and nowhere below" — it
+has never been priced, and 39 cases of one fault type is a measurable ceiling for it.
+
+**The 69 surprise-refusals are a different sentence.** 67 of them answer with the engine's own pick, i.e. the arm
+copied the prior and the prior is not the entry. Their answers concentrate on `ts-payment-service` and
+`ts-order-service`, which carry their own resource departures and are therefore sources *somewhere* — the rule refuses
+because it cannot tell "this service is working hard as a victim" from "this service is working hard". That is the
+symptom-versus-self split again, and it now needs the **direction** of the work rather than its size: a victim's CPU
+follows its callers' arrivals, a source's does not.
