@@ -8872,3 +8872,57 @@ observed*, and the cases need evidence about *who did the work*. The arm's telem
 `delta` and `surprise`, all of which are **rises**; a victim of an upstream failure is a service whose arrivals
 **fell**, and a fall is not representable in this view. That is the next extension, it is a telemetry field rather
 than a predicate, and it is the only one of the three candidates whose mechanism is not already refuted.
+
+### 325.14i The fall is real, universal, and therefore not a localiser
+
+Iteration 323 pre-registered one rule on one new field: a settled answer whose own non-symptom channels **fell** lost
+the work it was being sent, so it is a victim and the front door is the source. Priced at ¥0 over the third full
+dispatch (`44874383089`, 1 422 cases, telemetry rebuilt per case from the corpus, the rule
+applied through `applyResolver`, the same function the loop calls), the rule **loses at every threshold**, and the
+best available setting is the one at which it never fires.
+
+| κ (trough standardised) | moves | Top@1 | net against the shipped arm |
+| ---: | ---: | ---: | ---: |
+| 0 | 1 052 | 311 | −912 |
+| 300 | 416 | 837 | −386 |
+| 1 000 | 221 | 1 010 | −213 |
+| 1 500 | 0 | 1 223 | 0 |
+
+| κ (pre-median vs post-median) | moves | fixed | broken | net |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 1 052 | 41 | 953 | −912 |
+| 200 | 255 | 8 | 237 | −229 |
+
+**Two estimators, one verdict.** The trough is the minimum of the post-window and is therefore noise-sensitive in a
+way the peak is not — with n samples the expected minimum sits below the median even when nothing moved — so the same
+sweep was run on the level shift, which is robust to a single noisy sample. It fails in the same direction and by a
+similar amount, which rules out the estimator as the cause.
+
+**The cause is one number.** Every one of the 1 422 effective answers carries at least one non-symptom channel whose
+post-window median is at or below its pre-window median: **throughput fell for every service in every case.** An
+incident costs the whole system work, so "lost traffic" is a property of the INCIDENT and not of the culprit, and a
+quantity that is present at every service cannot choose between services. This is 322's base-rate law in a new place —
+the rule admitted **74 %** of the corpus to answer a question about **13 %** of it, and no threshold repairs an
+admission rate 54 points too high.
+
+**What survives is the target's measured ceiling.** Of the 41 entry-truth cases the entry prior refuses because a
+callee rose, the arm answers **0** and the engine answers **0**, so a working rule is worth **+41 → 1 264 (88.9 %)**.
+39 of them are `HTTPRequestReplaceMethod`. The per-case probe also found why nothing at the entry can reach them:
+**the entry carries no `/error/i` channel in 1 053 of the 1 054 cases that have a rising callee.** The front door is
+metric-blind, and the only evidence that it failed is its logs and its failed interfaces — which is a different
+instrument from any this rule family reads.
+
+### 325.14j The collapse axis was selecting on the peak and calling it a fall
+
+The one defect the new field exposed, and it was in the tools rather than in the model. Both `metric` and `fleet` carry
+a "falling" section, added when the prompt first asked the arm to take a collapsed service seriously. Both selected it
+with `delta < 0`, and `delta = peak − baseline`, so the test was **`peak < baseline`**: the section listed the series
+that **never rose**, and could not list the shape a victim actually has — a service whose arrivals spike on retries and
+then collapse, which has `peak > baseline` and a trough through the floor.
+
+The repair is `fall > 0` for selection and `byFall` for ordering, written the way `bySurprise` is (standardised fall
+first, absolute fall second, label last). The falling lines now print `low=<trough>`; the rise lines are byte-identical
+to iteration 322's, so the dispatch that follows can attribute any difference in the arm's answers to this axis alone.
+
+Three tests pin it and all three fail against the previous selection: a rise-then-collapse series is listed, it leads a
+shallower fall that merely never rose, and the trough appears on the falling lines and not on the rising ones.
