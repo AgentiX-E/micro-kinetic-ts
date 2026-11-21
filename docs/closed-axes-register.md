@@ -8751,3 +8751,49 @@ network-error counter rising as a *victim* is exactly the kind of false rise the
 the stricter reading refuses more often. It also **scored better per move**: 0.770 against the pricing's 0.675. The
 lesson is the one 321 recorded in the other direction: a Python re-pricing is a rate transfer with its own definition
 of every term, and the definition is part of the result.
+
+### 325.14f The second dispatch found the resolver wired at two of the three ways out of the loop
+
+Run `44865281020` (¥23.06, 1 422/1 422 answered, 6.00 rounds per case) is the first dispatch that ran the corrected
+`entryOf`. It printed **`resolved 87`** on the priced surface and **`agent Top@1 1 177`** in its own summary, and the
+38-point gap between those two numbers is the finding: **the resolver was priced 87 times and applied 11.**
+
+**The defect.** The loop has three ways to end with an answer: an answer inside the budget, an answer on the
+**forced** last round, and the fallback to the prior when nothing was admitted. The resolver was wired into the first
+and the third. The corpus answers on **round six of six** — `forcing` is true on `rounds === budget.maxRounds` — so
+1 272 of 1 422 cases leave through the branch that was written in iteration 318, before the resolver existed. The
+artifact says it in one line each: the 11 rows carrying `answeredBy: entry` are all `stop: rounds` (the fallback
+path), and **76 of the 1 272 rows that satisfy the row-level predicate** kept the model's name.
+
+**The fix is structural, not a third call site.** `settle()` is now the arm's only exit and the resolver lives inside
+it, so the rule cannot be bypassed by adding a fourth route out of the loop. Two tests pin the forcing branch — one
+forced by the round budget (`maxRounds: 1`) and one by the tool-call budget (`maxToolCalls: 0`) — and both fail
+against the previous wiring, which is the only proof that they test anything.
+
+**The reading, replayed over the same artifact with the shipped code.** The replay rebuilds each case's telemetry
+from the corpus and calls `readEntryPrior` + `entryAttribution` on the answer the gate settled on, which is the same
+path `settle()` now takes:
+
+| reading | Top@1 | net vs engine | moves | fixed | broken | precision | retention |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lag`, as dispatched | 1 170 (82.28 %) | +14 | — | — | — | — | 0.987 |
+| **`lag` + `entry-prior`, settled once** | **1 220 (85.79 %)** | **+64** | 87 | 66 | 16 | **0.759** | **0.985** |
+| `lag` + `entry-prior`, as dispatched | 1 177 (82.77 %) | +21 | 11 | 11 | 0 | 1.000 | 0.985 |
+
+Wilson 95 % on 1 220/1 422 is `[83.9, 87.5]`, and the sign test against both the engine and `lag` is **66/16,
+p = 2.3 × 10⁻⁸**. The in-run pricing reads the same level (1 220) with 67/17 rather than 66/16, and the one-case
+difference is `priorTopOf`: the pricing renames a refused row with the stored `engineWinner`, while the loop's prior
+is the first seeded candidate the case actually carries.
+
+**Correction to 325.14e.** Its table reported 87 moves as 67 kept and 20 lost, which sums to a net of 47 and not the
+50 it printed beside them. The replay gives the consistent split: **66 fixed, 16 broken, 5 moves wrong-to-wrong**.
+The level it recorded — 1 223 on that artifact — stands, because that artifact's `lag` arm was three cases higher
+(1 173) and the rule's net is **+50 on both artifacts**, which is now the number with two independent samples behind
+it.
+
+**The two defects found by two dispatches are the same defect.** 325.14e's `entryOf` asked for a graph with one root;
+this one asked for a settlement with one call site. Both were invisible to the tests that existed, both were caught
+only because the artifact records the evidence **per row**, and both were repaired by making the structure say what
+the rule means — reachability for the entry, a single exit for the settlement. A rule priced from an artifact is not
+the same object as a rule shipped in a loop, and the difference between the two is exactly what a row-level artifact
+is for.
