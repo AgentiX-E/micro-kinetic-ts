@@ -1009,7 +1009,7 @@ first whose advantage is statistically separable from it.
 
 **What it does not do is reach the target.** 90.0 % of 1 422 is 1 280 cases; the arm has 1 174. The remaining **+106**
 is 40 % of the engine's 266 misses, while the arm currently repairs **31 (11.65 %)**. No gate can supply that: a gate
-can only refuse an override, and 160 of 244 overrides are already refused. The gap is **coverage**, and coverage is the
+can only refuse an override, and 160 of the arm's 214 overrides are already refused. The gap is **coverage**, and coverage is the
 base term.
 
 **By fault family the net is not uniform**: `NetworkBandwidth` 8/0, `NetworkPartition` 6/3, `NetworkLoss` 5/0,
