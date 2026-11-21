@@ -8547,3 +8547,65 @@ from the other direction: on **short-flow** benchmarks, *additional search round
 they force the judge to re-examine an answer it has already read and overturn correct judgments into wrong ones*. The
 12-round artifact in §325.12 shows exactly that shape from inside: 9 breaks against 6 at six rounds, and `none`
 staying at 82. Two independent measurements now say the round cap is not where this population's headroom is.
+
+### 325.13a The same five policies, measured on all 1 422 cases (dispatch `44834190491`, ¥23.07)
+
+The projection above is a rate transfer, and this is the run that tests it. `--gate lag`, 6 rounds, 10 tool calls,
+**every** case: `sample 1422 (266 miss / 1156 correct)`, answered 1 422 of 1 422, rounds per case **6.00**.
+
+| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention | net | McNemar p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | 214 | 0 | 37 | **134** | 0.216 | 1 059 (**74.47 %**) | 0.884 | **−97** | 4.1e−14 |
+| `cited` | 213 | 1 | 37 | 133 | 0.218 | 1 060 (74.54 %) | 0.885 | −96 | 6.5e−14 |
+| `cone` | 189 | 25 | 37 | 115 | 0.243 | 1 078 (75.81 %) | 0.901 | −78 | 1.7e−10 |
+| `contrast` | 58 | 156 | 32 | 16 | 0.667 | 1 172 (82.42 %) | 0.986 | +16 | 0.029 |
+| **`lag`** | **54** | **160** | **31** | **13** | **0.705** | **1 174 (82.56 %)** | **0.989** | **+18** | **0.0096** |
+
+**This is the first corpus-scale reading in which an LLM arm beats this repository's own engine**, and the ladder is
+monotone in strictness with no exceptions: −97, −96, −78, +16, +18 against an engine at 1 156 (81.29 %). Wilson 95 %
+on 1 174/1 422 is `[80.5, 84.4]`.
+
+**The counter-intuitive result is now fully explained at scale.** An ungated arm admits **214 overrides at precision
+0.216** — 134 breaks against 1 156 hits — which is **−97 cases** at p = 4e−14. That is not a model that cannot
+investigate; it is a model whose every edit is net-negative on a population that is 81.3 % already right. The gate is
+the whole difference between −97 and +18, and it costs ¥0 (a re-score of the same artifact).
+
+**Adjudicated against the pre-registration (`preregistration-321.md`, written before the artifact):**
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| P1 | corpus Top@1 ≥ 83.0 % | **82.56 %** | **MISS** by 0.44 pp |
+| P2 | breaks ≤ 25 | **13** | pass |
+| P3 | net > 0 | **+18** | pass |
+| P4 | `lag` ≥ `contrast` on the same rows | 1 174 vs 1 172 | pass |
+| P5 | rounds per case ≤ 6.2 | 6.00 | pass |
+
+**`P1` missed and the miss is instructive.** The projection said +33.2 from rates of 12.5 % (repairs/miss) and 0 %
+(breaks/hit); the corpus measures **11.65 %** (31/266) and **1.12 %** (13/1 156). The repair rate transferred almost
+exactly; the break rate did not, and it could not have: 0 in 80 has a 95 % upper bound of 3.75 % by the rule of three,
+so the projection's zero was the least informative number in it. A projection whose uncertainty is concentrated in a
+zero count should be quoted with that bound, and §325.13 did not quote it.
+
+**By fault family, `lag`'s net is not uniform** — `NetworkBandwidth` 8/0, `NetworkPartition` 6/3, `NetworkLoss` 5/0,
+`HTTPRequestReplaceMethod` 4/0, `JVMException` 4/0, against `JVMMemoryStress` **0/4** and `NetworkPartition`'s three
+breaks. A family-conditional admission rule is therefore *visible*, and it is not taken here: the register's own rule
+is that a per-family knob needs a mechanism, and four breaks in one family is a sample of four.
+
+### 325.13b The margin axis, refuted where it counts
+
+§325.13 registered the prior's own margin at a single pre-committed cut (the 10 % quantile, `0.0148`) **to be priced
+on 1 422 rows rather than on 160**, because the 160-row sweep had read `91 / 0 breaks` at that cut and four cuts had
+been tried. On the corpus artifact:
+
+| rule | admitted | repairs | breaks | Top@1 | net | p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lag` (no margin) | 54 | 31 | 13 | **1 174** | **+18** | 0.0096 |
+| `lag ∨ (cone ∧ margin ≤ 0.0148)` | 75 | 32 | 24 | 1 164 | +8 | 0.35 |
+| `lag ∨ (cone ∧ margin ≤ 0.0745)` | 87 | 34 | 28 | 1 162 | +6 | 0.53 |
+| `lag ∨ (cone ∧ margin ≤ 0.1832)` | 98 | 34 | 35 | 1 155 | −1 | 1.00 |
+
+**A small margin buys one repair and eleven breaks at corpus scale.** The 160-row hint was a sweep over four cuts on a
+sample where a single break is 1.25 points; at 1 422 rows the same rule is *worse than doing nothing extra*, and it is
+worse in the predicted direction — a weak prior means the engine is unsure, which is not the same as the engine being
+wrong. Closed. This is the second axis in one iteration whose sample-level gain reversed at corpus scale, and it is
+the reason the margin sweep was registered rather than shipped.

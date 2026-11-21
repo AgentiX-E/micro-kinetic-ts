@@ -858,3 +858,203 @@ temporal and not directional: it is **salience** — deciding whether the loudes
 victim. LagRCA solves that with a trained residual model; the cheapest thing this repository can try that no
 competitor's paper supplies is the **base term** (236 misses, 126 never repaired) rather than another gate, because
 the gate's own numbers now say the gate is doing what it can.
+
+## 12. The base rate decides, and the axis that was dropped is the one that was admitting victims
+
+§11 ended with a reading — **87 against the engine's 80** on 160 cases — and a sentence naming the residue as
+*salience*. This iteration re-read the same artifact and found that the sentence was wrong about where the error is,
+and the reading was wrong about what it measures. Neither the model nor the predicate was re-run to find that out: the
+artifact carries both onsets, both interface nets, both answers and the trace, so every policy is priced from it at
+¥0, and the two errors are arithmetic.
+
+### 12.1 The law: what precision an override needs is the population's number, not 0.5
+
+The arm is measured on a sample drawn **80 engine-misses and 80 engine-hits**, because the two quantities that decide
+it are repairs and breaks and a sample drawn from the misses alone has no denominator for precision. That
+construction is an **exchange rate**. It is not the population: this corpus is **1 156 hits in 1 422 cases**
+(81.29 %), so a case is 4.35 times likelier to be one the engine already had right.
+
+For a gate admitting overrides at rate `a_m` on misses and `a_h` on hits, with precision `p` among the decided:
+
+```
+net = m · a_m · p − (1 − m) · a_h · (1 − p)   ⇒   net ≥ 0  ⟺  p ≥ (1 − m)·a_h / ( m·a_m + (1 − m)·a_h )
+```
+
+and with `a_m = a_h` this is **`p ≥ 1 − m` = the engine's own accuracy**. Here that is **0.813**. The break-even
+registered in §11 (`C1`: precision ≥ 0.50) is the *balanced sample's* break-even and it is 31 points too low.
+
+Transferring the measured per-stratum rates to the corpus:
+
+| policy | admitted / refused / repairs / breaks | precision | sample Top@1 | net@corpus | corpus Top@1 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `none` | 41 / 0 / 13 / 11 | 0.542 | 82 | −115.7 | 73.16 % |
+| `cited` | 40 / 1 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 % |
+| `cone` | 35 / 6 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 % |
+| `contrast` (§11's arm) | 19 / 22 / 11 / 4 | 0.733 | **87** | **−21.2** | **79.80 %** |
+| **`lag`** | **14 / 27 / 10 / 0** | **1.000** | **90** | **+33.2** | **83.63 %** |
+
+**§11's +7 is real as an exchange rate and negative as an effect.** That is the answer to the question asked since
+318 — *why does enabling the model read below the engine?* — and the answer is not the model: it is that a gate at
+precision 0.73 buys repairs in the 18.7 % stratum and pays for them in the 81.3 % stratum. `projectOntoCorpus` now
+computes this for every policy on every run, and refuses a stratum the sample did not carry rather than inventing a
+zero for it.
+
+### 12.2 `E1` is a reachability test, and it was admitting the prior's victims
+
+`contrast` is `E1 ∨ E2`, and a disjunction cannot say which term did the work. The artifact can:
+
+| term | admitted | repairs | breaks | precision |
+| --- | ---: | ---: | ---: | ---: |
+| `E1` only — the interface `prior → answer` failed | 5 | 1 | **4** | 0.200 |
+| `E2` only — the answer's first error is strictly earlier | 14 | **10** | **0** | **1.000** |
+| both | 19 | 11 | 4 | 0.733 |
+
+The reason is structural. **An interface that fails from the prior into the answer is what a failing caller produces
+on every callee it has left**, so `E1` points at the prior's victims exactly when the prior is the source — the case
+where an override is most expensive. It measures whether the call got through, and on a system whose caller has
+failed, calls do not get through.
+
+`E2` has no such ambiguity: a caller cannot report a callee's failure before the callee produces it. That is the
+collision model's $\tau$ used as an **ordering**, and it admits ten repairs and no break.
+
+So the policy is now **`lag` = `cited ∧ cone ∧ E2`**, strictly narrower than `contrast`, which stays unchanged
+because a rule that changes under a published name invalidates every number taken under it. The pricing table prints
+all five policies per artifact, in strictness order, for ¥0.
+
+### 12.3 The three axes proposed for the residue, and what the artifact says about each
+
+**Lag decay (LagRCA's exponential kernel) — no information in the magnitude.** Swept at `τ_min ∈ {1, 2, 5, 10, 20,
+30, 60}` s the reading is **identical through 30 s** (18 admitted, 11 repairs, 4 breaks) and at 60 s it **loses a
+repair and buys no break** (16 / 9 / 4). The gaps are not small — median `prior − answer` is **0 ms**, p90 **9.4 s**
+— so the decay has nothing to weigh. What carries the information is the **sign**. Closed as an admission axis.
+
+**Fault-free self-residual — refuted, and pointing backwards.** The healthy band exists (2 080 channels over the
+corpus, from `build-fault-free-profile`), so each service's departure from its own healthy shape is computable for
+free. The strongest self-channel residual of each side, by stratum:
+
+| stratum | truth | engine's answer | model's answer |
+| --- | ---: | ---: | ---: |
+| engine misses (80) | p50 **32.1** | 79.4 | 55.9 |
+| engine hits (80) | p50 **220.8** | 210.4 | 193.9 |
+
+**The cases the engine misses are the cases whose root cause is quiet in its own channels.** A silent source cannot
+be found by a salience threshold, and every variant of the axis (absolute 3…50, with and without "leads the prior")
+added breaks faster than repairs: the best reads 22 / 9 / 5 (precision 0.643, net@corpus −42.3). §11 called this "the
+single most promising untried use"; it is now closed, with the numbers that closed it.
+
+**The prior's own margin — a hint, registered rather than shipped.** A small engine margin is a licence to override.
+At the 10 % quantile the gate reads **91 / 0 breaks / precision 1.000 (p = 0.0010, net@corpus +36.6)**; at the 20 %,
+30 % and 50 % cuts it degrades to 89 / 2, 90 / 3, 88 / 5. Four cuts were swept on the same 160 rows, so the 91 is the
+best of four draws — it is registered for iteration 322 as a **single pre-committed threshold**, to be priced on the
+1 422-row corpus artifact instead of on 160.
+
+### 12.4 What the miss census says the arm actually does wrong
+
+A dozen traces read by hand produced every sentence this document has written about "what is left". `2608.21310`
+codes 154 wrong trajectories and finds one code accounts for **86.0 %** of the strongest model's failures; the same
+instrument restricted to what a row and a graph can prove (`benchmarks/src/agentic-failure-codes.ts`) codes the 73
+misses of the 160-case artifact:
+
+| code | misses | share |
+| --- | ---: | ---: |
+| `answered-downstream` — the answer is a CALLEE of the truth | 28 | 38.4 % |
+| `answered-other-branch` — another branch, truth never queried | 23 | 31.5 % |
+| `refused-fallback` — refused, and the prior was wrong | 15 | 20.5 % |
+| `answered-upstream` — the answer is a CALLER of the truth (reversed) | 7 | 9.6 % |
+| `answered-elsewhere-truth-queried` | 0 | 0 % |
+| `never-answered` | 0 | 0 % |
+
+**The largest bucket is overshoot**, which is neither of the two causes the register had been naming: the model does
+not go up (9.6 %) and does not stop (0 %), it goes one hop too far down. And `0 %` on "queried the truth and answered
+elsewhere" says the salience story is **not** what the misses are made of: where the investigation reached the
+truth's branch it either answered correctly or was refused.
+
+The repair that census suggests — prefer the **shallowest leader** on the path from the prior to the answer — was
+priced at ¥0 and buys nothing: 2 rewrites under the ungated control and **0** under `lag`, because an overshoot's
+answer is usually not reachable from the prior at all. Recorded as refuted rather than shipped.
+
+### 12.5 The corroboration from outside, and what it costs
+
+`arXiv:2609.13463` (Continual Search, Scale AI) reports the mirror of §11.6 from the other side: on **short-flow**
+populations, *additional search rounds do not help and actively hurt — they force the judge to re-examine an answer
+it has already read and overturn correct judgments into wrong ones*. §11.6 measured exactly that shape from inside
+(9 breaks at twelve rounds against 6 at six, `none` 82 → 82). Two independent measurements now say the round cap is
+not where this population's headroom is, which is why the depth of the next run stays at 6.
+
+### 12.6 The corpus, all 1 422 cases: −97 ungated, +18 gated
+
+Dispatch `44834190491`, `--gate lag`, six rounds, ten tool calls, **every** case. Cost **¥23.07** (11.33 M prompt +
+52 k completion tokens), rounds per case **6.00**, answered **1 422 of 1 422**.
+
+| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention | net vs engine |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| engine (paired baseline) | — | — | — | — | — | 1 156 (81.29 %) | — | 0 |
+| `none` | 214 | 0 | 37 | 134 | 0.216 | 1 059 (74.47 %) | 0.884 | **−97** (p = 4e−14) |
+| `cited` | 213 | 1 | 37 | 133 | 0.218 | 1 060 (74.54 %) | 0.885 | −96 |
+| `cone` | 189 | 25 | 37 | 115 | 0.243 | 1 078 (75.81 %) | 0.901 | −78 |
+| `contrast` | 58 | 156 | 32 | 16 | 0.667 | 1 172 (82.42 %) | 0.986 | +16 (p = 0.029) |
+| **`lag`** | **54** | **160** | **31** | **13** | **0.705** | **1 174 (82.56 %)** | **0.989** | **+18 (p = 0.0096)** |
+
+**The project's central anomaly is now measured at corpus scale and fully accounted for.** An ungated arm makes 214
+overrides at precision 0.216 and lands **97 cases below** the engine it was seeded from, at p = 4e−14. Nothing about
+that is a failure to investigate: the arm answered every case and spent the full budget. It is a model whose every
+edit is net-negative on a population where 81.3 % of cases are already right — the arithmetic of §12.1, measured
+rather than projected. **The gate is the entire difference between −97 and +18, and it costs ¥0**: it is a re-score of
+the same artifact.
+
+The ladder is monotone in strictness and every rung is priced from one run: `none` 74.47 → `cited` 74.54 → `cone`
+75.81 → `contrast` 82.42 → `lag` 82.56. Wilson 95 % on 1 174/1 422 is `[80.5, 84.4]`; McNemar `+18/−13`, p = 0.0096.
+This is the first corpus-scale reading in this repository in which an LLM arm beats its own non-LLM engine, and the
+first whose advantage is statistically separable from it.
+
+**What it does not do is reach the target.** 90.0 % of 1 422 is 1 280 cases; the arm has 1 174. The remaining **+106**
+is 40 % of the engine's 266 misses, while the arm currently repairs **31 (11.65 %)**. No gate can supply that: a gate
+can only refuse an override, and 160 of 244 overrides are already refused. The gap is **coverage**, and coverage is the
+base term.
+
+**By fault family the net is not uniform**: `NetworkBandwidth` 8/0, `NetworkPartition` 6/3, `NetworkLoss` 5/0,
+`HTTPRequestReplaceMethod` 4/0, `JVMException` 4/0 against `JVMMemoryStress` **0/4**. A family-conditional rule is
+visible in that table and is **not** taken: four breaks in one family is a sample of four, and the register's rule is
+that a per-family knob needs a mechanism before it needs a threshold.
+
+**And the axis that was registered to be tested here failed.** The prior's own margin, at the pre-committed 10 %
+quantile, buys **one repair and eleven breaks** at corpus scale (1 164, net +8, p = 0.35) — worse than doing nothing
+extra, and worse in the direction the 160-row sweep had hidden. Register §325.13b has the four cuts.
+
+### 12.7 The census at corpus scale: the arm does not fail to look, it looks one hop too far
+
+The same instrument over the corpus artifact's **248 misses** (17.4 % of 1 422):
+
+| code | 160-case sample | 1 422-case corpus |
+| --- | ---: | ---: |
+| `answered-downstream` — the answer is a CALLEE of the truth | 28 (38.4 %) | **100 (40.3 %)** |
+| `answered-other-branch` — another branch, truth never queried | 23 (31.5 %) | 73 (29.4 %) |
+| `answered-upstream` — the answer is a CALLER of the truth | 7 (9.6 %) | 38 (15.3 %) |
+| `refused-fallback` — refused, and the prior was wrong | 15 (20.5 %) | 36 (14.5 %) |
+| `answered-elsewhere-truth-queried` | 0 | **1 (0.4 %)** |
+| `never-answered` | 0 | 0 |
+
+Two things follow, and the first one sets the next iteration's target.
+
+**`answered-elsewhere-truth-queried` is 1 in 1 422.** The salience story — the model looked at the truth's own
+telemetry and preferred a loud victim — accounts for **one case in the corpus**. §11's residue was not salience.
+
+**Overshoot is 40.3 % of every miss the arm makes**, and it is the one bucket a harness can reach without a better
+model: if the arm answered the truth in those 100 cases it would read **1 274/1 422 = 89.6 %**, against a target of
+1 280. So the base term is not "more evidence" and not "more rounds" (12.6 measures rounds at 6.00 with 100 %
+answered). It is **one decision: where in the chain to stop.**
+
+The cheap form of that decision was priced and refuted (§12.4): prefer the shallowest leader *on the path from the
+prior*, which needs a path that usually does not exist. The form the corpus supports is **local and needs no path**:
+an answer is not a source if one of its own **ancestors** logged its first error at least as early — a minimal-element
+test over the ancestor chain, which is the collision model read one hop up instead of across the whole graph. The
+artifact does not carry ancestor onsets today, so this is the first axis in this project whose *precondition* is a new
+artifact field rather than a new threshold, and it is registered for iteration 322 with a pre-committed threshold:
+
+> **`E5`** — an override is refused when some ancestor of the candidate (strictly above it, within the prior's cone)
+> has a first-error offset **≤** the candidate's own. Predicted: it converts a majority of the 100 overshoots into
+> fallbacks, and it costs the cases where the truth is itself an intermediate node that logged *later* than its callee
+> — which the corpus says is the minority, since only 38 misses answer a caller of the truth.
+
+`E5` is not shipped on that prediction: it is registered, and it will be priced at ¥0 on this artifact's rows plus the
+corpus's ancestor onsets before any dispatch spends a token on it.
