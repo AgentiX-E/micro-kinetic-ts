@@ -88,6 +88,11 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   // the truth — one hop, because two would blur the reversal/overshoot distinction the codes exist to draw — and it
   // assembles no corpus: the population it counts is the ARTIFACT's rows, scored one case at a time.
   'run-agentic-failure-codes.ts',
+  // Iteration 325: the interface witness, read off each case's failing interfaces. It loads FSE'26 cases because
+  // novelty is a column of the CASE, and it assembles no corpus: what it counts is how often one predicate over
+  // those columns names the service the artifact already answered with. The witness file it writes is the case's
+  // own evidence, not a ranking input — nothing downstream of it ranks anything.
+  'run-edge-novel-census.ts',
 ];
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {

@@ -157,7 +157,7 @@ on:
         required: false
         default: ''
       query_resolve:
-        description: "Whether a SETTLED answer is re-read after the gate: `entry-prior` = attribute the failure to the service requests enter through when nothing below it raised an error rate and the answer's own non-symptom channels stayed under 300 units of its pre-window spread; empty/`none` = the arm as iterations 318-321 shipped it. Needs no model call and no second dispatch, because it is a second reader of evidence the case already carries. Iteration 323's second rule (a service that LOST traffic is a victim) is refuted and is not shipped: every case in this corpus has one, so it localises nothing"
+        description: "Whether a SETTLED answer is re-read after the gate: `entry-prior` = attribute the failure to the service requests enter through when nothing below it raised an error rate and the answer's own non-symptom channels stayed under 300 units of its pre-window spread; `edge-novel` = that rule PLUS the interface witness first: answer with the caller of the interface that carried a request SHAPE its callee had never seen, skipping the traffic generator, which is a root of the call graph and never a label. empty/`none` = the arm as iterations 318-321 shipped it. Needs no model call and no second dispatch, because both are second readers of evidence the case already carries. Iteration 323's second rule (a service that LOST traffic is a victim) is refuted and is not shipped: every case in this corpus has one, so it localises nothing"
         required: false
         default: ''
       topology_brief:

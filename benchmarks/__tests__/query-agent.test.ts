@@ -18,6 +18,7 @@ import {
   QUERY_SYSTEM_PROMPT,
   QUERY_TOOLS,
   TRACE_CHARS,
+  applyResolver,
   buildTelemetry,
   buildUserPrompt,
   byFall,
@@ -27,6 +28,7 @@ import {
   executeTool,
   formatNumber,
   gateAdmits,
+  interfaceAttribution,
   leadsEvidence,
   median,
   netBetween,
@@ -35,6 +37,7 @@ import {
   parseCall,
   projectOntoCorpus,
   readEntryPrior,
+  readInterfacePrior,
   renderBudget,
   renderGate,
   renderSeed,
@@ -57,6 +60,7 @@ import type {
   QueryBudget,
   QueryExchange,
   QuerySeed,
+  ResolverEvidence,
   TelemetryMetric,
 } from '../src/query-agent.js';
 
@@ -297,9 +301,12 @@ describe('buildTelemetry', () => {
 
   it('reads the failed-interface and latency channels in the units the producer wrote', () => {
     const telemetry = buildTelemetry(makeCase());
+    // `novel: 0` is the pre-290 channel: this fixture's producer did not measure request shapes, and an absent
+    // instrument has to read as a zero rather than as an unknown, because every rule that reads the field refuses
+    // a zero. The alternative — `undefined` — would make the reader branch on a shape the type does not describe.
     expect(telemetry.failed).toEqual([
-      { caller: 'checkout', callee: 'payment', failed: 40, baseline: 2 },
-      { caller: 'payment', callee: 'db', failed: 3, baseline: 3 },
+      { caller: 'checkout', callee: 'payment', failed: 40, baseline: 2, novel: 0 },
+      { caller: 'payment', callee: 'db', failed: 3, baseline: 3, novel: 0 },
     ]);
     expect(telemetry.latency[0]).toEqual({
       caller: 'checkout',
@@ -1150,6 +1157,8 @@ describe('summariseQueryArm', () => {
     entryChildErrors: null,
     rawSurprise: null,
     priorSurprise: null,
+    novelCaller: null,
+    novelRise: null,
     ...over,
   });
 
@@ -1894,6 +1903,8 @@ describe('three policies priced from one artifact', () => {
     entryChildErrors: null,
     rawSurprise: null,
     priorSurprise: null,
+    novelCaller: null,
+    novelRise: null,
     ...over,
   });
 
@@ -2032,6 +2043,8 @@ describe('a case the model never answered, under each policy', () => {
     entryChildErrors: null,
     rawSurprise: null,
     priorSurprise: null,
+    novelCaller: null,
+    novelRise: null,
     ...over,
   });
 
@@ -2253,6 +2266,8 @@ describe('four policies priced from one artifact', () => {
     entryChildErrors: null,
     rawSurprise: null,
     priorSurprise: null,
+    novelCaller: null,
+    novelRise: null,
     ...over,
   });
 
@@ -2377,6 +2392,8 @@ describe('the two ways the evidence can be absent', () => {
       entryChildErrors: null,
       rawSurprise: null,
       priorSurprise: null,
+      novelCaller: null,
+      novelRise: null,
     };
     const contrast = summariseGatePolicies([row]).find((reading) => reading.policy === 'contrast')!;
     // `cone` admits it on position alone; `contrast` cannot read the evidence and so refuses, falling back.
@@ -2489,6 +2506,8 @@ describe('five policies priced from one artifact', () => {
     entryChildErrors: null,
     rawSurprise: null,
     priorSurprise: null,
+    novelCaller: null,
+    novelRise: null,
     ...over,
   });
 
@@ -2634,6 +2653,14 @@ function entryCase(options: {
   }[];
   /** Nodes with metrics but no traffic, which is the state that made the first version of the rule find no entry. */
   readonly extraNodes?: readonly string[];
+  /** Failing interfaces, so a test can give the interface channel something to read. */
+  readonly failedEdges?: readonly {
+    readonly caller: string;
+    readonly callee: string;
+    readonly failed: number;
+    readonly baseline: number;
+    readonly novel?: number;
+  }[];
 }): BenchmarkCase {
   const at = [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000];
   const metrics = new Map([
@@ -2754,7 +2781,7 @@ function entryCase(options: {
     callGraph: graph,
     groundTruth: { serviceId: 'front', faultType: 'HTTPResponseReplaceCode' },
     logs: [],
-    failedTraceEdges: [],
+    failedTraceEdges: options.failedEdges ?? [],
     edgeLatency: [],
   });
 }
@@ -3038,6 +3065,8 @@ describe('the resolution priced from one artifact', () => {
     entryChildErrors: 0,
     rawSurprise: 0,
     priorSurprise: 0,
+    novelCaller: null,
+    novelRise: null,
     gateRefusals: 0,
     ...over,
   });
@@ -3156,5 +3185,307 @@ describe('byFall, the comparator that orders a collapse list', () => {
     expect(byFall(metric({ label: 'cpu' }), metric({ label: 'rps' }))).toBeLessThan(0);
     expect(byFall(metric({ label: 'rps' }), metric({ label: 'cpu' }))).toBeGreaterThan(0);
     expect(byFall(metric({}), metric({}))).toBe(0);
+  });
+});
+
+/**
+ * The interface prior.
+ *
+ * ## What it exists for, in one measurement
+ *
+ * `readEntryPrior` closes the front door whenever a callee of the entry rose, and that refusal is 41 cases wide:
+ * the arm and the rule together answer **0 of 41** cases whose truth IS the entry and whose children rose anyway.
+ * The census that found them also found the instrument this rule reads: a failed interface carries `novel`, the
+ * part of its failures whose request SHAPE — `(route, method)` as the callee recorded it — the edge had never
+ * carried before the injection. A callee that breaks rejects nothing; it fails the requests it has always served.
+ * A caller that corrupted its request sends a shape the callee has never been asked for. **Novelty therefore
+ * charges the caller**, which is the end no count could identify.
+ *
+ * ## Why the account is per CALLER rather than per edge
+ *
+ * In the corpus the strongest novel interface is unique in **every one of the 203 cases that carry the channel**,
+ * so a rule that named an edge would have to invent a second decision to turn it into a name. It reads the caller
+ * and stops.
+ */
+function interfaceCase(
+  edges: readonly {
+    readonly caller: string;
+    readonly callee: string;
+    readonly failed: number;
+    readonly baseline: number;
+    readonly novel?: number;
+  }[],
+  extraEdges: readonly { readonly from: string; readonly to: string }[] = [],
+): BenchmarkCase {
+  return entryCase({ leafError: 40, failedEdges: edges, extraEdges });
+}
+
+describe('the interface prior reads novelty, not volume', () => {
+  it('names the caller of the interface that carried a request shape its callee had never seen', () => {
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'front', callee: 'leaf', failed: 4_002, baseline: 0, novel: 4_002 },
+      ]),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: 'front', novelRise: 4_002 });
+  });
+
+  it('refuses a count with no novelty behind it, because an edge can fail at either end', () => {
+    // 40 failures on `front -> leaf` and not one of them a shape the leaf had not already served: this is a callee
+    // that broke, or a caller that was always asking wrongly. The count cannot say which, so the rule says nothing.
+    const telemetry = buildTelemetry(
+      interfaceCase([{ caller: 'front', callee: 'leaf', failed: 40, baseline: 2 }]),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: null, novelRise: null });
+  });
+
+  it('refuses an explicit zero, which is what a producer that cannot measure novelty reports', () => {
+    const telemetry = buildTelemetry(
+      interfaceCase([{ caller: 'front', callee: 'leaf', failed: 40, baseline: 2, novel: 0 }]),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: null, novelRise: null });
+  });
+
+  it('refuses the traffic generator, whose request shape is a workload and not a service’s interface', () => {
+    // `loadgenerator` is a root: nothing in the system calls it, which is what makes it the client rather than a
+    // component. Its novel shapes are the 74 cases where it out-ranks the real witness, and every one of them is a
+    // name the corpus never labels.
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'loadgenerator', callee: 'front', failed: 20, baseline: 0, novel: 20 },
+      ]),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: null, novelRise: null });
+  });
+
+  it('falls past the traffic generator to the witness behind it rather than refusing the case', () => {
+    // The shape the 39 ceiling cases actually carry: the generator's own edge and the entry's outbound edge report
+    // the SAME count, because one failure is seen at both hops. Skipping the generator is what names the entry.
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'loadgenerator', callee: 'front', failed: 93, baseline: 0, novel: 93 },
+        { caller: 'front', callee: 'leaf', failed: 93, baseline: 0, novel: 93 },
+      ]),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: 'front', novelRise: 93 });
+  });
+
+  it('breaks a tie on the novel count by the failure count, then by callee name, so the read is a function of data', () => {
+    const bigger = buildTelemetry(
+      interfaceCase(
+        [
+          { caller: 'front', callee: 'leaf', failed: 12, baseline: 0, novel: 10 },
+          { caller: 'front2', callee: 'leaf2', failed: 10, baseline: 0, novel: 10 },
+        ],
+        // `front2` needs a caller of its own: a root is the traffic generator, and the rule refuses one — which is
+        // a different test and would make these pass without ever comparing two witnesses.
+        [
+          { from: 'loadgenerator', to: 'front2' },
+          { from: 'front2', to: 'leaf2' },
+        ],
+      ),
+    );
+    expect(readInterfacePrior(bigger).novelCaller).toBe('front');
+    const tied = buildTelemetry(
+      interfaceCase(
+        [
+          { caller: 'front2', callee: 'leaf2', failed: 10, baseline: 0, novel: 10 },
+          { caller: 'front', callee: 'leaf', failed: 10, baseline: 0, novel: 10 },
+        ],
+        // `front2` needs a caller of its own: a root is the traffic generator, and the rule refuses one — which is
+        // a different test and would make these pass without ever comparing two witnesses.
+        [
+          { from: 'loadgenerator', to: 'front2' },
+          { from: 'front2', to: 'leaf2' },
+        ],
+      ),
+    );
+    // Same novel count, same failure count: `leaf` orders before `leaf2`, so the answer does not depend on the
+    // order the corpus happened to serialise its edges in.
+    expect(readInterfacePrior(tied).novelCaller).toBe('front');
+  });
+
+  it('keeps the larger witness when the larger one is read second', () => {
+    // The order the corpus serialises its edges in must not decide the answer: this pair is the same two edges as
+    // the tie test above with the counts swapped, so a reader that took the first would be caught here.
+    const telemetry = buildTelemetry(
+      interfaceCase(
+        [
+          { caller: 'front', callee: 'leaf', failed: 10, baseline: 0, novel: 5 },
+          { caller: 'front2', callee: 'leaf2', failed: 10, baseline: 0, novel: 9 },
+        ],
+        // `front2` needs a caller of its own: a root is the traffic generator, and the rule refuses one — which is
+        // a different test and would make these pass without ever comparing two witnesses.
+        [
+          { from: 'loadgenerator', to: 'front2' },
+          { from: 'front2', to: 'leaf2' },
+        ],
+      ),
+    );
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: 'front2', novelRise: 9 });
+  });
+
+  it('does not let a candidate with FEWER failures displace the incumbent on equal novelty', () => {
+    const telemetry = buildTelemetry(
+      interfaceCase(
+        [
+          { caller: 'front', callee: 'leaf', failed: 12, baseline: 0, novel: 10 },
+          { caller: 'front2', callee: 'leaf2', failed: 8, baseline: 0, novel: 10 },
+        ],
+        // `front2` needs a caller of its own: a root is the traffic generator, and the rule refuses one — which is
+        // a different test and would make these pass without ever comparing two witnesses.
+        [
+          { from: 'loadgenerator', to: 'front2' },
+          { from: 'front2', to: 'leaf2' },
+        ],
+      ),
+    );
+    expect(readInterfacePrior(telemetry).novelCaller).toBe('front');
+  });
+
+  it('does not let a later callee’s name displace the incumbent on a complete tie', () => {
+    const telemetry = buildTelemetry(
+      interfaceCase(
+        [
+          { caller: 'front', callee: 'leaf', failed: 10, baseline: 0, novel: 10 },
+          { caller: 'front2', callee: 'leaf2', failed: 10, baseline: 0, novel: 10 },
+        ],
+        // `front2` needs a caller of its own: a root is the traffic generator, and the rule refuses one — which is
+        // a different test and would make these pass without ever comparing two witnesses.
+        [
+          { from: 'loadgenerator', to: 'front2' },
+          { from: 'front2', to: 'leaf2' },
+        ],
+      ),
+    );
+    // `leaf` is already the incumbent and `leaf2` sorts after it, so the incumbent stands — which is the other half
+    // of the total order, and the half a test written only in the order the corpus happens to use would miss.
+    expect(readInterfacePrior(telemetry).novelCaller).toBe('front');
+  });
+
+  it('refuses a witness whose caller is not in the case’s own directory', () => {
+    // A dangling edge — the snapshot names a caller that no node carries. Answering with it would name a service
+    // the case does not contain, which is the refusal every tool in this file makes for the same reason.
+    const telemetry = buildTelemetry(
+      interfaceCase([{ caller: 'ghost', callee: 'leaf', failed: 40, baseline: 0, novel: 40 }]),
+    );
+    expect(telemetry.services.get('ghost')).toBeUndefined();
+    expect(readInterfacePrior(telemetry)).toEqual({ novelCaller: null, novelRise: null });
+  });
+
+  it('refuses a case with no failing interfaces at all', () => {
+    expect(readInterfacePrior(buildTelemetry(interfaceCase([])))).toEqual({
+      novelCaller: null,
+      novelRise: null,
+    });
+  });
+});
+
+describe('the interface rule as the resolver applies it', () => {
+  const evidence = (over: Partial<ResolverEvidence> = {}): ResolverEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    answerSurprise: 0,
+    novelCaller: 'front',
+    novelRise: 40,
+    ...over,
+  });
+
+  it('renames the answer to the caller of the novel interface', () => {
+    expect(applyResolver('leaf', evidence(), 'edge-novel')).toEqual({
+      answer: 'front',
+      by: 'interface',
+    });
+  });
+
+  it('keeps a name the witness already carries, so the rule is not a rename for its own sake', () => {
+    expect(applyResolver('front', evidence(), 'edge-novel')).toEqual({
+      answer: 'front',
+      by: null,
+    });
+  });
+
+  it('prefers the interface witness over the front door when both would fire', () => {
+    // The interface names a specific edge; the prior names the whole front door. The narrower reading wins, and it
+    // wins INSIDE the resolver rather than in a caller, so the pricing and the loop cannot order them differently.
+    expect(applyResolver('leaf', evidence({ novelCaller: 'leaf2' }), 'edge-novel')).toEqual({
+      answer: 'leaf2',
+      by: 'interface',
+    });
+  });
+
+  it('falls through to the entry prior when the case carries no novelty', () => {
+    expect(
+      applyResolver('leaf', evidence({ novelCaller: null, novelRise: null }), 'edge-novel'),
+    ).toEqual({ answer: 'front', by: 'entry' });
+  });
+
+  it('leaves `entry-prior` meaning exactly the front door, so the modes are an ablation and not a ladder', () => {
+    expect(applyResolver('leaf', evidence({ novelCaller: 'leaf2' }), 'entry-prior')).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+  });
+
+  it('leaves everything alone under `none`, which is what makes the switch a switch', () => {
+    expect(applyResolver('leaf', evidence(), 'none')).toEqual({ answer: 'leaf', by: null });
+  });
+
+  it('refuses a legacy artifact whose rows carry no interface columns', () => {
+    const legacy = { ...evidence() } as Record<string, unknown>;
+    delete legacy['novelCaller'];
+    delete legacy['novelRise'];
+    expect(applyResolver('leaf', legacy as unknown as ResolverEvidence, 'edge-novel')).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+  });
+
+  it('refuses a null answer, which is a case no resolver may answer for', () => {
+    // Asserted on the predicate as well as on the resolver, because the predicate is exported: the resolver cannot
+    // reach its guard (it returns before the rule is asked), and an exported rule that throws on the empty answer
+    // would be a public surface narrower than its signature.
+    expect(applyResolver(null, evidence(), 'edge-novel')).toEqual({ answer: null, by: null });
+    expect(interfaceAttribution(null, evidence())).toBeNull();
+  });
+
+  it('refuses a novelty count that is a failed measurement wearing a number', () => {
+    expect(
+      applyResolver(
+        'leaf',
+        evidence({ novelCaller: 'leaf2', novelRise: Number.NaN }),
+        'edge-novel',
+      ),
+    ).toEqual({ answer: 'front', by: 'entry' });
+  });
+});
+
+describe('the interface rule in the loop', () => {
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('answers with the caller of the novel interface, and records that the witness said so', async () => {
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'loadgenerator', callee: 'front', failed: 4_002, baseline: 0, novel: 4_002 },
+        { caller: 'front', callee: 'leaf', failed: 4_002, baseline: 0, novel: 4_002 },
+      ]),
+    );
+    const client = scriptedClient(['TOOL failed', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'edge-novel');
+    expect(outcome.answer).toBe('front');
+    expect(outcome.rawAnswer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('interface');
+  });
+
+  it('leaves the same case to the model when the rule is off', async () => {
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'front', callee: 'leaf', failed: 4_002, baseline: 0, novel: 4_002 },
+      ]),
+    );
+    const client = scriptedClient(['TOOL failed', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'none');
+    expect(outcome.answer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('model');
   });
 });

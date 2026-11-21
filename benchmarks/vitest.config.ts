@@ -479,6 +479,12 @@ export default defineConfig({
         // the line is the only place "the arm moved nothing because the map was never built" can be said at all,
         // and a formatter outside coverage is a claim about a population nobody counts.
         'src/self-time-census-report.ts',
+        // Added with the interface witness: the pricing of the resolver's three modes on ONE artifact, at zero
+        // cost. Included because it is the module that decides whether a rule SHIPS — a reading that counted a
+        // rename as a repair without checking the renamed answer, or a break only when the answer changed, would
+        // both produce a table that looks better than the run — and its bookkeeping is asserted either way. The
+        // runner beside it (`run-edge-novel-census.ts`) is an entry point and stays outside, as every `run-*` is.
+        'src/edge-novel-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

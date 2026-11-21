@@ -24,6 +24,7 @@ import {
   onsetOf,
   projectOntoCorpus,
   readEntryPrior,
+  readInterfacePrior,
   runQueryAgent,
   stride,
   summariseGatePolicies,
@@ -85,9 +86,9 @@ function parseArgs(argv: readonly string[]): Args {
   // A resolver, like a gate, is a rule a run STATES: a typo that silently measured no resolver would publish an
   // unread arm under the name of a read one.
   const resolve = map.get('resolve') ?? 'none';
-  const resolvers: readonly Resolution[] = ['none', 'entry-prior'];
+  const resolvers: readonly Resolution[] = ['none', 'entry-prior', 'edge-novel'];
   if (!resolvers.includes(resolve as Resolution)) {
-    throw new Error('--resolve must be `none` or `entry-prior`');
+    throw new Error('--resolve must be `none`, `entry-prior` or `edge-novel`');
   }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
@@ -208,8 +209,11 @@ async function investigate(
       entryChildErrors: null,
       rawSurprise: null,
       priorSurprise: null,
+      novelCaller: null,
+      novelRise: null,
     };
   }
+  const witnessed = readInterfacePrior(telemetry);
   const settledSaid = readEntryPrior(telemetry, outcome.answer);
   const rawSaid = readEntryPrior(telemetry, outcome.rawAnswer);
   const priorSaid = readEntryPrior(telemetry, verdict.winner);
@@ -257,6 +261,10 @@ async function investigate(
     entryChildErrors: settledSaid.entryChildErrors,
     rawSurprise: rawSaid.answerSurprise,
     priorSurprise: priorSaid.answerSurprise,
+    // Read once per case from the CASE's failing interfaces: the witness does not depend on the answer, so one
+    // column prices `edge-novel` for every policy and both sides of every fallback.
+    novelCaller: witnessed.novelCaller,
+    novelRise: witnessed.novelRise,
   };
 }
 

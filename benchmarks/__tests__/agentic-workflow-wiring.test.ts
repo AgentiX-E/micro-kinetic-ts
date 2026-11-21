@@ -727,7 +727,7 @@ describe('the free-investigation arm’s wiring', () => {
     // Every mode the runner accepts is nameable from the dispatch form. Iteration 322 shipped `entry-prior` with a
     // workflow input and no assertion tying the two lists together; a mode added to the runner alone would be an
     // ablation that exists only in the source, and this is the cheapest place to notice.
-    for (const mode of ['none', 'entry-prior']) {
+    for (const mode of ['none', 'entry-prior', 'edge-novel']) {
       expect(runner).toContain(mode);
       expect(WORKFLOW).toContain(mode);
     }

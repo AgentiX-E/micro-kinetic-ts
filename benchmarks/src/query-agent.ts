@@ -110,6 +110,15 @@ export interface TelemetryFailedEdge {
   readonly callee: string;
   readonly failed: number;
   readonly baseline: number;
+  /**
+   * The part of {@link failed} whose request SHAPE the edge had never carried before the injection.
+   *
+   * `0` when the producer could not measure it, which is the pre-290 channel: absent instrument, no finding. The
+   * field is carried into the tool view because it is the only count in the case that charges an END of the
+   * interface — a callee that breaks rejects nothing, while a caller that corrupted its request sends a shape the
+   * callee has never been asked for. Every other number on this edge is identical in the two situations.
+   */
+  readonly novel: number;
 }
 
 /** One edge's latency, before and after the injection. */
@@ -373,6 +382,8 @@ export function buildTelemetry(bench: BenchmarkCase): Telemetry {
     callee: edge.callee,
     failed: edge.failed,
     baseline: edge.baseline,
+    // An absent instrument is a zero and not an unknown, because every rule that reads this field refuses a zero.
+    novel: edge.novel ?? 0,
   }));
   const latency = (bench.edgeLatency ?? []).map((edge) => ({
     caller: edge.caller,
@@ -581,7 +592,10 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
       text: ranked
         .map(
           (edge) =>
-            `${edge.callee} <- ${edge.caller} net=${edge.net} failed=${edge.failed} pre=${edge.baseline}`,
+            `${edge.callee} <- ${edge.caller} net=${edge.net} failed=${edge.failed} pre=${edge.baseline}` +
+            // Printed only where the producer measured it: a `novel=0` on every line would say "no new shapes" about
+            // an instrument that was never run, which is the one statement this field must not make.
+            (edge.novel > 0 ? ` novel=${edge.novel}` : ''),
         )
         .join('\n'),
     };
@@ -747,7 +761,7 @@ export interface QueryOutcome {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or a resolver rule. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | null;
   /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
   readonly gateRefusals: number;
   /** Services the investigation executed a per-service query against, in first-query order. */
@@ -1238,6 +1252,10 @@ export async function runQueryAgent(
   let rawAnswer: string | null = null;
   let gateRefusals = 0;
 
+  // Read once: the witness is a property of the CASE, not of the answer, so every settlement in this investigation
+  // reads the same interface evidence.
+  const witnessed = readInterfacePrior(telemetry);
+
   /**
    * The resolver, applied where the answer is SETTLED rather than where it is proposed.
    *
@@ -1256,7 +1274,11 @@ export async function runQueryAgent(
     answer: string | null,
   ): { answer: string | null; by: QueryOutcome['answeredBy'] } => {
     if (resolution === 'none' || answer === null) return { answer, by: null };
-    const to = applyResolver(answer, readEntryPrior(telemetry, answer), resolution);
+    const to = applyResolver(
+      answer,
+      { ...readEntryPrior(telemetry, answer), ...witnessed },
+      resolution,
+    );
     return { answer: to.answer, by: to.by };
   };
 
@@ -1508,7 +1530,7 @@ export interface QueryArmRow {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or nobody. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | null;
   /** Services the investigation executed a per-service query against, in first-query order. */
   readonly calls: readonly string[];
   /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
@@ -1537,6 +1559,15 @@ export interface QueryArmRow {
   readonly rawSurprise: number | null;
   /** The prior's own departure, on the same channel split. */
   readonly priorSurprise: number | null;
+  /**
+   * The caller of the strongest novel interface in this case, or `null` when it carries none.
+   *
+   * Recorded per CASE rather than per side, because the witness does not depend on which name the gate settled on:
+   * one column pair prices the rule for every policy and for both sides of every fallback.
+   */
+  readonly novelCaller: string | null;
+  /** That interface's novel-call count, or `null` when there is none. */
+  readonly novelRise: number | null;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
@@ -1548,9 +1579,12 @@ export interface QueryArmRow {
  *
  * `none` is the arm as iterations 318–321 shipped it. `entry-prior` is {@link entryAttribution}, which runs AFTER
  * the gate settles the answer, needs no model call and no second dispatch, and is priced at zero from the artifact's
- * own rows (`summariseGatePolicies`).
+ * own rows (`summariseGatePolicies`). `edge-novel` is {@link interfaceAttribution} FIRST and then that same front
+ * door rule for everything the witness does not claim — one mode rather than a flag per rule, because the two are
+ * ordered deliberately: the witness names a specific interface, the prior names a whole front door, and a case
+ * that has both should be decided by the narrower reading (`applyResolver` orders them, not its callers).
  */
-export type Resolution = 'none' | 'entry-prior';
+export type Resolution = 'none' | 'entry-prior' | 'edge-novel';
 
 /**
  * The surprise a service's own departure must stay under for the entry prior to speak.
@@ -1699,6 +1733,112 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
 }
 
 /**
+ * What the interface channel says, in names rather than counts.
+ *
+ * The reading is the CALLER of the edge that carried a request shape its callee had never seen before the
+ * injection, and nothing else: `(route, method)` is the callee's own record of what it was asked for, so a novel
+ * shape is the caller's corruption and never the callee's break. A callee that breaks rejects nothing — it fails
+ * the requests it has always served, and those are shapes it has carried for the whole pre-window.
+ */
+export interface InterfacePriorEvidence {
+  /** The caller of the strongest novel interface, or `null` when the case carries no novelty at all. */
+  readonly novelCaller: string | null;
+  /** That interface's novel-call count, or `null` when there is none — the evidence's own volume. */
+  readonly novelRise: number | null;
+}
+
+/** Everything the resolver reads. One object, so the loop and the pricing cannot pass different fields. */
+export interface ResolverEvidence extends EntryPriorEvidence, InterfacePriorEvidence {}
+
+/**
+ * Read the strongest interface witness in a case.
+ *
+ * ## Why a caller and not an edge
+ *
+ * The corpus answers with a SERVICE, so an edge would have to become a name by a second decision — and every
+ * candidate for that decision (the upstream end, the downstream end, the deeper end) is a rule wearing the
+ * instrument's name. Novelty already decides the end: it charges whoever sent the shape.
+ *
+ * ## Why the traffic generator is not a witness
+ *
+ * `loadgenerator` is a ROOT of the call graph — nothing in the system calls it — which is the same structural fact
+ * that makes `entryOf` read the entry as its callee. Its request shape is a workload, not a service's interface,
+ * and the corpus never labels it: naming it would answer with a name no case accepts. It is the strongest witness
+ * in **74 of the 203** cases that carry the channel, so this refusal is not a corner.
+ *
+ * ## What it does not do
+ *
+ * It does not look at the size of the failing edge, and that omission is the finding: `failed − baseline` is
+ * identical whether the caller corrupted the request or the callee broke, and the count is what every earlier
+ * version of this reading sorted by.
+ *
+ * @param telemetry - The case's tool view.
+ * @returns The caller and volume of the strongest novel interface, or a refusal in both fields.
+ */
+export function readInterfacePrior(telemetry: Telemetry): InterfacePriorEvidence {
+  let best: { caller: string; rise: number; failed: number; callee: string } | null = null;
+  for (const edge of telemetry.failed) {
+    // A zero is a refusal, not a small number: the producers that cannot measure novelty report it and the
+    // pre-290 channel omits it entirely, and both mean "no finding" rather than "no novelty".
+    if (!(edge.novel > 0)) continue;
+    const caller = telemetry.services.get(edge.caller);
+    if (caller === undefined) continue;
+    if (caller.callers.length === 0) continue;
+    const candidate = {
+      caller: edge.caller,
+      rise: edge.novel,
+      failed: edge.failed,
+      callee: edge.callee,
+    };
+    if (best === null || bestWitness(candidate, best)) best = candidate;
+  }
+  return best === null
+    ? { novelCaller: null, novelRise: null }
+    : { novelCaller: best.caller, novelRise: best.rise };
+}
+
+/**
+ * Whether one witness outranks another: volume, then failure count, then the callee's name.
+ *
+ * The last comparison is alphabetical for the reason `bySurprise` and `byFall` both end the same way — the reading
+ * must be a function of the DATA, not of the order the corpus serialised its edges in — and it is the only one that
+ * can decide a case two edges tie on both counts. The corpus never needs it: no case carries two distinct novel
+ * callers, so this is a total order for the type rather than a tie-break the run depends on.
+ *
+ * @param left - The candidate.
+ * @param right - The incumbent.
+ * @returns True when `left` should replace `right`.
+ */
+function bestWitness(
+  left: { rise: number; failed: number; callee: string },
+  right: { rise: number; failed: number; callee: string },
+): boolean {
+  if (left.rise !== right.rise) return left.rise > right.rise;
+  if (left.failed !== right.failed) return left.failed > right.failed;
+  return left.callee < right.callee;
+}
+
+/**
+ * The interface attribution: answer with the caller whose request shape its callee had never seen.
+ *
+ * @param answer - The service the gate settled on, or `null`.
+ * @param evidence - What {@link readInterfacePrior} read.
+ * @returns The caller to answer with instead, or `null` when the rule does not fire.
+ */
+export function interfaceAttribution(
+  answer: string | null,
+  evidence: ResolverEvidence,
+): string | null {
+  if (answer === null) return null;
+  // Narrowed by measurement rather than by truthiness, for the reason `entryAttribution` is: an artifact written
+  // before this iteration carries no such columns, and `undefined !== answer` would fire on every one of its rows.
+  if (typeof evidence.novelCaller !== 'string') return null;
+  if (!Number.isFinite(evidence.novelRise)) return null;
+  if (evidence.novelCaller === answer) return null;
+  return evidence.novelCaller;
+}
+
+/**
  * The entry prior: attribute the failure to the front door when the evidence says it never went past it.
  *
  * ## What it is for
@@ -1762,10 +1902,17 @@ export function entryAttribution(
  */
 export function applyResolver(
   answer: string | null,
-  evidence: EntryPriorEvidence,
+  evidence: ResolverEvidence,
   mode: Resolution,
-): { answer: string | null; by: 'entry' | null } {
+): { answer: string | null; by: 'entry' | 'interface' | null } {
   if (answer === null || mode === 'none') return { answer, by: null };
+  // The order is part of the rule, not of the caller: the witness names one interface and the prior names the whole
+  // front door, so a case that carries both is decided by the narrower reading. Written here because a pricing that
+  // ordered them differently from the loop would report a rule nobody runs — the failure iteration 322 paid for.
+  if (mode === 'edge-novel') {
+    const witnessed = interfaceAttribution(answer, evidence);
+    if (witnessed !== null) return { answer: witnessed, by: 'interface' };
+  }
   const to = entryAttribution(answer, evidence);
   return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
 }
@@ -1938,6 +2085,8 @@ export function summariseGatePolicies(
           entry: row.entry,
           entryChildErrors: row.entryChildErrors,
           answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
+          novelCaller: row.novelCaller,
+          novelRise: row.novelRise,
         },
         resolution,
       );
