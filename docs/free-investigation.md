@@ -1116,3 +1116,38 @@ which is exactly the quantity that cannot distinguish them, because the entry is
 `--resolve entry-prior` applies a deterministic reader to that question after the gate settles an answer: no prompt
 change, no round, no token. It is priced from one artifact at ¥0 (`correctResolved` beside every policy), and its
 corpus reading is in §13.4.
+
+### 13.4 The corpus reading: 86.01 %, and a defect the first dispatch found
+
+The first dispatch of `--resolve entry-prior` (run `44856454924`, ¥23.08) reported `resolved 0` **on every policy**:
+the resolver never fired. `entryOf` had asked for a graph with exactly one root, and this corpus has **fourteen** —
+`ts-admin-*`, `ts-avatar-service`, `ts-delivery-service`, `ts-food-delivery-service`, `ts-preserve-other-service`,
+`ts-rebook-service`, `ts-wait-order-service`, `rabbitmq`, `kubernetes-endpoints` all carry metrics and were never
+called inside the captured window. The call graph is **broader than the traffic**, so the predicate returned `null` on
+1 422 of 1 422 cases.
+
+The fix is the mechanism the rule should have had: the entry is the root that reaches **strictly more** of the system
+than every other root — the front door is what the rest sits behind — and a tie fails closed. That names
+`loadgenerator`, which reaches 49 of 50 services and calls exactly one: `ts-ui-dashboard`.
+
+Re-scored over the same artifact (the resolver needs no model, so this is a re-read and not a second purchase):
+
+| reading | Top@1 | net vs engine | moves | kept | lost | precision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| engine | 1 156 (81.29 %) | — | — | — | — | — |
+| `lag` | 1 173 (82.49 %) | +17 | — | — | — | — |
+| **`lag` + `entry-prior`** | **1 223 (86.01 %)** | **+67** | 87 | 67 | 20 | **0.770** |
+
+Wilson 95 % `[84.1, 87.7]`; sign test against the engine **67/17, p = 3.5 × 10⁻⁸**; against `lag` **67/20,
+p = 4.3 × 10⁻⁷**; engine hits retained **1 139/1 156 = 0.985**.
+
+**The rule is one decision, and it is the decision the corpus is about.** 67 of the 87 moves land on a case whose truth
+is the entry, and the 20 that do not are the price of a condition stated structurally rather than fitted. It costs
+nothing to run: no prompt change, no round, no token — the same artifact that produced 82.49 % produces 86.01 % when
+its answers are read a second time.
+
+**And the defect is the more useful result.** The pre-registration predicted ≥ 90 moves; the implementation produced
+87, because the ¥0 pricing read the children's rise from `http.response.error_rate` while the code reads every
+`/error/i` label — including `k8s.pod.network.errors`, which rises on victims. The stricter predicate fires less and
+scores better per move (0.770 against 0.675). A re-pricing in another language is a second definition of every term,
+and §325.14e records the difference rather than reconciling it away.

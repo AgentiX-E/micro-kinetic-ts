@@ -8702,3 +8702,52 @@ the fault is at the top. That is not an accident of the ranking: on this corpus 
 **every** case, so any salience ranking places it first and then descends — and the ground truth is the entry in one
 case in seven. **The corpus is 13 % of "the answer is the noisy one"**, and every method in this repository that
 ranks by salience — the engine's, the arm's, the gate's — inherits that.
+
+### 325.14e The dispatch found a defect in the rule, and the rule is worth +50 once the defect is fixed
+
+The first dispatch of `--resolve entry-prior` (run `44856454924`, ¥23.08, 1 422 of 1 422 answered at 6.00 rounds)
+printed **`resolved 0` on every policy**: the resolver never fired, on any case, because it could not name the entry.
+That is the failure mode this repository has a name for — a mechanism reported as tested while the code took the
+branch that does nothing — and it was caught only because the artifact records the evidence per row.
+
+**The defect.** `entryOf` required the graph to have exactly one root. It has **fourteen**: `ts-admin-*` (five
+services), `ts-avatar-service`, `ts-delivery-service`, `ts-food-delivery-service`, `ts-preserve-other-service`,
+`ts-rebook-service`, `ts-wait-order-service`, `rabbitmq`, `kubernetes-endpoints`. Every one of them has metrics and
+none of them was called inside the captured window, so "the graph's single root" is a set and the predicate returned
+`null` on all 1 422 cases. The corpus's call graph is **broader than its traffic**, and nothing in this repository had
+written that down.
+
+**The fix, and why it is a mechanism rather than a patch.** What distinguishes the way in is **reach**: the front door
+is what the rest of the system sits behind. The entry is the root that reaches *strictly more* services than every
+other root, and a tie still fails closed. On this corpus that is `loadgenerator`, which reaches **49 of 50** services
+and calls exactly one, so the entry is `ts-ui-dashboard` as intended.
+
+**The reading, re-scored over the shipped artifact with the fix in place** (the resolver is post-hoc and needs no
+model, so this is the same artifact, not a second purchase):
+
+| reading | Top@1 | net vs engine | fired | kept | lost | precision | engine hits retained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lag` (dispatched) | 1 173 (82.49 %) | +17 | — | — | — | — | 1 143/1 156 (0.989) |
+| **`lag` + `entry-prior`** | **1 223 (86.01 %)** | **+67** | 87 | 67 | 20 | **0.770** | **1 139/1 156 (0.985)** |
+
+Wilson 95 % on 1 223/1 422 is `[84.1, 87.7]`; the sign test against the engine is **67/17, p = 3.5 × 10⁻⁸**, and against
+`lag` **67/20, p = 4.3 × 10⁻⁷**. The rule moves 87 answers, gets 67 of them right, and keeps 98.5 % of what the engine
+already had — which is the shape a resolver has to have if it is to be switched on by default.
+
+**Adjudicated against `preregistration-322.md`:**
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| P1 | corpus Top@1 ≥ 84.0 % | **86.01 %** | pass, +2.0 pp above the bound |
+| P2 | ≥ 90 moves, precision ≥ 0.60 | **87 moves**, precision **0.770** | **MISS** on the count, pass on the precision |
+| P3 | net gain over `lag` ≥ +25 | **+50** | pass |
+| P4 | ≥ 60 % of moves land on a row whose truth is the entry | **67/87 = 77.0 %** | pass |
+| P5 | engine-hit retention ≥ 0.95 | **0.985** | pass |
+
+**P2 missed by three moves and the miss is the useful part.** The ¥0 pricing predicted 114 firings at τ = 300 and the
+implementation produced 87, because the pricing read the children's rise from one channel (`http.response.error_rate`)
+while the implementation reads every label matching `/error/i`, which includes `k8s.pod.network.errors` — and a pod's
+network-error counter rising as a *victim* is exactly the kind of false rise the condition is supposed to catch, so
+the stricter reading refuses more often. It also **scored better per move**: 0.770 against the pricing's 0.675. The
+lesson is the one 321 recorded in the other direction: a Python re-pricing is a rate transfer with its own definition
+of every term, and the definition is part of the result.
