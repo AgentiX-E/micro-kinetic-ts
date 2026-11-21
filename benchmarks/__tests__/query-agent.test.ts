@@ -20,6 +20,7 @@ import {
   TRACE_CHARS,
   buildTelemetry,
   buildUserPrompt,
+  byFall,
   bySurprise,
   entryAttribution,
   entryOf,
@@ -814,6 +815,91 @@ describe('TOOL metric, both directions', () => {
   });
 });
 
+describe('the collapse axis reads the trough, not the peak', () => {
+  /**
+   * A service that rose and then collapsed: 50 → 100 → 1.
+   *
+   * This is the shape a victim actually has — retries inflate the arrival count for a moment and then the traffic
+   * stops — and the selection this suite exercised until iteration 323 could not see it, because it tested
+   * `delta < 0`, which is `peak < baseline`, which is false here (the peak is twice the baseline). The axis was
+   * therefore listing the series that never rose, and omitting the ones that collapsed hardest.
+   */
+  const collapsed = (): BenchmarkCase =>
+    makeCase({
+      metrics: new Map([
+        [
+          'checkout',
+          [
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              values: Float64Array.from([50, 50, 50, 100, 1]),
+            },
+          ],
+        ],
+      ]),
+    });
+
+  it('lists a series that peaked above its baseline and then collapsed', () => {
+    const result = executeTool(buildTelemetry(collapsed()), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'checkout',
+    });
+    expect(result.text).toContain('falling:');
+    expect(result.text).toContain('low=1');
+  });
+
+  it('ranks it above a shallower fall that merely never rose', () => {
+    // `throughput` sits below its baseline throughout (an 8-point fall); `rps` collapses 49 of 50. A list ordered by
+    // `delta` puts the first one first, because a series that never rose has a negative delta and a series that rose
+    // and collapsed has a positive one.
+    const twin = makeCase({
+      metrics: new Map([
+        [
+          'checkout',
+          [
+            {
+              label: 'rps',
+              unit: 'calls',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              values: Float64Array.from([50, 50, 50, 100, 1]),
+            },
+            {
+              label: 'throughput',
+              unit: 'calls',
+              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              values: Float64Array.from([50, 50, 50, 42, 42]),
+            },
+          ],
+        ],
+      ]),
+    });
+    const falling = executeTool(buildTelemetry(twin), { kind: 'tool', tool: 'metric', argument: 'checkout' })
+      .text.split('falling:')[1]!;
+    // Both are asserted PRESENT before the order is compared: `indexOf` returns -1 for an absent label, and -1 is
+    // less than every index, so an order assertion alone passes on the list that omits the series under test.
+    expect(falling).toContain('rps');
+    expect(falling).toContain('throughput');
+    expect(falling.indexOf('rps')).toBeLessThan(falling.indexOf('throughput'));
+  });
+
+  it('reports the trough beside the base and the peak, and only on the falling lines', () => {
+    // The rise section keeps the text it had in 322's arm, so a regression there cannot be attributed to this change;
+    // the fall section gains the one number that makes the fall legible.
+    const result = executeTool(
+      buildTelemetry(collapsed()),
+      { kind: 'tool', tool: 'metric', argument: 'checkout' },
+    );
+    const [rises, falls] = result.text.split('falling:');
+    expect(rises).toContain('peak=100');
+    expect(rises).not.toContain('low=');
+    expect(falls).toContain('low=1');
+    expect(falls).toContain('peak=100');
+  });
+});
+
 describe('the forcing turn', () => {
   it('records a rejected answer and ends there, rather than spending a turn it does not have', async () => {
     const client = scriptedClient(['TOOL services', 'ANSWER ghost']);
@@ -1390,6 +1476,8 @@ describe('bySurprise, the comparator that orders a list', () => {
     peak: 2,
     delta: 1,
     ratio: 2,
+    trough: 1,
+    fall: 0,
     peakOffset: 0,
     ...over,
   });
@@ -2955,5 +3043,96 @@ describe('the resolution priced from one artifact', () => {
     expect(reading.correct).toBe(0);
     expect(reading.correctResolved).toBe(0);
     expect(reading.resolved).toBe(0);
+  });
+});
+
+describe('the fall, as a series reads it', () => {
+  const at = [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000];
+
+  it('reads a series that dropped below its own baseline as a positive fall', () => {
+    // The channel a VICTIM loses and a source keeps: how many requests arrived. Every field the arm carried before
+    // this one was built from `peak`, so a drop of any size was invisible to it.
+    const summary = summariseSeries('http.server.request.count', at, [50, 50, 50, 12, 16], INJECT);
+    expect(summary.trough).toBe(12);
+    expect(summary.fall).toBe(38);
+    // Standardised against the pre-window's own spread, which for a flat 50 is |50| · 10⁻³ = 0.05. The number is
+    // the point: a fall of 38 arrivals is 760 spreads, and a threshold on it is a threshold on the case's evidence
+    // rather than on the channel's units.
+    expect(summary.fallSurprise).toBe(760);
+  });
+
+  it('keeps the sign on a series that never fell, so a rise cannot be read as a drop', () => {
+    const summary = summariseSeries('cpu', at, [10, 10, 10, 40, 40], INJECT);
+    expect(summary.trough).toBe(40);
+    expect(summary.fall).toBe(-30);
+    expect(summary.fallSurprise).toBeLessThan(0);
+  });
+
+  it('reports a series that held its level as a fall of exactly zero', () => {
+    const summary = summariseSeries('cpu', at, [10, 10, 10, 10, 10], INJECT);
+    expect(summary.trough).toBe(10);
+    expect(summary.fall).toBe(0);
+    expect(summary.fallSurprise).toBe(0);
+  });
+
+  it('refuses to standardise a fall against a pre-window that cannot support an estimate', () => {
+    // Two refusals, both inherited from `surprise` rather than re-derived: fewer than three pre-samples, and a
+    // pre-window with no level. Both leave `fall` measured and `fallSurprise` absent, which is the difference
+    // between "did not fall" and "cannot say".
+    const short = summariseSeries('cpu', [INJECT - 1_000, INJECT + 1_000], [5, 1], INJECT);
+    expect(short.fall).toBe(4);
+    expect(short.fallSurprise).toBeUndefined();
+    const level = summariseSeries(
+      'cpu',
+      [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000],
+      [0, 0, 0, 0],
+      INJECT,
+    );
+    expect(level.fall).toBe(0);
+    expect(level.fallSurprise).toBeUndefined();
+  });
+
+  it('is total on a series with no sample after the injection', () => {
+    const summary = summariseSeries('cpu', [INJECT - 2_000, INJECT - 1_000], [9, 9], INJECT);
+    expect(summary.trough).toBe(9);
+    expect(summary.fall).toBe(0);
+    const empty = summariseSeries('cpu', [], [], INJECT);
+    expect(empty.trough).toBe(0);
+    expect(empty.fall).toBe(0);
+  });
+});
+
+describe('byFall, the comparator that orders a collapse list', () => {
+  const metric = (over: Partial<TelemetryMetric>): TelemetryMetric => ({
+    label: 'rps',
+    baseline: 10,
+    peak: 10,
+    delta: 0,
+    ratio: 1,
+    trough: 5,
+    fall: 5,
+    peakOffset: 0,
+    ...over,
+  });
+
+  it('puts a standardised fall ahead of one the pre-window could not standardise', () => {
+    expect(byFall(metric({ fallSurprise: 4 }), metric({}))).toBeLessThan(0);
+    expect(byFall(metric({}), metric({ fallSurprise: 4 }))).toBeGreaterThan(0);
+  });
+
+  it('orders two standardised falls deepest first', () => {
+    expect(byFall(metric({ fallSurprise: 40 }), metric({ fallSurprise: 4 }))).toBeLessThan(0);
+    expect(byFall(metric({ fallSurprise: 4 }), metric({ fallSurprise: 40 }))).toBeGreaterThan(0);
+  });
+
+  it('falls back to the absolute fall when neither side can be standardised', () => {
+    expect(byFall(metric({ fall: 9 }), metric({ fall: 2 }))).toBeLessThan(0);
+    expect(byFall(metric({ fall: 2 }), metric({ fall: 9 }))).toBeGreaterThan(0);
+  });
+
+  it('breaks a complete tie by label, so the text is a function of the data', () => {
+    expect(byFall(metric({ label: 'cpu' }), metric({ label: 'rps' }))).toBeLessThan(0);
+    expect(byFall(metric({ label: 'rps' }), metric({ label: 'cpu' }))).toBeGreaterThan(0);
+    expect(byFall(metric({}), metric({}))).toBe(0);
   });
 });

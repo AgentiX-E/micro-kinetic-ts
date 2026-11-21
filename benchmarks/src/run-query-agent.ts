@@ -210,6 +210,9 @@ async function investigate(
       priorSurprise: null,
     };
   }
+  const settledSaid = readEntryPrior(telemetry, outcome.answer);
+  const rawSaid = readEntryPrior(telemetry, outcome.rawAnswer);
+  const priorSaid = readEntryPrior(telemetry, verdict.winner);
   return {
     datapack: raw.datapack,
     faultType: raw.faultType ?? 'unknown',
@@ -247,11 +250,13 @@ async function investigate(
         : netBetween(telemetry, outcome.rawAnswer, verdict.winner),
     gateRefusals: outcome.gateRefusals,
     // The resolver's evidence is read from the CASE for both sides the artifact can settle on, so a run that
-    // dispatched `lag` also prices what the entry prior would have done with `none`'s answers and with `cone`'s.
-    entry: readEntryPrior(telemetry, outcome.answer).entry,
-    entryChildErrors: readEntryPrior(telemetry, outcome.answer).entryChildErrors,
-    rawSurprise: readEntryPrior(telemetry, outcome.rawAnswer).answerSurprise,
-    priorSurprise: readEntryPrior(telemetry, verdict.winner).answerSurprise,
+    // dispatched `lag` also prices what either rule would have done with `none`'s answers and with `cone`'s.
+    // One read per side: `readEntryPrior` finds the entry by walking the graph, and reading the same side twice
+    // would walk it twice to answer the same question.
+    entry: settledSaid.entry,
+    entryChildErrors: settledSaid.entryChildErrors,
+    rawSurprise: rawSaid.answerSurprise,
+    priorSurprise: priorSaid.answerSurprise,
   };
 }
 
@@ -387,7 +392,7 @@ async function main(): Promise<void> {
   );
   const population = { misses: misses.length, hits: correct.length };
   const total = population.misses + population.hits;
-  for (const reading of summariseGatePolicies(kept)) {
+  for (const reading of summariseGatePolicies(kept, args.resolve)) {
     const projection = projectOntoCorpus(
       reading,
       sampledMisses.length,

@@ -66,6 +66,26 @@ export interface TelemetryMetric {
    * series last and falls back to the ratio, which is the statement the case actually supports.
    */
   readonly surprise?: number;
+  /**
+   * Smallest sample AT or AFTER the injection.
+   *
+   * Every other post-injection quantity here is built from {@link peak}, so a series that DROPPED was invisible to
+   * the arm until iteration 323: its `delta` was negative and nothing read it, and `surprise` was negative and
+   * nothing read that either. A victim of an upstream failure is exactly that shape — the work it was being sent
+   * stopped arriving — so the field is the difference between reading *where a failure was observed* and reading
+   * *who kept working*, which is what the 322 census said was missing.
+   */
+  readonly trough: number;
+  /** `baseline − trough`, POSITIVE when the series fell below where the case started. */
+  readonly fall: number;
+  /**
+   * The trough in units of the pre-window's own spread — `(median − trough) / spread`, the mirror of
+   * {@link surprise} and computed from the same {@link dispersionOf}.
+   *
+   * The sign is kept rather than clamped at zero: a series that only rose reports a negative fall, and a rule that
+   * reads `≥ κ` then refuses it without a second condition saying so.
+   */
+  readonly fallSurprise?: number;
   /** Milliseconds from the injection to the peak sample; negative when the peak precedes it. */
   readonly peakOffset: number;
 }
@@ -171,6 +191,7 @@ export function summariseSeries(
   const pre: number[] = [];
   let peak = Number.NEGATIVE_INFINITY;
   let peakAt = injectTime;
+  let trough = Number.POSITIVE_INFINITY;
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index]!;
     const at = timestamps[index] ?? injectTime;
@@ -182,6 +203,7 @@ export function summariseSeries(
       peak = value;
       peakAt = at;
     }
+    if (value < trough) trough = value;
   }
   // A series that begins after the injection has no pre-window: its first sample is the only baseline the case
   // carries, and reading it is a statement about that case rather than a default invented here.
@@ -192,7 +214,15 @@ export function summariseSeries(
     : values.length > 0
       ? values[values.length - 1]!
       : 0;
+  // The trough follows the same two fallbacks as the peak, so a series with no sample after the injection reads
+  // "it never moved" rather than "it fell to negative infinity". One rule for both ends of the series.
+  const resolvedTrough = Number.isFinite(trough)
+    ? trough
+    : values.length > 0
+      ? values[values.length - 1]!
+      : 0;
   const scale = Math.abs(baseline);
+  const dispersion = dispersionOf(pre);
   return {
     label,
     baseline,
@@ -200,6 +230,10 @@ export function summariseSeries(
     delta: resolvedPeak - baseline,
     ratio: scale > 0 ? resolvedPeak / scale : resolvedPeak,
     surprise: surpriseOf(pre, resolvedPeak),
+    trough: resolvedTrough,
+    fall: baseline - resolvedTrough,
+    fallSurprise:
+      dispersion === undefined ? undefined : (dispersion.mid - resolvedTrough) / dispersion.spread,
     peakOffset: peakAt - injectTime,
   };
 }
@@ -230,12 +264,28 @@ export function summariseSeries(
  * @returns The surprise, or `undefined` when the pre-window cannot support an estimate.
  */
 export function surpriseOf(pre: readonly number[], peak: number): number | undefined {
+  const scale = dispersionOf(pre);
+  return scale === undefined ? undefined : (peak - scale.mid) / scale.spread;
+}
+
+/**
+ * The pre-window's level and its own spread, or `undefined` when the window cannot support either.
+ *
+ * Split out so that a rise and a fall are standardised by ONE definition rather than by two that agree today. The
+ * fall needs the same denominator and the opposite numerator; two copies of this arithmetic would drift the moment
+ * one of them learned something about zero medians or short windows, and the two readings would stop being
+ * comparable — which is the only reason a threshold on one of them says anything about the other.
+ *
+ * @param pre - The samples before the injection, in time order.
+ * @returns The median and the standardising spread, or `undefined` for fewer than three samples or a zero level.
+ */
+export function dispersionOf(pre: readonly number[]): { mid: number; spread: number } | undefined {
   if (pre.length < 3) return undefined;
   const mid = median(pre);
   // No level, no standardised reading. See the note above: this is the case that produced 5e10.
   if (mid === 0) return undefined;
   const mad = median(pre.map((value) => Math.abs(value - mid)));
-  return (peak - mid) / Math.max(1.4826 * mad, Math.abs(mid) * 1e-3);
+  return { mid, spread: Math.max(1.4826 * mad, Math.abs(mid) * 1e-3) };
 }
 
 /** A log line, trimmed to a length a prompt can carry. */
@@ -404,13 +454,38 @@ export function parseCall(reply: string): ParsedCall {
  * @param one - The series' window summary.
  * @returns The line.
  */
-function renderMetricLine(id: string, one: TelemetryMetric): string {
+function renderMetricLine(id: string, one: TelemetryMetric, withTrough = false): string {
   const z = one.surprise === undefined ? 'n/a' : formatNumber(one.surprise);
+  // The trough is printed only where the line is ABOUT a fall. A rise line that carried it would be longer text for
+  // the same information, and the rise section's wording predates this field: keeping it byte-identical is what lets
+  // a dispatch attribute a difference in the arm's answers to the collapse axis alone.
+  const low = withTrough ? `low=${formatNumber(one.trough)} ` : '';
   return (
-    `${id} ${one.label}: base=${formatNumber(one.baseline)} peak=${formatNumber(one.peak)} ` +
+    `${id} ${one.label}: base=${formatNumber(one.baseline)} ${low}peak=${formatNumber(one.peak)} ` +
     `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} z=${z} ` +
     `at=${Math.round(one.peakOffset / 1000)}s`
   );
+}
+
+/**
+ * Order two series by how far they FELL, deepest first.
+ *
+ * The mirror of {@link bySurprise}, and the same three rules in the same order: a standardised fall first (a series
+ * whose pre-window has no level cannot be ranked against one that does), the absolute fall second, and the label last
+ * so the text is a function of the data rather than of the producer's ordering.
+ *
+ * @param a - One series.
+ * @param b - The other.
+ * @returns Negative when `a` fell further.
+ */
+export function byFall(a: TelemetryMetric, b: TelemetryMetric): number {
+  const left = a.fallSurprise;
+  const right = b.fallSurprise;
+  if (left !== undefined && right === undefined) return -1;
+  if (left === undefined && right !== undefined) return 1;
+  if (left !== undefined && right !== undefined && left !== right) return right - left;
+  if (a.fall !== b.fall) return b.fall - a.fall;
+  return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
 }
 
 /**
@@ -471,23 +546,26 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
       .slice(0, FLEET_LINES);
     // The collapse axis is NOT the rise axis read backwards: a service can have its strongest RISE on cpu while
     // its traffic fell through the floor, and the second is the shape the prompt tells the model to take
-    // seriously. So this reads each service's WORST delta rather than the delta of its best ratio.
+    // seriously. So this reads each service's deepest FALL rather than the fall of its best ratio.
     const collapses: { id: string; metric: TelemetryMetric }[] = [];
     for (const [id, service] of telemetry.services) {
       let worst: TelemetryMetric | undefined;
       for (const one of service.metrics) {
-        if (one.delta < 0 && (worst === undefined || one.delta < worst.delta)) worst = one;
+        // `fall > 0` rather than `delta < 0`: a series that peaked above its baseline and then collapsed is the
+        // shape a victim has, and a test on the peak excludes it by construction. `byFall` then orders the section
+        // deepest first, with the same undefined-last rule `bySurprise` uses.
+        if (one.fall > 0 && (worst === undefined || byFall(one, worst) < 0)) worst = one;
       }
       if (worst !== undefined) collapses.push({ id, metric: worst });
     }
     const falls = collapses
-      .sort((a, b) => a.metric.delta - b.metric.delta)
+      .sort((a, b) => byFall(a.metric, b.metric) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .slice(0, COLLAPSE_LINES);
     const lines = [`fleet: ${entries.length} services with metrics, ${rises.length} largest rises`];
     for (const entry of rises) lines.push(`  ${renderMetricLine(entry.id, entry.metric)}`);
     if (falls.length > 0) {
       lines.push(`falling: ${falls.length} of ${entries.length} services`);
-      for (const entry of falls) lines.push(`  ${renderMetricLine(entry.id, entry.metric)}`);
+      for (const entry of falls) lines.push(`  ${renderMetricLine(entry.id, entry.metric, true)}`);
     }
     return { ok: true, text: lines.join('\n') };
   }
@@ -531,10 +609,10 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
     // traffic COLLAPSED is a candidate even when it reports nothing, and its ratio is at the bottom of a
     // rise-sorted list by construction.
     const falls = [...service.metrics]
-      .filter((one) => one.delta < 0)
-      .sort((a, b) => a.delta - b.delta)
+      .filter((one) => one.fall > 0)
+      .sort(byFall)
       .slice(0, COLLAPSE_LINES)
-      .map((one) => renderMetricLine(service.id, one));
+      .map((one) => renderMetricLine(service.id, one, true));
     if (falls.length > 0) ranked.push('falling:', ...falls);
     return { ok: true, text: ranked.join('\n') };
   }
@@ -668,7 +746,7 @@ export interface QueryOutcome {
    * therefore priced from one artifact rather than from three runs. `null` when the model never named one.
    */
   readonly rawAnswer: string | null;
-  /** Who produced {@link answer}: the model, the prior the gate fell back to, or the entry prior. */
+  /** Who produced {@link answer}: the model, the prior the gate fell back to, or a resolver rule. */
   readonly answeredBy: 'model' | 'prior' | 'entry' | null;
   /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
   readonly gateRefusals: number;
@@ -1161,23 +1239,25 @@ export async function runQueryAgent(
   let gateRefusals = 0;
 
   /**
-   * The entry prior, applied where the answer is SETTLED rather than where it is proposed.
+   * The resolver, applied where the answer is SETTLED rather than where it is proposed.
    *
    * Placement is the whole design. A gate that refused an answer has already decided which name stands; a resolver
    * that ran before it would be asking the gate about a candidate the model never named, and the artifact could no
    * longer price the two independently. Running it after means the artifact's `rawAnswer` still records the model's
-   * own name, the gate's own decision is unchanged, and this rule is a SECOND READER of the same case — which is
+   * own name, the gate's own decision is unchanged, and the rule is a SECOND READER of the same case — which is
    * why it is priced from one artifact at zero cost instead of from a second dispatch.
    *
    * It is applied to the prior as well, because a refusal falls back to the prior and a fallback that was never read
-   * is a name the rule was not allowed to check.
+   * is a name the rule was not allowed to check. And it is applied through {@link applyResolver}, so the mode names
+   * a rule the PRICING also has — a resolver priced by one implementation and shipped by another is two rules, and
+   * the artifact would measure the one nobody runs.
    */
   const attribute = (
     answer: string | null,
   ): { answer: string | null; by: QueryOutcome['answeredBy'] } => {
     if (resolution === 'none' || answer === null) return { answer, by: null };
-    const to = entryAttribution(answer, readEntryPrior(telemetry, answer));
-    return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
+    const to = applyResolver(answer, readEntryPrior(telemetry, answer), resolution);
+    return { answer: to.answer, by: to.by };
   };
 
   /**
@@ -1220,13 +1300,6 @@ export async function runQueryAgent(
   };
 
   /**
-   * Ask the gate about one resolved answer, recording the model's first one as the raw answer.
-   *
-   * The refusal text names the rule and the two ways to satisfy it, because a refusal the model cannot act on is a
-   * round spent twice. The direction test is only computed under the policy that reads it: a cone nobody consults is
-   * a graph walk nobody needs.
-   */
-  /**
    * Everything a gate reads about one candidate.
    *
    * The evidence block is built for the two EVIDENCE policies only, because the others must not pay for it: an arm
@@ -1256,16 +1329,11 @@ export async function runQueryAgent(
   };
 
   /**
-   * The entry prior, applied where the answer is SETTLED rather than where it is proposed.
+   * Ask the gate about one resolved answer, recording the model's first one as the raw answer.
    *
-   * Placement is the whole design. A gate that refused an answer has already decided which name stands; a resolver
-   * that ran before it would be asking the gate about a candidate the model never named, and the artifact could no
-   * longer price the two independently. Running it after means the artifact's `rawAnswer` still records the model's
-   * own name, the gate's own decision is unchanged, and this rule is a SECOND READER of the same case — which is
-   * why it is priced from one artifact at zero cost instead of from a second dispatch.
-   *
-   * It is applied to the prior as well, because a refusal falls back to the prior and a fallback that was never read
-   * is a name the rule was not allowed to check.
+   * The refusal text names the rule and the two ways to satisfy it, because a refusal the model cannot act on is a
+   * round spent twice. The direction test is only computed under the policy that reads it: a cone nobody consults is
+   * a graph walk nobody needs.
    */
   const admit = (resolved: string): { ok: boolean; text: string } => {
     if (rawAnswer === null) rawAnswer = resolved;
@@ -1548,9 +1616,9 @@ export function entryOf(telemetry: Telemetry): string | null {
   }
   if (dominant === null || tied || dominant.reach === 0) return null;
   const root = telemetry.services.get(dominant.id)!;
-  if (root.callees.length === 1) return root.callees[0]!;
-  if (root.callees.length > 1) return root.id;
-  return null;
+  // `reach > 0` is what makes the ternary total: a root that reaches anything has at least one callee, so there is
+  // no third case for a `return null` to cover. The guard above states the condition; this line spends it.
+  return root.callees.length === 1 ? root.callees[0]! : root.id;
 }
 
 /**
@@ -1679,6 +1747,29 @@ export function entryAttribution(
   return evidence.entry;
 }
 
+/**
+ * Apply the resolver to one settled answer.
+ *
+ * One function for the loop and for the pricing, for the reason iteration 322 learned at the cost of a dispatch:
+ * a rule that is priced by one implementation and shipped by another is two rules, and the artifact measures the
+ * one nobody runs. Iteration 323 added a second rule here and refuted it — a service that lost traffic lost it in
+ * every case, so the rule localised nothing — and the refutation is in the register rather than in this function.
+ *
+ * @param answer - The answer the gate settled on.
+ * @param evidence - The evidence read about it.
+ * @param mode - Whether the rule is switched on.
+ * @returns The answer to publish and the rule that renamed it, or the input and `null`.
+ */
+export function applyResolver(
+  answer: string | null,
+  evidence: EntryPriorEvidence,
+  mode: Resolution,
+): { answer: string | null; by: 'entry' | null } {
+  if (answer === null || mode === 'none') return { answer, by: null };
+  const to = entryAttribution(answer, evidence);
+  return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
+}
+
 /** The arm's reading. Repairs and breaks decide it; the engine's own score is the paired baseline. */
 export interface QueryArmSummary {
   readonly cases: number;
@@ -1786,9 +1877,13 @@ export interface GateReading {
  * does. A case the arm could not measure is out of the population for every policy, as in {@link summariseQueryArm}.
  *
  * @param rows - The artifact's rows.
+ * @param resolution - Which resolver to price beside each policy; defaults to the one 322 shipped.
  * @returns One reading per policy, in the order `none`, `cited`, `cone`, `contrast`, `lag`.
  */
-export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly GateReading[] {
+export function summariseGatePolicies(
+  rows: readonly QueryArmRow[],
+  resolution: Resolution = 'entry-prior',
+): readonly GateReading[] {
   const measured = rows.filter((row) => row.stop !== 'error');
   const engineHits = measured.filter((row) => row.engineRank === 1).length;
   // Ordered by STRICTNESS, so the table reads as a ladder: each policy refuses everything the one before it refuses.
@@ -1835,14 +1930,20 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
       }
       // The resolver is priced on the SAME rows, from the same artifact, at zero cost: it is a second reader of an
       // answer that is already settled, so a dispatch that measured a policy also measured what this rule would do
-      // with that policy's answers.
-      const attributed = entryAttribution(effective, {
-        entry: row.entry,
-        entryChildErrors: row.entryChildErrors,
-        answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
-      });
-      const settledAnswer = attributed ?? effective;
-      if (attributed !== null) resolved += 1;
+      // with that policy's answers. It goes through `applyResolver`, the function the LOOP calls, so the two columns
+      // cannot come to describe different rules.
+      const resolvedHere = applyResolver(
+        effective,
+        {
+          entry: row.entry,
+          entryChildErrors: row.entryChildErrors,
+          answerSurprise:
+            effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
+        },
+        resolution,
+      );
+      const settledAnswer = resolvedHere.answer;
+      if (resolvedHere.by !== null) resolved += 1;
       if (settledAnswer !== null && row.truth.includes(settledAnswer)) correctResolved += 1;
     }
     const decided = repairs + breaks;
