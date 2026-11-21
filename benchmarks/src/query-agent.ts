@@ -1499,12 +1499,52 @@ function isSymptomChannel(label: string): boolean {
  * @returns The entry, or `null` when the graph does not name one.
  */
 export function entryOf(telemetry: Telemetry): string | null {
-  const roots = [...telemetry.services.values()].filter((one) => one.callers.length === 0);
-  if (roots.length !== 1) return null;
-  const root = roots[0]!;
+  // The corpus's call graph is BROADER than its traffic: 14 services have no caller at all in the graph
+  // (`ts-admin-*`, `rabbitmq`, `kubernetes-endpoints`), because nothing in the captured window called them. A rule
+  // that demanded a single root therefore found none on any of the 1 422 cases — which is how this was found. What
+  // distinguishes the way in is REACH: the front door is what the rest of the system sits behind, so the dominant
+  // root is the one that reaches strictly more services than every other, and a tie means the graph has several
+  // fronts and no single entry.
+  let dominant: { id: string; reach: number } | null = null;
+  let tied = false;
+  for (const root of telemetry.services.values()) {
+    if (root.callers.length > 0) continue;
+    const reach = reachableFrom(telemetry, root.id).size - 1;
+    if (dominant === null || reach > dominant.reach) {
+      dominant = { id: root.id, reach };
+      tied = false;
+    } else if (reach === dominant.reach) {
+      tied = true;
+    }
+  }
+  if (dominant === null || tied || dominant.reach === 0) return null;
+  const root = telemetry.services.get(dominant.id)!;
   if (root.callees.length === 1) return root.callees[0]!;
   if (root.callees.length > 1) return root.id;
   return null;
+}
+
+/**
+ * Everything reachable from one service by following callee edges, itself included.
+ *
+ * @param telemetry - The case's tool view.
+ * @param from - The service to start at.
+ * @returns The reachable set.
+ */
+function reachableFrom(telemetry: Telemetry, from: string): ReadonlySet<string> {
+  const seen = new Set<string>([from]);
+  const queue = [from];
+  while (queue.length > 0) {
+    const here = queue.shift()!;
+    // The assertion is the same argument `onPriorCone` makes: every node pushed below came out of a `callees` list
+    // that `buildTelemetry` seeded from the same key set, so a miss here is unreachable.
+    for (const next of telemetry.services.get(here)!.callees) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen;
 }
 
 /** What the entry prior reads about one answer. */

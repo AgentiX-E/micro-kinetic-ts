@@ -2522,6 +2522,8 @@ function entryCase(options: {
     readonly from: string;
     readonly to: string;
   }[];
+  /** Nodes with metrics but no traffic, which is the state that made the first version of the rule find no entry. */
+  readonly extraNodes?: readonly string[];
 }): BenchmarkCase {
   const at = [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000];
   const metrics = new Map([
@@ -2600,10 +2602,15 @@ function entryCase(options: {
   const graph = {
     systemLoad: 0,
     nodes: new Map(
-      ['loadgenerator', 'front', 'leaf'].map((id) => [
-        id,
-        { id, name: id, namespace: 'shop', labels: {} },
-      ]),
+      [
+        ...new Set([
+          'loadgenerator',
+          'front',
+          'leaf',
+          ...(options.extraNodes ?? []),
+          ...(options.extraEdges ?? []).flatMap((one) => [one.from, one.to]),
+        ]),
+      ].map((id) => [id, { id, name: id, namespace: 'shop', labels: {} }] as const),
     ),
     edges: [
       {
@@ -2671,18 +2678,28 @@ describe('the entry, as a structural read', () => {
     expect(entryOf(buildTelemetry(solo))).toBeNull();
   });
 
-  it('refuses a graph with two roots, because then there are two ways in and neither is the entry', () => {
-    // `leaf` gains a caller, so the only root is still `loadgenerator` and it still calls exactly one service.
-    const twin = entryCase({ extraEdges: [{ from: 'leaf', to: 'front' }] });
-    expect(entryOf(buildTelemetry(twin))).toBe('front');
-    // Now `leaf` is a second root as well, and a graph with two ways in has no single entry.
-    const looped = entryCase({
+  it('names the front door even when the call graph carries services nothing called', () => {
+    // THIS IS THE DEFECT THE FIRST VERSION SHIPPED. The corpus's call graph is broader than its traffic: 14
+    // services (`ts-admin-*`, `rabbitmq`, `kubernetes-endpoints`) have no caller, so a rule demanding a SINGLE root
+    // found none, and the dispatched run wrote `entry: null` on all 1 422 rows. Reach decides, not uniqueness.
+    const idle = entryCase({ extraNodes: ['rabbitmq', 'kubernetes-endpoints'] });
+    expect(entryOf(buildTelemetry(idle))).toBe('front');
+    const reachless = entryCase({
+      extraEdges: [{ from: 'ts-admin-basic-info-service', to: 'leaf' }],
+    });
+    // A second root that reaches strictly less of the system does not compete with the front door.
+    expect(entryOf(buildTelemetry(reachless))).toBe('front');
+  });
+
+  it('refuses two roots that reach the same amount of the system, because then there are two ways in', () => {
+    const twin = entryCase({
       extraEdges: [
-        { from: 'leaf', to: 'front' },
-        { from: 'leaf', to: 'loadgenerator' },
+        { from: 'front2', to: 'leaf2' },
+        { from: 'leaf2', to: 'leaf3' },
       ],
     });
-    expect(entryOf(buildTelemetry(looped))).toBeNull();
+    // `loadgenerator` reaches front and leaf; `front2` reaches leaf2 and leaf3. Equal reach, no single entry.
+    expect(entryOf(buildTelemetry(twin))).toBeNull();
   });
 });
 
