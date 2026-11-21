@@ -8908,9 +8908,19 @@ admission rate 54 points too high.
 **What survives is the target's measured ceiling.** Of the 41 entry-truth cases the entry prior refuses because a
 callee rose, the arm answers **0** and the engine answers **0**, so a working rule is worth **+41 → 1 264 (88.9 %)**.
 39 of them are `HTTPRequestReplaceMethod`. The per-case probe also found why nothing at the entry can reach them:
-**the entry carries no `/error/i` channel in 1 053 of the 1 054 cases that have a rising callee.** The front door is
-metric-blind, and the only evidence that it failed is its logs and its failed interfaces — which is a different
-instrument from any this rule family reads.
+**the entry has no `/error/i` channel in 1 053 of the 1 054 cases that have a rising callee.** *Corrected below: the
+channel exists and the reading does not.*
+
+**Correction, same iteration.** The sentence above was the first probe's reading and it was wrong. The entry
+**carries** an error-rate channel in **1 418 of 1 422** cases; what is absent is a *standardisable* reading of it,
+because that channel's pre-window median is zero in 1 053 of the 1 054 cases with a rising callee and `surpriseOf`
+refuses a zero level by design. What the entry genuinely never does is **log**: **0 of 1 422** cases carry an
+`ERROR`/`FATAL` line at the front door, so `TOOL logs <entry>` always answers that there is none. The front door is
+therefore visible only as an **unstandardised rise** (0 → X) and as a **failed-interface record** — the two
+instruments `325.14g` and `325.14h` refuted in their respective forms — and that is why an arm which reasons from
+logs systematically under-attributes to the entry. The corrected fact is the stronger one: it is not that the front
+door has nothing to say, it is that the tools can only hear it in the two registers this programme has already
+refuted.
 
 ### 325.14j The collapse axis was selecting on the peak and calling it a fall
 
