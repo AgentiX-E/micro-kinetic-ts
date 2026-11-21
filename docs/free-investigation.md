@@ -1058,3 +1058,61 @@ artifact field rather than a new threshold, and it is registered for iteration 3
 
 `E5` is not shipped on that prediction: it is registered, and it will be priced at ¥0 on this artifact's rows plus the
 corpus's ancestor onsets before any dispatch spends a token on it.
+
+## 13. The root cause is silent, and the corpus is one-seventh "the answer is the noisy one"
+
+§12 closed with a registered axis — `E5`, "refuse the override when an ancestor logged its first error no later" —
+and a prediction that it would convert a majority of the 100 overshoots into fallbacks. It was priced on the same
+1 422-row artifact at ¥0, and **it failed**. This section is about why, because the reason is worth more than the axis.
+
+### 13.1 `E5` refuted, and the number that refutes it
+
+| axis | repairs | breaks | net | comparator |
+| --- | ---: | ---: | ---: | --- |
+| `E5` ancestor refusal | 20 | 7 | **+13** | `lag` is **+18** |
+| promotion to the earliest ancestor | 23 | **92** | **−69** | — |
+| promotion to the nearest earlier ancestor | 23 | 90 | −67 | — |
+
+Across the arm's 248 misses: **180 answer a transitive ancestor of the truth** (122 at hop 1), and of those 180,
+**170 have a truth that never logged an error at all**, while **one** has a truth that logged earlier than the answer.
+`E5` assumed the ordering it needed was present and small; it is **absent**. The same census says **230 of 248 misses
+have an entirely silent truth** — and so do 865 of the engine's 1 156 hits, which is why silence alone separates
+nothing.
+
+### 13.2 The one asymmetry the corpus does carry
+
+A fault at the entry sabotages the entry's own inbound API: nothing below it fails. A fault below reaches the entry
+through the callee on the failed path: that callee's error rate rises. So
+
+* `entryChildErrors` — the largest **error-rate** rise among the entry's own callees — is the direction test;
+* `answerSurprise` — the answer's largest departure in a channel that is **not** an error rate — is the source test.
+
+The split matters because an error rate rising means *calls are failing here* (true of every hop on a failure's path)
+while a resource rising means *this service is working harder* (true only of the service doing the work). Priced with
+and without, on the same rows:
+
+| rule | fires | repairs | breaks | net |
+| --- | ---: | ---: | ---: | ---: |
+| children quiet → entry | 134 | 63 | 71 | −8 |
+| `∧ surprise ≤ 300` | 114 | 77 | 37 | **+45** |
+| `∧ surprise ≤ 1000` | 160 | 92 | 68 | +33 |
+
+**`entryChildErrors = 0` alone has precision 0.393**, because 222 non-entry cases are quiet below the entry too — a
+silent deep source raises no error rate anywhere. The resource condition is what separates a quiet *victim* from a
+quiet *source*.
+
+### 13.3 The two strata the whole gap lives in
+
+| stratum | cases | engine correct |
+| --- | ---: | ---: |
+| the truth is the entry (`ts-ui-dashboard`) | **186** | **13 — 7.0 %** |
+| the truth is deep and leaves the entry's children quiet | 227 | **218 — 96.0 %** |
+
+The 186 entry cases are 13.1 % of the corpus and the engine finds **seven per cent** of them; the arm finds 11. On the
+other 227 the engine is nearly perfect and the arm matches it. Nothing in between: this corpus's difficulty is
+concentrated in one question — *is the fault at the top, or below it?* — and every method here answers it by salience,
+which is exactly the quantity that cannot distinguish them, because the entry is the loudest service in every case.
+
+`--resolve entry-prior` applies a deterministic reader to that question after the gate settles an answer: no prompt
+change, no round, no token. It is priced from one artifact at ¥0 (`correctResolved` beside every policy), and its
+corpus reading is in §13.4.

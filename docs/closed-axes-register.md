@@ -8609,3 +8609,96 @@ sample where a single break is 1.25 points; at 1 422 rows the same rule is *wors
 worse in the predicted direction — a weak prior means the engine is unsure, which is not the same as the engine being
 wrong. Closed. This is the second axis in one iteration whose sample-level gain reversed at corpus scale, and it is
 the reason the margin sweep was registered rather than shipped.
+
+## 325.14 The failure does not travel downward, and that is the only asymmetry in this corpus (iteration 322)
+
+Iteration 321 ended with a census: of the arm's 248 misses, **180 answer a service that is a transitive caller of the
+truth**, 122 of them exactly one hop below it, and **105 of those 122 answer a callee of `ts-ui-dashboard`**. That
+looked like a temporal problem — the arm descends, so the ancestor's onset should stop it — and the register
+pre-committed **`E5`** on that reading. **`E5` is refuted by the artifact it was registered against**, and the reason
+it fails is the finding this iteration is built on.
+
+### 325.14a The three axes that were priced and closed
+
+All three were priced at ¥0 from iteration 321's artifact (1 422 rows, ¥23.07 already spent). "Net" is repairs minus
+breaks, and the comparator is `lag`'s **+18**.
+
+| axis | form | repairs | breaks | net | verdict |
+| --- | --- | ---: | ---: | ---: | --- |
+| `E5` ancestor refusal (registered) | refuse the override when any ancestor logged its first error no later | 20 | 7 | **+13** | **refuted** — a narrower `lag`: 7 breaks bought with 11 repairs |
+| same, silence counts as early | extend the ordering to ancestors that logged nothing | 11 | 7 | +4 | refuted |
+| promotion to the earliest ancestor | answer the ancestor whose first error is earliest | 23 | **92** | **−69** | **refuted** — true on 80 of the engine's own hits |
+| promotion to the nearest earlier ancestor | same, ranked by hop distance | 23 | 90 | −67 | refuted |
+| earliest with a 5 s margin | require the ancestor to lead by a margin | 23 | 72 | −49 | refuted |
+
+**Why `E5` failed is the diagnosis, not a parameter.** Across the 248 misses:
+
+| structure | cases |
+| --- | ---: |
+| the truth is a transitive ancestor of the answer | **180** |
+| … at hop 1 (`answered-downstream`) | 122 |
+| … and the truth **never logged an error at all** | **170 of the 180** |
+| … and the truth logged EARLIER than the answer | **1** |
+| the truth is not an ancestor | 68 |
+
+**The root cause is silent in 230 of the 248 misses** (and in 865 of the 1 156 hits), so an ordering over log onsets
+has almost nothing to order: the medians that made `lag` work are 0 ms and p90 9.4 s, and here the quantity is absent
+rather than small. A rule that needs the truth to have logged is a rule that cannot see two thirds of what it is
+supposed to see. `E5` asked the corpus for a signal the corpus does not carry.
+
+### 325.14b Failed-edge topology is absent where it is needed
+
+The next candidate was structural rather than temporal: a failure must ARRIVE, so a service with no failing interface
+into it cannot be what its caller saw fail. The corpus refuses it as a gate:
+
+| fault type | failed edges in the case |
+| --- | --- |
+| `HTTPResponseReplaceCode` at `ts-ui-dashboard` | **1** — `loadgenerator → ts-ui-dashboard` |
+| `HTTPRequestReplaceMethod` at `ts-ui-dashboard` | 1 — the same edge |
+| `HTTPRequestDelay` at `ts-basic-service` | 9 — the path from the leaf up to the entry |
+| `JVMCPUStress`, `TimeSkew`, `NetworkDelay` | **0** |
+
+Three of the twenty-four fault types carry **no** failed edge, and the entry faults carry exactly one. A gate built on
+this channel fails closed on the cases it was invented for.
+
+### 325.14c The entry prior: what the rule is, and the one condition it cannot drop
+
+What survives is one asymmetry the corpus does carry. **A fault injected at the entry sabotages the entry's own
+inbound API, so nothing below it starts failing; a fault injected below reaches the entry through the callee on the
+failed path, so that callee's error rate rises.** With
+
+* `entryChildErrors(E)` = the largest **error-rate** rise among `E`'s callees, and
+* `answerSurprise(S)` = `S`'s largest departure in a channel that is **not** an error rate,
+
+the resolver answers the entry iff `entryChildErrors ≤ 0 ∧ answerSurprise ≤ 300`. The split is the axis: an error
+rate rising means *calls are failing here*, which is true of every hop on a failure's path, while a resource rising
+means *this service is working harder*, which is true only of the service doing the work.
+
+**The resource condition is not decoration.** Priced without it:
+
+| rule | fired | repairs | breaks | net |
+| --- | ---: | ---: | ---: | ---: |
+| `entryChildErrors ≤ 0` → entry | 134 | 63 | 71 | **−8** |
+| `∧ answerSurprise ≤ 100` | 68 | 47 | 18 | +29 |
+| `∧ answerSurprise ≤ 200` | 97 | 64 | 33 | +36 |
+| **`∧ answerSurprise ≤ 300`** | 114 | 77 | 37 | **+45** |
+| `∧ answerSurprise ≤ 500` | 130 | 82 | 48 | +39 |
+| `∧ answerSurprise ≤ 1000` | 160 | 92 | 68 | +33 |
+
+`entryChildErrors = 0` alone reads precision **0.393**, because 222 of the 1 231 non-entry cases also have quiet
+children — a silent deep source leaves no error rise anywhere, which is exactly why the previous paragraph exists. The
+threshold is picked by **five-fold cross-validation** (re-picked on four folds, applied to the fifth), the plateau is
+flat from 300 to 750, and four of five folds chose 300 — the discipline 321's four-point margin sweep lacked.
+
+### 325.14d Why "the arm goes one hop too far" is a property of the corpus and not of the model
+
+| stratum | cases | engine correct |
+| --- | ---: | ---: |
+| truth is the entry | **186** | **13 (7.0 %)** |
+| truth is deep, and no callee of the entry raised an error rate | 227 | **218 (96.0 %)** |
+
+The engine is nearly perfect exactly where a deep fault leaves the entry's children quiet, and nearly useless where
+the fault is at the top. That is not an accident of the ranking: on this corpus the entry is the loudest service in
+**every** case, so any salience ranking places it first and then descends — and the ground truth is the entry in one
+case in seven. **The corpus is 13 % of "the answer is the noisy one"**, and every method in this repository that
+ranks by salience — the engine's, the arm's, the gate's — inherits that.
