@@ -1,0 +1,71 @@
+{
+  "name": "@agentix-e/micro-kinetic-root",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nx run-many --target=build --all",
+    "prepare": "husky",
+    "build:core": "nx build @agentix-e/micro-kinetic-core",
+    "build:tree": "nx build @agentix-e/micro-kinetic-tree",
+    "build:cutting": "nx build @agentix-e/micro-kinetic-cutting",
+    "build:noise": "nx build @agentix-e/micro-kinetic-noise",
+    "build:scaling": "nx build @agentix-e/micro-kinetic-scaling",
+    "build:wave": "nx build @agentix-e/micro-kinetic-wave",
+    "build:kinetic": "nx build @agentix-e/micro-kinetic",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:integration": "vitest run --config integration-tests/vitest.config.ts",
+    "test:all": "pnpm test && pnpm test:integration",
+    "coverage": "pnpm -r --filter \"!@agentix-e/micro-kinetic-integration-tests\" --workspace-concurrency=1 run test:coverage",
+    "typecheck": "nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json",
+    "typecheck:src": "nx run-many --target=typecheck --all",
+    "typecheck:workspace": "tsc -p tsconfig.workspace.json",
+    "lint": "oxlint --config .oxlintrc.json packages/*/src/ packages/*/__tests__/ benchmarks/src/ benchmarks/__tests__/ integration-tests/src/",
+    "lint:eslint": "eslint packages/*/src/ benchmarks/src/ integration-tests/src/",
+    "format": "prettier --write 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts' 'integration-tests/src/**/*.ts' 'benchmarks/*.ts' 'benchmarks/src/**/*.ts' 'benchmarks/__tests__/**/*.ts'",
+    "format:check": "prettier --check 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts' 'integration-tests/src/**/*.ts' 'benchmarks/*.ts' 'benchmarks/src/**/*.ts' 'benchmarks/__tests__/**/*.ts'",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "clean": "nx run-many --target=clean --all",
+    "benchmark": "tsx benchmarks/src/run-all.ts",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish",
+    "version": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.12",
+    "fast-check": "^3.20.0",
+    "husky": "^9.1.7",
+    "nx": "^22.7.10",
+    "oxlint": "^0.15.0",
+    "prettier": "^3.4.0",
+    "prettier-plugin-organize-imports": "^4.1.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
+  },
+  "pnpm": {
+    "overrides": {
+      "adm-zip": "0.6.1",
+      "axios": "1.20.0",
+      "brace-expansion@5": "5.0.12",
+      "esbuild@0.27": "0.28.1",
+      "follow-redirects": "1.16.2",
+      "js-yaml@3": "3.15.2",
+      "js-yaml@4": "4.3.2",
+      "minimatch@10": "11.0.1",
+      "smol-toml": "1.9.1",
+      "source-map-js": "1.2.2",
+      "sprintf-js": "1.1.3",
+      "undici": "8.12.2"
+    }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
