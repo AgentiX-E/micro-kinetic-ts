@@ -8570,7 +8570,7 @@ on 1 174/1 422 is `[80.5, 84.4]`.
 investigate; it is a model whose every edit is net-negative on a population that is 81.3 % already right. The gate is
 the whole difference between −97 and +18, and it costs ¥0 (a re-score of the same artifact).
 
-**Adjudicated against the pre-registration (`preregistration-321.md`, written before the artifact):**
+**Adjudicated against the pre-registration (`docs-repository:preregistration-321.md`, written before the artifact):**
 
 | id | prediction | measured | verdict |
 | --- | --- | --- | --- |
