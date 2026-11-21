@@ -2860,6 +2860,44 @@ describe('the entry prior in the loop', () => {
     expect(outcome.answer).toBe('front');
     expect(outcome.answeredBy).toBe('entry');
   });
+
+  it('resolves an answer given on the FORCED last round, which is the round a six-round budget answers on', async () => {
+    // The forcing round has its own settlement, and iteration 322 wired the resolver into the ordinary one only.
+    // The dispatch then measured the rule as inert on 76 of the 87 answers it was registered to rename, because
+    // the corpus answers on round six of six. The settlement is now a single function for exactly this reason.
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxRounds: 1 },
+      null,
+      'none',
+      'entry-prior',
+    );
+    expect(outcome.stop).toBe('answered');
+    expect(outcome.rawAnswer).toBe('leaf');
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('entry');
+  });
+
+  it('resolves a case whose last round is forced by the TOOL-CALL budget rather than by the round budget', async () => {
+    // The second way into the same forced branch: `callsLeft === 0` forces the answer just as the final round
+    // does, and a resolver wired into one entrance to that branch is a rule with a hole shaped like a budget.
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      { ...DEFAULT_QUERY_BUDGET, maxToolCalls: 0 },
+      null,
+      'none',
+      'entry-prior',
+    );
+    expect(outcome.stop).toBe('answered');
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('entry');
+  });
 });
 
 describe('the resolution priced from one artifact', () => {

@@ -8734,7 +8734,7 @@ Wilson 95 % on 1 223/1 422 is `[84.1, 87.7]`; the sign test against the engine i
 `lag` **67/20, p = 4.3 × 10⁻⁷**. The rule moves 87 answers, gets 67 of them right, and keeps 98.5 % of what the engine
 already had — which is the shape a resolver has to have if it is to be switched on by default.
 
-**Adjudicated against `preregistration-322.md`:**
+**Adjudicated against `docs-repository:preregistration-322.md`:**
 
 | id | prediction | measured | verdict |
 | --- | --- | --- | --- |

@@ -1160,25 +1160,64 @@ export async function runQueryAgent(
   let rawAnswer: string | null = null;
   let gateRefusals = 0;
 
+  /**
+   * The entry prior, applied where the answer is SETTLED rather than where it is proposed.
+   *
+   * Placement is the whole design. A gate that refused an answer has already decided which name stands; a resolver
+   * that ran before it would be asking the gate about a candidate the model never named, and the artifact could no
+   * longer price the two independently. Running it after means the artifact's `rawAnswer` still records the model's
+   * own name, the gate's own decision is unchanged, and this rule is a SECOND READER of the same case — which is
+   * why it is priced from one artifact at zero cost instead of from a second dispatch.
+   *
+   * It is applied to the prior as well, because a refusal falls back to the prior and a fallback that was never read
+   * is a name the rule was not allowed to check.
+   */
+  const attribute = (
+    answer: string | null,
+  ): { answer: string | null; by: QueryOutcome['answeredBy'] } => {
+    if (resolution === 'none' || answer === null) return { answer, by: null };
+    const to = entryAttribution(answer, readEntryPrior(telemetry, answer));
+    return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
+  };
+
+  /**
+   * The arm's one and only exit.
+   *
+   * Every route out of the loop — an answer inside the budget, an answer on the FORCED last round, the fallback to
+   * the prior, and the control's refusal to have a fallback at all — comes through here, because the resolver is
+   * wired into this function rather than into its callers. Iteration 322 shipped it at two of the three answering
+   * sites and the dispatch found it inert on 76 of the 87 answers it was registered to rename: the corpus answers
+   * on round six, which is the forcing round, and that settlement was written before the resolver existed. A rule
+   * that must read EVERY settled answer cannot depend on a future author remembering to call it — so there is one
+   * call site, and adding a fourth route out of the loop cannot leave the rule behind again.
+   *
+   * @param stop - How the investigation ended.
+   * @param answer - The name the gate settled on, or `null` when the arm has no fallback.
+   * @param answeredBy - Who settled it, before the resolver reads it.
+   * @returns The outcome, with the resolver's rename applied if the rule fires.
+   */
   const settle = (
     stop: QueryOutcome['stop'],
     answer: string | null,
     answeredBy: QueryOutcome['answeredBy'],
-  ): QueryOutcome => ({
-    answer,
-    rawAnswer,
-    answeredBy,
-    gateRefusals,
-    investigated,
-    answerRefused,
-    exchanges,
-    trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
-    rounds,
-    toolCalls,
-    promptTokens,
-    completionTokens,
-    stop,
-  });
+  ): QueryOutcome => {
+    const attributed = attribute(answer);
+    return {
+      answer: attributed.answer,
+      rawAnswer,
+      answeredBy: attributed.by ?? answeredBy,
+      gateRefusals,
+      investigated,
+      answerRefused,
+      exchanges,
+      trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
+      rounds,
+      toolCalls,
+      promptTokens,
+      completionTokens,
+      stop,
+    };
+  };
 
   /**
    * Ask the gate about one resolved answer, recording the model's first one as the raw answer.
@@ -1228,14 +1267,6 @@ export async function runQueryAgent(
    * It is applied to the prior as well, because a refusal falls back to the prior and a fallback that was never read
    * is a name the rule was not allowed to check.
    */
-  const attribute = (
-    answer: string | null,
-  ): { answer: string | null; by: QueryOutcome['answeredBy'] } => {
-    if (resolution === 'none' || answer === null) return { answer, by: null };
-    const to = entryAttribution(answer, readEntryPrior(telemetry, answer));
-    return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
-  };
-
   const admit = (resolved: string): { ok: boolean; text: string } => {
     if (rawAnswer === null) rawAnswer = resolved;
     const context = gateContextFor(resolved);
@@ -1335,8 +1366,7 @@ export async function runQueryAgent(
         ok: gated.ok,
       });
       if (gated.ok) {
-        const settled = attribute(result.resolved);
-        return settle('answered', settled.answer, settled.by ?? 'model');
+        return settle('answered', result.resolved, 'model');
       }
       // A refused override is NOT the end of the investigation: the model may satisfy the rule on the next turn,
       // which is the whole reason the rule is announced before it is enforced.
@@ -1365,8 +1395,7 @@ export async function runQueryAgent(
   // that was ADMITTED and wrong, never by a refusal. `none` has no fallback by construction — a control that
   // answered for the model would not be the surface iteration 318 measured.
   if (policy !== 'none' && priorTop !== null) {
-    const settled = attribute(priorTop);
-    return settle(stop, settled.answer, settled.by ?? 'prior');
+    return settle(stop, priorTop, 'prior');
   }
   // The control still has NO fallback: resolving the prior here would hand `none` a name the model never produced,
   // and `none` is the surface iteration 318 measured. The resolver is a second reader of a settled answer, not a
