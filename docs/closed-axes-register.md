@@ -9020,7 +9020,12 @@ else is read: not the size of the failing edge, not either end's error rate, not
 | fires | 0 | 0 | **42** |
 | repairs | 0 | 0 | **42** |
 | breaks | 0 | 0 | **0** |
-| Top@1 | 1 222 | 1 222 | **1 264 (88.89 %)** |
+| Top@1, ¥0 replay | 1 222 | 1 222 | **1 264 (88.89 %)** |
+| Top@1, dispatch `44915289950` | 1 222 | 1 222 | **1 263 (88.82 %)** |
+
+The dispatch settles it: `answeredBy=interface` is **42** rows, every one correct, on a run whose own drift against the
+324 answers is −1 case (`repairs 140 · breaks 33 · precision 0.809 · retention 0.971`, 11 410 480 + 52 193 tokens,
++0.04 % the token cost for +41 net cases).
 
 `entry-prior` reads 0 fires because the 324 dispatch already shipped it: a replay that fired again would have counted
 the same repair twice, and that idempotence is the check that the two columns are one population.
