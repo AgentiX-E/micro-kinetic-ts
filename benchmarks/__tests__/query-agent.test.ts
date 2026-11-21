@@ -833,7 +833,13 @@ describe('the collapse axis reads the trough, not the peak', () => {
             {
               label: 'rps',
               unit: 'calls',
-              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              timestamps: [
+                INJECT - 3_000,
+                INJECT - 2_000,
+                INJECT - 1_000,
+                INJECT + 1_000,
+                INJECT + 2_000,
+              ],
               values: Float64Array.from([50, 50, 50, 100, 1]),
             },
           ],
@@ -863,21 +869,36 @@ describe('the collapse axis reads the trough, not the peak', () => {
             {
               label: 'rps',
               unit: 'calls',
-              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              timestamps: [
+                INJECT - 3_000,
+                INJECT - 2_000,
+                INJECT - 1_000,
+                INJECT + 1_000,
+                INJECT + 2_000,
+              ],
               values: Float64Array.from([50, 50, 50, 100, 1]),
             },
             {
               label: 'throughput',
               unit: 'calls',
-              timestamps: [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000],
+              timestamps: [
+                INJECT - 3_000,
+                INJECT - 2_000,
+                INJECT - 1_000,
+                INJECT + 1_000,
+                INJECT + 2_000,
+              ],
               values: Float64Array.from([50, 50, 50, 42, 42]),
             },
           ],
         ],
       ]),
     });
-    const falling = executeTool(buildTelemetry(twin), { kind: 'tool', tool: 'metric', argument: 'checkout' })
-      .text.split('falling:')[1]!;
+    const falling = executeTool(buildTelemetry(twin), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'checkout',
+    }).text.split('falling:')[1]!;
     // Both are asserted PRESENT before the order is compared: `indexOf` returns -1 for an absent label, and -1 is
     // less than every index, so an order assertion alone passes on the list that omits the series under test.
     expect(falling).toContain('rps');
@@ -888,10 +909,11 @@ describe('the collapse axis reads the trough, not the peak', () => {
   it('reports the trough beside the base and the peak, and only on the falling lines', () => {
     // The rise section keeps the text it had in 322's arm, so a regression there cannot be attributed to this change;
     // the fall section gains the one number that makes the fall legible.
-    const result = executeTool(
-      buildTelemetry(collapsed()),
-      { kind: 'tool', tool: 'metric', argument: 'checkout' },
-    );
+    const result = executeTool(buildTelemetry(collapsed()), {
+      kind: 'tool',
+      tool: 'metric',
+      argument: 'checkout',
+    });
     const [rises, falls] = result.text.split('falling:');
     expect(rises).toContain('peak=100');
     expect(rises).not.toContain('low=');

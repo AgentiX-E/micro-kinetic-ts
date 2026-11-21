@@ -1937,8 +1937,7 @@ export function summariseGatePolicies(
         {
           entry: row.entry,
           entryChildErrors: row.entryChildErrors,
-          answerSurprise:
-            effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
+          answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
         },
         resolution,
       );
