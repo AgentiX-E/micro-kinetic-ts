@@ -28,6 +28,7 @@ import {
   executeTool,
   formatNumber,
   gateAdmits,
+  gateTableCaveat,
   interfaceAttribution,
   leadsEvidence,
   median,
@@ -3487,5 +3488,30 @@ describe('the interface rule in the loop', () => {
     const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'none');
     expect(outcome.answer).toBe('leaf');
     expect(outcome.answeredBy).toBe('model');
+  });
+});
+
+describe('the caveat a gate table needs when the arm had no prior', () => {
+  it('says nothing about a seeded artifact, whose refusals really did fall back to the prior', () => {
+    expect(gateTableCaveat([{ seeded: true }, { seeded: true }])).toBeNull();
+  });
+
+  it('warns on a free-arm artifact, where the gate could not refuse and the columns are a counterfactual', () => {
+    // Run 44909105091 was dispatched without `query_seed` by accident: 1 422 rows, 0 gate refusals, and a table
+    // whose `contrast` column reads 89.94 % for a policy the loop had no prior to execute.
+    const caveat = gateTableCaveat([{ seeded: false }, { seeded: false }]);
+    expect(caveat).toContain('FREE arm');
+    expect(caveat).toContain('could not execute');
+  });
+
+  it('says nothing at all about an empty artifact, which has no arm to describe', () => {
+    expect(gateTableCaveat([])).toBeNull();
+  });
+
+  it('warns on a MIXED artifact, because one unseeded row is enough to make the table an average of two arms', () => {
+    // The dangerous case is not the pure free arm — a run that says `seed none` is at least legible. It is a sample
+    // where a few rows carry a prior and the rest do not, so a reader sees refusals in the total and concludes the
+    // fallback was available on every row the column averages over.
+    expect(gateTableCaveat([{ seeded: true }, { seeded: false }])).not.toBeNull();
   });
 });

@@ -2016,6 +2016,33 @@ export interface GateReading {
 }
 
 /**
+ * The sentence a gate table needs when the artifact it was re-scored from cannot execute the policy it prices.
+ *
+ * {@link summariseGatePolicies} charges a refusal with the PRIOR — `row.engineWinner` — because that is what the
+ * loop answers with when its gate refuses an override. That equivalence holds only for a SEEDED arm: the seed is
+ * both the order the model is shown and the name a refusal falls back to. On a free arm there is no prior, so the
+ * gate never refuses anything (`gateRefusals` sums to 0 on all 1 422 rows of run `44909105091`) and every `correct`
+ * and `top1@resolved` column describes a policy the run could not have executed — computed from the artifact, but
+ * not measurable by it.
+ *
+ * Iteration 325 dispatched that arm by accident (the `query_seed` input was omitted) and its table was read as if
+ * the columns were comparable. Printing the caveat beside the table is cheaper than remembering not to believe it.
+ *
+ * @param rows - The artifact's rows.
+ * @returns A caveat to print, or `null` when the artifact is seeded (or carries no rows at all).
+ */
+export function gateTableCaveat(rows: readonly Pick<QueryArmRow, 'seeded'>[]): string | null {
+  if (rows.length === 0) return null;
+  // ANY unseeded row, not "no seeded row": a MIXED artifact is the worse case, because a reader sees refusals in
+  // the total and concludes the fallback was available on every row it is averaged over.
+  if (rows.every((row) => row.seeded)) return null;
+  return (
+    'this artifact is the FREE arm: the loop had no prior, so the refused columns describe a policy it could ' +
+    'not execute (gate refusals 0 by construction, not by measurement)'
+  );
+}
+
+/**
  * Price every gate policy from one artifact.
  *
  * The five policies differ in exactly one place — whether an override stands — so they are a re-score of the same

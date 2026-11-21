@@ -8995,3 +8995,48 @@ refuses an answer unless the candidate logged first, the entry prior refuses unl
 This iteration **displayed** a relation instead, and display did nothing. Evidence the tools carry is not the same
 thing as evidence the loop acts on, and the next instrument has to act: the interface record for the 39
 `HTTPRequestReplaceMethod` cases, applied as a check inside the gate rather than as a line in a prompt.
+
+## 325.15 The interface witness charges the CALLER, and that is 42 cases (iteration 325)
+
+`325.14k` closed the service-granularity route to the 41 child-refused entry cases and named the next unit: the fault
+is applied to an **edge**, so the distinguishing fact is *which interface* changed shape. The corpus had carried the
+instrument for that reading since iteration 290 and the arm had **never been shown it**: `buildTelemetry` copied
+`caller/callee/failed/baseline` off `FaultFailedEdge` and dropped `novel`.
+
+`novel` is the part of an edge's failures whose request **shape** — `(route, method)` as the callee recorded it — the
+edge had never carried before the injection. The channel's own docstring is the whole argument: *a callee that broke
+rejects nothing, it fails the requests it has always served, while a CALLER that corrupted its request sends a shape
+the callee has never been asked for.* `failed − baseline` is identical in the two situations, which is why every
+earlier reading of this channel — all of them counts — could not charge either end, and why `325.14k` read 602
+triggers at 0.068 precision.
+
+**The rule.** Answer with the caller of the strongest novel interface, skipping a caller that is a **root** of the
+call graph: a root is the traffic generator, its request shape is a workload rather than a service's interface, and
+the corpus never labels it — it is the strongest witness in **74 of the 203** cases that carry the channel. Nothing
+else is read: not the size of the failing edge, not either end's error rate, not the latency.
+
+| reading (¥0, through `applyResolver`) | none | entry-prior | **edge-novel** |
+| --- | ---: | ---: | ---: |
+| fires | 0 | 0 | **42** |
+| repairs | 0 | 0 | **42** |
+| breaks | 0 | 0 | **0** |
+| Top@1 | 1 222 | 1 222 | **1 264 (88.89 %)** |
+
+`entry-prior` reads 0 fires because the 324 dispatch already shipped it: a replay that fired again would have counted
+the same repair twice, and that idempotence is the check that the two columns are one population.
+
+**The ceiling it was built for.** Of the 41 cases whose truth is the entry and whose children rose anyway, **39** are
+repaired — exactly the `HTTPRequestReplaceMethod` block. The two left are `NetworkPartition` and `NetworkBandwidth`,
+families on which the channel does not speak. The rule is invariant to all three tie-breaks tried, and **no case in
+the corpus carries two distinct novel callers**, so "the caller" is not a second decision wearing the instrument's
+name.
+
+**And the inverse rule is refused.** The 37 remaining witnessed cases carry novelty **arriving at** the entry with
+none leaving it. "A shape the entry has never seen means the entry" fires 37 times and is right **15** — **0.405**
+where 0.813 is needed. Recorded rather than dropped, because it is the natural next sentence after the one that
+worked and the corpus says the two directions are not symmetric.
+
+**The test that would have saved three iterations.** An instrument has to **charge an END**. `novel` works because it
+can only be produced by the caller; the fall (`325.14i`) failed because every service in every case lost throughput;
+a count (`325.14k`) failed because both ends can make an edge fail. Classifying a candidate as *asymmetric* or
+*symmetric* before pricing it would have killed all three failed rules in one line each.

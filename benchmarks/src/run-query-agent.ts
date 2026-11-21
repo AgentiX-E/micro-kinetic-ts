@@ -19,6 +19,7 @@ import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
 import {
   DEFAULT_QUERY_BUDGET,
   buildTelemetry,
+  gateTableCaveat,
   netBetween,
   onPriorCone,
   onsetOf,
@@ -421,6 +422,8 @@ async function main(): Promise<void> {
         `${reading.policy === args.gate ? '  <- dispatched' : ''}`,
     );
   }
+  const caveat = gateTableCaveat(kept);
+  if (caveat !== null) console.log(`  [caveat] ${caveat}`);
   const fallbacks = kept.filter((row) => row.answeredBy === 'prior').length;
   console.log(
     `answered by the model ${kept.filter((row) => row.answeredBy === 'model').length} · ` +
