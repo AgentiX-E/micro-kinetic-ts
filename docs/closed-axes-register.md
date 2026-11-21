@@ -8936,3 +8936,36 @@ to iteration 322's, so the dispatch that follows can attribute any difference in
 
 Three tests pin it and all three fail against the previous selection: a rise-then-collapse series is listed, it leads a
 shallower fall that merely never rose, and the trough appears on the falling lines and not on the rising ones.
+
+### 325.14k The entry boundary is uninformative at service granularity, and that is a granularity answer
+
+Three candidates were priced at ¥0 over the same artifact to reach the 41 child-refused entry-truth cases (the arm
+answers 0 of them, the engine answers 0, so a working rule is worth +41 → 1 264, 88.9 %). All three read the boundary
+the fault was applied to, and all three fail on precision:
+
+| rule | fires | on entry-truth | fixed | broken | precision | net |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| the entry's own error rate rose | 596 | 41 | 41 | 518 | 0.069 | **−477** |
+| the entry's rise ≥ its callees' rise (HTTP family only) | 174 | 7 | 7 | 160 | 0.040 | **−153** |
+| a failed interface lands on the entry | 602 | 41 | 41 | 522 | 0.068 | **−481** |
+| the entry rose **and** an interface into it failed | 596 | 41 | 41 | 518 | 0.069 | **−477** |
+
+**The signs are right and the precision is twelve times short.** The 41 do carry a signature — the entry's own HTTP
+error rate rises in **41 of 41** of them at a median of **8.75 points**, against **555 of 1 011** at a median of
+**1.77** for the rest — but every rule that keys on *any* rise admits 55 % of the innocents, and the base-rate law
+needs a precision of **0.813** on the admitted set to break even. Precision 0.069 does not fail because a threshold is
+mis-set; it fails because the evidence is a **level**, and a level is present on both sides.
+
+**This closes the service-granularity route to the 41 and names the next unit.** The 39 `HTTPRequestReplaceMethod`
+cases are a fault applied to an **edge**: the method on a specific interface was replaced, the callee then rejects the
+call, and the callee's error rate goes to **100 points** (its median across the whole candidate set is 100, which is
+why `entryChildErrors > 0` is true there). At service granularity the entry and its callee look alike — one rose 8.75
+points, the other 100 — and the distinguishing fact is *which interface* changed shape, not *which service* moved.
+That is the unit `InterfaceRCA` (HR@1 92.57 %) builds on, and it is the only route this programme has left to these 39
+cases.
+
+**Every surviving rule in this register is relational and every refuted one is marginal.** `lag` reads an order, the
+cone reads a containment, the entry prior reads a non-existence ("nothing below it rose"). The fall, the magnitude
+comparison, the failure topology and the entry's own rise all read a level, and all four lose. That is now strong
+enough to be a screen rather than an observation: a candidate should be classified before it is priced, and a
+level-reading candidate should be expected to fail.
