@@ -23,6 +23,7 @@ import {
   onPriorCone,
   onsetOf,
   projectOntoCorpus,
+  readEntryPrior,
   runQueryAgent,
   stride,
   summariseGatePolicies,
@@ -32,6 +33,7 @@ import {
   type QueryBudget,
   type QueryOutcome,
   type QuerySeed,
+  type Resolution,
 } from './query-agent.js';
 
 /** Declared prices, per million tokens, in CNY. Estimates: the arm's own report carries the token counts. */
@@ -51,6 +53,8 @@ interface Args {
   readonly seed: 'none' | 'engine';
   /** What an override must show before it replaces the prior. `none` is the ungated control. */
   readonly gate: GatePolicy;
+  /** Whether a settled answer is re-read by the entry prior. `none` is the arm as 318–321 shipped it. */
+  readonly resolve: Resolution;
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -78,6 +82,13 @@ function parseArgs(argv: readonly string[]): Args {
   if (!gates.includes(gate as GatePolicy)) {
     throw new Error('--gate must be `none`, `cited`, `cone`, `contrast` or `lag`');
   }
+  // A resolver, like a gate, is a rule a run STATES: a typo that silently measured no resolver would publish an
+  // unread arm under the name of a read one.
+  const resolve = map.get('resolve') ?? 'none';
+  const resolvers: readonly Resolution[] = ['none', 'entry-prior'];
+  if (!resolvers.includes(resolve as Resolution)) {
+    throw new Error('--resolve must be `none` or `entry-prior`');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -94,6 +105,7 @@ function parseArgs(argv: readonly string[]): Args {
     concurrency: Math.max(1, number('concurrency', 4)),
     seed,
     gate: gate as GatePolicy,
+    resolve: resolve as Resolution,
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -140,6 +152,7 @@ async function investigate(
   budget: QueryBudget,
   seeding: 'none' | 'engine',
   gate: GatePolicy,
+  resolve: Resolution,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -159,7 +172,7 @@ async function investigate(
   const telemetry = buildTelemetry(bench);
   let outcome: QueryOutcome;
   try {
-    outcome = await runQueryAgent(client, telemetry, budget, seed, gate);
+    outcome = await runQueryAgent(client, telemetry, budget, seed, gate, resolve);
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
     // guess, and the sentence is not a secret.
@@ -191,6 +204,10 @@ async function investigate(
       intoAnswer: null,
       intoPrior: null,
       gateRefusals: 0,
+      entry: null,
+      entryChildErrors: null,
+      rawSurprise: null,
+      priorSurprise: null,
     };
   }
   return {
@@ -229,6 +246,12 @@ async function investigate(
         ? null
         : netBetween(telemetry, outcome.rawAnswer, verdict.winner),
     gateRefusals: outcome.gateRefusals,
+    // The resolver's evidence is read from the CASE for both sides the artifact can settle on, so a run that
+    // dispatched `lag` also prices what the entry prior would have done with `none`'s answers and with `cone`'s.
+    entry: readEntryPrior(telemetry, outcome.answer).entry,
+    entryChildErrors: readEntryPrior(telemetry, outcome.answer).entryChildErrors,
+    rawSurprise: readEntryPrior(telemetry, outcome.rawAnswer).answerSurprise,
+    priorSurprise: readEntryPrior(telemetry, verdict.winner).answerSurprise,
   };
 }
 
@@ -306,6 +329,7 @@ async function main(): Promise<void> {
       args.budget,
       args.seed,
       args.gate,
+      args.resolve,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -359,9 +383,10 @@ async function main(): Promise<void> {
   // the misreading iteration 320 had to withdraw.
   console.log('gate policies (re-scored from this artifact):');
   console.log(
-    '  policy  admitted refused repairs breaks precision correct retention  net@corpus  top1@corpus',
+    '  policy  admitted refused repairs breaks precision correct retention  net@corpus  top1@corpus  resolved  top1@resolved',
   );
   const population = { misses: misses.length, hits: correct.length };
+  const total = population.misses + population.hits;
   for (const reading of summariseGatePolicies(kept)) {
     const projection = projectOntoCorpus(
       reading,
@@ -377,7 +402,9 @@ async function main(): Promise<void> {
         `${String(reading.correct).padStart(7)} ` +
         `${(reading.retention === null ? 'n/a' : reading.retention.toFixed(3)).padStart(9)} ` +
         `${(projection.net === null ? 'n/a' : projection.net.toFixed(1)).padStart(10)} ` +
-        `${(projection.top1 === null ? 'n/a' : `${projection.top1.toFixed(2)}%`).padStart(11)}` +
+        `${(projection.top1 === null ? 'n/a' : `${projection.top1.toFixed(2)}%`).padStart(11)} ` +
+        `${String(reading.resolved).padStart(8)} ` +
+        `${`${((reading.correctResolved / total) * 100).toFixed(2)}%`.padStart(13)}` +
         `${reading.policy === args.gate ? '  <- dispatched' : ''}`,
     );
   }

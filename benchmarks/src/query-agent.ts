@@ -668,8 +668,8 @@ export interface QueryOutcome {
    * therefore priced from one artifact rather than from three runs. `null` when the model never named one.
    */
   readonly rawAnswer: string | null;
-  /** Who produced {@link answer}: the model, or the prior the gate fell back to. */
-  readonly answeredBy: 'model' | 'prior' | null;
+  /** Who produced {@link answer}: the model, the prior the gate fell back to, or the entry prior. */
+  readonly answeredBy: 'model' | 'prior' | 'entry' | null;
   /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
   readonly gateRefusals: number;
   /** Services the investigation executed a per-service query against, in first-query order. */
@@ -1145,6 +1145,7 @@ export async function runQueryAgent(
   budget: QueryBudget = DEFAULT_QUERY_BUDGET,
   seed: QuerySeed | null = null,
   policy: GatePolicy = 'none',
+  resolution: Resolution = 'none',
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
@@ -1213,6 +1214,26 @@ export async function runQueryAgent(
         intoPrior: netBetween(telemetry, candidate, priorTop),
       },
     };
+  };
+
+  /**
+   * The entry prior, applied where the answer is SETTLED rather than where it is proposed.
+   *
+   * Placement is the whole design. A gate that refused an answer has already decided which name stands; a resolver
+   * that ran before it would be asking the gate about a candidate the model never named, and the artifact could no
+   * longer price the two independently. Running it after means the artifact's `rawAnswer` still records the model's
+   * own name, the gate's own decision is unchanged, and this rule is a SECOND READER of the same case — which is
+   * why it is priced from one artifact at zero cost instead of from a second dispatch.
+   *
+   * It is applied to the prior as well, because a refusal falls back to the prior and a fallback that was never read
+   * is a name the rule was not allowed to check.
+   */
+  const attribute = (
+    answer: string | null,
+  ): { answer: string | null; by: QueryOutcome['answeredBy'] } => {
+    if (resolution === 'none' || answer === null) return { answer, by: null };
+    const to = entryAttribution(answer, readEntryPrior(telemetry, answer));
+    return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
   };
 
   const admit = (resolved: string): { ok: boolean; text: string } => {
@@ -1313,7 +1334,10 @@ export async function runQueryAgent(
         result: gated.ok ? result.text : gated.text,
         ok: gated.ok,
       });
-      if (gated.ok) return settle('answered', result.resolved, 'model');
+      if (gated.ok) {
+        const settled = attribute(result.resolved);
+        return settle('answered', settled.answer, settled.by ?? 'model');
+      }
       // A refused override is NOT the end of the investigation: the model may satisfy the rule on the next turn,
       // which is the whole reason the rule is announced before it is enforced.
       continue;
@@ -1340,7 +1364,13 @@ export async function runQueryAgent(
   // The fallback, and the reason the arm is MONOTONE: a case the engine had right can only be lost by an override
   // that was ADMITTED and wrong, never by a refusal. `none` has no fallback by construction — a control that
   // answered for the model would not be the surface iteration 318 measured.
-  if (policy !== 'none' && priorTop !== null) return settle(stop, priorTop, 'prior');
+  if (policy !== 'none' && priorTop !== null) {
+    const settled = attribute(priorTop);
+    return settle(stop, settled.answer, settled.by ?? 'prior');
+  }
+  // The control still has NO fallback: resolving the prior here would hand `none` a name the model never produced,
+  // and `none` is the surface iteration 318 measured. The resolver is a second reader of a settled answer, not a
+  // second way into one.
   return settle(stop, null, null);
 }
 
@@ -1381,7 +1411,7 @@ export interface QueryArmRow {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or nobody. */
-  readonly answeredBy: 'model' | 'prior' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | null;
   /** Services the investigation executed a per-service query against, in first-query order. */
   readonly calls: readonly string[];
   /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
@@ -1396,10 +1426,188 @@ export interface QueryArmRow {
   readonly intoPrior: number | null;
   /** Answers the gate refused on this case. */
   readonly gateRefusals: number;
+  /** The service requests enter the system through, or `null` when the graph does not name one. */
+  readonly entry: string | null;
+  /** The largest error-rate rise among the entry's own callees, or `null` when it has none. */
+  readonly entryChildErrors: number | null;
+  /**
+   * The raw answer's own departure in a channel that is not an error rate.
+   *
+   * Recorded per SIDE rather than for the settled answer, because the artifact prices every policy from one run and
+   * a policy that refuses settles on the prior instead. One field would make the two readings share a measurement
+   * that belongs to only one of them.
+   */
+  readonly rawSurprise: number | null;
+  /** The prior's own departure, on the same channel split. */
+  readonly priorSurprise: number | null;
   readonly rounds: number;
   readonly toolCalls: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+}
+
+/**
+ * Which post-answer reader, if any, may rename the answer.
+ *
+ * `none` is the arm as iterations 318–321 shipped it. `entry-prior` is {@link entryAttribution}, which runs AFTER
+ * the gate settles the answer, needs no model call and no second dispatch, and is priced at zero from the artifact's
+ * own rows (`summariseGatePolicies`).
+ */
+export type Resolution = 'none' | 'entry-prior';
+
+/**
+ * The surprise a service's own departure must stay under for the entry prior to speak.
+ *
+ * Chosen by five-fold cross-validation over the 1 422-case artifact: the parameter is re-picked on four folds and
+ * applied to the fifth, and the plateau is flat from 300 to 750 (1 219 and 1 217 correct against `lag`'s 1 174).
+ * 300 is the in-sample maximum and the value four of the five folds chose; the flatness is the reason a single
+ * number is defensible here where iteration 321's four-cut margin sweep was not.
+ */
+export const ENTRY_PRIOR_SURPRISE = 300;
+
+/**
+ * Whether a series is the SYMPTOM of a failure rather than a property of the service itself.
+ *
+ * The split is the axis this resolver reads. `http.response.error_rate` rising means *calls are failing here*,
+ * which is true of every hop on a failure's path — a caller that has failed fails its calls to every callee it has
+ * left. `container.cpu.usage` rising means *this service is working harder*, which is true only of the service
+ * doing the work. The predicate is a label test rather than a list because the corpus writes the same channel under
+ * several names (`http.response.error_rate`, `k8s.pod.network.errors`), and a list would silently miss the third.
+ *
+ * @param label - The metric family as the producer wrote it.
+ */
+function isSymptomChannel(label: string): boolean {
+  return /error/i.test(label);
+}
+
+/**
+ * The service requests enter the system through.
+ *
+ * ## Why the root is not the entry
+ *
+ * Every case in this corpus has one root — `loadgenerator` — and it is a **traffic generator**, not a service: it
+ * measures the load it applied and nothing about the system's internals. The entry is the service it calls, and on
+ * this corpus that is `ts-ui-dashboard` in 1 421 of 1 422 cases, which is also where 186 of the corpus's ground
+ * truths sit.
+ *
+ * So the rule is structural and it fails closed twice. A root with exactly one callee is a client and the entry is
+ * that callee; a root with several callees IS the entry (it is a front door in its own right, which is the one case
+ * where the corpus names the dashboard as the root); and a graph with no root or with more than one has no single
+ * way in, so it has no entry.
+ *
+ * @param telemetry - The case's tool view.
+ * @returns The entry, or `null` when the graph does not name one.
+ */
+export function entryOf(telemetry: Telemetry): string | null {
+  const roots = [...telemetry.services.values()].filter((one) => one.callers.length === 0);
+  if (roots.length !== 1) return null;
+  const root = roots[0]!;
+  if (root.callees.length === 1) return root.callees[0]!;
+  if (root.callees.length > 1) return root.id;
+  return null;
+}
+
+/** What the entry prior reads about one answer. */
+export interface EntryPriorEvidence {
+  /** The service requests enter the system through, or `null` when the graph does not name one. */
+  readonly entry: string | null;
+  /**
+   * The largest error-rate rise among the entry's OWN callees, or `null` when the entry has none.
+   *
+   * This is the quantity that says whether the failure travelled downward. A fault below the entry reaches it
+   * through the callee that sits on the failed path, so that callee's error rate rises. A fault AT the entry does
+   * not: the requests are sabotaged before they are ever routed, and the callees see nothing.
+   */
+  readonly entryChildErrors: number | null;
+  /**
+   * The answer's strongest departure in a channel that is not an error rate, or `null` when it has none.
+   *
+   * A service that is working harder carries its own signature wherever it sits. A service whose only rise is its
+   * error rate is answering failures it received.
+   */
+  readonly answerSurprise: number | null;
+}
+
+/**
+ * Read what the entry prior needs about one answer.
+ *
+ * @param telemetry - The case's tool view.
+ * @param answer - The service about to be answered with, or `null`.
+ * @returns The evidence, with `null` in every field the case cannot supply.
+ */
+export function readEntryPrior(telemetry: Telemetry, answer: string | null): EntryPriorEvidence {
+  const entry = entryOf(telemetry);
+  if (entry === null) return { entry: null, entryChildErrors: null, answerSurprise: null };
+  const entryService = telemetry.services.get(entry)!;
+  let childErrors: number | null = entryService.callees.length === 0 ? null : 0;
+  for (const child of entryService.callees) {
+    const service = telemetry.services.get(child);
+    if (service === undefined) continue;
+    for (const one of service.metrics) {
+      if (!isSymptomChannel(one.label)) continue;
+      // A callee's rise is a RISE: a series that fell after the injection is not a symptom of having failed.
+      if (one.delta > (childErrors ?? 0)) childErrors = one.delta;
+    }
+  }
+  const service = answer === null ? undefined : telemetry.services.get(answer);
+  // The floor is a MEASURED zero rather than a missing one: a service whose channels cannot be standardised has no
+  // self-departure to report, and the predicate below refuses on `null` rather than reading silence as quiet.
+  let surprise: number | null = null;
+  for (const one of service?.metrics ?? []) {
+    if (isSymptomChannel(one.label)) continue;
+    if (one.surprise === undefined) continue;
+    if (surprise === null || one.surprise > surprise) surprise = one.surprise;
+  }
+  return { entry, entryChildErrors: childErrors, answerSurprise: surprise };
+}
+
+/**
+ * The entry prior: attribute the failure to the front door when the evidence says it never went past it.
+ *
+ * ## What it is for
+ *
+ * Iteration 321's census left one number standing over everything else: of the arm's 248 misses, **180 answer a
+ * service that is a TRANSITIVE CALLER of the truth**, 122 of them one hop below it, and **105 of those 122 answer a
+ * callee of `ts-ui-dashboard`**. The arm does not fail to look; it looks one hop too far DOWN, every time, on a
+ * corpus whose ground truth is the front door in 186 of 1 422 cases — where the engine itself is right 13 times
+ * (7.0 %) against 96 % on the cases whose truth is a silent deep service.
+ *
+ * ## Why the two conditions are the whole test
+ *
+ * For the failure to have been injected at the entry, **nothing below the entry can have started failing**: the
+ * sabotage is applied to the entry's own inbound API, and its callees are called normally, or not called at all.
+ * For the failure to have been injected below, the path from the truth up to the entry rises, so the entry's own
+ * callee on that path rises. That is `entryChildErrors` and it is asymmetric in exactly one direction.
+ *
+ * `answerSurprise` then removes the other half of the confusions: a **silent** deep source — 230 of the 248 misses
+ * have a truth that never logs an error — still carries its own resource signature, and a service that carries one
+ * is a source wherever it sits. What is left over, a service whose only rise is its error rate with nothing
+ * failing beneath it, is a victim of the top.
+ *
+ * Both conditions are refusals when the case cannot supply them, for the reason every other predicate in this file
+ * fails closed: a rule that speaks in the absence of its own input is a wider rule wearing a narrower name.
+ *
+ * @param answer - The service the gate settled on, or `null`.
+ * @param evidence - What {@link readEntryPrior} read, or `undefined` when the caller did not read it.
+ * @param threshold - The self-departure a quiet answer must stay under; defaults to {@link ENTRY_PRIOR_SURPRISE}.
+ * @returns The entry to answer with instead, or `null` when the rule does not fire.
+ */
+export function entryAttribution(
+  answer: string | null,
+  evidence: EntryPriorEvidence | undefined,
+  threshold: number = ENTRY_PRIOR_SURPRISE,
+): string | null {
+  if (answer === null || evidence === undefined) return null;
+  // Each field is narrowed by MEASUREMENT rather than by truthiness, because these three arrive from JSON: an
+  // artifact written before this iteration carries no such keys at all, and `undefined > threshold` is false — a
+  // predicate written with comparisons alone would fire on every row of every older artifact and call it a result.
+  if (typeof evidence.entry !== 'string') return null;
+  if (evidence.entry === answer) return null;
+  if (!Number.isFinite(evidence.entryChildErrors)) return null;
+  if (evidence.entryChildErrors! > 0) return null;
+  if (!Number.isFinite(evidence.answerSurprise)) return null;
+  if (evidence.answerSurprise! > threshold) return null;
+  return evidence.entry;
 }
 
 /** The arm's reading. Repairs and breaks decide it; the engine's own score is the paired baseline. */
@@ -1494,6 +1702,10 @@ export interface GateReading {
   readonly correct: number;
   /** Of the engine's own hits, the share the policy keeps. */
   readonly retention: number | null;
+  /** Top@1 under this policy with the entry prior applied to its own settled answer. */
+  readonly correctResolved: number;
+  /** Settled answers the entry prior renamed. */
+  readonly resolved: number;
 }
 
 /**
@@ -1519,6 +1731,8 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
     let breaks = 0;
     let correct = 0;
     let retained = 0;
+    let correctResolved = 0;
+    let resolved = 0;
     for (const row of measured) {
       const override = row.rawAnswer !== null && row.rawAnswer !== row.engineWinner;
       const stands =
@@ -1550,6 +1764,17 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
       } else if (override && stands && row.engineRank === 1) {
         breaks += 1;
       }
+      // The resolver is priced on the SAME rows, from the same artifact, at zero cost: it is a second reader of an
+      // answer that is already settled, so a dispatch that measured a policy also measured what this rule would do
+      // with that policy's answers.
+      const attributed = entryAttribution(effective, {
+        entry: row.entry,
+        entryChildErrors: row.entryChildErrors,
+        answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
+      });
+      const settledAnswer = attributed ?? effective;
+      if (attributed !== null) resolved += 1;
+      if (settledAnswer !== null && row.truth.includes(settledAnswer)) correctResolved += 1;
     }
     const decided = repairs + breaks;
     return {
@@ -1561,6 +1786,8 @@ export function summariseGatePolicies(rows: readonly QueryArmRow[]): readonly Ga
       precision: decided === 0 ? null : repairs / decided,
       correct,
       retention: engineHits === 0 ? null : retained / engineHits,
+      correctResolved,
+      resolved,
     };
   });
 }

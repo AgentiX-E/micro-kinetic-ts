@@ -714,4 +714,17 @@ describe('the free-investigation arm’s wiring', () => {
       expect(WORKFLOW).toContain(`\`${policy}\``);
     }
   });
+
+  it('carries the resolver on the same surface, because a rule the runner accepts must be dispatchable', () => {
+    // Iteration 321's lesson in its cheapest form: a `--gate` the workflow never offers is an ablation nobody can
+    // run from the UI, and a `--resolve` with no workflow input would be exactly that.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('RESOLVE_ARG+=(--resolve');
+    expect(measure).toContain('"${RESOLVE_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('resolve')");
+    expect(runner).toContain('`none` or `entry-prior`');
+    expect(WORKFLOW).toContain('`entry-prior`');
+    expect(WORKFLOW).toContain('query_resolve');
+  });
 });

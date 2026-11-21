@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_QUERY_BUDGET,
+  ENTRY_PRIOR_SURPRISE,
   LOG_LINES,
   METRIC_LINES,
   QUERY_SYSTEM_PROMPT,
@@ -20,6 +21,8 @@ import {
   buildTelemetry,
   buildUserPrompt,
   bySurprise,
+  entryAttribution,
+  entryOf,
   executeTool,
   formatNumber,
   gateAdmits,
@@ -30,6 +33,7 @@ import {
   onsetOf,
   parseCall,
   projectOntoCorpus,
+  readEntryPrior,
   renderBudget,
   renderGate,
   renderSeed,
@@ -44,6 +48,7 @@ import {
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type {
   ContrastEvidence,
+  EntryPriorEvidence,
   GateContext,
   GateReading,
   QueryAgentClient,
@@ -109,8 +114,22 @@ function makeCase(overrides: Partial<BenchmarkCase> = {}): BenchmarkCase {
           p99Latency: 5,
           errorRate: 0,
         },
-        { from: 'payment', to: 'db', type: 'REST', callRate: 10, p99Latency: 5, errorRate: 0 },
-        { from: 'payment', to: 'payment', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+        {
+          from: 'payment',
+          to: 'db',
+          type: 'REST' as const,
+          callRate: 10,
+          p99Latency: 5,
+          errorRate: 0,
+        },
+        {
+          from: 'payment',
+          to: 'payment',
+          type: 'REST' as const,
+          callRate: 1,
+          p99Latency: 1,
+          errorRate: 0,
+        },
       ],
     },
     groundTruth: { serviceId: 'payment', faultType: 'HTTPResponseReplaceCode' },
@@ -1019,6 +1038,10 @@ describe('summariseQueryArm', () => {
     intoAnswer: null,
     intoPrior: null,
     gateRefusals: 0,
+    entry: null,
+    entryChildErrors: null,
+    rawSurprise: null,
+    priorSurprise: null,
     ...over,
   });
 
@@ -1558,11 +1581,11 @@ describe('the callee-side cone', () => {
           ]),
         ),
         edges: [
-          { from: 'a', to: 'b', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
-          { from: 'a', to: 'c', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
-          { from: 'b', to: 'd', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
-          { from: 'c', to: 'd', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
-          { from: 'd', to: 'e', type: 'REST', callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'a', to: 'b', type: 'REST' as const, callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'a', to: 'c', type: 'REST' as const, callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'b', to: 'd', type: 'REST' as const, callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'c', to: 'd', type: 'REST' as const, callRate: 1, p99Latency: 1, errorRate: 0 },
+          { from: 'd', to: 'e', type: 'REST' as const, callRate: 1, p99Latency: 1, errorRate: 0 },
         ],
       },
     });
@@ -1757,6 +1780,10 @@ describe('three policies priced from one artifact', () => {
     intoAnswer: null,
     intoPrior: null,
     gateRefusals: 0,
+    entry: null,
+    entryChildErrors: null,
+    rawSurprise: null,
+    priorSurprise: null,
     ...over,
   });
 
@@ -1891,6 +1918,10 @@ describe('a case the model never answered, under each policy', () => {
     intoAnswer: null,
     intoPrior: null,
     gateRefusals: 0,
+    entry: null,
+    entryChildErrors: null,
+    rawSurprise: null,
+    priorSurprise: null,
     ...over,
   });
 
@@ -2108,6 +2139,10 @@ describe('four policies priced from one artifact', () => {
     intoAnswer: null,
     intoPrior: null,
     gateRefusals: 0,
+    entry: null,
+    entryChildErrors: null,
+    rawSurprise: null,
+    priorSurprise: null,
     ...over,
   });
 
@@ -2228,6 +2263,10 @@ describe('the two ways the evidence can be absent', () => {
       intoAnswer: null,
       intoPrior: null,
       gateRefusals: 0,
+      entry: null,
+      entryChildErrors: null,
+      rawSurprise: null,
+      priorSurprise: null,
     };
     const contrast = summariseGatePolicies([row]).find((reading) => reading.policy === 'contrast')!;
     // `cone` admits it on position alone; `contrast` cannot read the evidence and so refuses, falling back.
@@ -2336,6 +2375,10 @@ describe('five policies priced from one artifact', () => {
     intoAnswer: null,
     intoPrior: null,
     gateRefusals: 0,
+    entry: null,
+    entryChildErrors: null,
+    rawSurprise: null,
+    priorSurprise: null,
     ...over,
   });
 
@@ -2431,6 +2474,8 @@ describe('a balanced sample projected onto the corpus it ships in', () => {
     precision: 11 / 15,
     correct: 87,
     retention: 0.95,
+    correctResolved: 90,
+    resolved: 22,
     ...over,
   });
   const corpus = { misses: 266, hits: 1_156 };
@@ -2460,5 +2505,400 @@ describe('a balanced sample projected onto the corpus it ships in', () => {
     expect(projection.repairs).toBeNull();
     expect(projection.net).toBeNull();
     expect(projection.top1).toBeNull();
+  });
+});
+
+/**
+ * A case shaped like a system with a traffic generator: one root, one front door, three leaves.
+ *
+ * `front` is the only service the root calls, so it is the entry; `leaf` is a callee of the front door that can be
+ * made loud or quiet per test, which is the whole quantity the entry prior reads.
+ */
+function entryCase(options: {
+  readonly leafError?: number;
+  /** When true the front door carries an error rate and nothing else, which is the all-symptom shape. */
+  readonly frontOnlySymptom?: boolean;
+  readonly extraEdges?: readonly {
+    readonly from: string;
+    readonly to: string;
+  }[];
+}): BenchmarkCase {
+  const at = [INJECT - 3_000, INJECT - 2_000, INJECT - 1_000, INJECT + 1_000, INJECT + 2_000];
+  const metrics = new Map([
+    [
+      'front',
+      [
+        {
+          label: 'http.response.error_rate',
+          unit: 'percent',
+          timestamps: at,
+          values: Float64Array.from([0, 0, 0, options.leafError ?? 30, options.leafError ?? 30]),
+        },
+        // A self channel that does not move. It exists so the front door has a measurable departure of ZERO rather
+        // than no measurement at all — the difference between "quiet" and "unknown", which the predicate separates.
+        ...(options.frontOnlySymptom === true
+          ? []
+          : [
+              {
+                label: 'http.server.request.duration',
+                unit: 'ms',
+                timestamps: at,
+                values: Float64Array.from([50, 50, 50, 50, 50]),
+              },
+            ]),
+      ],
+    ],
+    [
+      'leaf',
+      [
+        // The leaf's own resource channel: a value the prior reads as SELF evidence, because it is not an error rate.
+        {
+          label: 'container.cpu.usage',
+          unit: 'ratio',
+          timestamps: at,
+          values: Float64Array.from([
+            10,
+            10,
+            10,
+            10 + (options.leafError ?? 0),
+            10 + (options.leafError ?? 0),
+          ]),
+        },
+        // A second self channel that departs FAR more than the first, so "the strongest departure wins" is a
+        // comparison the suite exercises rather than a line the report lists as covered by the first assignment.
+        {
+          label: 'queueSize',
+          unit: 'messages',
+          timestamps: at,
+          values: Float64Array.from([
+            1,
+            1,
+            1,
+            1 + (options.leafError ?? 0),
+            1 + (options.leafError ?? 0),
+          ]),
+        },
+        // And a self channel whose pre-window has no level at all, so its departure cannot be standardised: the
+        // reading must SKIP it rather than invent a zero for it.
+        {
+          label: 'k8s.container.restarts',
+          unit: 'count',
+          timestamps: at,
+          values: Float64Array.from([0, 0, 0, 0, 1]),
+        },
+        // And its error rate, which is the SYMPTOM channel: this is the quantity `entryChildErrors` reads, because a
+        // failure below the entry has to reach the entry through the callee that carried it.
+        {
+          label: 'http.response.error_rate',
+          unit: 'percent',
+          timestamps: at,
+          values: Float64Array.from([0, 0, 0, options.leafError ?? 0, options.leafError ?? 0]),
+        },
+      ],
+    ],
+  ]);
+  const graph = {
+    systemLoad: 0,
+    nodes: new Map(
+      ['loadgenerator', 'front', 'leaf'].map((id) => [
+        id,
+        { id, name: id, namespace: 'shop', labels: {} },
+      ]),
+    ),
+    edges: [
+      {
+        from: 'loadgenerator',
+        to: 'front',
+        type: 'REST' as const,
+        callRate: 10,
+        p99Latency: 5,
+        errorRate: 0,
+      },
+      {
+        from: 'front',
+        to: 'leaf',
+        type: 'REST' as const,
+        callRate: 10,
+        p99Latency: 5,
+        errorRate: 0,
+      },
+      ...(options.extraEdges ?? []).map((one) => ({
+        ...one,
+        type: 'REST' as const,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
+      })),
+    ],
+  };
+  return makeCase({
+    id: 'case-entry',
+    metrics,
+    callGraph: graph,
+    groundTruth: { serviceId: 'front', faultType: 'HTTPResponseReplaceCode' },
+    logs: [],
+    failedTraceEdges: [],
+    edgeLatency: [],
+  });
+}
+
+describe('the entry, as a structural read', () => {
+  it('names the service the graph’s single root calls, because a traffic generator is not part of the system', () => {
+    // `loadgenerator` has no callers and calls one service. It is a client; the system begins at `front`.
+    expect(entryOf(buildTelemetry(entryCase({})))).toBe('front');
+  });
+
+  it('names the root itself when the root fronts several services, so a fan-out root is the entry', () => {
+    // One root, two callees: it is a front door in its own right, and this is the one shape the corpus has where
+    // the dashboard is the root rather than the callee of the load generator.
+    const wide = entryCase({ extraEdges: [{ from: 'loadgenerator', to: 'leaf' }] });
+    expect(entryOf(buildTelemetry(wide))).toBe('loadgenerator');
+  });
+
+  it('refuses a graph with no root at all, because a cycle has no entry', () => {
+    const cyclic = entryCase({ extraEdges: [{ from: 'leaf', to: 'loadgenerator' }] });
+    expect(entryOf(buildTelemetry(cyclic))).toBeNull();
+  });
+
+  it('refuses a root that calls nothing, because a system with no calls in it has no way in', () => {
+    const solo = makeCase({
+      callGraph: {
+        systemLoad: 0,
+        nodes: new Map([['solo', { id: 'solo', name: 'solo', namespace: 'shop', labels: {} }]]),
+        edges: [],
+      },
+    });
+    expect(entryOf(buildTelemetry(solo))).toBeNull();
+  });
+
+  it('refuses a graph with two roots, because then there are two ways in and neither is the entry', () => {
+    // `leaf` gains a caller, so the only root is still `loadgenerator` and it still calls exactly one service.
+    const twin = entryCase({ extraEdges: [{ from: 'leaf', to: 'front' }] });
+    expect(entryOf(buildTelemetry(twin))).toBe('front');
+    // Now `leaf` is a second root as well, and a graph with two ways in has no single entry.
+    const looped = entryCase({
+      extraEdges: [
+        { from: 'leaf', to: 'front' },
+        { from: 'leaf', to: 'loadgenerator' },
+      ],
+    });
+    expect(entryOf(buildTelemetry(looped))).toBeNull();
+  });
+});
+
+describe('the entry prior, as the resolver reads it', () => {
+  it('measures the largest error-rate rise among the entry’s own callees', () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 40 }));
+    expect(readEntryPrior(telemetry, 'leaf').entryChildErrors).toBeCloseTo(40, 6);
+  });
+
+  it('reads zero when no callee of the entry raised an error rate, which is the state the prior needs', () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    expect(readEntryPrior(telemetry, 'leaf').entryChildErrors).toBe(0);
+  });
+
+  it('measures the answer’s own departure in a channel that is NOT an error rate', () => {
+    // The leaf's cpu went from 10 to 50 while its error rate says nothing: that is self evidence, and the prior must
+    // read it — a service whose own resource moved is a source wherever it sits.
+    const telemetry = buildTelemetry(entryCase({ leafError: 40 }));
+    expect(readEntryPrior(telemetry, 'leaf').answerSurprise!).toBeGreaterThan(ENTRY_PRIOR_SURPRISE);
+  });
+
+  it('reads a service whose only rise is its error rate as QUIET, which is the whole point of the split', () => {
+    // `front` returns replaced codes and nothing else moves. Its error rate rose 30 points; its own channel did
+    // not. A resolver that read the error rate as evidence of a self-fault would find a source at every hop.
+    const telemetry = buildTelemetry(entryCase({ leafError: 30 }));
+    const prior = readEntryPrior(telemetry, 'front');
+    expect(prior.answerSurprise).toBe(0);
+    expect(prior.entry).toBe('front');
+  });
+
+  it('reads a service whose ONLY series are error rates as unknown and not as quiet', () => {
+    // The distinction the predicate turns on: "no channel departed" and "no channel could be measured" both look
+    // like silence, and only the first is evidence. `null` here makes the predicate refuse.
+    const telemetry = buildTelemetry(entryCase({ leafError: 30, frontOnlySymptom: true }));
+    expect(readEntryPrior(telemetry, 'front').answerSurprise).toBeNull();
+    expect(entryAttribution('front', readEntryPrior(telemetry, 'front'))).toBeNull();
+  });
+
+  it('reports no surprise at all when the answer carries no standardisable channel', () => {
+    const telemetry = buildTelemetry(entryCase({}));
+    expect(readEntryPrior(telemetry, 'loadgenerator').answerSurprise).toBeNull();
+  });
+
+  it('carries no evidence when the case has no entry', () => {
+    const telemetry = buildTelemetry(entryCase({}));
+    expect(readEntryPrior(telemetry, 'leaf').entry).toBe('front');
+    const broken = entryCase({ extraEdges: [{ from: 'leaf', to: 'loadgenerator' }] });
+    expect(readEntryPrior(buildTelemetry(broken), 'leaf').entry).toBeNull();
+  });
+});
+
+describe('the entry prior, as a predicate', () => {
+  const evidence = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    answerSurprise: 0,
+    ...over,
+  });
+
+  it('attributes to the entry when nothing below it rose and the answer shows no self departure', () => {
+    expect(entryAttribution('leaf', evidence())).toBe('front');
+  });
+
+  it('refuses when a callee of the entry rose, because the failure reached downward', () => {
+    expect(entryAttribution('leaf', evidence({ entryChildErrors: 0.5 }))).toBeNull();
+  });
+
+  it('refuses when the answer departs in its own channels, because a source carries its own signature', () => {
+    expect(
+      entryAttribution('leaf', evidence({ answerSurprise: ENTRY_PRIOR_SURPRISE + 1 })),
+    ).toBeNull();
+  });
+
+  it('treats the threshold as inclusive, so the boundary is a value and not an interval', () => {
+    expect(entryAttribution('leaf', evidence({ answerSurprise: ENTRY_PRIOR_SURPRISE }))).toBe(
+      'front',
+    );
+  });
+
+  it('refuses when the answer IS the entry, because there is nothing to attribute to', () => {
+    expect(entryAttribution('front', evidence())).toBeNull();
+  });
+
+  it('refuses a null answer, which is a case the model never settled', () => {
+    expect(entryAttribution(null, evidence())).toBeNull();
+  });
+
+  it('fails closed on an unknown entry, exactly as the gate policies do', () => {
+    expect(entryAttribution('leaf', evidence({ entry: null }))).toBeNull();
+  });
+
+  it('fails closed on a missing child measurement, because no measurement is not a quiet one', () => {
+    expect(entryAttribution('leaf', evidence({ entryChildErrors: null }))).toBeNull();
+  });
+
+  it('fails closed on a missing self measurement, for the same reason', () => {
+    expect(entryAttribution('leaf', evidence({ answerSurprise: null }))).toBeNull();
+  });
+
+  it('fails closed on an artifact written before this iteration, whose rows carry no evidence at all', () => {
+    // The three fields arrive from JSON, and `undefined > 300` is false: a predicate written with comparisons alone
+    // would fire on every row of every older artifact. The narrowing is by measurement for that reason.
+    const legacy = { entry: undefined, entryChildErrors: undefined, answerSurprise: undefined };
+    expect(entryAttribution('leaf', legacy as unknown as EntryPriorEvidence)).toBeNull();
+  });
+
+  it('fails closed on a NaN, which is a failed measurement wearing a number', () => {
+    expect(entryAttribution('leaf', evidence({ answerSurprise: Number.NaN }))).toBeNull();
+  });
+});
+
+describe('the entry prior in the loop', () => {
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('answers with the entry when the model descended and nothing below the entry moved', async () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    const client = scriptedClient(['TOOL metric leaf', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'entry-prior');
+    expect(outcome.answer).toBe('front');
+    // The model's own name is still recorded, because `rawAnswer` is what an ungated arm would have said and the
+    // resolver is a SECOND reader of the same evidence rather than a second investigation.
+    expect(outcome.rawAnswer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('entry');
+  });
+
+  it('keeps the model’s answer when the resolver is off, which is what makes it a switch', async () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    const client = scriptedClient(['TOOL metric leaf', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none');
+    expect(outcome.answer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('model');
+  });
+
+  it('leaves the answer alone when a callee of the entry rose, so the switch cannot flatten a real descent', async () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 40 }));
+    const client = scriptedClient(['TOOL metric leaf', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'entry-prior');
+    expect(outcome.answer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('model');
+  });
+
+  it('resolves the PRIOR as well, so a refusal falls back to a name the same rule has checked', async () => {
+    // The model overrides, the gate refuses, the fallback is the prior — and the prior is a callee of the entry
+    // with nothing below it moving, so the resolver moves it to the entry. A resolver applied only to the model's
+    // answer would leave the fallback unread.
+    const telemetry = buildTelemetry(entryCase({ leafError: 0 }));
+    // The model answers the CALLER of the prior it was shown, which the cone refuses; the fallback is the prior.
+    const client = scriptedClient(['TOOL metric front', 'ANSWER front']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      budget,
+      { source: 'engine', candidates: ['leaf'] },
+      'lag',
+      'entry-prior',
+    );
+    expect(outcome.gateRefusals).toBeGreaterThan(0);
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('entry');
+  });
+});
+
+describe('the resolution priced from one artifact', () => {
+  const row = (over: Partial<QueryArmRow> = {}): QueryArmRow => ({
+    datapack: 'case-1',
+    faultType: 'cpu',
+    truth: ['front'],
+    engineRank: 2,
+    engineWinner: 'leaf',
+    answer: 'leaf',
+    correct: false,
+    stop: 'answered',
+    trace: '',
+    seeded: true,
+    rounds: 2,
+    toolCalls: 1,
+    promptTokens: 10,
+    completionTokens: 5,
+    rawAnswer: 'leaf',
+    answeredBy: 'model',
+    calls: ['leaf'],
+    inCone: true,
+    answerOnset: { firstError: null, fall: null },
+    priorOnset: { firstError: null, fall: null },
+    intoAnswer: null,
+    intoPrior: null,
+    entry: 'front',
+    entryChildErrors: 0,
+    rawSurprise: 0,
+    priorSurprise: 0,
+    gateRefusals: 0,
+    ...over,
+  });
+
+  it('counts the answer the entry prior converts, without a second dispatch', () => {
+    const reading = summariseGatePolicies([row()]).find((one) => one.policy === 'none')!;
+    expect(reading.correct).toBe(0);
+    expect(reading.correctResolved).toBe(1);
+    expect(reading.resolved).toBe(1);
+  });
+
+  it('leaves a reading untouched when the answer is already the entry', () => {
+    const reading = summariseGatePolicies([row({ answer: 'front', rawAnswer: 'front' })]).find(
+      (one) => one.policy === 'none',
+    )!;
+    expect(reading.correct).toBe(1);
+    expect(reading.correctResolved).toBe(1);
+    expect(reading.resolved).toBe(0);
+  });
+
+  it('does not resolve an answer the resolver refuses, so the two columns differ only where the rule fires', () => {
+    const reading = summariseGatePolicies([
+      row({ rawSurprise: ENTRY_PRIOR_SURPRISE + 1, priorSurprise: ENTRY_PRIOR_SURPRISE + 1 }),
+    ]).find((one) => one.policy === 'none')!;
+    expect(reading.correct).toBe(0);
+    expect(reading.correctResolved).toBe(0);
+    expect(reading.resolved).toBe(0);
   });
 });

@@ -156,6 +156,10 @@ on:
         description: "What an OVERRIDE of the prior must show before it is accepted: `cited` = the investigation executed a query about the service it names, `cone` = that plus the service sitting on the prior's callee side, `contrast` = that plus the candidate's OWN telemetry showing it LEADS the prior (the interface prior->X failed, or X logged its first error earlier — the lag axis of arXiv 10.1145/3803437.3805219), `lag` = that plus ONLY the order axis (X's first error strictly earlier), because the 160-case pricing found the interface axis admits the prior's own victims and bought 1 repair with 4 breaks, empty/`none` = ungated (the surface iteration 318 measured, where the model overrode 55% of cases at precision 0.263). A refused override falls back to the prior, so the gated arm cannot score below the engine by refusing — only by admitting a wrong edit. `arXiv:2611.05390` prices the mechanism: an evidence gate cuts corruption of correct proposals while keeping most repairs, and a gate whose rule lives only in the prompt does not hold"
         required: false
         default: ''
+      query_resolve:
+        description: "Whether a SETTLED answer is re-read after the gate: `entry-prior` = attribute the failure to the service requests enter through when nothing below it raised an error rate and the answer's own non-symptom channels stayed under 300 units of its pre-window spread; empty/`none` = the arm as iterations 318-321 shipped it. Needs no model call and no second dispatch, because it is a second reader of evidence the case already carries"
+        required: false
+        default: ''
       topology_brief:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
@@ -363,6 +367,11 @@ jobs:
           if [ -n "${{ inputs.query_gate }}" ]; then
             GATE_ARG+=(--gate "${{ inputs.query_gate }}")
           fi
+          # A resolver, like a gate, is a rule the run STATES, and the runner refuses an unknown value.
+          RESOLVE_ARG=()
+          if [ -n "${{ inputs.query_resolve }}" ]; then
+            RESOLVE_ARG+=(--resolve "${{ inputs.query_resolve }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -373,6 +382,7 @@ jobs:
             "${BUDGET_ARG[@]}" \
             "${SEED_ARG[@]}" \
             "${GATE_ARG[@]}" \
+            "${RESOLVE_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run
