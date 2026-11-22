@@ -9045,3 +9045,82 @@ worked and the corpus says the two directions are not symmetric.
 can only be produced by the caller; the fall (`325.14i`) failed because every service in every case lost throughput;
 a count (`325.14k`) failed because both ends can make an edge fail. Classifying a candidate as *asymmetric* or
 *symmetric* before pricing it would have killed all three failed rules in one line each.
+
+## 326 The premise was read in a channel that is usually absent (iteration 326)
+
+`325.15` closed the request-shape axis and left one sentence standing over the rest of the residue: the entry prior is
+the arm's second-largest earner (**+57** on the engine's own answers), and it is also the arm's largest source of
+harm — on the 325 artifact it renamed a **correct** answer to the front door on **15** cases, and every one of them
+is a case whose failing-interface record said the failure had travelled. This iteration found why, and the reason is the same defect in miniature that `325.14i` found
+in the fall axis: **the rule read its premise in a channel that is usually not there.**
+
+### 326.1 The premise, and the two channels that can carry it
+
+The entry prior fires when *the sabotage never went past the front door*. Its reading of that sentence was
+`entryChildErrors ≤ 0`: the largest error-rate rise among the entry's **direct callees**. Measured over the corpus,
+that channel is silent in **1 053 of the 1 054** cases whose callee rose — the pre-window median is zero, `surpriseOf`
+refuses a zero level by design, and `delta` is therefore `0` for a series that went `0 → 100`. So a zero in that
+column is mostly an **absent instrument wearing the shape of a measured quiet**, and a rule that reads it as evidence
+speaks where it has none.
+
+The corpus carries the same statement in a dense channel and the arm had never read it: `failed − baseline > 0` on an
+interface whose **callee** sits in the entry's **reachable set**. That is not a level, it is the event itself — a call
+below the door began failing — and it contradicts the premise in exactly one direction.
+
+| on the 325 artifact (`44915289950`) | fires | repairs | breaks | net | Top@1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| the entry prior as shipped (`entryChildErrors` alone) | 90 | 67 | 16 | +51 | 1 263 (88.82 %) |
+| plus `belowFails` | **83** | **67** | **9** | **+58** | **1 270 (89.31 %)** |
+
+**The reading is pure**: it refuses 7 of the rule's 90 fires and **all seven are breaks**, so not one repair is lost.
+The same column on the free artifact (`44909105091`) refuses 7 of 85 and moves that composition from 1 279 to
+**1 286**. Two artifacts, two populations, the same seven-case block.
+
+### 326.2 What the arm is without a model, stated for the first time beside it
+
+Two resolvers applied to the **engine's own answer**, with no investigation at all, read **1 256 (88.33 %)**:
+1 156 + 57 from the entry prior + 43 from the witness (the 43 are witness cases the engine had wrong). Everything
+above that number is the model's contribution, and it is small: **+7** on the arm 325 shipped, **+14** after this
+iteration, **+30** in the free-arm composition. The LLM is not carrying this arm; it is refining a deterministic
+localiser, and every number this programme has published should be read with that sentence attached.
+
+### 326.3 Five localisers priced at ¥0, and all five refused
+
+The 39-case `HTTPResponseReplaceCode` block — truth is the front door, the only failing interface is the traffic
+generator's call to it, and the arm answers a deep service — is the largest single pocket left (**38** of 152
+residual misses). Five readings of it were written and priced against the same artifact:
+
+| candidate | kind | fires | repairs | breaks | net |
+| --- | --- | ---: | ---: | ---: | ---: |
+| the sink of the failing-edge subgraph | region | 430 | 66 | 348 | **−282** |
+| that sink, ordered by inflow | region | 510 | 71 | 417 | **−346** |
+| the callee of a case's ONLY failing edge | level + relation | 129 | 44 | 82 | **−38** |
+| the callee of the highest-count failing edge | level | 645 | 55 | 554 | **−499** |
+| the sink of the LATENCY-rise subgraph, ρ ∈ [2, 20] | region | 183–917 | 10–29 | 156–796 | **−767 … −132** |
+
+**The corpus cannot separate the 39 from the 82 cases that look identical in this channel.** Both groups carry one
+failing interface, the traffic generator's, into the front door; in one the front door is the truth and in the other
+a silent resource stress sits behind it. The candidate that would fix all 39 breaks 82, and every gate tried on the
+difference (the answer's own departure, the answer's location, the entry's inbound failure) separates them by less
+than the base rate demands. This is a **granularity** answer, not a threshold answer: at service granularity the two
+shapes are the same shape.
+
+What does separate them is **which channels** the answer's departure lives in — `container.*`/`k8s.*` (work the
+service did) against `http.*`/`hubble*` (a retry storm passing through it) — and that split prices at **1 277
+(89.80 %)** for κ = 200. It is **not shipped**: the κ sweep reads 1 248, 1 274, **1 277**, 1 269, 1 260, 1 250, a peak
+at one value on one corpus, which is the selection signature this register has refused before. It is the next axis,
+with its own cross-validated pre-registration.
+
+### 326.4 Two decisions one argument was carrying
+
+`runQueryAgent` took `seed` and used it for two jobs: the order the prompt **shows** and the order a refusal **falls
+back to**. Every published arm showed what it fell back to, so nothing measured the difference — and the free arm
+(`seed: null`) had no fallback *by construction*, which is not a property of a free investigation but of the harness
+that ran it. The two are now separate (`fallback`, defaulting to `seed`), and the gap they open is the surface a
+product with an engine underneath actually has: show nothing, ship the engine's answer unless the model justifies an
+override.
+
+A gate the loop enforces must be a gate the prompt states, so `buildUserPrompt` now takes the incumbent instead of
+re-deriving it from the seed, and `gateTableCaveat` reads a new `incumbent` column — an artifact that shows no order
+and falls back to one executed every policy in its own table, which is precisely what the free arm's caveat says it
+did not.
