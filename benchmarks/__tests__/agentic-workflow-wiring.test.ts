@@ -745,4 +745,19 @@ describe('the free-investigation arm’s wiring', () => {
     expect(WORKFLOW).toContain('query_fallback');
     for (const value of ['none', 'engine', 'seed']) expect(WORKFLOW).toContain(value);
   });
+
+  it('reports the incumbent on a row whose call failed, because the caveat reads the column', () => {
+    // The bug this pins, found while reading the two 326 dispatches: the error row hardcoded `incumbent: false`
+    // while the normal row computed it. A single transient 5xx on a seeded arm therefore said "this arm had no
+    // incumbent", `gateTableCaveat` raised its counterfactual sentence, and every number printed under the table
+    // for the rest of the sheet was disclaimed — by one case out of 1 422, with nothing in the output saying so.
+    //
+    // The property is asserted as a COUNT rather than as presence: one row computing the column and the other
+    // hardcoding it is precisely the state that shipped, so "the text appears at least once" would have passed.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).not.toContain('incumbent: false');
+    expect(
+      runner.match(/incumbent: priorTopOf\(fallbackOrder, telemetry\) !== null/g),
+    ).toHaveLength(2);
+  });
 });

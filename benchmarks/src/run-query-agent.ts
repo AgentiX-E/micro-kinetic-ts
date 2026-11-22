@@ -212,7 +212,9 @@ async function investigate(
       stop: 'error',
       trace: '',
       seeded: seed !== null,
-      incumbent: false,
+      // The INCUMBENT is a property of the case and the order, not of the investigation: a case whose call failed
+      // still had one, and a row that said it did not would raise the gate-table caveat on a seeded arm.
+      incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
       rounds: 0,
       toolCalls: 0,
       promptTokens: 0,
