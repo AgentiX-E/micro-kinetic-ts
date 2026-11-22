@@ -9125,10 +9125,10 @@ re-deriving it from the seed, and `gateTableCaveat` reads a new `incumbent` colu
 and falls back to one executed every policy in its own table, which is precisely what the free arm's caveat says it
 did not.
 
-## 327 The premise read where it is measured: 1 285 of 1 422 (90.37 %), and what the 129 cases are made of (iteration 327)
+## 327 The premise read where it is measured: 1 286.3 of 1 422 (90.46 %), and what the 130 cases are made of (iteration 327)
 
-Two dispatches read 326 back. Neither changed a constant, and both are in the band their pre-registration wrote before
-they ran.
+Four dispatches read 326 back. None changed a constant, and every one of them is in the band its pre-registration
+wrote before it ran.
 
 ### 327.1 Run A confirms the ¥0 replay to four cases
 
@@ -9146,6 +9146,8 @@ by the model. A replay prices a RULE; a dispatch also moves the ANSWERS, and thi
 populations were read separately.
 
 ### 327.2 Run B: the free arm with an engine fallback is the highest surface this programme has produced
+
+(§327.4 carries the two repeats that turn this single reading into a measured one.)
 
 | run | configuration | Top@1 | tokens | cost |
 | --- | --- | ---: | --- | ---: |
@@ -9185,19 +9187,39 @@ about the **generator**, not the system: a fault that does not change a route's 
 shape the edge has never carried. It is stated as a target for a theorem with a falsifier in `327`'s
 pre-registration, not as a result.
 
-### 327.4 The margin is inside the band, and that is stated rather than hidden
+### 327.4 The margin, measured: three runs, 1 285 / 1 287 / 1 287
 
-0.37 pp separates 90.37 % from the published 90.0 %, and the arm's run-to-run band is **±10 cases = ±0.70 pp**
-(`325.14l`). One run therefore places this surface **at** the frontier. Two repeats of exactly B's configuration
-(`45040043777`, `45040048386`) were dispatched after these readings; if they land at or above 1 280 the surface is
-above the bar on average, and if they land below 1 270 the claim is withdrawn as a band artefact.
+0.37 pp separated 90.37 % from the published 90.0 %, and the arm's run-to-run band was **±10 cases = ±0.70 pp**
+(`325.14l`), so one run placed this surface **at** the frontier and said so. Two repeats of exactly B's configuration
+were dispatched with their decision rule registered first:
+
+| run | Top@1 | tokens | cost | refusals |
+| --- | ---: | --- | ---: | ---: |
+| B `45032153035` | 1 285 (90.37 %) | 10 211 554 + 46 183 | ¥20.79 | 619 |
+| R1 `45040043777` | 1 287 (90.51 %) | 10 256 007 + 46 047 | ¥20.88 | 573 |
+| R2 `45040048386` | 1 287 (90.51 %) | 10 244 354 + 46 083 | ¥20.86 | 605 |
+| **mean** | **1 286.3 (90.46 %)** | — | ¥20.84 | 599 |
+
+**Three runs, three passes, a spread of two cases.** The registered rule (mean ≥ 1 280, min ≥ 1 270) is met with both
+conditions slack, so the claim is "above the bar on average" rather than "at it" — and the spread is **five times
+tighter than the ±10-case band** every earlier arm of this programme was judged by, which is itself a finding: that band
+was dominated by the seeded arm's dependence on a five-name prior, and a surface that shows one name (or none) varies by
+two cases.
+
+**The gate's decisions moved while its errors did not.** Refusals read 619, 573 and 605 across the three runs, the
+model answered 636, 683 and 652 cases, and the accuracy moved by two cases. That is the property a gate has to have to
+be worth shipping, and it had not been measured before this iteration.
+
+What remains open is not variance but **population**: 1 422 cases here against a 500-case sample there, with no
+published per-case results and no published variance on the other side. That inequality is permanent and is stated with
+the number rather than under it.
 
 ### 327.5 The counter-intuitive reading of 325a, closed
 
 | arm | prompt shows | a refusal settles on | Top@1 |
 | --- | --- | --- | ---: |
 | 325a free | nothing | **nothing** | 755 (53.09 %) |
-| 326 B hybrid | nothing | **the engine's first name** | **1 285 (90.37 %)** |
+| 326 B hybrid | nothing | **the engine's first name** | **1 286.3 (90.46 %)**, three runs |
 
 The 28-point deficit against the non-LLM engine was never a property of the model. It was a harness in which a refusal
 settled on nothing and a gate enforced a rule the prompt never stated. **An arm's accuracy is a property of the
