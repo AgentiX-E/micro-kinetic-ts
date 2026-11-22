@@ -9225,3 +9225,7 @@ The 28-point deficit against the non-LLM engine was never a property of the mode
 settled on nothing and a gate enforced a rule the prompt never stated. **An arm's accuracy is a property of the
 settlement, not of the model**, and a harness that ignores its engine when the model speaks is worse than no model at
 all.
+
+The four positions a deployment can now choose between — advisor off, model only, hybrid, seed only, engine only — and
+the measured Top@1 and price of each, are listed in one place in `llm-switches.md`; this row is the axis those positions
+were measured on.
