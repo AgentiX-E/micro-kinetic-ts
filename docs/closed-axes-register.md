@@ -309,7 +309,7 @@ declare it |
 |`trace-share.md`| **the trace vote's rise is the ONE variable that cannot separate its right votes from its wrong ones** — the fifteen hits carry`growth 1.17-2.22`and the five misses`1.16-1.47`, so every refused refinement of this family (a weight, a leader mask, a tail-only restriction, a materiality floor, a Poisson significance bar) was a function of a variable whose two classes overlap. What separates them is the **fleet's own move**: `drift 0.05-0.11`under every hit and`0.79-0.99`under every miss, so`growth / drift`— the candidate's change of SHARE — reads`10.7-36.3`for the sources against`1.26-1.86`for the votes that were wrong, with the largest non-source share measured at`4.3`. The census sweeps four floors over that empty interval and prints `withdrawn`against`surrendered`, which is the only pair the decision may be read on. **Then it was enrolled, and it is the only member of this family that was**: the sweep returned byte-identical counts at all four floors (`withdrawn=5 surrendered=0`on TrainTicket,`1 / 0`on OnlineBoutique) and the loss census resolved the upper bound case by case — the truth stood at rank 2 of 68 on two of the six withdrawn votes, so withdrawing the unit promotes it, and at rank 6 / 13 / 20 on the other three — which makes`minFleetShare = 2`the fourth threshold of the rule and the first trace refinement in six to survive.`0`disables it,`2`is the smallest integer above the largest measured miss (1.85) and far below the smallest hit (10.56). **This row stays in the register because the AXIS it closes is not the floor but the rise**: no function of`growth` alone, and no selector on the Poisson axis above it, can be tried again |
 |`prior-floor.md`| **the baseline is a READING now, not a paragraph a session restates by hand, and `Top@5`is retired as a headline by the INSTRUMENT rather than by prose.** Iteration 153 read the label space off the 735 loss-census rows and found that`RE3`is prior-heavy while the six`RE1`/`RE2`cells are five-way and balanced; the numbers have been quoted from a doc section ever since, so every run restated them and nothing checked the restatement.`createPriorFloorCensus`/`accumulatePriorFloor`/`formatPriorFloorLine`make each RCAEval cell print its own floor on the line beside its own rate, over BOTH closed forms —`uniform`(what a blind guess pays) and`frequency`(what a majority-class rule pays, which is the stronger baseline wherever the truths are imbalanced) — with`lift = (engine - prior) / (1 - prior)`as the one quantity comparable across cells. Two cells are read so far.`RE3:SockShop`is the one that changed a priority: 30 cases and three truths, so the frequency prior is **40.0%** (majority`carts`, 12) against a uniform 33.3%, and the `Avg@5`floor is 80.0% — the engine reaches a 63.3%`AC@1`for a **lift of 38.9% of the reachable margin above the 40.0% frequency prior**, with 7 of 12`carts`cases missed while`front-end`is 9 of 9 — so on its own majority class the engine is behind a blind guess. **And the instrument then found the same defect in itself**: the first version printed both baselines and divided by the WEAKER one, reporting`45.0%`here,`77.8%`on`RE3:OnlineBoutique`(whose frequency prior is 50.0% against a uniform 25.0%) and`46.7%`on`RE3:TrainTicket`, where the two coincide — the error was largest exactly where the corpus gives the most away, and it is recorded as a measured correction (`docs/prior-floor.md`§3.2) rather than fixed quietly. The cell's entire lead over the prior therefore comes from the class the prior cannot NAME, which is why the ordering of the remaining work moved to`RE3`rather than to the largest raw miss count.`RE1:OnlineBoutique`is the control where the five-way balance makes the two priors coincide to twelve digits. And the reason this is filed as an instrument rather than a table:`S <= 5`holds in all nine cells, so the`Top@5`floor is`1.000`and the artifact prints`SATURATED` on that cell instead of a number a reader would compare — the headline metric this project used for several iterations is uninformative by construction here, and it says so itself |
 |`trace-weight-default.md`| **the trace weight's default was a fact of a YAML `else`branch, and it was worth 44 points on the one cell that has spans.** A local run of`RE3:TrainTicket`printed 30.6% for the cell CI calls 74.5% — same source, same commit, the difference a`--trace-weight 1`inside`benchmark-rcaeval.yml`'s guard — so the published configuration was not a point in the battery's cube and `productionFlags`had to return three vectors. The unconfounded nine-cell A/B (both arms with`injectTime`on) moved the value into`DEFAULT_TRACE_WEIGHT = 1`: 13 cases gained on that cell, none lost, and **not one case flipped on the seven other cells** — six of which cannot see the term at all because their packs carry no `traces.csv`. The same document records the two facts that bound it: `RE3:TrainTicket`'s 189,488 spans carry **no `statusCode` at all**, so the only direction-carrying term (`failedEdge`, weight 3) is data-inert on the cell that needs direction most; and the trace term is a VOLUME prior whose cost is that eight of the nine remaining misses are one service losing to a trace hub. §6 is a pre-screen that CLOSED the obvious repair — ranking a dependency-connected error emitter above a silent leader — at **9 gains against 68 losses**, because a victim floods the same channel in RE2) |
-|`topo-edge-explained.md`| **the missing response channel cannot be replaced by the per-edge latency rise, in either of the two units available.** The corpus's 87 metric names are all `container.*`/`k8s.*`, so the deduction's admission predicate has no true instance (§316.3) — but `traceEdgeLatency` is `[from, to, baseline, post]` per edge and encodes the same physical fact, so the arm reads it in the direction nothing else reads it: the graph's `edgeLatencyScores` scores a node by its INBOUND rise (what its callers waited, feeding `latWeight = 0.561495`) and the deduction needs the OUTBOUND one (what the node waited for). Both sides of the operator consult ONE predicate, because relaxing the callee side alone is inert on exactly the corpus the arm was built for (amendment A1). Two forms were measured on 1 422 FSE'26 cases at `$0`: an absolute threshold reads **1 129 / 1 153** against a reproduced control of **1 156** at θ = 2 and θ = 10, and the queueing divisor `rise(edge) ≥ θ · inbound(caller)` reads **1 129 / 1 140** at θ = 2 and θ = 5. Both are refused by the pre-registered rule (`Top@1 ≥ 1 200`, golden nine cells identical), and the reason is not the threshold: a census of **71 560 measured edges** — 5 942 of them leaving a ground-truth service — shows the harmful and helpful populations have the same rise distribution (median **0.91×** against **0.94×**, the helpful one LARGER) and the same ratio distribution (**0.65** against **0.76**), so the divisor is **26× less pure** at θ = 10 (15.7 % of its admissions charge the truth, against 0.6 %) because a service few callers wait on has a small inbound measurement and dividing by it selects for sources. What outlives the axis is the cost function it exposed: at the shipped `rho = 1` with `poolAdmission = positive` an admitted edge does not DEMOTE a candidate, it DELETES it — 16 answers that were correct at rank 1 are absent from the ranked list under the inbound form at θ = 2, against a structural floor of zero in the control |
+|`topo-edge-explained.md`| **the missing response channel cannot be replaced by the per-edge latency rise, in either of the two units available.** The corpus's 87 metric names are all `container._`/`k8s._`, so the deduction's admission predicate has no true instance (§316.3) — but `traceEdgeLatency`is`[from, to, baseline, post]`per edge and encodes the same physical fact, so the arm reads it in the direction nothing else reads it: the graph's`edgeLatencyScores`scores a node by its INBOUND rise (what its callers waited, feeding`latWeight = 0.561495`) and the deduction needs the OUTBOUND one (what the node waited for). Both sides of the operator consult ONE predicate, because relaxing the callee side alone is inert on exactly the corpus the arm was built for (amendment A1). Two forms were measured on 1 422 FSE'26 cases at `$0`: an absolute threshold reads **1 129 / 1 153** against a reproduced control of **1 156** at θ = 2 and θ = 10, and the queueing divisor `rise(edge) ≥ θ · inbound(caller)` reads **1 129 / 1 140** at θ = 2 and θ = 5. Both are refused by the pre-registered rule (`Top@1 ≥ 1 200`, golden nine cells identical), and the reason is not the threshold: a census of **71 560 measured edges** — 5 942 of them leaving a ground-truth service — shows the harmful and helpful populations have the same rise distribution (median **0.91×** against **0.94×**, the helpful one LARGER) and the same ratio distribution (**0.65** against **0.76**), so the divisor is **26× less pure** at θ = 10 (15.7 % of its admissions charge the truth, against 0.6 %) because a service few callers wait on has a small inbound measurement and dividing by it selects for sources. What outlives the axis is the cost function it exposed: at the shipped `rho = 1`with`poolAdmission = positive` an admitted edge does not DEMOTE a candidate, it DELETES it — 16 answers that were correct at rank 1 are absent from the ranked list under the inbound form at θ = 2, against a structural floor of zero in the control |
 
 ## The shared kill criterion
 
@@ -3139,13 +3139,13 @@ Benjamini & Yekutieli apply to intervals around selected parameters, exact rathe
 
 The price is measured, on the 1 422-case dump, for the row the point estimate prefers (`stability 0.3 + log 1.2`, +13):
 
-| reading                          | corpus | budget | rate      |
-| -------------------------------- | -----: | -----: | --------- |
-| single — named in advance        |  1 422 |  **8** | **0.56 %** |
+| reading                           | corpus | budget | rate       |
+| --------------------------------- | -----: | -----: | ---------- |
+| single — named in advance         |  1 422 |  **8** | **0.56 %** |
 | joint — best of 28 on this corpus |  1 422 | **13** | **0.91 %** |
-| split, 2 folds                   |    711 |    7.5 | 1.05 %    |
-| split, 5 folds                   |    284 |    7.0 | 2.46 %    |
-| split, 10 folds                  |    142 |    7.0 | 4.92 %    |
+| split, 2 folds                    |    711 |    7.5 | 1.05 %     |
+| split, 5 folds                    |    284 |    7.0 | 2.46 %     |
+| split, 10 folds                   |    142 |    7.0 | 4.92 %     |
 
 The naive reading is 1.6× optimistic, which is the winner's curse in this repository's own currency. A 2-fold split
 prices the same row at 1.05 %, so **28 looks cost about what half the corpus costs** — and the deeper splits show the
@@ -3156,14 +3156,14 @@ count.
 
 `pnpm tsx benchmarks/src/run-term-weight-screen.ts --terms <dump>`, `δ = 0.05`, Holm, 28 looks, 29 readings:
 
-| candidate                          | cases | delta | budget | worst family        | lost | price | verdict         |
-| ---------------------------------- | ----: | ----: | -----: | ------------------- | ---: | ----: | --------------- |
-| shipped                            | 1 073 |     0 |     10 | `ContainerKill`     |    0 |     — | unchanged       |
-| stability 0.05                     | 1 074 |    +1 | **10** | `HTTPRequestDelay`  |    1 |     — | **improvement** |
-| stability 0.1                      | 1 075 |    +2 |     11 | `HTTPRequestDelay`  |    2 | 2.000 | concession      |
-| log 1.2                            | 1 073 |     0 |     14 | `HTTPRequestDelay`  |    4 |     — | **flat**        |
-| stability 0.3 + log 1.2            | 1 086 |   +13 |     13 | `HTTPResponseDelay` |    3 | 4.333 | concession      |
-| stability 0.3 + lat 0.4 + log 1.2  | 1 078 |    +5 |     16 | `HTTPRequestDelay`  |    5 | 0.833 | concession      |
+| candidate                         | cases | delta | budget | worst family        | lost | price | verdict         |
+| --------------------------------- | ----: | ----: | -----: | ------------------- | ---: | ----: | --------------- |
+| shipped                           | 1 073 |     0 |     10 | `ContainerKill`     |    0 |     — | unchanged       |
+| stability 0.05                    | 1 074 |    +1 | **10** | `HTTPRequestDelay`  |    1 |     — | **improvement** |
+| stability 0.1                     | 1 075 |    +2 |     11 | `HTTPRequestDelay`  |    2 | 2.000 | concession      |
+| log 1.2                           | 1 073 |     0 |     14 | `HTTPRequestDelay`  |    4 |     — | **flat**        |
+| stability 0.3 + log 1.2           | 1 086 |   +13 |     13 | `HTTPResponseDelay` |    3 | 4.333 | concession      |
+| stability 0.3 + lat 0.4 + log 1.2 | 1 078 |    +5 |     16 | `HTTPRequestDelay`  |    5 | 0.833 | concession      |
 
 29 readings resolve as **1 improvement, 12 concessions, 12 regressions, 1 flat, 3 unchanged**. The single improvement
 is worth one case — and it is the one row the standing acceptance condition already rejects (it costs
@@ -3172,10 +3172,10 @@ floor did lose a case, and no family lost more than the shipped run's certified 
 
 ### The two rules, priced
 
-|              | shipped | `stability 0.05`       | `stability 0.3 + log 1.2` | best price | certified improvements |
-| ------------ | ------: | ---------------------- | ------------------------: | ---------: | ---------------------- |
-| **union**    |      10 | 13 — concession, 0.333 |                        20 |  **1.857** | none                   |
-| **holm**     |      10 | **10 — improvement**   |                    **13** |  **4.333** | `stability 0.05`       |
+|           | shipped | `stability 0.05`       | `stability 0.3 + log 1.2` | best price | certified improvements |
+| --------- | ------: | ---------------------- | ------------------------: | ---------: | ---------------------- |
+| **union** |      10 | 13 — concession, 0.333 |                        20 |  **1.857** | none                   |
+| **holm**  |      10 | **10 — improvement**   |                    **13** |  **4.333** | `stability 0.05`       |
 
 Holm is worth more here than it was on the ladder: under the union bound **no row can be certified to improve on what
 ships**, and the best price is less than half. At `δ = 0.01` both budgets rise by two (10 → 12, 13 → 15) and the price
@@ -3196,13 +3196,13 @@ reader's appetite for being wrong.
 
 ### Axes this closes
 
-| Axis                                                       | Verdict                                                                                                                                                                                    |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| "A screen row's budget is the certificate's budget"         | **closed** — the row was named after looking at 28 rows; pricing it as a hypothesis named in advance is 1.6× optimistic (0.56 % against 0.91 %)                                           |
-| "Multiplicity over candidates is prohibitively expensive"   | **closed as measured** — 28 looks cost about half the corpus (0.91 % against 1.05 % at 2 folds), and the count floor means deeper splits can only lose                                   |
-| "Splitting the corpus removes the need for the correction"  | **half-closed** — it removes the multiplicity and pays 2.8× the rate at 5 folds; the 2-fold split is the near-equivalent, not the free one                                                 |
-| "The best row is the best buy"                              | **closed** — `stability 0.1` buys 2 cases per budget unit and `stability 0.3 + log 1.2` buys 4.333, but `stability 0.05` buys one for nothing, and `log 1.2` buys nothing for four          |
-| "A row that ties on cases is a tie"                         | **closed** — `log 1.2` answers the shipped 1 073 at a budget of 14 instead of 10, which is a concession of four units for nothing                                                          |
+| Axis                                                       | Verdict                                                                                                                                                                            |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "A screen row's budget is the certificate's budget"        | **closed** — the row was named after looking at 28 rows; pricing it as a hypothesis named in advance is 1.6× optimistic (0.56 % against 0.91 %)                                    |
+| "Multiplicity over candidates is prohibitively expensive"  | **closed as measured** — 28 looks cost about half the corpus (0.91 % against 1.05 % at 2 folds), and the count floor means deeper splits can only lose                             |
+| "Splitting the corpus removes the need for the correction" | **half-closed** — it removes the multiplicity and pays 2.8× the rate at 5 folds; the 2-fold split is the near-equivalent, not the free one                                         |
+| "The best row is the best buy"                             | **closed** — `stability 0.1` buys 2 cases per budget unit and `stability 0.3 + log 1.2` buys 4.333, but `stability 0.05` buys one for nothing, and `log 1.2` buys nothing for four |
+| "A row that ties on cases is a tie"                        | **closed** — `log 1.2` answers the shipped 1 073 at a budget of 14 instead of 10, which is a concession of four units for nothing                                                  |
 
 ### What ships
 
@@ -3217,8 +3217,8 @@ gate mode.
 ## Iteration 282 — the ceiling had no method under it, and the method now has an artifact
 
 `scoreArm` has carried four arms since iteration 267: `engine`, `oracle`, `evidence` and `recorded`. Three of them
-could be produced by the repository. The fourth — the one whose own docblock says *"replays claims somebody else
-proposed, which is how a model's answers are scored without calling it again"* — had **no producer anywhere in the
+could be produced by the repository. The fourth — the one whose own docblock says _"replays claims somebody else
+proposed, which is how a model's answers are scored without calling it again"_ — had **no producer anywhere in the
 tree**. So the elimination line could price a bound and a deterministic rule, and could not answer the question the
 bound exists to ask, which is whether a model collects any of it. Fifteen iterations of instruments, and the arm
 that costs money was the one with nothing behind it.
@@ -3228,13 +3228,13 @@ number, because no dispatch has run the paid arm. That state is recorded here ra
 
 ### What the model is allowed to say, and what it is not offered
 
-| decision                                        | why                                                                                                              |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| the reply is JSON, one object, one array          | a prose answer and a wrong answer are the same object until scored — the reason `0d6ae609` retired the first layer |
-| an **empty array is a legitimate answer**        | "the ranking is right" is an outcome; pooling it with "no answer" would make a silent model look confident        |
-| `delta` is **not offerable**                     | it is the one statistic the table does not print, so quoting it means computing it, and a rounding error reads as fabrication |
-| every number is printed as `String(v)`           | the verifier compares with `===`, so a faithful copy must round-trip exactly                                      |
-| a malformed element refuses the **whole reply**  | a truncated answer's surviving claims are an accident of generation order, and admitting them makes accuracy a function of `max_tokens` |
+| decision                                        | why                                                                                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| the reply is JSON, one object, one array        | a prose answer and a wrong answer are the same object until scored — the reason `0d6ae609` retired the first layer                      |
+| an **empty array is a legitimate answer**       | "the ranking is right" is an outcome; pooling it with "no answer" would make a silent model look confident                              |
+| `delta` is **not offerable**                    | it is the one statistic the table does not print, so quoting it means computing it, and a rounding error reads as fabrication           |
+| every number is printed as `String(v)`          | the verifier compares with `===`, so a faithful copy must round-trip exactly                                                            |
+| a malformed element refuses the **whole reply** | a truncated answer's surviving claims are an accident of generation order, and admitting them makes accuracy a function of `max_tokens` |
 
 ### Three refusals on the way back, kept apart
 
@@ -3250,7 +3250,7 @@ twice. The alternative — dropping the case — would let an outage improve the
 ### Three defects the work found, and one the census found in itself
 
 - **A resumed run appended every reused line a second time.** `proposeClaims` called `onRecord` for records it had
-  just *reused*, so the claim file grew by one line per resumed case and a run that asked nothing reported a file
+  just _reused_, so the claim file grew by one line per resumed case and a run that asked nothing reported a file
   twice its size. The resume test failed on the line count; the fix is to count a reuse and not emit it.
 - **`createChatClientFromEnv` returned two different shapes.** The key-present branch had no `reason` and the
   key-absent one did, which the compiler only reported when the study needed to print the reason from either. Both
@@ -3267,7 +3267,7 @@ twice. The alternative — dropping the case — would let an outage improve the
   census's roots in the same commit, because a comparator outside the population is a comparator nobody measures —
   and the first site in `packages/ai` is this one.
 
-The census is the only one of the four that failed on the *first* push and was right to: it refused a tree in which
+The census is the only one of the four that failed on the _first_ push and was right to: it refused a tree in which
 `benchmarks/src/agentic-eliminator-study.ts` sorted by datapack without stating its population. Enrollment, not
 exemption, is the rule; the entry states why the two-arm form is safe (the headroom join makes datapacks unique).
 
@@ -3287,12 +3287,12 @@ Run `43548386087` on `7e17d26`, corpus `corpus-release-282`, model asked `deepse
 `deepseek-flash`** — recorded from the endpoint's own reply rather than from the request, which is the one place a
 reader can tell a router from a model.
 
-| arm        | top1      | moves | claims | silent | delta                |
-| ---------- | --------: | ----: | -----: | -----: | -------------------- |
-| `engine`   | **75.5 %** |     0 |      0 |      0 | control              |
-| `oracle`   | 87.7 %    |   174 |    269 |  1 248 | **+174** (ceiling)   |
-| `evidence` | 44.2 %    |   695 |    695 |    727 | **−444**             |
-| `recorded` | 33.1 %    |   925 |  5 335 |    348 | **−602**, worst family −88 |
+| arm        |       top1 | moves | claims | silent | delta                      |
+| ---------- | ---------: | ----: | -----: | -----: | -------------------------- |
+| `engine`   | **75.5 %** |     0 |      0 |      0 | control                    |
+| `oracle`   |     87.7 % |   174 |    269 |  1 248 | **+174** (ceiling)         |
+| `evidence` |     44.2 % |   695 |    695 |    727 | **−444**                   |
+| `recorded` |     33.1 % |   925 |  5 335 |    348 | **−602**, worst family −88 |
 
 Proposal: 1 422 asked, 1 421 answered, **0 declined**, 1 unreadable (`the reply is not JSON`), 5 335 claims,
 3 244 994 prompt + 354 585 completion tokens, 421 s, p50 1 798 ms per call.
@@ -3304,13 +3304,13 @@ Proposal: 1 422 asked, 1 421 answered, **0 declined**, 1 unreadable (`the reply 
    below the control by 8× the headroom that exists.
 2. **refusal rate: 2 014 of 5 335 (37.8 %)**, and the decomposition is the whole finding:
 
-   | refusal                              | count | share of claims |
-   | ------------------------------------ | ----: | --------------: |
-   | `unknown-channel`                    | 1 774 |          33.2 % |
-   | `band-disagrees-with-fingerprint`    |   207 |           3.9 % |
+   | refusal                                | count | share of claims |
+   | -------------------------------------- | ----: | --------------: |
+   | `unknown-channel`                      | 1 774 |          33.2 % |
+   | `band-disagrees-with-fingerprint`      |   207 |           3.9 % |
    | `removed-candidate-is-inside-its-band` |    28 |           0.5 % |
-   | `rate-disagrees-with-fingerprint`    |     4 |           0.1 % |
-   | `value-disagrees-with-fingerprint`   |     1 |           0.0 % |
+   | `rate-disagrees-with-fingerprint`      |     4 |           0.1 % |
+   | `value-disagrees-with-fingerprint`     |     1 |           0.0 % |
 
    **Arithmetic is not the problem — the contract is.** `value-disagrees` fires once in 5 335 claims, so copying a
    printed number is something this model does essentially perfectly. `unknown-channel` fires 1 774 times because
@@ -3320,6 +3320,7 @@ Proposal: 1 422 asked, 1 421 answered, **0 declined**, 1 unreadable (`the reply 
    labels on average (median 2), and 56 of 1 422 cases share none**; of the 5 335 claims, 3 561 (66.7 %) cite a
    label present on both, 774 only on the removed candidate, 742 only on the kept one, and 258 on neither. All 240
    non-channel refusals fall inside the 3 561, so **acceptance among claims that clear the channel rule is 93.3 %**.
+
 3. **price: not computed.** `certifiedBudgetOf` prints 105 for the arm and the number is meaningless on a delta of
    −602 — a budget is the corpus's permission for a gain, and there is no gain to permit. The row is printed so a
    reader sees the function agree rather than the study hide it.
@@ -3332,16 +3333,16 @@ and not sufficient**, and the next arm has to change what is asked, not only how
 
 ### Axes this closes
 
-| Axis                                                          | Verdict                                                                                                                                                    |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "The recorded arm can be scored"                               | **closed** — `run-agentic-eliminator.ts --propose` produces the claims, verifies them through the same `verifyClaim` every other arm uses, and scores all four |
-| "A cached answer is only valid for the question that elicited it" | **closed** — the prompt digest and the protocol version are recorded per line, and a replay refuses a mismatch by name                                    |
-| "An ablation of the model arm needs a second dispatch"          | **closed** — `--weight`, `--max-candidates` and `--skip-rule` are re-reads of the claims file; `--weight 0` is the control by construction                  |
-| "A failed call may be dropped from the population"              | **closed** — it is recorded as an abstention with its reason, so an outage cannot improve the score                                                         |
-| "The prompt may ask for a statistic the model must compute"      | **closed** — `delta` is excluded from the protocol; the two quotable statistics are the two the table prints                                                |
-| "The paid arm can be measured without a key"                    | **closed as measured** — the study prints `MODEL ARM NOT MEASURED: <reason>` and exits non-zero; the workflow warns by name, so a green job cannot imply a row that was never produced |
-| "Replaying a claim is a method"                                 | **closed as REFUTED on its first reading** — 33.1 % against a 75.5 % control, −602 cases, measured on 1 422 cases with 5 335 claims; the arm is an ablation that costs money and loses to doing nothing |
-| "A prompt may name a comparison the table cannot express"       | **closed** — the verifier requires the cited channel on both candidates and the prompt asked for one on the removed one; 33.2 % of claims died there. The protocol must print which presented ranks share a label, or not ask for a shared one |
+| Axis                                                              | Verdict                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The recorded arm can be scored"                                  | **closed** — `run-agentic-eliminator.ts --propose` produces the claims, verifies them through the same `verifyClaim` every other arm uses, and scores all four                                                                                 |
+| "A cached answer is only valid for the question that elicited it" | **closed** — the prompt digest and the protocol version are recorded per line, and a replay refuses a mismatch by name                                                                                                                         |
+| "An ablation of the model arm needs a second dispatch"            | **closed** — `--weight`, `--max-candidates` and `--skip-rule` are re-reads of the claims file; `--weight 0` is the control by construction                                                                                                     |
+| "A failed call may be dropped from the population"                | **closed** — it is recorded as an abstention with its reason, so an outage cannot improve the score                                                                                                                                            |
+| "The prompt may ask for a statistic the model must compute"       | **closed** — `delta` is excluded from the protocol; the two quotable statistics are the two the table prints                                                                                                                                   |
+| "The paid arm can be measured without a key"                      | **closed as measured** — the study prints `MODEL ARM NOT MEASURED: <reason>` and exits non-zero; the workflow warns by name, so a green job cannot imply a row that was never produced                                                         |
+| "Replaying a claim is a method"                                   | **closed as REFUTED on its first reading** — 33.1 % against a 75.5 % control, −602 cases, measured on 1 422 cases with 5 335 claims; the arm is an ablation that costs money and loses to doing nothing                                        |
+| "A prompt may name a comparison the table cannot express"         | **closed** — the verifier requires the cited channel on both candidates and the prompt asked for one on the removed one; 33.2 % of claims died there. The protocol must print which presented ranks share a label, or not ask for a shared one |
 
 ### What ships
 
@@ -3364,7 +3365,7 @@ until a weight is passed and a claim is verified.
 
 §282 measured the model arm at 33.1 % against a 75.5 % control and named the failure as a **contract** defect: the
 verifier wanted the cited channel on both candidates, the prompt asked for one on the removed candidate, and 33.2 %
-of claims died there. The obvious repair was a better operator — the shipped arm *displaces* (a unary score
+of claims died there. The obvious repair was a better operator — the shipped arm _displaces_ (a unary score
 multiplier, so `weight = 1` erases rank 0), while a rank-fusion operator is pairwise and can express a tie.
 
 This iteration implements the pairwise operators, implements the two nulls that say whether there is anything to
@@ -3373,34 +3374,34 @@ not the whole defect.**
 
 ### The measurement that decides it
 
-| quantity | reading |
-| --- | --- |
-| claims scored | 5 335 across 1 422 cases |
+| quantity                                         | reading                                                                                                   |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| claims scored                                    | 5 335 across 1 422 cases                                                                                  |
 | **uniform null** (keep drawn from the same pool) | **519 hits (9.73 %) against 891 expected (16.70 %) — z = −14.41 iid, −9.26 with the case as the cluster** |
-| surviving `verifyClaim` | 3 321 of 5 335 (62.2 %) |
-| uniform null, survivors only | 310 (9.33 %) against 529 expected — z = −11.00 |
-| **constant swap** (promote rank 1 everywhere) | **1 073 → 112 of 1 422 (75.46 % → 7.88 %), delta −961** |
-| claims promoting rank 1 | 4 113 (77.09 %) |
-| claims exactly "remove rank 0, keep rank 1" | 1 318 |
-| **claims whose removed service is the answer** | **1 129 (21.16 %); 1 038 of 1 421 cases in their first claim (73.05 %)** |
+| surviving `verifyClaim`                          | 3 321 of 5 335 (62.2 %)                                                                                   |
+| uniform null, survivors only                     | 310 (9.33 %) against 529 expected — z = −11.00                                                            |
+| **constant swap** (promote rank 1 everywhere)    | **1 073 → 112 of 1 422 (75.46 % → 7.88 %), delta −961**                                                   |
+| claims promoting rank 1                          | 4 113 (77.09 %)                                                                                           |
+| claims exactly "remove rank 0, keep rank 1"      | 1 318                                                                                                     |
+| **claims whose removed service is the answer**   | **1 129 (21.16 %); 1 038 of 1 421 cases in their first claim (73.05 %)**                                  |
 
 `z = −9.26` is not a weak signal: it is a signal pointing the wrong way. The model's choice is **significantly
 worse than a draw from the same pool**, and the mechanism is in the same table — 77.09 % of claims promote rank 1,
 which is the truth in 112 of 1 422 cases. The arm's −602 is the constant rule applied to 925 cases; the corpus
 scores the same rule applied to all 1 422 at −961.
 
-| strategy | weight | correct | delta | moved | delta over survivors |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| control | 0 | 1 073 | — | 0 | — |
-| `rrf` / `borda` | 0.2 | 1 073 | 0 | 0 | 0 |
-| `rrf` / `borda` | 0.5 | 883 | −190 | 284 | −125 |
-| `rrf` / `borda` | 1.0 | 882 | −191 | 287 | −155 |
-| `veto` | 0.5 | 1 073 | 0 | 0 | 0 |
-| `veto` | 1.0 | 147 | −926 | 1 381 | −600 |
+| strategy        | weight | correct | delta | moved | delta over survivors |
+| --------------- | -----: | ------: | ----: | ----: | -------------------: |
+| control         |      0 |   1 073 |     — |     0 |                    — |
+| `rrf` / `borda` |    0.2 |   1 073 |     0 |     0 |                    0 |
+| `rrf` / `borda` |    0.5 |     883 |  −190 |   284 |                 −125 |
+| `rrf` / `borda` |    1.0 |     882 |  −191 |   287 |                 −155 |
+| `veto`          |    0.5 |   1 073 |     0 |     0 |                    0 |
+| `veto`          |    1.0 |     147 |  −926 | 1 381 |                 −600 |
 
 **No positive region, at any weight, under any operator.** `rrf` and `borda` agree to the last digit because the
 claims are almost all one claim; `veto` at full weight recovers the constant-swap null from the claim set alone. The
-best an operator can do here is **0**, by moving nothing. And the shipped displacement arm is *better* than full
+best an operator can do here is **0**, by moving nothing. And the shipped displacement arm is _better_ than full
 `veto` only because it moves fewer cases — a weakness that reads as an advantage.
 
 ### The instrument was wrong twice, and the second time it was wrong about itself
@@ -3413,7 +3414,7 @@ instrument rather than a fact about the model.
   rank 1" decides it once and applies it three times, so the iid standard error is too small. Squaring the **case**
   deviation takes `z` to **−9.26**. `nullReadingOf` returns both and the study prints the clustered one by name.
 - **The one-claim-per-case null did not model the action.** Restricting to the first claim concentrates the sample
-  on claims whose removed service is rank 0, and in 73.05 % of those that service *is* the answer — so the null's
+  on claims whose removed service is rank 0, and in 73.05 % of those that service _is_ the answer — so the null's
   pool is empty and its expectation is zero, and a case where the model deleted the truth scores `0 − 0`: "no
   evidence" in the arithmetic, catastrophic in fact. The `+14.53` was that artefact.
 
@@ -3449,13 +3450,13 @@ checkable** (a cited channel is genuinely outside its band 98.6 % of the time) a
 
 ### Axes this closes
 
-| Axis | Verdict |
-| --- | --- |
-| "A better fusion operator recovers the arm" | **closed as REFUTED with numbers** — three operators × five weights × two populations, no positive delta; the proposal set is 14.4 σ on the wrong side of chance |
-| "`weight = 0` means the model agrees" | **closed** — it is the engine's order returned unchanged before any arithmetic, for every strategy, so a delta at zero weight is a delta against the engine |
-| "A veto can be dialled" | **closed** — a veto fires at `weight >= 1` or not at all; a half-veto has no definition and would be a scale nobody wrote down |
-| "The failure is arithmetic" | **closed as refuted** — one `value-disagrees-with-fingerprint` in 5 335 claims; the failure is choice, not copying |
-| "The failure is the channel contract" | **closed as insufficient** — repairing the contract admits 1 774 more claims whose truth rate is 9.6 %, so the repair changes nothing |
+| Axis                                                | Verdict                                                                                                                                                                      |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "A better fusion operator recovers the arm"         | **closed as REFUTED with numbers** — three operators × five weights × two populations, no positive delta; the proposal set is 14.4 σ on the wrong side of chance             |
+| "`weight = 0` means the model agrees"               | **closed** — it is the engine's order returned unchanged before any arithmetic, for every strategy, so a delta at zero weight is a delta against the engine                  |
+| "A veto can be dialled"                             | **closed** — a veto fires at `weight >= 1` or not at all; a half-veto has no definition and would be a scale nobody wrote down                                               |
+| "The failure is arithmetic"                         | **closed as refuted** — one `value-disagrees-with-fingerprint` in 5 335 claims; the failure is choice, not copying                                                           |
+| "The failure is the channel contract"               | **closed as insufficient** — repairing the contract admits 1 774 more claims whose truth rate is 9.6 %, so the repair changes nothing                                        |
 | "A model without query access is a competitive arm" | **closed by the literature and by our own reading** — the category is catalogued at 45.8 % on RCABench and ours reads 33.1 %; the ceiling for this shape is not a tuning gap |
 
 ### What ships
@@ -3474,7 +3475,7 @@ moves, because the change is an instrument and a refusal.
 
 **Verdict: the arm's failure had two causes, and neither is the one the last two iterations were treating.** One was
 ours: the rows the model read were ordered by the wrong quantity, and 62.7 % of the channels it cited were channels
-that leave their band in half of the *fault-free* windows. The other is not fixable by any protocol change: the
+that leave their band in half of the _fault-free_ windows. The other is not fixable by any protocol change: the
 service the arm names most often is named **5.0 %** of the time when it is the source and **38.1 %** of the time when
 it is not. That is not a reader misjudging a row. That is a prior about the service.
 
@@ -3482,16 +3483,16 @@ it is not. That is not a reader misjudging a row. That is a prior about the serv
 
 A census of all 5 335 claims against the table they were shown (`agentic-citation-census.ts`):
 
-| Reading | Claims | Share |
-| --- | ---: | ---: |
-| cite a channel **both** rows carry, so the verifier could judge them | 3 561 | 66.7 % |
-| cite a channel **only the eliminated row** carries | 774 | 14.5 % |
-| name a label **that row never printed** at all | 1 000 | 18.7 % |
+| Reading                                                              | Claims |  Share |
+| -------------------------------------------------------------------- | -----: | -----: |
+| cite a channel **both** rows carry, so the verifier could judge them |  3 561 | 66.7 % |
+| cite a channel **only the eliminated row** carries                   |    774 | 14.5 % |
+| name a label **that row never printed** at all                       |  1 000 | 18.7 % |
 
 Two things follow, and both are defects.
 
 - **The verifier enforced a rule the prompt never stated.** `verifyClaim` requires the cited channel on the removed
-  candidate *and* on the kept one, and it reported both failures as `unknown-channel`: 1 774 refusals, one number,
+  candidate _and_ on the kept one, and it reported both failures as `unknown-channel`: 1 774 refusals, one number,
   two different mistakes. `channel-not-observed-on-both` had been declared in `CLAIM_REJECTIONS` since the first
   commit and **no input could produce it** — a rejection family that was a comment. The prompt now states the rule
   (protocol **2**), and the census splits it.
@@ -3524,49 +3525,49 @@ rows a model sees are the head of the order the cap kept and not a second rankin
 `agentic-preference-census.ts` splits, for one service, the cases it was **presented** in by whether it is the source,
 and counts how often the arm named it in each half. On the 1 422-case corpus, for the four most-presented services:
 
-| Service | named when it IS the source | named when it is not |
-| --- | ---: | ---: |
-| `ts-travel-plan-service` | **4 / 80 (5.0 %)** | 251 / 658 (38.1 %) |
-| `ts-route-plan-service` | 48 / 134 (35.8 %) | 171 / 571 (29.9 %) |
-| `ts-travel-service` | **9 / 98 (9.2 %)** | 170 / 430 (39.5 %) |
-| `ts-travel2-service` | **10 / 75 (13.3 %)** | 142 / 367 (38.7 %) |
+| Service                  | named when it IS the source | named when it is not |
+| ------------------------ | --------------------------: | -------------------: |
+| `ts-travel-plan-service` |          **4 / 80 (5.0 %)** |   251 / 658 (38.1 %) |
+| `ts-route-plan-service`  |           48 / 134 (35.8 %) |   171 / 571 (29.9 %) |
+| `ts-travel-service`      |          **9 / 98 (9.2 %)** |   170 / 430 (39.5 %) |
+| `ts-travel2-service`     |        **10 / 75 (13.3 %)** |   142 / 367 (38.7 %) |
 
 Three of the four are **inverted**, and the largest is inverted 7.6-fold. `ts-travel-plan-service` is the twelfth most
 common answer in the corpus and the first most common answer from the model: 647 of 5 335 claims keep it, of which
 1.9 % are cases where it is the source. The arm is not reading the row and getting it wrong; it is naming the
 front-of-house service that looks busiest, which is the symptom-versus-source confusion the prompt warns about, and
-it prefers it *more* when it is innocent.
+it prefers it _more_ when it is innocent.
 
 ### Did verification rescue it? No — and the size of the no is the finding
 
 Re-scoring the recorded artifact with every claim the verifier refuses dropped first (`fuseClaims` on the 3 321
 accepted of 5 335, 62.2 %), over three operators and three weights:
 
-| Operator | weight | all claims | verified only |
-| --- | ---: | ---: | ---: |
-| `rrf` / `borda` | 0.25 | 75.5 % (moved 0) | 75.5 % (moved 0) |
-| `rrf` / `borda` | 0.5 | 62.1 % | **66.7 %** |
-| `rrf` / `borda` | 1.0 | 62.0 % | 64.6 % |
-| `veto` | 1.0 | 10.3 % | 33.3 % |
+| Operator        | weight |       all claims |    verified only |
+| --------------- | -----: | ---------------: | ---------------: |
+| `rrf` / `borda` |   0.25 | 75.5 % (moved 0) | 75.5 % (moved 0) |
+| `rrf` / `borda` |    0.5 |           62.1 % |       **66.7 %** |
+| `rrf` / `borda` |    1.0 |           62.0 % |           64.6 % |
+| `veto`          |    1.0 |           10.3 % |           33.3 % |
 
 Filtering recovers **+4.6 points** and still loses **8.8** to the engine at 75.5 %. The fabrication was part of the
-loss; the judgement is the loss. And the arm the protocol never allowed — rank the services by how many claims *keep*
+loss; the judgement is the loss. And the arm the protocol never allowed — rank the services by how many claims _keep_
 them, a nomination read out of the same answers — scores **27.5 %** (verified) and **10.3 %** (all), which is below
 the engine's order and below the five-way chance of 20 %. The positive preference is worse than the negative one.
 
 ### What the literature says this shape is
 
-*Free to Look, Free to Reason* (arXiv, 26 October 2026) pools eight public RCA datasets into **RCAtlas** — 542 cases
+_Free to Look, Free to Reason_ (arXiv, 26 October 2026) pools eight public RCA datasets into **RCAtlas** — 542 cases
 screened, 348 through eight exclusion rules, **90 sampled** across 23 scenarios, injection-tool traces removed — and
 runs three harnesses that leave every step to the model against five published root-cause agents and the non-LLM
 methods, on six models, with repeat passes:
 
-| Configuration | Top-1 |
-| --- | ---: |
+| Configuration                                                                                                  |         Top-1 |
+| -------------------------------------------------------------------------------------------------------------- | ------------: |
 | simple harnesses (one call over an evidence package; a SQL agent over raw telemetry; Codex) on mid-tier models | **65 – 77 %** |
-| the same, on the strongest models tested | 84 – 89 % |
-| five published, hand-crafted RCA agents, same mid-tier models | **16 – 53 %** |
-| best non-LLM method (NSigma), the usability threshold | 38.9 % |
+| the same, on the strongest models tested                                                                       |     84 – 89 % |
+| five published, hand-crafted RCA agents, same mid-tier models                                                  | **16 – 53 %** |
+| best non-LLM method (NSigma), the usability threshold                                                          |        38.9 % |
 
 The paper's own attribution is mechanical: the published agents fix between **0.10 and 1.00** of their model calls in
 code and the simple harnesses fix none; a case study shows one agent's matched procedure never reading the logs that
@@ -3605,14 +3606,14 @@ Result: **14 projects, every dimension ≥ 95 %, lowest branch 95.69 %**, and th
 
 ### Axes this closes
 
-| Axis | Verdict |
-| --- | --- |
-| "A third of the output is fabrication, and repairing it fixes the arm" | **closed as insufficient** — the split is 774 unstated rule / 1 000 fabrication, and repairing both leaves the judgement where it was |
-| "The table already shows the decisive channel" | **closed as refuted** — 62.7 % of citations were channels that swing in half of clean windows, 48 % of them two filesystem channels at a rate of 0.99 |
-| "Verifying before fusing rescues the arm" | **closed as refuted with numbers** — +4.6 pp over the unverified reading, −8.8 pp against the engine |
-| "The model prefers the source and the operator discards it" | **closed as refuted and inverted** — 5.0 % against 38.1 % on the service it names most |
-| "The category is a tuning gap" | **closed twice** — 45.8 % catalogued for no-query agents on RCABench, 16–53 % for hand-crafted procedures on RCAtlas, and our own 33.1 % |
-| "`channel-not-observed-on-both` distinguishes a rule from a fabrication" | **closed as a defect** — the family was declared and unreachable; the two mistakes shared one counter for three iterations |
+| Axis                                                                     | Verdict                                                                                                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "A third of the output is fabrication, and repairing it fixes the arm"   | **closed as insufficient** — the split is 774 unstated rule / 1 000 fabrication, and repairing both leaves the judgement where it was                 |
+| "The table already shows the decisive channel"                           | **closed as refuted** — 62.7 % of citations were channels that swing in half of clean windows, 48 % of them two filesystem channels at a rate of 0.99 |
+| "Verifying before fusing rescues the arm"                                | **closed as refuted with numbers** — +4.6 pp over the unverified reading, −8.8 pp against the engine                                                  |
+| "The model prefers the source and the operator discards it"              | **closed as refuted and inverted** — 5.0 % against 38.1 % on the service it names most                                                                |
+| "The category is a tuning gap"                                           | **closed twice** — 45.8 % catalogued for no-query agents on RCABench, 16–53 % for hand-crafted procedures on RCAtlas, and our own 33.1 %              |
+| "`channel-not-observed-on-both` distinguishes a rule from a fabrication" | **closed as a defect** — the family was declared and unreachable; the two mistakes shared one counter for three iterations                            |
 
 ### What ships
 
@@ -3643,20 +3644,20 @@ agentic line retires and the deterministic engine is the product.** That is the 
 Run `43570841404`, commit `9eb573ff`, `deepseek-chat`, 1 422 cases, protocol 2. Same corpus, same model, same
 protocol shape. What changed is which channels the table showed and one sentence of instruction.
 
-| Reading | §283 | §284b |
-| --- | ---: | ---: |
-| `recorded` arm, damping, `weight = 1` | 33.1 % | **60.7 %** |
-| best fusion operator (`rrf`/`borda`, `w = 0.3`, verified claims) | 62.1 % (`w = 0.5`) | **73.6 %** |
-| engine (control) | 75.5 % | 75.5 % |
-| oracle ceiling | 87.7 % | 87.1 % |
-| claims emitted | 5 335 | 5 188 |
-| claims the verifier accepts | 3 321 (62.2 %) | **3 632 (70.0 %)** |
-| mean fault-free rate of a cited channel | 0.90 | **0.37** |
-| citations of a channel that swings in ≥ half of clean windows | 3 344 (62.7 %) | **740 (14.3 %)** |
-| `unknown-channel` / `channel-not-observed-on-both` | 1 774 / **unreachable** | 1 036 / **281** |
-| uniform null, clustered `z` | **−9.26** | **+25.0** |
-| claims that keep a true service | 77.1 % against a mis-modelled expectation | 3 111 / 5 188 (60.0 %) against 1 033 expected |
-| `ts-travel-plan-service`, named when it IS the source / when it is not | 5.0 % / 38.1 % | **76.3 % / 16.4 %** |
+| Reading                                                                |                                      §283 |                                         §284b |
+| ---------------------------------------------------------------------- | ----------------------------------------: | --------------------------------------------: |
+| `recorded` arm, damping, `weight = 1`                                  |                                    33.1 % |                                    **60.7 %** |
+| best fusion operator (`rrf`/`borda`, `w = 0.3`, verified claims)       |                        62.1 % (`w = 0.5`) |                                    **73.6 %** |
+| engine (control)                                                       |                                    75.5 % |                                        75.5 % |
+| oracle ceiling                                                         |                                    87.7 % |                                        87.1 % |
+| claims emitted                                                         |                                     5 335 |                                         5 188 |
+| claims the verifier accepts                                            |                            3 321 (62.2 %) |                            **3 632 (70.0 %)** |
+| mean fault-free rate of a cited channel                                |                                      0.90 |                                      **0.37** |
+| citations of a channel that swings in ≥ half of clean windows          |                            3 344 (62.7 %) |                              **740 (14.3 %)** |
+| `unknown-channel` / `channel-not-observed-on-both`                     |                   1 774 / **unreachable** |                               1 036 / **281** |
+| uniform null, clustered `z`                                            |                                 **−9.26** |                                     **+25.0** |
+| claims that keep a true service                                        | 77.1 % against a mis-modelled expectation | 3 111 / 5 188 (60.0 %) against 1 033 expected |
+| `ts-travel-plan-service`, named when it IS the source / when it is not |                            5.0 % / 38.1 % |                           **76.3 % / 16.4 %** |
 
 **The arm reads the case now.** The clustered null went from 9.3 σ on the wrong side of chance to **+25.0 σ** on the
 right side, and the preference census — the instrument that found the inversion — now reports the correct direction
@@ -3676,7 +3677,7 @@ does not close the gap; it removes the two defects that were making the gap unre
 **What §283's verdict has to be corrected to.** Its central sentence — "the operator was never the problem"
 — was measured on claims of which 62.7 % cited a channel the profile itself calls noise. On the repaired artifact the
 operator is worth **+11.4 points**: the same claims score 60.7 % under the shipped damping rule and 72.1 % under `rrf`
-at weight 0.5. The operator was not the problem *then* because the input could not have supported any operator; it is
+at weight 0.5. The operator was not the problem _then_ because the input could not have supported any operator; it is
 a problem now, and it is the next one to measure.
 
 **What this retires, and what it does not.** The nomination harness pre-registered above is **not** next: it was
@@ -3696,12 +3697,12 @@ is what this section records.
 
 Three counts decide every arm on this population, and all three are arithmetic over the dump:
 
-| Reading | Cases | Share |
-| --- | ---: | ---: |
-| the engine's top-1 is accepted | 1 073 / 1 422 | 75.5 % |
+| Reading                                                      |         Cases |      Share |
+| ------------------------------------------------------------ | ------------: | ---------: |
+| the engine's top-1 is accepted                               | 1 073 / 1 422 |     75.5 % |
 | an accepted answer appears anywhere in the width-5 posterior | 1 249 / 1 422 | **87.8 %** |
-| not in the width-5 posterior | 173 / 1 422 | 12.2 % |
-| **not anywhere in the engine's order** | **0 / 1 422** | **0.0 %** |
+| not in the width-5 posterior                                 |   173 / 1 422 |     12.2 % |
+| **not anywhere in the engine's order**                       | **0 / 1 422** |  **0.0 %** |
 
 The second row bounds **every** reader, whatever it is asked. The third is not a hard case: it is a case the
 published five-wide presentation does not show. The fourth is the one that would be fatal — and it is empty. The
@@ -3710,12 +3711,12 @@ ranking-depth report reads `absent 0`, `beyond@20 112`: the engine's complete or
 
 The gate's own bound is a fourth count — `engine correct OR arm correct`, per case:
 
-| Arm under the claim protocol | arm alone | arm-only | engine-only | **union** |
-| --- | ---: | ---: | ---: | ---: |
-| damping, `w = 1.0` | 60.7 % | 56 | 266 | **79.4 %** |
-| damping, `w = 0.5` | 69.1 % | 56 | 147 | **79.4 %** |
-| damping, `w = 0.3` | 72.0 % | 44 | 93 | **78.6 %** |
-| `rrf`, `w = 0.3` | 73.6 % | 10 | 36 | 76.2 % |
+| Arm under the claim protocol | arm alone | arm-only | engine-only |  **union** |
+| ---------------------------- | --------: | -------: | ----------: | ---------: |
+| damping, `w = 1.0`           |    60.7 % |       56 |         266 | **79.4 %** |
+| damping, `w = 0.5`           |    69.1 % |       56 |         147 | **79.4 %** |
+| damping, `w = 0.3`           |    72.0 % |       44 |          93 | **78.6 %** |
+| `rrf`, `w = 0.3`             |    73.6 % |       10 |          36 |     76.2 % |
 
 **79.4 % is the most a gate can ever reach here**, because it assumes the gate knows the label — it keeps every case
 the arm got right and every case the engine got right, and discards the 266 the arm lost. A real gate is a
@@ -3733,14 +3734,14 @@ Nine gate rules over the recorded claims, each scored on a hash split of the cor
 reported as a method. Verified claims: **3 632** over **1 201** cases (the other 221 cases produced no admissible
 claim at all).
 
-| Gate | Operator | all | in-sample | out-of-sample | Δ vs engine |
-| --- | --- | ---: | ---: | ---: | ---: |
-| none | damping `w=1` | 60.7 % | 62.6 % | 58.8 % | −14.8 |
-| separation `< 0` | damping `w=1` | 68.6 % | 69.4 % | 67.7 % | −6.9 |
-| `margin < 0.05` | damping `w=1` | 75.7 % | 76.4 % | 74.9 % | **+0.2** |
-| **`margin < 0.05` ∧ separation `< 0`** | damping `w=1` | **75.7 %** | 76.2 % | 75.3 % | **+0.3** |
-| `margin < 0.05` ∧ separation `< 0` | `rrf` `w=0.3` | 75.5 % | 75.9 % | 75.0 % | +0.0 |
-| `n ≤ 2` ∧ separation `< 0` | damping `w=1` | 73.6 % | 74.1 % | 73.2 % | −1.8 |
+| Gate                                   | Operator      |        all | in-sample | out-of-sample | Δ vs engine |
+| -------------------------------------- | ------------- | ---------: | --------: | ------------: | ----------: |
+| none                                   | damping `w=1` |     60.7 % |    62.6 % |        58.8 % |       −14.8 |
+| separation `< 0`                       | damping `w=1` |     68.6 % |    69.4 % |        67.7 % |        −6.9 |
+| `margin < 0.05`                        | damping `w=1` |     75.7 % |    76.4 % |        74.9 % |    **+0.2** |
+| **`margin < 0.05` ∧ separation `< 0`** | damping `w=1` | **75.7 %** |    76.2 % |        75.3 % |    **+0.3** |
+| `margin < 0.05` ∧ separation `< 0`     | `rrf` `w=0.3` |     75.5 % |    75.9 % |        75.0 % |        +0.0 |
+| `n ≤ 2` ∧ separation `< 0`             | damping `w=1` |     73.6 % |    74.1 % |        73.2 % |        −1.8 |
 
 The best gate is worth **+0.3 points** and it agrees with the shipped skip rule almost exactly: `margin < 0.05` alone
 is +0.2. The two-column split is what makes this readable — every rule that loses in sample also loses out of
@@ -3755,17 +3756,17 @@ population whose base rate is 19 % correct without also discarding most of the 6
 
 ### One measurement that inverted an assumption
 
-The separation feature was added on the theory that a claim cites a channel which is *more* anomalous on the removed
+The separation feature was added on the theory that a claim cites a channel which is _more_ anomalous on the removed
 candidate than on the kept one, and that a claim with the opposite sign is asserting a preference rather than
 comparing evidence. The corpus says otherwise:
 
 | `departure(removed) − departure(kept)` in band widths | claims | the kept service IS the truth |
-| --- | ---: | ---: |
-| `< −1.0` (kept far more anomalous) | 915 | **71.0 %** |
-| `−1.0 … −0.25` | 343 | 70.6 % |
-| `−0.25 … 0` | 695 | 46.5 % |
-| `0 … 0.25` | 936 | 48.1 % |
-| `≥ 4.0` | 274 | 58.8 % |
+| ----------------------------------------------------- | -----: | ----------------------------: |
+| `< −1.0` (kept far more anomalous)                    |    915 |                    **71.0 %** |
+| `−1.0 … −0.25`                                        |    343 |                        70.6 % |
+| `−0.25 … 0`                                           |    695 |                        46.5 % |
+| `0 … 0.25`                                            |    936 |                        48.1 % |
+| `≥ 4.0`                                               |    274 |                        58.8 % |
 
 When the kept service is **further** outside the cited band than the removed one, it is the truth 71 % of the time —
 14 points above the corpus's own 60 % rate for "the kept service is true". The direction is right and the reason is
@@ -3779,8 +3780,8 @@ how far the engine's own margin already was.
 
 `depth.ndjson` records the engine's full order, so the recall curve is free:
 
-| depth | 1 | 2 | 3 | 5 | 8 | 10 | 15 | 20 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| depth  |      1 |      2 |      3 |      5 |      8 |         10 |         15 |         20 |
+| ------ | -----: | -----: | -----: | -----: | -----: | ---------: | ---------: | ---------: |
 | recall | 75.5 % | 83.3 % | 86.3 % | 87.8 % | 88.8 % | **89.9 %** | **91.0 %** | **92.1 %** |
 
 The published five is a **presentation** decision, not a property of the engine: the truth sits at rank 5–19 in a
@@ -3798,7 +3799,7 @@ What ships is the **second expression protocol** and the instruments that made t
   replays.
 - `packages/ai/src/agent/nomination.ts` — protocol 3: a ranking, partial and possibly empty, verified for existence
   and repetition only. Its refusal families are two, both about the answer rather than the case, because whether a
-  ranking is *right* is what the accuracy measures.
+  ranking is _right_ is what the accuracy measures.
 - `benchmarks/src/agentic-protocol-ceiling.ts` — the reader bound, the union bound, and the recall curve, from one
   loop that takes `orderOf(case)` so a claim arm and a nomination arm are scored by the same arithmetic.
 - `benchmarks/src/run-agentic-ceiling.ts` — the offline entry point; `benchmark-agentic.yml` runs it after the
@@ -3847,36 +3848,36 @@ wrong is the finding.
 
 The three artifacts `measure` writes were compared by digest against the previous run's:
 
-| Artifact | md5 (both runs) |
-| --- | --- |
+| Artifact              | md5 (both runs)                    |
+| --------------------- | ---------------------------------- |
 | `fingerprints.ndjson` | `1bda8c2d7a953fa000d33b7ea6588175` |
-| `per-case.ndjson` | `78279a2168d62340fc7db72768309b62` |
-| `depth.ndjson` | `656c3d0162c3a3c0a751d6730e363441` |
+| `per-case.ndjson`     | `78279a2168d62340fc7db72768309b62` |
+| `depth.ndjson`        | `656c3d0162c3a3c0a751d6730e363441` |
 
 **Identical, byte for byte, across a commit that changed `pruner.ts`.** Everything below is therefore a property of
 the model, not of the engine.
 
 ### Nomination: the model restates the engine
 
-| Arm | `rrf` `w=0.1` | `w=0.3` | `w=0.5` | `w=1.0` |
-| --- | ---: | ---: | ---: | ---: |
-| nominate (arm alone) | 74.6 % | 74.6 % | 74.5 % | 74.5 % |
-| **union (engine or arm)** | 75.8 % | 75.9 % | 76.0 % | **76.2 %** |
-| arm-only | 5 | 6 | 8 | **10** |
-| engine-only | 17 | 18 | 21 | 24 |
+| Arm                       | `rrf` `w=0.1` | `w=0.3` | `w=0.5` |    `w=1.0` |
+| ------------------------- | ------------: | ------: | ------: | ---------: |
+| nominate (arm alone)      |        74.6 % |  74.6 % |  74.5 % |     74.5 % |
+| **union (engine or arm)** |        75.8 % |  75.9 % |  76.0 % | **76.2 %** |
+| arm-only                  |             5 |       6 |       8 |     **10** |
+| engine-only               |            17 |      18 |      21 |         24 |
 
 3 941 891 prompt tokens and 24 105 completion tokens bought **ten** cases the engine did not have, and lost
 seventeen. The reason is visible in the answers themselves:
 
-| Reading | Cases | Share |
-| --- | ---: | ---: |
+| Reading                                                 |         Cases |      Share |
+| ------------------------------------------------------- | ------------: | ---------: |
 | the model's first service is the engine's first service | 1 238 / 1 422 | **87.1 %** |
-| the model's first service is the truth | 1 056 / 1 422 | 74.3 % |
-| the truth appears anywhere in the model's ranking | 1 204 / 1 422 | 84.7 % |
-| mean ranking length | 2.25 services | — |
+| the model's first service is the truth                  | 1 056 / 1 422 |     74.3 % |
+| the truth appears anywhere in the model's ranking       | 1 204 / 1 422 |     84.7 % |
+| mean ranking length                                     | 2.25 services |          — |
 
 The layer is being asked to improve a ranking and answers by repeating it: 87.1 % of the time its first choice is
-the choice it was shown first, and its first choice is the truth *less* often than the engine's is. Its recall,
+the choice it was shown first, and its first choice is the truth _less_ often than the engine's is. Its recall,
 84.7 %, is **below the 87.8 % the posterior already contained** — the model discards true answers that were on the
 page. Nomination's union ceiling, 76.2 %, is below the elimination protocol's 80.7 % on the same cases, so the
 8.4-point expressiveness gap §285 measured is real but is not where the loss is: the loss is that there is nothing
@@ -3887,13 +3888,13 @@ to express.
 This run's elimination arm was measured beside the previous one. The prompt digest replays 1 422 / 1 422 with zero
 stale, so the question was identical; the engine artifact is identical by md5; the model name is identical.
 
-| Reading | §284b | §285b | Δ |
-| --- | ---: | ---: | ---: |
-| `recorded` arm, damping `w=1` | 60.7 % | **45.6 %** | −15.1 |
-| claims emitted | 5 188 | 5 093 | −95 |
-| verified claims | 3 632 (70.0 %) | **3 633 (71.3 %)** | +1.3 |
-| union (engine or arm) | 79.4 % | 80.7 % | +1.3 |
-| arm-only / engine-only | 56 / 266 | 75 / 499 | — |
+| Reading                                                                |           §284b |               §285b |                 Δ |
+| ---------------------------------------------------------------------- | --------------: | ------------------: | ----------------: |
+| `recorded` arm, damping `w=1`                                          |          60.7 % |          **45.6 %** |             −15.1 |
+| claims emitted                                                         |           5 188 |               5 093 |               −95 |
+| verified claims                                                        |  3 632 (70.0 %) |  **3 633 (71.3 %)** |              +1.3 |
+| union (engine or arm)                                                  |          79.4 % |              80.7 % |              +1.3 |
+| arm-only / engine-only                                                 |        56 / 266 |            75 / 499 |                 — |
 | `ts-travel-plan-service`, named when it IS the source / when it is not | 76.3 % / 16.4 % | **46.3 % / 28.1 %** | inversion returns |
 
 The preference census — the instrument §284 used to prove the arm had stopped reading a name prior — has **fallen
@@ -3901,13 +3902,13 @@ back to 1.65×**, from 4.7×. The claims are, if anything, more often true (73.0
 often useful (45.6 % against 60.7 %): the model is citing real evidence and reaching worse conclusions from it.
 
 **This is not a defect in this iteration's code.** It is the same prompt, the same table, the same endpoint name,
-and a materially different answer — which makes the arm's contribution, at ±3 points, *smaller than its own
-run-to-run variance at 15 points*. A component whose signal is under its noise cannot be shipped in a decision path
+and a materially different answer — which makes the arm's contribution, at ±3 points, _smaller than its own
+run-to-run variance at 15 points_. A component whose signal is under its noise cannot be shipped in a decision path
 and cannot be measured into one either: every ablation of it would be an ablation of the day it ran.
 
 ### The verdict the pre-registration requires
 
-§285 stated: *"if nomination on 1 422 cases does not clear 75.5 %, the agentic line retires for good."* It scored
+§285 stated: _"if nomination on 1 422 cases does not clear 75.5 %, the agentic line retires for good."_ It scored
 74.5–74.6 % against 75.5 %, with a union ceiling of 76.2 % that no gate could exceed. **The line retires.** Not
 because a protocol was badly chosen — three protocols were measured, two of them this month — but because on this
 corpus, with this presentation, the model's reading carries no information the engine does not already have, and its
@@ -3915,7 +3916,7 @@ variance exceeds its value.
 
 Retirement is specific and does not generalise to "models cannot do RCA". `arXiv:2608.21310v2` reports 90.0 % for
 Sonnet + ThinkDepth.ai on the same benchmark, with **open-ended telemetry requerying** as the mechanism. What retires
-here is the *read-one-page-and-answer* shape — a single call over a pre-extracted feature table — which the same
+here is the _read-one-page-and-answer_ shape — a single call over a pre-extracted feature table — which the same
 paper measures at 45.8 % for OpsAgent, the framework it describes as issuing no telemetry queries of its own. Two
 measurements, three orders of magnitude apart in cost, agreeing that the shape is the limit.
 
@@ -3930,7 +3931,7 @@ The two obstacles that remain are both deterministic and both arithmetic:
 2. **The presentation width.** `run-fse26.ts:270` calls `pruner.analyze(faultGraph, 5)`. The reader bound rises from
    87.8 % (width 5) to 89.9 % (10) to 92.1 % (20) at no cost in Acc@1, because top-1 is a prefix of the same total
    order. **No model is involved** — and since §285b retires the model, width does not help either: it raises what a
-   reader *could* reach, and the shipped engine already reads the whole order. What the ladder measures is therefore
+   reader _could_ reach, and the shipped engine already reads the whole order. What the ladder measures is therefore
    the engine's **ordering** error, which is where all 24.5 points of Top@1 headroom sit.
 
 Against the published table (`arXiv:2608.21310v2`, Table 2), the shipped deterministic engine at **75.5 %** is above
@@ -3941,7 +3942,7 @@ zero model calls is inside the band only three LLM frameworks occupy.
 ### Axes this closes
 
 - **"The expression protocol was the binding constraint."** False, measured: nomination removes the expressive cost
-  entirely and scores 0.9 points *below* the engine, with a union ceiling 4.5 points below the elimination protocol's.
+  entirely and scores 0.9 points _below_ the engine, with a union ceiling 4.5 points below the elimination protocol's.
 - **"A stronger harness on the same table would clear the engine."** False for the read-one-page shape, at 1 422
   cases, with a pre-registered kill criterion that fired.
 - **"An LLM arm's delta can be measured by one run."** False, and this is the iteration's most transferable result:
@@ -3963,7 +3964,7 @@ three ceilings that bound it, and the two deterministic obstacles that replace i
 
 ## §286 — The caller wins 100 of the 111 one-step cases, and four terms that cannot move a rank
 
-Iteration 285b left one sentence to test: *every remaining point is the engine's ordering error*. This iteration
+Iteration 285b left one sentence to test: _every remaining point is the engine's ordering error_. This iteration
 asked the corpus where that error lives, and the answer is specific enough to name a mechanism — but the three
 levers the engine already has for that mechanism are **inert on this corpus**, which is the finding that matters
 more than the numbers.
@@ -3973,12 +3974,12 @@ more than the numbers.
 The raw parquet corpus carries client and server spans, so every RPC can be paired on `(trace_id, parent_span_id)`.
 From that pairing, per service, over the abnormal window against the same service's normal window:
 
-| quantity | definition | what it separates |
-| --- | --- | --- |
-| `own` | median server duration minus the slowest callee's median | time the service spent itself |
-| `tIn` | median transport ratio on the edges that point at it | link latency into the service |
-| `tOut` | median transport ratio on the edges it originates | link latency out of it |
-| `egress` | `tOut / tIn` | whether the delay is on its own egress |
+| quantity | definition                                               | what it separates                      |
+| -------- | -------------------------------------------------------- | -------------------------------------- |
+| `own`    | median server duration minus the slowest callee's median | time the service spent itself          |
+| `tIn`    | median transport ratio on the edges that point at it     | link latency into the service          |
+| `tOut`   | median transport ratio on the edges it originates        | link latency out of it                 |
+| `egress` | `tOut / tIn`                                             | whether the delay is on its own egress |
 
 All four are post/pre ratios of medians, computed for **1 248 of 1 422** cases (one case's parquet the reader
 cannot open; the scope is exactly the cases whose truth is one of the five presented, baseline `1 072 = 85.90 %`).
@@ -3987,14 +3988,14 @@ cannot open; the scope is exactly the cases whose truth is one of the five prese
 
 Plain argmax over the five candidates, on the same scope:
 
-| rule | correct | % |
-| --- | --- | --- |
-| engine (shipped) | 1 072 | **85.90** |
-| `srv` ratio | 572 | 45.83 |
-| `own` | 573 | 45.91 |
-| `tOut` | 550 | 44.07 |
-| `tIn` | 456 | 36.54 |
-| `egress` | 306 | 24.52 |
+| rule             | correct | %         |
+| ---------------- | ------- | --------- |
+| engine (shipped) | 1 072   | **85.90** |
+| `srv` ratio      | 572     | 45.83     |
+| `own`            | 573     | 45.91     |
+| `tOut`           | 550     | 44.07     |
+| `tIn`            | 456     | 36.54     |
+| `egress`         | 306     | 24.52     |
 
 Three fusion families were tried, all pre-registered before the numbers were read:
 
@@ -4008,28 +4009,28 @@ A bucket census by `max(own)` over the five explains why: `own`'s hit rate does 
 the better reader, so no gate can be built on it.
 
 **This corrects the previous iteration's reading.** A three-case sample showed `own` ranking the truth first in two
-of three; at n = 1 248 the same statistic is 45.9 %, thirty points *below* the engine. The sample was the
+of three; at n = 1 248 the same statistic is 45.9 %, thirty points _below_ the engine. The sample was the
 instrument's noise floor, not a signal.
 
 ### 3. What the decomposition did find: the weakness is a fault family, not a rule
 
 Top@1 by fault family on the full 1 422, with the rank of the first accepted answer:
 
-| family | n | Top@1 | rank-2 | rank-3 | outside 5 |
-| --- | --- | --- | --- | --- | --- |
-| JVMMemoryStress | 171 | **100.0** | 0 | 0 | 0 |
-| ContainerKill | 89 | **100.0** | 0 | 0 | 0 |
-| PodFailure / PodKill | 34 | **100.0** | 0 | 0 | 0 |
-| HTTPRequestReplacePath | 39 | 97.4 | 1 | 0 | 0 |
-| NetworkDelay | 21 | 95.2 | 1 | 0 | 0 |
-| HTTPResponseReplaceBody | 51 | 88.2 | 4 | 2 | 0 |
-| HTTPResponseReplaceCode | 231 | 70.1 | 11 | 2 | 55 |
-| HTTPRequestReplaceMethod | 190 | 65.8 | 18 | 4 | 38 |
-| NetworkPartition | 97 | 66.0 | 10 | 7 | 15 |
-| HTTPRequestDelay | 88 | 64.8 | 13 | 5 | 11 |
-| HTTPResponseDelay | 89 | 62.9 | 17 | 5 | 7 |
-| NetworkLoss | 48 | 60.4 | 8 | 3 | 7 |
-| **NetworkBandwidth** | 42 | **47.6** | 3 | 9 | 6 |
+| family                   | n   | Top@1     | rank-2 | rank-3 | outside 5 |
+| ------------------------ | --- | --------- | ------ | ------ | --------- |
+| JVMMemoryStress          | 171 | **100.0** | 0      | 0      | 0         |
+| ContainerKill            | 89  | **100.0** | 0      | 0      | 0         |
+| PodFailure / PodKill     | 34  | **100.0** | 0      | 0      | 0         |
+| HTTPRequestReplacePath   | 39  | 97.4      | 1      | 0      | 0         |
+| NetworkDelay             | 21  | 95.2      | 1      | 0      | 0         |
+| HTTPResponseReplaceBody  | 51  | 88.2      | 4      | 2      | 0         |
+| HTTPResponseReplaceCode  | 231 | 70.1      | 11     | 2      | 55        |
+| HTTPRequestReplaceMethod | 190 | 65.8      | 18     | 4      | 38        |
+| NetworkPartition         | 97  | 66.0      | 10     | 7      | 15        |
+| HTTPRequestDelay         | 88  | 64.8      | 13     | 5      | 11        |
+| HTTPResponseDelay        | 89  | 62.9      | 17     | 5      | 7         |
+| NetworkLoss              | 48  | 60.4      | 8      | 3      | 7         |
+| **NetworkBandwidth**     | 42  | **47.6**  | 3      | 9      | 6         |
 
 The engine is exact on resource faults (208/208 on memory, container and pod kills) and weak on the two families
 that carry no resource signal: **content substitution** (`ReplaceCode` / `ReplaceMethod`: 421 cases, 68.2 %) and
@@ -4041,12 +4042,12 @@ Of the 176 in-scope misses, **111 put the truth at rank 2** — one step, 7.8 po
 spans gives the relation between the rank-1 candidate and the truth for each of them:
 
 | rank-1 candidate's relation to the truth | rank-2 cases | rank-3 cases (control) |
-| --- | --- | --- |
-| **caller** (the truth calls it) | **100** | 3 |
-| callee | **0** | 21 |
-| no direct edge | 11 | 19 |
+| ---------------------------------------- | ------------ | ---------------------- |
+| **caller** (the truth calls it)          | **100**      | 3                      |
+| callee                                   | **0**        | 21                     |
+| no direct edge                           | 11           | 19                     |
 
-A caller's response time *contains* its callees', so on any anomaly that propagates along the call graph the
+A caller's response time _contains_ its callees', so on any anomaly that propagates along the call graph the
 caller's deviation is the larger of the two by construction. 90 % of the one-step misses are exactly that, and
 the channel evidence says so directly: on those 100 cases the truth's
 `http.server.request.duration` departure exceeds the winner's by a factor of 5 to 20 (e.g. 187.8 against
@@ -4056,23 +4057,23 @@ the channel evidence says so directly: on those 100 cases the truth's
 
 Four arms on the shipped configuration (FSE'26, 1 422 cases, run ids in the table):
 
-| knob | value | Top@1 | Δ |
-| --- | --- | --- | --- |
-| shipped | `selfTimeWeight=0` | **75.457 %** | — |
-| `self_time_weight` | 0.25 | 75.457 % | **0** |
-| `self_time_weight` | 0.5 | 75.457 % | **0** |
-| `self_time_weight` | 1.0 | 75.457 % | **0** |
-| `self_time_weight` | 2.0 | 75.457 % | **0** |
-| `topo_discount=0.25, gate=0` | scope `external` | 75.457 % | **0** |
-| `topo_discount=0.5, gate=0` | scope `external` | 75.457 % | **0** |
-| `topo_discount=1, gate=0` | scope `external` | 75.457 % | **0** |
-| `topo_discount=1, gate=0.5` | scope `external` | 75.457 % | **0** |
-| `topo_discount=1, gate=0` | scope `caller` | 75.457 % | **0** |
-| `topo_discount=1, gate=0` | scope `all` | 72.570 % | **−2.89** |
-| `topo_discount=0.5, gate=0, closure=sum` | scope `all` | 74.890 % | −0.57 |
-| `victim_weight` | 0.5 | 74.402 % | −1.06 |
-| `victim_weight` | 1.0 | 71.590 % | −3.87 |
-| `victim_weight` | 2.0 | 62.030 % | −13.43 |
+| knob                                     | value              | Top@1        | Δ         |
+| ---------------------------------------- | ------------------ | ------------ | --------- |
+| shipped                                  | `selfTimeWeight=0` | **75.457 %** | —         |
+| `self_time_weight`                       | 0.25               | 75.457 %     | **0**     |
+| `self_time_weight`                       | 0.5                | 75.457 %     | **0**     |
+| `self_time_weight`                       | 1.0                | 75.457 %     | **0**     |
+| `self_time_weight`                       | 2.0                | 75.457 %     | **0**     |
+| `topo_discount=0.25, gate=0`             | scope `external`   | 75.457 %     | **0**     |
+| `topo_discount=0.5, gate=0`              | scope `external`   | 75.457 %     | **0**     |
+| `topo_discount=1, gate=0`                | scope `external`   | 75.457 %     | **0**     |
+| `topo_discount=1, gate=0.5`              | scope `external`   | 75.457 %     | **0**     |
+| `topo_discount=1, gate=0`                | scope `caller`     | 75.457 %     | **0**     |
+| `topo_discount=1, gate=0`                | scope `all`        | 72.570 %     | **−2.89** |
+| `topo_discount=0.5, gate=0, closure=sum` | scope `all`        | 74.890 %     | −0.57     |
+| `victim_weight`                          | 0.5                | 74.402 %     | −1.06     |
+| `victim_weight`                          | 1.0                | 71.590 %     | −3.87     |
+| `victim_weight`                          | 2.0                | 62.030 %     | −13.43    |
 
 Byte-identical rankings at four different self-time weights and at a fully open topological gate are not a
 measurement of "the term does not help". They are the signature of a term that **contributes zero to every
@@ -4105,8 +4106,8 @@ of ranking, and the family table in §3 says where.
 - **"The client/server pairing carries a ranking signal the dumps lack."** False at n = 1 248, in three fusion
   families, with the small-sample reading that suggested otherwise recorded as an illusion.
 - **"PRISM's internal/external symmetry mask helps."** False and monotone: −1.06 / −3.87 / −13.43 at weights
-  0.5 / 1 / 2. The axiom's *direction* is right (the winner is external-only in the rank-2 cases) but its
-  *magnitude* cannot be separated from self-anomaly without also discounting true external faults, which are 53 %
+  0.5 / 1 / 2. The axiom's _direction_ is right (the winner is external-only in the rank-2 cases) but its
+  _magnitude_ cannot be separated from self-anomaly without also discounting true external faults, which are 53 %
   of the corpus.
 - **"Weights nobody swept are the remaining lever."** False for the three mechanism terms: two are inert by
   construction on this graph and the third degrades monotonically. A weight sweep is only a measurement where
@@ -4133,21 +4134,21 @@ instead of a dispatch — and it also answers a question no dispatch could: **wh
 
 ### Coverage: five of nineteen terms appear on no candidate
 
-| term | configured weight | cases where the term is present on at least one candidate |
-| --- | ---: | ---: |
-| `selfAnomalyLog1p` | 1 | 1 422 |
-| `prism` | 0 | 1 422 |
-| `rise`, `pool`, `collision`, `temporal`, `source`, `topo`, `stability` | 0 / −0.0679 / 0 … | 1 422 |
-| `log` | 1 | 1 000 |
-| `dualFamily` | 0.25 | 1 003 |
-| `failedEdge` | 3 | 1 222 |
-| `lat` | 0.561495 | 760 |
-| `podState` | 8 | 294 |
-| **`trace`** | **1** | **0** |
-| **`selfTime`** | **0** | **0** |
-| **`emission`** | 0 | **0** |
-| **`faultFree`** | 0 | **0** |
-| **`victim`** | **0** | **0** |
+| term                                                                   | configured weight | cases where the term is present on at least one candidate |
+| ---------------------------------------------------------------------- | ----------------: | --------------------------------------------------------: |
+| `selfAnomalyLog1p`                                                     |                 1 |                                                     1 422 |
+| `prism`                                                                |                 0 |                                                     1 422 |
+| `rise`, `pool`, `collision`, `temporal`, `source`, `topo`, `stability` | 0 / −0.0679 / 0 … |                                                     1 422 |
+| `log`                                                                  |                 1 |                                                     1 000 |
+| `dualFamily`                                                           |              0.25 |                                                     1 003 |
+| `failedEdge`                                                           |                 3 |                                                     1 222 |
+| `lat`                                                                  |          0.561495 |                                                       760 |
+| `podState`                                                             |                 8 |                                                       294 |
+| **`trace`**                                                            |             **1** |                                                     **0** |
+| **`selfTime`**                                                         |             **0** |                                                     **0** |
+| **`emission`**                                                         |                 0 |                                                     **0** |
+| **`faultFree`**                                                        |                 0 |                                                     **0** |
+| **`victim`**                                                           |             **0** |                                                     **0** |
 
 `trace` is the one that matters: it is configured at weight **1** — the same as `selfAnomalyLog1p` — and it is
 present on **zero of 1 422 cases**. A term at weight 1 that never fires is indistinguishable, in every published
@@ -4158,22 +4159,22 @@ side: the map is empty, so four weights produce one ranking.
 
 Sorted by each term alone over the same 51-candidate lists:
 
-| term | Top@1 as the only ranker | usable cases |
-| --- | ---: | ---: |
-| `failedEdge` | 47.89 % | 1 222 |
-| `prism` | 44.02 % | 1 422 |
-| `log` | 43.67 % | 1 000 |
-| `dualFamily` | 42.12 % | 1 003 |
-| `lat` | 25.67 % | 760 |
-| `selfAnomalyLog1p` | 24.47 % | 1 422 |
-| `podState` | 20.68 % | 294 |
-| `rise` | 14.70 % | 1 422 |
-| `pool` | 12.45 % | 1 422 |
-| `collision` | 5.63 % | 1 422 |
-| `temporal` | 4.22 % | 1 422 |
-| `stability` | 2.53 % | 1 422 |
-| `topo` | 0.70 % | 1 422 |
-| engine (all 19) | **75.46 %** | 1 422 |
+| term               | Top@1 as the only ranker | usable cases |
+| ------------------ | -----------------------: | -----------: |
+| `failedEdge`       |                  47.89 % |        1 222 |
+| `prism`            |                  44.02 % |        1 422 |
+| `log`              |                  43.67 % |        1 000 |
+| `dualFamily`       |                  42.12 % |        1 003 |
+| `lat`              |                  25.67 % |          760 |
+| `selfAnomalyLog1p` |                  24.47 % |        1 422 |
+| `podState`         |                  20.68 % |          294 |
+| `rise`             |                  14.70 % |        1 422 |
+| `pool`             |                  12.45 % |        1 422 |
+| `collision`        |                   5.63 % |        1 422 |
+| `temporal`         |                   4.22 % |        1 422 |
+| `stability`        |                   2.53 % |        1 422 |
+| `topo`             |                   0.70 % |        1 422 |
+| engine (all 19)    |              **75.46 %** |        1 422 |
 
 Every individual term is far below the combination, which is the honest statement of why the architecture is not
 replaceable by any one signal — and why "which term is the lever" has no answer at the level of a single term.
@@ -4182,20 +4183,20 @@ replaceable by any one signal — and why "which term is the lever" has no answe
 
 Zeroing one configured term at a time, reconstructed from the dump (`Δ` from 1 096, see the residual note below):
 
-| term | weight | Δ Top@1 |
-| --- | ---: | ---: |
-| **`podState`** | **8** | **−205** |
-| `failedEdge` | 3 | −65 |
-| `dualFamily` | 0.25 | −25 |
-| `lat` | 0.561495 | −22 |
-| `pool` | −0.0679 | −1 |
-| `trace` | 1 | 0 (no coverage) |
-| `log` | 1 | **+9** |
-| `selfAnomalyLog1p` | 1 | **+14** |
+| term               |   weight |         Δ Top@1 |
+| ------------------ | -------: | --------------: |
+| **`podState`**     |    **8** |        **−205** |
+| `failedEdge`       |        3 |             −65 |
+| `dualFamily`       |     0.25 |             −25 |
+| `lat`              | 0.561495 |             −22 |
+| `pool`             |  −0.0679 |              −1 |
+| `trace`            |        1 | 0 (no coverage) |
+| `log`              |        1 |          **+9** |
+| `selfAnomalyLog1p` |        1 |         **+14** |
 
 The shipped ranker on this corpus is, by contribution, a **pod-state ranker with a failed-edge tie-breaker**;
 the two terms that the architecture's documentation treats as the model — `selfAnomalyLog1p` and `log` — each
-cost one to two tenths of a point when zeroed, i.e. the ranking is *better* without them. That is consistent
+cost one to two tenths of a point when zeroed, i.e. the ranking is _better_ without them. That is consistent
 with the family table in §286 (208/208 on resource faults, 66 % on link and content faults): `podState` is
 exactly the term that solves resource faults, and it is doing the work.
 
@@ -4205,7 +4206,7 @@ The reconstruction `score = Σ weight × slope` is **not exact**: the worst resi
 `failedEdge` on a candidate that records `weight = 3, slope = 1` in a case whose recorded score does not
 contain that 3. The dump carries no `presence` field, so an absent term (`None`) and a present term of value
 zero are indistinguishable to a reader — which is the one thing this artifact cannot answer, and the reason
-every number in the table above is stated as a reconstruction rather than as a re-run. The ablation's *ranking*
+every number in the table above is stated as a reconstruction rather than as a re-run. The ablation's _ranking_
 of terms is robust to it (a 3.0 residual on one candidate cannot move a 205-case effect); the third decimal is
 not.
 
@@ -4214,7 +4215,7 @@ not.
 `prism` is present on all 1 422 cases, ranks 44.02 % alone, and is configured at weight **0** — the only
 populated term with no weight. Three arms (`prism_weight` 0.1 / 0.25 / 0.5) are in flight; the axis was refused
 once on RCAEval's nine cells as an additive term, and this corpus is the one where its shape (`min(Sⁱ, Sᵉ)`) is
-already enrolled at 0.25 through `dualFamilyWeight`. What the sweep asks is whether the *score* form is refused
+already enrolled at 0.25 through `dualFamilyWeight`. What the sweep asks is whether the _score_ form is refused
 there too, on a population whose two weak families are exactly the ones PRISM's axiom describes.
 
 ## §286c — The readback: podState saturates at four, and PRISM's score form is refused a third time
@@ -4223,12 +4224,12 @@ Six arms closed the two axes §286b opened.
 
 ### `prism_weight` on this corpus: refused, and monotonically
 
-| weight | Top@1 | Δ |
-| --- | ---: | ---: |
-| 0 (shipped) | **75.457 %** | — |
-| 0.1 | 75.530 % | +0.07 (+1 case) |
-| 0.25 | 74.610 % | −0.85 |
-| 0.5 | 72.640 % | −2.82 |
+| weight      |        Top@1 |               Δ |
+| ----------- | -----------: | --------------: |
+| 0 (shipped) | **75.457 %** |               — |
+| 0.1         |     75.530 % | +0.07 (+1 case) |
+| 0.25        |     74.610 % |           −0.85 |
+| 0.5         |     72.640 % |           −2.82 |
 
 One case is not a signal, and the monotone decay on either side of it says the same thing the RCAEval nine
 cells said in iteration 140: PRISM's `min(Sⁱ, Sᵉ)` works as a **shape indicator** (`dualFamilyWeight` 0.25,
@@ -4236,13 +4237,13 @@ enrolled) and not as a **score**. Third refusal, now on the population whose wea
 
 ### `pod_state_weight`: a plateau at four, and what the plateau means
 
-| weight | Top@1 | Δ |
-| --- | ---: | ---: |
-| **8 (shipped)** | **75.457 %** | — |
-| 4 | 75.392 % | −0.07 |
-| 2 | 71.800 % | −3.66 |
-| 1 | 65.050 % | −10.41 |
-| 0 (reconstruction) | ≈62.6 % | −12.9 |
+| weight             |        Top@1 |      Δ |
+| ------------------ | -----------: | -----: |
+| **8 (shipped)**    | **75.457 %** |      — |
+| 4                  |     75.392 % |  −0.07 |
+| 2                  |     71.800 % |  −3.66 |
+| 1                  |     65.050 % | −10.41 |
+| 0 (reconstruction) |      ≈62.6 % |  −12.9 |
 
 The shipped value sits **on a plateau**: halving it costs one case. Below four the curve is steep. That is not a
 tuning opportunity — it is the scale statement this register could not make before the dump existed.
@@ -4265,7 +4266,7 @@ campaign must win is being ranked by the one term that is exact on resource faul
 ### What this licenses for the next iteration
 
 `pod_state_weight=4` is **free** (−0.07, one case). That is the only configuration change in this register
-that costs nothing, and it is worth one arm only as the *floor* of a scale experiment: 4 is where the balance
+that costs nothing, and it is worth one arm only as the _floor_ of a scale experiment: 4 is where the balance
 between the pod indicator and the anomaly can be redressed without paying for it. The experiment is
 `pod_state_weight=4 × self_anomaly_weight ∈ {2, 4} × topo_discount` measured against the shipped ranking on the
 629 weak cases, not on the corpus total — a lever that only buys resource-fault cases has no headroom left.
@@ -4290,7 +4291,7 @@ Top@1                                 = 1 073/1 422 = 75.4571 %
 ```
 
 So the reconstruction is **exact**, the shipped number is reproduced, and every offline screen in this register is
-a local computation over one run with no residual to qualify. §286b's ablation *ordering* was right; its stated
+a local computation over one run with no residual to qualify. §286b's ablation _ordering_ was right; its stated
 error bar was not, and this supersedes it.
 
 ### 2. The `trace` data path is repairable and not worth repairing
@@ -4301,10 +4302,10 @@ The parquet has them, so the observable was measured before a line of loader cod
 counts per service over both windows, the engine's own rule applied to them (pre ≥ 500, growth ≥ 1.15, growth ≥ 2×
 the fleet's median drift, **unique** riser):
 
-| quantity | value |
-| --- | ---: |
+| quantity                             |                  value |
+| ------------------------------------ | ---------------------: |
 | cases with a unique qualifying riser | **91 / 1 249 = 7.3 %** |
-| of those, the riser is the truth | **51 = 56.0 %** |
+| of those, the riser is the truth     |        **51 = 56.0 %** |
 
 Seven per cent coverage at 56 % precision against an engine that reads 85.9 % on the same scope. The axis is
 **closed by measurement rather than by absence of data**: the data path could be built, and it would not pay.
@@ -4315,15 +4316,15 @@ Six terms carry data on this corpus and a weight of zero — `collision` (31 190
 `source`, `topo`, `rise`, `prism`. Each was swept alone over
 `w ∈ {±0.05, ±0.1, ±0.2, ±0.5, ±1, ±2}`, then a greedy forward pass combined the winners:
 
-| term | best single weight | Δ Top@1 | halves |
-| --- | ---: | ---: | --- |
-| `temporal` | +0.05 | +4 | −1 / +5 |
-| `collision` | −0.05 | +3 | +2 / +1 |
-| `rise` | −0.2 | +3 | −2 / +5 |
-| `source` | −0.05 | +2 | −1 / +3 |
-| `prism` | +0.05 | +2 | +1 / +1 |
-| `topo` | +0.1 | 0 | −2 / +2 |
-| greedy stack of three | | **+6 = +0.42 pp** | |
+| term                  | best single weight |           Δ Top@1 | halves  |
+| --------------------- | -----------------: | ----------------: | ------- |
+| `temporal`            |              +0.05 |                +4 | −1 / +5 |
+| `collision`           |              −0.05 |                +3 | +2 / +1 |
+| `rise`                |               −0.2 |                +3 | −2 / +5 |
+| `source`              |              −0.05 |                +2 | −1 / +3 |
+| `prism`               |              +0.05 |                +2 | +1 / +1 |
+| `topo`                |               +0.1 |                 0 | −2 / +2 |
+| greedy stack of three |                    | **+6 = +0.42 pp** |         |
 
 Four cases out of 1 422 is the noise floor, and the halves disagree in sign on three of the six. **`collision` —
 the Deng Yu collision source — is populated on 45 % of candidates and worth nothing as an additive weight on this
@@ -4344,11 +4345,11 @@ invert rank(i), rank(i+1)  when  rank(i) calls rank(i+1)  and  excursion(rank(i+
 
 Measured on all 1 422 cases, one pass over the top five:
 
-| | cases | Top@1 |
-| --- | ---: | ---: |
-| shipped | 1 073 | 75.457 % |
-| shipped + containment | **1 114** | **78.34 %** |
-| Δ | **+41** | **+2.88 pp** |
+|                       |     cases |        Top@1 |
+| --------------------- | --------: | -----------: |
+| shipped               |     1 073 |     75.457 % |
+| shipped + containment | **1 114** |  **78.34 %** |
+| Δ                     |   **+41** | **+2.88 pp** |
 
 Gains **41**, losses **0**, halves **+25 / +16**. The families that gain are the ones that PROPAGATE
 (HTTPRequestDelay +8, HTTPResponseDelay +7, NetworkPartition +5, NetworkCorrupt +4, NetworkLoss +3,
@@ -4366,7 +4367,7 @@ Three fusion forms were measured first and all failed, which is why the shipped 
 
 ### 5. Prior art, and the precise size of the claim
 
-**TD-RCA** (IWQoS 2026, `10.1109/IWQoS70441.2026.11661074`) names this mechanism *Cascade Confusion* — "synchronous
+**TD-RCA** (IWQoS 2026, `10.1109/IWQoS70441.2026.11661074`) names this mechanism _Cascade Confusion_ — "synchronous
 blocking RPC can amplify upstream anomaly signals and cause victim services to exhibit stronger symptoms than the
 true root cause" — and decouples it with a Dual-Perspective module inside a VAE-GNN, reporting HR@1 93.9 % on
 TrainTicket and 94.3 % on SocialNetwork. The mechanism is therefore established prior art and is not claimed here.
@@ -4405,19 +4406,19 @@ flip the default to `true` with all four cells re-read.
 Two dispatches of `.github/workflows/benchmark-agentic.yml` — identical but for `containment_order` — replace that
 number, and the replacement is worse in one direction and larger in the other.
 
-| | cases | Top@1 | gains | losses | net |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `containment_order=0` | 1 422 | 75.457 % | — | — | — |
-| `containment_order=1` | 1 422 | **78.411 %** | **47** | **5** | **+42** |
+|                       | cases |        Top@1 |  gains | losses |     net |
+| --------------------- | ----: | -----------: | -----: | -----: | ------: |
+| `containment_order=0` | 1 422 |     75.457 % |      — |      — |       — |
+| `containment_order=1` | 1 422 | **78.411 %** | **47** |  **5** | **+42** |
 
 Per case, read from each run's own `per-case.ndjson`: 47 gains, 5 losses, and the five are
 `HTTPResponseReplaceCode`×2, `HTTPResponseAbort`, `HTTPResponseDelay`, `HTTPRequestReplaceMethod` — i.e. the
-response-rewrite mechanism, where the injected service's *callees* look worse on duration and the pass promotes one
+response-rewrite mechanism, where the injected service's _callees_ look worse on duration and the pass promotes one
 of them past it.
 
 **Why the screen said zero and the engine says five.** The screen's `maxdep` was the largest normalised departure
 over **every** channel a candidate carries; the shipped `latencyExcursions` restricts the quantity to the latency
-family, because a claim about inherited *response time* should be made on the channel that carries response time. A
+family, because a claim about inherited _response time_ should be made on the channel that carries response time. A
 counter channel departs its band under a source fault far more sharply than any duration channel does, so the
 all-channel form inverts on the wrong instrument and, on this corpus, happens never to invert a correct pair. The
 41/0 figure is therefore a true statement about a quantity that does not ship; §287's own table is left standing as
@@ -4431,18 +4432,18 @@ the five** — all five lie outside that half. The local harness reproduces both
 zero disagreements on either verdict, which is what licenses reading it as a measurement of the shipped path.
 
 **The lever this iteration found, which is larger than the one §287 registered.** The failed-edge term — the only
-directional signal in the engine — is gated by `admitsFailedEdgeTerm`, which conditions the term on the *current
-rank-1's* dominant metric being duration-shaped. Four arms over the same 711 cases, one graph per case, only the
+directional signal in the engine — is gated by `admitsFailedEdgeTerm`, which conditions the term on the _current
+rank-1's_ dominant metric being duration-shaped. Four arms over the same 711 cases, one graph per case, only the
 gate mode changed:
 
-| gate mode | Top@1 | gains | losses | net |
-| --- | ---: | ---: | ---: | ---: |
-| `absolute` (shipped) | 484 (68.07 %) | — | — | — |
-| `evidence` | 476 (66.95 %) | 2 | 10 | −8 |
+| gate mode                |             Top@1 |  gains | losses |     net |
+| ------------------------ | ----------------: | -----: | -----: | ------: |
+| `absolute` (shipped)     |     484 (68.07 %) |      — |      — |       — |
+| `evidence`               |     476 (66.95 %) |      2 |     10 |      −8 |
 | **`margin` (share 0.5)** | **518 (72.86 %)** | **61** | **27** | **+34** |
-| `fleet` | 458 (64.42 %) | 3 | 29 | −26 |
+| `fleet`                  |     458 (64.42 %) |      3 |     29 |     −26 |
 
-`margin` asks the only question that matters for a ranking — *can this term overturn the leader at all* — and gains
+`margin` asks the only question that matters for a ranking — _can this term overturn the leader at all_ — and gains
 concentrate exactly where the shipped gate is blind: **36 of the 61 are `HTTPResponseReplaceCode`**, the family that
 owns 46 of the 112 cases whose truth is outside the presented five. Its 27 losses are the delay families, so the
 discriminator is the same one the containment pass needs, which is the useful part: **`margin` and the containment
@@ -4454,7 +4455,7 @@ ride the gains down, so the bar buys a better ratio only by refusing the term al
 shippable under the zero-regression rule as it stands.
 
 **A trap this iteration found in the plumbing, recorded because it silently mislabelled a measurement.** `margin`
-reads `failedEdgeGateShare`, and the FSE'26 CLI always populates that field with the *gate* default (0.5). So
+reads `failedEdgeGateShare`, and the FSE'26 CLI always populates that field with the _gate_ default (0.5). So
 `--failed-edge-gate-mode margin` with no share runs the **fleet-share number**, not
 `DEFAULT_FAILED_EDGE_MARGIN_SHARE` (0.3): the two maxima share one option, which is the defect the pruner's own
 comment at `failedEdgeGate` warns about. The four-arm table above is measured at 0.5 for that reason, and says so.
@@ -4492,7 +4493,7 @@ discriminator whose refusals are enumerable — not the question itself. Any fut
 ## §288 — Two phase-coupling defects, found by the same question asked twice
 
 §287b ended with one discriminator named and two levers that both carried regressions. This iteration asked a
-narrower question — *which phase does each option belong to* — and the answer produced two defects and one
+narrower question — _which phase does each option belong to_ — and the answer produced two defects and one
 measurement that is better than either lever alone.
 
 ### 288a. The margin bar read the fleet constant, and no predicate test could see it
@@ -4510,7 +4511,7 @@ predicate's docblock and five predicate-level tests all said **0.3**.
 It survived because of where the tests were pointed. At the `admitsFailedEdgeTerm` layer the CALLER passes the
 share, so no assertion there can observe which field the engine read it from. The defect was found by two harnesses
 disagreeing on **two cases out of 711** (518 against 520) and then by a three-way probe — omit the key, spell it
-`undefined`, name 0.3 — in which *omitting* the key behaved differently from *spelling it undefined*, which is only
+`undefined`, name 0.3 — in which _omitting_ the key behaved differently from _spelling it undefined_, which is only
 possible if something fills it in between.
 
 **Fix:** a field per maximum. `failedEdgeMarginShare` (default 0.3) is what the margin bar reads;
@@ -4531,17 +4532,17 @@ regressions (§288c) and cannot ship; spending a re-anchored battery on an arm t
 published number to record a measurement that changed nothing. The field therefore lives in the ENGINE with no
 dispatch surface — the same status `containmentOrder` had before its own workflow input existed — and the pipe is
 built the day a discriminator makes the bar shippable. The census keeps the distinction it exists to keep: the
-margin share is *absent from* the dispatch surface, not *unreachable from* it.
+margin share is _absent from_ the dispatch surface, not _unreachable from_ it.
 
 **Independent verification, not a re-run of the same harness.** The seven-arm factorial reports `mar3` = **520** and
 `mar5` = **518**, the two historical readings, from the fixed engine. The numbers did not move because the fix
-restores what the documents always claimed; what moved is that the two are now *different arms* instead of the same
+restores what the documents always claimed; what moved is that the two are now _different arms_ instead of the same
 arm under two names.
 
 ### 288b. `containmentOrder` lived in the build phase, and `analyze` takes a graph from anywhere
 
-`containmentExcursions` was built only when the pass was switched ON, which made two facts one: *the graph carries
-the measurement* and *this run applies it*. `analyze(graph)` is public and its graph argument can come from any
+`containmentExcursions` was built only when the pass was switched ON, which made two facts one: _the graph carries
+the measurement_ and _this run applies it_. `analyze(graph)` is public and its graph argument can come from any
 pruner, so a graph built by a pass-off pruner carried no map and **every** pruner reading it ran without the pass.
 
 The factorial hit this on its first run: `cont` reported **484**, exactly the shipped count, on a corpus with
@@ -4556,15 +4557,15 @@ builder has the pass OFF and the reader ON, and both verdicts are asserted on th
 
 ### 288c. The factorial, on the shipped vector, one graph per case, 711 cases
 
-| arm | Top@1 | % | gains | losses | net |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `off` (direction term at weight 0) | 476 | 66.948 | — | — | — |
-| **`shipped`** | **484** | **68.073** | — | — | — |
-| `mar3` (margin bar, share 0.3) | 520 | 73.136 | 61 | **25** | +36 |
-| `mar5` | 518 | 72.855 | 61 | 27 | +34 |
-| **`cont`** (containment order) | **518** | **72.855** | **34** | **0** | **+34** |
-| `mar3+cont` | **550** | **77.356** | 90 | 24 | +66 |
-| `mar5+cont` | 548 | 77.075 | 90 | 26 | +64 |
+| arm                                |   Top@1 |          % |  gains | losses |     net |
+| ---------------------------------- | ------: | ---------: | -----: | -----: | ------: |
+| `off` (direction term at weight 0) |     476 |     66.948 |      — |      — |       — |
+| **`shipped`**                      | **484** | **68.073** |      — |      — |       — |
+| `mar3` (margin bar, share 0.3)     |     520 |     73.136 |     61 | **25** |     +36 |
+| `mar5`                             |     518 |     72.855 |     61 |     27 |     +34 |
+| **`cont`** (containment order)     | **518** | **72.855** | **34** |  **0** | **+34** |
+| `mar3+cont`                        | **550** | **77.356** |     90 |     24 |     +66 |
+| `mar5+cont`                        |     548 |     77.075 |     90 |     26 |     +64 |
 
 Three readings worth keeping:
 
@@ -4592,20 +4593,20 @@ regressions. `cont` alone is the one arm here that satisfies the register's rule
 ## §289 — The containment pass had a ceiling, and the ceiling was a channel
 
 §288 ended with `containmentOrder` at +34/−0 on this half and a full-corpus arm at +47/−5 that could not ship. This
-iteration asked what the pass cannot do rather than how to tune it — *which of the one-step misses does it not
-repair, and why* — and the answer turned out to be a second instrument, of the same shape, that needs no profile
+iteration asked what the pass cannot do rather than how to tune it — _which of the one-step misses does it not
+repair, and why_ — and the answer turned out to be a second instrument, of the same shape, that needs no profile
 at all.
 
 ### 289a. The census: 34 of 82, and the 41 that no delay can reach
 
 Every one of the 82 cases that publish the truth second behind its own caller, on the 711-case half:
 
-| why the pair is not repaired | cases |
-| --- | ---: |
-| the containment signature fires | **34** |
-| BOTH candidates inside their bands | **41** |
-| no direct edge | 5 |
-| callee not further outside its band | 2 |
+| why the pair is not repaired        |  cases |
+| ----------------------------------- | -----: |
+| the containment signature fires     | **34** |
+| BOTH candidates inside their bands  | **41** |
+| no direct edge                      |      5 |
+| callee not further outside its band |      2 |
 
 The 34 are the pass's gains exactly. The 41 are its ceiling: a replaced status code, an aborted request or a
 rewritten path moves no latency percentile, so the excursion is `0` at both ends, and `0` is a measurement of no
@@ -4619,12 +4620,12 @@ reported and outgoing what v's own calls reported. A source's inbound rise is it
 the calls it makes and cancels. The pass inverts an adjacent pair on a failing direct edge when
 `unexplained(lower) > unexplained(upper)` — the same quantity on both candidates, strictly, with no margin.
 
-| arm | Top@1 | gains | losses |
-| --- | ---: | ---: | ---: |
-| shipped | 484 | — | — |
-| `containmentOrder` | 518 | 34 | 0 |
-| **`failureContainment`** | **538** | **54** | **0** |
-| both | **560** | **76** | **0** |
+| arm                      |   Top@1 |  gains | losses |
+| ------------------------ | ------: | -----: | -----: |
+| shipped                  |     484 |      — |      — |
+| `containmentOrder`       |     518 |     34 |      0 |
+| **`failureContainment`** | **538** | **54** |  **0** |
+| both                     | **560** | **76** |  **0** |
 
 Halves, by case index: flow **31/0** and **23/0**, union **41/0** and **35/0**. The overlap is 12 cases, which is
 what the census predicts — the two channels are silent in almost disjoint places.
@@ -4712,11 +4713,11 @@ the default is not flipped on this measurement.
 
 ### 290d. The measurement: zero losses on the full corpus
 
-| arm | Top@1 | % | gains | losses |
-| --- | ---: | ---: | ---: | ---: |
-| shipped | 1 073 | 75.457 | — | — |
-| `attribution=counts` (§289's rule) | 1 138 | 80.028 | 67 | **2** |
-| `attribution=shape` | **1 141** | **80.239** | **68** | **0** |
+| arm                                |     Top@1 |          % |  gains | losses |
+| ---------------------------------- | --------: | ---------: | -----: | -----: |
+| shipped                            |     1 073 |     75.457 |      — |      — |
+| `attribution=counts` (§289's rule) |     1 138 |     80.028 |     67 |  **2** |
+| `attribution=shape`                | **1 141** | **80.239** | **68** |  **0** |
 
 The counts arm reproduces §289's dispatched readback exactly through a locally re-cut cache (1 073 → 1 138, 67
 gains, the same two losses), which is what makes the third row comparable rather than a second experiment. Top@5
@@ -4758,12 +4759,12 @@ of `docs/containment-order.md` reports (1 073 of 1 422, 75.457 %).
 
 ### 291a. Candidate generation is not the defect — every truth is in the pool
 
-| bucket | cases | share |
-| --- | --- | --- |
-| rank 1 | 1 073 | 75.46 % |
-| rank 2–5 | 176 | 12.38 % |
-| rank 6–19 | 59 | 4.15 % |
-| rank ≥ 20 | 114 | 8.02 % |
+| bucket     | cases | share      |
+| ---------- | ----- | ---------- |
+| rank 1     | 1 073 | 75.46 %    |
+| rank 2–5   | 176   | 12.38 %    |
+| rank 6–19  | 59    | 4.15 %     |
+| rank ≥ 20  | 114   | 8.02 %     |
 | **absent** | **0** | **0.00 %** |
 
 The far tail had been carried in the working notes as a CANDIDATE-GENERATION problem — a truth the pool never
@@ -4780,11 +4781,11 @@ every one of them, which is why the counterfactuals in 291d track that bar.
 
 Three populations, classified from each case's own dump:
 
-| population | cases | share |
-| --- | --- | --- |
-| no subject measured (inert for an input reason) | 200 | 14.1 % |
-| admitted and paid | 108 | 7.6 % |
-| **measured, then refused by the gate** | **1 114** | **78.3 %** |
+| population                                      | cases     | share      |
+| ----------------------------------------------- | --------- | ---------- |
+| no subject measured (inert for an input reason) | 200       | 14.1 %     |
+| admitted and paid                               | 108       | 7.6 %      |
+| **measured, then refused by the gate**          | **1 114** | **78.3 %** |
 
 - **86 of the 114 far misses are in the third row**, and the two families that carry the far tail are refused on
   every case: `HTTPResponseReplaceCode` 46 of 46, `HTTPRequestReplaceMethod` 32 of 32.
@@ -4799,15 +4800,15 @@ carries the tables.
 
 Offline re-scoring is exact on this arm (`score = Σ w·slope`), control 1 073:
 
-| counterfactual | Top@1 | Δ | consequence |
-| --- | --- | --- | --- |
-| pay the term at `w = 1` / `w = 2` everywhere | 1 142 / 1 143 | +69 / +70 | — |
-| pay it at its configured `w = 3` | 1 099 | +26 | repairs 61 response-code, breaks 18 `JVMMemoryStress` |
-| `margin` bar, `w = 3`, share 0.20–0.35 | 1 148 | +75 | rejected in §4 for nine family regressions |
-| threshold-free: pay it when the channel named exactly ONE subject | 1 120 | +47 | 64 repaired, breaks 11 `JVMMemoryStress` |
-| source caller only (the failing caller is a graph source) | 974 | −99 | 101 repaired, 200 broken |
-| source caller AND the margin bar, shares 0.10–0.50 | 1 093…977 | +20…−96 | worse than either half |
-| **source caller AND exactly one measured subject** | **1 136** | **+63** | **64 repaired, ONE broken** |
+| counterfactual                                                    | Top@1         | Δ         | consequence                                           |
+| ----------------------------------------------------------------- | ------------- | --------- | ----------------------------------------------------- |
+| pay the term at `w = 1` / `w = 2` everywhere                      | 1 142 / 1 143 | +69 / +70 | —                                                     |
+| pay it at its configured `w = 3`                                  | 1 099         | +26       | repairs 61 response-code, breaks 18 `JVMMemoryStress` |
+| `margin` bar, `w = 3`, share 0.20–0.35                            | 1 148         | +75       | rejected in §4 for nine family regressions            |
+| threshold-free: pay it when the channel named exactly ONE subject | 1 120         | +47       | 64 repaired, breaks 11 `JVMMemoryStress`              |
+| source caller only (the failing caller is a graph source)         | 974           | −99       | 101 repaired, 200 broken                              |
+| source caller AND the margin bar, shares 0.10–0.50                | 1 093…977     | +20…−96   | worse than either half                                |
+| **source caller AND exactly one measured subject**                | **1 136**     | **+63**   | **64 repaired, ONE broken**                           |
 
 The last row is the one worth carrying forward, but it prices a rule the engine CANNOT express, and the difference
 between that price and the mode's own is this entry's finding.
@@ -4850,11 +4851,11 @@ the two depth profiles are not presented as a comparison.
 §290e left the pass one dispatch away, and the dispatch was blocked by a provenance gate rather than by an argument.
 Both closed here, in order:
 
-| step | artefact | evidence |
-| --- | --- | --- |
-| the converter the arm was measured against | `d4c3843f` | the shape split's second column (§290b) |
-| the shard cache cut from it | `rcabench-data` run `43806078620`, release **`rcabench-shape-v1`** | `build-cache.yml` clones this repository and stamps the digest into the manifest, so the gate resolves |
-| the readback | `fse26-benchmark` run `43818561923`, `ranking_knobs=failure_containment=1` | **Top@1 = 80.2 %**, `Cases = 1422`, `Top@3 = 86.4`, `Top@5 = 87.8`, `loadErrors=0 engineErrors=0 emptyGraphs=0`, `[guard] boundary placeable=1422/1422 injectTime=1422 **noSplit=0**` |
+| step                                       | artefact                                                                   | evidence                                                                                                                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the converter the arm was measured against | `d4c3843f`                                                                 | the shape split's second column (§290b)                                                                                                                                               |
+| the shard cache cut from it                | `rcabench-data` run `43806078620`, release **`rcabench-shape-v1`**         | `build-cache.yml` clones this repository and stamps the digest into the manifest, so the gate resolves                                                                                |
+| the readback                               | `fse26-benchmark` run `43818561923`, `ranking_knobs=failure_containment=1` | **Top@1 = 80.2 %**, `Cases = 1422`, `Top@3 = 86.4`, `Top@5 = 87.8`, `loadErrors=0 engineErrors=0 emptyGraphs=0`, `[guard] boundary placeable=1422/1422 injectTime=1422 **noSplit=0**` |
 
 The readback reproduced the local arm to the case count — 1 141 — which is the condition §290e named, and the guard
 row is the part that makes the reproduction mean something: `noSplit=0` says the shape column was present on every
@@ -4888,7 +4889,7 @@ reasoned from the source:
   which is the sharper statement, because it stops a future rescoring inside the flow from hiding behind a
   reordering.
 - **The Law-34 red pole became two switches.** The golden nine-cell fence needs `{failedEdgeWeight: 0,
-  failureContainment: false}` to move `RE2-TT`; either switch alone leaves the cell at its pinned value, because the
+failureContainment: false}` to move `RE2-TT`; either switch alone leaves the cell at its pinned value, because the
   flow promotes the same callee the term does. A pole that lowered only the weight would have gone green while
   asserting nothing, so the test now asserts each half's own inertness and the pair cannot become decoration.
 
@@ -4927,12 +4928,12 @@ All seven shards of `rcabench-shape-v1` were verified against the manifest (`con
 `sha256:b7fca80e…`, 1 422 cases) and every arm below is a full-corpus run whose per-case verdict file is the
 reading — not a suite line.
 
-| arm | interface requirement | Top@1 | Δ | gains | losses |
-| --- | --- | ---: | ---: | ---: | ---: |
-| shipped | — | 1 141 (80.239 %) | — | — | — |
-| A | none (§4's rule) | 1 174 (82.560 %) | +33 | 38 | **5** |
-| B | ledger rows | 1 156 (81.294 %) | +15 | 15 | **0** |
-| C | raw rows (`failedInterfaces`) | 1 156 (81.294 %) | +15 | 15 | **0** |
+| arm     | interface requirement         |            Top@1 |   Δ | gains | losses |
+| ------- | ----------------------------- | ---------------: | --: | ----: | -----: |
+| shipped | —                             | 1 141 (80.239 %) |   — |     — |      — |
+| A       | none (§4's rule)              | 1 174 (82.560 %) | +33 |    38 |  **5** |
+| B       | ledger rows                   | 1 156 (81.294 %) | +15 |    15 |  **0** |
+| C       | raw rows (`failedInterfaces`) | 1 156 (81.294 %) | +15 |    15 |  **0** |
 
 Arm A reproduces §287b's mechanism at the new default and with the same five losses, which are a single signature:
 **each one is a pair whose interface carried no failed call at all** (0 records in all five). Requiring the record
@@ -5011,10 +5012,10 @@ it cost and what it closes.
 It was thirty, so the guard whose purpose is to stop an empty cell from being reported is the guard that let it
 be reported. The two populations are different questions:
 
-| name | counted by | answers |
-| --- | --- | --- |
-| `requested` | `LoadStats.considered`, summed over memory slices | which cases the dispatch asked for |
-| `evaluated` | `Σ RunResult.totalCases` | which cases the scorer produced a verdict for |
+| name        | counted by                                        | answers                                       |
+| ----------- | ------------------------------------------------- | --------------------------------------------- |
+| `requested` | `LoadStats.considered`, summed over memory slices | which cases the dispatch asked for            |
+| `evaluated` | `Σ RunResult.totalCases`                          | which cases the scorer produced a verdict for |
 
 `cell-population.ts` now owns the decision, with four states rather than two, because they call for different
 responses: nothing selected (change the dispatch), corpus/provider failure (restore the provider), a silent drop
@@ -5043,10 +5044,10 @@ provider that answers without embedding anything would otherwise pass a probe th
 
 On a refusal the policy is explicit, and it defaults to refusing:
 
-| `BENCHMARK_EMBEDDING_FALLBACK` | behaviour |
-| --- | --- |
-| unset / `abort` (default) | throw before any case is read, naming provider, reason and way out; exit 1 |
-| `local` | substitute the in-process TF-IDF provider, print a `DEGRADED` banner, change the configuration line |
+| `BENCHMARK_EMBEDDING_FALLBACK` | behaviour                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| unset / `abort` (default)      | throw before any case is read, naming provider, reason and way out; exit 1                          |
+| `local`                        | substitute the in-process TF-IDF provider, print a `DEGRADED` banner, change the configuration line |
 
 An unrecognised value is refused rather than defaulted, on the anomaly-knob rule: this policy decides whether a
 run measures the published configuration, so a typo must not silently pick either arm.
@@ -5152,14 +5153,14 @@ properties (an unmeasured side is absent rather than zero; a pair with no call e
 The quota came back: the run on `f9546a9` reached all three suites with `semantic enhancement (API embedding,
 network)`, no `429`, no `DEGRADED`, and produced
 
-| cell | AC@1 |
-| --- | ---: |
+| cell               |   AC@1 |
+| ------------------ | -----: |
 | RE1 OnlineBoutique | 90.4 % |
-| RE1 SockShop | 95.2 % |
-| RE1 TrainTicket | 90.4 % |
+| RE1 SockShop       | 95.2 % |
+| RE1 TrainTicket    | 90.4 % |
 | RE3 OnlineBoutique | 91.1 % |
-| RE3 SockShop | 79.6 % |
-| RE3 TrainTicket | 74.5 % |
+| RE3 SockShop       | 79.6 % |
+| RE3 TrainTicket    | 74.5 % |
 
 The preflight did not have to fire, and that is the point of having built it: the same commit would have produced
 four `0.0 %` rows a day earlier. What the restore does **not** establish is that the instrument is now
@@ -5179,7 +5180,7 @@ budget. Pushing it demonstrated the limit of the mechanism within the same minut
 `78dd3b0`, the commit that declares the block) started while run `43966895574` (on `f9546a9`, which declares
 nothing) was still in its ablation phase, and **both walked the corpus at once**.
 
-GitHub applies a concurrency group to runs *created after* the declaration. A run already in flight cannot be
+GitHub applies a concurrency group to runs _created after_ the declaration. A run already in flight cannot be
 retroactively grouped, and no syntax changes that. So the block's first real effect is on the second push after
 it lands, and the change that introduces it is precisely the one it cannot protect.
 
@@ -5192,10 +5193,10 @@ existed, and this entry is the record of that gap rather than a claim that the g
 Two overlapping walks spend the budget twice for one reading, so one of them had to go, and the choice was not
 symmetric:
 
-| run | what it still owed | what it had already produced |
-| --- | --- | --- |
-| `43966895574` | the three ablation arms (exploration) | all nine cells, 666 / 666 against the anchor |
-| `43974549448` | all nine cells, on a tree that now routes `applyContainmentOrder` through `inspectContainmentOrder` | nothing yet |
+| run           | what it still owed                                                                                  | what it had already produced                 |
+| ------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `43966895574` | the three ablation arms (exploration)                                                               | all nine cells, 666 / 666 against the anchor |
+| `43974549448` | all nine cells, on a tree that now routes `applyContainmentOrder` through `inspectContainmentOrder` | nothing yet                                  |
 
 `43966895574` was cancelled. The cells it had already produced are the anchor reproduction; the ablation arms are
 re-runnable by dispatch (`scopes=ablation`) and are exploration rather than gates. `43974549448` is the run that
@@ -5206,18 +5207,18 @@ that would have been lost.
 
 `43974549448` finished its three golden jobs green, and the nine cells are the committed anchor cell for cell:
 
-| cell | `f9546a9` (before the refactor) | `78dd3b0` (after it) | anchor |
-| --- | ---: | ---: | ---: |
-| RE1:OnlineBoutique | 113 | 113 | 113 |
-| RE1:SockShop | 119 | 119 | 119 |
-| RE1:TrainTicket | 113 | 113 | 113 |
-| RE2:OnlineBoutique | 84 | 84 | 84 |
-| RE2:SockShop | 89 | 89 | 89 |
-| RE2:TrainTicket | 76 | 76 | 76 |
-| RE3:OnlineBoutique | 26 | 26 | 26 |
-| RE3:SockShop | 24 | 24 | 24 |
-| RE3:TrainTicket | 22 | 22 | 22 |
-| **total** | **666** | **666** | **666** |
+| cell               | `f9546a9` (before the refactor) | `78dd3b0` (after it) |  anchor |
+| ------------------ | ------------------------------: | -------------------: | ------: |
+| RE1:OnlineBoutique |                             113 |                  113 |     113 |
+| RE1:SockShop       |                             119 |                  119 |     119 |
+| RE1:TrainTicket    |                             113 |                  113 |     113 |
+| RE2:OnlineBoutique |                              84 |                   84 |      84 |
+| RE2:SockShop       |                              89 |                   89 |      89 |
+| RE2:TrainTicket    |                              76 |                   76 |      76 |
+| RE3:OnlineBoutique |                              26 |                   26 |      26 |
+| RE3:SockShop       |                              24 |                   24 |      24 |
+| RE3:TrainTicket    |                              22 |                   22 |      22 |
+| **total**          |                         **666** |              **666** | **666** |
 
 Two independent walks on either side of `d1c41a6` — the commit that routed `applyContainmentOrder` through
 `inspectContainmentOrder` — reproduce the anchor exactly. The refactor that added the edge population is therefore
@@ -5246,11 +5247,11 @@ written here rather than discovered after a gate came back low.
 published top-1, a **replay verdict**, and two separate pair traces. Three design points, each of which was a
 defect waiting to happen:
 
-| decision | why |
-| --- | --- |
-| the sweep's input is re-derived by a second pruner with both relational passes OFF | `analyze` applies the containment pass and then the flow pass, so the published ranking is two transformations past the fusion order the sweep actually saw |
-| the two arms are stored as two traces | once one arm inverts a pair the other refused, the scans are looking at different adjacencies; zipping rows by index would attach a decision to a pair it was never taken about |
-| the replay is written, not asserted | `differs` is a statement about the instrument — the rows describe something other than the decision — and a run that threw would delete the evidence |
+| decision                                                                           | why                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the sweep's input is re-derived by a second pruner with both relational passes OFF | `analyze` applies the containment pass and then the flow pass, so the published ranking is two transformations past the fusion order the sweep actually saw                     |
+| the two arms are stored as two traces                                              | once one arm inverts a pair the other refused, the scans are looking at different adjacencies; zipping rows by index would attach a decision to a pair it was never taken about |
+| the replay is written, not asserted                                                | `differs` is a statement about the instrument — the rows describe something other than the decision — and a run that threw would delete the evidence                            |
 
 `--containment-depth` defaults to 5, the depth every number in §4 and §12 was measured at. A depth of 1 is refused
 by name: it carries no adjacent pair, so the artifact would publish an empty population that reads as "the sweep
@@ -5263,11 +5264,11 @@ examined nothing".
     ρ = P(δa ∧ δb) − pq  and  P(δa ∧ δb) ≤ min(p, q)
     ⇒ ρ ≤ min(p, q) − pq = min(p(1−q), q(1−p))
 
-| marginals | perfectly co-moving joint | ρ |
-| --- | --- | ---: |
-| 0.5, 0.5 | 0.5 | 0.25 |
-| 0.9, 0.9 | 0.9 | 0.09 |
-| 1.0, 1.0 | 1.0 | **0** |
+| marginals | perfectly co-moving joint |     ρ |
+| --------- | ------------------------- | ----: |
+| 0.5, 0.5  | 0.5                       |  0.25 |
+| 0.9, 0.9  | 0.9                       |  0.09 |
+| 1.0, 1.0  | 1.0                       | **0** |
 
 An edge whose two ends are out of band in every observation therefore scores **zero** on the pre-registered
 statistic, and an edge that moved together half the time scores the maximum. The estimator's ranking is partly a
@@ -5312,10 +5313,10 @@ population was "the pairs the arm inverted", and on that population the residual
 The pre-registration says "every adjacent pair the containment sweep considers", so the restriction was an
 implementation error rather than a hypothesis failing. Over the examined pairs, on the same artifact:
 
-| arm | edges | obs | n ≥ 10 | gains | losses | AUC(ρ) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| ungated | 64 | 809 | 16 | 45 | 3 | **0.8611** |
-| gated | 64 | 786 | 16 | 41 | 0 | N/A |
+| arm     | edges | obs | n ≥ 10 | gains | losses |     AUC(ρ) |
+| ------- | ----: | --: | -----: | ----: | -----: | ---------: |
+| ungated |    64 | 809 |     16 |    45 |      3 | **0.8611** |
+| gated   |    64 | 786 |     16 |    41 |      0 |        N/A |
 
 Two qualifications are part of the number and not footnotes to it. `AUC = 0.8611` is computed over **two**
 negative cases, so the statistic moves in steps of `1/72` and one loss placed one position earlier reads `0.75` —
@@ -5350,11 +5351,11 @@ document named its own replacement, and the replacement is what got built.
 
 ### Three decisions, each one a defect avoided
 
-| decision | what it prevents |
-| --- | --- |
-| the row carries the sweep's INPUT (`chain`), not only its decisions | a gate changes which pairs are inverted, which changes the adjacencies examined next; a re-decision over recorded rows reports a corpus the gate never saw |
-| four arms — `off`, `ungated`, `shipped`, `prior` | `off` and `ungated` are one line apart and a mechanism apart; a baseline that inverted pairs credits the gate with the fusion's own decisions |
-| the prior is consulted LAST in the sweep | asked first, it labels pairs the measurements already refused, and the count of blocked inversions — the gate's price — inflates with refusals it never reached |
+| decision                                                            | what it prevents                                                                                                                                                |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the row carries the sweep's INPUT (`chain`), not only its decisions | a gate changes which pairs are inverted, which changes the adjacencies examined next; a re-decision over recorded rows reports a corpus the gate never saw      |
+| four arms — `off`, `ungated`, `shipped`, `prior`                    | `off` and `ungated` are one line apart and a mechanism apart; a baseline that inverted pairs credits the gate with the fusion's own decisions                   |
+| the prior is consulted LAST in the sweep                            | asked first, it labels pairs the measurements already refused, and the count of blocked inversions — the gate's price — inflates with refusals it never reached |
 
 The `chain` field is omitted rather than nulled on an older dump, so "predates the field" and "empty" stay apart.
 With it, an arm nobody has run is a local computation over one artifact, and the run's own `replay` verdict becomes
@@ -5550,11 +5551,11 @@ The pre-registration is not amended — the falsifier it wrote is the one that f
 
 ### The finding: precision is a function of distance, not of the statistic
 
-| λ | rank 2 | rank 3 | rank 4 | rank 5 |
-| --- | --- | --- | --- | --- |
-| 0.25 | +2 / −0 | +0 / −1 | — | — |
-| 1 | **+4 / −0** (100 %) | +2 / −5 (29 %) | +0 / −2 | +0 / −3 |
-| 4 | +11 / −3 (79 %) | +17 / −7 (71 %) | +0 / −11 | +0 / −9 |
+| λ    | rank 2              | rank 3          | rank 4   | rank 5  |
+| ---- | ------------------- | --------------- | -------- | ------- |
+| 0.25 | +2 / −0             | +0 / −1         | —        | —       |
+| 1    | **+4 / −0** (100 %) | +2 / −5 (29 %)  | +0 / −2  | +0 / −3 |
+| 4    | +11 / −3 (79 %)     | +17 / −7 (71 %) | +0 / −11 | +0 / −9 |
 
 Ranks 4 and 5 are **0 for 20** at every λ. Rank 2 is perfect at λ = 1. And the nodes a long lift promotes are the
 corpus's downstream hubs — `ts-travel-service`, `ts-basic-service`, `ts-travel2-service` — which carry **φ = 1.000**
@@ -5563,20 +5564,20 @@ most to the node that co-moves most, and that node is the furthest down the chai
 
 **So `+27 / −3` was not a measurement of the residual's discrimination (AUC 0.8611) — it was a measurement of the
 step's constraint.** An adjacent swap can promote exactly the candidate at rank 2, and rank 2 is the only distance
-at which this statistic reads 100 %. A step bounds *which pairs can move*; a term bounds only *what one pair is
-worth*. The first is the load-bearing part, and nothing in §299 said so.
+at which this statistic reads 100 %. A step bounds _which pairs can move_; a term bounds only _what one pair is
+worth_. The first is the load-bearing part, and nothing in §299 said so.
 
 ### The curve, and the word for it
 
-| λ | Top@1 | ± | moved |
-| --- | ---: | --- | ---: |
-| 0.25 | 1 142 | +2 / −1 | 13 |
-| 0.5 | 1 139 | +4 / −6 | 32 |
-| 1 | 1 137 | +6 / −10 | 55 |
-| 2 | 1 141 | +18 / −18 | 98 |
-| 4 | 1 139 | +28 / −30 | 139 |
+| λ    | Top@1 | ±         | moved |
+| ---- | ----: | --------- | ----: |
+| 0.25 | 1 142 | +2 / −1   |    13 |
+| 0.5  | 1 139 | +4 / −6   |    32 |
+| 1    | 1 137 | +6 / −10  |    55 |
+| 2    | 1 141 | +18 / −18 |    98 |
+| 4    | 1 139 | +28 / −30 |   139 |
 
-One-to-one over a 16-fold range. Not inert (the curve moves), not noise (the sign of its *net* is stable), and not
+One-to-one over a 16-fold range. Not inert (the curve moves), not noise (the sign of its _net_ is stable), and not
 a bar that was missed: **it has no slope.** A spend that buys one case for every one it sells is not a candidate
 requirement at any magnitude.
 
@@ -5586,10 +5587,10 @@ The reach table implies one more shape — the residual added to the interface r
 can be priced before it is built. An exploratory probe (labelled as such: no pre-registration, so a bound and not
 a reading) over the 279 cases the fusion misses:
 
-| λ | both fix | shipped only | term-at-rank-2 only | union Top@1 |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 3 | 12 | 1 | 1 157 |
-| 4 | 9 | 6 | 2 | 1 158 |
+| λ   | both fix | shipped only | term-at-rank-2 only | union Top@1 |
+| --- | -------: | -----------: | ------------------: | ----------: |
+| 1   |        3 |           12 |                   1 |       1 157 |
+| 4   |        9 |            6 |                   2 |       1 158 |
 
 One case at λ = 1, two at λ = 4, in exchange for a pass that must become score-aware — giving up a documented
 property of `applyContainmentOrder` for a one-case return. **The residual axis is exhausted:** as a gate it loses
@@ -5643,13 +5644,13 @@ is a whole-corpus reading and not a subset that happens to look tidy.
 
 ### 301.2 The three predictions, audited
 
-| prediction | written before the run | measured | verdict |
-| --- | --- | --- | --- |
-| 1 | the arm fails **on losses**, Top@1 in `[1 120, 1 150]`, `losses ≥ 8` | failed on losses (**2**), Top@1 **1 155** | **half wrong** — the direction held, both magnitudes did not: 1 155 is five ABOVE the band and the losses are a quarter of the floor |
-| 2 | `opened` total `> 50`, dominated by `unmeasured`, `not-larger` non-empty | total **133**, `not-larger` **130**, `unmeasured` **2** | **partly wrong** — the total is right and the DOMINANT heading is the other one |
-| 3 | `moved` in `[40, 120]` | `moved` **15** | **wrong** — by a factor of three |
+| prediction | written before the run                                                   | measured                                                | verdict                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1          | the arm fails **on losses**, Top@1 in `[1 120, 1 150]`, `losses ≥ 8`     | failed on losses (**2**), Top@1 **1 155**               | **half wrong** — the direction held, both magnitudes did not: 1 155 is five ABOVE the band and the losses are a quarter of the floor |
+| 2          | `opened` total `> 50`, dominated by `unmeasured`, `not-larger` non-empty | total **133**, `not-larger` **130**, `unmeasured` **2** | **partly wrong** — the total is right and the DOMINANT heading is the other one                                                      |
+| 3          | `moved` in `[40, 120]`                                                   | `moved` **15**                                          | **wrong** — by a factor of three                                                                                                     |
 
-The falsifier the pre-registration wrote — *"if `opened` totals 0, §289 was wrong about its own mechanism"* — did
+The falsifier the pre-registration wrote — _"if `opened` totals 0, §289 was wrong about its own mechanism"_ — did
 not fire: 133 pairs were opened. What fired instead is the prediction that said a replacement must sell the shipped
 pass's cases. It did not sell them: it reached 1 155 against 1 156, one case apart, with two losses.
 
@@ -5660,12 +5661,12 @@ Three censuses, side by side. The latency walk's totals come from the gated arm 
 stopped would have been inversions without it, so the shipped rule inverts **242** pairs and refuses **561** as
 `not-larger` and **52** as `unmeasured`.
 
-| census | latency (shipped rule) | all channels (surprise) |
-| --- | ---: | ---: |
-| pairs inverted | 242 | 226 |
-| refused `not-larger` | 561 | 59 |
-| refused `unmeasured` | 52 | 0 |
-| refused `no-failed-interface` | — | 552 |
+| census                        | latency (shipped rule) | all channels (surprise) |
+| ----------------------------- | ---------------------: | ----------------------: |
+| pairs inverted                |                    242 |                     226 |
+| refused `not-larger`          |                    561 |                      59 |
+| refused `unmeasured`          |                     52 |                       0 |
+| refused `no-failed-interface` |                      — |                     552 |
 
 The two walks agree on **93** inversions and disagree on **282** (149 latency-only, 133 surprise-only). That is
 59 % of the surprise arm's work being new, and the change is exactly where §289 said it would be: **561 pairs
@@ -5729,7 +5730,7 @@ is `!licensed` now.
 
 That `inverted=99` was **not** evidence of the defect is worth stating: the shipped walk's own inversion count is
 never printed anywhere (§19.8), so there was no control to compare it against, and the comparison this entry first
-wanted to make was against a *derived* 242 that assumed a shared cascade. The evidence that carried was the
+wanted to make was against a _derived_ 242 that assumed a shared cascade. The evidence that carried was the
 relaxation argument and `prior-absent`, and both were on the artifact.
 
 ### 302.2 The corrected reading
@@ -5761,17 +5762,17 @@ inverting it changed no answer.
 
 ### 302.4 The ceiling, and why this axis is finished
 
-| population | cases |
-| --- | ---: |
-| fusion misses (1 422 − 1 141) | 281 |
-| accepted answer at position 1 of the recorded order | 43 |
-| … pair physically qualifiable by the rule | **21** |
-| … converted by the shipped pass | **15** |
-| … converted by the case-scoped pass | **15** |
+| population                                          |  cases |
+| --------------------------------------------------- | -----: |
+| fusion misses (1 422 − 1 141)                       |    281 |
+| accepted answer at position 1 of the recorded order |     43 |
+| … pair physically qualifiable by the rule           | **21** |
+| … converted by the shipped pass                     | **15** |
+| … converted by the case-scoped pass                 | **15** |
 
 The first two rows are a theorem, not a count: the sweep visits adjacent positions from the top and never revisits
 one, so a candidate ascends **exactly one place** and only the pair at positions 0 and 1 can change the published
-head. Six of the 281 misses are therefore reachable by *any* arm on this axis beyond the shipped one, and all six
+head. Six of the 281 misses are therefore reachable by _any_ arm on this axis beyond the shipped one, and all six
 are the territory §299 priced — record exists, edge absent, residual would admit — the population that produced
 three losses for eighteen gains.
 
@@ -5781,13 +5782,13 @@ was already within six cases of the physical bound.
 
 ### 302.5 The pre-registered predictions, audited
 
-| # | written before the run | measured | verdict |
-| --- | --- | --- | --- |
-| 1 | `record-free` ∈ [150, 500] | **200** | ✅ |
-| 2 | losses = 0 | **0** | ✅ — but it was never at risk: the buggy run had 0 as well, because the conjunction could only *remove* inversions |
-| 3 | gains ∈ [20, 32] | **15** | ❌ — the arm adds nothing at all, which is the finding rather than the miss |
-| 4 | `record-silent` ∈ [100, 400] | **11** | ❌ — by a factor of nine. The pre-registration's own hedge ("below 20 means the silent cases are mostly `not-larger`") named the cause without betting on it |
-| 5 | `at-second` ≈ 36, `reachable` ∈ [24, 36] | **43**, **21** | ❌ — the 36 was read off the depth report's `@2 − @1`, which counts depth in the engine's order; this counts position 1 of the CHAIN's order, and the flow pass and the candidate pool separate them |
+| #   | written before the run                   | measured       | verdict                                                                                                                                                                                              |
+| --- | ---------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `record-free` ∈ [150, 500]               | **200**        | ✅                                                                                                                                                                                                   |
+| 2   | losses = 0                               | **0**          | ✅ — but it was never at risk: the buggy run had 0 as well, because the conjunction could only _remove_ inversions                                                                                   |
+| 3   | gains ∈ [20, 32]                         | **15**         | ❌ — the arm adds nothing at all, which is the finding rather than the miss                                                                                                                          |
+| 4   | `record-silent` ∈ [100, 400]             | **11**         | ❌ — by a factor of nine. The pre-registration's own hedge ("below 20 means the silent cases are mostly `not-larger`") named the cause without betting on it                                         |
+| 5   | `at-second` ≈ 36, `reachable` ∈ [24, 36] | **43**, **21** | ❌ — the 36 was read off the depth report's `@2 − @1`, which counts depth in the engine's order; this counts position 1 of the CHAIN's order, and the flow pass and the candidate pool separate them |
 
 Prediction 2's falsifier did not fire, so the axis does not close for the reason the pre-registration gave. It
 closes on §302.4's bound instead, which is stronger: it does not depend on any arm being wrong.
@@ -5880,12 +5881,12 @@ the first entry in this register whose headline is a CENSUS rather than a delta.
 
 ### 303.1 Three arms, one digest
 
-| arm | run | `Top@1` | per-case `md5` |
-| --- | --- | ---: | --- |
-| control, `selfTimeWeight=0` (`05236ff`) | `43828014109` | 1 141 (80.24 %) | `a201eb81…` |
-| A3, `0.05` + `absolute` (mechanism control) | `44134531473` | 1 141 | `a201eb81…` |
-| A1, `0.05` + `fleet` | `44134503641` | 1 141 | `a201eb81…` |
-| A2, `0.2` + `fleet` | `44134518256` | 1 141 | `a201eb81…` |
+| arm                                         | run           |         `Top@1` | per-case `md5` |
+| ------------------------------------------- | ------------- | --------------: | -------------- |
+| control, `selfTimeWeight=0` (`05236ff`)     | `43828014109` | 1 141 (80.24 %) | `a201eb81…`    |
+| A3, `0.05` + `absolute` (mechanism control) | `44134531473` |           1 141 | `a201eb81…`    |
+| A1, `0.05` + `fleet`                        | `44134503641` |           1 141 | `a201eb81…`    |
+| A2, `0.2` + `fleet`                         | `44134518256` |           1 141 | `a201eb81…`    |
 
 The digest is the same digest, so the identity is artifact-level, not percentage-level: 1 422 rows, candidate
 for candidate, same order. An eight-fold weight increase between A1 and A2 moved nothing.
@@ -5914,12 +5915,12 @@ between two unobservable arms is not a comparison between them.
 
 ### 303.3 The four predictions, audited
 
-| # | pre-registered | outcome |
-| --- | --- | --- |
-| 1 | A3 loses cases (the §6 mechanism is direction-blind on leaf-heavy graphs) | **NOT REALISED** — a term with no map cannot lose a case |
-| 2 | A2 moves strictly more than A1, both directions | **NOT REALISED** — both move zero |
-| 3 | Residual ABSENT for most candidates on the 14- and ~10-service graphs | **NOT TESTED** — there is no residual |
-| 4 | Gains are win-the-CALLER cases; losses are leaf-among-moved-leaves | **NOT TESTED** |
+| #   | pre-registered                                                            | outcome                                                  |
+| --- | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | A3 loses cases (the §6 mechanism is direction-blind on leaf-heavy graphs) | **NOT REALISED** — a term with no map cannot lose a case |
+| 2   | A2 moves strictly more than A1, both directions                           | **NOT REALISED** — both move zero                        |
+| 3   | Residual ABSENT for most candidates on the 14- and ~10-service graphs     | **NOT TESTED** — there is no residual                    |
+| 4   | Gains are win-the-CALLER cases; losses are leaf-among-moved-leaves        | **NOT TESTED**                                           |
 
 Two failed and two were never reached, and the failure is informative in one direction only: it is evidence
 about the arm's **reach**, not about its theory. The pre-registration is left as written. Rewriting it into a
@@ -5957,7 +5958,7 @@ cvBonus = cv > 0.5 ? min(cv, 1.5) × anomalyCvWeight : 0        anomalyCvWeight 
 
 Three transformations before the rank ever sees it — **hard-zeroed** below `cv = 0.5`, **saturated** above
 `cv = 1.5`, and **scaled into a band `0.05` wide** in between. So the rank is ordering a quantity whose resolution
-was destroyed one stage earlier, and a residual standardised *inside* that band would have standardised the three
+was destroyed one stage earlier, and a residual standardised _inside_ that band would have standardised the three
 transformations rather than the node. The 163 cases would have stayed lost, and the arm would have reported "the
 residual does not help" about a statistic that was never handed the raw quantity.
 
@@ -6004,12 +6005,12 @@ The arms and the falsifier are in `docs-repository:preregistration-302.md`; thei
 Four arms, one commit (`1c11c41`), FSE'26 RCABench on all 1 422 cases. The control reproduces the published
 bare-dispatch reading exactly, so the deltas below are same-commit deltas and not remembered ones.
 
-| arm | dispatch | Top@1 | Top@3 | Top@5 | saved | broke | net |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| control | `stability_weight=0` | 1 141 **80.24%** | 1 228 | 1 249 | — | — | — |
-| A1 | `scope=fleet, weight=0.1` | 730 **51.34%** | 1 045 | 1 123 | 19 | 430 | **−411** |
-| A2 | `scope=fleet, weight=0.4` | 270 **18.99%** | 603 | 782 | 12 | 883 | **−871** |
-| A3 | `scope=fleet_unbinned, weight=0.1` | 1 112 **78.20%** | 1 230 | 1 256 | 21 | 50 | **−29** |
+| arm     | dispatch                           | Top@1            | Top@3 | Top@5 | saved | broke | net      |
+| ------- | ---------------------------------- | ---------------- | ----- | ----- | ----- | ----- | -------- |
+| control | `stability_weight=0`               | 1 141 **80.24%** | 1 228 | 1 249 | —     | —     | —        |
+| A1      | `scope=fleet, weight=0.1`          | 730 **51.34%**   | 1 045 | 1 123 | 19    | 430   | **−411** |
+| A2      | `scope=fleet, weight=0.4`          | 270 **18.99%**   | 603   | 782   | 12    | 883   | **−871** |
+| A3      | `scope=fleet_unbinned, weight=0.1` | 1 112 **78.20%** | 1 230 | 1 256 | 21    | 50    | **−29**  |
 
 Runs `44210815387`, `44210819354`, `44210824103`, `44210828265`. The full reading, the prediction audit and the
 `Top@3`/`Top@5` asymmetry live in `stability-dispersion.md` §6; this entry records the closure and the three defects
@@ -6017,16 +6018,16 @@ the closure exposes.
 
 ### 305.1 The lever is the measurement a weight table hides
 
-| arm | top-1s changed | breakages installing a candidate the control ranked outside its top-5 |
-| --- | --- | --- |
-| A1 `fleet 0.1` | **449** | 340 / 430 = **79.1%** |
-| A2 `fleet 0.4` | **895** | 790 / 883 = **89.5%** |
-| A3 `unbinned 0.1` | **71** | 11 / 50 = **22.0%** |
+| arm               | top-1s changed | breakages installing a candidate the control ranked outside its top-5 |
+| ----------------- | -------------- | --------------------------------------------------------------------- |
+| A1 `fleet 0.1`    | **449**        | 340 / 430 = **79.1%**                                                 |
+| A2 `fleet 0.4`    | **895**        | 790 / 883 = **89.5%**                                                 |
+| A3 `unbinned 0.1` | **71**         | 11 / 50 = **22.0%**                                                   |
 
 At the same weight the family-binned residual moves **6.3×** as many decisions as the unbinned one, and four of
 every five of its breakages install a service the rest of the engine had ranked sixth or worse. The term was never
 a perturbation on this ranking: **it was the ranking.** A3, at the same weight, is a perturbation — 78% of its
-breakages are `rank1 ↔ rank2` swaps — which is why it loses 29 cases instead of 411 while *gaining* 7 at `Top@5`.
+breakages are `rank1 ↔ rank2` swaps — which is why it loses 29 cases instead of 411 while _gaining_ 7 at `Top@5`.
 
 The criterion's second clause (zero regressed families) is nowhere near satisfied and is measured separately: of the
 `25` fault families A1 improves **1** and regresses **22**, A2 improves **0** and regresses **22**, A3 improves **2**
@@ -6072,9 +6073,9 @@ its own artifact.
    same guard that removes it from the sum, so that bucket produces **no losses by construction**. Inert and wrong
    are not two regions of one axis; they are mutually exclusive by the code.
 3. **An argument about validity used to predict a magnitude.** Prediction 4 ordered A3's regressed-family count
-   *behind* A1's "because unbinned peers mix families whose `cv` distributions do not overlap". That is a
+   _behind_ A1's "because unbinned peers mix families whose `cv` distributions do not overlap". That is a
    distributional claim producing a scale prediction, and the artifacts reverse it (`50` against `430`) for the
-   reason in §305.2. Mixing families is what *bounds* the residual.
+   reason in §305.2. Mixing families is what _bounds_ the residual.
 
 ### 305.5 What is closed, what stays open
 
@@ -6088,7 +6089,7 @@ weight would mean "the largest contribution this term can add" and would therefo
 key. It is a third transform of `cv`, so this pre-registration forbids dispatching it; it also is not what the
 falsifier prescribes next — the 11 bucket-C cases, whose truth leads on **nothing** and which no re-weighting of an
 existing term can reach. Order of work: bucket-C audit first, then a fresh pre-registration for the bounded form
-with its weight stated in *contribution* units and that magnitude measured **before** the arm.
+with its weight stated in _contribution_ units and that magnitude measured **before** the arm.
 
 Also open, as an instrument defect rather than a finding: the promised count of the 163 stability-singleton cases
 that flip was **not** produced, because iteration 301's term dump — which carried the bucket-A labels — was not
@@ -6097,8 +6098,8 @@ census had to be rebuilt from the corpus for that reason.
 
 ## §306 — The depth ladder closes at 49, and three attempts to beat the ranking were noise
 
-| record | what it measures | artifact | cost |
-| --- | --- | --- | --- |
+| record          | what it measures                                                                     | artifact                                 | cost                                       |
+| --------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------ |
 | `rank-depth.md` | ladder to 49, the permutation, the gap calibration, three refusals, the corpus count | `--depth-out` + `--terms-dump` + one A/B | 15 m 29 s + 14 m 5 s, **zero model calls** |
 
 `benchmarks/src/ranking-depth.ts` has measured the per-case depth since iteration 262 and
@@ -6109,9 +6110,9 @@ and the ladder carries `25, 30, 40, 50`.
 
 ### 306.1 Every answer is inside the order
 
-| K | 1 | 2 | 3 | 5 | 10 | 12 | 20 | 25 | 30 | 40 | 45 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| cases | 1 141 | 1 190 | 1 228 | 1 249 | 1 278 | 1 287 | 1 310 | 1 327 | 1 345 | 1 400 | **1 422** |
+| K     | 1       | 2       | 3       | 5       | 10      | 12      | 20      | 25      | 30      | 40      | 45           |
+| ----- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------------ |
+| cases | 1 141   | 1 190   | 1 228   | 1 249   | 1 278   | 1 287   | 1 310   | 1 327   | 1 345   | 1 400   | **1 422**    |
 | share | 80.24 % | 83.68 % | 86.36 % | 87.83 % | 89.87 % | 90.51 % | 92.12 % | 93.32 % | 94.59 % | 98.45 % | **100.00 %** |
 
 **`absent = 0` on all 1 422 cases.** The truth is at rank `45` at the worst, in orders of up to `50`, so no re-ranking at any width is
@@ -6121,9 +6122,9 @@ correct as one; the clause after it omitted its own width, and the width is `max
 
 ### 306.2 The two relational passes are worth +68, confined to rank 1
 
-| K | 1 | 2 | 3 | 5 | 10 | 20 | 30 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| engine | 1 141 | 1 190 | 1 228 | 1 249 | 1 278 | 1 310 | 1 345 |
+| K          | 1     | 2     | 3     | 5     | 10    | 20    | 30    |
+| ---------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| engine     | 1 141 | 1 190 | 1 228 | 1 249 | 1 278 | 1 310 | 1 345 |
 | score-only | 1 073 | 1 184 | 1 227 | 1 249 | 1 278 | 1 310 | 1 344 |
 
 `terms-dump.ts` already recorded the `+68`. That it is **confined to the first position** is new, and it is the
@@ -6134,10 +6135,10 @@ apparatus's measured contribution and its shipped form agree.
 
 ### 306.3 The score gap is a calibration curve, and the smallest-gap band is a twin
 
-| gap | `[0,.005)` | `[.005,.01)` | `[.01,.02)` | `[.02,.05)` | `[.05,.1)` | `[.1,.3)` | `[.3,∞)` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| cases | 9 | 18 | 76 | 93 | 95 | 372 | 759 |
-| accuracy | 44.4 % | 27.8 % | **14.5 %** | 52.7 % | 74.7 % | 73.4 % | **95.9 %** |
+| gap      | `[0,.005)` | `[.005,.01)` | `[.01,.02)` | `[.02,.05)` | `[.05,.1)` | `[.1,.3)` | `[.3,∞)`   |
+| -------- | ---------- | ------------ | ----------- | ----------- | ---------- | --------- | ---------- |
+| cases    | 9          | 18           | 76          | 93          | 95         | 372       | 759        |
+| accuracy | 44.4 %     | 27.8 %       | **14.5 %**  | 52.7 %      | 74.7 %     | 73.4 %    | **95.9 %** |
 
 `gap ≥ 0.3` is 759 cases (53.4 % of the corpus) at 95.9 %. `gap < 0.02` is 103 cases — **7.2 % of the corpus
 holding 83 of the 281 misses, 29.5 % of them** — at 19.4 %, and the `[0.01, 0.02)` band alone scores 14.5 %.
@@ -6163,10 +6164,10 @@ scores **44/1 422** as an order. The information exists in several channels and 
 `failureAttribution = 'shape'` shipped on a **cost** argument ("identical where there is no evidence"), never on a
 benefit. Measured where the evidence exists:
 
-| arm | Top@1 | cases | flips |
-| --- | --- | --- | --- |
+| arm               | Top@1               | cases | flips         |
+| ----------------- | ------------------- | ----- | ------------- |
 | `shape` (shipped) | **1 141 / 80.24 %** | 1 422 | 3 won, 0 lost |
-| `counts` | 1 138 / 80.0 % | 1 422 | 0 won, 3 lost |
+| `counts`          | 1 138 / 80.0 %      | 1 422 | 0 won, 3 lost |
 
 All three flips are `novel > 0` cases (two `HTTPRequestReplaceMethod` at 1 487 and 2 014 novel failures, one
 `HTTPRequestReplacePath` at 73) and none of the 1 219 `novel == 0` cases moves — the design claim, confirmed
@@ -6302,8 +6303,8 @@ available answer to "is +9 an artefact".
 
 The sweep that found this also **rediscovered an entry already on file**: RCAtlas has been in
 `sota-populations.md` since an earlier iteration, with three root-cause levels and a leakage audit this search did
-not surface. Recording it because the failure mode is the one §307's own §8.8 names one surface over: *read what
-the repository already says before writing what the web says.*
+not surface. Recording it because the failure mode is the one §307's own §8.8 names one surface over: _read what
+the repository already says before writing what the web says._
 
 ## §308 — The gate reproduces at +9 on production code, and the guard around it was one candidate too strict
 
@@ -6314,12 +6315,12 @@ treatment are one loop rather than two.
 
 ### 308.1 The four predictions
 
-| # | as registered | reading |
-| --- | --- | --- |
-| G1 | net ≥ **+5** | **+9** |
-| G2 | both id-hash halves positive, `\|A − B\| ≤ 6` | **+5 / +4**, difference 1 |
-| G3 | overrides ≤ band | **56 ≤ 122** |
-| G4 | end to end as `1 156 + net`, fraction printed | **1 156 → 1 165** |
+| #   | as registered                                 | reading                   |
+| --- | --------------------------------------------- | ------------------------- |
+| G1  | net ≥ **+5**                                  | **+9**                    |
+| G2  | both id-hash halves positive, `\|A − B\| ≤ 6` | **+5 / +4**, difference 1 |
+| G3  | overrides ≤ band                              | **56 ≤ 122**              |
+| G4  | end to end as `1 156 + net`, fraction printed | **1 156 → 1 165**         |
 
 The falsifier does not fire, so the axis stays open and arm W is authorised. `docs/agentic-promotion-gate.md` §9
 carries the readings and the artifact provenance; the one number that makes the replay a confirmation rather than a
@@ -6333,9 +6334,9 @@ below §307's. The guard refuses to gate a case whose full order disagrees with 
 whole five-candidate prefix. Seventeen cases differ, and the distribution of the first differing position is the
 whole finding:
 
-| first differing position | 1 | 2 | 3 | 4 | 5 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| cases | **0** | **0** | 0 | **2** | **15** |
+| first differing position |     1 |     2 |   3 |     4 |      5 |
+| ------------------------ | ----: | ----: | --: | ----: | -----: |
+| cases                    | **0** | **0** |   0 | **2** | **15** |
 
 The gate reads `full[0]` (the answer), the pair `(full[0], full[1])` (the margin) and `min(score)` (the denominator).
 Two of those three live in positions 1 and 2, and neither position ever differs. So the correct condition is
@@ -6371,14 +6372,14 @@ the threshold was chosen on this corpus, the halves are the only internal replic
 already an instrument here (`ranking-depth.ts` prints `Retrieval@K`) and the gate had never been placed in it. On
 the artifact arm G replays:
 
-| quantity | reading |
-| --- | ---: |
-| `Retrieval@5` | `1 249 / 1 422 = 87.83 %` |
-| `Rerank@1 ∣ Retrieval@5`, gate off | `1 156 / 1 249 = 92.55 %` |
-| identity | `0.878340 × 0.925540 = 0.812940` = `Top@1` |
-| `Rerank@1`, gate on | `1 165 / 1 249 = 93.27 %` |
-| reranking headroom at width 5 | **+93 cases, +6.54 pp** |
-| the gate took | **9 of 93 = 9.7 %** |
+| quantity                           |                                    reading |
+| ---------------------------------- | -----------------------------------------: |
+| `Retrieval@5`                      |                  `1 249 / 1 422 = 87.83 %` |
+| `Rerank@1 ∣ Retrieval@5`, gate off |                  `1 156 / 1 249 = 92.55 %` |
+| identity                           | `0.878340 × 0.925540 = 0.812940` = `Top@1` |
+| `Rerank@1`, gate on                |                  `1 165 / 1 249 = 93.27 %` |
+| reranking headroom at width 5      |                    **+93 cases, +6.54 pp** |
+| the gate took                      |                        **9 of 93 = 9.7 %** |
 
 Three consequences, and the third is the one that changes the roadmap.
 
@@ -6387,7 +6388,7 @@ Three consequences, and the third is the one that changes the roadmap.
    five-wide list.
 2. **The gate is 9.7 % through its own axis.** Nine of ninety-three. The remaining eighty-four are cases where the
    answer is visible at positions 2-5 and the model's first choice is wrong, and §7's `36.6 %` conversion says the
-   model does convert them when it can see them — so a better *admission rule* has room and a better *threshold*
+   model does convert them when it can see them — so a better _admission rule_ has room and a better _threshold_
    does not. The next lever on this axis is a verifier, not a wider band.
 3. **Width crosses the published best, and the projection is now derived.** `Retrieval@20 = 92.12 %`, so holding
    `Rerank@1` at `92.55 %` gives `0.921238 × 0.925540 = 85.26 %` — the same `85.3 %` `docs-repository:preregistration-303.md`
@@ -6419,13 +6420,13 @@ is read.
 
 Verified rather than argued, by running both widths over the whole corpus and comparing the artifacts:
 
-| artifact | width 5 | width 20 |
-| --- | --- | --- |
-| `per-case.ndjson` | `2778b294de9f…` | identical |
-| `terms.ndjson` | `4b1dadd057f4…` | identical |
-| `results.json` | `068d1af8d96f…` | identical |
-| `Top@1` / `Top@3` / `Top@5` | 1 156 / 1 228 / 1 249 | identical |
-| candidates carried | 7 110 | **28 440** |
+| artifact                    | width 5               | width 20   |
+| --------------------------- | --------------------- | ---------- |
+| `per-case.ndjson`           | `2778b294de9f…`       | identical  |
+| `terms.ndjson`              | `4b1dadd057f4…`       | identical  |
+| `results.json`              | `068d1af8d96f…`       | identical  |
+| `Top@1` / `Top@3` / `Top@5` | 1 156 / 1 228 / 1 249 | identical  |
+| candidates carried          | 7 110                 | **28 440** |
 
 ### 309.2 The defect: the width had a second owner, and it won silently
 
@@ -6445,20 +6446,20 @@ not have.
 
 ### 309.3 What the widened population moves, and what it does not
 
-The dump is the engine's answer **at that width**, and a structural pass permutes *the list it is handed*, so a
+The dump is the engine's answer **at that width**, and a structural pass permutes _the list it is handed_, so a
 twenty-wide order is not the published five plus fifteen:
 
-| width 5 vs width 20 | cases |
-| --- | ---: |
-| position 1 differs | **0** |
-| position 2 differs | **0** |
-| first difference at position 4 | 2 |
-| first difference at position 5 | 15 |
-| any of the first five differs | **17** |
+| width 5 vs width 20            |  cases |
+| ------------------------------ | -----: |
+| position 1 differs             |  **0** |
+| position 2 differs             |  **0** |
+| first difference at position 4 |      2 |
+| first difference at position 5 |     15 |
+| any of the first five differs  | **17** |
 
 Seventeen in 1 422, at the same positions as the fingerprint-versus-terms discrepancy `agentic-promotion-gate.md`
 §9.3 recorded. The control is untouched (`engineOrderOf` reads position 1, which never differs, and the gate-off
-arm over this population reads `1 156`), and the arm's prompts are *not* a strict superset of arm G's — on 1.2 %
+arm over this population reads `1 156`), and the arm's prompts are _not_ a strict superset of arm G's — on 1.2 %
 of the corpus the last two visible rows are ordered differently. That is stated because a reader who assumed
 otherwise would be reading a cleaner experiment than the one that ran.
 
@@ -6468,11 +6469,11 @@ otherwise would be reading a cleaner experiment than the one that ran.
 of 2 772 tokens per case. The per-case cost is not a constant: it is a function of the table, and the table is what
 the flag changes.
 
-| | width 5 | width 20 |
-| --- | ---: | ---: |
-| table rows over the corpus | 63 897 | 255 181 |
-| ratio | — | **3.99** |
-| projected total prompt tokens | 3.94 M | **15.74 M** |
+|                               | width 5 |    width 20 |
+| ----------------------------- | ------: | ----------: |
+| table rows over the corpus    |  63 897 |     255 181 |
+| ratio                         |       — |    **3.99** |
+| projected total prompt tokens |  3.94 M | **15.74 M** |
 
 So the arm costs about four times what was registered. The error is the one this line of work keeps making — a
 quantity measured at one width applied at another — and it is recorded here rather than at the end, because the
@@ -6499,7 +6500,7 @@ asserted not to appear on the engine's command line, and the census names the ne
 workflow — never a benchmark cell — may produce.
 
 The second half of the repair is the part a reader should check. Separating the files leaves the join unable to
-answer *"is this dump from the run being scored?"*, because the field it compared — the candidate array — is the
+answer _"is this dump from the run being scored?"_, because the field it compared — the candidate array — is the
 one a widening changes. So the presentation records the order the run published beside the order it presents, and
 `joinHeadroom` compares THAT, in full: `published` equals `per-case.ranked` on 1 422 of 1 422 cases, and position 1
 is identical on 1 422 of 1 422. A presentation whose recorded order disagrees is refused exactly as a stale
@@ -6518,35 +6519,35 @@ be found by a reader that joined two artifacts.
 `docs/agentic-presentation-width.md` §9 turns `Retrieval@K` into a curve over the whole corpus at `$0` of API
 spend, and it moves the next width arm:
 
-| K | 1 | 2 | 3 | 5 | 10 | 15 | 20 | 25 | 30 | 40 | 50 |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+|         K |     1 |     2 |     3 |     5 |    10 |    15 |    20 |    25 |    30 |    40 |    50 |
+| --------: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: |
 | reachable | 1 156 | 1 192 | 1 228 | 1 249 | 1 278 | 1 294 | 1 310 | 1 327 | 1 345 | 1 400 | 1 422 |
 
 Width 5 → 20 buys **61 cases over 15 slots** (4.1 per slot); width 30 → 40 buys **55 over 10** (5.5 per slot), which
 is the shoulder of the curve and the better next arm if the axis survives at all. And the 17-case permutation does
 not change this: the ladder taken over the fingerprint's own order equals the ladder taken over the fifty-wide
-terms dump at every rung, and the set newly reachable between 5 and 20 is *the same 61 cases* by identity.
+terms dump at every rung, and the set newly reachable between 5 and 20 is _the same 61 cases_ by identity.
 
 ## §310 — The width axis closes at 20, and it closes net-neutral rather than inert
 
-`docs-repository:preregistration-305.md` authorised arm W (width 20, gate `0.03`) behind a single falsifier: *if its `Top@1` is at
-or below arm G's, the width axis closes as a class at 20*. `44299700032` ran it on `87fcdf0`, 1 422 cases,
+`docs-repository:preregistration-305.md` authorised arm W (width 20, gate `0.03`) behind a single falsifier: _if its `Top@1` is at
+or below arm G's, the width axis closes as a class at 20_. `44299700032` ran it on `87fcdf0`, 1 422 cases,
 `deepseek-chat` asked and `deepseek-flash` served (the endpoint's own reply, as in every arm since
 `docs/agentic-eliminator.md` §140), 13.95 M prompt tokens, 4 m 42 s of model time.
 
 ### 310.1 The four predictions, and the falsifier
 
-| # | as registered | reading | verdict |
-| --- | --- | --- | --- |
-| W1 | `Top@1` ≥ 1 165 + 12 = **1 177** | **1 165** | **FAILS** |
-| W2 | overrides ≤ 56 + 61 = **117** | **32** | bound holds, **reason refuted** |
-| W3 | band unchanged at **122** | **122**, engineWrong **98** | holds — plumbing check only |
-| W4 | `promoted` rises, `agrees` falls by the same amount, `reversed` ≥ **26** | promoted **32** (arm G 56), `reversed` **14**, `agrees` 1 313 | **FAILS, in the opposite direction** |
-| — | falsifier: `Top@1` ≤ arm G's **1 165** | **1 165** | **FIRES** |
+| #   | as registered                                                            | reading                                                       | verdict                              |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------ |
+| W1  | `Top@1` ≥ 1 165 + 12 = **1 177**                                         | **1 165**                                                     | **FAILS**                            |
+| W2  | overrides ≤ 56 + 61 = **117**                                            | **32**                                                        | bound holds, **reason refuted**      |
+| W3  | band unchanged at **122**                                                | **122**, engineWrong **98**                                   | holds — plumbing check only          |
+| W4  | `promoted` rises, `agrees` falls by the same amount, `reversed` ≥ **26** | promoted **32** (arm G 56), `reversed` **14**, `agrees` 1 313 | **FAILS, in the opposite direction** |
+| —   | falsifier: `Top@1` ≤ arm G's **1 165**                                   | **1 165**                                                     | **FIRES**                            |
 
 W2 is the interesting miss. The bound was written as an upper limit and the reading is far below it, so the
-prediction "passes" while the sentence justifying it — *a wider list gives the model candidates it did not have, so
-it will use more of them* — is refuted by the same number. Overrides fell by 24. A bound that holds for the opposite
+prediction "passes" while the sentence justifying it — _a wider list gives the model candidates it did not have, so
+it will use more of them_ — is refuted by the same number. Overrides fell by 24. A bound that holds for the opposite
 of its stated reason is a prediction that should be counted as a miss, and it is counted as one here.
 
 W3 held to the digit and could not have failed: `(s₁ − s₂)` is read from positions 1 and 2, which the widening
@@ -6557,9 +6558,9 @@ plumbing check, which is how it was re-stated before dispatch.
 
 `+9 = +9` is not inertness. The 11 fixes split by where the truth sat in the published five:
 
-| truth inside the published five | fixes |
-| --- | ---: |
-| yes — at ranks 2, 2, 2, 3, 3, 5 | **6** |
+| truth inside the published five                     | fixes |
+| --------------------------------------------------- | ----: |
+| yes — at ranks 2, 2, 2, 3, 3, 5                     | **6** |
 | **no — absent, presented at ranks 6, 9, 9, 14, 17** | **5** |
 
 and the exchange rate is symmetric: arm G's `15 fix / 6 break` became `11 / 2`. **Five cases were answered that a
@@ -6599,7 +6600,7 @@ Not said by the closure, and worth naming so it is not over-read:
   at `30 → 40` (+55 cases over ten slots). That is a different arm with a different cost (≈ 25 M tokens) and it is
   not authorised here.
 - **Not the admission rule.** §10.1's second consequence said a better threshold has no room left and a better
-  *rule* has 84 cases of it. Arm W's census sharpens that: the rule now arbitrates 32 disagreements instead of 56,
+  _rule_ has 84 cases of it. Arm W's census sharpens that: the rule now arbitrates 32 disagreements instead of 56,
   so a rule that is a function of the case rather than of the pair has less to arbitrate and more to gain per
   decision.
 
@@ -6622,12 +6623,12 @@ It is recorded rather than re-anchored, because writing +2.74 pp into the standi
 engine a movement that may belong to the converter.
 
 **(b) The containment pass is worth +44 cases when it can speak, and the published cell is the one where it
-cannot.** On the *same* manifest (`b7fca80e…`, 1 422 cases) and the same engine defaults, two workflows disagree:
+cannot.** On the _same_ manifest (`b7fca80e…`, 1 422 cases) and the same engine defaults, two workflows disagree:
 
-| workflow | profile | Top@1 | Top@3 | Top@5 |
-| --- | --- | ---: | ---: | ---: |
-| `fse26-benchmark.yml`, run `44210828265` | **none** — the surface refuses `--fault-free-profile` by name | 1 112 (78.20 %) | 1 230 (86.50 %) | **1 256 (88.33 %)** |
-| `benchmark-agentic.yml`, run `44299700032` measure job | built from the corpus in the same job | **1 156 (81.29 %)** | 1 228 (86.36 %) | 1 249 (87.83 %) |
+| workflow                                               | profile                                                       |               Top@1 |           Top@3 |               Top@5 |
+| ------------------------------------------------------ | ------------------------------------------------------------- | ------------------: | --------------: | ------------------: |
+| `fse26-benchmark.yml`, run `44210828265`               | **none** — the surface refuses `--fault-free-profile` by name |     1 112 (78.20 %) | 1 230 (86.50 %) | **1 256 (88.33 %)** |
+| `benchmark-agentic.yml`, run `44299700032` measure job | built from the corpus in the same job                         | **1 156 (81.29 %)** | 1 228 (86.36 %) |     1 249 (87.83 %) |
 
 So the pass concentrates answers into position 1 — **+44 at Top@1, −7 at Top@5** — which is what a pass that
 permutes the list it is handed does: it swaps some answers up to the front and some out of the five. The published
@@ -6713,10 +6714,10 @@ old.
 Same corpus manifest (`b7fca80e…`, 1 422 cases), same engine defaults, two workflows, and the only difference is
 whether the run could supply a fault-free profile:
 
-| workflow | profile | Top@1 | Top@3 | Top@5 |
-| --- | --- | ---: | ---: | ---: |
-| `fse26-benchmark.yml` | none | 1 112 (78.20 %) | 1 230 | **1 256** |
-| `benchmark-agentic.yml` measure | built from the corpus | **1 156 (81.29 %)** | 1 228 | 1 249 |
+| workflow                        | profile               |               Top@1 | Top@3 |     Top@5 |
+| ------------------------------- | --------------------- | ------------------: | ----: | --------: |
+| `fse26-benchmark.yml`           | none                  |     1 112 (78.20 %) | 1 230 | **1 256** |
+| `benchmark-agentic.yml` measure | built from the corpus | **1 156 (81.29 %)** | 1 228 |     1 249 |
 
 > **THIS TABLE IS WRONG, AND §314 SAYS HOW.** The `none` row is not the shipped configuration. `44210828265` is
 > **arm A3** of §305 — `stabilityScope=fleet_unbinned, stabilityWeight=0.1` — and it was read as a bare dispatch
@@ -6756,6 +6757,7 @@ re-anchored by the commit that reads the run — with both figures printed, beca
 81.29 %` — the prediction held to the case — but **Top@5 did not move the other way** (`1 249` before and after), and
 the `+44` this entry priced the repair at is `+15`. The repair was right for the reason given here; the size of what
 it buys was read off a control that was an arm.
+
 ## §313 — Arm T reads 1 166: the brief bought precision, not yield, and missed T1 by nine cases
 
 Arm T was dispatched as `44329808264` on `b77e920` — `topology_brief=auto`, `promotion=0.03`,
@@ -6927,23 +6929,23 @@ This entry records the implementation (`gatePromotion`'s second mode), the two r
 Both arms re-score the 1 422 nominations and fingerprints `44329808264` already holds — no dispatch, no tokens. The
 control is the same run's engine answer, so every delta below is over one denominator.
 
-| arm | overrides | fix | break | neutral | precision | Top@1 | net | half A | half B |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| control (gate off) | — | — | — | — | — | **1 156 (81.3 %)** | — | 569 | 587 |
-| **A1 count** | 63 | 13 | 25 | 25 | 34.2 % | 1 144 (80.5 %) | **−12** | 568 | 576 |
-| **A2 count + rarity** | 43 | 9 | 15 | 19 | 37.5 % | 1 150 (80.9 %) | **−6** | 570 | 580 |
+| arm                   | overrides | fix | break | neutral | precision |              Top@1 |     net | half A | half B |
+| --------------------- | --------: | --: | ----: | ------: | --------: | -----------------: | ------: | -----: | -----: |
+| control (gate off)    |         — |   — |     — |       — |         — | **1 156 (81.3 %)** |       — |    569 |    587 |
+| **A1 count**          |        63 |  13 |    25 |      25 |    34.2 % |     1 144 (80.5 %) | **−12** |    568 |    576 |
+| **A2 count + rarity** |        43 |   9 |    15 |      19 |    37.5 % |     1 150 (80.9 %) |  **−6** |    570 |    580 |
 
 Every prediction failed except the one that stated an ordering:
 
-| prediction | registered | measured | verdict |
-| --- | --- | --- | --- |
-| A1-P1 `Top@1 ≥ 1 177` | 1 177 | **1 144** | fails by 33 |
-| A1-P2 overrides `< 56` and `> 20` | 21–55 | **63** | fails — the rule is not stricter than the band |
-| A1-P3 precision `≥ 80 %` | 80 % | **34.2 %** | fails at half the band's 71.4 % |
-| A1-P4 breaks `≤ 6` | ≤ 6 | **25** | fails by 19 |
-| A2 ordering (fewer overrides, higher precision, between A1 and G) | 43 / 37.5 / 1 150 | exact | **holds** |
+| prediction                                                        | registered        | measured   | verdict                                        |
+| ----------------------------------------------------------------- | ----------------- | ---------- | ---------------------------------------------- |
+| A1-P1 `Top@1 ≥ 1 177`                                             | 1 177             | **1 144**  | fails by 33                                    |
+| A1-P2 overrides `< 56` and `> 20`                                 | 21–55             | **63**     | fails — the rule is not stricter than the band |
+| A1-P3 precision `≥ 80 %`                                          | 80 %              | **34.2 %** | fails at half the band's 71.4 %                |
+| A1-P4 breaks `≤ 6`                                                | ≤ 6               | **25**     | fails by 19                                    |
+| A2 ordering (fewer overrides, higher precision, between A1 and G) | 43 / 37.5 / 1 150 | exact      | **holds**                                      |
 
-A2's ordering holding while every absolute claim failed is the shape of a prediction implied by the *construction*
+A2's ordering holding while every absolute claim failed is the shape of a prediction implied by the _construction_
 rather than by the rule: "A2 is A1 with a narrower criterion" is true of any monotone narrowing, including one that
 narrows the wrong quantity.
 
@@ -6959,14 +6961,14 @@ at 85.7 % precision. The same 39 answers, admitted by a different rule, are wort
 
 ### 315.3 Why it fails, stated as the mechanism rather than the number
 
-The rule's census is the diagnosis. Of 1 422 cases it declines on 22 ties and 44 where the pick is *behind*, and it
+The rule's census is the diagnosis. Of 1 422 cases it declines on 22 ties and 44 where the pick is _behind_, and it
 promotes 63 — four times the band's 39 at the same precision regime. Inside those 63, **25 are neutral and 25 break
 against 13 fixes**: the pick is a service whose channels moved at least as much as the leader's, which on this corpus
-is what *every* candidate in a fault window looks like. Mean out-of-band channels per candidate is **7.31 of 8**, so
+is what _every_ candidate in a fault window looks like. Mean out-of-band channels per candidate is **7.31 of 8**, so
 "more moved channels" is not a discriminating statistic — it is the corpus's ambient condition, and the median filter
 on the fault-free rate removes 40 % of it without restoring any discrimination.
 
-The band's statistic is a *margin*, and a margin is comparative by construction: it asks whether the engine's own
+The band's statistic is a _margin_, and a margin is comparative by construction: it asks whether the engine's own
 score has separated these two candidates, and the score already integrates magnitude, onset and the caller/callee
 asymmetry the containment pass enforces. A raw count discards all three. **The rule was registered as "the case
 carries properties of its own" and it turns out the case's properties are not the ones that decide the answer** —
@@ -7010,9 +7012,9 @@ The census reports `(winner − truth) / winner`. Its first draft reported `(top
 the runner-up — and on the 72 rank-2/3 cases that reads **22 under 2 %**, which is a tie-break class. Measured
 against the answer:
 
-| band | under 1 % | under 2 % | under 5 % | under 10 % | under 20 % | ≥ 20 % | unmeasurable |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cases | 1 | 5 | 9 | 15 | 12 | **51** | 0 |
+| band  | under 1 % | under 2 % | under 5 % | under 10 % | under 20 % | ≥ 20 % | unmeasurable |
+| ----- | --------: | --------: | --------: | ---------: | ---------: | -----: | -----------: |
+| cases |         1 |         5 |         9 |         15 |         12 | **51** |            0 |
 
 `tie share (under-2pct): 5.38 % — verdict evidence`. **A single wrong subtrahend flips the reading of a whole
 class**, and the tie-break axis that the first draft would have ordered is worth 5 cases and not 22. Recorded as a
@@ -7026,13 +7028,13 @@ observer class `docs/topo-closure.md` §1 named on the golden half. That documen
 and recorded **"inert on 1 422 cases"** here. A 20-case local probe (ten observer wins, ten others; a constructed
 sample, so only the DIFFERENCES are readable) measures every knob at once:
 
-| configuration | Top@1 | Top@3 | Top@5 | per-case md5 |
-| --- | ---: | ---: | ---: | --- |
-| `external`, `max` (shipped) | 0 % | 75 % | 100 % | `be9ac3fb…` |
-| `external`, `sum` | 0 % | 75 % | 100 % | `be9ac3fb…` |
-| `caller`, `max` | 0 % | 75 % | 100 % | `be9ac3fb…` |
-| `all`, `max` | 5 % | 65 % | 80 % | `96b0e4a3…` |
-| `all`, `sum` | 0 % | 60 % | 75 % | — |
+| configuration               | Top@1 | Top@3 | Top@5 | per-case md5 |
+| --------------------------- | ----: | ----: | ----: | ------------ |
+| `external`, `max` (shipped) |   0 % |  75 % | 100 % | `be9ac3fb…`  |
+| `external`, `sum`           |   0 % |  75 % | 100 % | `be9ac3fb…`  |
+| `caller`, `max`             |   0 % |  75 % | 100 % | `be9ac3fb…`  |
+| `all`, `max`                |   5 % |  65 % |  80 % | `96b0e4a3…`  |
+| `all`, `sum`                |   0 % |  60 % |  75 % | —            |
 
 Three of four knobs move **not one byte**, and the fourth moves `+1 / −2 / −4`.
 
@@ -7061,12 +7063,12 @@ cells byte-identical.
 
 ### Axes this closes
 
-| Axis | Verdict |
-| --- | --- |
-| "A tie-break rule is what the near-miss class needs" | **closed as measured false** — 5.38 % of the class is within two percent of its answer, and the reading that said otherwise divided by the wrong quantity |
+| Axis                                                 | Verdict                                                                                                                                                                                         |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "A tie-break rule is what the near-miss class needs" | **closed as measured false** — 5.38 % of the class is within two percent of its answer, and the reading that said otherwise divided by the wrong quantity                                       |
 | "The topological discount can be tuned for RCABench" | **closed by information set** — the operator's admission predicate has no true instance on the corpus, so no value of `rho`, `gate`, `scope` or `closure` can move it; four refusals, one cause |
-| "The observer class is a golden-half phenomenon" | **closed as false** — it is 44.1 % of the FSE'26 near-miss class |
-| "`sum` is the closure that unblocks the fan-out" | **closed a second time**, now with the reason: the fan-out's explanation lives in an edge's latency, not in a callee's resource reading |
+| "The observer class is a golden-half phenomenon"     | **closed as false** — it is 44.1 % of the FSE'26 near-miss class                                                                                                                                |
+| "`sum` is the closure that unblocks the fan-out"     | **closed a second time**, now with the reason: the fan-out's explanation lives in an edge's latency, not in a callee's resource reading                                                         |
 
 ---
 
@@ -7089,14 +7091,14 @@ pre-registration and it was written before the first dispatch.
 
 Four runs, all local, `$0`, no model call anywhere:
 
-| arm | `Top@1` | `Top@3` | `Top@5` | up | down | net |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| control (shipped + profile) | **1 156** | 1 228 | 1 249 | — | — | — |
-| `θ = 2` | 1 117 | 1 207 | 1 237 | 20 | 48 | −39 |
-| `θ = 10` | 1 141 | 1 222 | 1 246 | 21 | 19 | −15 |
-| control, with the profile | **1 156** | 1 228 | 1 249 | — | — | — |
-| `θ = 2`, with the profile | 1 129 | 1 207 | 1 237 | 17 | 48 | −27 |
-| `θ = 10`, with the profile | 1 153 | 1 222 | 1 246 | 18 | 19 | −3 |
+| arm                         |   `Top@1` | `Top@3` | `Top@5` |  up | down | net |
+| --------------------------- | --------: | ------: | ------: | --: | ---: | --: |
+| control (shipped + profile) | **1 156** |   1 228 |   1 249 |   — |    — |   — |
+| `θ = 2`                     |     1 117 |   1 207 |   1 237 |  20 |   48 | −39 |
+| `θ = 10`                    |     1 141 |   1 222 |   1 246 |  21 |   19 | −15 |
+| control, with the profile   | **1 156** |   1 228 |   1 249 |   — |    — |   — |
+| `θ = 2`, with the profile   |     1 129 |   1 207 |   1 237 |  17 |   48 | −27 |
+| `θ = 10`, with the profile  |     1 153 |   1 222 |   1 246 |  18 |   19 |  −3 |
 
 The first pair is the same battery without the fault-free profile, taken because the profile's worth (`+15`) was
 established two iterations earlier and it would have been an assumption to score the arm against the profile-less
@@ -7108,18 +7110,18 @@ what makes the four arms one axis rather than two builds.
 The pre-registration wrote five predictions and one acceptance before the first run. They are quoted as they were
 written, including the one whose recorded expectation went the other way:
 
-| # | written before the run | measured | verdict |
-| --- | --- | --- | --- |
-| P1 | ≥ **12** of the observer-class near misses become correct | **6** | **failed** |
-| P2 | `Top@1` between **1 180 and 1 240** | 1 129 (no profile) / 1 129 (profile) at `θ = 2` | **failed**, below the floor by 51 |
-| P3 | the golden nine cells are identical (`641/735`), because the array is absent there | not dispatched — see below | **not reached** |
-| P4 | no fault type ≥ 2 down | `NetworkCorrupt −5`, `NetworkBandwidth −4`, `NetworkPartition −4`, `HTTPResponseAbort −3` | **violated** |
-| P5 | the `θ` curve is **NOT** monotone — `θ = 10` moves MORE cases than `θ = 2` | 37 moved against 65 | **refuted in the theory's favour** |
-| A | `Top@1 ≥ 1 200`, golden identical, no family ≥ 2 down | none of the three | **refused** |
+| #   | written before the run                                                             | measured                                                                                  | verdict                            |
+| --- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------- |
+| P1  | ≥ **12** of the observer-class near misses become correct                          | **6**                                                                                     | **failed**                         |
+| P2  | `Top@1` between **1 180 and 1 240**                                                | 1 129 (no profile) / 1 129 (profile) at `θ = 2`                                           | **failed**, below the floor by 51  |
+| P3  | the golden nine cells are identical (`641/735`), because the array is absent there | not dispatched — see below                                                                | **not reached**                    |
+| P4  | no fault type ≥ 2 down                                                             | `NetworkCorrupt −5`, `NetworkBandwidth −4`, `NetworkPartition −4`, `HTTPResponseAbort −3` | **violated**                       |
+| P5  | the `θ` curve is **NOT** monotone — `θ = 10` moves MORE cases than `θ = 2`         | 37 moved against 65                                                                       | **refuted in the theory's favour** |
+| A   | `Top@1 ≥ 1 200`, golden identical, no family ≥ 2 down                              | none of the three                                                                         | **refused**                        |
 
 `P5` is the one prediction that was wrong in the arm's favour, and it is the one that matters for what came next: the
 threshold DOES do what a threshold does — fewer admissions, fewer movements, `−3` against `−27` — so the rise
-carries *some* information and the failure is not that the comparison is meaningless. That is what made a second
+carries _some_ information and the failure is not that the comparison is meaningless. That is what made a second
 **form** worth measuring rather than a second threshold, and `§318` measures it.
 
 `P3` was not reached, and the reason is not cost: the acceptance conjunct on the golden half is an AND, so a battery
@@ -7136,9 +7138,9 @@ waiting on the faults it caused. So the axis is a classifier over the corpus's m
 be scored without running the engine at all: 71 560 measured edges in the FSE'26 corpus, 5 942 of them leaving a
 ground-truth service.
 
-| statistic | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
-| --- | --- | --- |
-| edge rise `post/pre`, p10 / p25 / **p50** / p75 / p90 | 0.47 / 0.68 / **0.91** / 1.24 / 1.91 | 0.48 / 0.70 / **0.94** / 1.38 / 2.91 |
+| statistic                                             | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
+| ----------------------------------------------------- | --------------------------------------- | ---------------------------------------- |
+| edge rise `post/pre`, p10 / p25 / **p50** / p75 / p90 | 0.47 / 0.68 / **0.91** / 1.24 / 1.91    | 0.48 / 0.70 / **0.94** / 1.38 / 2.91     |
 
 The medians differ by 3 %, and the helpful class is the one with the **larger** values. A fault multiplies the latency
 of every call the faulty node makes, so a high out-rise is as much a property of the source as of the symptom. There
@@ -7149,22 +7151,22 @@ edges to charge almost every caller, gains 20 cases and loses 48.
 
 The 37 cases `θ = 10` moved split cleanly by a quantity the absolute form cannot name: in the losses the charged node
 had **no out-edge at all** in 15 of 19 cases, and in the wins it had one whose rise was large. That reads as a
-queueing split — *how long did this node wait relative to how long it was waited for* — and it motivated the second
+queueing split — _how long did this node wait relative to how long it was waited for_ — and it motivated the second
 form of the axis (`§318`). It is a real asymmetry in the corpus and it is not a usable one, which is the subject of
 the next chapter.
 
 ### Axes this closes
 
-| Axis | Verdict |
-| --- | --- |
-| "The topological discount can be made to fire on RCABench by reading the edge channel" | **closed** — it fires, at 10 227 admissions at `θ = 2`, and `Top@1` falls by 27 |
-| "A single absolute threshold on the per-edge rise separates sources from symptoms" | **closed as measured uninformative** — the two populations have the same median (0.91× against 0.94×) and the helpful one has the larger tail |
+| Axis                                                                                   | Verdict                                                                                                                                       |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The topological discount can be made to fire on RCABench by reading the edge channel" | **closed** — it fires, at 10 227 admissions at `θ = 2`, and `Top@1` falls by 27                                                               |
+| "A single absolute threshold on the per-edge rise separates sources from symptoms"     | **closed as measured uninformative** — the two populations have the same median (0.91× against 0.94×) and the helpful one has the larger tail |
 
 ---
 
 ## §318 — The edge channel, second form: the queueing divisor is 26× less pure than the constant, and `rho = 1` turns a false positive into a deletion
 
-**Verdict: the second form is refused, and it is refused *relative* to the first — the same threshold on the same
+**Verdict: the second form is refused, and it is refused _relative_ to the first — the same threshold on the same
 corpus admits a population that charges the truth three times as often. The form was worth measuring because the
 mechanism it encodes is real; the measurement says the mechanism runs in the direction that makes the arm worse. The
 chapter closes the family of five forms and records the one mechanism that outlives it: at the shipped weight, an
@@ -7174,13 +7176,13 @@ admitted edge does not demote a candidate, it deletes it.**
 
 `TopoEdgeRise` is `{ threshold, against: 'absolute' | 'inbound' } | null`:
 
-| `against` | predicate | what it says |
-| --- | --- | --- |
-| `absolute` | `rise(edge) ≥ θ` | the call got this much slower |
-| `inbound` | `rise(edge) ≥ θ · maxInRise(caller)` | the call got slower relative to how much this **caller** was itself slowed |
+| `against`  | predicate                            | what it says                                                               |
+| ---------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| `absolute` | `rise(edge) ≥ θ`                     | the call got this much slower                                              |
+| `inbound`  | `rise(edge) ≥ θ · maxInRise(caller)` | the call got slower relative to how much this **caller** was itself slowed |
 
 The motivation is stated as a falsifiable claim rather than as a preference: §317's failing is that the corpus's
-ambient rise varies by two orders of magnitude between cases, so a constant admits both the edge that *is* the fault
+ambient rise varies by two orders of magnitude between cases, so a constant admits both the edge that _is_ the fault
 and the edge the network multiplied along with everything else. Dividing by the caller's own inbound measurement is
 "the same fact in the units the case provides". A source has little or no inbound traffic, so the divisor should
 charge symptoms and leave sources alone.
@@ -7204,13 +7206,13 @@ not contain. That branch is the one this chapter's census endorses — and it is
 
 Same corpus, same commit, same control artifact — **1 156 / 1 228 / 1 249**, reproduced to the case:
 
-| arm | `Top@1` | `Top@3` | `Top@5` | up | down | net | P1 repaired | truth deleted |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| control | **1 156** | 1 228 | 1 249 | — | — | — | — | 0 |
-| `θ = 2`, `absolute` | 1 129 | 1 207 | 1 237 | 17 | 48 | −27 | 6 | 9 |
-| `θ = 10`, `absolute` | 1 153 | 1 222 | 1 246 | 18 | 19 | −3 | 6 | 2 |
-| `θ = 2`, `inbound` | 1 129 | 1 205 | 1 232 | 16 | 38 | −27 | **3** | **16** |
-| `θ = 5`, `inbound` | 1 140 | 1 216 | 1 238 | 4 | 18 | −16 | **0** | **12** |
+| arm                  |   `Top@1` | `Top@3` | `Top@5` |  up | down | net | P1 repaired | truth deleted |
+| -------------------- | --------: | ------: | ------: | --: | ---: | --: | ----------: | ------------: |
+| control              | **1 156** |   1 228 |   1 249 |   — |    — |   — |           — |             0 |
+| `θ = 2`, `absolute`  |     1 129 |   1 207 |   1 237 |  17 |   48 | −27 |           6 |             9 |
+| `θ = 10`, `absolute` |     1 153 |   1 222 |   1 246 |  18 |   19 |  −3 |           6 |             2 |
+| `θ = 2`, `inbound`   |     1 129 |   1 205 |   1 232 |  16 |   38 | −27 |       **3** |        **16** |
+| `θ = 5`, `inbound`   |     1 140 |   1 216 |   1 238 |   4 |   18 | −16 |       **0** |        **12** |
 
 Three readings, and the third is the one that decides the form:
 
@@ -7220,18 +7222,18 @@ Three readings, and the third is the one that decides the form:
 2. **The repair prediction collapses.** P1 was the arm's reason for existing — 38 observer-class near misses, ≥ 12
    repaired. Absolute reads 6 at both thresholds; inbound reads **3** and **0**.
 3. **The deletions double.** 16 of the 38 losses at `θ = 2 inbound` are answers that were right at rank 1 and are
-   *absent from the ranked list* afterwards, against 9 for the absolute form at the same threshold.
+   _absent from the ranked list_ afterwards, against 9 for the absolute form at the same threshold.
 
 ### 318.3 Why the divisor inverts: it selects for sources
 
 The census of §317.3 can be split by threshold and by form, because the decision is per edge and the truth value is
 per edge:
 
-| θ | `absolute`: admitted / of which charge the truth | `inbound`: admitted / of which charge the truth |
-| ---: | --- | --- |
-| 2 | 10 227 / 533 (5.2 %) | 5 151 / 434 (8.4 %) |
-| 5 | 4 568 / 78 (1.7 %) | 1 240 / 157 (**12.7 %**) |
-| 10 | 3 125 / 18 (**0.6 %**) | 510 / 80 (**15.7 %**) |
+|   θ | `absolute`: admitted / of which charge the truth | `inbound`: admitted / of which charge the truth |
+| --: | ------------------------------------------------ | ----------------------------------------------- |
+|   2 | 10 227 / 533 (5.2 %)                             | 5 151 / 434 (8.4 %)                             |
+|   5 | 4 568 / 78 (1.7 %)                               | 1 240 / 157 (**12.7 %**)                        |
+|  10 | 3 125 / 18 (**0.6 %**)                           | 510 / 80 (**15.7 %**)                           |
 
 At `θ = 10` the constant admits 3 125 edges of which 18 charge the truth — **0.6 % impurity**. The divisor admits 510
 of which 80 do — **15.7 %**, i.e. **26× less pure on a population 6× smaller**. The mechanism is arithmetic and not a
@@ -7239,11 +7241,11 @@ threshold: `maxInRise` is small or absent for exactly the services with few call
 backend edge of the call graph and on every system includes the injected ones. Dividing by a small number is a
 multiplier, so the form concentrates on the population it was introduced to spare.
 
-| statistic | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
-| --- | --- | --- |
-| rise ÷ caller's inbound rise, p10 / **median** / p90 | 0.03 / **0.65** / 1.62 | 0.08 / **0.76** / 1.70 |
+| statistic                                            | charging the truth (harmful), n = 5 942 | charging a symptom (helpful), n = 65 618 |
+| ---------------------------------------------------- | --------------------------------------- | ---------------------------------------- |
+| rise ÷ caller's inbound rise, p10 / **median** / p90 | 0.03 / **0.65** / 1.62                  | 0.08 / **0.76** / 1.70                   |
 
-The ratio does not separate the classes either — 17 % apart at the median, with the helpful class again the *larger* —
+The ratio does not separate the classes either — 17 % apart at the median, with the helpful class again the _larger_ —
 so the form's failure is not a bad threshold on a good statistic. It is the same statistic, reweighted toward the
 harmful tail.
 
@@ -7251,13 +7253,13 @@ harmful tail.
 
 The purity above would be survivable if a wrong charge cost one rank position. It does not:
 
-| arm | truth absent from the ranked list | of those, correct at rank 1 in the control |
-| --- | ---: | ---: |
-| control | 173 | 0 |
-| `θ = 2`, `absolute` | 185 | 9 |
-| `θ = 10`, `absolute` | 176 | 2 |
-| `θ = 2`, `inbound` | 190 | 16 |
-| `θ = 5`, `inbound` | 184 | 12 |
+| arm                  | truth absent from the ranked list | of those, correct at rank 1 in the control |
+| -------------------- | --------------------------------: | -----------------------------------------: |
+| control              |                               173 |                                          0 |
+| `θ = 2`, `absolute`  |                               185 |                                          9 |
+| `θ = 10`, `absolute` |                               176 |                                          2 |
+| `θ = 2`, `inbound`   |                               190 |                                         16 |
+| `θ = 5`, `inbound`   |                               184 |                                         12 |
 
 The 173 is the structural floor — cases `poolAdmission = positive` already excludes, present in the control and in
 every arm, and unchanged by this axis. What the arms add is the column beside it. `ts-preserve-service` is
@@ -7273,7 +7275,7 @@ Two consequences, and the second is not about this axis:
    in either of the two units available.
 2. **The deletion channel is live wherever the deduction runs.** `rho = 1` is the shipped value on both corpora, and
    on RCAEval the deduction is worth +10 net (`docs/topo-share.md` §8–9) — so the cliff is not a defect in itself.
-   But any future arm that *widens* admission is measured against a cost function with a cliff in it, and 0.6 %
+   But any future arm that _widens_ admission is measured against a cost function with a cliff in it, and 0.6 %
    impurity is enough to lose 19 cases when each false positive can remove an answer rather than demote it.
 
 ### 318.5 What a next arm would have to change
@@ -7281,7 +7283,7 @@ Two consequences, and the second is not about this axis:
 Not the threshold, and not the divisor. The two facts this iteration adds are constraints on any successor:
 
 - **the statistic has to be one that separates the classes**, and neither `post/pre` nor `post/pre ÷ inbound` does.
-  The remaining candidate in this corpus is the *shape* of the rise — whether the edge's post-distribution moved as a
+  The remaining candidate in this corpus is the _shape_ of the rise — whether the edge's post-distribution moved as a
   step at the injection boundary or as a ramp — because a fault's own calls step and a network's ambient does not.
 - **admission must not be a deletion.** A charge that can push a candidate out of the pool makes every false positive
   cost a whole answer. A successor that subtracts a bounded share, or that re-orders instead of zeroing, would be
@@ -7290,12 +7292,12 @@ Not the threshold, and not the divisor. The two facts this iteration adds are co
 
 ### Axes this closes
 
-| Axis | Verdict |
-| --- | --- |
-| "Dividing by the caller's own inbound rise is the same fact in the case's units" | **closed as false, and worse than the null** — 26× less pure at `θ = 10`, and 16 correct answers deleted at `θ = 2` |
-| "The observer class is repaired by an edge predicate" | **closed at 6 / 3 / 0** of a pre-registered 12, by all four arms |
-| "The edge channel can stand in for the missing response channel" | **closed as measured uninformative** — both available statistics rank the harmful and helpful populations in the same order, and the helpful one higher |
-| "The remaining gap on RCABench is a parameter of the deduction" | **closed** — five forms, five refusals, four distinct causes |
+| Axis                                                                             | Verdict                                                                                                                                                 |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Dividing by the caller's own inbound rise is the same fact in the case's units" | **closed as false, and worse than the null** — 26× less pure at `θ = 10`, and 16 correct answers deleted at `θ = 2`                                     |
+| "The observer class is repaired by an edge predicate"                            | **closed at 6 / 3 / 0** of a pre-registered 12, by all four arms                                                                                        |
+| "The edge channel can stand in for the missing response channel"                 | **closed as measured uninformative** — both available statistics rank the harmful and helpful populations in the same order, and the helpful one higher |
+| "The remaining gap on RCABench is a parameter of the deduction"                  | **closed** — five forms, five refusals, four distinct causes                                                                                            |
 
 ## §319 — The clamp: the class of deleted answers is empty on RCABench, and the reason is the SPACE rather than the operator
 
@@ -7314,15 +7316,15 @@ deletions of that shape (`topoClosure` §8), and `poolAdmission`'s own docblock 
 "whether a prior carries a zero-anomaly node is the measurement".
 
 The arm was therefore a **factorial**, because one arm cannot separate "the deduction is wrong" from "the pool
-decision is wrong": the deduction's only visible effect at `rho = 1` *is* the pool decision.
+decision is wrong": the deduction's only visible effect at `rho = 1` _is_ the pool decision.
 
-| arm | `scope` | `gate` | `poolAdmission` | what it isolates |
-| --- | --- | ---: | --- | --- |
-| **A0** | `external` | 1 | `positive` | the published cell |
-| **A1** | `all` | 1 | `positive` | the shipped charge, unblocked |
-| **A2** | `all` | 1 | `graph` | **the clamp** — same charge, no candidate may leave the pool |
-| **A3** | `external` | 1 | `graph` | the pool decision alone, nothing to delete |
-| **A4** | `all` | 0 | `positive` | the gentle charge |
+| arm    | `scope`    | `gate` | `poolAdmission` | what it isolates                                             |
+| ------ | ---------- | -----: | --------------- | ------------------------------------------------------------ |
+| **A0** | `external` |      1 | `positive`      | the published cell                                           |
+| **A1** | `all`      |      1 | `positive`      | the shipped charge, unblocked                                |
+| **A2** | `all`      |      1 | `graph`         | **the clamp** — same charge, no candidate may leave the pool |
+| **A3** | `external` |      1 | `graph`         | the pool decision alone, nothing to delete                   |
+| **A4** | `all`      |      0 | `positive`      | the gentle charge                                            |
 
 `A1 − A0` differs from the published configuration in **one knob**, the scope, because `DEFAULT_TOPO_DISCOUNT = 1`
 and `DEFAULT_TOPO_DISCOUNT_GATE = 1` — the operator ships at full strength and is inert on this corpus for exactly
@@ -7333,22 +7335,22 @@ one reason, that `external` finds no response channel among the 87 `container.*`
 FSE'26, 1 422 cases, one commit, one profile built from the same corpus, `$0`, no model call. The control
 reproduces the published cell to the case.
 
-| arm | Top@1 | Top@3 | Top@5 | ΔTop@1 | fault types below control | truths at `truthRank: 0` |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **A0** | **1 156** | 1 228 | 1 249 | — | — | **0** |
-| **A1** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
-| **A2** | 1 103 | 1 209 | 1 235 | **−53** | 12 | **0** |
-| **A3** | 1 156 | 1 228 | 1 249 | **0** | 0 | **0** |
-| **A4** | 1 120 | 1 211 | 1 226 | **−36** | 12 | **0** |
+| arm    |     Top@1 | Top@3 | Top@5 |  ΔTop@1 | fault types below control | truths at `truthRank: 0` |
+| ------ | --------: | ----: | ----: | ------: | ------------------------: | -----------------------: |
+| **A0** | **1 156** | 1 228 | 1 249 |       — |                         — |                    **0** |
+| **A1** |     1 103 | 1 209 | 1 235 | **−53** |                        12 |                    **0** |
+| **A2** |     1 103 | 1 209 | 1 235 | **−53** |                        12 |                    **0** |
+| **A3** |     1 156 | 1 228 | 1 249 |   **0** |                         0 |                    **0** |
+| **A4** |     1 120 | 1 211 | 1 226 | **−36** |                        12 |                    **0** |
 
 Three of the five readings are **exact**, and the exactness is the result:
 
 1. **`md5(A1.ndjson) == md5(A2.ndjson)`.** Not "close": identical over 1 422 rows, every `truthRank`, every `pool`,
    every `ranked` array. The clamp has nothing to clamp, so the arm cannot be read as a gain or as a loss — it is
-   the *same run*.
+   the _same run_.
 2. **A3 is the control.** `poolAdmission = graph` alone leaves all three headline numbers unchanged; the pool
    median moves 49 → 50, one node per case, and that node enters at the bottom and stays there. §9's finding
-   (twelve candidates recovered, one answer) reproduces on 1 422 cases and is *more* inert at a wider pool.
+   (twelve candidates recovered, one answer) reproduces on 1 422 cases and is _more_ inert at a wider pool.
 3. **The charge costs at both gates**, and the shipped predicate therefore carries `+53` (3.73 pp) here — the loss
    concentrates in `HTTPResponseReplaceCode` (171 → 153) and `HTTPRequestReplaceMethod` (139 → 123), two families
    whose truth is a response the caller itself produced, which is precisely what an internal-channel charge erases.
@@ -7366,15 +7368,15 @@ const normalized = (i + j) / 2 / (n - 1);
 Measured on one case the arm **lost** (`ts0-ts-basic-service-request-replace-method-gqn7nd`, 50 nodes), on the
 deviation map the operator actually reads:
 
-| map | entries at the minimum | the minimum | after the transform |
-| --- | ---: | ---: | --- |
-| raw | **1** | 1.71e-4 | 1 entry at **0** → the pool loses it (49) |
-| `external` (shipped, inert) | 1 | 1.71e-4 | 1 entry at **0** (49) |
-| `all` | **19** | **0** | 19 entries at **0.1837** → pool 50 |
+| map                         | entries at the minimum | the minimum | after the transform                       |
+| --------------------------- | ---------------------: | ----------: | ----------------------------------------- |
+| raw                         |                  **1** |     1.71e-4 | 1 entry at **0** → the pool loses it (49) |
+| `external` (shipped, inert) |                      1 |     1.71e-4 | 1 entry at **0** (49)                     |
+| `all`                       |                 **19** |       **0** | 19 entries at **0.1837** → pool 50        |
 
 Nineteen of fifty nodes are zeroed, and the tie average lifts all nineteen to `(0 + 18) / 2 / 49 = 0.1837` — the
-score of the **ninth**-ranked node. Every charged candidate is re-admitted *above the eight least-anomalous nodes
-it was meant to fall below*. The operator's zero is not a zero after the transform: **the tie average is the right
+score of the **ninth**-ranked node. Every charged candidate is re-admitted _above the eight least-anomalous nodes
+it was meant to fall below_. The operator's zero is not a zero after the transform: **the tie average is the right
 rule for a tie the data has and the wrong rule for a tie the operator creates.** That is why the clamp is vacuous
 here, and why `gate = 1` (−53) is worse than `gate = 0` (−36): the gate decides how many nodes join the promoted
 tie group.
@@ -7388,8 +7390,8 @@ tie group.
 **Closes** `scope = all` on both corpora as well: −2 on RE3/SockShop, −53 here.
 
 **Opens** one thing that is not a knob: the operator's output is expressed in a space that re-quantises it. On a
-rank surface "fully explained" can be written as *0* (deleted, or admitted at the floor) or as the *band's average
-rank* (promoted), and the corpus's own transform chooses the second. A future arm would have to return the charged
+rank surface "fully explained" can be written as _0_ (deleted, or admitted at the floor) or as the _band's average
+rank_ (promoted), and the corpus's own transform chooses the second. A future arm would have to return the charged
 set through a transform that keeps it at the bottom, which is a change of **space** rather than of the operator and
 belongs to whoever measures `rank` against `minmax` first. It is recorded rather than attempted, because the five
 arms above are the measurement that says the question is real.
@@ -7410,15 +7412,15 @@ rather than from a directory listing.
 
 ### 319.6 The space arm: the intervention that turns the mechanism into a measurement
 
-§319.3 explains the vacuity with a mechanism. A mechanism that is only *explained* is an inference; this is the
+§319.3 explains the vacuity with a mechanism. A mechanism that is only _explained_ is an inference; this is the
 intervention. The same three arms, the same corpus, the same profile, one flag — `--no-rank-normalization` — so the
 map the ranking reads is the deviation map the operator writes:
 
-| arm | flags | Top@1 | Top@3 | Top@5 | pool median | truths at `truthRank: 0` |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| **B0** | `--no-rank-normalization` | 1 122 | 1 223 | 1 242 | 49 | **0** |
-| **B1** | `… --topo-discount-scope all` | 733 | 783 | 797 | **27** | **588** |
-| **B2** | `… --scope all --pool-admission graph` | 1 067 | 1 200 | 1 229 | 50 | **0** |
+| arm    | flags                                  | Top@1 | Top@3 | Top@5 | pool median | truths at `truthRank: 0` |
+| ------ | -------------------------------------- | ----: | ----: | ----: | ----------: | -----------------------: |
+| **B0** | `--no-rank-normalization`              | 1 122 | 1 223 | 1 242 |          49 |                    **0** |
+| **B1** | `… --topo-discount-scope all`          |   733 |   783 |   797 |      **27** |                  **588** |
+| **B2** | `… --scope all --pool-admission graph` | 1 067 | 1 200 | 1 229 |          50 |                    **0** |
 
 Four readings, and they settle the question the rank-space factorial could only pose:
 
@@ -7427,11 +7429,11 @@ Four readings, and they settle the question the rank-space factorial could only 
    the transform the output is read through. §319.3's sentence is now a measurement rather than an explanation.
 2. **The clamp is decisive exactly where it can act.** B2 restores **588 of 588**: **336 to rank 1**, 52 to rank 2,
    424 inside Top@5. `Top@1` moves **733 → 1 067, +334 cases (+23.5 pp)** — the largest single movement any arm on
-   this operator has produced, and it is produced by refusing to let a charge *delete*.
+   this operator has produced, and it is produced by refusing to let a charge _delete_.
 3. **The operator's space-independent cost is 55 cases.** B2 still reads 55 below B0 (1 067 vs 1 122), and the
    rank-space pair reads 53 below its own control (1 103 vs 1 156). Two different mechanisms — deletion in one,
    tie-promotion in the other — land on the same residual, which is therefore the part of the charge that is
-   *reordering* rather than removing: **86 % of the deviation-space damage is deletion (334 of 389) and 14 % is the
+   _reordering_ rather than removing: **86 % of the deviation-space damage is deletion (334 of 389) and 14 % is the
    reordering that survives the clamp.**
 4. **The published normalisation is itself worth +34.** B0 reads 1 122 against A0's 1 156 on the same corpus, so
    `rankNormalization = true` is a +34-case configuration choice — a number this repository has never measured,
@@ -7439,14 +7441,14 @@ Four readings, and they settle the question the rank-space factorial could only 
 
 **Verdict, revised and stated as one sentence:** the clamp is **vacuous on the published configuration** (A2 ≡ A1,
 byte for byte) and **worth +334 cases on the same corpus once the transform stops hiding the deletion** (B2 vs B1) —
-so it is refused as a *default* (B2 is still 55 short of B0, and B0 is 34 short of the published cell) and enrolled
+so it is refused as a _default_ (B2 is still 55 short of B0, and B0 is 34 short of the published cell) and enrolled
 in the record as the **largest measured contribution of any arm on this operator**, with the decomposition 334
 deletion / 55 reordering. `DEFAULT_POOL_ADMISSION` stays `positive` and `rankNormalization` stays `true`; what
 changes is that both are now defended by a measurement rather than by a published number nobody had decomposed.
 
 **What this opens, in priority order.** (a) The 55-case reordering residual is the operator's real price, and it is
 the only quantity a successor arm has to beat; (b) a transform that keeps a charged set at the bottom instead of
-averaging it into the tie band would make the clamp's +334 available *without* changing the normalisation — that is
+averaging it into the tie band would make the clamp's +334 available _without_ changing the normalisation — that is
 the change of space §319.4 names, and it is now worth a pre-registration rather than a paragraph; (c) the +34 the
 normalisation is worth must be checked for `minmax`, which is the third value of the same axis and has never been
 measured on this corpus.
@@ -7456,50 +7458,50 @@ measured on this corpus.
 The four readings above are aggregate. The per-case columns make the same numbers decomposable to the case, and the
 decomposition changes what the next arm should be:
 
-| quantity | count | derivation |
-| --- | ---: | --- |
-| truths B1 deletes | **588** | `truthRank: 0 ∧ truthAnomalyBefore > 0` |
-| … of which B0 ranks **1** | **393** | the charge destroys 393 top answers, not 588 top answers |
-| … of which B0 puts inside Top@5 | **441** | 96.1 % of what the clamp recovers was recoverable |
-| B2 returns to **rank 1** | **336** | 85.5 % of 393 |
-| B2 returns inside **Top@5** | **424** | 96.1 % of 441 |
-| B0 → B2 `Top@1` | **−75 / +20 = −55** | the residual is net, not gross |
+| quantity                        |               count | derivation                                               |
+| ------------------------------- | ------------------: | -------------------------------------------------------- |
+| truths B1 deletes               |             **588** | `truthRank: 0 ∧ truthAnomalyBefore > 0`                  |
+| … of which B0 ranks **1**       |             **393** | the charge destroys 393 top answers, not 588 top answers |
+| … of which B0 puts inside Top@5 |             **441** | 96.1 % of what the clamp recovers was recoverable        |
+| B2 returns to **rank 1**        |             **336** | 85.5 % of 393                                            |
+| B2 returns inside **Top@5**     |             **424** | 96.1 % of 441                                            |
+| B0 → B2 `Top@1`                 | **−75 / +20 = −55** | the residual is net, not gross                           |
 
 Two consequences that the aggregate table hides:
 
-1. **The clamp recovers the *order*, not just the membership.** If admission were a floor with an arbitrary order,
+1. **The clamp recovers the _order_, not just the membership.** If admission were a floor with an arbitrary order,
    the 588 would return near the bottom of a 50-node pool and `Top@1` would not move; it returns 336 to rank 1
    because the restored candidates are ranked by `selfScore`, i.e. by their own deviation — the quantity the charge
    never touched. That is the mechanism §319.1 claimed for the axis and it is now read off 588 cases.
 2. **The gross cost is 75, not 55.** The clamp loses 75 answers relative to B0 and wins 20 back. A residual quoted
-   as "55" is a *net*; the operator's gross reordering damage in deviation space is 75 and the 20 are cases where
-   the charge is *right* — worth separating because they are the only direct evidence that the charge carries
+   as "55" is a _net_; the operator's gross reordering damage in deviation space is 75 and the 20 are cases where
+   the charge is _right_ — worth separating because they are the only direct evidence that the charge carries
    signal at all.
 
 **And the residual is not spread evenly.** `Top@1(B2) − Top@1(B0)` per fault type, over the 25 types present:
 
-| fault type | B0 | B1 | B2 | B2 − B0 | n |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| HTTPResponseReplaceCode | 161 | 81 | 142 | **−19** | 231 |
-| HTTPRequestReplaceMethod | 132 | 73 | 121 | **−11** | 190 |
-| HTTPResponseAbort | 39 | 17 | 33 | −6 | 44 |
-| HTTPRequestDelay | 70 | 44 | 65 | −5 | 88 |
-| HTTPResponseReplaceBody | 49 | 24 | 44 | −5 | 51 |
-| HTTPRequestAbort | 49 | 29 | 45 | −4 | 60 |
-| NetworkCorrupt | 33 | 24 | 29 | −4 | 46 |
-| HTTPRequestReplacePath | 39 | 23 | 36 | −3 | 39 |
-| NetworkBandwidth | 19 | 19 | 17 | −2 | 42 |
-| JVMReturn / TimeSkew | 12 / 1 | 9 / 0 | 11 / 0 | −1 / −1 | 21 / 2 |
-| HTTPResponseDelay | 66 | 50 | **70** | **+4** | 89 |
-| JVMException | 31 | 24 | **33** | **+2** | 43 |
-| the other 13 types | — | — | — | **0** | 518 |
+| fault type               |     B0 |    B1 |     B2 | B2 − B0 |      n |
+| ------------------------ | -----: | ----: | -----: | ------: | -----: |
+| HTTPResponseReplaceCode  |    161 |    81 |    142 | **−19** |    231 |
+| HTTPRequestReplaceMethod |    132 |    73 |    121 | **−11** |    190 |
+| HTTPResponseAbort        |     39 |    17 |     33 |      −6 |     44 |
+| HTTPRequestDelay         |     70 |    44 |     65 |      −5 |     88 |
+| HTTPResponseReplaceBody  |     49 |    24 |     44 |      −5 |     51 |
+| HTTPRequestAbort         |     49 |    29 |     45 |      −4 |     60 |
+| NetworkCorrupt           |     33 |    24 |     29 |      −4 |     46 |
+| HTTPRequestReplacePath   |     39 |    23 |     36 |      −3 |     39 |
+| NetworkBandwidth         |     19 |    19 |     17 |      −2 |     42 |
+| JVMReturn / TimeSkew     | 12 / 1 | 9 / 0 | 11 / 0 | −1 / −1 | 21 / 2 |
+| HTTPResponseDelay        |     66 |    50 | **70** |  **+4** |     89 |
+| JVMException             |     31 |    24 | **33** |  **+2** |     43 |
+| the other 13 types       |      — |     — |      — |   **0** |    518 |
 
-The residual is **HTTP-shaped**: every fault type that changes a *value* on an existing request path loses cases
-(`ReplaceCode` −19, `ReplaceMethod` −11, `ReplaceBody` −5), every fault type that changes *reachability* loses none
+The residual is **HTTP-shaped**: every fault type that changes a _value_ on an existing request path loses cases
+(`ReplaceCode` −19, `ReplaceMethod` −11, `ReplaceBody` −5), every fault type that changes _reachability_ loses none
 (`ContainerKill`, `PodKill`, `PodFailure`, `NetworkPartition`, `NetworkLoss` all read exactly B0). The charge is a
 parent-to-child transfer along the call topology; a code replacement does not sever an edge, so the propagation
 term is spent reordering nodes whose deviation is genuinely close, and the 20 net-minus-55 cases where the charge
-*helps* are the ones where the truth sits downstream of a louder neighbour.
+_helps_ are the ones where the truth sits downstream of a louder neighbour.
 
 **The larger number this puts on the table.** The same read gives the corpus's remaining Top@1 misses in the
 published configuration: 1 422 − 1 156 = **266**, of which `HTTPResponseReplaceCode` (60) and
@@ -7521,13 +7523,13 @@ published population with the correction applied.
 
 ### 320.1 Two of the four registered hypotheses die, and they were the actionable two
 
-| class | published (111) | share |
-| --- | ---: | ---: |
-| **H1** truth's anomaly absent or off-graph | **0** | 0 % |
-| **H2** the winner is the truth's **caller** | 13 | 11.7 % |
-| **H3** in band (rank ≤ 5) | 8 | 7.2 % |
-| **H4** instrument artifact | **0** | 0 % |
-| **H5** real anomaly, not a caller, rank 6–45 | **90** | 81.1 % |
+| class                                        | published (111) |  share |
+| -------------------------------------------- | --------------: | -----: |
+| **H1** truth's anomaly absent or off-graph   |           **0** |    0 % |
+| **H2** the winner is the truth's **caller**  |              13 | 11.7 % |
+| **H3** in band (rank ≤ 5)                    |               8 |  7.2 % |
+| **H4** instrument artifact                   |           **0** |    0 % |
+| **H5** real anomaly, not a caller, rank 6–45 |          **90** | 81.1 % |
 
 H1 is empty on all 421 dumped cases — the truth always carries a nonzero `selfAnomaly` — so "no observable exists,
 add a channel" is false here and the corpus's own status-code column is not the missing piece. H4 is empty: every
@@ -7538,12 +7540,12 @@ document rather than folded into H3: its members sit at rank 6–45 (median 35 o
 
 Grouping the **whole corpus** by truth service, off the per-case artifact rather than the dump:
 
-| truth service | cases | Top@1 | rate |
-| --- | ---: | ---: | ---: |
-| **`ts-ui-dashboard`** | **165** | **10** | **6.1 %** |
-| `ts-basic-service` (next largest) | 202 | 188 | 93.1 % |
-| the other 28 services | 1 055 | 958 | 90.8 % |
-| corpus | 1 422 | 1 156 | 81.3 % |
+| truth service                     |   cases |  Top@1 |      rate |
+| --------------------------------- | ------: | -----: | --------: |
+| **`ts-ui-dashboard`**             | **165** | **10** | **6.1 %** |
+| `ts-basic-service` (next largest) |     202 |    188 |    93.1 % |
+| the other 28 services             |   1 055 |    958 |    90.8 % |
+| corpus                            |   1 422 |  1 156 |    81.3 % |
 
 **155 of the 266 misses — 58 % — are one node: the request entry point.** No second outlier exists among the
 thirty services with a population worth quoting; `ts-price-service` is next worst at 8 cases. Inside the dashboard's
@@ -7611,10 +7613,10 @@ candidates precede the rest, keeping the score order inside each half, reads **7
 
 ### 321.3 On the corpus it is refused, and the decomposition says why
 
-| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| control | **1 156** | 1 228 | 1 249 | — | — |
-| `failedEdgeFirst` | 986 | **1 232** | **1 293** | 71 | **241** |
+| arm               |   `Top@1` |   `Top@3` |   `Top@5` | gained |    lost |
+| ----------------- | --------: | --------: | --------: | -----: | ------: |
+| control           | **1 156** |     1 228 |     1 249 |      — |       — |
+| `failedEdgeFirst` |       986 | **1 232** | **1 293** |     71 | **241** |
 
 `HTTPResponseReplaceCode` **+56** (171 → 227) — the family whose truth is the entry point in 58 of its 231 cases,
 converted almost exactly as the dump predicted. Against it: `JVMMemoryStress` **−145** (171 → 26),
@@ -7635,11 +7637,11 @@ cases it is right to refuse, and a looser gate would be this arm.
 **Opened, with its prediction stated:** rank first the candidates whose **unexplained** failures are positive,
 `unexplainedFailures(v) = max(0, inbound − outgoing)` — the statistic `failureContainment` already trusts. In an
 entry-point fault its inbound calls fail and its outbound ones do not (residual > 0); in a stress or kill
-downstream its inbound *and* outbound calls fail (residual ≈ 0), because the failures it reports are the ones it
+downstream its inbound _and_ outbound calls fail (residual ≈ 0), because the failures it reports are the ones it
 received. Bar: beat 1 156 with no type below its published cell, **keep ≥ 40 of the 56** `HTTPResponseReplaceCode`
 gains, and restore `JVMMemoryStress` **above 160**.
 
-**Axes this closes.** Two. **Axes this opens.** One: the failure flow's *residual* as a membership test.
+**Axes this closes.** Two. **Axes this opens.** One: the failure flow's _residual_ as a membership test.
 
 ---
 
@@ -7651,10 +7653,10 @@ Iteration 312 registered one successor: rank first the candidates whose **unexpl
 (`unexplainedFailures(v) = max(0, inbound − outgoing)`), on the claim that a relay's own calls account for the
 failures it reports. Measured on 1 422 cases against the same control:
 
-| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| control | 1 156 | 1 228 | 1 249 | — | — |
-| `failedEdgeFirstScope=unexplained` | **1 049** | **1 323** | **1 348** | 135 | **242** |
+| arm                                |   `Top@1` |   `Top@3` |   `Top@5` | gained |    lost |
+| ---------------------------------- | --------: | --------: | --------: | -----: | ------: |
+| control                            |     1 156 |     1 228 |     1 249 |      — |       — |
+| `failedEdgeFirstScope=unexplained` | **1 049** | **1 323** | **1 348** |    135 | **242** |
 
 The narrower membership bought **64 more gains than 312's and one more loss**. The same four families paid:
 `JVMMemoryStress` 171 → 26, `ContainerKill` 89 → 23, `PodFailure` 24 → 4, `PodKill` 10 → 6 — 235 of the 242, at
@@ -7665,24 +7667,24 @@ the same counts iteration 312 recorded. Full read: `docs/failed-edge-jurisdictio
 `scripts/dump-failure-flows.ts` prints the four counts the pass reads, per service, per case (`$0`, 20 cases per
 family):
 
-| fault type | n | ground truth has **no** flow row | truth is a lead |
-| --- | ---: | ---: | ---: |
-| `JVMMemoryStress` | 20 | **20 (100 %)** | 0 |
-| `ContainerKill` | 20 | **20 (100 %)** | 0 |
-| `PodFailure` | 20 | **20 (100 %)** | 0 |
-| `PodKill` | 10 | **10 (100 %)** | 0 |
-| `HTTPResponseReplaceCode` | 20 | 0 | 20 |
-| `HTTPRequestReplaceMethod` | 20 | 0 | 20 |
+| fault type                 |   n | ground truth has **no** flow row | truth is a lead |
+| -------------------------- | --: | -------------------------------: | --------------: |
+| `JVMMemoryStress`          |  20 |                   **20 (100 %)** |               0 |
+| `ContainerKill`            |  20 |                   **20 (100 %)** |               0 |
+| `PodFailure`               |  20 |                   **20 (100 %)** |               0 |
+| `PodKill`                  |  10 |                   **10 (100 %)** |               0 |
+| `HTTPResponseReplaceCode`  |  20 |                                0 |              20 |
+| `HTTPRequestReplaceMethod` |  20 |                                0 |              20 |
 
 **In the four loss families the ground truth is not in the ledger at all**: a stress or kill fails no call at its
 own service, so it has no inbound and no outbound failure record, and no rule over that population can promote
-it. Its rank-1 signature is *identical* to an entry-point fault's (inbound > 0, outbound = 0, residual share
+it. Its rank-1 signature is _identical_ to an entry-point fault's (inbound > 0, outbound = 0, residual share
 1.00), so no threshold, weight or reading separates them. What separates them is **which fault family the case
 belongs to** — the label.
 
 ### 322.3 What that closes, and what it left open
 
-**Closed:** the failure ledger as evidence about *causation*. Any promotion of ledger members over non-members
+**Closed:** the failure ledger as evidence about _causation_. Any promotion of ledger members over non-members
 trades one family's gain for another's loss at a rate the corpus fixes in advance (312: −170, 313: −107).
 
 **Left open, and this is the arm that paid:** the shipped pass is stated over the **fusion's neighbours**, so a
@@ -7693,11 +7695,11 @@ fusion's order; the failing edge is a property of the case.
 
 `failureContainmentScope ∈ {adjacent, global, global-measured}` — the same rule, three populations of pairs:
 
-| arm | `Top@1` | `Top@3` | `Top@5` | gained | lost |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| control (`adjacent`) | 1 156 | 1 228 | 1 249 | — | — |
-| `global` | **1 186** | **1 236** | **1 255** | 30 | **0** |
-| `global-measured` | **1 186** | **1 236** | **1 255** | 30 | **0** |
+| arm                  |   `Top@1` |   `Top@3` |   `Top@5` | gained |  lost |
+| -------------------- | --------: | --------: | --------: | -----: | ----: |
+| control (`adjacent`) |     1 156 |     1 228 |     1 249 |      — |     — |
+| `global`             | **1 186** | **1 236** | **1 255** |     30 | **0** |
+| `global-measured`    | **1 186** | **1 236** | **1 255** |     30 | **0** |
 
 **30 gained, none lost, eight fault types gaining and none declining**: `NetworkBandwidth` +7,
 `HTTPRequestReplaceMethod` +7, `NetworkPartition` +5, `JVMException`/`HTTPResponseReplaceCode`/`Body`/`NetworkLoss`/
@@ -7714,7 +7716,7 @@ byte-identical over 1 422 cases, so the evidence guard is free, and it refuses t
 unsafe (a candidate the channel never measured read as a fully explained one).
 
 **The objection this entry carried one revision ago — "the golden half is unmeasured" — is now retired by a
-measurement, not an argument.** The Benchmark run dispatched on `accc80d` built a tree whose engine default *was*
+measurement, not an argument.** The Benchmark run dispatched on `accc80d` built a tree whose engine default _was_
 `global-measured`; the run on `f48b3de` is a tree with no scope option at all. Six RCAEval artifacts compared
 byte-for-byte: **735 cases across RE1/RE2/RE3 × {inject-time, no inject-time} plus RE3's novelty signal, and the only
 differing line in any of them is `Total duration`.** So the pass is built and live on that half and its two states
@@ -7756,14 +7758,14 @@ NAMED rather than decomposed, and a tie is NAMED rather than resolved.
 
 **§323.1 — what decided the 236.**
 
-| term | cases | share |
-| --- | ---: | ---: |
-| `selfAnomalyLog1p` | 126 | 53.4 % |
-| `dualFamily` | 42 | 17.8 % |
-| `lat` | 41 | 17.4 % |
-| `log` | 25 | 10.6 % |
-| `failedEdge` / `pool` | 1 / 1 | 0.4 % each |
-| truth absent from the results | **0** | **0.0 %** |
+| term                          | cases |      share |
+| ----------------------------- | ----: | ---------: |
+| `selfAnomalyLog1p`            |   126 |     53.4 % |
+| `dualFamily`                  |    42 |     17.8 % |
+| `lat`                         |    41 |     17.4 % |
+| `log`                         |    25 |     10.6 % |
+| `failedEdge` / `pool`         | 1 / 1 | 0.4 % each |
+| truth absent from the results | **0** |  **0.0 %** |
 
 No miss is a membership decision and none is a tie: the decisive term's contribution is a **median 40.4 % of the
 winner's score** and only 14 of 236 (5.9 %) are under 5 %. The signature also **changes with depth** — at rank 2–3
@@ -7780,26 +7782,26 @@ the scale was calibrated on.
 
 **§323.3 — three channels the score did not use.**
 
-| term | weight | candidates it reached (of 236) | why |
-| --- | ---: | ---: | --- |
-| `failedEdge` | **3** | **2** | the gate's name half refuses every candidate whose dominant metric is not duration-shaped (1 030 of 1 422 before any bar), and `evidence` mode needs a call denominator this corpus does not publish. **157 of the 236 carry the rows it reads** — `HTTPResponseReplaceCode` 58/58, `HTTPRequestReplaceMethod` 44/44, `JVMReturn` 9/9, `JVMException` 8/8 |
-| `trace` | 1 | **0** | the FSE'26 loader fills no `traceActivity`; the corpus ships `traceEdges` (pairs, no counts) and `traceEdgeLatency`. The term's input is ABSENT, not zero — `lat` is the same data read as a node statistic, which is why 69 candidates do score on it |
-| `faultFree` | 0 | 0 | weight is the ablation, and §323.4 is why the weight alone was not the whole story |
+| term         | weight | candidates it reached (of 236) | why                                                                                                                                                                                                                                                                                                                                                       |
+| ------------ | -----: | -----------------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `failedEdge` |  **3** |                          **2** | the gate's name half refuses every candidate whose dominant metric is not duration-shaped (1 030 of 1 422 before any bar), and `evidence` mode needs a call denominator this corpus does not publish. **157 of the 236 carry the rows it reads** — `HTTPResponseReplaceCode` 58/58, `HTTPRequestReplaceMethod` 44/44, `JVMReturn` 9/9, `JVMException` 8/8 |
+| `trace`      |      1 |                          **0** | the FSE'26 loader fills no `traceActivity`; the corpus ships `traceEdges` (pairs, no counts) and `traceEdgeLatency`. The term's input is ABSENT, not zero — `lat` is the same data read as a node statistic, which is why 69 candidates do score on it                                                                                                    |
+| `faultFree`  |      0 |                              0 | weight is the ablation, and §323.4 is why the weight alone was not the whole story                                                                                                                                                                                                                                                                        |
 
 **The `failedEdge` row was measured before the arm was priced**, and the price is why no arm shipped: on 1 222 cases
 whose net-failed-call leader exists, that leader is the truth **57.7 % of the time on cases the engine already gets
-right** and 73.2 % on the ones it misses. The channel is *better* on misses and still far below the base term's
+right** and 73.2 % on the ones it misses. The channel is _better_ on misses and still far below the base term's
 83.4 % overall, so a partition that promoted its leader would take the archive to roughly 730 — a loss of ~450, not
 a gain. The measurement is the arm's ceiling and it was taken for `$0` rather than paid for in a run.
 
 **§323.4 — the fault-free prior: one aggregation degenerate, one refused.**
 
-| arm | `Top@1` | `Top@3` | `Top@5` | gained / lost at rank 1 |
-| --- | ---: | ---: | ---: | ---: |
-| control (`w = 0`) | **1 186** | 1 236 | 1 255 | — |
-| `rarest`, `w` = 0.1 / 0.3 / 1.0 | **1 186** | 1 236 | 1 255 | 0 / 0 |
-| `dominant`, `w = 0.3` | 1 175 | 1 249 | **1 279** | 15 / 26 |
-| `dominant`, `w = 1.0` | 1 143 | 1 247 | 1 278 | 28 / 71 |
+| arm                             |   `Top@1` | `Top@3` |   `Top@5` | gained / lost at rank 1 |
+| ------------------------------- | --------: | ------: | --------: | ----------------------: |
+| control (`w = 0`)               | **1 186** |   1 236 |     1 255 |                       — |
+| `rarest`, `w` = 0.1 / 0.3 / 1.0 | **1 186** |   1 236 |     1 255 |                   0 / 0 |
+| `dominant`, `w = 0.3`           |     1 175 |   1 249 | **1 279** |                 15 / 26 |
+| `dominant`, `w = 1.0`           |     1 143 |   1 247 |     1 278 |                 28 / 71 |
 
 **`rarest` is DEGENERATE here and the statement is arithmetic.** The aggregation reads the minimum `rate` over
 EVERY channel a service carries, and 150 of the profile's 2 080 channels have `rate = 0`; a service with 39
@@ -7814,7 +7816,7 @@ came from, which is the reading the term's docblock describes. Its shape is a FL
 single movement is `1 → 2` on **20 cases** against `2 → 1` on 9, `Top@3` gains 17 and loses 4, `Top@5` gains 24 —
 and `Top@1` falls 11. By family the loss is concentrated and the gain is not: `NetworkPartition` **−7 / +0**,
 `NetworkDelay −5 / +0`, `NetworkBandwidth −5 / +0`, against `JVMException +5 / −0` and `HTTPResponseDelay +2 / −0`.
-A partition makes a *reachability* channel fire, and that channel is noisy in the fault-free window too, so `1 − r`
+A partition makes a _reachability_ channel fire, and that channel is noisy in the fault-free window too, so `1 − r`
 is small exactly where the fault is loudest in its own units — the term prefers a quieter neighbour, which is the
 mechanism the register named for `NetworkPartition` in §322 from the other direction.
 
@@ -7980,12 +7982,12 @@ registered its own pilot.
 
 ### §325.1 The shape, priced by the two papers that measured it
 
-| framework (RCABench, `arXiv:2608.21310`) | Acc@1 | what it does |
-| --- | ---: | --- |
-| OpsAgent | **45.8 %** | **no telemetry queries of its own — reasons over a pre-extracted feature set** |
-| OpenRCA | 46.6 % | commits as soon as it can answer |
-| AIQ | 77.6 % | requeries telemetry as evidence emerges |
-| ThinkDepth.ai | **90.0 %** | the same, on the strongest backbone |
+| framework (RCABench, `arXiv:2608.21310`) |      Acc@1 | what it does                                                                   |
+| ---------------------------------------- | ---------: | ------------------------------------------------------------------------------ |
+| OpsAgent                                 | **45.8 %** | **no telemetry queries of its own — reasons over a pre-extracted feature set** |
+| OpenRCA                                  |     46.6 % | commits as soon as it can answer                                               |
+| AIQ                                      |     77.6 % | requeries telemetry as evidence emerges                                        |
+| ThinkDepth.ai                            | **90.0 %** | the same, on the strongest backbone                                            |
 
 `RCAtlas` reaches the same ordering from the other side: Codex-with-a-filesystem 77.2 %, SQL agent 72.8 %, one call
 65.3 %, best published agent 53.3 %, NSigma 38.9 %, random 5.5 % — and its ablation prices the levers separately: **a
@@ -8000,21 +8002,21 @@ layer rather than about any module, and it is the reason eleven refutations were
 
 `deepseek-chat` at `--fingerprint-top-k 30`, one pass over 1 422 cases, `--promotion off`:
 
-| arm | Top@1 | moved |
-| --- | ---: | ---: |
-| engine (this dispatch's control) | **81.29 %** (1 156) | — |
-| **the model's own order** | **81.08 % (1 153)** | 61 |
-| rrf, weight 0.30 | 81.19 % (1 155) | 41 |
-| borda, weight 1.00 | 81.08 % (1 153) | 48 |
-| **oracle (engine ∪ arm)** | **94.5 %** | — |
+| arm                              |               Top@1 | moved |
+| -------------------------------- | ------------------: | ----: |
+| engine (this dispatch's control) | **81.29 %** (1 156) |     — |
+| **the model's own order**        | **81.08 % (1 153)** |    61 |
+| rrf, weight 0.30                 |     81.19 % (1 155) |    41 |
+| borda, weight 1.00               |     81.08 % (1 153) |    48 |
+| **oracle (engine ∪ arm)**        |          **94.5 %** |     — |
 
-| quantity | value |
-| --- | ---: |
-| repairs (engine wrong, model right) | **29** |
-| breaks (engine right, model wrong) | **32** |
-| **precision** | **0.475** |
-| requirement at this width (§324.3) | 0.543 |
-| falsifier that would close the layer | 0.30 |
+| quantity                             |     value |
+| ------------------------------------ | --------: |
+| repairs (engine wrong, model right)  |    **29** |
+| breaks (engine right, model wrong)   |    **32** |
+| **precision**                        | **0.475** |
+| requirement at this width (§324.3)   |     0.543 |
+| falsifier that would close the layer |      0.30 |
 
 **B1 fails** (1 153 against 1 216, and 3 below its own control, so the failure is not the 30 cases between the two
 containment scopes), **B2 fails by 0.075**, **B3 fails** (`HTTPRequestReplaceMethod −7`, `HTTPResponseAbort −6`),
@@ -8028,17 +8030,17 @@ the same width, or a wider presentation with a better reader.
 
 ### §325.3 The family asymmetry, at the level of the model's own decisions
 
-| family | repairs | breaks | net |
-| --- | ---: | ---: | ---: |
-| `HTTPResponseReplaceCode` | 8 | — | **+8** |
-| `JVMException` | 8 | — | **+8** |
-| `HTTPResponseDelay` | 4 | 1 | +3 |
-| `HTTPRequestDelay` | 2 | — | +2 |
-| `NetworkLoss` | 2 | 6 | −4 |
-| `NetworkPartition` | — | 4 | −4 |
-| `HTTPRequestAbort` | — | 2 | −2 |
-| `HTTPResponseAbort` | — | 6 | −6 |
-| `HTTPRequestReplaceMethod` | — | 7 | **−7** |
+| family                     | repairs | breaks |    net |
+| -------------------------- | ------: | -----: | -----: |
+| `HTTPResponseReplaceCode`  |       8 |      — | **+8** |
+| `JVMException`             |       8 |      — | **+8** |
+| `HTTPResponseDelay`        |       4 |      1 |     +3 |
+| `HTTPRequestDelay`         |       2 |      — |     +2 |
+| `NetworkLoss`              |       2 |      6 |     −4 |
+| `NetworkPartition`         |       — |      4 |     −4 |
+| `HTTPRequestAbort`         |       — |      2 |     −2 |
+| `HTTPResponseAbort`        |       — |      6 |     −6 |
+| `HTTPRequestReplaceMethod` |       — |      7 | **−7** |
 
 The two families the failed-edge channel was built for split almost exactly: `ReplaceCode` +8 and `ReplaceMethod`
 −7. That is §324.2's census — a population a rule is right about inside a population of the same size it is wrong
@@ -8053,9 +8055,9 @@ kept.
 
 Two smaller readings, recorded because they belong to any future arm that names a model:
 
-* the endpoint served **`deepseek-flash`** for all 1 422 requests that named `deepseek-chat`, and that is the model
+- the endpoint served **`deepseek-flash`** for all 1 422 requests that named `deepseek-chat`, and that is the model
   `RCAtlas` calls DeepSeek V4.1 Flash — one of its three mid-tier models, where its SQL agent reads 72.8 % PR@1;
-* `--agent` off reproduces the engine's own column exactly, so the switch the product exposes is the switch the arm
+- `--agent` off reproduces the engine's own column exactly, so the switch the product exposes is the switch the arm
   was measured under (B5).
 
 ### §325.5 The surface, built rather than described
@@ -8090,9 +8092,9 @@ their prompts contain the word.
 
 Two repairs, and the second is the one that matters:
 
-* `response_format` is now an option (`'json' | 'text'`, default `'json'`), so every existing arm is bit-identical
+- `response_format` is now an option (`'json' | 'text'`, default `'json'`), so every existing arm is bit-identical
   and the query arm states `text`. The constraint belongs to the arm that parses JSON, not to the transport.
-* the runner prints the endpoint's own sentence beside the status. A 400 with no detail turned this into a guess
+- the runner prints the endpoint's own sentence beside the status. A 400 with no detail turned this into a guess
   about our own prompt, and the sentence was available the whole time.
 
 Adding the word "json" to the arm's prompt was the cheap alternative and it was refused: it would have satisfied the
@@ -8106,14 +8108,14 @@ on the query-arm input, so that run paid for a full 1 422-case elimination pass 
 Run `44692141852`, `query_agent_sample = 80` (80 engine-misses + 80 engine-hits), `deepseek-chat`, 6 rounds and 10
 tool calls per case:
 
-| quantity | value |
-| --- | ---: |
-| answered | **5 of 160** |
-| stops | `{"rounds": 155, "answered": 5}` |
-| agent Top@1 | 4 |
-| engine Top@1 on the same 160 | 80 |
-| repairs / breaks | 2 / 78 |
-| completion tokens per turn | **6.8** |
+| quantity                     |                            value |
+| ---------------------------- | -------------------------------: |
+| answered                     |                     **5 of 160** |
+| stops                        | `{"rounds": 155, "answered": 5}` |
+| agent Top@1                  |                                4 |
+| engine Top@1 on the same 160 |                               80 |
+| repairs / breaks             |                           2 / 78 |
+| completion tokens per turn   |                          **6.8** |
 
 The artifact's precision is **0.025** and it must not be read as one: a case with no answer is not a wrong answer,
 and 78 of the 80 "breaks" are cases where the arm never spoke. The pre-registered falsifier (`< 0.30`) is therefore
@@ -8148,14 +8150,14 @@ empty, so the default 6/10 is what the pilot used and the next run differs from 
 Run `44704530268`, the same 160-case sample and the same 6-round/10-call budget as §325.6's pilot, after the three
 harness repairs:
 
-| quantity | v1 | **v2** |
-| --- | ---: | ---: |
-| answered share | 0.031 | **1.000** (160 of 160) |
-| agent Top@1 | 4 | **54** (33.75 %) |
-| engine Top@1 on the same 160 | 80 | 80 (50.0 %) |
-| repairs / breaks | 2 / 78 | **11 / 37** |
-| precision | 0.025 *(not adjudicable)* | **0.229** on 48 decided |
-| cost | ¥1.42 | **¥1.90** |
+| quantity                     |                        v1 |                  **v2** |
+| ---------------------------- | ------------------------: | ----------------------: |
+| answered share               |                     0.031 |  **1.000** (160 of 160) |
+| agent Top@1                  |                         4 |        **54** (33.75 %) |
+| engine Top@1 on the same 160 |                        80 |             80 (50.0 %) |
+| repairs / breaks             |                    2 / 78 |             **11 / 37** |
+| precision                    | 0.025 _(not adjudicable)_ | **0.229** on 48 decided |
+| cost                         |                     ¥1.42 |               **¥1.90** |
 
 **I1 passes at 1.000**, which settles §325.6's question: the pilot's 3.1 % was the harness, not the arm. **I2 passes
 formally and not in substance** — every case reached the cap and the cap is a forcing turn, so the model never chose
@@ -8166,13 +8168,13 @@ choice is the arm's, so the evidence-shape row **closes on this implementation**
 **The reading that keeps the row honest is a ¥0 ladder on the arm's own 160 cases**, because the §6.1 census's 38.3 %
 was taken in the corpus's natural class balance and the arm ran on 80 misses plus 80 hits:
 
-| read | correct |
-| --- | ---: |
-| fleet max-ratio, answer the top service | 30.6 % |
-| truth inside the fleet's top 3 | 41.9 % |
-| truth inside the fleet's top 8 | **63.1 %** |
-| **the arm, five investigative turns** | **33.75 %** |
-| the engine, same cases | 50.0 % |
+| read                                    |     correct |
+| --------------------------------------- | ----------: |
+| fleet max-ratio, answer the top service |      30.6 % |
+| truth inside the fleet's top 3          |      41.9 % |
+| truth inside the fleet's top 8          |  **63.1 %** |
+| **the arm, five investigative turns**   | **33.75 %** |
+| the engine, same cases                  |      50.0 % |
 
 So the queries bought **+3.1 pp over a read that investigates nothing** (the arm is not merely echoing the first
 ordering), while the truth was reachable on **63.1 %** — a **29.4-point selection gap, not an evidence gap**. The
@@ -8237,14 +8239,14 @@ the answer is that it chooses what it is shown.
 
 §325.9 shipped a fleet ordering by "dispersion-normalised surprise" and priced it with a recall gain (63.1 % → 76.9 %
 on the sample; 110 of the engine's 159 misses inside one call). **Both numbers were real and the mechanism was not.**
-The first `surpriseOf` floored the pre-window spread at a thousandth of the *level* and let the level be zero, so the
+The first `surpriseOf` floored the pre-window spread at a thousandth of the _level_ and let the level be zero, so the
 floor was `1e-9` and a series that sat at zero and became 50 scored **5e10**. A census on the arm's own 160 cases:
 
-| | |
-| --- | ---: |
-| cases carrying a zero-baseline series | **160 of 160** |
-| cases where one owns the top of the fleet list | **160 of 160** |
-| top-8 slots held by a `z > 1e6` series | **1 133 of 1 280 (88.5 %)** |
+|                                                |                             |
+| ---------------------------------------------- | --------------------------: |
+| cases carrying a zero-baseline series          |              **160 of 160** |
+| cases where one owns the top of the fleet list |              **160 of 160** |
+| top-8 slots held by a `z > 1e6` series         | **1 133 of 1 280 (88.5 %)** |
 
 Zero-baseline series are error rates and class-loading counters, and they belong to **victims**. So the ordering that
 scored 76.9 % was an **error-rate sort**: it found the blast radius and called itself dispersion. The fix is a
@@ -8253,14 +8255,14 @@ refusal rather than a wider floor — a median of zero leaves no level to standa
 
 **The seeded arm, run `44724631904`, same 160 cases, `--seed engine`.** The engine's top-5 is printed as a prior.
 
-| quantity | v2 free | v3 seeded | threshold |
-| --- | ---: | ---: | --- |
-| answered (I1) | 1.000 | **1.000** | ≥ 0.90 — pass |
-| retention over the engine's 80 hits (I3) | 0.538 | **0.650** | ≥ 0.90 — **fail** |
-| agent Top@1 | 54 | **62** | ≥ 80 — **fail** |
-| repairs / breaks | 11 / 37 | **10 / 28** | — |
-| precision (Q1) | 0.229 | **0.263** | ≥ 0.55 — **fail** |
-| cost | ¥1.90 | **¥2.16** | ≤ ¥10 — pass |
+| quantity                                 | v2 free |   v3 seeded | threshold         |
+| ---------------------------------------- | ------: | ----------: | ----------------- |
+| answered (I1)                            |   1.000 |   **1.000** | ≥ 0.90 — pass     |
+| retention over the engine's 80 hits (I3) |   0.538 |   **0.650** | ≥ 0.90 — **fail** |
+| agent Top@1                              |      54 |      **62** | ≥ 80 — **fail**   |
+| repairs / breaks                         | 11 / 37 | **10 / 28** | —                 |
+| precision (Q1)                           |   0.229 |   **0.263** | ≥ 0.55 — **fail** |
+| cost                                     |   ¥1.90 |   **¥2.16** | ≤ ¥10 — pass      |
 
 **Both falsifiers fired.** Retention 0.650 means that on **28 of the 80 cases the engine had right** the arm answered
 something else and was wrong, with the correct service printed at position 1 of the prior. Precision 0.263 means its
@@ -8276,7 +8278,7 @@ edits were worth less than the 0.500 break-even.
 > implementation it is an **ungated override of the strongest prior the repository owns**.
 
 **What closes and what does not, stated so it cannot be read as an excuse.** The falsifiers fire against **this
-implementation**, which carried the §325.10 defect, and the row is closed *as built*. A corrected statistic is a
+implementation**, which carried the §325.10 defect, and the row is closed _as built_. A corrected statistic is a
 different surface: it will be measured once, under a pre-registration whose instrument checks precede its thresholds,
 and the surface that replaces "free" is **gated** — an override is accepted only when the model names the evidence
 that discriminates it from the prior, and a case where it cannot is answered with the prior. This is the second time
@@ -8284,9 +8286,9 @@ in three iterations that a defect let a row escape closure; the register says so
 
 ### §325.11 The gate: an override admitted only against a record — and the 21 refusals that cost nothing
 
-§325.10 closed the seeded arm *as built* and named the surface that would replace it: **gated**. This iteration
-builds it, on the institution `arXiv:2611.05390` prices — an override is binding only after *"a mechanically valid
-record"* — and with its warning taken seriously: a rule that lives in a prompt is a request, because
+§325.10 closed the seeded arm _as built_ and named the surface that would replace it: **gated**. This iteration
+builds it, on the institution `arXiv:2611.05390` prices — an override is binding only after _"a mechanically valid
+record"_ — and with its warning taken seriously: a rule that lives in a prompt is a request, because
 `arXiv:2611.05662` shows a judge that has already gathered the decisive evidence still reverses up to 40 % of correct
 verdicts under one authority-toned sentence. So the rule is enforced **by the harness, after the model has spoken**,
 against the record the harness already owns: the transcript.
@@ -8294,11 +8296,11 @@ against the record the harness already owns: the transcript.
 Three policies, one run, one artifact (`summariseGatePolicies` re-scores the two that were not dispatched at ¥0, and
 a test asserts the online surface equals the priced one):
 
-| policy | admitted when | admitted | refused | repairs | breaks | precision | Top@1 | retention |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `none` | always (control) | 51 | 0 | 9 | 17 | 0.346 | 72 | 0.787 |
-| `cited` | the service it names was queried | 50 | **1** | 9 | 16 | 0.360 | 73 | 0.800 |
-| `cone` | `cited` **and** on the prior's callee-side cone | 30 | **21** | 9 | 11 | **0.450** | **78** | **0.863** |
+| policy  | admitted when                                   | admitted | refused | repairs | breaks | precision |  Top@1 | retention |
+| ------- | ----------------------------------------------- | -------: | ------: | ------: | -----: | --------: | -----: | --------: |
+| `none`  | always (control)                                |       51 |       0 |       9 |     17 |     0.346 |     72 |     0.787 |
+| `cited` | the service it names was queried                |       50 |   **1** |       9 |     16 |     0.360 |     73 |     0.800 |
+| `cone`  | `cited` **and** on the prior's callee-side cone |       30 |  **21** |       9 |     11 | **0.450** | **78** | **0.863** |
 
 Run `44749523006`, the same 160 cases as 317–318, `deepseek-chat`, 6 rounds / 10 calls, `--seed engine --gate cited`,
 **¥2.48**. A refused override falls back to the prior, which is what makes the arm **monotone**: a case the engine
@@ -8317,7 +8319,7 @@ from this artifact would be post-hoc selection; it is **registered as the primar
    and that is a stronger statement than the paper's warning that a prompt-level gate can fail.
 2. **The direction gate refuses only what is free to refuse.** Of the 21 refusals, **0 were repairs** and 6 were
    breaks — it discarded none of the 9 edits that gained a case and 6 of the 17 that lost one. Under random removal
-   of 21 from 51, losing no repair has probability **0.0047**. It does not *find* breaks (33 % of the override
+   of 21 from 51, losing no repair has probability **0.0047**. It does not _find_ breaks (33 % of the override
    population, 29 % of the refused set); it **never vetoes a repair**, which with a fallback is the only property a
    gate needs.
 3. **Announcing the jurisdiction moved the behaviour more than exercising it.** The run contains **one** refusal,
@@ -8341,16 +8343,16 @@ printed by `TOOL failed` and `TOOL metric`, so one boolean per row prices the wh
 
 **Four censuses on the same artifact, and the fourth reframes the next purchase.**
 
-* **The round cap binds; the call cap does not.** All 160 cases ran **6 rounds and 5 calls** with `rounds = calls + 1`
+- **The round cap binds; the call cap does not.** All 160 cases ran **6 rounds and 5 calls** with `rounds = calls + 1`
   exactly — the arm answered on the forcing turn every time and left **5 of its 10 calls** unused. "More calls" was
   never the constraint; `query_max_rounds` is the input that doubles the depth, at about ¥5 rather than the ¥6–10 a
   100-call arm was priced at.
-* **The named investigation is one to three services wide** (1 on 45 cases, 2 on 110, 3 on 5, against ~50 per case).
+- **The named investigation is one to three services wide** (1 on 45 cases, 2 on 110, 3 on 5, against ~50 per case).
   Breadth comes from `TOOL fleet`; depth would have to come from rounds.
-* **The rule turned an overrider into a verifier**: the model queried the prior's rank-1 on **141/160** and kept it
+- **The rule turned an overrider into a verifier**: the model queried the prior's rank-1 on **141/160** and kept it
   on **109** — a **31.9 %** override rate against 318's **55 %** — and that deference is what the +10 is worth when
   the prior is right half the time.
-* **The same deference is what a miss costs**: on the engine's 80 misses the arm kept the **wrong** prior on **46**.
+- **The same deference is what a miss costs**: on the engine's 80 misses the arm kept the **wrong** prior on **46**.
   A symmetric fallback protects a hit and a miss equally, so a gate can only trade repair against retention; 318
   bought repairs and paid breaks, 319 bought retention and paid repairs. **Breaking that symmetry is the next
   design**, and it cannot be "how much did you look" — it is whether the callee's evidence beats the prior's on a
@@ -8367,23 +8369,23 @@ model that descended from a correct prior into a callee. Position is necessary a
 demands **evidence**.
 
 **The theory, twice confirmed.** LagRCA (`10.1145/3803437.3805219`, FSE Companion '26 Industry Track Distinguished
-Paper, 88.3 % AC@5) names the failure mode — causes and symptoms are *misaligned in time*, and synchronous reading
+Paper, 88.3 % AC@5) names the failure mode — causes and symptoms are _misaligned in time_, and synchronous reading
 "dilutes true upstream culprits while over-ranking downstream victims" — and its **18.49 %** synchronous-incident
 rate forces a **disjunction** rather than a conjunction. Sharper still, `arXiv:2608.21310` codes the 50 failed
-trajectories of the **Sonnet arm that reaches 90.0 Acc@1**: `MIS3` *"fault direction reversed between caller and
-callee sides"* at **86.0 %** and `OMIT6` *"no check that proposed cause precedes the symptom"* at **4.0 %**. The
+trajectories of the **Sonnet arm that reaches 90.0 Acc@1**: `MIS3` _"fault direction reversed between caller and
+callee sides"_ at **86.0 %** and `OMIT6` _"no check that proposed cause precedes the symptom"_ at **4.0 %**. The
 strongest published agent reverses direction in most of its failures and almost never checks order — **neither is a
 capability, both are procedure**, which is why the harness imposes them.
 
 **The predicate.** `contrast` = `cone` ∧ (E1 ∨ E2), read off the case and not the transcript:
 
-* **E1** net failures on `prior → answer` exceed those on `answer → prior` — a failing interface is a call that
+- **E1** net failures on `prior → answer` exceed those on `answer → prior` — a failing interface is a call that
   failed, and the callee is the end it reached;
-* **E2** the candidate logged its first `ERROR`/`FATAL` strictly earlier (LagRCA's $\tau>0$), with a silent prior
+- **E2** the candidate logged its first `ERROR`/`FATAL` strictly earlier (LagRCA's $\tau>0$), with a silent prior
   treated as no counter-evidence rather than as a veto.
 
 Two rejections are part of the design. **E3** (deepest collapse) was pre-registered and **dropped**, because this
-package's own fixture refutes it: `checkout`'s traffic falls from 100 to 20 *because* `payment` is down. And the
+package's own fixture refutes it: `checkout`'s traffic falls from 100 to 20 _because_ `payment` is down. And the
 degenerate `z(answer) > z(prior)` is rejected in writing: this repository's statistic is a robust z against a
 service's own pre-window, amplification makes a victim's z exceed its source's, so that form would collapse
 `contrast` into `cone`.
@@ -8391,24 +8393,24 @@ service's own pre-window, amplification makes a victim's z exceed its source's, 
 **Two arms, ¥7.67.** `44773762451` dispatched `--gate contrast` at 6 rounds; `44773776750` dispatched `--gate cited`
 at **12 rounds** because §325.11's census showed the round cap and not the call cap binds.
 
-| policy | 6-round: adm / ref / rep / brk / prec / Top@1 / ret | 12-round: same |
-| --- | --- | --- |
-| `none` | 41 / 0 / 13 / 11 / 0.542 / 82 / 0.863 | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887 |
-| `cited` | 40 / 1 / 13 / 10 / 0.565 / 83 / 0.875 | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887 |
-| `cone` | 35 / 6 / 13 / 10 / 0.565 / 83 / 0.875 | 33 / 18 / 11 / 6 / 0.647 / 85 / 0.925 |
-| **`contrast`** | **19 / 22 / 11 / 4 / 0.733 / 87 / 0.950** | **12 / 39 / 10 / 0 / 1.000 / 90 / 1.000** |
+| policy         | 6-round: adm / ref / rep / brk / prec / Top@1 / ret | 12-round: same                            |
+| -------------- | --------------------------------------------------- | ----------------------------------------- |
+| `none`         | 41 / 0 / 13 / 11 / 0.542 / 82 / 0.863               | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887      |
+| `cited`        | 40 / 1 / 13 / 10 / 0.565 / 83 / 0.875               | 51 / 0 / 11 / 9 / 0.550 / 82 / 0.887      |
+| `cone`         | 35 / 6 / 13 / 10 / 0.565 / 83 / 0.875               | 33 / 18 / 11 / 6 / 0.647 / 85 / 0.925     |
+| **`contrast`** | **19 / 22 / 11 / 4 / 0.733 / 87 / 0.950**           | **12 / 39 / 10 / 0 / 1.000 / 90 / 1.000** |
 
 **Adjudicated against thresholds registered before the artifact:**
 
-| id | threshold | 6 rounds | 12 rounds | verdict |
-| --- | --- | ---: | ---: | --- |
-| C1 | precision ≥ 0.50 | 0.733 | 1.000 | pass |
-| C2 | retention ≥ 0.95 | 0.950 | 1.000 | pass |
-| C3 | Top@1 ≥ 84 | **87** | **90** | pass |
-| C4 | repairs refused = 0 | **2** | **1** | **FAIL** |
-| D1 | 12-round repairs ≥ 11 | — | 11 | pass (at the line) |
-| D2 | 12-round precision ≥ 0.50 | — | 0.550 | pass |
-| F2 | ≥ 1 repair refused | **2** | **1** | **FIRES** |
+| id  | threshold                 | 6 rounds | 12 rounds | verdict            |
+| --- | ------------------------- | -------: | --------: | ------------------ |
+| C1  | precision ≥ 0.50          |    0.733 |     1.000 | pass               |
+| C2  | retention ≥ 0.95          |    0.950 |     1.000 | pass               |
+| C3  | Top@1 ≥ 84                |   **87** |    **90** | pass               |
+| C4  | repairs refused = 0       |    **2** |     **1** | **FAIL**           |
+| D1  | 12-round repairs ≥ 11     |        — |        11 | pass (at the line) |
+| D2  | 12-round precision ≥ 0.50 |        — |     0.550 | pass               |
+| F2  | ≥ 1 repair refused        |    **2** |     **1** | **FIRES**          |
 
 **`C4` fails and `F2` fires, so the registered shipping rule selects nothing and no default changes.** Three
 honesties belong beside that, because the headline is easy to over-read:
@@ -8434,9 +8436,9 @@ non-negative gain by construction. The first half holds; the second is too stron
 Measured: six rounds `+7 − 2 = +5`; twelve rounds `+9 − 1 = +8`. Both positive, neither free.
 
 **Depth, priced.** The 12-round arm cost ¥5.19 and moved `none` from 82 to 82, repairs from 13 to 11, rounds from
-6.00 to 9.72. It bought **more overrides and no more repairs** — RCAtlas's finding reproduced (*"reasoning budget
-does not predict quality"*). What it did buy is worth stating precisely: the twelve-round override population is
-*more filterable* (39 of 51 refused), so depth made the **gate** look better by making the model's overrides worse,
+6.00 to 9.72. It bought **more overrides and no more repairs** — RCAtlas's finding reproduced (_"reasoning budget
+does not predict quality"_). What it did buy is worth stating precisely: the twelve-round override population is
+_more filterable_ (39 of 51 refused), so depth made the **gate** look better by making the model's overrides worse,
 which is not the same as making the arm better.
 
 **What is left is salience, not time and not direction.** Both refused repairs are `MIS2`, and the residual is the
@@ -8473,17 +8475,17 @@ iteration 319 registered as the break-even is the balanced sample's break-even, 
 
 **What that does to the readings already published.** Transferring the observed per-stratum rates to the corpus:
 
-| policy | adm / ref / rep / brk | precision | sample Top@1 | projected net@corpus | projected corpus Top@1 |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `none` | 41 / 0 / 13 / 11 | 0.542 | 82 | −115.7 | 73.16 |
-| `cited` | 40 / 1 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 |
-| `cone` | 35 / 6 / 13 / 10 | 0.565 | 83 | −101.3 | 74.17 |
-| `contrast` (320's arm) | 19 / 22 / 11 / 4 | 0.733 | **87** | **−21.2** | **79.80** |
-| **`lag`** (this iteration) | **14 / 27 / 10 / 0** | **1.000** | **90** | **+33.2** | **83.63** |
+| policy                     | adm / ref / rep / brk | precision | sample Top@1 | projected net@corpus | projected corpus Top@1 |
+| -------------------------- | --------------------- | --------: | -----------: | -------------------: | ---------------------: |
+| `none`                     | 41 / 0 / 13 / 11      |     0.542 |           82 |               −115.7 |                  73.16 |
+| `cited`                    | 40 / 1 / 13 / 10      |     0.565 |           83 |               −101.3 |                  74.17 |
+| `cone`                     | 35 / 6 / 13 / 10      |     0.565 |           83 |               −101.3 |                  74.17 |
+| `contrast` (320's arm)     | 19 / 22 / 11 / 4      |     0.733 |       **87** |            **−21.2** |              **79.80** |
+| **`lag`** (this iteration) | **14 / 27 / 10 / 0**  | **1.000** |       **90** |            **+33.2** |              **83.63** |
 
 `contrast`'s +7 is real as an exchange rate and **negative as an effect**: 4 breaks per 80 hits is 57.8 breaks against
 1 156, while 11 repairs per 80 misses is 36.6 against 266. This is the arithmetic that answers the question the
-project has been asking since 318 — *why does enabling the model read below the engine?* — and the answer is not the
+project has been asking since 318 — _why does enabling the model read below the engine?_ — and the answer is not the
 model. It is that a gate at precision 0.73 buys repairs in the stratum that is 18.7 % of the population and pays for
 them in the stratum that is 81.3 %.
 
@@ -8495,11 +8497,11 @@ carry has no rate (`projectOntoCorpus` returns `null` rather than 0). The full-c
 `contrast` is `E1 ∨ E2`. The 160-case artifact separates the two terms for the first time, because the artifact
 carries both onsets and the interface nets:
 
-| term | admitted | repairs | breaks | precision |
-| --- | ---: | ---: | ---: | ---: |
-| `E1` only (interface `prior → answer` failed) | 5 | 1 | **4** | 0.200 |
-| `E2` only (answer's first error strictly earlier) | 14 | **10** | **0** | **1.000** |
-| both (`contrast`) | 19 | 11 | 4 | 0.733 |
+| term                                              | admitted | repairs | breaks | precision |
+| ------------------------------------------------- | -------: | ------: | -----: | --------: |
+| `E1` only (interface `prior → answer` failed)     |        5 |       1 |  **4** |     0.200 |
+| `E2` only (answer's first error strictly earlier) |       14 |  **10** |  **0** | **1.000** |
+| both (`contrast`)                                 |       19 |      11 |      4 |     0.733 |
 
 **`E1` buys one repair with four breaks at corpus base rate it is worse than that.** The reason is structural and not
 a property of this corpus: an interface that fails from `prior` into `answer` is **what a failing caller produces on
@@ -8524,15 +8526,16 @@ arm 320 published, because a rule that changes under a published name invalidate
    from the corpus), so each service's departure from its own healthy shape is computable at ¥0. It **fails, and it
    fails by pointing the wrong way**: the strongest self-channel residual of the truth is
 
-   | stratum | truth p50 | engine's answer p50 | model's answer p50 |
-   | --- | ---: | ---: | ---: |
-   | engine misses (80) | **32.1** | 79.4 | 55.9 |
-   | engine hits (80) | 220.8 | 210.4 | 193.9 |
+   | stratum            | truth p50 | engine's answer p50 | model's answer p50 |
+   | ------------------ | --------: | ------------------: | -----------------: |
+   | engine misses (80) |  **32.1** |                79.4 |               55.9 |
+   | engine hits (80)   |     220.8 |               210.4 |              193.9 |
 
    **The cases the engine misses are the cases whose root cause is QUIET in its own channels** — a silent source,
    not a loud victim. Every variant of the axis (absolute threshold 3…50, with and without "leads the prior") adds
    breaks faster than repairs: the best reads 22 admitted / 9 repairs / 5 breaks / 0.643, projected −42.3. Closed,
    with the negative result kept because 320 had named it "the single most promising untried use".
+
 3. **The prior's own margin** (from `depth.ndjson`, ¥0 for all 1 422). A small engine margin is a licence to
    override: at the 10 % quantile the gate reads **91 / 0 breaks / precision 1.000 (p = 0.0010, net@corpus +36.6)**,
    and at the 20 %, 30 % and 50 % cuts it degrades monotonically to 89 / 2, 90 / 3, 88 / 5. That is a **hint and not
@@ -8543,8 +8546,8 @@ arm 320 published, because a rule that changes under a published name invalidate
 ### The corroboration from outside
 
 `arXiv:2609.13463` (Continual Search, Scale AI, Sept 2026) reports the mirror image of this project's depth result
-from the other direction: on **short-flow** benchmarks, *additional search rounds do not help and actively hurt —
-they force the judge to re-examine an answer it has already read and overturn correct judgments into wrong ones*. The
+from the other direction: on **short-flow** benchmarks, _additional search rounds do not help and actively hurt —
+they force the judge to re-examine an answer it has already read and overturn correct judgments into wrong ones_. The
 12-round artifact in §325.12 shows exactly that shape from inside: 9 breaks against 6 at six rounds, and `none`
 staying at 82. Two independent measurements now say the round cap is not where this population's headroom is.
 
@@ -8553,13 +8556,13 @@ staying at 82. Two independent measurements now say the round cap is not where t
 The projection above is a rate transfer, and this is the run that tests it. `--gate lag`, 6 rounds, 10 tool calls,
 **every** case: `sample 1422 (266 miss / 1156 correct)`, answered 1 422 of 1 422, rounds per case **6.00**.
 
-| policy | admitted | refused | repairs | breaks | precision | Top@1 | retention | net | McNemar p |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `none` | 214 | 0 | 37 | **134** | 0.216 | 1 059 (**74.47 %**) | 0.884 | **−97** | 4.1e−14 |
-| `cited` | 213 | 1 | 37 | 133 | 0.218 | 1 060 (74.54 %) | 0.885 | −96 | 6.5e−14 |
-| `cone` | 189 | 25 | 37 | 115 | 0.243 | 1 078 (75.81 %) | 0.901 | −78 | 1.7e−10 |
-| `contrast` | 58 | 156 | 32 | 16 | 0.667 | 1 172 (82.42 %) | 0.986 | +16 | 0.029 |
-| **`lag`** | **54** | **160** | **31** | **13** | **0.705** | **1 174 (82.56 %)** | **0.989** | **+18** | **0.0096** |
+| policy     | admitted | refused | repairs |  breaks | precision |               Top@1 | retention |     net |  McNemar p |
+| ---------- | -------: | ------: | ------: | ------: | --------: | ------------------: | --------: | ------: | ---------: |
+| `none`     |      214 |       0 |      37 | **134** |     0.216 | 1 059 (**74.47 %**) |     0.884 | **−97** |    4.1e−14 |
+| `cited`    |      213 |       1 |      37 |     133 |     0.218 |     1 060 (74.54 %) |     0.885 |     −96 |    6.5e−14 |
+| `cone`     |      189 |      25 |      37 |     115 |     0.243 |     1 078 (75.81 %) |     0.901 |     −78 |    1.7e−10 |
+| `contrast` |       58 |     156 |      32 |      16 |     0.667 |     1 172 (82.42 %) |     0.986 |     +16 |      0.029 |
+| **`lag`**  |   **54** | **160** |  **31** |  **13** | **0.705** | **1 174 (82.56 %)** | **0.989** | **+18** | **0.0096** |
 
 **This is the first corpus-scale reading in which an LLM arm beats this repository's own engine**, and the ladder is
 monotone in strictness with no exceptions: −97, −96, −78, +16, +18 against an engine at 1 156 (81.29 %). Wilson 95 %
@@ -8572,13 +8575,13 @@ the whole difference between −97 and +18, and it costs ¥0 (a re-score of the 
 
 **Adjudicated against the pre-registration (`docs-repository:preregistration-321.md`, written before the artifact):**
 
-| id | prediction | measured | verdict |
-| --- | --- | --- | --- |
-| P1 | corpus Top@1 ≥ 83.0 % | **82.56 %** | **MISS** by 0.44 pp |
-| P2 | breaks ≤ 25 | **13** | pass |
-| P3 | net > 0 | **+18** | pass |
-| P4 | `lag` ≥ `contrast` on the same rows | 1 174 vs 1 172 | pass |
-| P5 | rounds per case ≤ 6.2 | 6.00 | pass |
+| id  | prediction                          | measured       | verdict             |
+| --- | ----------------------------------- | -------------- | ------------------- |
+| P1  | corpus Top@1 ≥ 83.0 %               | **82.56 %**    | **MISS** by 0.44 pp |
+| P2  | breaks ≤ 25                         | **13**         | pass                |
+| P3  | net > 0                             | **+18**        | pass                |
+| P4  | `lag` ≥ `contrast` on the same rows | 1 174 vs 1 172 | pass                |
+| P5  | rounds per case ≤ 6.2               | 6.00           | pass                |
 
 **`P1` missed and the miss is instructive.** The projection said +33.2 from rates of 12.5 % (repairs/miss) and 0 %
 (breaks/hit); the corpus measures **11.65 %** (31/266) and **1.12 %** (13/1 156). The repair rate transferred almost
@@ -8588,7 +8591,7 @@ zero count should be quoted with that bound, and §325.13 did not quote it.
 
 **By fault family, `lag`'s net is not uniform** — `NetworkBandwidth` 8/0, `NetworkPartition` 6/3, `NetworkLoss` 5/0,
 `HTTPRequestReplaceMethod` 4/0, `JVMException` 4/0, against `JVMMemoryStress` **0/4** and `NetworkPartition`'s three
-breaks. A family-conditional admission rule is therefore *visible*, and it is not taken here: the register's own rule
+breaks. A family-conditional admission rule is therefore _visible_, and it is not taken here: the register's own rule
 is that a per-family knob needs a mechanism, and four breaks in one family is a sample of four.
 
 ### 325.13b The margin axis, refuted where it counts
@@ -8597,15 +8600,15 @@ is that a per-family knob needs a mechanism, and four breaks in one family is a 
 on 1 422 rows rather than on 160**, because the 160-row sweep had read `91 / 0 breaks` at that cut and four cuts had
 been tried. On the corpus artifact:
 
-| rule | admitted | repairs | breaks | Top@1 | net | p |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `lag` (no margin) | 54 | 31 | 13 | **1 174** | **+18** | 0.0096 |
-| `lag ∨ (cone ∧ margin ≤ 0.0148)` | 75 | 32 | 24 | 1 164 | +8 | 0.35 |
-| `lag ∨ (cone ∧ margin ≤ 0.0745)` | 87 | 34 | 28 | 1 162 | +6 | 0.53 |
-| `lag ∨ (cone ∧ margin ≤ 0.1832)` | 98 | 34 | 35 | 1 155 | −1 | 1.00 |
+| rule                             | admitted | repairs | breaks |     Top@1 |     net |      p |
+| -------------------------------- | -------: | ------: | -----: | --------: | ------: | -----: |
+| `lag` (no margin)                |       54 |      31 |     13 | **1 174** | **+18** | 0.0096 |
+| `lag ∨ (cone ∧ margin ≤ 0.0148)` |       75 |      32 |     24 |     1 164 |      +8 |   0.35 |
+| `lag ∨ (cone ∧ margin ≤ 0.0745)` |       87 |      34 |     28 |     1 162 |      +6 |   0.53 |
+| `lag ∨ (cone ∧ margin ≤ 0.1832)` |       98 |      34 |     35 |     1 155 |      −1 |   1.00 |
 
 **A small margin buys one repair and eleven breaks at corpus scale.** The 160-row hint was a sweep over four cuts on a
-sample where a single break is 1.25 points; at 1 422 rows the same rule is *worse than doing nothing extra*, and it is
+sample where a single break is 1.25 points; at 1 422 rows the same rule is _worse than doing nothing extra_, and it is
 worse in the predicted direction — a weak prior means the engine is unsure, which is not the same as the engine being
 wrong. Closed. This is the second axis in one iteration whose sample-level gain reversed at corpus scale, and it is
 the reason the margin sweep was registered rather than shipped.
@@ -8623,23 +8626,23 @@ it fails is the finding this iteration is built on.
 All three were priced at ¥0 from iteration 321's artifact (1 422 rows, ¥23.07 already spent). "Net" is repairs minus
 breaks, and the comparator is `lag`'s **+18**.
 
-| axis | form | repairs | breaks | net | verdict |
-| --- | --- | ---: | ---: | ---: | --- |
-| `E5` ancestor refusal (registered) | refuse the override when any ancestor logged its first error no later | 20 | 7 | **+13** | **refuted** — a narrower `lag`: 7 breaks bought with 11 repairs |
-| same, silence counts as early | extend the ordering to ancestors that logged nothing | 11 | 7 | +4 | refuted |
-| promotion to the earliest ancestor | answer the ancestor whose first error is earliest | 23 | **92** | **−69** | **refuted** — true on 80 of the engine's own hits |
-| promotion to the nearest earlier ancestor | same, ranked by hop distance | 23 | 90 | −67 | refuted |
-| earliest with a 5 s margin | require the ancestor to lead by a margin | 23 | 72 | −49 | refuted |
+| axis                                      | form                                                                  | repairs | breaks |     net | verdict                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------- | ------: | -----: | ------: | --------------------------------------------------------------- |
+| `E5` ancestor refusal (registered)        | refuse the override when any ancestor logged its first error no later |      20 |      7 | **+13** | **refuted** — a narrower `lag`: 7 breaks bought with 11 repairs |
+| same, silence counts as early             | extend the ordering to ancestors that logged nothing                  |      11 |      7 |      +4 | refuted                                                         |
+| promotion to the earliest ancestor        | answer the ancestor whose first error is earliest                     |      23 | **92** | **−69** | **refuted** — true on 80 of the engine's own hits               |
+| promotion to the nearest earlier ancestor | same, ranked by hop distance                                          |      23 |     90 |     −67 | refuted                                                         |
+| earliest with a 5 s margin                | require the ancestor to lead by a margin                              |      23 |     72 |     −49 | refuted                                                         |
 
 **Why `E5` failed is the diagnosis, not a parameter.** Across the 248 misses:
 
-| structure | cases |
-| --- | ---: |
-| the truth is a transitive ancestor of the answer | **180** |
-| … at hop 1 (`answered-downstream`) | 122 |
+| structure                                        |              cases |
+| ------------------------------------------------ | -----------------: |
+| the truth is a transitive ancestor of the answer |            **180** |
+| … at hop 1 (`answered-downstream`)               |                122 |
 | … and the truth **never logged an error at all** | **170 of the 180** |
-| … and the truth logged EARLIER than the answer | **1** |
-| the truth is not an ancestor | 68 |
+| … and the truth logged EARLIER than the answer   |              **1** |
+| the truth is not an ancestor                     |                 68 |
 
 **The root cause is silent in 230 of the 248 misses** (and in 865 of the 1 156 hits), so an ordering over log onsets
 has almost nothing to order: the medians that made `lag` work are 0 ms and p90 9.4 s, and here the quantity is absent
@@ -8651,12 +8654,12 @@ supposed to see. `E5` asked the corpus for a signal the corpus does not carry.
 The next candidate was structural rather than temporal: a failure must ARRIVE, so a service with no failing interface
 into it cannot be what its caller saw fail. The corpus refuses it as a gate:
 
-| fault type | failed edges in the case |
-| --- | --- |
-| `HTTPResponseReplaceCode` at `ts-ui-dashboard` | **1** — `loadgenerator → ts-ui-dashboard` |
-| `HTTPRequestReplaceMethod` at `ts-ui-dashboard` | 1 — the same edge |
-| `HTTPRequestDelay` at `ts-basic-service` | 9 — the path from the leaf up to the entry |
-| `JVMCPUStress`, `TimeSkew`, `NetworkDelay` | **0** |
+| fault type                                      | failed edges in the case                   |
+| ----------------------------------------------- | ------------------------------------------ |
+| `HTTPResponseReplaceCode` at `ts-ui-dashboard`  | **1** — `loadgenerator → ts-ui-dashboard`  |
+| `HTTPRequestReplaceMethod` at `ts-ui-dashboard` | 1 — the same edge                          |
+| `HTTPRequestDelay` at `ts-basic-service`        | 9 — the path from the leaf up to the entry |
+| `JVMCPUStress`, `TimeSkew`, `NetworkDelay`      | **0**                                      |
 
 Three of the twenty-four fault types carry **no** failed edge, and the entry faults carry exactly one. A gate built on
 this channel fails closed on the cases it was invented for.
@@ -8667,23 +8670,23 @@ What survives is one asymmetry the corpus does carry. **A fault injected at the 
 inbound API, so nothing below it starts failing; a fault injected below reaches the entry through the callee on the
 failed path, so that callee's error rate rises.** With
 
-* `entryChildErrors(E)` = the largest **error-rate** rise among `E`'s callees, and
-* `answerSurprise(S)` = `S`'s largest departure in a channel that is **not** an error rate,
+- `entryChildErrors(E)` = the largest **error-rate** rise among `E`'s callees, and
+- `answerSurprise(S)` = `S`'s largest departure in a channel that is **not** an error rate,
 
 the resolver answers the entry iff `entryChildErrors ≤ 0 ∧ answerSurprise ≤ 300`. The split is the axis: an error
-rate rising means *calls are failing here*, which is true of every hop on a failure's path, while a resource rising
-means *this service is working harder*, which is true only of the service doing the work.
+rate rising means _calls are failing here_, which is true of every hop on a failure's path, while a resource rising
+means _this service is working harder_, which is true only of the service doing the work.
 
 **The resource condition is not decoration.** Priced without it:
 
-| rule | fired | repairs | breaks | net |
-| --- | ---: | ---: | ---: | ---: |
-| `entryChildErrors ≤ 0` → entry | 134 | 63 | 71 | **−8** |
-| `∧ answerSurprise ≤ 100` | 68 | 47 | 18 | +29 |
-| `∧ answerSurprise ≤ 200` | 97 | 64 | 33 | +36 |
-| **`∧ answerSurprise ≤ 300`** | 114 | 77 | 37 | **+45** |
-| `∧ answerSurprise ≤ 500` | 130 | 82 | 48 | +39 |
-| `∧ answerSurprise ≤ 1000` | 160 | 92 | 68 | +33 |
+| rule                           | fired | repairs | breaks |     net |
+| ------------------------------ | ----: | ------: | -----: | ------: |
+| `entryChildErrors ≤ 0` → entry |   134 |      63 |     71 |  **−8** |
+| `∧ answerSurprise ≤ 100`       |    68 |      47 |     18 |     +29 |
+| `∧ answerSurprise ≤ 200`       |    97 |      64 |     33 |     +36 |
+| **`∧ answerSurprise ≤ 300`**   |   114 |      77 |     37 | **+45** |
+| `∧ answerSurprise ≤ 500`       |   130 |      82 |     48 |     +39 |
+| `∧ answerSurprise ≤ 1000`      |   160 |      92 |     68 |     +33 |
 
 `entryChildErrors = 0` alone reads precision **0.393**, because 222 of the 1 231 non-entry cases also have quiet
 children — a silent deep source leaves no error rise anywhere, which is exactly why the previous paragraph exists. The
@@ -8692,10 +8695,10 @@ flat from 300 to 750, and four of five folds chose 300 — the discipline 321's 
 
 ### 325.14d Why "the arm goes one hop too far" is a property of the corpus and not of the model
 
-| stratum | cases | engine correct |
-| --- | ---: | ---: |
-| truth is the entry | **186** | **13 (7.0 %)** |
-| truth is deep, and no callee of the entry raised an error rate | 227 | **218 (96.0 %)** |
+| stratum                                                        |   cases |   engine correct |
+| -------------------------------------------------------------- | ------: | ---------------: |
+| truth is the entry                                             | **186** |   **13 (7.0 %)** |
+| truth is deep, and no callee of the entry raised an error rate |     227 | **218 (96.0 %)** |
 
 The engine is nearly perfect exactly where a deep fault leaves the entry's children quiet, and nearly useless where
 the fault is at the top. That is not an accident of the ranking: on this corpus the entry is the loudest service in
@@ -8718,17 +8721,17 @@ none of them was called inside the captured window, so "the graph's single root"
 written that down.
 
 **The fix, and why it is a mechanism rather than a patch.** What distinguishes the way in is **reach**: the front door
-is what the rest of the system sits behind. The entry is the root that reaches *strictly more* services than every
+is what the rest of the system sits behind. The entry is the root that reaches _strictly more_ services than every
 other root, and a tie still fails closed. On this corpus that is `loadgenerator`, which reaches **49 of 50** services
 and calls exactly one, so the entry is `ts-ui-dashboard` as intended.
 
 **The reading, re-scored over the shipped artifact with the fix in place** (the resolver is post-hoc and needs no
 model, so this is the same artifact, not a second purchase):
 
-| reading | Top@1 | net vs engine | fired | kept | lost | precision | engine hits retained |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `lag` (dispatched) | 1 173 (82.49 %) | +17 | — | — | — | — | 1 143/1 156 (0.989) |
-| **`lag` + `entry-prior`** | **1 223 (86.01 %)** | **+67** | 87 | 67 | 20 | **0.770** | **1 139/1 156 (0.985)** |
+| reading                   |               Top@1 | net vs engine | fired | kept | lost | precision |    engine hits retained |
+| ------------------------- | ------------------: | ------------: | ----: | ---: | ---: | --------: | ----------------------: |
+| `lag` (dispatched)        |     1 173 (82.49 %) |           +17 |     — |    — |    — |         — |     1 143/1 156 (0.989) |
+| **`lag` + `entry-prior`** | **1 223 (86.01 %)** |       **+67** |    87 |   67 |   20 | **0.770** | **1 139/1 156 (0.985)** |
 
 Wilson 95 % on 1 223/1 422 is `[84.1, 87.7]`; the sign test against the engine is **67/17, p = 3.5 × 10⁻⁸**, and against
 `lag` **67/20, p = 4.3 × 10⁻⁷**. The rule moves 87 answers, gets 67 of them right, and keeps 98.5 % of what the engine
@@ -8736,18 +8739,18 @@ already had — which is the shape a resolver has to have if it is to be switche
 
 **Adjudicated against `docs-repository:preregistration-322.md`:**
 
-| id | prediction | measured | verdict |
-| --- | --- | --- | --- |
-| P1 | corpus Top@1 ≥ 84.0 % | **86.01 %** | pass, +2.0 pp above the bound |
-| P2 | ≥ 90 moves, precision ≥ 0.60 | **87 moves**, precision **0.770** | **MISS** on the count, pass on the precision |
-| P3 | net gain over `lag` ≥ +25 | **+50** | pass |
-| P4 | ≥ 60 % of moves land on a row whose truth is the entry | **67/87 = 77.0 %** | pass |
-| P5 | engine-hit retention ≥ 0.95 | **0.985** | pass |
+| id  | prediction                                             | measured                          | verdict                                      |
+| --- | ------------------------------------------------------ | --------------------------------- | -------------------------------------------- |
+| P1  | corpus Top@1 ≥ 84.0 %                                  | **86.01 %**                       | pass, +2.0 pp above the bound                |
+| P2  | ≥ 90 moves, precision ≥ 0.60                           | **87 moves**, precision **0.770** | **MISS** on the count, pass on the precision |
+| P3  | net gain over `lag` ≥ +25                              | **+50**                           | pass                                         |
+| P4  | ≥ 60 % of moves land on a row whose truth is the entry | **67/87 = 77.0 %**                | pass                                         |
+| P5  | engine-hit retention ≥ 0.95                            | **0.985**                         | pass                                         |
 
 **P2 missed by three moves and the miss is the useful part.** The ¥0 pricing predicted 114 firings at τ = 300 and the
 implementation produced 87, because the pricing read the children's rise from one channel (`http.response.error_rate`)
 while the implementation reads every label matching `/error/i`, which includes `k8s.pod.network.errors` — and a pod's
-network-error counter rising as a *victim* is exactly the kind of false rise the condition is supposed to catch, so
+network-error counter rising as a _victim_ is exactly the kind of false rise the condition is supposed to catch, so
 the stricter reading refuses more often. It also **scored better per move**: 0.770 against the pricing's 0.675. The
 lesson is the one 321 recorded in the other direction: a Python re-pricing is a rate transfer with its own definition
 of every term, and the definition is part of the result.
@@ -8774,11 +8777,11 @@ against the previous wiring, which is the only proof that they test anything.
 from the corpus and calls `readEntryPrior` + `entryAttribution` on the answer the gate settled on, which is the same
 path `settle()` now takes:
 
-| reading | Top@1 | net vs engine | moves | fixed | broken | precision | retention |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `lag`, as dispatched | 1 170 (82.28 %) | +14 | — | — | — | — | 0.987 |
-| **`lag` + `entry-prior`, settled once** | **1 220 (85.79 %)** | **+64** | 87 | 66 | 16 | **0.759** | **0.985** |
-| `lag` + `entry-prior`, as dispatched | 1 177 (82.77 %) | +21 | 11 | 11 | 0 | 1.000 | 0.985 |
+| reading                                 |               Top@1 | net vs engine | moves | fixed | broken | precision | retention |
+| --------------------------------------- | ------------------: | ------------: | ----: | ----: | -----: | --------: | --------: |
+| `lag`, as dispatched                    |     1 170 (82.28 %) |           +14 |     — |     — |      — |         — |     0.987 |
+| **`lag` + `entry-prior`, settled once** | **1 220 (85.79 %)** |       **+64** |    87 |    66 |     16 | **0.759** | **0.985** |
+| `lag` + `entry-prior`, as dispatched    |     1 177 (82.77 %) |           +21 |    11 |    11 |      0 |     1.000 |     0.985 |
 
 Wilson 95 % on 1 220/1 422 is `[83.9, 87.5]`, and the sign test against both the engine and `lag` is **66/16,
 p = 2.3 × 10⁻⁸**. The in-run pricing reads the same level (1 220) with 67/17 rather than 66/16, and the one-case
@@ -8804,21 +8807,21 @@ The rule answers 76 of the 186 entry-truth cases and refuses 110. The refusals s
 of the entry raised an error rate**, **69 because the answer carried its own self-departure above τ**. The two are
 different problems and the first was priced and **refuted** in the same artifact, at zero cost.
 
-| refusal reason | cases | dominant fault types |
-| --- | ---: | --- |
-| a callee rose (`entryChildErrors > 0`) | 41 | `HTTPRequestReplaceMethod` **39**, `NetworkPartition` 2 |
-| the answer departed (`answerSurprise > 300`) | 69 | `HTTPResponseReplaceCode` **36**, `HTTPRequestDelay` 7, `HTTPResponseDelay` 7, `NetworkPartition` 7 |
+| refusal reason                               | cases | dominant fault types                                                                                |
+| -------------------------------------------- | ----: | --------------------------------------------------------------------------------------------------- |
+| a callee rose (`entryChildErrors > 0`)       |    41 | `HTTPRequestReplaceMethod` **39**, `NetworkPartition` 2                                             |
+| the answer departed (`answerSurprise > 300`) |    69 | `HTTPResponseReplaceCode` **36**, `HTTPRequestDelay` 7, `HTTPResponseDelay` 7, `NetworkPartition` 7 |
 
 **The axis that failed: compare the two rises.** The natural continuation is that the entry is still the source when
 its **own** inbound error rise is at least as large as the largest rise below it — a partial-propagation test rather
 than a zero-propagation one. Priced over all 1 422 cases with the entry's own symptom channels on one side and its
 callees' on the other:
 
-| threshold | additional moves | fixed | net against the shipped rule |
-| --- | ---: | ---: | ---: |
-| `entry ≥ 1 × child` | 63 | **4** | **−53** |
-| `entry ≥ 1.5 × child` | 21 | 0 | −21 |
-| `entry ≥ 2 × child` | 17 | 0 | −17 |
+| threshold             | additional moves | fixed | net against the shipped rule |
+| --------------------- | ---------------: | ----: | ---------------------------: |
+| `entry ≥ 1 × child`   |               63 | **4** |                      **−53** |
+| `entry ≥ 1.5 × child` |               21 |     0 |                          −21 |
+| `entry ≥ 2 × child`   |               17 |     0 |                          −17 |
 
 Every additional move loses. The reason is a **definition** defect and it is worth recording as one: the two sides of
 that comparison are not on the same scale. The entry's maximum is taken over every label matching `/error/i`, which on
@@ -8830,7 +8833,7 @@ that means the same thing in every family.
 **What is left, and it is one fault type.** 39 of the 41 child-refusals are `HTTPRequestReplaceMethod`, and the census
 of the corpus says why that type is special: replacing the request's method at the entry makes the entry **reject**
 requests, and the replay recorded the rejection one hop down. Those cases therefore have a real rise below the entry
-and the premise of the rule is genuinely false for them — the fault is at the entry and it *did* propagate. Reaching
+and the premise of the rule is genuinely false for them — the fault is at the entry and it _did_ propagate. Reaching
 them needs a test of a different kind: which interfaces recorded failures, not which services did. The failed-interface
 record was refuted in 321 as a **promotion** rule (it points at every callee a failing caller has left); as a
 **confirmation** rule for the entry — "the failures are recorded on the entry's inbound edge and nowhere below" — it
@@ -8838,7 +8841,7 @@ has never been priced, and 39 cases of one fault type is a measurable ceiling fo
 
 **The 69 surprise-refusals are a different sentence.** 67 of them answer with the engine's own pick, i.e. the arm
 copied the prior and the prior is not the entry. Their answers concentrate on `ts-payment-service` and
-`ts-order-service`, which carry their own resource departures and are therefore sources *somewhere* — the rule refuses
+`ts-order-service`, which carry their own resource departures and are therefore sources _somewhere_ — the rule refuses
 because it cannot tell "this service is working hard as a victim" from "this service is working hard". That is the
 symptom-versus-self split again, and it now needs the **direction** of the work rather than its size: a victim's CPU
 follows its callers' arrivals, a source's does not.
@@ -8850,9 +8853,9 @@ if every interface that began failing lands on the entry and none lands below it
 front door, so the entry is the source. It is the mirror image of the promotion rule 321 refuted — same instrument,
 opposite direction — and it is refuted as well:
 
-| rule | additional moves | fixed | broken | net against the shipped rule |
-| --- | ---: | ---: | ---: | ---: |
-| every failing interface lands on the entry | 101 | 39 | **60** | **−21** |
+| rule                                       | additional moves | fixed | broken | net against the shipped rule |
+| ------------------------------------------ | ---------------: | ----: | -----: | ---------------------------: |
+| every failing interface lands on the entry |              101 |    39 | **60** |                      **−21** |
 
 **And it does not even reach the cases it was built for.** None of the 101 additional moves is an
 `HTTPRequestReplaceMethod` case: the 39 that motivated the rule carry failing interfaces **below** the entry, which is
@@ -8862,13 +8865,13 @@ prior is false for them, and no re-reading of the failure topology changes that.
 **Why the rule loses elsewhere.** 65 of the 186 entry-truth cases have all their failing interfaces on the entry's
 inbound edge, but so does a large population of **non-entry** cases — a deep fault under a synchronous call chain
 leaves the caller-side failures at the top and the callee's own counters below, so "the failures are all at the front
-door" is a statement about where failures are *counted*, not about where the fault *is*. This is 321's refutation of
+door" is a statement about where failures are _counted_, not about where the fault _is_. This is 321's refutation of
 `E1` arriving from the other side: the failed-interface record is a reachability instrument, and a reachability
 instrument cannot localise a source.
 
 **What the wall is made of.** Two independent readings now fail on the same 110 cases: the magnitude of the rise, and
-the topology of the failures. Both fail for the same reason — the evidence they read is about *where the failure was
-observed*, and the cases need evidence about *who did the work*. The arm's telemetry carries `baseline`, `peak`,
+the topology of the failures. Both fail for the same reason — the evidence they read is about _where the failure was
+observed_, and the cases need evidence about _who did the work_. The arm's telemetry carries `baseline`, `peak`,
 `delta` and `surprise`, all of which are **rises**; a victim of an upstream failure is a service whose arrivals
 **fell**, and a fall is not representable in this view. That is the next extension, it is a telemetry field rather
 than a predicate, and it is the only one of the three candidates whose mechanism is not already refuted.
@@ -8882,16 +8885,16 @@ applied through `applyResolver`, the same function the loop calls), the rule **l
 best available setting is the one at which it never fires.
 
 | κ (trough standardised) | moves | Top@1 | net against the shipped arm |
-| ---: | ---: | ---: | ---: |
-| 0 | 1 052 | 311 | −912 |
-| 300 | 416 | 837 | −386 |
-| 1 000 | 221 | 1 010 | −213 |
-| 1 500 | 0 | 1 223 | 0 |
+| ----------------------: | ----: | ----: | --------------------------: |
+|                       0 | 1 052 |   311 |                        −912 |
+|                     300 |   416 |   837 |                        −386 |
+|                   1 000 |   221 | 1 010 |                        −213 |
+|                   1 500 |     0 | 1 223 |                           0 |
 
-| κ (pre-median vs post-median) | moves | fixed | broken | net |
-| ---: | ---: | ---: | ---: | ---: |
-| 0 | 1 052 | 41 | 953 | −912 |
-| 200 | 255 | 8 | 237 | −229 |
+| κ (pre-median vs post-median) | moves | fixed | broken |  net |
+| ----------------------------: | ----: | ----: | -----: | ---: |
+|                             0 | 1 052 |    41 |    953 | −912 |
+|                           200 |   255 |     8 |    237 | −229 |
 
 **Two estimators, one verdict.** The trough is the minimum of the post-window and is therefore noise-sensitive in a
 way the peak is not — with n samples the expected minimum sits below the median even when nothing moved — so the same
@@ -8908,11 +8911,11 @@ admission rate 54 points too high.
 **What survives is the target's measured ceiling.** Of the 41 entry-truth cases the entry prior refuses because a
 callee rose, the arm answers **0** and the engine answers **0**, so a working rule is worth **+41 → 1 264 (88.9 %)**.
 39 of them are `HTTPRequestReplaceMethod`. The per-case probe also found why nothing at the entry can reach them:
-**the entry has no `/error/i` channel in 1 053 of the 1 054 cases that have a rising callee.** *Corrected below: the
-channel exists and the reading does not.*
+**the entry has no `/error/i` channel in 1 053 of the 1 054 cases that have a rising callee.** _Corrected below: the
+channel exists and the reading does not._
 
 **Correction, same iteration.** The sentence above was the first probe's reading and it was wrong. The entry
-**carries** an error-rate channel in **1 418 of 1 422** cases; what is absent is a *standardisable* reading of it,
+**carries** an error-rate channel in **1 418 of 1 422** cases; what is absent is a _standardisable_ reading of it,
 because that channel's pre-window median is zero in 1 053 of the 1 054 cases with a rising callee and `surpriseOf`
 refuses a zero level by design. What the entry genuinely never does is **log**: **0 of 1 422** cases carry an
 `ERROR`/`FATAL` line at the front door, so `TOOL logs <entry>` always answers that there is none. The front door is
@@ -8943,16 +8946,16 @@ Three candidates were priced at ¥0 over the same artifact to reach the 41 child
 answers 0 of them, the engine answers 0, so a working rule is worth +41 → 1 264, 88.9 %). All three read the boundary
 the fault was applied to, and all three fail on precision:
 
-| rule | fires | on entry-truth | fixed | broken | precision | net |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| the entry's own error rate rose | 596 | 41 | 41 | 518 | 0.069 | **−477** |
-| the entry's rise ≥ its callees' rise (HTTP family only) | 174 | 7 | 7 | 160 | 0.040 | **−153** |
-| a failed interface lands on the entry | 602 | 41 | 41 | 522 | 0.068 | **−481** |
-| the entry rose **and** an interface into it failed | 596 | 41 | 41 | 518 | 0.069 | **−477** |
+| rule                                                    | fires | on entry-truth | fixed | broken | precision |      net |
+| ------------------------------------------------------- | ----: | -------------: | ----: | -----: | --------: | -------: |
+| the entry's own error rate rose                         |   596 |             41 |    41 |    518 |     0.069 | **−477** |
+| the entry's rise ≥ its callees' rise (HTTP family only) |   174 |              7 |     7 |    160 |     0.040 | **−153** |
+| a failed interface lands on the entry                   |   602 |             41 |    41 |    522 |     0.068 | **−481** |
+| the entry rose **and** an interface into it failed      |   596 |             41 |    41 |    518 |     0.069 | **−477** |
 
 **The signs are right and the precision is twelve times short.** The 41 do carry a signature — the entry's own HTTP
 error rate rises in **41 of 41** of them at a median of **8.75 points**, against **555 of 1 011** at a median of
-**1.77** for the rest — but every rule that keys on *any* rise admits 55 % of the innocents, and the base-rate law
+**1.77** for the rest — but every rule that keys on _any_ rise admits 55 % of the innocents, and the base-rate law
 needs a precision of **0.813** on the admitted set to break even. Precision 0.069 does not fail because a threshold is
 mis-set; it fails because the evidence is a **level**, and a level is present on both sides.
 
@@ -8960,7 +8963,7 @@ mis-set; it fails because the evidence is a **level**, and a level is present on
 cases are a fault applied to an **edge**: the method on a specific interface was replaced, the callee then rejects the
 call, and the callee's error rate goes to **100 points** (its median across the whole candidate set is 100, which is
 why `entryChildErrors > 0` is true there). At service granularity the entry and its callee look alike — one rose 8.75
-points, the other 100 — and the distinguishing fact is *which interface* changed shape, not *which service* moved.
+points, the other 100 — and the distinguishing fact is _which interface_ changed shape, not _which service_ moved.
 That is the unit `InterfaceRCA` (HR@1 92.57 %) builds on, and it is the only route this programme has left to these 39
 cases.
 
@@ -8977,18 +8980,18 @@ falling lines — and pre-registered the hypothesis that an investigator who can
 answering that service's caller. One dispatch (`44890115507`, ¥23.23) and one ¥0 replay that reproduces it to the case
 (1 222, 90 renames) say it does not:
 
-| reading | 44874383089 (before) | 44890115507 (after) |
-| --- | ---: | ---: |
-| Top@1 | 1 223 (86.01 %) | 1 222 (85.94 %) |
-| `lag`, re-scored | 1 173 | 1 171 |
+| reading                                        |   44874383089 (before) |    44890115507 (after) |
+| ---------------------------------------------- | ---------------------: | ---------------------: |
+| Top@1                                          |        1 223 (86.01 %) |        1 222 (85.94 %) |
+| `lag`, re-scored                               |                  1 173 |                  1 171 |
 | misses naming a **direct callee of the truth** | **72 / 199 = 36.18 %** | **73 / 200 = 36.50 %** |
-| tokens | 11 343 352 + 52 238 | 11 406 428 + 52 111 |
-| rounds per case | 6.00 | 6.00 |
+| tokens                                         |    11 343 352 + 52 238 |    11 406 428 + 52 111 |
+| rounds per case                                |                   6.00 |                   6.00 |
 
 **The comparison is not exact and the file had claimed it would be.** The tools are deterministic; the **endpoint is
 not**. The ungated arm reads **1 067** here against **1 050** before, and the stop distribution moves from
 `{answered 1 256, rounds 166}` to `{answered 1 273, rounds 149}`, so ±10 cases is the run-to-run band and the −1 is
-inside it. What is *outside* any band is the overshoot rate: 36.18 % and 36.50 % are the same number measured twice.
+inside it. What is _outside_ any band is the overshoot rate: 36.18 % and 36.50 % are the same number measured twice.
 
 **The consequence is a design rule.** The two instruments that worked in this programme **enforce** a relation — `lag`
 refuses an answer unless the candidate logged first, the entry prior refuses unless nothing below the entry rose.
@@ -8999,14 +9002,14 @@ thing as evidence the loop acts on, and the next instrument has to act: the inte
 ## 325.15 The interface witness charges the CALLER, and that is 42 cases (iteration 325)
 
 `325.14k` closed the service-granularity route to the 41 child-refused entry cases and named the next unit: the fault
-is applied to an **edge**, so the distinguishing fact is *which interface* changed shape. The corpus had carried the
+is applied to an **edge**, so the distinguishing fact is _which interface_ changed shape. The corpus had carried the
 instrument for that reading since iteration 290 and the arm had **never been shown it**: `buildTelemetry` copied
 `caller/callee/failed/baseline` off `FaultFailedEdge` and dropped `novel`.
 
 `novel` is the part of an edge's failures whose request **shape** — `(route, method)` as the callee recorded it — the
-edge had never carried before the injection. The channel's own docstring is the whole argument: *a callee that broke
+edge had never carried before the injection. The channel's own docstring is the whole argument: _a callee that broke
 rejects nothing, it fails the requests it has always served, while a CALLER that corrupted its request sends a shape
-the callee has never been asked for.* `failed − baseline` is identical in the two situations, which is why every
+the callee has never been asked for._ `failed − baseline` is identical in the two situations, which is why every
 earlier reading of this channel — all of them counts — could not charge either end, and why `325.14k` read 602
 triggers at 0.068 precision.
 
@@ -9015,13 +9018,13 @@ call graph: a root is the traffic generator, its request shape is a workload rat
 the corpus never labels it — it is the strongest witness in **74 of the 203** cases that carry the channel. Nothing
 else is read: not the size of the failing edge, not either end's error rate, not the latency.
 
-| reading (¥0, through `applyResolver`) | none | entry-prior | **edge-novel** |
-| --- | ---: | ---: | ---: |
-| fires | 0 | 0 | **42** |
-| repairs | 0 | 0 | **42** |
-| breaks | 0 | 0 | **0** |
-| Top@1, ¥0 replay | 1 222 | 1 222 | **1 264 (88.89 %)** |
-| Top@1, dispatch `44915289950` | 1 222 | 1 222 | **1 263 (88.82 %)** |
+| reading (¥0, through `applyResolver`) |  none | entry-prior |      **edge-novel** |
+| ------------------------------------- | ----: | ----------: | ------------------: |
+| fires                                 |     0 |           0 |              **42** |
+| repairs                               |     0 |           0 |              **42** |
+| breaks                                |     0 |           0 |               **0** |
+| Top@1, ¥0 replay                      | 1 222 |       1 222 | **1 264 (88.89 %)** |
+| Top@1, dispatch `44915289950`         | 1 222 |       1 222 | **1 263 (88.82 %)** |
 
 The dispatch settles it: `answeredBy=interface` is **42** rows, every one correct, on a run whose own drift against the
 324 answers is −1 case (`repairs 140 · breaks 33 · precision 0.809 · retention 0.971`, 11 410 480 + 52 193 tokens,
@@ -9043,8 +9046,8 @@ worked and the corpus says the two directions are not symmetric.
 
 **The test that would have saved three iterations.** An instrument has to **charge an END**. `novel` works because it
 can only be produced by the caller; the fall (`325.14i`) failed because every service in every case lost throughput;
-a count (`325.14k`) failed because both ends can make an edge fail. Classifying a candidate as *asymmetric* or
-*symmetric* before pricing it would have killed all three failed rules in one line each.
+a count (`325.14k`) failed because both ends can make an edge fail. Classifying a candidate as _asymmetric_ or
+_symmetric_ before pricing it would have killed all three failed rules in one line each.
 
 ## 326 The premise was read in a channel that is usually absent (iteration 326)
 
@@ -9056,7 +9059,7 @@ in the fall axis: **the rule read its premise in a channel that is usually not t
 
 ### 326.1 The premise, and the two channels that can carry it
 
-The entry prior fires when *the sabotage never went past the front door*. Its reading of that sentence was
+The entry prior fires when _the sabotage never went past the front door_. Its reading of that sentence was
 `entryChildErrors ≤ 0`: the largest error-rate rise among the entry's **direct callees**. Measured over the corpus,
 that channel is silent in **1 053 of the 1 054** cases whose callee rose — the pre-window median is zero, `surpriseOf`
 refuses a zero level by design, and `delta` is therefore `0` for a series that went `0 → 100`. So a zero in that
@@ -9067,10 +9070,10 @@ The corpus carries the same statement in a dense channel and the arm had never r
 interface whose **callee** sits in the entry's **reachable set**. That is not a level, it is the event itself — a call
 below the door began failing — and it contradicts the premise in exactly one direction.
 
-| on the 325 artifact (`44915289950`) | fires | repairs | breaks | net | Top@1 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| the entry prior as shipped (`entryChildErrors` alone) | 90 | 67 | 16 | +51 | 1 263 (88.82 %) |
-| plus `belowFails` | **83** | **67** | **9** | **+58** | **1 270 (89.31 %)** |
+| on the 325 artifact (`44915289950`)                   |  fires | repairs | breaks |     net |               Top@1 |
+| ----------------------------------------------------- | -----: | ------: | -----: | ------: | ------------------: |
+| the entry prior as shipped (`entryChildErrors` alone) |     90 |      67 |     16 |     +51 |     1 263 (88.82 %) |
+| plus `belowFails`                                     | **83** |  **67** |  **9** | **+58** | **1 270 (89.31 %)** |
 
 **The reading is pure**: it refuses 7 of the rule's 90 fires and **all seven are breaks**, so not one repair is lost.
 The same column on the free artifact (`44909105091`) refuses 7 of 85 and moves that composition from 1 279 to
@@ -9090,13 +9093,13 @@ The 39-case `HTTPResponseReplaceCode` block — truth is the front door, the onl
 generator's call to it, and the arm answers a deep service — is the largest single pocket left (**38** of 152
 residual misses). Five readings of it were written and priced against the same artifact:
 
-| candidate | kind | fires | repairs | breaks | net |
-| --- | --- | ---: | ---: | ---: | ---: |
-| the sink of the failing-edge subgraph | region | 430 | 66 | 348 | **−282** |
-| that sink, ordered by inflow | region | 510 | 71 | 417 | **−346** |
-| the callee of a case's ONLY failing edge | level + relation | 129 | 44 | 82 | **−38** |
-| the callee of the highest-count failing edge | level | 645 | 55 | 554 | **−499** |
-| the sink of the LATENCY-rise subgraph, ρ ∈ [2, 20] | region | 183–917 | 10–29 | 156–796 | **−767 … −132** |
+| candidate                                          | kind             |   fires | repairs |  breaks |             net |
+| -------------------------------------------------- | ---------------- | ------: | ------: | ------: | --------------: |
+| the sink of the failing-edge subgraph              | region           |     430 |      66 |     348 |        **−282** |
+| that sink, ordered by inflow                       | region           |     510 |      71 |     417 |        **−346** |
+| the callee of a case's ONLY failing edge           | level + relation |     129 |      44 |      82 |         **−38** |
+| the callee of the highest-count failing edge       | level            |     645 |      55 |     554 |        **−499** |
+| the sink of the LATENCY-rise subgraph, ρ ∈ [2, 20] | region           | 183–917 |   10–29 | 156–796 | **−767 … −132** |
 
 **The corpus cannot separate the 39 from the 82 cases that look identical in this channel.** Both groups carry one
 failing interface, the traffic generator's, into the front door; in one the front door is the truth and in the other
@@ -9115,7 +9118,7 @@ with its own cross-validated pre-registration.
 
 `runQueryAgent` took `seed` and used it for two jobs: the order the prompt **shows** and the order a refusal **falls
 back to**. Every published arm showed what it fell back to, so nothing measured the difference — and the free arm
-(`seed: null`) had no fallback *by construction*, which is not a property of a free investigation but of the harness
+(`seed: null`) had no fallback _by construction_, which is not a property of a free investigation but of the harness
 that ran it. The two are now separate (`fallback`, defaulting to `seed`), and the gap they open is the surface a
 product with an engine underneath actually has: show nothing, ship the engine's answer unless the model justifies an
 override.
@@ -9132,13 +9135,13 @@ wrote before it ran.
 
 ### 327.1 Run A confirms the ¥0 replay to four cases
 
-| run | configuration | pre-registered | read | verdict |
-| --- | --- | ---: | ---: | --- |
-| A `45032001904` | `seed engine`, `gate lag`, `resolve edge-novel` | 1 270 ± 10 | **1 274 (89.59 %)** | pass |
-| — pass condition 1 | `answeredBy=entry ≤ 84` | ≤ 84 | **82** | pass (325 read 90) |
-| — pass condition 2 | Top@1 ≥ 1 265 | 1 265 | **1 274** | pass |
-| — pass condition 3 | `lag` row `top1@resolved ≥ 88.5 %` | 88.5 % | **89.59 %** (`resolved` 140) | pass |
-| — falsifier | Top@1 < 1 263 | — | 1 274 | **not met** |
+| run                | configuration                                   | pre-registered |                         read | verdict            |
+| ------------------ | ----------------------------------------------- | -------------: | ---------------------------: | ------------------ |
+| A `45032001904`    | `seed engine`, `gate lag`, `resolve edge-novel` |     1 270 ± 10 |          **1 274 (89.59 %)** | pass               |
+| — pass condition 1 | `answeredBy=entry ≤ 84`                         |           ≤ 84 |                       **82** | pass (325 read 90) |
+| — pass condition 2 | Top@1 ≥ 1 265                                   |          1 265 |                    **1 274** | pass               |
+| — pass condition 3 | `lag` row `top1@resolved ≥ 88.5 %`              |         88.5 % | **89.59 %** (`resolved` 140) | pass               |
+| — falsifier        | Top@1 < 1 263                                   |              — |                        1 274 | **not met**        |
 
 The +11 over 325's 1 263 splits into the resolver's **+7** (what the replay priced) and **+4 of trajectory drift**:
 A's gate refused 140 overrides where 325 refused 149, so four cases the earlier run settled on the prior were answered
@@ -9149,22 +9152,22 @@ populations were read separately.
 
 (§327.4 carries the two repeats that turn this single reading into a measured one.)
 
-| run | configuration | Top@1 | tokens | cost |
-| --- | --- | ---: | --- | ---: |
+| run             | configuration                                                         |               Top@1 | tokens              |       cost |
+| --------------- | --------------------------------------------------------------------- | ------------------: | ------------------- | ---------: |
 | B `45032153035` | `seed none`, `fallback engine`, `gate contrast`, `resolve edge-novel` | **1 285 (90.37 %)** | 10 211 554 + 46 183 | **¥20.79** |
 
 The pre-registered band was **≥ 1 280 → SOTA on this corpus, with the surface named**. It cleared by five cases. What
 makes the reading more than a leaderboard cell is how it decomposes, and the decomposition is read from B's own gate
 table — one artifact, three columns, no second dispatch:
 
-| surface | seeded A | hybrid B |
-| --- | ---: | ---: |
-| the model's own answers (no gate, no fallback) | 1 070 (75.25 %) | **586 (41.21 %)** |
-| + the gate, refusing into the engine | 1 175 (82.63 %) | 1 077 (75.74 %) |
-| + the two resolvers (shipped) | **1 274 (89.59 %)** | **1 285 (90.37 %)** |
+| surface                                        |            seeded A |            hybrid B |
+| ---------------------------------------------- | ------------------: | ------------------: |
+| the model's own answers (no gate, no fallback) |     1 070 (75.25 %) |   **586 (41.21 %)** |
+| + the gate, refusing into the engine           |     1 175 (82.63 %) |     1 077 (75.74 %) |
+| + the two resolvers (shipped)                  | **1 274 (89.59 %)** | **1 285 (90.37 %)** |
 
 **1. A gate plus a fallback still loses to the engine on the hybrid arm** — 1 077, i.e. **net −79**, the number the
-table prints. Deciding *who speaks* does not decide *what is true*.
+table prints. Deciding _who speaks_ does not decide _what is true_.
 
 **2. The resolvers' yield scales with the number of wrong answers the surface leaves**: +99 cases on the seeded
 surface, **+208 on the hybrid one**, +100 on the engine's own answer (1 156 → 1 256). The free arm's weaker raw answers
@@ -9175,12 +9178,12 @@ programme should be read with that sentence attached.
 
 ### 327.3 The witness, four populations, 496 for 496
 
-| population | renames | correct |
-| --- | ---: | ---: |
-| 325a (free, `lag`) | 138 | 138 |
-| 326 A (seeded, `lag`) | 42 | 42 |
-| 326 B (hybrid, `contrast`) | 150 | 150 |
-| the corpus, applied to the engine's own answer | 166 | 166 |
+| population                                     | renames | correct |
+| ---------------------------------------------- | ------: | ------: |
+| 325a (free, `lag`)                             |     138 |     138 |
+| 326 A (seeded, `lag`)                          |      42 |      42 |
+| 326 B (hybrid, `contrast`)                     |     150 |     150 |
+| the corpus, applied to the engine's own answer |     166 |     166 |
 
 Three gate policies, two seedings, two corpora-worth of cases and no counter-example. The candidate explanation is
 about the **generator**, not the system: a fault that does not change a route's code path cannot produce a request
@@ -9193,12 +9196,12 @@ pre-registration, not as a result.
 (`325.14l`), so one run placed this surface **at** the frontier and said so. Two repeats of exactly B's configuration
 were dispatched with their decision rule registered first:
 
-| run | Top@1 | tokens | cost | refusals |
-| --- | ---: | --- | ---: | ---: |
-| B `45032153035` | 1 285 (90.37 %) | 10 211 554 + 46 183 | ¥20.79 | 619 |
-| R1 `45040043777` | 1 287 (90.51 %) | 10 256 007 + 46 047 | ¥20.88 | 573 |
-| R2 `45040048386` | 1 287 (90.51 %) | 10 244 354 + 46 083 | ¥20.86 | 605 |
-| **mean** | **1 286.3 (90.46 %)** | — | ¥20.84 | 599 |
+| run              |                 Top@1 | tokens              |   cost | refusals |
+| ---------------- | --------------------: | ------------------- | -----: | -------: |
+| B `45032153035`  |       1 285 (90.37 %) | 10 211 554 + 46 183 | ¥20.79 |      619 |
+| R1 `45040043777` |       1 287 (90.51 %) | 10 256 007 + 46 047 | ¥20.88 |      573 |
+| R2 `45040048386` |       1 287 (90.51 %) | 10 244 354 + 46 083 | ¥20.86 |      605 |
+| **mean**         | **1 286.3 (90.46 %)** | —                   | ¥20.84 |      599 |
 
 **Three runs, three passes, a spread of two cases.** The registered rule (mean ≥ 1 280, min ≥ 1 270) is met with both
 conditions slack, so the claim is "above the bar on average" rather than "at it" — and the spread is **five times
@@ -9216,10 +9219,10 @@ the number rather than under it.
 
 ### 327.5 The counter-intuitive reading of 325a, closed
 
-| arm | prompt shows | a refusal settles on | Top@1 |
-| --- | --- | --- | ---: |
-| 325a free | nothing | **nothing** | 755 (53.09 %) |
-| 326 B hybrid | nothing | **the engine's first name** | **1 286.3 (90.46 %)**, three runs |
+| arm          | prompt shows | a refusal settles on        |                             Top@1 |
+| ------------ | ------------ | --------------------------- | --------------------------------: |
+| 325a free    | nothing      | **nothing**                 |                     755 (53.09 %) |
+| 326 B hybrid | nothing      | **the engine's first name** | **1 286.3 (90.46 %)**, three runs |
 
 The 28-point deficit against the non-LLM engine was never a property of the model. It was a harness in which a refusal
 settled on nothing and a gate enforced a rule the prompt never stated. **An arm's accuracy is a property of the
@@ -9229,3 +9232,60 @@ all.
 The four positions a deployment can now choose between — advisor off, model only, hybrid, seed only, engine only — and
 the measured Top@1 and price of each, are listed in one place in `llm-switches.md`; this row is the axis those positions
 were measured on.
+
+## 328 The witness is not weak on the front door — it is SILENT there, and that is a statement about the generator (iteration 328)
+
+The falsifier 327 §3 registered has been walked, and it did not fire. What the walk found is a stronger statement than
+the one it was testing.
+
+### 328.1 332 for 332, and the channel exists if and only if the fault rewrites the request
+
+| arm             | cases | carrying a novel-shape interface | truth IS that interface's caller | on a non-rewrite fault |
+| --------------- | ----: | -------------------------------: | -------------------------------: | ---------------------: |
+| B `45032153035` | 1 422 |                          **166** |                          **166** |                  **0** |
+| A `45032001904` | 1 422 |                          **166** |                          **166** |                  **0** |
+
+Two seedings, two fallbacks, 332 witnessed decisions, no counter-example. But the population is the finding:
+
+> the two families present are `HTTPRequestReplaceMethod` (127) and `HTTPRequestReplacePath` (39) and **nothing else**.
+
+**The novelty channel exists on this corpus if and only if the fault rewrites the request.** That is the generator's
+property, exactly as the candidate statement predicted, and it has a consequence the count hides: the witness is
+**structurally blind to `HTTPResponseReplaceCode`**, the largest residual family (37 of 137 misses at the B surface). A
+replaced response code does not change the request a caller sends, so the instrument that has settled 332 decisions
+without an error cannot see the family that needs it most. It is not weak there; it is silent, and silence is the
+correct reading of its own premise.
+
+### 328.2 What the front door is worth, and what it costs to read it
+
+The same 1 422 rows, decomposed by whether the entry prior could REACH a case at all — premise satisfied
+(`belowFails` false, `entryChildErrors` ≤ 0, no witness), answer not already the entry, and refused only by the
+300-unit surprise bar:
+
+| population                                                |   cases | largest families                                                                    |
+| --------------------------------------------------------- | ------: | ----------------------------------------------------------------------------------- |
+| **reachable** — the answer is wrong and the premise holds |  **72** | ReplaceCode 34, RequestDelay 7, Partition 7, ResponseDelay 7, RequestAbort 5        |
+| **at risk** — the answer is RIGHT and the premise holds   | **153** | JVMMemoryStress 57, ContainerKill 40, NetworkDelay 18, Corrupt 8, Loss 7, PodKill 7 |
+
+A rule that fired on all 225 would need **precision 0.68** to break even on this population, which is why the bar has
+to be selective rather than broad. The two populations are also not symmetric in KIND: the at-risk side is dominated
+by families whose answer did the work itself (a JVM heap, a killed container), while the reachable side is dominated
+by families whose answer only carried traffic. **That asymmetry is the hypothesis the channel split tests, and it is
+the first time it has been stated as a population rather than as an anecdote.**
+
+### 328.3 The model does not name the front door, which refutes an axis before it is priced
+
+A tempting ¥0 axis is to widen the GATE instead of the resolver: admit an override that names the entry when the
+premise holds, with no contrast required. The artifact prices it in one pass, because `rawAnswer` is recorded:
+
+| reading                                                                 | cases |
+| ----------------------------------------------------------------------- | ----: |
+| rows where the model itself answered the ENTRY with the premise holding | **4** |
+| of those, already settled on it (and correct)                           |     3 |
+| refused, truth IS the entry (repairs)                                   | **1** |
+| refused, truth is not (breaks)                                          | **0** |
+
+**+1 case, on a population of 4.** The model does not propose the entrance: on 1 422 cases it names the front door
+four times, which is why the front door has to be INFERRED by a resolver (100 cases) rather than asked for. The axis is
+recorded as refuted so that nobody re-derives it, and the number is the reason: an arm cannot be widened into a name
+its surface never produces.
