@@ -2955,6 +2955,7 @@ describe('the entry prior, as a predicate', () => {
     entryChildErrors: 0,
     belowFails: false,
     answerSurprise: 0,
+    answerChannels: null,
     ...over,
   });
 
@@ -3555,6 +3556,7 @@ describe('the interface rule as the resolver applies it', () => {
     entryChildErrors: 0,
     belowFails: false,
     answerSurprise: 0,
+    answerChannels: null,
     novelCaller: 'front',
     novelRise: 40,
     ...over,

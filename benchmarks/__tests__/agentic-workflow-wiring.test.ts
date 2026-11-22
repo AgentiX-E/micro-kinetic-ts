@@ -761,3 +761,50 @@ describe('the free-investigation arm’s wiring', () => {
     ).toHaveLength(2);
   });
 });
+
+describe('the channel split’s wiring', () => {
+  const measure = jobs(WORKFLOW).get('measure') ?? '';
+
+  it('is an input a dispatch has to ask for, because it costs a corpus walk and answers one question', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_channel_split');
+    expect(measure).toContain('inputs.query_channel_split');
+    // Off by default: a dispatch that is not asking this question must not pay 25 minutes for the walk.
+    expect(WORKFLOW).toContain('default: false');
+  });
+
+  it('runs in the job that holds the corpus, after the arm whose answers it reads', () => {
+    expect(measure).toContain('benchmarks/src/run-channel-split.ts');
+    expect(measure).toContain('--artifact artifacts/agentic/query-agent.ndjson');
+    expect(measure).toContain('--data-dir "$HOME/rcabench/json"');
+    expect(measure).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(measure.indexOf('run-channel-split.ts')).toBeGreaterThan(
+      measure.indexOf('Free-investigation arm (sample)'),
+    );
+  });
+
+  it('refuses to price the rule against an artifact that cannot make it fire', () => {
+    // The engine's verdict rows carry no entry and no below-door premise, so a fallback to them would price a rule
+    // that cannot fire and print the zero as a reading. The step says NOT PRICED instead.
+    expect(measure).toContain('CHANNEL SPLIT NOT PRICED');
+    expect(measure).not.toContain('ANSWER_FILE=artifacts/agentic/per-case.ndjson');
+  });
+
+  it('keeps the runner and the two modules it prices with in the tree', () => {
+    for (const path of [
+      'benchmarks/src/run-channel-split.ts',
+      'benchmarks/src/channel-split.ts',
+      'benchmarks/src/channel-kind.ts',
+    ]) {
+      expect(existsSync(resolve(repoRoot, path)), path).toBe(true);
+    }
+  });
+
+  it('ships the bar DISABLED, because a number there is a decision a report has to witness', () => {
+    // The split priced at 1 277 against 1 270 at one value of a six-point sweep whose neighbours read 1 269 and
+    // 1 260 — a peak at one value on one corpus. Turning this constant into a number is what shipping the axis
+    // means, so this line is the deliberate edit that has to accompany a passing cross-validation, not an
+    // incidental one: a test that merely asserted "a number exists" would pass for every bar anyone typed.
+    const source = readFileSync(resolve(repoRoot, 'benchmarks/src/query-agent.ts'), 'utf8');
+    expect(source).toContain('export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;');
+  });
+});

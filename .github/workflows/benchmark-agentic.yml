@@ -168,6 +168,11 @@ on:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
         default: ''
+      query_channel_split:
+        description: "Price the channel split over the corpus after the arm: walk every case once, write each service's resource/traffic/other departure profile, and print the two-fold cross-validation of the bar that decides whether an answer whose departure lives only in the traffic channel is a conduit rather than a source. Costs NO model call — it re-reads evidence the case already carries — and ~25 minutes of walk. Off by default because a dispatch that is not asking this question should not pay for it"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -402,6 +407,26 @@ jobs:
           echo "::warning::DEEPSEEK_API_KEY is not available to this job, so the free-investigation arm was NOT MEASURED"
           echo "QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job" \
             | tee artifacts/agentic/query-agent.txt
+
+      - name: Price the channel split (corpus walk, no model call)
+        # The corpus is already here and the answers are already in the arm's artifact, so the split's price is a
+        # walk rather than a second arm. The artifact is REQUIRED rather than optional: the rule reads the entry,
+        # the below-door premise and the answer together, and the engine's verdict rows carry none of the first two —
+        # a fallback to them would price a rule that cannot fire and call the zero a result.
+        if: inputs.query_channel_split
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          if [ ! -f artifacts/agentic/query-agent.ndjson ]; then
+            echo "::warning::query_channel_split was requested but the arm produced no artifact, so the split was NOT PRICED"
+            echo "CHANNEL SPLIT NOT PRICED: no query-agent.ndjson" | tee artifacts/agentic/channel-split.txt
+            exit 0
+          fi
+          pnpm exec tsx benchmarks/src/run-channel-split.ts \
+            --artifact artifacts/agentic/query-agent.ndjson \
+            --data-dir "$HOME/rcabench/json" \
+            --channel-out artifacts/agentic/channel-profiles.ndjson 2>&1 | tee artifacts/agentic/channel-split.txt
 
       - name: Upload the measurement
         if: always()

@@ -86,6 +86,10 @@ export function priceModes(
         entryChildErrors: row.entryChildErrors,
         belowFails: row.belowFails,
         answerSurprise: row.answerSurprise,
+        // The channel split is priced by `channel-split.ts`, from a corpus walk rather than from an artifact: this
+        // census's rows carry no answer-side profile, and a `null` here reads as "no channel evidence" — the state
+        // `entryAttribution` refuses on rather than one it fires on.
+        answerChannels: null,
         novelCaller: witness?.novelCaller ?? null,
         novelRise: witness?.novelRise ?? null,
       };

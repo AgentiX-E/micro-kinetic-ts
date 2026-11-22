@@ -93,6 +93,11 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   // those columns names the service the artifact already answered with. The witness file it writes is the case's
   // own evidence, not a ranking input — nothing downstream of it ranks anything.
   'run-edge-novel-census.ts',
+  // Iteration 328: the channel split, read off each case's own metric families. It loads FSE'26 cases because the
+  // KIND of channel a departure lives in is a column of the CASE, and it assembles no corpus: what it prices is how
+  // often one predicate over those columns would rename an answer the artifact already settled. The profile file
+  // it writes is the case's own evidence, not a ranking input.
+  'run-channel-split.ts',
 ];
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {

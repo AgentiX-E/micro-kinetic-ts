@@ -38,6 +38,8 @@ import type {
   BenchmarkCase,
   BenchmarkLogEntry,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import type { ChannelDeparture } from './channel-kind.js';
+import { channelKindOf, departureOf, trafficOnly } from './channel-kind.js';
 import type { ChatClient } from './chat-completions.js';
 
 /** One metric's window summary, in the case's own units. */
@@ -1634,18 +1636,30 @@ export type Resolution = 'none' | 'entry-prior' | 'edge-novel';
 export const ENTRY_PRIOR_SURPRISE = 300;
 
 /**
- * Whether a series is the SYMPTOM of a failure rather than a property of the service itself.
+ * The resource ceiling under which an answer's departure counts as "traffic only", or `null` to read no channel.
  *
- * The split is the axis this resolver reads. `http.response.error_rate` rising means *calls are failing here*,
- * which is true of every hop on a failure's path — a caller that has failed fails its calls to every callee it has
- * left. `container.cpu.usage` rising means *this service is working harder*, which is true only of the service
- * doing the work. The predicate is a label test rather than a list because the corpus writes the same channel under
- * several names (`http.response.error_rate`, `k8s.pod.network.errors`), and a list would silently miss the third.
+ * `null` is a DECISION and not a placeholder. The bar's first pricing read 1 277 against 1 270 at one value of a
+ * six-point sweep whose neighbours read 1 269 and 1 260 — a peak at one value on one corpus, which is the shape this
+ * programme has refused twice. The axis therefore ships disabled until a bar chosen on one fold pays on the other,
+ * in both directions, and `channel-split.ts` is the only thing that may set this constant: it is set to a number
+ * only when its cross-validation report says `passes`.
+ */
+export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;
+
+/**
+ * The wall a resolver uses to separate an error-rate rise from a service's own departure.
+ *
+ * The split is the axis this resolver reads, and since iteration 328 it lives in `channel-kind.ts` as a four-way
+ * classification rather than a boolean here: `http.response.error_rate` rising means *calls are failing here*,
+ * which is true of every hop on a failure's path, while `container.cpu.usage` rising means *this service is working
+ * harder* — and the third and fourth kinds (traffic, and a family neither rule claims) are different statements
+ * again. Re-exported from one predicate so a resolver and a census cannot disagree about what a series measures.
  *
  * @param label - The metric family as the producer wrote it.
+ * @returns True when the series is a failure record.
  */
 function isSymptomChannel(label: string): boolean {
-  return /error/i.test(label);
+  return channelKindOf(label) === 'symptom';
 }
 
 /**
@@ -1748,6 +1762,15 @@ export interface EntryPriorEvidence {
    * entry through the deepest hop that actually broke and the arm answers one or two levels below the door.
    */
   readonly belowFails: boolean | null;
+  /**
+   * The answer's departure split by CHANNEL, or `null` when the case does not carry that service.
+   *
+   * {@link answerSurprise} is the largest of these three numbers, so this field is the same measurement
+   * disaggregated rather than a second one. It is carried because the aggregate cannot say whether a rise of 700
+   * was work the service did or a retry storm passing through it, and that difference is what decides whether a
+   * deep answer is a source or a conduit — see `channel-kind.ts`.
+   */
+  readonly answerChannels: ChannelDeparture | null;
 }
 
 /**
@@ -1760,7 +1783,13 @@ export interface EntryPriorEvidence {
 export function readEntryPrior(telemetry: Telemetry, answer: string | null): EntryPriorEvidence {
   const entry = entryOf(telemetry);
   if (entry === null)
-    return { entry: null, entryChildErrors: null, answerSurprise: null, belowFails: null };
+    return {
+      entry: null,
+      entryChildErrors: null,
+      answerSurprise: null,
+      belowFails: null,
+      answerChannels: null,
+    };
   const entryService = telemetry.services.get(entry)!;
   let childErrors: number | null = entryService.callees.length === 0 ? null : 0;
   for (const child of entryService.callees) {
@@ -1775,11 +1804,18 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
   const service = answer === null ? undefined : telemetry.services.get(answer);
   // The floor is a MEASURED zero rather than a missing one: a service whose channels cannot be standardised has no
   // self-departure to report, and the predicate below refuses on `null` rather than reading silence as quiet.
+  //
+  // One read, three channels: `answerSurprise` is the largest of them, so the aggregate and the split cannot come to
+  // describe different measurements — the failure a second loop would invite.
+  const channels = service === undefined ? null : departureOf(service.metrics);
   let surprise: number | null = null;
-  for (const one of service?.metrics ?? []) {
-    if (isSymptomChannel(one.label)) continue;
-    if (one.surprise === undefined) continue;
-    if (surprise === null || one.surprise > surprise) surprise = one.surprise;
+  for (const value of [
+    channels?.resource ?? null,
+    channels?.traffic ?? null,
+    channels?.other ?? null,
+  ]) {
+    if (value === null) continue;
+    if (surprise === null || value > surprise) surprise = value;
   }
   // The dense reading of the same premise, and the one that decides it where the error channel is absent: an
   // interface that BEGAN failing under the door says the failure travelled, whatever the error rates report. The
@@ -1794,7 +1830,13 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
     belowFails = true;
     break;
   }
-  return { entry, entryChildErrors: childErrors, answerSurprise: surprise, belowFails };
+  return {
+    entry,
+    entryChildErrors: childErrors,
+    answerSurprise: surprise,
+    belowFails,
+    answerChannels: channels,
+  };
 }
 
 /**
@@ -1940,6 +1982,7 @@ export function entryAttribution(
   answer: string | null,
   evidence: EntryPriorEvidence | undefined,
   threshold: number = ENTRY_PRIOR_SURPRISE,
+  trafficKappa: number | null = ENTRY_PRIOR_TRAFFIC_KAPPA,
 ): string | null {
   if (answer === null || evidence === undefined) return null;
   // Each field is narrowed by MEASUREMENT rather than by truthiness, because these three arrive from JSON: an
@@ -1957,7 +2000,13 @@ export function entryAttribution(
   if (typeof evidence.belowFails !== 'boolean') return null;
   if (evidence.belowFails) return null;
   if (!Number.isFinite(evidence.answerSurprise)) return null;
-  if (evidence.answerSurprise! > threshold) return null;
+  if (evidence.answerSurprise! > threshold) {
+    // The extension, and it ships DISABLED: `trafficKappa === null` makes this branch the `return null` every
+    // earlier iteration had. The axis is not shipped on its in-sample maximum (see `channel-split.ts` for the
+    // cross-validation that decides it), so a default that fired would be a rule nobody measured.
+    if (trafficKappa === null) return null;
+    if (!trafficOnly(evidence.answerChannels ?? null, trafficKappa)) return null;
+  }
   return evidence.entry;
 }
 
@@ -2191,6 +2240,9 @@ export function summariseGatePolicies(
           entryChildErrors: row.entryChildErrors,
           belowFails: row.belowFails,
           answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
+          // The artifact carries no channel split: the axis is priced from a corpus walk (`channel-split.ts`), and a
+          // `null` here is the same refusal a case without that service would produce.
+          answerChannels: null,
           novelCaller: row.novelCaller,
           novelRise: row.novelRise,
         },

@@ -98,6 +98,14 @@ export default defineConfig({
         // direction it also has, a null answer is not a refusal by a prior that is also null, and a wrong branch the
         // model LOOKED at is a different finding from one it never queried — so every rung is asserted by name.
         'src/agentic-failure-codes.ts',
+        // Added with the modules: the channel split, as a classification and as a held-out reading. Both are
+        // measured rather than trusted because both can lie in a way that looks like a result — a classifier that
+        // reads `k8s.pod.network.errors` by its prefix counts a symptom as work the service did, and a
+        // cross-validation that reports its SELECTION reading instead of its held-out one turns a fitted parameter
+        // into a finding. Every branch of the four-way classification, of the "traffic only" verdict and of the
+        // fold assignment is asserted by name in `channel-kind.test.ts` and `channel-split.test.ts`.
+        'src/channel-kind.ts',
+        'src/channel-split.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
