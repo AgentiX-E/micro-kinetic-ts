@@ -732,4 +732,17 @@ describe('the free-investigation arm’s wiring', () => {
       expect(WORKFLOW).toContain(mode);
     }
   });
+
+  it('carries the FALLBACK on the same surface, because a surface the runner accepts must be dispatchable', () => {
+    // The decoupling this input exists for: what the arm SHOWS and what a refusal FALLS BACK TO are two decisions,
+    // and an arm with one and not the other is a surface nobody can ask for. The default is the shown order, which
+    // is what every arm measured before this input was — so the input is an ABLATION switch and not a new default.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('FALLBACK_ARG+=(--fallback');
+    expect(measure).toContain('"${FALLBACK_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('fallback')");
+    expect(WORKFLOW).toContain('query_fallback');
+    for (const value of ['none', 'engine', 'seed']) expect(WORKFLOW).toContain(value);
+  });
 });

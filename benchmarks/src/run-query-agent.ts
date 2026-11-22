@@ -23,6 +23,7 @@ import {
   netBetween,
   onPriorCone,
   onsetOf,
+  priorTopOf,
   projectOntoCorpus,
   readEntryPrior,
   readInterfacePrior,
@@ -53,6 +54,11 @@ interface Args {
   readonly budget: QueryBudget;
   /** `none` for the free arm, `engine` to show the engine's own order before the first turn. */
   readonly seed: 'none' | 'engine';
+  /**
+   * What a refusal settles on: `seed` for the order the arm shows (every arm before this flag), `none` for no
+   * fallback, `engine` for the engine's answer even when the prompt showed nothing.
+   */
+  readonly fallback: 'none' | 'engine' | 'seed';
   /** What an override must show before it replaces the prior. `none` is the ungated control. */
   readonly gate: GatePolicy;
   /** Whether a settled answer is re-read by the entry prior. `none` is the arm as 318–321 shipped it. */
@@ -77,6 +83,13 @@ function parseArgs(argv: readonly string[]): Args {
   };
   const seed = map.get('seed') ?? 'none';
   if (seed !== 'none' && seed !== 'engine') throw new Error('--seed must be `none` or `engine`');
+  // A fallback that defaulted to something other than the shown order would silently change every arm that was
+  // measured before this flag existed, so the default IS the shown order.
+  const fallback = map.get('fallback') ?? 'seed';
+  const fallbacks: readonly string[] = ['none', 'engine', 'seed'];
+  if (!fallbacks.includes(fallback)) {
+    throw new Error('--fallback must be `none`, `engine` or `seed`');
+  }
   // A gate is a policy a run states, and an unknown one is refused rather than defaulted: a typo that silently
   // measured the ungated control would publish a gated reading that no gate produced.
   const gate = map.get('gate') ?? 'none';
@@ -106,6 +119,7 @@ function parseArgs(argv: readonly string[]): Args {
     correct: number('sample-correct', 100),
     concurrency: Math.max(1, number('concurrency', 4)),
     seed,
+    fallback: fallback as Args['fallback'],
     gate: gate as GatePolicy,
     resolve: resolve as Resolution,
     budget: {
@@ -153,6 +167,7 @@ async function investigate(
   client: ReturnType<typeof createChatClient>,
   budget: QueryBudget,
   seeding: 'none' | 'engine',
+  fallback: 'none' | 'engine',
   gate: GatePolicy,
   resolve: Resolution,
 ): Promise<QueryArmRow | null> {
@@ -171,10 +186,14 @@ async function investigate(
   // here would be seeding an arm with an order no other artifact can reproduce.
   const seed: QuerySeed | null =
     seeding === 'engine' ? { source: 'engine', candidates: verdict.ranked } : null;
+  // The order a refusal settles on, which is the SAME object when the arm shows one: the ranking a run was given is
+  // the one it falls back to, so a seeded arm cannot fall back to an order no artifact carries.
+  const fallbackOrder: QuerySeed | null =
+    fallback === 'engine' ? { source: 'engine', candidates: verdict.ranked } : null;
   const telemetry = buildTelemetry(bench);
   let outcome: QueryOutcome;
   try {
-    outcome = await runQueryAgent(client, telemetry, budget, seed, gate, resolve);
+    outcome = await runQueryAgent(client, telemetry, budget, seed, gate, resolve, fallbackOrder);
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
     // guess, and the sentence is not a secret.
@@ -193,6 +212,7 @@ async function investigate(
       stop: 'error',
       trace: '',
       seeded: seed !== null,
+      incumbent: false,
       rounds: 0,
       toolCalls: 0,
       promptTokens: 0,
@@ -208,6 +228,7 @@ async function investigate(
       gateRefusals: 0,
       entry: null,
       entryChildErrors: null,
+      belowFails: null,
       rawSurprise: null,
       priorSurprise: null,
       novelCaller: null,
@@ -229,6 +250,8 @@ async function investigate(
     stop: outcome.stop,
     trace: outcome.trace,
     seeded: seed !== null,
+    // What the LOOP had, which is the fallback's first name the case actually carries.
+    incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
     rounds: outcome.rounds,
     toolCalls: outcome.toolCalls,
     promptTokens: outcome.promptTokens,
@@ -260,6 +283,8 @@ async function investigate(
     // would walk it twice to answer the same question.
     entry: settledSaid.entry,
     entryChildErrors: settledSaid.entryChildErrors,
+    // Answer-independent, so the settled side's read is the case's read.
+    belowFails: settledSaid.belowFails,
     rawSurprise: rawSaid.answerSurprise,
     priorSurprise: priorSaid.answerSurprise,
     // Read once per case from the CASE's failing interfaces: the witness does not depend on the answer, so one
@@ -342,6 +367,7 @@ async function main(): Promise<void> {
       client,
       args.budget,
       args.seed,
+      args.fallback === 'seed' ? args.seed : args.fallback,
       args.gate,
       args.resolve,
     );
@@ -359,10 +385,11 @@ async function main(): Promise<void> {
     1_000_000;
   process.stderr.write('\n');
   const seededWidth = sample.length === 0 ? 0 : (verdicts.get(sample[0]!)?.ranked.length ?? 0);
+  const fallbackLabel = args.fallback === 'seed' ? args.seed : args.fallback;
   console.log(
     `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
-      `gate ${args.gate}`,
+      `gate ${args.gate}, fallback ${fallbackLabel}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,

@@ -1156,6 +1156,7 @@ describe('summariseQueryArm', () => {
     gateRefusals: 0,
     entry: null,
     entryChildErrors: null,
+    belowFails: false,
     rawSurprise: null,
     priorSurprise: null,
     novelCaller: null,
@@ -1902,6 +1903,7 @@ describe('three policies priced from one artifact', () => {
     gateRefusals: 0,
     entry: null,
     entryChildErrors: null,
+    belowFails: false,
     rawSurprise: null,
     priorSurprise: null,
     novelCaller: null,
@@ -2042,6 +2044,7 @@ describe('a case the model never answered, under each policy', () => {
     gateRefusals: 0,
     entry: null,
     entryChildErrors: null,
+    belowFails: false,
     rawSurprise: null,
     priorSurprise: null,
     novelCaller: null,
@@ -2265,6 +2268,7 @@ describe('four policies priced from one artifact', () => {
     gateRefusals: 0,
     entry: null,
     entryChildErrors: null,
+    belowFails: false,
     rawSurprise: null,
     priorSurprise: null,
     novelCaller: null,
@@ -2391,6 +2395,7 @@ describe('the two ways the evidence can be absent', () => {
       gateRefusals: 0,
       entry: null,
       entryChildErrors: null,
+      belowFails: false,
       rawSurprise: null,
       priorSurprise: null,
       novelCaller: null,
@@ -2505,6 +2510,7 @@ describe('five policies priced from one artifact', () => {
     gateRefusals: 0,
     entry: null,
     entryChildErrors: null,
+    belowFails: false,
     rawSurprise: null,
     priorSurprise: null,
     novelCaller: null,
@@ -2887,14 +2893,83 @@ describe('the entry prior, as the resolver reads it', () => {
     const broken = entryCase({ extraEdges: [{ from: 'leaf', to: 'loadgenerator' }] });
     expect(readEntryPrior(buildTelemetry(broken), 'leaf').entry).toBeNull();
   });
+
+  it('reads a failing interface BELOW the entry as the failure having travelled down', () => {
+    // The predicate's premise is "the sabotage never went past the front door". Its error-rate reading of that
+    // sentence is silent in 1 053 of the 1 054 cases whose callee rose, so a zero there is usually an absent
+    // instrument rather than a measured quiet; the failing-interface record is the dense channel for the same
+    // statement, and it is the one that says whether calls BELOW the door are failing.
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        failedEdges: [{ caller: 'front', callee: 'leaf', failed: 40, baseline: 0 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'leaf').belowFails).toBe(true);
+  });
+
+  it('does not read the entry’s own inbound interface as a failure below it', () => {
+    // The traffic generator's calls to the front door are the PREMISE, not its negation: they fail in every case
+    // where the door is what broke, so counting them would make the rule refuse the one shape it exists for.
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 30,
+        failedEdges: [{ caller: 'loadgenerator', callee: 'front', failed: 1_408, baseline: 0 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'front').belowFails).toBe(false);
+  });
+
+  it('reads an interface that did not rise as no failure at all', () => {
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        failedEdges: [{ caller: 'front', callee: 'leaf', failed: 40, baseline: 40 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'leaf').belowFails).toBe(false);
+  });
+
+  it('does not read an interface into a service the entry cannot reach', () => {
+    // The reading is about what sits UNDER the entry, so a failing interface into a name the call graph never
+    // places below it is a different case's evidence wearing this one's shape.
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        extraNodes: ['orphan'],
+        failedEdges: [{ caller: 'front', callee: 'orphan', failed: 5, baseline: 0 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'leaf').belowFails).toBe(false);
+  });
+
+  it('carries no below-reading when the graph names no entry', () => {
+    const broken = entryCase({ extraEdges: [{ from: 'leaf', to: 'loadgenerator' }] });
+    expect(readEntryPrior(buildTelemetry(broken), 'leaf').belowFails).toBeNull();
+  });
 });
 
 describe('the entry prior, as a predicate', () => {
   const evidence = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
     entry: 'front',
     entryChildErrors: 0,
+    belowFails: false,
     answerSurprise: 0,
     ...over,
+  });
+
+  it('refuses when a failing interface landed BELOW the entry, because the premise is dead', () => {
+    // The rule's whole licence is "nothing below the door is failing". An interface that began failing under the
+    // door is that licence withdrawn, in the channel that measures failing calls rather than in the error-rate
+    // channel that usually cannot.
+    expect(entryAttribution('leaf', evidence({ belowFails: true }))).toBeNull();
+  });
+
+  it('fails closed on an artifact whose rows carry no below-reading', () => {
+    // Rows written before this iteration carry no such column, and `undefined` is not `false`: a rule that spoke
+    // there would fire on every row of every older artifact and call it a reading.
+    const legacy = { entry: 'front', entryChildErrors: 0, answerSurprise: 0 };
+    expect(entryAttribution('leaf', legacy as unknown as EntryPriorEvidence)).toBeNull();
   });
 
   it('attributes to the entry when nothing below it rose and the answer shows no self departure', () => {
@@ -2979,6 +3054,22 @@ describe('the entry prior in the loop', () => {
     expect(outcome.answeredBy).toBe('model');
   });
 
+  it('keeps the model’s answer when a failing interface below the entry says the failure travelled', async () => {
+    // The dispatch's own defect, as a fixture: the error-rate channel said nothing (`leafError: 0`) while the
+    // interface below the door had begun failing. Before this reading the rule renamed a CORRECT answer to the
+    // front door on 15 of the corpus's cases, which is the largest block of harm any shipped rule has caused.
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        failedEdges: [{ caller: 'front', callee: 'leaf', failed: 40, baseline: 0 }],
+      }),
+    );
+    const client = scriptedClient(['TOOL metric leaf', 'ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'entry-prior');
+    expect(outcome.answer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('model');
+  });
+
   it('resolves the PRIOR as well, so a refusal falls back to a name the same rule has checked', async () => {
     // The model overrides, the gate refuses, the fallback is the prior — and the prior is a callee of the entry
     // with nothing below it moving, so the resolver moves it to the entry. A resolver applied only to the model's
@@ -3038,6 +3129,70 @@ describe('the entry prior in the loop', () => {
   });
 });
 
+describe('the order a refusal falls back to', () => {
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 3 };
+  const engineOrder: QuerySeed = { source: 'engine', candidates: ['front'] };
+
+  it('settles on an order the prompt never showed, which is the arm a product with an engine underneath has', async () => {
+    // The two decisions this parameter separates: what the arm SHOWS and what a refusal FALLS BACK TO. Before it,
+    // `seed: null` meant both "no prior in the prompt" and "no fallback", so a free investigation that answered
+    // nothing the gate would admit could not ship the engine's own answer — the surface a product always has.
+    const telemetry = buildTelemetry(entryCase({ leafError: 30 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      budget,
+      null,
+      'cone',
+      'none',
+      engineOrder,
+    );
+    expect(outcome.rawAnswer).toBe('leaf');
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('prior');
+    expect(outcome.gateRefusals).toBe(budget.maxRounds);
+  });
+
+  it('states the gate it enforces, because a rule the model is judged by is announced', async () => {
+    // The prompt shows no ranked order — that is the whole difference from the seeded arm — but it names the name
+    // the gate defends. A refusal the model cannot act on costs two rounds, and a rule discovered only by refusal
+    // is the failure `the gate is stated in the prompt` pins.
+    const telemetry = buildTelemetry(entryCase({ leafError: 30 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    await runQueryAgent(client, telemetry, budget, null, 'cone', 'none', engineOrder);
+    expect(client.seen[0]).toContain('Gate:');
+    expect(client.seen[0]).toContain('`front`');
+    // And it does not show the order: no ranked list, which is the anchor the seeded arm pays for.
+    expect(client.seen[0]).not.toContain('strongest first');
+  });
+
+  it('leaves the control without a fallback, because a control that answered for the model is not the control', async () => {
+    const telemetry = buildTelemetry(entryCase({ leafError: 30 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      budget,
+      null,
+      'none',
+      'none',
+      engineOrder,
+    );
+    expect(outcome.answer).toBe('leaf');
+    expect(outcome.answeredBy).toBe('model');
+  });
+
+  it('keeps every shipped arm on the order it shows, because the default IS the shown order', async () => {
+    // A fallback that defaulted to something else would silently re-measure every arm published before this flag.
+    const telemetry = buildTelemetry(entryCase({ leafError: 30 }));
+    const client = scriptedClient(['ANSWER leaf']);
+    const outcome = await runQueryAgent(client, telemetry, budget, engineOrder, 'cone');
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('prior');
+  });
+});
+
 describe('the resolution priced from one artifact', () => {
   const row = (over: Partial<QueryArmRow> = {}): QueryArmRow => ({
     datapack: 'case-1',
@@ -3064,6 +3219,7 @@ describe('the resolution priced from one artifact', () => {
     intoPrior: null,
     entry: 'front',
     entryChildErrors: 0,
+    belowFails: false,
     rawSurprise: 0,
     priorSurprise: 0,
     novelCaller: null,
@@ -3085,6 +3241,17 @@ describe('the resolution priced from one artifact', () => {
     )!;
     expect(reading.correct).toBe(1);
     expect(reading.correctResolved).toBe(1);
+    expect(reading.resolved).toBe(0);
+  });
+
+  it('does not count a rename a failing interface below the entry refuses', () => {
+    // Pricing and shipping read the same evidence object, so a gate the loop obeys cannot be a gate the table
+    // ignores: the row's own columns are what the reading is recomputed from.
+    const reading = summariseGatePolicies([row({ belowFails: true })]).find(
+      (one) => one.policy === 'none',
+    )!;
+    expect(reading.correct).toBe(0);
+    expect(reading.correctResolved).toBe(0);
     expect(reading.resolved).toBe(0);
   });
 
@@ -3386,6 +3553,7 @@ describe('the interface rule as the resolver applies it', () => {
   const evidence = (over: Partial<ResolverEvidence> = {}): ResolverEvidence => ({
     entry: 'front',
     entryChildErrors: 0,
+    belowFails: false,
     answerSurprise: 0,
     novelCaller: 'front',
     novelRise: 40,
@@ -3500,8 +3668,15 @@ describe('the caveat a gate table needs when the arm had no prior', () => {
     // Run 44909105091 was dispatched without `query_seed` by accident: 1 422 rows, 0 gate refusals, and a table
     // whose `contrast` column reads 89.94 % for a policy the loop had no prior to execute.
     const caveat = gateTableCaveat([{ seeded: false }, { seeded: false }]);
-    expect(caveat).toContain('FREE arm');
+    expect(caveat).toContain('NO incumbent');
     expect(caveat).toContain('could not execute');
+  });
+
+  it('says nothing about an arm that shows no order and still has one to fall back to', () => {
+    // The column that decides the caveat is the INCUMBENT, not the prompt: an arm whose refusals really do settle
+    // on the engine's answer has executed every policy in the table, whatever the model was shown.
+    expect(gateTableCaveat([{ seeded: false, incumbent: true }])).toBeNull();
+    expect(gateTableCaveat([{ seeded: false }])).not.toBeNull();
   });
 
   it('says nothing at all about an empty artifact, which has no arm to describe', () => {

@@ -38,6 +38,8 @@ export interface PriceableRow {
   /** The resolver evidence the row recorded about its own answer; `null` fields read as refusals. */
   readonly entry: string | null;
   readonly entryChildErrors: number | null;
+  /** Whether a failing interface lands below the entry; `null` reads as a refusal, like every other missing field. */
+  readonly belowFails: boolean | null;
   readonly answerSurprise: number | null;
 }
 
@@ -82,6 +84,7 @@ export function priceModes(
       const evidence: ResolverEvidence = {
         entry: row.entry,
         entryChildErrors: row.entryChildErrors,
+        belowFails: row.belowFails,
         answerSurprise: row.answerSurprise,
         novelCaller: witness?.novelCaller ?? null,
         novelRise: witness?.novelRise ?? null,

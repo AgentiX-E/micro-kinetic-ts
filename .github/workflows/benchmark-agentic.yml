@@ -152,6 +152,10 @@ on:
         description: "Which order to show the free-investigation arm BEFORE its first turn: `engine` = the engine's own top-5 (a prior, and the arm's floor becomes the engine's accuracy) or empty/`none` = a free arm, whose first sight of the case is its first tool call. The two arms have different floors, so this is an ablation switch and not a quality knob"
         required: false
         default: ''
+      query_fallback:
+        description: "What a REFUSED override settles on, and which name the gate defends: `seed` (the default) = the same order the arm shows, which is every arm measured before this input existed; `engine` = the engine's own top-5 order's first name even when the prompt showed nothing, which is the arm a product with an engine underneath actually has; `none` = no fallback, so an arm that shows no prior answers nothing the gate admits and scores what it investigated. The two decisions this separates are what the arm SHOWS (`query_seed`) and what it FALLS BACK TO: a free investigation that could not ship the engine's answer was measuring the harness's wiring rather than the model"
+        required: false
+        default: ''
       query_gate:
         description: "What an OVERRIDE of the prior must show before it is accepted: `cited` = the investigation executed a query about the service it names, `cone` = that plus the service sitting on the prior's callee side, `contrast` = that plus the candidate's OWN telemetry showing it LEADS the prior (the interface prior->X failed, or X logged its first error earlier — the lag axis of arXiv 10.1145/3803437.3805219), `lag` = that plus ONLY the order axis (X's first error strictly earlier), because the 160-case pricing found the interface axis admits the prior's own victims and bought 1 repair with 4 breaks, empty/`none` = ungated (the surface iteration 318 measured, where the model overrode 55% of cases at precision 0.263). A refused override falls back to the prior, so the gated arm cannot score below the engine by refusing — only by admitting a wrong edit. `arXiv:2611.05390` prices the mechanism: an evidence gate cuts corruption of correct proposals while keeping most repairs, and a gate whose rule lives only in the prompt does not hold"
         required: false
@@ -367,6 +371,12 @@ jobs:
           if [ -n "${{ inputs.query_gate }}" ]; then
             GATE_ARG+=(--gate "${{ inputs.query_gate }}")
           fi
+          # A fallback, like a gate, is a surface the run STATES: an empty input leaves the runner's own default
+          # (the order the arm shows), which is what every arm measured before this input carries.
+          FALLBACK_ARG=()
+          if [ -n "${{ inputs.query_fallback }}" ]; then
+            FALLBACK_ARG+=(--fallback "${{ inputs.query_fallback }}")
+          fi
           # A resolver, like a gate, is a rule the run STATES, and the runner refuses an unknown value.
           RESOLVE_ARG=()
           if [ -n "${{ inputs.query_resolve }}" ]; then
@@ -382,6 +392,7 @@ jobs:
             "${BUDGET_ARG[@]}" \
             "${SEED_ARG[@]}" \
             "${GATE_ARG[@]}" \
+            "${FALLBACK_ARG[@]}" \
             "${RESOLVE_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 

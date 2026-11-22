@@ -18,6 +18,7 @@ const row = (over: Partial<PriceableRow> = {}): PriceableRow => ({
   answer: 'leaf',
   entry: 'front',
   entryChildErrors: 0,
+  belowFails: false,
   answerSurprise: 0,
   ...over,
 });

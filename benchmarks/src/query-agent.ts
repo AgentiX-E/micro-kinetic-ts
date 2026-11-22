@@ -1189,6 +1189,7 @@ export function buildUserPrompt(
   state?: BudgetState,
   seed?: QuerySeed | null,
   policy: GatePolicy = 'none',
+  incumbent?: string | null,
 ): string {
   const names = [...telemetry.services.keys()].sort();
   const head = [
@@ -1196,7 +1197,16 @@ export function buildUserPrompt(
     'Deliverable: one `ANSWER <service>` line.',
   ];
   if (state !== undefined) head.push(renderBudget(state));
-  const priorTop = seed === undefined || seed === null ? null : priorTopOf(seed, telemetry);
+  // The name the gate defends is the FALLBACK's first, which is not always the prior the prompt shows: an arm that
+  // shows no order and still ships the engine's answer must state the rule it enforces. A rule the model is judged
+  // by and never told is the failure `the gate is stated in the prompt` pins, so the incumbent is passed in rather
+  // than re-derived from the seed here.
+  const priorTop =
+    incumbent === undefined
+      ? seed === undefined || seed === null
+        ? null
+        : priorTopOf(seed, telemetry)
+      : incumbent;
   if (seed !== undefined && seed !== null) {
     const prior = renderSeed(seed, telemetry);
     if (prior !== '') head.push('', prior);
@@ -1224,11 +1234,21 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
 /**
  * Investigate one case.
  *
+ * ## The order the arm SHOWS and the order a refusal falls back to are two decisions
+ *
+ * Every arm shipped before this parameter showed the same order it fell back to, so one argument carried both and
+ * the free arm (`seed: null`) had no fallback by construction. The two are separate: an arm can show nothing and
+ * still ship the engine's answer when the model offers none the gate will admit, which is the surface a product
+ * with an engine underneath actually has. `fallback` defaults to `seed` for that reason — the shipped arms keep
+ * their exact behaviour, and an arm whose fallback differs from what it shows is asked for rather than inferred.
+ *
  * @param client - The model.
  * @param telemetry - The case's tool view.
  * @param budget - Rounds, calls and transcript size.
  * @param seed - An order to show the model before it investigates, or `null` for a free arm.
  * @param policy - What an override must show before it replaces the prior.
+ * @param resolution - Which post-answer reader may rename the settled answer.
+ * @param fallback - The order a refusal settles on, and the incumbent the gate defends. Defaults to {@link seed}.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1238,11 +1258,13 @@ export async function runQueryAgent(
   seed: QuerySeed | null = null,
   policy: GatePolicy = 'none',
   resolution: Resolution = 'none',
+  fallback: QuerySeed | null = seed,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
   const cited = new Set<string>();
-  const priorTop = priorTopOf(seed, telemetry);
+  // The incumbent: what the gate defends and what a refusal ships. It is NOT necessarily what the prompt shows.
+  const priorTop = priorTopOf(fallback, telemetry);
   let rounds = 0;
   let toolCalls = 0;
   let promptTokens = 0;
@@ -1406,6 +1428,7 @@ export async function runQueryAgent(
         },
         seed,
         policy,
+        priorTop,
       ),
     });
     promptTokens += completion.promptTokens;
@@ -1523,6 +1546,13 @@ export interface QueryArmRow {
    */
   readonly seeded: boolean;
   /**
+   * Whether the arm had an order the gate defends and a refusal settles on, which is not the same as showing one.
+   *
+   * `seeded` records what the PROMPT showed; this records what the loop fell back to. On every arm before the
+   * fallback existed the two were the same decision, so a row that carries only `seeded` is read that way.
+   */
+  readonly incumbent?: boolean;
+  /**
    * The model's own answer, before any gate — what an ungated arm would have returned on this case.
    *
    * Recorded so the three gate policies are priced from ONE artifact: the online run applies the dispatched policy
@@ -1549,6 +1579,13 @@ export interface QueryArmRow {
   readonly entry: string | null;
   /** The largest error-rate rise among the entry's own callees, or `null` when it has none. */
   readonly entryChildErrors: number | null;
+  /**
+   * Whether a failing interface lands on a service below the entry, or `null` when the graph names no entry.
+   *
+   * Answer-independent, like the witness: it is a property of the CASE, so one column prices the rule for every
+   * policy and for both sides of every fallback.
+   */
+  readonly belowFails: boolean | null;
   /**
    * The raw answer's own departure in a channel that is not an error rate.
    *
@@ -1697,6 +1734,20 @@ export interface EntryPriorEvidence {
    * error rate is answering failures it received.
    */
   readonly answerSurprise: number | null;
+  /**
+   * Whether a failing interface lands on a service BELOW the entry, or `null` when the graph names no entry.
+   *
+   * The same premise as {@link entryChildErrors}, read on the dense channel. That field asks "did an error rate rise
+   * under the door", and the corpus's error channel is silent in 1 053 of the 1 054 cases whose callee rose — so a
+   * zero there is usually an ABSENT INSTRUMENT rather than a measured quiet, and a rule that reads it as the latter
+   * speaks where it has no evidence. A failing interface is the statement itself: `failed − baseline > 0` on an
+   * edge whose callee sits under the entry means calls BELOW the door are failing, which is the premise's
+   * negation.
+   *
+   * It is measured on the reachable set rather than on the entry's direct callees, because the failure reaches the
+   * entry through the deepest hop that actually broke and the arm answers one or two levels below the door.
+   */
+  readonly belowFails: boolean | null;
 }
 
 /**
@@ -1708,7 +1759,8 @@ export interface EntryPriorEvidence {
  */
 export function readEntryPrior(telemetry: Telemetry, answer: string | null): EntryPriorEvidence {
   const entry = entryOf(telemetry);
-  if (entry === null) return { entry: null, entryChildErrors: null, answerSurprise: null };
+  if (entry === null)
+    return { entry: null, entryChildErrors: null, answerSurprise: null, belowFails: null };
   const entryService = telemetry.services.get(entry)!;
   let childErrors: number | null = entryService.callees.length === 0 ? null : 0;
   for (const child of entryService.callees) {
@@ -1729,7 +1781,20 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
     if (one.surprise === undefined) continue;
     if (surprise === null || one.surprise > surprise) surprise = one.surprise;
   }
-  return { entry, entryChildErrors: childErrors, answerSurprise: surprise };
+  // The dense reading of the same premise, and the one that decides it where the error channel is absent: an
+  // interface that BEGAN failing under the door says the failure travelled, whatever the error rates report. The
+  // entry's own inbound edges are excluded by naming the callee under it, so the front door's own failing calls are
+  // the premise rather than its negation.
+  const below = reachableFrom(telemetry, entry);
+  let belowFails = false;
+  for (const edge of telemetry.failed) {
+    if (!(edge.failed - edge.baseline > 0)) continue;
+    if (edge.callee === entry) continue;
+    if (!below.has(edge.callee)) continue;
+    belowFails = true;
+    break;
+  }
+  return { entry, entryChildErrors: childErrors, answerSurprise: surprise, belowFails };
 }
 
 /**
@@ -1862,7 +1927,9 @@ export function interfaceAttribution(
  * failing beneath it, is a victim of the top.
  *
  * Both conditions are refusals when the case cannot supply them, for the reason every other predicate in this file
- * fails closed: a rule that speaks in the absence of its own input is a wider rule wearing a narrower name.
+ * fails closed: a rule that speaks in the absence of its own input is a wider rule wearing a narrower name. The
+ * first of the two is read TWICE for that reason — once in the error channel it was written against, and once in
+ * the failing-interface record, which is the channel that reports a failing call rather than a rising rate.
  *
  * @param answer - The service the gate settled on, or `null`.
  * @param evidence - What {@link readEntryPrior} read, or `undefined` when the caller did not read it.
@@ -1882,6 +1949,13 @@ export function entryAttribution(
   if (evidence.entry === answer) return null;
   if (!Number.isFinite(evidence.entryChildErrors)) return null;
   if (evidence.entryChildErrors! > 0) return null;
+  // The premise's dense reading, and the one that overrules the sparse one: a failing interface under the door is
+  // calls BELOW the door failing, which is exactly the statement the rule needs to be false. Measured on 325's
+  // dispatch it keeps all 67 of the rule's repairs and refuses 7 of its 16 breaks — the largest block of harm any
+  // shipped rule has caused was a CORRECT answer renamed to the front door, and those are cases where this column
+  // is true.
+  if (typeof evidence.belowFails !== 'boolean') return null;
+  if (evidence.belowFails) return null;
   if (!Number.isFinite(evidence.answerSurprise)) return null;
   if (evidence.answerSurprise! > threshold) return null;
   return evidence.entry;
@@ -2031,14 +2105,18 @@ export interface GateReading {
  * @param rows - The artifact's rows.
  * @returns A caveat to print, or `null` when the artifact is seeded (or carries no rows at all).
  */
-export function gateTableCaveat(rows: readonly Pick<QueryArmRow, 'seeded'>[]): string | null {
+export function gateTableCaveat(
+  rows: readonly Pick<QueryArmRow, 'seeded' | 'incumbent'>[],
+): string | null {
   if (rows.length === 0) return null;
-  // ANY unseeded row, not "no seeded row": a MIXED artifact is the worse case, because a reader sees refusals in
-  // the total and concludes the fallback was available on every row it is averaged over.
-  if (rows.every((row) => row.seeded)) return null;
+  // ANY row with no incumbent, not "no row with one": a MIXED artifact is the worse case, because a reader sees
+  // refusals in the total and concludes the fallback was available on every row it is averaged over. A row written
+  // before the fallback existed carries `seeded` alone, and on those artifacts showing an order and falling back to
+  // it were one decision — so that column is the incumbent's reading there, exactly.
+  if (rows.every((row) => row.incumbent ?? row.seeded)) return null;
   return (
-    'this artifact is the FREE arm: the loop had no prior, so the refused columns describe a policy it could ' +
-    'not execute (gate refusals 0 by construction, not by measurement)'
+    'this artifact carries rows with NO incumbent: the loop had no prior to defend, so the refused columns ' +
+    'describe a policy it could not execute (gate refusals 0 by construction, not by measurement)'
   );
 }
 
@@ -2111,6 +2189,7 @@ export function summariseGatePolicies(
         {
           entry: row.entry,
           entryChildErrors: row.entryChildErrors,
+          belowFails: row.belowFails,
           answerSurprise: effective === row.rawAnswer ? row.rawSurprise : row.priorSurprise,
           novelCaller: row.novelCaller,
           novelRise: row.novelRise,
