@@ -9124,3 +9124,82 @@ A gate the loop enforces must be a gate the prompt states, so `buildUserPrompt` 
 re-deriving it from the seed, and `gateTableCaveat` reads a new `incumbent` column — an artifact that shows no order
 and falls back to one executed every policy in its own table, which is precisely what the free arm's caveat says it
 did not.
+
+## 327 The premise read where it is measured: 1 285 of 1 422 (90.37 %), and what the 129 cases are made of (iteration 327)
+
+Two dispatches read 326 back. Neither changed a constant, and both are in the band their pre-registration wrote before
+they ran.
+
+### 327.1 Run A confirms the ¥0 replay to four cases
+
+| run | configuration | pre-registered | read | verdict |
+| --- | --- | ---: | ---: | --- |
+| A `45032001904` | `seed engine`, `gate lag`, `resolve edge-novel` | 1 270 ± 10 | **1 274 (89.59 %)** | pass |
+| — pass condition 1 | `answeredBy=entry ≤ 84` | ≤ 84 | **82** | pass (325 read 90) |
+| — pass condition 2 | Top@1 ≥ 1 265 | 1 265 | **1 274** | pass |
+| — pass condition 3 | `lag` row `top1@resolved ≥ 88.5 %` | 88.5 % | **89.59 %** (`resolved` 140) | pass |
+| — falsifier | Top@1 < 1 263 | — | 1 274 | **not met** |
+
+The +11 over 325's 1 263 splits into the resolver's **+7** (what the replay priced) and **+4 of trajectory drift**:
+A's gate refused 140 overrides where 325 refused 149, so four cases the earlier run settled on the prior were answered
+by the model. A replay prices a RULE; a dispatch also moves the ANSWERS, and this is the first iteration whose two
+populations were read separately.
+
+### 327.2 Run B: the free arm with an engine fallback is the highest surface this programme has produced
+
+| run | configuration | Top@1 | tokens | cost |
+| --- | --- | ---: | --- | ---: |
+| B `45032153035` | `seed none`, `fallback engine`, `gate contrast`, `resolve edge-novel` | **1 285 (90.37 %)** | 10 211 554 + 46 183 | **¥20.79** |
+
+The pre-registered band was **≥ 1 280 → SOTA on this corpus, with the surface named**. It cleared by five cases. What
+makes the reading more than a leaderboard cell is how it decomposes, and the decomposition is read from B's own gate
+table — one artifact, three columns, no second dispatch:
+
+| surface | seeded A | hybrid B |
+| --- | ---: | ---: |
+| the model's own answers (no gate, no fallback) | 1 070 (75.25 %) | **586 (41.21 %)** |
+| + the gate, refusing into the engine | 1 175 (82.63 %) | 1 077 (75.74 %) |
+| + the two resolvers (shipped) | **1 274 (89.59 %)** | **1 285 (90.37 %)** |
+
+**1. A gate plus a fallback still loses to the engine on the hybrid arm** — 1 077, i.e. **net −79**, the number the
+table prints. Deciding *who speaks* does not decide *what is true*.
+
+**2. The resolvers' yield scales with the number of wrong answers the surface leaves**: +99 cases on the seeded
+surface, **+208 on the hybrid one**, +100 on the engine's own answer (1 156 → 1 256). The free arm's weaker raw answers
+are raw material rather than a liability, which is why the arm that answers worst alone ends up highest.
+
+**3. The distance from the engine to SOTA is 129 cases: 100 resolvers, 29 model.** Every published number in this
+programme should be read with that sentence attached.
+
+### 327.3 The witness, four populations, 496 for 496
+
+| population | renames | correct |
+| --- | ---: | ---: |
+| 325a (free, `lag`) | 138 | 138 |
+| 326 A (seeded, `lag`) | 42 | 42 |
+| 326 B (hybrid, `contrast`) | 150 | 150 |
+| the corpus, applied to the engine's own answer | 166 | 166 |
+
+Three gate policies, two seedings, two corpora-worth of cases and no counter-example. The candidate explanation is
+about the **generator**, not the system: a fault that does not change a route's code path cannot produce a request
+shape the edge has never carried. It is stated as a target for a theorem with a falsifier in `327`'s
+pre-registration, not as a result.
+
+### 327.4 The margin is inside the band, and that is stated rather than hidden
+
+0.37 pp separates 90.37 % from the published 90.0 %, and the arm's run-to-run band is **±10 cases = ±0.70 pp**
+(`325.14l`). One run therefore places this surface **at** the frontier. Two repeats of exactly B's configuration
+(`45040043777`, `45040048386`) were dispatched after these readings; if they land at or above 1 280 the surface is
+above the bar on average, and if they land below 1 270 the claim is withdrawn as a band artefact.
+
+### 327.5 The counter-intuitive reading of 325a, closed
+
+| arm | prompt shows | a refusal settles on | Top@1 |
+| --- | --- | --- | ---: |
+| 325a free | nothing | **nothing** | 755 (53.09 %) |
+| 326 B hybrid | nothing | **the engine's first name** | **1 285 (90.37 %)** |
+
+The 28-point deficit against the non-LLM engine was never a property of the model. It was a harness in which a refusal
+settled on nothing and a gate enforced a rule the prompt never stated. **An arm's accuracy is a property of the
+settlement, not of the model**, and a harness that ignores its engine when the model speaks is worse than no model at
+all.
