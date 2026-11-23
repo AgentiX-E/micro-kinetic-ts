@@ -9706,7 +9706,8 @@ the model on the cases it settles, which is ~4 % of the arm's calls saved rather
 ## 333 The confirmation costs nothing: the rule answers 37 rows itself and 1 385 rows are already paid for (iteration 333)
 
 The plan's first item was a full-corpus dispatch (**≈ ¥21**) to turn 91.98 % into a measurement, and the queue behind
-it was priced at **≈ ¥100**. Both prices were read again, at **¥0**, against the artifacts that already exist.
+it was priced at **≈ ¥100**. Both prices were read again, at **¥0**, against the artifacts that already exist. The full
+reading, with the five buckets, the residual and the falsifiers, is `cost-audit-333.md`.
 
 > **A surface whose changed rows are named by the case, and whose unchanged rows run the same program on the same
 > input, is replayed rather than re-dispatched.**
