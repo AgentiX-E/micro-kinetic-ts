@@ -133,6 +133,15 @@ export default defineConfig({
         // Added with the module: the first-hop rule's boundary premise, its three refusals that are not about a
         // number, the calibration floor and the four clauses that can refuse the reading whatever it gains.
         'src/first-hop.ts',
+        // Added with the module: the retrieval block's five classes, the widening curve and the gap sweep. Its whole
+        // value is that four different failures are kept apart — a precedence failure, a reasoning failure, a breadth
+        // failure and a pool failure — so the unranked branch, the multi-label minimum, the comparator's null cases
+        // and the two zero-denominator readings are asserted by name in `retrieval-block.test.ts`.
+        'src/retrieval-block.ts',
+        // Added with the module: the engine-certainty guard, which reads a margin about the ENGINE rather than a
+        // loudness about the answer. The refusals are the test — an unmeasured margin, an unranked case and a null
+        // answer must all pass the answer through — and the four clauses that can refuse the reading are asserted.
+        'src/engine-certainty.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

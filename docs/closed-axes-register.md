@@ -9756,3 +9756,49 @@ from the instrument, and the table was the only place the wrong count appeared.
 
 **Axes this closes.** Two: "confirmation requires a dispatch" as a cost, and "the remaining queue costs ≈ ¥100".
 **Axes this opens.** One: model drift as a measured quantity rather than an assumption, priced at ¥0.74.
+
+## 335 The 135 misses are four failures, and only one of them is a budget (iteration 334)
+
+The queue behind 91.98 % had two items — the retrieval block (74 cases whose truth the model never saw) and a
+resolver-scope question. Both were read at **¥0**, and the reading split the misses into four populations that every
+earlier plan had averaged into one number. The full reading is `retrieval-block-334.md`.
+
+| class | cases | what a budget would buy |
+| ----- | ----: | ----------------------- |
+| hit | 1 287 | — |
+| lost at the rank one | 20 | precedence |
+| seen but lost (truth in the seed) | 41 | reasoning |
+| **retrieval block (truth never shown)** | **74** | **breadth** |
+| absent (truth not a candidate) | **0** | pool |
+
+**Zero absent** closes the pool direction outright: the engine's candidate set is complete on this corpus. Breadth
+buys visibility and nothing else — width 5 / 10 / 22 / 44 makes 61 / 75 / 99 / 135 misses visible — and the two bars a
+deployed pipeline could read are both refuted here.
+
+### 335.1 Two refutations
+
+* **The engine's own indecision does not identify a block.** The gap between its first two candidates reaches the
+  block at precision 0.115–0.170 (§`retrieval-block-334.md` §3); a widening rule keyed on it would spend most of its
+  tokens on hits.
+* **No single term ranks the block.** Its truth is stronger on `stability` in 64 of 74 cases and on `temporal` in
+  43 of 65 — a source against a conduit — but ranking by either term localises 5.4 % and 6.8 % of the block. A
+  difference of means is not a decision rule, and this is the third time this register has measured the distinction.
+
+### 335.2 The candidate that is measured and not shipped
+
+> A resolver may not rename a case whose engine leads its second candidate by more than 1.5.
+
+Not 331's guard: that read the ANSWER's loudness (the resolver's own premise backwards); this reads a margin about the
+ENGINE. The front door's harm concentrates exactly here — 12 of 81 overrides wrong, median margin 3.34, against 0.03 on
+the 69 it got right. Held out on the surface the first-hop rule ships: **+10 / +10**, precision **1.000 / 1.000**,
+whole-corpus counterfactual **1 328 / 1 422 = 93.39 %**.
+
+**It does not ship, and the reason is a scope gap rather than a doubt.** The margin lives in `terms.ndjson`, whose
+ordering differs from the shipped ordering on **83 of 1 422** cases; the guard touches 13 cases of which **12** agree on
+both candidates. A bar computed on a possibly different second candidate is not yet the product's bar. The engine
+already computes the gated scores — one local re-run that writes them is **¥0 and calls no endpoint** — and on that
+column the reading either reproduces (ship, +20 cases) or does not (refuse).
+
+**Axes this closes.** Three: "the candidates are missing" (absent = 0), "widen when the engine is undecided" (precision
+≤ 0.17), and "a single term can order the block" (≤ 6.8 %). **Axes this opens.** One: the gated margin as a product
+column, which is the only thing standing between the measured 93.39 % and a shipped one.
