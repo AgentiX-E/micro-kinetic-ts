@@ -894,10 +894,12 @@ describe('the census workflow, which exists so a walk does not pay for an engine
     expect(census).toContain('name: channel-census');
   });
 
-  it('does not build, because the walk imports the loader by source and cannot read a compiled one', () => {
-    // A `pnpm build` here would compile nine packages the census never loads, and the hour the workflow exists to
-    // save was two engine steps plus a build.
+  it('builds, because a source-imported runner in a `dist`-resolved workspace still needs its dependencies', () => {
+    // This assertion started as `not.toContain('pnpm build')` — the reasoning being that the walk imports the loader
+    // by source and compiles nothing. The first dispatch of the workflow it guards died with ERR_MODULE_NOT_FOUND on
+    // `@agentix-e/micro-kinetic-core/dist/index.js`, which is exactly the dependency a workspace package resolves
+    // through `dist`. The build is a requirement of the SOURCE import, not of the census.
     expect(census).toContain('pnpm install --frozen-lockfile');
-    expect(census).not.toContain('pnpm build');
+    expect(census).toContain('CI=false pnpm build');
   });
 });

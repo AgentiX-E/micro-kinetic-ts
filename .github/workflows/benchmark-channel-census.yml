@@ -72,10 +72,16 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # No build: the runner imports the loader by SOURCE path through `tsx`, so a build would compile packages the
-      # walk never loads. A census that needed the whole build would be paying for the engine it does not run.
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # The build IS required, and this step exists because its absence was measured: the walk imports the loader by
+      # source through `tsx`, but that source imports `@agentix-e/micro-kinetic-core`, which a workspace resolves
+      # through the package's `dist/index.js` — so a first dispatch died with ERR_MODULE_NOT_FOUND on a package whose
+      # source was right there. A source-imported runner in a `dist`-resolved workspace still needs the build; what it
+      # does not need is the ENGINE run, which is the 45 minutes this workflow exists to avoid.
+      - name: Build
+        run: CI=false pnpm build
 
       - name: Take the answers from the run that bought them
         if: inputs.baseline_run != ''
