@@ -155,6 +155,23 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`byFamily.entries()`, a Map keyed by fault type (unique)',
     },
   ],
+  'benchmarks/src/causal-depth-slice.ts': [
+    // The slice table's row order, which is the reading rather than a presentation choice: a depth is the KEY of the
+    // tally map and depths are unique integers, so the two-way arm never meets equal operands — and the order it
+    // imposes is what makes "depth 3 is the twelfth case" a statement a reader can check down the column.
+    {
+      signature: 'a < b',
+      population: '`byDepth.entries()`, a Map keyed by an integer depth (unique)',
+    },
+  ],
+  'benchmarks/src/run-depth-slice.ts': [
+    // The `answered by` footer's arm order. The key is the arm's own name, unique by construction; the comparator
+    // exists so two runs of the same artifact print the same footer, not to rank the arms.
+    {
+      signature: 'a < b',
+      population: '`byAnswered.entries()`, a Map keyed by an arm name (unique)',
+    },
+  ],
   'benchmarks/src/term-gap-census.ts': [
     // The term-gap census's per-list ordering. Its keys are `Map` keys (term names), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded rather than exempted, because the census's

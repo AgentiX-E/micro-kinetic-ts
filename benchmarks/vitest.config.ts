@@ -119,6 +119,13 @@ export default defineConfig({
         // reach, the two-way sort that keeps a comparator from hiding an unreachable equality arm, and the control
         // that holds the firing population constant while destroying the relation.
         'src/channel-ancestry.ts',
+        // Added with the module: the causal-depth slice, which exists because two quantities in this repository were
+        // both called "depth" and the confusion had a price. Its whole value is the three distinctions it draws — the
+        // smallest reachable distance over a multi-service truth rather than the deepest, an unreachable truth NAMED
+        // in `unattached` rather than dropped, and a share whose denominator is the depth's own population — so the
+        // null branches, the multi-label minimum, the missing-graph branch and the table's alignment are all
+        // asserted by name in `causal-depth-slice.test.ts`.
+        'src/causal-depth-slice.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
