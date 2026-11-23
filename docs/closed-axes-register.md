@@ -9562,3 +9562,47 @@ control that holds the firing population constant while destroying the relation.
 containment chain — rather than on the call graph's depth.** A rise travels a route; the chain is the engine's
 hypothesis about which route, and it is already written into every artifact. Depth over the DAG measured the
 diameter and paid 104 correct answers to learn it.
+
+## 334 The depth-3 arm is cancelled before it is bought: the slice is 12 cases and 11 are already right (iteration 334a)
+
+This row is not a closed axis. It is a **cancelled purchase**, recorded here because the register's job is to stop an
+experiment being proposed twice, and this one was proposed as a budget line rather than as a hypothesis.
+
+`334 depth-3 instrument (needs a dispatch per arm) ≈ ¥40–80` priced a MEASUREMENT as if it needed a dispatch. Causal
+depth is a property of the case, not of our answer: the call graph is in `containment.ndjson` and the answers are in
+`query-agent.ndjson`, and the join is free. Read from `sha256:572952e8ab856422` (1 287 / 1 422 = 90.51 %) against
+`f82c13b2d1598937`, entry `ts-ui-dashboard`:
+
+| depth | cases | correct | misses |   share |
+| ----: | ----: | ------: | -----: | ------: |
+|     0 |   186 |     120 |     66 |  64.52 % |
+|     1 |   707 |     665 |     42 |  94.06 % |
+|     2 |   517 |     491 |     26 |  94.97 % |
+|     3 |    12 |      11 |      1 |  91.67 % |
+
+The slice the ¥40–80 was reserved for holds **one miss**, i.e. `0.07 pp` of the surface. The instrument now exists so
+the number cannot be re-proposed from memory: `benchmarks/src/causal-depth-slice.ts` (14 tests,
+100/100/100/100) and `run-depth-slice.ts`, which prints both digests before the table.
+
+**What the join returns instead is the axis worth buying, and it is also ¥0.** The 66 misses at depth 0 are all
+injections on the entry itself, and their answers split by arm with no ambiguity at all:
+
+| answered by | correct | cases | share |
+| ----------- | ------: | ----: | ----: |
+| `entry`     |      69 |    69 |  100 % |
+| `interface` |      39 |    39 |  100 % |
+| `prior`     |       9 |    35 | 25.7 % |
+| `model`     |       3 |    43 |  7.0 % |
+
+**The deterministic channels are 108 for 108 on entry-self faults and the model is 3 for 43.** Answering all 186 would
+read `1 353 / 1 422 = 95.15 %`, a ceiling of **+4.58 pp** — larger than every remaining rule in this register
+combined — and the attempt costs nothing because the evidence is already in the artifacts. That is 334′, pre-registered
+next, with the exploratory separability signal (`entryChildErrors` median 0 at depth 0 against 100 below it;
+`belowFails` 22.0 % against 84.8 %) carried as a candidate and **not** as a rule.
+
+335 was audited in the same pass and cut to publication-only: the three-family evidence taxonomy of `2608.21310`
+already ran at ¥0 in iteration 243, the artifact's trace is truncated at `TRACE_CHARS = 2 000` by design, and the
+runner samples 100+100 by default, so a full-trace dispatch is `20.88 × 200 / 1422 ≈ ¥2.94` rather than ¥20 — with a
+ranking contribution of zero under every published metric in this field.
+
+Full audit: `docs/cost-audit-334-335.md`.
