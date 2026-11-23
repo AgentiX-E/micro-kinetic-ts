@@ -9289,3 +9289,80 @@ premise holds, with no contrast required. The artifact prices it in one pass, be
 four times, which is why the front door has to be INFERRED by a resolver (100 cases) rather than asked for. The axis is
 recorded as refuted so that nobody re-derives it, and the number is the reason: an arm cannot be widened into a name
 its surface never produces.
+
+### 328.4 The channel split is refused — not by its bar, but by NON-IDENTIFIABILITY
+
+Priced at ¥0 as 327 §2 registered: one corpus walk (`run-channel-split.ts`, 1 422 cases, no model call), the answers
+read from run B's artifact, the bar held out.
+
+|       κ |  fold 0 |  fold 1 | repairs | breaks |
+| ------: | ------: | ------: | ------: | -----: |
+|      30 |     638 |     643 |      26 |     30 |
+|     100 |     642 |     642 |      32 |     33 |
+| **200** | **644** | **645** |  **40** | **36** |
+|     300 |     644 |     644 |      40 |     37 |
+|     500 |     641 |     644 |      40 |     40 |
+|     750 |     640 |     644 |      40 |     41 |
+
+The shipped surface reads 644 / 641 = **1 285**. Both folds select **200**, so the swap is not what refuses it: the
+held-out reading is **+0 / +4** against a registered requirement of **+7 on each**. In-sample maximum 1 289, i.e. +4.
+**REFUSED**, and the 326 probe's 1 277 is withdrawn rather than reconciled — the probe no longer exists, and the
+instrument now in the tree reads a different number at the same bar.
+
+**Where the +4 comes from, and where it goes.** The bar fires 76 times on the corpus, and the entire net is one family
+against another:
+
+| fault                     | cases | fires | repairs | breaks |
+| ------------------------- | ----: | ----: | ------: | -----: |
+| `HTTPResponseReplaceCode` |   231 |    20 |  **20** |  **0** |
+| `NetworkDelay`            |    21 |    15 |   **0** | **15** |
+| `NetworkCorrupt`          |    46 |    10 |       1 |      8 |
+| `HTTPRequestDelay`        |    88 |     8 |       6 |      1 |
+| `HTTPResponseDelay`       |    89 |     6 |       5 |      1 |
+| `NetworkPartition`        |    97 |     5 |       1 |      3 |
+| `HTTPRequestAbort`        |    60 |     3 |       3 |      0 |
+| `NetworkBandwidth`        |    42 |     2 |       1 |      0 |
+| `HTTPResponseAbort`       |    44 |     2 |       2 |      0 |
+| `PodFailure`              |    24 |     2 |       0 |      2 |
+| `JVMCPUStress`            |     2 |     1 |       0 |      0 |
+| `PodKill`                 |    10 |     1 |       0 |      1 |
+
+**The hypothesis is exactly right for the family it was written for — 20 for 20 — and exactly wrong for
+`NetworkDelay`, 0 for 15.** The two net out to +4.
+
+**Why no bar can fix it.** `NetworkDelay` injects latency on the network: the delayed service consumes no CPU, so its
+resource side is quiet, and the arm's answer is the true root. `HTTPResponseReplaceCode` rewrites a response at the
+door: the deep service it points at also does no work of its own. **The two situations carry the same evidence.** The
+populations confirm it at every bar:
+
+| population               | cases | answer's resource p50 / p90 | traffic p50 / p90 | traffic-only at κ = 750 |
+| ------------------------ | ----: | --------------------------: | ----------------: | ----------------------: |
+| reachable (answer wrong) |    74 |                **30 / 436** |      897 / 11 148 |                  **45** |
+| at risk (answer right)   |   153 |             **551 / 5 596** |      791 / 16 663 |                  **41** |
+
+The medians differ by an order of magnitude and the tails overlap completely: 45 of the 74 cases the rule could repair
+and 41 of the 153 it could destroy are traffic-shaped under the LOOSEST bar. A sweep of one number cannot cut a set
+that both sides occupy.
+
+**What does separate them, and why it cannot be used.** The only column that separates the 20 repairs from the 15
+breaks is the rank the engine gave the TRUTH: every repair sits at rank ≥ 5 and every break at rank 1. That column is
+label-aware — it is computed from the answer key — so it is an explanation of the failure, not an instrument. The
+label-free echo of it (`answer === engineWinner`) does make the rule safe: it drops the 15 breaks and keeps 4 repairs
+(**+4 / −0**), inside the arm's own two-case spread, chosen after these numbers were read. It is recorded as a
+candidate for a fresh artifact, not shipped.
+
+**The instrument defect found on the way, because it is the reusable part.** The first dispatch of this axis read
+**1 287 at every bar and was reported as a refused hypothesis**. It was not a refusal: the artifact records the
+surprise per SIDE (`rawSurprise`, `priorSurprise`) and carries no `answerSurprise` key, so a reader that asserted the
+settled column's name produced `undefined` on all 1 422 rows — and `entryAttribution` narrows that field by
+MEASUREMENT so an older artifact cannot fire. The rule therefore never ran, and six identical rows looked exactly like
+a mechanism that does not exist. `toSplitCase` is the guard: it reads the model's column when the model's answer
+stands, the prior's when a refusal settled on the prior, refuses to borrow the other side's measurement for a name it
+does not describe, and REJECTS a row carrying neither column by name. **A null and an absent key mean different
+things, and only one of them is a measurement.**
+
+**What this costs the next axis.** The channel kind is now a measurement the resolver may not read, because on this
+corpus it does not identify the thing it was introduced to identify. The next attempt at the 17 `ReplaceCode` misses
+the witness cannot reach needs a NEW COLUMN rather than a new bar: the answer's departure split by _what the traffic
+says_ (duration against status) is the only remaining candidate that is not already in the evidence, and it is
+untested.
