@@ -14,9 +14,24 @@
  * A verdict file makes the judgement a POST-processing decision. It records what the engine answered and what
  * the corpus accepted — and, since iteration 310, the three facts about the POOL that answer could be drawn from:
  * how wide the pool was, where the accepted answer sat in it, and its own anomaly before the topological
- * deduction charged anything. It still carries no score of the engine's own and no judgement: a reader who wants
- * strict, loose, Top-3 or `MRR` computes it from the same file, and two engines' files are comparable row by row
- * because the fields are the corpus's own.
+ * deduction charged anything. It carries no judgement: a reader who wants strict, loose, Top-3 or `MRR` computes it
+ * from the same file, and two engines' files are comparable row by row because the fields are the corpus's own.
+ *
+ * ## The two sort values, and what changed in iteration 336
+ *
+ * Until 336 this file carried **no score of the engine's own**, and the sentence was a rule rather than an
+ * accident: a score invites a reader to re-derive the order from it, and the order is not a function of the scores —
+ * two relational passes permute a finished list, so a score-sorted reading of a dump reproduces 1 073 top-1 answers
+ * where the run published 1 141. Iteration 334 then paid for the rule from the other side. A guard that refuses to
+ * rename a case the engine was decided about needs the engine's own separation between the pair the row publishes;
+ * priced on a dump's score-sorted pair, its margin was taken between two candidates the product never showed first
+ * and second on **83 of 1 422** cases, and the reading could only be withheld.
+ *
+ * So the row now carries `top1Score` and `top2Score`: the engine's own `finalScore` for the two candidates it placed
+ * first and second, in that order, with no threshold applied. They are **not** a re-scoring and they do not invite a
+ * re-sort: the pair is named by {@link PerCaseVerdict.ranked}, which stays authoritative for what the run answered,
+ * and these two values describe that pair rather than any other. A reader that sorts by them is reading a different
+ * engine and this file's own tests say so.
  *
  * The three pool columns are not a score and are not a judgement, and the distinction is what keeps them inside
  * the format's argument: they are properties of the ORDER (its width, its position of the accepted set) and of the
@@ -91,6 +106,17 @@ export interface PerCaseVerdict {
    * the graph. Read against zero: `0` is a silent origin, `> 0` with {@link truthRank} `0` is an explained one.
    */
   readonly truthAnomalyBefore?: number | null;
+  /**
+   * The engine's own `finalScore` for the case's FIRST published candidate, absent when the engine wrote none.
+   *
+   * Beside {@link top2Score} rather than collapsed into a margin, because the two values are what a reader needs to
+   * audit the statement: a margin alone cannot say whether the engine led or trailed, and the engine's order is not a
+   * function of its scores — two relational passes permute a finished list — so the pair the row publishes can be a
+   * pair whose arithmetic runs the other way.
+   */
+  readonly top1Score?: number;
+  /** The engine's `finalScore` for the case's SECOND published candidate, absent when there is none or none was written. */
+  readonly top2Score?: number;
 }
 
 /**
@@ -115,6 +141,30 @@ export function poolColumns(
   const caseTruth = truthRank > 0 ? ranking[truthRank - 1]!.serviceId : accepted[0];
   const before = caseTruth === undefined ? undefined : anomalyBefore(caseTruth);
   return { truthRank, pool: ranking.length, truthAnomalyBefore: before ?? null };
+}
+
+/**
+ * The engine's own sort values for the first two candidates the row publishes.
+ *
+ * A separate owner from {@link poolColumns} because they answer different questions about the same order: that one
+ * asks where the accepted answer sat and how wide the pool was, this one asks how far apart the first two published
+ * candidates were. Both read the SAME `ranking`, so a row cannot describe a pair it did not show.
+ *
+ * @param ranking - The engine's order, best first, at the width the row publishes.
+ * @returns `top1Score` and `top2Score`, each omitted when the engine wrote no `finalScore` for that slot.
+ */
+export function marginColumns(
+  ranking: readonly { readonly finalScore?: number | undefined }[],
+): Pick<PerCaseVerdict, 'top1Score' | 'top2Score'> {
+  const first = ranking[0]?.finalScore;
+  const second = ranking[1]?.finalScore;
+  return {
+    // Omitted rather than zeroed: an engine that does not sum its terms leaves `finalScore` unset, and a `0` written
+    // on its behalf would say the candidate scored nothing — an absence reported as a measurement, which is the
+    // defect this file's pool columns were introduced to stop repeating.
+    ...(first === undefined ? {} : { top1Score: first }),
+    ...(second === undefined ? {} : { top2Score: second }),
+  };
 }
 
 /**
@@ -143,6 +193,10 @@ export function formatPerCaseVerdict(verdict: PerCaseVerdict): string {
   if (verdict.truthAnomalyBefore !== undefined) {
     line.truthAnomalyBefore = verdict.truthAnomalyBefore;
   }
+  // The engine's own sort values, each written only when the row carries it. A gradient and not a judgement: they
+  // are the values the sort used, and no threshold is applied to them here.
+  if (verdict.top1Score !== undefined) line.top1Score = verdict.top1Score;
+  if (verdict.top2Score !== undefined) line.top2Score = verdict.top2Score;
   return JSON.stringify(line);
 }
 
@@ -195,6 +249,18 @@ function anomalyAt(value: unknown, field: string, line: number): number | null |
 }
 
 /**
+ * One of the two sort values, `undefined` when the row predates the column.
+ *
+ * A finite number and nothing else. A string would compare as text downstream (`'9' > 1.5` is true for the wrong
+ * reason), and an unbounded value would let a sentinel sent by a producer stand as a measurement.
+ */
+function scoreAt(value: unknown, field: string, line: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  throw new Error(`${field} on line ${line} is not a finite number`);
+}
+
+/**
  * Read a verdict file back.
  *
  * The reader exists because the format's own argument is that a judgement may be chosen AFTER a run: an artifact
@@ -233,6 +299,8 @@ export function parsePerCaseVerdicts(text: string): PerCaseVerdict[] {
     const truthRank = countAt(row.truthRank, 'truthRank', lineNumber);
     const pool = countAt(row.pool, 'pool', lineNumber);
     const truthAnomalyBefore = anomalyAt(row.truthAnomalyBefore, 'truthAnomalyBefore', lineNumber);
+    const top1Score = scoreAt(row.top1Score, 'top1Score', lineNumber);
+    const top2Score = scoreAt(row.top2Score, 'top2Score', lineNumber);
     verdicts.push({
       datapack: row.datapack,
       faultType: row.faultType,
@@ -241,6 +309,8 @@ export function parsePerCaseVerdicts(text: string): PerCaseVerdict[] {
       ...(truthRank === undefined ? {} : { truthRank }),
       ...(pool === undefined ? {} : { pool }),
       ...(truthAnomalyBefore === undefined ? {} : { truthAnomalyBefore }),
+      ...(top1Score === undefined ? {} : { top1Score }),
+      ...(top2Score === undefined ? {} : { top2Score }),
     });
   }
   return verdicts;

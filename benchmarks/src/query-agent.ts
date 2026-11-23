@@ -763,7 +763,7 @@ export interface QueryOutcome {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or a resolver rule. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | 'certainty' | null;
   /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
   readonly gateRefusals: number;
   /** Services the investigation executed a per-service query against, in first-query order. */
@@ -1261,6 +1261,7 @@ export async function runQueryAgent(
   policy: GatePolicy = 'none',
   resolution: Resolution = 'none',
   fallback: QuerySeed | null = seed,
+  engine: EngineOpinion | null = null,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
@@ -1302,6 +1303,9 @@ export async function runQueryAgent(
       answer,
       { ...readEntryPrior(telemetry, answer), ...witnessed },
       resolution,
+      // The ENGINE's opinion, which is a property of the verdict rather than of the prompt: a free arm is handed no
+      // order and still ships a case the engine was decided about, so the two are passed separately.
+      engine,
     );
     return { answer: to.answer, by: to.by };
   };
@@ -1528,6 +1532,14 @@ export interface QueryArmRow {
   readonly truth: readonly string[];
   readonly engineRank: number;
   readonly engineWinner: string | null;
+  /**
+   * The margin the certainty guard read: the engine's own separation between the two candidates it published first.
+   *
+   * Recorded per row rather than recomputed, because it is the one input that decides whether the guard could speak
+   * at all — a row with `null` here is a case the rule was not allowed to answer for, and an artifact without the
+   * column is one whose surface the guard would have left untouched.
+   */
+  readonly engineMargin: number | null;
   readonly answer: string | null;
   readonly correct: boolean;
   /**
@@ -1562,7 +1574,7 @@ export interface QueryArmRow {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or nobody. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | 'certainty' | null;
   /** Services the investigation executed a per-service query against, in first-query order. */
   readonly calls: readonly string[];
   /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
@@ -2160,6 +2172,92 @@ function readEntryPremise(
 }
 
 /**
+ * The engine's opinion, as the artifact recorded it: the name it placed first and the margin that separated it.
+ *
+ * A separate type from `QuerySeed` because the two answer different questions. A seed is *what the model was shown*
+ * and is `null` on a free arm; this is *what the engine said*, which exists on every arm that was given a verdict —
+ * the rule is about the engine and not about the prompt, and coupling them would make `--seeding none` silently
+ * disable a guard that has nothing to do with seeding.
+ */
+export interface EngineOpinion {
+  /** The engine's own first choice, or `null` when the verdict carried no ranking. */
+  readonly top1: string | null;
+  /**
+   * The margin between the engine's first and second PUBLISHED candidate, or `null` when the artifact carried none.
+   *
+   * `null` is an unmeasured boundary and not a zero: an artifact written before the column existed must leave the
+   * pipeline alone, which is the clause iteration 329 paid for.
+   */
+  readonly margin: number | null;
+}
+
+/**
+ * The bar at which a resolver may not rename the engine's own first choice.
+ *
+ * One constant for the product switch and the ablation switch, as every rule in this file has: `null` restores the
+ * surface of iterations 324–335 byte for byte, so a reading with the rule and a reading without it are the same
+ * program on the same input.
+ *
+ * The value is the middle of the measured plateau rather than its edge: on the shipped surface the guard repairs
+ * 20 of 1 422 cases at every bar in **[1.0, 2.0]** with **zero** breaks, so 1.5 is a choice inside a plateau and not
+ * a point on its slope (`docs/engine-certainty-336.md`).
+ */
+export const ENGINE_CERTAINTY_MARGIN: number | null = 1.5;
+
+/**
+ * The engine's opinion, taken from a verdict row's own two columns.
+ *
+ * One owner for the derivation, because the sign is not obvious: the columns describe the pair the row PUBLISHED, and
+ * the engine's order is not a function of its scores, so a negative margin is a real configuration rather than a
+ * corrupt row. A reader that clamped it to zero would report a decided engine on the cases where the placement passes
+ * had overturned the arithmetic — the exact population this guard exists to leave alone.
+ *
+ * @param row - A verdict row: its first name and the two sort values, each optional because an older row lacks them.
+ * @returns The opinion, with an unmeasured margin as `null` rather than as a zero.
+ */
+export function engineOpinionOf(row: {
+  readonly winner: string | null;
+  readonly top1Score?: number | null | undefined;
+  readonly top2Score?: number | null | undefined;
+}): EngineOpinion {
+  const first = row.top1Score;
+  const second = row.top2Score;
+  const measured =
+    typeof first === 'number' &&
+    typeof second === 'number' &&
+    Number.isFinite(first) &&
+    Number.isFinite(second);
+  return { top1: row.winner, margin: measured ? first - second : null };
+}
+
+/**
+ * The engine-certainty guard: a case whose engine was decided keeps the engine's answer.
+ *
+ * Iteration 331 refuted the guard that read the ANSWER's loudness — that quantity is the resolver's own premise read
+ * backwards, so the two rules cannot both hold on a case. This one reads the engine's own separation, which is
+ * independent of the answer, and iteration 334 measured where the resolver's harm lives: **12 of 81** overrides wrong
+ * with a median margin of 3.34, against 0.03 on the 69 it got right.
+ *
+ * @param answer - What the pipeline would ship, after every rule that precedes this one.
+ * @param engine - The engine's opinion, or `null` when the arm was handed none.
+ * @param bar - The margin at which the engine is treated as decided; `null` disables the guard.
+ * @returns The engine's first choice when the guard fires, or `null` when it does not.
+ */
+export function engineCertainty(
+  answer: string | null,
+  engine: EngineOpinion | null,
+  bar: number | null = ENGINE_CERTAINTY_MARGIN,
+): string | null {
+  if (bar === null || engine === null || answer === null) return null;
+  if (engine.top1 === null || engine.top1 === answer) return null;
+  // Narrowed by measurement rather than by truthiness: `null` and a `NaN` are both unmeasured, and a comparison
+  // alone would treat the first as inert and the second as decided (`NaN > 1.5` is false, `!(NaN <= 1.5)` is true).
+  if (!Number.isFinite(engine.margin)) return null;
+  if (engine.margin! <= bar) return null;
+  return engine.top1;
+}
+
+/**
  * Apply the resolver to one settled answer.
  *
  * One function for the loop and for the pricing, for the reason iteration 322 learned at the cost of a dispatch:
@@ -2176,7 +2274,9 @@ export function applyResolver(
   answer: string | null,
   evidence: ResolverEvidence,
   mode: Resolution,
-): { answer: string | null; by: 'entry' | 'interface' | 'door' | null } {
+  engine: EngineOpinion | null = null,
+  bar: number | null = ENGINE_CERTAINTY_MARGIN,
+): { answer: string | null; by: 'entry' | 'interface' | 'door' | 'certainty' | null } {
   if (answer === null || mode === 'none') return { answer, by: null };
   // The order is part of the rule, not of the caller: the witness names one interface and the prior names the whole
   // front door, so a case that carries both is decided by the narrower reading. Written here because a pricing that
@@ -2189,6 +2289,12 @@ export function applyResolver(
   // improvement. It is inside this function rather than at the call site for the reason 322 paid for — a rule wired
   // into one exit is a rule the next exit forgets.
   const door = doorAttribution(settled, evidence);
+  // The engine guard is applied LAST, over what the pipeline would actually ship, because its statement is about the
+  // ENGINE and not about which rule spoke: it asks whether the engine was decided, so it has to see the name that
+  // would have been published. Placed before the door it would be priced on a pipeline nobody runs — the ordering
+  // defect iteration 322 paid for once already.
+  const guarded = engineCertainty(door ?? settled, engine, bar);
+  if (guarded !== null) return { answer: guarded, by: 'certainty' };
   if (door !== null) return { answer: door, by: 'door' };
   if (witnessed !== null) return { answer: witnessed, by: 'interface' };
   return to === null ? { answer, by: null } : { answer: to, by: 'entry' };

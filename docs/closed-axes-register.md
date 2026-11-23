@@ -9802,3 +9802,31 @@ column the reading either reproduces (ship, +20 cases) or does not (refuse).
 **Axes this closes.** Three: "the candidates are missing" (absent = 0), "widen when the engine is undecided" (precision
 ≤ 0.17), and "a single term can order the block" (≤ 6.8 %). **Axes this opens.** One: the gated margin as a product
 column, which is the only thing standing between the measured 93.39 % and a shipped one.
+
+## 336 The engine-certainty guard SHIPS: the margin was the wrong pair, and the product now carries the right one (iteration 336)
+
+Iteration 334 withheld a **+20** because its margin came from a score-sorted dump while the product publishes an order
+that is not a function of the scores, and the two orders disagree on **83 of 1 422** cases. Both halves of that gap are
+closed here at **¥0**, and the rule ships: **1 308 → 1 328 / 1 422 (91.98 % → 93.39 %)**, held out **+10 / +10** at
+precision **1.000 / 1.000** on both artifacts. The full reading is `engine-certainty-336.md`.
+
+| closure | how it was closed | what it cost |
+| ------- | ----------------- | ------------ |
+| the pair | the margin is `score(published[0]) − score(published[1])`, so a negative margin is a real configuration rather than a corrupt row | ¥0 |
+| the column | `per-case.ndjson` gains `top1Score` / `top2Score`, and a local engine re-run reproduces the shipped order on **1 422 of 1 422** cases | ¥0 (15 m 56 s, no endpoint) |
+| the two sources | `worst \\|score − Σ w·slope\\| = 0.000e+0` over **69 688** candidates, so the dump's score IS the engine's `finalScore` | ¥0 |
+
+**It ships inside `applyResolver`, applied last**, with `ENGINE_CERTAINTY_MARGIN = 1.5` as both the product switch and
+the ablation switch (`null` restores 335 byte for byte) and `engineMargin` recorded on every arm row so an artifact can
+be asked which cases the rule was allowed to answer for. The reading is flat from **1.0 to 2.0** on both folds of both
+artifacts, so 1.5 is inside a plateau rather than on its slope.
+
+**A defect the equivalence test found.** The instrument and the product are two implementations of one statement, and a
+grid test (3 answers × 3 engine tops × 6 margins × 8 bars) now requires them to settle on the same name. It failed on
+its first run: `certaintyUnder` compared `margin <= bar`, and `NaN <= 1.5` is false, so a **failed measurement** read as
+a decided engine. The product had already narrowed by `Number.isFinite`. Fixed in the instrument — `null` and `NaN` are
+the same absence — and the test is the fence.
+
+**Axes this closes.** One: "the guard's input is not a product column" — the reason 334 could not ship. **Axes this
+leaves open.** The 74 retrieval misses (truth at engine rank 6–44, breadth the only axis that reaches them and both
+deployable bars refuted in 334), and model drift (50-case stratified bound, `≈ ¥0.74`, publication-only).

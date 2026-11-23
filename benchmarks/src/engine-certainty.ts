@@ -62,8 +62,87 @@ export interface CertaintyCase {
   readonly answer: string | null;
   /** The engine's own first choice, or `null` when the case carried no ranking. */
   readonly engineTop1: string | null;
-  /** The score margin between the engine's first and second candidate, or `null` when it cannot be computed. */
+  /**
+   * The margin between the engine's first and second **published** candidate, or `null` when it cannot be computed.
+   *
+   * Published and not sorted: the engine's order is not a function of its scores (two relational passes permute a
+   * finished list), so the pair a reader sees is the pair this margin is about. Iteration 334 read the same number
+   * off the score-sorted pair and could only call its reading a reading about the TERM order; iteration 336 reads the
+   * published pair, which is the engine's own `top1Score − top2Score`.
+   */
   readonly margin: number | null;
+}
+
+/**
+ * One case as the three artifacts describe it: the answers' rows, the engine's order, and the engine's own sort values.
+ *
+ * `scoreOf` is a function rather than a map because the caller's scores are keyed by case and then by service, and a
+ * map of maps would be copied once per case to read two entries from it.
+ */
+export interface PublishedCase {
+  readonly datapack: string;
+  readonly faultType: string;
+  readonly truth: readonly string[];
+  /** The answer the shipped surface settles on, after the rules that precede this guard. */
+  readonly settled: string | null;
+  /** The engine's own order, as the artifact published it. */
+  readonly ranked: readonly string[];
+  /**
+   * The artifact's own two sort values, when the row carries them.
+   *
+   * Preferred over {@link scoreOf}: this is the engine's record of the pair the row shows, and the dump is a second
+   * source that happens to agree with it. `null` and absence are the same state here — unmeasured — and both fall
+   * through to the dump.
+   */
+  readonly top1Score?: number | null | undefined;
+  /** See {@link top1Score}. */
+  readonly top2Score?: number | null | undefined;
+  /** The dump's `finalScore` for one service, used only when the artifact carried no columns. */
+  readonly scoreOf?: ((service: string) => number | undefined) | undefined;
+}
+
+/**
+ * Join the three artifacts into the rows this guard reads.
+ *
+ * The order is the artifact's and the values are the engine's, which is the whole point: a guard that re-sorted the
+ * scores would be reading a pair the product never showed. The published order and the score order disagree on 83 of
+ * 1 422 cases, and on those cases the two definitions are two different rules.
+ *
+ * @param cases - One row per case, in the artifact's own order.
+ * @returns The cases, with a `null` margin wherever a score or a second candidate is missing.
+ */
+export function certaintyCasesOf(cases: readonly PublishedCase[]): CertaintyCase[] {
+  return cases.map((one) => {
+    const first = one.ranked[0];
+    const second = one.ranked[1];
+    // The artifact's own columns first, one source for both sides: a margin whose two halves came from different
+    // measurements would be a difference between two vocabularies rather than between two candidates.
+    const native =
+      typeof one.top1Score === 'number' &&
+      typeof one.top2Score === 'number' &&
+      Number.isFinite(one.top1Score) &&
+      Number.isFinite(one.top2Score);
+    const firstScore = native
+      ? one.top1Score
+      : first === undefined
+        ? undefined
+        : one.scoreOf?.(first);
+    const secondScore = native
+      ? one.top2Score
+      : second === undefined
+        ? undefined
+        : one.scoreOf?.(second);
+    const margin =
+      firstScore === undefined || secondScore === undefined ? null : firstScore - secondScore;
+    return {
+      datapack: one.datapack,
+      faultType: one.faultType,
+      truth: one.truth,
+      answer: one.settled,
+      engineTop1: first ?? null,
+      margin,
+    };
+  });
 }
 
 /**
@@ -81,8 +160,11 @@ export function certaintyUnder(one: CertaintyCase, margin: number | null): strin
   if (margin === null) return one.answer;
   if (one.answer === null) return null;
   if (one.engineTop1 === null) return one.answer;
-  if (one.margin === null) return one.answer;
-  if (one.margin <= margin) return one.answer;
+  // Narrowed by MEASUREMENT rather than by comparison: `NaN <= bar` is false, so a comparison alone lets a failed
+  // measurement through as a decided engine. `null` and `NaN` are the same absence and both must leave the pipeline
+  // alone — the clause `engineCertainty` states and this one has to match, since they are one rule.
+  if (!Number.isFinite(one.margin)) return one.answer;
+  if (one.margin! <= margin) return one.answer;
   if (one.answer === one.engineTop1) return one.answer;
   return one.engineTop1;
 }

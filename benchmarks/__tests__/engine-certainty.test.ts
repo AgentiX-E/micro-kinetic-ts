@@ -15,12 +15,15 @@ import {
   CERTAINTY_MARGIN,
   MIN_CERTAINTY_GAIN,
   MIN_CERTAINTY_PRECISION,
+  certaintyCasesOf,
   certaintyUnder,
   crossValidateCertainty,
   formatCertaintyReport,
   type CertaintyCase,
   type CertaintyValidation,
+  type PublishedCase,
 } from '../src/engine-certainty.js';
+import { engineCertainty } from '../src/query-agent.js';
 
 /** A case whose engine was decided and whose answer was renamed away from it. */
 function certaintyCase(overrides: Partial<CertaintyCase> = {}): CertaintyCase {
@@ -114,10 +117,139 @@ function corpusOf(
   return cases;
 }
 
+/**
+ * One case as the three artifacts describe it.
+ *
+ * The defaults are the ordinary shape: the engine published `engine-pick` first, its score leads the runner-up by
+ * four, and the shipped answer is somebody else's name.
+ */
+function publishedCase(overrides: Partial<PublishedCase> = {}): PublishedCase {
+  const scores = new Map([
+    ['engine-pick', 9],
+    ['runner-up', 5],
+    ['someone-else', 1],
+  ]);
+  return {
+    datapack: 'case-a',
+    faultType: 'F',
+    truth: ['engine-pick'],
+    settled: 'someone-else',
+    ranked: ['engine-pick', 'runner-up', 'someone-else'],
+    scoreOf: (service) => scores.get(service),
+    ...overrides,
+  };
+}
+
+describe('the pair the margin is taken between', () => {
+  it('reads the first two candidates the engine PUBLISHED, in the order it published them', () => {
+    const [one] = certaintyCasesOf([publishedCase()]);
+    expect(one!.engineTop1).toBe('engine-pick');
+    expect(one!.margin).toBe(4);
+  });
+
+  it('is the published pair even when the scores would sort the two the other way round', () => {
+    // The engine's order is NOT a function of its scores: two relational passes permute a finished list, so a case
+    // can publish a first choice its own arithmetic scores below the second. Reading the margin off the sorted pair
+    // would then be reading a pair the product never showed — the whole of iteration 334's scope gap.
+    const [one] = certaintyCasesOf([
+      publishedCase({
+        ranked: ['runner-up', 'engine-pick'],
+        scoreOf: (service) => (service === 'engine-pick' ? 9 : 5),
+      }),
+    ]);
+    expect(one!.engineTop1).toBe('runner-up');
+    expect(one!.margin).toBe(-4);
+  });
+
+  it('refuses a margin for a case the engine ranked once, rather than inventing a second', () => {
+    const [one] = certaintyCasesOf([publishedCase({ ranked: ['engine-pick'] })]);
+    expect(one!.engineTop1).toBe('engine-pick');
+    expect(one!.margin).toBeNull();
+  });
+
+  it('refuses a margin when either name carries no score, rather than reading it as zero', () => {
+    // An absent score is an UNMEASURED boundary. A `?? 0` here would turn a column the artifact never carried into
+    // the strongest possible statement — "the engine led by nine" — which is exactly the shape 329 paid for.
+    const [one] = certaintyCasesOf([
+      publishedCase({ scoreOf: (service) => (service === 'engine-pick' ? 9 : undefined) }),
+    ]);
+    expect(one!.margin).toBeNull();
+  });
+
+  it('refuses a margin for a case the engine never ranked', () => {
+    const [one] = certaintyCasesOf([publishedCase({ ranked: [] })]);
+    expect(one!.engineTop1).toBeNull();
+    expect(one!.margin).toBeNull();
+  });
+
+  it('prefers the artifact’s own two columns over the dump, because that is the product’s number', () => {
+    // Both sources describe the same pair, and the native one is the engine's own record. The precedence is asserted
+    // so a future caller cannot silently price the dump while the artifact carries the column: on this corpus the two
+    // agree exactly (iteration 336 recomputed the sum on 69 688 candidates), which is why the reading survives either
+    // source — but a reading that does not SAY which source it took is not auditable.
+    const [one] = certaintyCasesOf([
+      publishedCase({ top1Score: 9, top2Score: 5, scoreOf: () => 1 }),
+    ]);
+    expect(one!.margin).toBe(4);
+  });
+
+  it('falls back to the dump only when the artifact carried no columns', () => {
+    const [one] = certaintyCasesOf([publishedCase({ top1Score: null, top2Score: null })]);
+    expect(one!.margin).toBe(4);
+  });
+
+  it('is unmeasured when the artifact carries one column and the dump none', () => {
+    const [one] = certaintyCasesOf([publishedCase({ top1Score: 9, scoreOf: () => undefined })]);
+    expect(one!.margin).toBeNull();
+  });
+
+  it('carries the shipped answer through untouched, so the guard reads the surface it is added to', () => {
+    const [one] = certaintyCasesOf([publishedCase({ settled: 'engine-pick' })]);
+    expect(one!.answer).toBe('engine-pick');
+  });
+
+  it('builds one case per row, in the artifact’s own order', () => {
+    const cases = certaintyCasesOf([
+      publishedCase({ datapack: 'first' }),
+      publishedCase({ datapack: 'second' }),
+    ]);
+    expect(cases.map((one) => one.datapack)).toEqual(['first', 'second']);
+  });
+});
+
 /** A corpus that mixes the two roles, so a bar can be right on one and wrong on the other. */
 function mixedCorpus(): CertaintyCase[] {
   return corpusOf((_fold, nth) => (nth % 7 === 0 ? 'break' : nth % 3 === 0 ? 'repair' : 'narrow'));
 }
+
+describe('the priced rule and the shipped rule', () => {
+  it('settle on the same answer over the whole grid of inputs they can be handed', () => {
+    // Two implementations, one statement. The instrument prices `certaintyUnder` over an artifact and the product
+    // ships `engineCertainty` inside `applyResolver`; a rule priced by one and shipped by another is two rules, and
+    // the artifact would then measure the one nobody runs — the defect iteration 322 paid a dispatch to learn.
+    const answers = [null, 'a', 'b'];
+    const tops = [null, 'a', 'b'];
+    const margins = [null, 0, 1.5, 1.500001, 3, Number.NaN];
+    const bars = [null, ...CERTAINTY_GRID];
+    for (const answer of answers) {
+      for (const top1 of tops) {
+        for (const margin of margins) {
+          for (const bar of bars) {
+            const priced = certaintyUnder(
+              certaintyCase({ answer, engineTop1: top1, margin, truth: ['a'] }),
+              bar,
+            );
+            const shipped = engineCertainty(answer, { top1, margin }, bar) ?? answer;
+            expect(
+              shipped,
+              `${String(answer)} ${String(top1)} ${String(margin)} ${String(bar)}`,
+            ).toBe(priced);
+          }
+        }
+      }
+    }
+  });
+});
 
 describe('the held-out reading', () => {
   it('passes a guard that repairs on both folds without breaking anything', () => {

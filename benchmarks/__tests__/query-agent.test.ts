@@ -18,6 +18,7 @@ import {
   bySurprise,
   DEFAULT_QUERY_BUDGET,
   doorAttribution,
+  engineOpinionOf,
   ENTRY_FIRST_HOP_BETA,
   ENTRY_PRIOR_SURPRISE,
   entryAttribution,
@@ -1137,6 +1138,7 @@ describe('summariseQueryArm', () => {
     datapack: 'd',
     faultType: 'Kill',
     truth: ['a'],
+    engineMargin: null,
     engineRank: 1,
     engineWinner: 'a',
     answer: 'a',
@@ -1886,6 +1888,7 @@ describe('three policies priced from one artifact', () => {
     truth: ['payment'],
     engineRank: 1,
     engineWinner: 'payment',
+    engineMargin: null,
     answer: 'payment',
     correct: true,
     stop: 'answered',
@@ -2027,6 +2030,7 @@ describe('a case the model never answered, under each policy', () => {
     truth: ['payment'],
     engineRank: 2,
     engineWinner: 'checkout',
+    engineMargin: null,
     answer: null,
     correct: false,
     stop: 'rounds',
@@ -2251,6 +2255,7 @@ describe('four policies priced from one artifact', () => {
     truth: ['payment'],
     engineRank: 1,
     engineWinner: 'payment',
+    engineMargin: null,
     answer: 'payment',
     correct: true,
     stop: 'answered',
@@ -2378,6 +2383,7 @@ describe('the two ways the evidence can be absent', () => {
       truth: ['payment'],
       engineRank: 1,
       engineWinner: 'payment',
+      engineMargin: null,
       answer: 'ghost',
       correct: false,
       stop: 'answered',
@@ -2493,6 +2499,7 @@ describe('five policies priced from one artifact', () => {
     truth: ['payment'],
     engineRank: 1,
     engineWinner: 'payment',
+    engineMargin: null,
     answer: 'payment',
     correct: true,
     stop: 'answered',
@@ -3406,6 +3413,7 @@ describe('the resolution priced from one artifact', () => {
     truth: ['front'],
     engineRank: 2,
     engineWinner: 'leaf',
+    engineMargin: null,
     answer: 'leaf',
     correct: false,
     stop: 'answered',
@@ -3837,6 +3845,131 @@ describe('the interface rule as the resolver applies it', () => {
   });
 });
 
+describe('the engine-certainty guard as the resolver applies it', () => {
+  const evidence = (over: Partial<ResolverEvidence> = {}): ResolverEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    belowFails: false,
+    answerSurprise: 0,
+    answerChannels: null,
+    entryInboundFails: null,
+    novelCaller: null,
+    novelRise: null,
+    ...over,
+  });
+
+  it('refuses to rename a case whose engine led its second candidate by more than the bar', () => {
+    // The case the whole rule is about: the front door fires, and the engine was not close. 331 refuted the guard
+    // keyed on the ANSWER's loudness; this one reads a quantity about the engine, which is why it can hold here.
+    expect(applyResolver('leaf', evidence(), 'entry-prior', { top1: 'front', margin: 3 })).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+    expect(applyResolver('leaf', evidence(), 'entry-prior', { top1: 'other', margin: 3 })).toEqual({
+      answer: 'other',
+      by: 'certainty',
+    });
+  });
+
+  it('leaves a case the engine hesitated over to the resolver that renamed it', () => {
+    expect(
+      applyResolver('leaf', evidence(), 'entry-prior', { top1: 'other', margin: 0.5 }),
+    ).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+    expect(
+      applyResolver('leaf', evidence(), 'entry-prior', { top1: 'other', margin: 1.5 }),
+    ).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+  });
+
+  it('refuses an UNMEASURED margin, so an artifact without the column is not read as decided', () => {
+    // The 329 lesson, stated as a test: a rule that fires on a row which predates its column is a rule whose most
+    // important clause was never checked.
+    expect(
+      applyResolver('leaf', evidence(), 'entry-prior', { top1: 'other', margin: null }),
+    ).toEqual({ answer: 'front', by: 'entry' });
+    expect(applyResolver('leaf', evidence(), 'entry-prior', null)).toEqual({
+      answer: 'front',
+      by: 'entry',
+    });
+  });
+
+  it('is silent when the pipeline already ships the engine’s first choice', () => {
+    expect(
+      applyResolver('front', evidence({ entry: 'front' }), 'entry-prior', {
+        top1: 'front',
+        margin: 9,
+      }),
+    ).toEqual({ answer: 'front', by: null });
+  });
+
+  it('is the shipped surface, byte for byte, when the bar is null', () => {
+    // The ablation switch and the product switch are one constant, so this is the check that turning it off restores
+    // the surface every earlier reading was taken on.
+    expect(
+      applyResolver('leaf', evidence(), 'entry-prior', { top1: 'other', margin: 3 }, null),
+    ).toEqual({ answer: 'front', by: 'entry' });
+  });
+
+  it('is not a resolver of its own: under `none` it does not fire either', () => {
+    expect(applyResolver('leaf', evidence(), 'none', { top1: 'other', margin: 9 })).toEqual({
+      answer: 'leaf',
+      by: null,
+    });
+  });
+
+  it('overrides the boundary rule when the two disagree, because it is applied last', () => {
+    // The door names the entry from the case's own failure boundary; this guard names the engine's first choice.
+    // When both speak and the engine was decided, the engine wins — which is the surface §7 of iteration 336 prices,
+    // and pricing it in any other order would be pricing a pipeline nobody runs.
+    const both = evidence({ entry: 'front', entryChildErrors: 0, belowFails: false });
+    expect(applyResolver('leaf', both, 'entry-prior', { top1: 'other', margin: 3 })).toEqual({
+      answer: 'other',
+      by: 'certainty',
+    });
+  });
+});
+
+describe('the engine’s opinion as the artifact states it', () => {
+  it('is the difference between the two columns the verdict row carries', () => {
+    expect(engineOpinionOf({ winner: 'a', top1Score: 9, top2Score: 5 })).toEqual({
+      top1: 'a',
+      margin: 4,
+    });
+  });
+
+  it('is NEGATIVE when the row publishes a first choice its own arithmetic scores lower', () => {
+    // The engine's order is not a function of its scores, so this is a real configuration and not a corruption:
+    // a placement pass moved the candidate. Reporting it as a positive margin would invert the rule's reading.
+    expect(engineOpinionOf({ winner: 'a', top1Score: 2, top2Score: 7 }).margin).toBe(-5);
+  });
+
+  it('is unmeasured when either column is absent, which is what an older artifact looks like', () => {
+    expect(engineOpinionOf({ winner: 'a', top1Score: 9 }).margin).toBeNull();
+    expect(engineOpinionOf({ winner: 'a', top2Score: 5 }).margin).toBeNull();
+    expect(engineOpinionOf({ winner: 'a' }).margin).toBeNull();
+  });
+
+  it('is unmeasured when a column is a failed measurement wearing a number', () => {
+    expect(engineOpinionOf({ winner: 'a', top1Score: Number.NaN, top2Score: 5 }).margin).toBeNull();
+    expect(
+      engineOpinionOf({ winner: 'a', top1Score: 9, top2Score: Number.POSITIVE_INFINITY }).margin,
+    ).toBeNull();
+  });
+
+  it('keeps the name even when it has no margin, because the two are different facts', () => {
+    expect(engineOpinionOf({ winner: 'a' })).toEqual({ top1: 'a', margin: null });
+    expect(engineOpinionOf({ winner: null, top1Score: 9, top2Score: 5 })).toEqual({
+      top1: null,
+      margin: 4,
+    });
+  });
+});
+
 describe('the interface rule in the loop', () => {
   const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
 
@@ -3864,6 +3997,61 @@ describe('the interface rule in the loop', () => {
     const outcome = await runQueryAgent(client, telemetry, budget, null, 'none', 'none');
     expect(outcome.answer).toBe('leaf');
     expect(outcome.answeredBy).toBe('model');
+  });
+});
+
+describe('the engine-certainty guard in the loop', () => {
+  const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, maxRounds: 4 };
+
+  it('answers with the engine’s first choice and records that the guard said so', async () => {
+    // The arm is handed an order the engine was decided about, and the model names a different service. The guard is
+    // the last reader, so the published answer is the engine's and `rawAnswer` still records what the model said.
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'front', callee: 'leaf', failed: 4_002, baseline: 0, novel: 4_002 },
+      ]),
+    );
+    const client = scriptedClient(['TOOL failed', 'ANSWER leaf']);
+    const opinion = { top1: 'front', margin: 3 };
+    const outcome = await runQueryAgent(
+      client,
+      telemetry,
+      budget,
+      null,
+      'none',
+      'entry-prior',
+      null,
+      opinion,
+    );
+    expect(outcome.answer).toBe('front');
+    expect(outcome.answeredBy).toBe('certainty');
+    expect(outcome.rawAnswer).toBe('leaf');
+  });
+
+  it('changes nothing when the opinion measures no margin, which is the whole of the unmeasured clause', async () => {
+    const telemetry = buildTelemetry(
+      interfaceCase([
+        { caller: 'front', callee: 'leaf', failed: 4_002, baseline: 0, novel: 4_002 },
+      ]),
+    );
+    const arm = (engine: { top1: string | null; margin: number | null } | null) =>
+      runQueryAgent(
+        scriptedClient(['TOOL failed', 'ANSWER leaf']),
+        telemetry,
+        budget,
+        null,
+        'none',
+        'entry-prior',
+        null,
+        engine,
+      );
+    const blind = await arm(null);
+    const unmeasured = await arm({ top1: 'elsewhere', margin: null });
+    // Byte for byte, not merely "also wrong": an artifact written before the column existed has to run the pipeline
+    // it always ran, which is the clause iteration 336's reading depends on.
+    expect(unmeasured.answer).toBe(blind.answer);
+    expect(unmeasured.answeredBy).toBe(blind.answeredBy);
+    expect(unmeasured.answeredBy).not.toBe('certainty');
   });
 });
 

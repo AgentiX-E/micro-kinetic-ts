@@ -80,6 +80,7 @@ import {
 } from './fse26-boundary-census.js';
 import { parseFSE26Args, PUBLISHED_TOP_K } from './fse26-cli.js';
 import {
+  marginColumns,
   PER_CASE_RANK_LIMIT,
   poolColumns,
   writePerCaseVerdicts,
@@ -521,6 +522,10 @@ async function main(): Promise<void> {
       accepted,
       ranked: ranking.slice(0, PER_CASE_RANK_LIMIT).map((r) => r.serviceId),
       ...columns,
+      // …and the engine's own sort values for the first two candidates this row publishes, because a rule that
+      // refuses to rename a case the engine was decided about can only read a margin about THIS pair. Derived by
+      // the file's owner (`marginColumns`) so the runner cannot answer it with a second rule.
+      ...marginColumns(ranking),
     });
     acceptedPerCase.push(accepted);
     faultTypeOfCase.push(faultType);

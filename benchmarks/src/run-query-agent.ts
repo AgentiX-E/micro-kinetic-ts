@@ -19,6 +19,7 @@ import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
 import {
   DEFAULT_QUERY_BUDGET,
   buildTelemetry,
+  engineOpinionOf,
   gateTableCaveat,
   netBetween,
   onPriorCone,
@@ -139,6 +140,14 @@ interface Verdict {
   readonly winner: string | null;
   /** The engine's order, truncated by the artifact that wrote it — the seed, when one is asked for. */
   readonly ranked: readonly string[];
+  /**
+   * The engine's own sort value for the two candidates it published first and second.
+   *
+   * Optional because the artifact only gained the columns in iteration 336: a verdict file written before them is a
+   * file the certainty guard must leave alone rather than one it may read as decided.
+   */
+  readonly top1Score?: number | null;
+  readonly top2Score?: number | null;
 }
 
 /** Read the engine's per-case verdicts. */
@@ -150,11 +159,15 @@ function readVerdicts(path: string): Map<string, Verdict> {
       datapack: string;
       truthRank: number;
       ranked: readonly string[];
+      top1Score?: number | null;
+      top2Score?: number | null;
     };
     verdicts.set(row.datapack, {
       rank: row.truthRank,
       winner: row.ranked[0] ?? null,
       ranked: row.ranked,
+      top1Score: row.top1Score,
+      top2Score: row.top2Score,
     });
   }
   return verdicts;
@@ -193,7 +206,23 @@ async function investigate(
   const telemetry = buildTelemetry(bench);
   let outcome: QueryOutcome;
   try {
-    outcome = await runQueryAgent(client, telemetry, budget, seed, gate, resolve, fallbackOrder);
+    // The engine's opinion travels BESIDE the seed: a free arm is shown no order and still ships a case the engine
+    // was decided about, and a guard that read the seed would be switched off by `--seeding none`.
+    const engine = engineOpinionOf({
+      winner: verdict.winner,
+      top1Score: verdict.top1Score,
+      top2Score: verdict.top2Score,
+    });
+    outcome = await runQueryAgent(
+      client,
+      telemetry,
+      budget,
+      seed,
+      gate,
+      resolve,
+      fallbackOrder,
+      engine,
+    );
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
     // guess, and the sentence is not a secret.
@@ -207,6 +236,11 @@ async function investigate(
       truth,
       engineRank: verdict.rank,
       engineWinner: verdict.winner,
+      engineMargin: engineOpinionOf({
+        winner: verdict.winner,
+        top1Score: verdict.top1Score,
+        top2Score: verdict.top2Score,
+      }).margin,
       answer: null,
       correct: false,
       stop: 'error',
@@ -247,6 +281,11 @@ async function investigate(
     truth,
     engineRank: verdict.rank,
     engineWinner: verdict.winner,
+    engineMargin: engineOpinionOf({
+      winner: verdict.winner,
+      top1Score: verdict.top1Score,
+      top2Score: verdict.top2Score,
+    }).margin,
     answer: outcome.answer,
     correct: outcome.answer !== null && truth.includes(outcome.answer),
     stop: outcome.stop,

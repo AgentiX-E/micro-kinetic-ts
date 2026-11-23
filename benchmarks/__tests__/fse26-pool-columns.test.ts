@@ -184,6 +184,31 @@ describe('the pool columns on the verdict line', () => {
   });
 });
 
+describe('the engine’s two sort values', () => {
+  it('round-trip through the parser, because a guard that reads them must read the run’s own numbers', () => {
+    const full = row({ truthRank: 1, pool: 3, top1Score: 9.25, top2Score: 1.5 });
+    expect(parsePerCaseVerdicts(formatPerCaseVerdict(full))).toEqual([full]);
+  });
+
+  it('read as absent on an archived line, so a guard can refuse instead of reading a zero', () => {
+    const [parsed] = parsePerCaseVerdicts(toLine({}));
+    expect(parsed?.top1Score).toBeUndefined();
+    expect(parsed?.top2Score).toBeUndefined();
+  });
+
+  it('round-trip a one-candidate ranking, which has a first value and no second', () => {
+    const single = row({ top1Score: 4 });
+    expect(parsePerCaseVerdicts(formatPerCaseVerdict(single))).toEqual([single]);
+  });
+
+  it('refuse a value that is not a number, because a string margin would compare as text', () => {
+    for (const bad of ['9', true, [], null]) {
+      expect(() => parsePerCaseVerdicts(toLine({ top1Score: bad }))).toThrow(/top1Score/);
+      expect(() => parsePerCaseVerdicts(toLine({ top2Score: bad }))).toThrow(/top2Score/);
+    }
+  });
+});
+
 /** One line carrying the four published fields plus whatever the case under test adds. */
 function toLine(extra: Record<string, unknown>): string {
   return JSON.stringify({

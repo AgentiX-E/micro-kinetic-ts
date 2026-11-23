@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   PER_CASE_RANK_LIMIT,
   formatPerCaseVerdict,
+  marginColumns,
   writePerCaseVerdicts,
   type PerCaseVerdict,
 } from '../src/fse26-per-case.js';
@@ -139,5 +140,78 @@ describe('writePerCaseVerdicts', () => {
   it("refuses to invent a directory — a missing parent is the caller's bug, not a silent success", () => {
     const path = join(dir, 'missing', 'verdicts.jsonl');
     expect(() => writePerCaseVerdicts(path, [verdict()])).toThrow();
+  });
+});
+
+/**
+ * The two sort values the verdict file gained in iteration 336.
+ *
+ * The guard they exist for — *a resolver may not rename a case whose engine led its second candidate by more than a
+ * margin* — needs the engine's own separation between the pair the row PUBLISHES, and a margin derived from a dump's
+ * score-sorted pair is a margin about a different pair on the 83 cases where the two orders disagree. So the row
+ * carries the two values, and the tests below pin the three states a reader has to tell apart.
+ */
+describe('marginColumns', () => {
+  it('reports the first two candidates’ own sort values', () => {
+    expect(marginColumns([{ finalScore: 9 }, { finalScore: 5.5 }])).toEqual({
+      top1Score: 9,
+      top2Score: 5.5,
+    });
+  });
+
+  it('reports the SECOND candidate’s value even when it outscores the first', () => {
+    // The engine's order is not a function of its scores, so a row may publish a first choice its arithmetic scores
+    // below the runner-up. The columns describe the pair the row shows, in the order it shows them, and a margin the
+    // reader derives from them is therefore allowed to be negative — silently re-sorting here would hide the case.
+    expect(marginColumns([{ finalScore: 2 }, { finalScore: 7 }])).toEqual({
+      top1Score: 2,
+      top2Score: 7,
+    });
+  });
+
+  it('omits the second value for a case the engine ranked once, rather than inventing a runner-up', () => {
+    expect(marginColumns([{ finalScore: 9 }])).toEqual({ top1Score: 9 });
+  });
+
+  it('omits a value the engine never computed, rather than writing a zero', () => {
+    // `finalScore` is optional in the engine's own result: a producer that does not sum the terms leaves it unset, and
+    // a `0` written on its behalf would read as "the engine scored this candidate zero" — the strongest possible
+    // statement about a candidate nobody measured.
+    expect(marginColumns([{}, { finalScore: 5 }])).toEqual({
+      top2Score: 5,
+    });
+  });
+
+  it('omits both values for a case with no ranking at all', () => {
+    expect(marginColumns([])).toEqual({});
+  });
+});
+
+describe('the score columns on the wire', () => {
+  it('writes them after the pool columns, so the four published fields keep their order', () => {
+    const parsed = JSON.parse(
+      formatPerCaseVerdict(verdict({ truthRank: 1, pool: 49, top1Score: 9, top2Score: 5 })),
+    );
+    expect(Object.keys(parsed)).toEqual([
+      'datapack',
+      'faultType',
+      'accepted',
+      'ranked',
+      'truthRank',
+      'pool',
+      'top1Score',
+      'top2Score',
+    ]);
+    expect(parsed.top1Score).toBe(9);
+    expect(parsed.top2Score).toBe(5);
+  });
+
+  it('omits them on a row that predates them, so an old artifact stays byte-identical', () => {
+    expect(Object.keys(JSON.parse(formatPerCaseVerdict(verdict())))).toEqual([
+      'datapack',
+      'faultType',
+      'accepted',
+      'ranked',
+    ]);
   });
 });
