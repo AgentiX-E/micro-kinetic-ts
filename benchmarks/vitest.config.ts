@@ -130,6 +130,9 @@ export default defineConfig({
         // (an unmeasured profile and a disabled bar), the partition it shares with the channel split, and the
         // three clauses that can refuse the rule whatever it reads. `head-precedence.test.ts` names each.
         'src/head-precedence.ts',
+        // Added with the module: the first-hop rule's boundary premise, its three refusals that are not about a
+        // number, the calibration floor and the four clauses that can refuse the reading whatever it gains.
+        'src/first-hop.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

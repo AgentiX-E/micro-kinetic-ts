@@ -11,18 +11,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_QUERY_BUDGET,
-  ENTRY_PRIOR_SURPRISE,
-  LOG_LINES,
-  METRIC_LINES,
-  QUERY_SYSTEM_PROMPT,
-  QUERY_TOOLS,
-  TRACE_CHARS,
   applyResolver,
   buildTelemetry,
   buildUserPrompt,
   byFall,
   bySurprise,
+  DEFAULT_QUERY_BUDGET,
+  doorAttribution,
+  ENTRY_FIRST_HOP_BETA,
+  ENTRY_PRIOR_SURPRISE,
   entryAttribution,
   entryOf,
   entryPremise,
@@ -32,12 +29,16 @@ import {
   gateTableCaveat,
   interfaceAttribution,
   leadsEvidence,
+  LOG_LINES,
   median,
+  METRIC_LINES,
   netBetween,
   onPriorCone,
   onsetOf,
   parseCall,
   projectOntoCorpus,
+  QUERY_SYSTEM_PROMPT,
+  QUERY_TOOLS,
   readEntryPrior,
   readInterfacePrior,
   renderBudget,
@@ -49,6 +50,7 @@ import {
   summariseGatePolicies,
   summariseQueryArm,
   summariseSeries,
+  TRACE_CHARS,
 } from '../src/query-agent.js';
 
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
@@ -2957,6 +2959,7 @@ describe('the entry prior, as a predicate', () => {
     belowFails: false,
     answerSurprise: 0,
     answerChannels: null,
+    entryInboundFails: 0,
     ...over,
   });
 
@@ -3033,6 +3036,7 @@ describe('the entry prior’s premise, read on its own', () => {
     belowFails: false,
     answerSurprise: 0,
     answerChannels: null,
+    entryInboundFails: 0,
     ...over,
   });
 
@@ -3049,6 +3053,106 @@ describe('the entry prior’s premise, read on its own', () => {
   });
 });
 
+describe('the first hop, the rule 332 shipped', () => {
+  const boundary = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    belowFails: false,
+    answerSurprise: 0,
+    answerChannels: null,
+    entryInboundFails: 500,
+    ...over,
+  });
+
+  it('reads the failures on the edge into the entry above their own baseline', () => {
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        failedEdges: [{ caller: 'loadgenerator', callee: 'front', failed: 60, baseline: 10 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'leaf').entryInboundFails).toBe(50);
+  });
+
+  it('reads a MEASURED zero when the edge into the entry did not fail', () => {
+    // The load generator's edge is written in every case of this corpus, so its absence from the failing list is a
+    // measurement rather than a missing one — and a rule that confused the two would fire on every case.
+    const telemetry = buildTelemetry(entryCase({ leafError: 0, failedEdges: [] }));
+    expect(readEntryPrior(telemetry, 'leaf').entryInboundFails).toBe(0);
+  });
+
+  it('does not count an edge that failed as much before the injection as after it', () => {
+    const telemetry = buildTelemetry(
+      entryCase({
+        leafError: 0,
+        failedEdges: [{ caller: 'loadgenerator', callee: 'front', failed: 40, baseline: 40 }],
+      }),
+    );
+    expect(readEntryPrior(telemetry, 'leaf').entryInboundFails).toBe(0);
+  });
+
+  it('names the door when the failure provably never crossed it', () => {
+    expect(doorAttribution('leaf', boundary())).toBe('front');
+  });
+
+  it('refuses when a child of the door reports an error, however loud the edge is', () => {
+    expect(doorAttribution('leaf', boundary({ entryChildErrors: 1 }))).toBeNull();
+  });
+
+  it('refuses when a measured edge below the door failed', () => {
+    expect(doorAttribution('leaf', boundary({ belowFails: true }))).toBeNull();
+  });
+
+  it('refuses an unmeasured boundary rather than reading it as a quiet one', () => {
+    expect(doorAttribution('leaf', boundary({ entryInboundFails: null }))).toBeNull();
+  });
+
+  it('refuses a child-error column that was never measured', () => {
+    expect(doorAttribution('leaf', boundary({ entryChildErrors: null }))).toBeNull();
+  });
+
+  it('refuses when the door is already the answer, and when there is no answer at all', () => {
+    expect(doorAttribution('front', boundary())).toBeNull();
+    expect(doorAttribution(null, boundary())).toBeNull();
+  });
+
+  it('refuses at the bar itself, and refuses when the bar is the off switch', () => {
+    expect(doorAttribution('leaf', boundary({ entryInboundFails: 50 }))).toBeNull();
+    expect(doorAttribution('leaf', boundary(), null)).toBeNull();
+  });
+
+  it('refuses a case whose graph names no entry', () => {
+    expect(doorAttribution('leaf', boundary({ entry: null }))).toBeNull();
+    expect(doorAttribution('leaf', undefined)).toBeNull();
+  });
+
+  it('is applied through the resolver the loop calls, and it overrides both other rules', () => {
+    // The witness names a caller inside the system and the front door can name the door itself; the boundary rule is
+    // applied LAST because its statement is about the case rather than about the answer, so a loud boundary wins.
+    const resolved = applyResolver(
+      'leaf',
+      { ...boundary({ answerSurprise: 900_000 }), novelCaller: 'mid', novelRise: 12 },
+      'edge-novel',
+    );
+    expect(resolved).toEqual({ answer: 'front', by: 'door' });
+  });
+
+  it('is silent in the resolver mode that switches every rule off', () => {
+    expect(
+      applyResolver('leaf', { ...boundary(), novelCaller: null, novelRise: null }, 'none'),
+    ).toEqual({
+      answer: 'leaf',
+      by: null,
+    });
+  });
+
+  it('ships at the cell the two folds chose independently', () => {
+    // Pinned rather than described: the constant is the product's off switch, so changing it has to be a decision a
+    // test refuses rather than an edit nobody notices.
+    expect(ENTRY_FIRST_HOP_BETA).toBe(50);
+  });
+});
+
 describe('the entry prior’s channel clauses', () => {
   const evidence = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
     entry: 'front',
@@ -3056,6 +3160,7 @@ describe('the entry prior’s channel clauses', () => {
     belowFails: false,
     answerSurprise: ENTRY_PRIOR_SURPRISE + 100,
     answerChannels: { resource: 5, traffic: 900, other: null, symptom: null, symptomRise: null },
+    entryInboundFails: 0,
     ...over,
   });
 
@@ -3657,6 +3762,7 @@ describe('the interface rule as the resolver applies it', () => {
     belowFails: false,
     answerSurprise: 0,
     answerChannels: null,
+    entryInboundFails: null,
     novelCaller: 'front',
     novelRise: 40,
     ...over,

@@ -9645,3 +9645,58 @@ branches, functions and lines) and `benchmarks/src/run-head-precedence.ts`, whic
 before any table. The rule ships nowhere. **Axes this closes.** One: "loudness of the head" as a guard on resolver
 precedence. **Axes this opens.** One: the resolver's input is the model's answer, and that is a population nobody has
 priced.
+
+## 332 The first hop SHIPS: the boundary of the case separates the door from a leaf the request path never touched (iteration 332)
+
+This is the register's first **shipped** row rather than a closure, and it is recorded here because the numbers it
+replaces are in this file. Pre-registered in `docs-repository:preregistration-332.md` and pushed (`990b4666`) before
+the reading existed; priced at **¥0** on both artifacts.
+
+> **When the only failing boundary of a case is the door's inbound edge, the answer is the door** — no child of the
+> door reports an error, no measured edge below the door failed, and requests failed on the way in by more than 50.
+
+| reading | prediction | run R1 (`572952e8ab856422`, 1 287) | run B (`993e181f67a9565e`, 1 285) |
+| ------- | ---------- | ---------------------------------: | -------------------------------: |
+| chosen cell, both folds | interior | **50 / 50** | **50 / 50** |
+| held-out gain, fold 0 / fold 1 | ≥ +7 each | **+10 / +11** | **+9 / +11** |
+| precision at the chosen cell | ≥ 0.75 | **0.800** | **0.763** |
+| firings outside the population | 0 | **0** | **0** |
+| whole-corpus delta | — | **+21** → 1 308 (**91.98 %**) | **+20** → 1 305 (91.77 %) |
+
+### 332.1 The population, which is the larger finding
+
+| | cases | already right | door is the truth | rule fires |
+| - | ----: | ------------: | ----------------: | ---------: |
+| nothing below the door fails (`entryChildErrors = 0`, `belowFails = false`) | **318** | 231 | **145** | 58 |
+| everything else | 1 104 | 1 056 | — | 0 |
+
+The premise **alone** loses 86 cases (64 repairs against 150 breaks, precision 0.30): it cannot tell a door-self fault
+from a **leaf fault the request path never exercised** — `ts-consign-service`, `ts-cancel-service`,
+`ts-contacts-service` under stress or pod failure, whose anomaly is real and whose failing calls never reach the door.
+Every channel column was measured and refused as a conditioning signal: the door's own-work departure reads 6.74 in the
+repairs against 6.18 in the breaks, its traffic reads **53.65 against 98.98** (louder when the fault is elsewhere,
+because the rest of the system is still working through it), and the conduit test on the named answer reaches precision
+**0.500**. The column that separates them is the failure count on the edge that enters the system: 0.814 precision at
+β=50 against 0.414 at β=0.
+
+### 332.2 Why this is not the coefficient §320 refused
+
+§320.4 refused every form of *"make the entry point's own numbers louder"*, and for a measured reason: the entry sits
+18–45 metric ranks below the winner, a log-space gap of 0.18–0.45 against a term bounded by 0.005 — *"a tie-break
+bounded by one step cannot close a thirty-rank gap."* This rule does not touch the score, does not promote the entry in
+any ranking, and does not read the entry's numbers; it reads the case's **failure boundary** and overrides the answer
+of every channel when the failure provably never crossed the door. The two statements are compatible, which is why
+§320 could be right and this can still pay.
+
+### 332.3 What ships, and the one number that is not yet measured
+
+`ENTRY_FIRST_HOP_BETA = 50`, applied last in `applyResolver` (so it overrides the witness, the front door and the
+model, and the loop's single exit cannot forget it), with the evidence column computed in `readEntryPrior` from the
+same edge list the `belowFails` clause walks. `null` is the off switch and restores the 324–331 surface byte for byte.
+Coverage of the new instrument: `first-hop.ts` at 100/100/100/100 across 29 tests, and the shipped rule is tested
+through `applyResolver` itself rather than through the instrument — 307 tests in `query-agent.test.ts`.
+
+**91.98 % is a counterfactual until one dispatch confirms it.** The rule replaces an answer without reading the model's
+reasoning, so applying it to a published artifact's rows is exact; but a published surface is a dispatch, and that
+dispatch (**≈ ¥21**) is the next iteration's first item. The rule also pre-empts the model on the cases it settles,
+which is ~4 % of the arm's calls saved rather than spent.

@@ -763,7 +763,7 @@ export interface QueryOutcome {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or a resolver rule. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | null;
   /** How many answers the gate refused. A refused answer costs a round and not a tool call. */
   readonly gateRefusals: number;
   /** Services the investigation executed a per-service query against, in first-query order. */
@@ -1562,7 +1562,7 @@ export interface QueryArmRow {
    */
   readonly rawAnswer: string | null;
   /** Who produced {@link answer}: the model, the prior the gate fell back to, or nobody. */
-  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | null;
+  readonly answeredBy: 'model' | 'prior' | 'entry' | 'interface' | 'door' | null;
   /** Services the investigation executed a per-service query against, in first-query order. */
   readonly calls: readonly string[];
   /** Whether {@link rawAnswer} sits on the engine's rank-1 callee-side cone. */
@@ -1662,6 +1662,27 @@ export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;
  * `null` is the disabled state and it is the shipped state until `channel-split.ts` reports `passes`.
  */
 export const ENTRY_PRIOR_SYMPTOM_FLOOR: number | null = null;
+
+/**
+ * The failures on the edge into the entry above which the door answers, whatever settled the case, or `null` to
+ * read no boundary at all.
+ *
+ * Iteration 332's rule, and it is **shipped**: a rule may ship on a held-out reading that clears the standing bar,
+ * and this one cleared it on both artifacts (deltas +10 / +11 and +9 / +11, precision 0.80 and 0.76, chosen cell 50 on
+ * both folds, nothing fired outside its population). 50 is the cell the two folds chose independently, not a peak
+ * picked here: the sweep is flat from 50 to 100 and the neighbours read 0.81 and 0.82 precision, so the value is a
+ * plateau rather than a spike.
+ *
+ * What it is NOT. It is not a coefficient on the entry's score — §320 of the register refused every form of that, and
+ * for a measured reason (the entry sits 18–45 ranks below the winner, and a term bounded by one step cannot close a
+ * thirty-rank gap). It does not touch the ranking at all: it reads the case's failure BOUNDARY — no child of the door
+ * reports an error, no measured edge below the door failed, and requests failed on the way in — and when the failure
+ * provably never travelled below the door it overrides the answer of every channel, including the model's.
+ *
+ * `null` is therefore not the shipped state but the OFF switch, and it is the ablation the user asked for: the same
+ * constant, set to `null`, restores the 324–331 surface byte for byte.
+ */
+export const ENTRY_FIRST_HOP_BETA: number | null = 50;
 
 /**
  * The wall a resolver uses to separate an error-rate rise from a service's own departure.
@@ -1788,6 +1809,16 @@ export interface EntryPriorEvidence {
    * deep answer is a source or a conduit — see `channel-kind.ts`.
    */
   readonly answerChannels: ChannelDeparture | null;
+  /**
+   * Requests that failed on the edge INTO the entry, above the pre-injection baseline, or `null` when unmeasured.
+   *
+   * The one column in this record that is about the boundary of the SYSTEM rather than about a service. A fault at
+   * the door sabotages requests as they arrive, so that edge's failure count rises by hundreds; a fault on a leaf the
+   * request path never exercised leaves it at zero, and a fault below the door raises it incidentally by a dozen.
+   * Iteration 332 measured the three populations apart and priced the rule that reads this column: repairs 28 against
+   * breaks 7 at a bar of 50, held out at +10 and +11 on the two folds, precision 0.80.
+   */
+  readonly entryInboundFails: number | null;
 }
 
 /**
@@ -1806,6 +1837,7 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
       answerSurprise: null,
       belowFails: null,
       answerChannels: null,
+      entryInboundFails: null,
     };
   const entryService = telemetry.services.get(entry)!;
   let childErrors: number | null = entryService.callees.length === 0 ? null : 0;
@@ -1847,12 +1879,23 @@ export function readEntryPrior(telemetry: Telemetry, answer: string | null): Ent
     belowFails = true;
     break;
   }
+  // The boundary of the system, read on the same edge list the clause above walks: how many requests failed on the
+  // way IN. `failed - baseline` and not `failed`, because an edge that carried errors before the injection is not
+  // evidence of an injection; and a MEASURED zero when the edge did not fail, because the load generator's edge is
+  // written in every case's edge list and its absence from the FAILING list is therefore a measurement.
+  let inbound = 0;
+  for (const edge of telemetry.failed) {
+    if (edge.callee !== entry) continue;
+    const rise = edge.failed - edge.baseline;
+    if (rise > 0) inbound += rise;
+  }
   return {
     entry,
     entryChildErrors: childErrors,
     answerSurprise: surprise,
     belowFails,
     answerChannels: channels,
+    entryInboundFails: inbound,
   };
 }
 
@@ -2033,6 +2076,47 @@ export function entryPremise(
   return readEntryPremise(answer, evidence)?.entry ?? null;
 }
 
+/**
+ * The first hop: when the failure provably never travelled below the door, the door is the answer.
+ *
+ * ## Why this is not the front door's rule again
+ *
+ * {@link entryAttribution} asks a question about the ANSWER — is the service you named quiet? — and it therefore
+ * refuses whenever the answer is loud, which is exactly the population that holds most of the remaining misses at the
+ * entry. This rule asks a question about the CASE: did any failure cross the door at all? A case whose children report
+ * nothing, whose edges below the door never failed, and whose inbound edge did fail is a case where every service a
+ * ranking or a model could name has no measured failure of its own — the answer is the door, and no channel can
+ * improve on it.
+ *
+ * ## Why the three clauses are each a refusal rather than a heuristic
+ *
+ * 1. **A child that reports an error** says the failure travelled. `null` here is the producer's refusal, not a quiet
+ *    child, so it refuses too: the corpus's error channel is absent in most cases and reading absence as zero is the
+ *    mistake 326 paid for.
+ * 2. **An edge below the door that failed** is the same statement on the dense channel.
+ * 3. **`null` inbound** is an unmeasured boundary. The load generator's edge is written in every case of this corpus,
+ *    so this refusal is about other corpora rather than this one, and it stays because a rule that fired on an
+ *    unmeasured column would be a rule whose most important clause cannot be checked.
+ *
+ * @param answer - The service about to be answered with, or `null`.
+ * @param evidence - What {@link readEntryPrior} read.
+ * @param beta - The bar, or `null` to read no boundary at all.
+ * @returns The entry the rule names, or `null` when it stays silent.
+ */
+export function doorAttribution(
+  answer: string | null,
+  evidence: EntryPriorEvidence | undefined,
+  beta: number | null = ENTRY_FIRST_HOP_BETA,
+): string | null {
+  if (beta === null || evidence === undefined) return null;
+  if (answer === null || evidence.entry === null) return null;
+  if (answer === evidence.entry) return null;
+  if (evidence.entryChildErrors !== 0) return null;
+  if (evidence.belowFails !== false) return null;
+  if (evidence.entryInboundFails === null) return null;
+  return evidence.entryInboundFails > beta ? evidence.entry : null;
+}
+
 /** One reading of the premise, carrying the columns the bars need so they need not be re-narrowed. */
 interface EntryPremiseReading {
   readonly entry: string;
@@ -2092,16 +2176,21 @@ export function applyResolver(
   answer: string | null,
   evidence: ResolverEvidence,
   mode: Resolution,
-): { answer: string | null; by: 'entry' | 'interface' | null } {
+): { answer: string | null; by: 'entry' | 'interface' | 'door' | null } {
   if (answer === null || mode === 'none') return { answer, by: null };
   // The order is part of the rule, not of the caller: the witness names one interface and the prior names the whole
   // front door, so a case that carries both is decided by the narrower reading. Written here because a pricing that
   // ordered them differently from the loop would report a rule nobody runs — the failure iteration 322 paid for.
-  if (mode === 'edge-novel') {
-    const witnessed = interfaceAttribution(answer, evidence);
-    if (witnessed !== null) return { answer: witnessed, by: 'interface' };
-  }
-  const to = entryAttribution(answer, evidence);
+  const witnessed = mode === 'edge-novel' ? interfaceAttribution(answer, evidence) : null;
+  const to = witnessed ?? entryAttribution(answer, evidence);
+  const settled = to === null ? answer : to;
+  // The boundary rule is applied LAST and over whatever the two resolvers settled on, because its statement is about
+  // the case rather than about the answer: when the failure never crossed the door, no rename below it can be an
+  // improvement. It is inside this function rather than at the call site for the reason 322 paid for — a rule wired
+  // into one exit is a rule the next exit forgets.
+  const door = doorAttribution(settled, evidence);
+  if (door !== null) return { answer: door, by: 'door' };
+  if (witnessed !== null) return { answer: witnessed, by: 'interface' };
   return to === null ? { answer, by: null } : { answer: to, by: 'entry' };
 }
 
@@ -2308,6 +2397,9 @@ export function summariseGatePolicies(
           // The artifact carries no channel split: the axis is priced from a corpus walk (`channel-split.ts`), and a
           // `null` here is the same refusal a case without that service would produce.
           answerChannels: null,
+          // The first hop's column is not in an answer artifact; `first-hop.ts` prices that rule from the failing-edge
+          // file the corpus walk writes, and a `null` here refuses rather than fires.
+          entryInboundFails: null,
           novelCaller: row.novelCaller,
           novelRise: row.novelRise,
         },

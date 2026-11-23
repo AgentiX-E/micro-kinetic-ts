@@ -231,6 +231,9 @@ export function resolvedUnder(
     answerSurprise: one.answerSurprise,
     belowFails: one.belowFails,
     answerChannels: null,
+    // The first hop's column is not in this shape: `first-hop.ts` prices that rule from the failing-edge artifact,
+    // and a `null` here is the refusal it documents rather than a measured zero.
+    entryInboundFails: null,
     novelCaller: one.novelCaller,
     novelRise: one.novelRise,
   };
@@ -422,6 +425,7 @@ export function gateHolds(one: SplitCase): one is AddressedCase {
       entryChildErrors: one.entryChildErrors,
       answerSurprise: one.answerSurprise,
       belowFails: one.belowFails,
+      entryInboundFails: null,
       answerChannels: null,
     }) !== null
   );
