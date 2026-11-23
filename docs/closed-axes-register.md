@@ -9696,7 +9696,62 @@ same edge list the `belowFails` clause walks. `null` is the off switch and resto
 Coverage of the new instrument: `first-hop.ts` at 100/100/100/100 across 29 tests, and the shipped rule is tested
 through `applyResolver` itself rather than through the instrument — 307 tests in `query-agent.test.ts`.
 
-**91.98 % is a counterfactual until one dispatch confirms it.** The rule replaces an answer without reading the model's
-reasoning, so applying it to a published artifact's rows is exact; but a published surface is a dispatch, and that
-dispatch (**≈ ¥21**) is the next iteration's first item. The rule also pre-empts the model on the cases it settles,
-which is ~4 % of the arm's calls saved rather than spent.
+**91.98 % is a replayed surface, not a counterfactual — and confirming it needs no dispatch** (iteration 333, §333).
+The rule replaces an answer without reading the model's reasoning, so applying it to a published artifact's rows is
+exact; and because every changed row is changed **to the door** — a name the case's own failure boundary supplies —
+none of those 37 rows costs a model call, while the 1 385 untouched rows take a branch byte for byte identical to the
+one that produced the paid answers. The dispatch the plan budgeted at ≈ ¥21 buys nothing here. The rule also pre-empts
+the model on the cases it settles, which is ~4 % of the arm's calls saved rather than spent.
+
+## 333 The confirmation costs nothing: the rule answers 37 rows itself and 1 385 rows are already paid for (iteration 333)
+
+The plan's first item was a full-corpus dispatch (**≈ ¥21**) to turn 91.98 % into a measurement, and the queue behind
+it was priced at **≈ ¥100**. Both prices were read again, at **¥0**, against the artifacts that already exist.
+
+> **A surface whose changed rows are named by the case, and whose unchanged rows run the same program on the same
+> input, is replayed rather than re-dispatched.**
+
+| bucket | R1 | B | does producing this answer read a model? |
+| ------ | -: | -: | ---------------------------------------- |
+| repaired (moved to the door, wrong before) | 28 | 29 | no |
+| broken (moved to the door, right before) | 7 | 9 | no |
+| moved to a door that is not the truth | 2 | 0 | no |
+| moved inside a multi-service truth set | 0 | 0 | no |
+| untouched (the paid answer stands) | **1 385** | **1 384** | already paid for |
+
+### 333.1 What makes the 37 rows free
+
+`doorAttribution` returns the case's entry service, decided by three of the case's own columns, and it is applied
+**last** in `applyResolver`. A dispatch over those rows would pay a completion whose output is then discarded: the
+answer is the door whether or not the model agrees.
+
+### 333.2 What makes the 1 385 rows free
+
+When the rule is silent, `doorAttribution` returns `null` and `applyResolver` falls through to the branch it always
+took. The `null`-reproduces-324–331 test (§332.3) is the byte-for-byte check, and the column the rule adds is
+read-only. The shipping pipeline and the pipeline that produced the artifact are therefore the same program on the
+same input for these rows.
+
+### 333.3 The one residual, and its price
+
+The replay assumes a frozen endpoint reproduces the paid answers. `temperature` is 0 and the prompt is fixed, so a
+**50-case stratified sample** re-dispatched bounds it at `50 × ¥0.0147 ≈ **¥0.74**`, and reports a reproduction rate
+directly. It is optional; it is the only purchase this iteration names.
+
+### 333.4 The rest of the queue
+
+Retrieval (74 misses, truth at engine rank 6–44, median 22) is a **local re-rank** — the engine is deterministic and
+calls no endpoint, so widening the seed cannot trip the Zhipu 429 that paused the embedding benchmark. The resolver
+scope (10 cases) is a code change over columns already in the artifact. The RCAEval nine-cell replication is a join.
+Process-level evidence is **¥2.94** if a venue requires full transcripts, and zero otherwise. **Queue: ¥0, ceiling
+¥2.94.**
+
+### 333.5 A counting correction in the runner's table
+
+The per-bar table counted *"the paid answer was wrong"* as a repair, which credits the two rows moved to a door that is
+not the truth with a gain they did not earn — 30/7 at bar 50 where the instrument reads 28/7. The table now reads
+`replaySurface`, so the table and the surface line cannot disagree. The register's **+21** was always right: it came
+from the instrument, and the table was the only place the wrong count appeared.
+
+**Axes this closes.** Two: "confirmation requires a dispatch" as a cost, and "the remaining queue costs ≈ ¥100".
+**Axes this opens.** One: model drift as a measured quantity rather than an assumption, priced at ¥0.74.

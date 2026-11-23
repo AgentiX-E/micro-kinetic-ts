@@ -26,7 +26,9 @@ import {
   MIN_FIRST_HOP_PRECISION,
   crossValidateFirstHop,
   formatFirstHopReport,
+  formatSurfaceReplay,
   premiseHolds,
+  replaySurface,
   type HopCase,
 } from './first-hop.js';
 
@@ -153,24 +155,20 @@ function main(): void {
     `\nthe boundary premise holds on ${population.length} cases, ` +
       `${withEdge.length} of them with a failing inbound edge, ${repairable.length} with the door as the truth`,
   );
+  // The table reads the same instrument the surface replay does. Counting "the paid answer was wrong" as a repair
+  // reads a row the rule moved to a door that is not the truth as a gain, which is how a bar reads a delta it did not
+  // earn; `replaySurface` compares both sides against the truth and puts that row in its own bucket.
   table(
     ['bar', 'fires', 'repairs', 'breaks', 'precision'],
     BETA_GRID.map((beta) => {
-      const firing = cases.filter((one) => one.answer !== one.entry && premiseHolds(one));
-      const over = firing.filter((one) => (one.inboundFails ?? 0) > beta);
-      const repairs = over.filter(
-        (one) => one.answer !== null && !one.truth.includes(one.answer),
-      ).length;
-      const breaks = over.filter(
-        (one) => one.answer !== null && one.truth.includes(one.answer),
-      ).length;
-      const total = repairs + breaks;
+      const replay = replaySurface(cases, beta);
+      const total = replay.repaired + replay.broken;
       return [
         String(beta),
-        String(over.length),
-        String(repairs),
-        String(breaks),
-        total === 0 ? '-' : (repairs / total).toFixed(3),
+        String(replay.decidedByTheDoor),
+        String(replay.repaired),
+        String(replay.broken),
+        total === 0 ? '-' : (replay.repaired / total).toFixed(3),
       ];
     }),
   );
@@ -182,6 +180,13 @@ function main(): void {
     MIN_FIRST_HOP_PRECISION,
   );
   console.log(`\n${formatFirstHopReport(reading)}`);
+  console.log(
+    `\n${formatSurfaceReplay(replaySurface(cases, reading.selected[0]), reading.selected[0])}`,
+  );
+  console.log(
+    'a confirmation dispatch pays for 0 of these rows: every changed answer is the door, which the case names, and\n' +
+      'every unchanged answer is the one already in the artifact.',
+  );
 }
 
 main();

@@ -224,6 +224,122 @@ export function crossValidateFirstHop(
   };
 }
 
+/**
+ * What the shipping surface is made of, row by row.
+ *
+ * ## Why this is the answer to "does confirming it need a dispatch"
+ *
+ * A published surface is normally a dispatch: the number is only real once a run paid for it. This surface is not,
+ * and the reason is a property of the rule rather than a preference. Every row the bar changes is changed **to the
+ * door**, and the door is named by the case's own failure boundary — no model output is read to produce that answer.
+ * Every row the bar leaves alone takes a code path byte for byte identical to the one that produced the paid
+ * answers, because `doorAttribution` returns `null` and `applyResolver` falls through to the branch it always took.
+ * So the surface is **replayed** from two artifacts rather than re-measured, and the count below is what a
+ * confirmation dispatch would actually be buying: rows whose final answer came from the model.
+ *
+ * The five buckets partition the corpus, which is asserted rather than assumed: a row is either untouched, or moved
+ * to the door, and a moved row is right-then-right, wrong-then-right, right-then-wrong, or wrong-then-wrong.
+ */
+export interface SurfaceReplay {
+  /** Rows read. */
+  readonly cases: number;
+  /** Correct under the shipped pipeline (`beta === null`), i.e. what was already paid for. */
+  readonly before: number;
+  /** Correct under the bar, i.e. the surface this ships. */
+  readonly after: number;
+  /** Moved to the door and wrong before: the rule did the work. */
+  readonly repaired: number;
+  /** Moved to the door and right before: the rule cost a case. */
+  readonly broken: number;
+  /** Moved to a door that is not the truth while the paid answer was wrong too. */
+  readonly changedStuck: number;
+  /** Moved inside the truth set — a multi-service truth where both names are correct. */
+  readonly changedStillRight: number;
+  /** Rows the rule does not touch; their paid answers stand unchanged. */
+  readonly unchanged: number;
+  /** Rows whose answer the rule decided. No model output is read to produce these. */
+  readonly decidedByTheDoor: number;
+}
+
+/**
+ * Replay the surface a bar produces over an artifact's rows.
+ *
+ * @param cases - The corpus, in the artifact's own order.
+ * @param beta - The bar, or `null` for the shipped pipeline.
+ * @returns The two surfaces and the five buckets that separate them.
+ */
+export function replaySurface(cases: readonly HopCase[], beta: number | null): SurfaceReplay {
+  let before = 0;
+  let after = 0;
+  let repaired = 0;
+  let broken = 0;
+  let changedStuck = 0;
+  let changedStillRight = 0;
+  let unchanged = 0;
+  let decided = 0;
+  for (const one of cases) {
+    const shipped = firstHopUnder(one, null);
+    const settled = firstHopUnder(one, beta);
+    const was = shipped !== null && one.truth.includes(shipped);
+    const now = settled !== null && one.truth.includes(settled);
+    if (was) before += 1;
+    if (now) after += 1;
+    // `settled === shipped` is the whole of "this row is untouched": the bar either did not speak or spoke with the
+    // name already in the answer, and both leave the pipeline's output identical.
+    if (settled === shipped) {
+      unchanged += 1;
+      continue;
+    }
+    decided += 1;
+    if (was && now) changedStillRight += 1;
+    else if (!was && now) repaired += 1;
+    else if (was && !now) broken += 1;
+    else changedStuck += 1;
+  }
+  return {
+    cases: cases.length,
+    before,
+    after,
+    repaired,
+    broken,
+    changedStuck,
+    changedStillRight,
+    unchanged,
+    decidedByTheDoor: decided,
+  };
+}
+
+/** A share to two decimals, and `0.00` for an empty corpus rather than a NaN nobody can print. */
+function percent(part: number, whole: number): string {
+  return whole === 0 ? '0.00' : ((100 * part) / whole).toFixed(2);
+}
+
+/**
+ * The replay as one string.
+ *
+ * @param replay - The reading.
+ * @param beta - The bar it was read at, so the line cannot be quoted without the cell that produced it.
+ * @returns The report.
+ */
+export function formatSurfaceReplay(replay: SurfaceReplay, beta: number | null): string {
+  const bar = beta === null ? 'off' : String(beta);
+  const lines: string[] = [];
+  lines.push(
+    `the surface this ships (bar ${bar}): ${replay.after} / ${replay.cases} ` +
+      `(${percent(replay.after, replay.cases)} %), from ${replay.before} (${percent(replay.before, replay.cases)} %)`,
+  );
+  lines.push(
+    `  answered by the door ${replay.decidedByTheDoor}: ${replay.repaired} repaired, ${replay.broken} broken, ` +
+      `${replay.changedStuck} moved to a door that is not the truth, ` +
+      `${replay.changedStillRight} moved inside the truth set`,
+  );
+  lines.push(
+    `  ${replay.unchanged} rows stand on the answers already paid for: the bar is silent on them and the pipeline ` +
+      'takes the branch it always took',
+  );
+  return lines.join('\n');
+}
+
 /** The bar one fold chose: the most correct cases on that half, ties to the narrower bar. */
 function pick(sweep: readonly FirstHopBar[], side: 0 | 1): number {
   let best = sweep[0]!;

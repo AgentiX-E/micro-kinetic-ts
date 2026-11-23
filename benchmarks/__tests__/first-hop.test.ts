@@ -18,7 +18,9 @@ import {
   doorSpeaks,
   firstHopUnder,
   formatFirstHopReport,
+  formatSurfaceReplay,
   premiseHolds,
+  replaySurface,
   type FirstHopValidation,
   type HopCase,
 } from '../src/first-hop.js';
@@ -297,6 +299,115 @@ describe('the report', () => {
       passes: false,
     });
     expect(refused).toContain('does not pass -- fold 0 gains 3');
+  });
+});
+
+describe('the surface a confirmation dispatch would have to pay for', () => {
+  it('splits a corpus into the five kinds of row it is made of, and the five add up to the corpus', () => {
+    const cases: HopCase[] = [
+      hopCase({ datapack: 'repair' }),
+      hopCase({ datapack: 'break', answer: 'mid', truth: ['mid', 'side'] }),
+      hopCase({ datapack: 'stuck', answer: 'elsewhere', truth: ['somewhere'] }),
+      hopCase({ datapack: 'still-right', answer: 'mid', truth: ['front', 'mid'] }),
+      hopCase({ datapack: 'untouched', entryChildErrors: 100 }),
+    ];
+    const replay = replaySurface(cases, 50);
+    expect(replay.cases).toBe(5);
+    expect(replay.repaired).toBe(1);
+    expect(replay.broken).toBe(1);
+    expect(replay.changedStuck).toBe(1);
+    expect(replay.changedStillRight).toBe(1);
+    expect(replay.unchanged).toBe(1);
+    expect(
+      replay.repaired +
+        replay.broken +
+        replay.changedStuck +
+        replay.changedStillRight +
+        replay.unchanged,
+    ).toBe(replay.cases);
+  });
+
+  it('reads a row the rule repairs as a repair rather than as a case the model had right', () => {
+    const replay = replaySurface([hopCase()], 50);
+    expect(replay.before).toBe(0);
+    expect(replay.after).toBe(1);
+    expect(replay.repaired).toBe(1);
+  });
+
+  it('reads a row whose paid answer already names the door as unchanged, not as the rule’s work', () => {
+    // The paid answer is the door AND right; the rule is silent because there is nothing to replace. Counting this
+    // as a repair would credit the rule with a case the model had already settled.
+    const replay = replaySurface([hopCase({ answer: 'front' })], 50);
+    expect(replay.repaired).toBe(0);
+    expect(replay.decidedByTheDoor).toBe(0);
+    expect(replay.unchanged).toBe(1);
+    expect(replay.before).toBe(1);
+    expect(replay.after).toBe(1);
+  });
+
+  it('reads a row moved to a door that is not the truth as changed-but-stuck, not as a repair', () => {
+    const replay = replaySurface([hopCase({ answer: 'elsewhere', truth: ['somewhere'] })], 50);
+    expect(replay.repaired).toBe(0);
+    expect(replay.broken).toBe(0);
+    expect(replay.changedStuck).toBe(1);
+    expect(replay.after).toBe(0);
+  });
+
+  it('counts every row it changes as answered by the door, which is what makes a dispatch unnecessary', () => {
+    const cases: HopCase[] = [
+      hopCase({ datapack: 'a' }),
+      hopCase({ datapack: 'b', answer: 'front', truth: ['mid'] }),
+      hopCase({ datapack: 'c', answer: 'elsewhere', truth: ['somewhere'] }),
+      hopCase({ datapack: 'd', answer: 'mid', truth: ['front', 'mid'] }),
+    ];
+    const replay = replaySurface(cases, 50);
+    expect(replay.decidedByTheDoor).toBe(
+      replay.repaired + replay.broken + replay.changedStuck + replay.changedStillRight,
+    );
+  });
+
+  it('leaves the surface byte for byte when the bar is null', () => {
+    const cases: HopCase[] = [hopCase(), hopCase({ answer: 'front', truth: ['mid'] })];
+    const replay = replaySurface(cases, null);
+    expect(replay.after).toBe(replay.before);
+    expect(replay.decidedByTheDoor).toBe(0);
+    expect(replay.unchanged).toBe(replay.cases);
+  });
+
+  it('does not count a null answer as correct on either side', () => {
+    const replay = replaySurface([hopCase({ answer: null })], 50);
+    expect(replay.before).toBe(0);
+    expect(replay.after).toBe(0);
+    expect(replay.unchanged).toBe(1);
+  });
+
+  it('reads an unmeasured boundary as a reused row rather than as a silent firing', () => {
+    const replay = replaySurface([hopCase({ inboundFails: null })], 50);
+    expect(replay.decidedByTheDoor).toBe(0);
+    expect(replay.unchanged).toBe(1);
+  });
+});
+
+describe('the surface report', () => {
+  it('states the gain, the work the rule did and the rows that stand on paid answers', () => {
+    const replay = replaySurface(
+      [hopCase(), hopCase({ datapack: 'b', answer: 'mid', truth: ['mid'] })],
+      50,
+    );
+    const text = formatSurfaceReplay(replay, 50);
+    expect(text).toContain('bar 50');
+    expect(text).toContain('answered by the door 2');
+    expect(text).toContain('stand on the answers already paid for');
+  });
+
+  it('prints an empty corpus as zero percent rather than as a NaN', () => {
+    const text = formatSurfaceReplay(replaySurface([], 50), 50);
+    expect(text).toContain('(0.00 %)');
+    expect(text).not.toContain('NaN');
+  });
+
+  it('names the bar as off when the shipped pipeline is what is being replayed', () => {
+    expect(formatSurfaceReplay(replaySurface([hopCase()], null), null)).toContain('bar off');
   });
 });
 
