@@ -428,6 +428,9 @@ jobs:
         if: inputs.query_channel_split
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+          # `gh run download` reads GH_TOKEN and nothing else — the failure this line fixes was a step that had the
+          # `actions: read` permission and no token, so it exited 4 before walking anything.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           ARTIFACT_ARG=()

@@ -862,3 +862,42 @@ describe('the channel census buys no paid arm', () => {
     expect(study.match(/asked for the channel census/g) ?? []).toHaveLength(2);
   });
 });
+
+describe('the census workflow, which exists so a walk does not pay for an engine run', () => {
+  const census = readFileSync(
+    resolve(repoRoot, '.github/workflows/benchmark-channel-census.yml'),
+    'utf8',
+  );
+
+  it('is dispatched by hand, on the corpus, with no paid arm of any kind', () => {
+    expect(census).toContain('workflow_dispatch');
+    expect(census).toContain('uses: ./.github/actions/rcabench-shards');
+    // The three things that would make it a paid run: a model key, the agentic workflow, and an arm.
+    expect(census).not.toContain('DEEPSEEK_API_KEY');
+    expect(census).not.toContain('run-query-agent.ts');
+    expect(census).not.toContain('query_agent_sample');
+  });
+
+  it('prices against a named previous run, and needs the permission and the token to fetch it', () => {
+    // Both halves of the failure iteration 329's first walk hit: `gh run download` exits 4 without GH_TOKEN, and the
+    // permission is stated on the workflow rather than discovered by a 404 in a runner.
+    expect(census).toContain('inputs.baseline_run');
+    expect(census).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(census).toContain('actions: read');
+    expect(census).toContain('test -f artifacts/baseline/query-agent.ndjson');
+  });
+
+  it('writes and uploads all three files, because a walk nobody can re-read must be repeated', () => {
+    expect(census).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(census).toContain('--label-out artifacts/agentic/channel-labels.json');
+    expect(census).toContain('artifacts/agentic/channel-split.txt');
+    expect(census).toContain('name: channel-census');
+  });
+
+  it('does not build, because the walk imports the loader by source and cannot read a compiled one', () => {
+    // A `pnpm build` here would compile nine packages the census never loads, and the hour the workflow exists to
+    // save was two engine steps plus a build.
+    expect(census).toContain('pnpm install --frozen-lockfile');
+    expect(census).not.toContain('pnpm build');
+  });
+});

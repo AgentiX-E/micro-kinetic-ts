@@ -1,0 +1,120 @@
+name: Benchmark — channel census
+
+# One instrument, one job.
+#
+# ## Why this is a workflow of its own
+#
+# The channel census answers a question about the CORPUS and an artifact that already exists: which measurands does
+# the benchmark publish, and does a candidate conditioning column separate the population a rule repairs from the one
+# it breaks. It needs the corpus on disk and nothing else — and iteration 329 paid an hour of runner time for the
+# answer, because the census lived as a step inside `benchmark-agentic.yml`, whose `measure` job rebuilds a fault-free
+# profile and re-dumps the elimination pass before any step may run. Those two steps are 45 of that hour and neither
+# of them is an input to a walk.
+#
+# So the walk gets its own file. It buys no model call, it changes nothing the benchmark ships, and a dispatch of it
+# cannot be mistaken for a measurement of the arm.
+#
+# ## What it uploads
+#
+#   * `channel-profiles.ndjson` — every service's five-slot profile, the cache every later pricing reads at ¥0;
+#   * `channel-labels.json`     — the label census, which answers "does a status column exist at all";
+#   * `channel-split.txt`       — the reading: the pooled sweep, the separability table, the conditioned sweep.
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_run:
+        description: 'The run id whose `agentic-measure` artifact carries the ANSWERS to price against. Empty = write the profiles and the census only, which is what a first walk does'
+        type: string
+        default: ''
+        required: false
+      shard_tag:
+        description: "rcabench-data release tag holding the shards (empty = resolve it from this checkout's converter digest, and refuse unless it matches)"
+        type: string
+        default: ''
+        required: false
+      categories:
+        description: 'Comma-separated fault categories to download (empty = all 7). A subset is a SCOPE: a category that was not downloaded cannot report anything at all'
+        type: string
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+  # Read on ACTIONS for the one reason this workflow exists: the answers it prices against were bought by an earlier
+  # dispatch, and re-buying them to answer a question about evidence already held is the mistake 328's guard and this
+  # file both exist to prevent.
+  actions: read
+
+# One census at a time: two walks write the same three filenames, and the second would overwrite the first's reading
+# with a profile map from a different corpus checkout.
+concurrency:
+  group: channel-census-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  census:
+    name: census (corpus walk, no model call)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the converted corpus
+        id: corpus
+        uses: ./.github/actions/rcabench-shards
+        with:
+          tag: ${{ inputs.shard_tag }}
+          categories: ${{ inputs.categories }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # No build: the runner imports the loader by SOURCE path through `tsx`, so a build would compile packages the
+      # walk never loads. A census that needed the whole build would be paying for the engine it does not run.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Take the answers from the run that bought them
+        if: inputs.baseline_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/baseline
+          gh run download "${{ inputs.baseline_run }}" --repo "${{ github.repository }}" \
+            -n agentic-measure -D artifacts/baseline
+          # The artifact is 8 MB of dumps; the census reads one file out of it, and naming that file here is what
+          # turns a missing artifact from "the sweep printed nothing" into a failed step.
+          test -f artifacts/baseline/query-agent.ndjson
+
+      - name: Walk the corpus, count the labels, price the axis
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/agentic
+          ARTIFACT_ARG=()
+          if [ -f artifacts/baseline/query-agent.ndjson ]; then
+            ARTIFACT_ARG=(--artifact artifacts/baseline/query-agent.ndjson)
+          else
+            echo "::warning::no baseline run was named: this walk writes the profiles and the census and prices nothing"
+          fi
+          pnpm exec tsx benchmarks/src/run-channel-split.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --channel-out artifacts/agentic/channel-profiles.ndjson \
+            --label-out artifacts/agentic/channel-labels.json \
+            "${ARTIFACT_ARG[@]}" 2>&1 | tee artifacts/agentic/channel-split.txt
+
+      - name: Upload the census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-census
+          path: |
+            artifacts/agentic/channel-profiles.ndjson
+            artifacts/agentic/channel-labels.json
+            artifacts/agentic/channel-split.txt
+          if-no-files-found: warn
