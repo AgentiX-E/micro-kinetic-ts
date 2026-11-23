@@ -16,6 +16,7 @@ import {
   foldOf,
   resolvedUnder,
   stableHash,
+  toSplitCase,
   type Profiles,
   type SplitCase,
 } from '../src/channel-split.js';
@@ -250,5 +251,73 @@ describe('the cross-validated reading', () => {
     }
     const report = crossValidate(rows, profiles, [30, 100]);
     expect(report.selected).toEqual([30, 30]);
+  });
+});
+
+describe('reading an artifact row as a case', () => {
+  /** An artifact row, whose surprise is recorded per SIDE rather than for the settled answer. */
+  function armRow(over: Partial<import('../src/channel-split.js').ArmRow> = {}) {
+    return {
+      datapack: 'case-a',
+      faultType: 'HTTPResponseReplaceCode',
+      truth: ['front'],
+      answer: 'deep',
+      entry: 'front',
+      entryChildErrors: 0,
+      belowFails: false,
+      rawAnswer: 'deep',
+      rawSurprise: 900,
+      priorSurprise: 40,
+      novelCaller: null,
+      novelRise: null,
+      ...over,
+    };
+  }
+
+  it('reads the MODEL’s departure when the model’s answer is the one that stands', () => {
+    expect(toSplitCase(armRow()).answerSurprise).toBe(900);
+  });
+
+  it('reads the PRIOR’s departure when a refusal settled on the prior', () => {
+    // The case that shipped broken: with the per-side columns unread, every row's surprise was `undefined`, the
+    // resolver narrowed it to a refusal on all 1 422 rows, and the sweep printed six identical rows that looked
+    // like a refuted hypothesis instead of an unconnected instrument.
+    const refused = armRow({ answer: 'front', entry: null, rawAnswer: 'deep', priorSurprise: 40 });
+    expect(toSplitCase(refused).answerSurprise).toBe(40);
+  });
+
+  it('does not borrow the other side’s measurement when the settled side has none', () => {
+    // The prior's surprise is about a DIFFERENT service, so substituting it would price the rule on a name the
+    // answer did not settle on. A settled side with no measurement is a refusal, and it reads as one.
+    expect(toSplitCase(armRow({ rawSurprise: null })).answerSurprise).toBeNull();
+    // The one fallback that is not a substitution: a case with NO answer at all settles on nothing, and the prior's
+    // reading is the only one its refusal could have been about.
+    expect(
+      toSplitCase(armRow({ answer: null, rawSurprise: 900, priorSurprise: 40 })).answerSurprise,
+    ).toBe(40);
+    expect(
+      toSplitCase(armRow({ answer: null, rawSurprise: 900, priorSurprise: null })).answerSurprise,
+    ).toBe(900);
+  });
+
+  it('refuses an artifact that carries neither column, rather than reading it as a refusal', () => {
+    // A null and an absent key mean different things: the first is a measurement, the second is a schema the axis
+    // was not written for. Reading the second as the first is how a whole sweep came to read nothing.
+    const legacy = { ...armRow() } as Record<string, unknown>;
+    delete legacy.rawSurprise;
+    delete legacy.priorSurprise;
+    expect(() => toSplitCase(legacy as never)).toThrow(/carries no surprise column/);
+  });
+
+  it('carries every column the rule reads straight through', () => {
+    const one = toSplitCase(armRow({ novelCaller: 'mid', novelRise: 12 }));
+    expect(one).toMatchObject({
+      datapack: 'case-a',
+      answer: 'deep',
+      entry: 'front',
+      belowFails: false,
+      novelCaller: 'mid',
+      novelRise: 12,
+    });
   });
 });

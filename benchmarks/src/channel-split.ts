@@ -62,6 +62,70 @@ export interface SplitCase {
 /** Every case's service profiles, keyed by datapack and then by service id. */
 export type Profiles = ReadonlyMap<string, ReadonlyMap<string, ChannelDeparture>>;
 
+/** The part of an artifact row this axis reads. `QueryArmRow` satisfies it structurally. */
+export interface ArmRow {
+  readonly datapack: string;
+  readonly faultType: string;
+  readonly truth: readonly string[];
+  readonly answer: string | null;
+  readonly entry: string | null;
+  readonly entryChildErrors: number | null;
+  readonly belowFails: boolean | null;
+  readonly rawAnswer: string | null;
+  /** The model's own departure, recorded per SIDE. */
+  readonly rawSurprise: number | null;
+  /** The prior's departure, on the same measurement. */
+  readonly priorSurprise: number | null;
+  readonly novelCaller: string | null;
+  readonly novelRise: number | null;
+}
+
+/**
+ * Read an artifact row as a case, on the side the answer actually came from.
+ *
+ * ## The defect this exists to prevent, which shipped for one dispatch
+ *
+ * The artifact records the surprise per SIDE (`rawSurprise`, `priorSurprise`) and has no `answerSurprise` key at
+ * all. Reading a row through this module's own `SplitCase` shape therefore produced `undefined` in every row, and
+ * `entryAttribution` narrows that field by MEASUREMENT (`Number.isFinite`) precisely so an older artifact cannot
+ * fire — so the rule refused on all 1 422 rows, every bar of the sweep read exactly the shipped surface, and the
+ * table looked like a refuted hypothesis rather than like an instrument that was never connected.
+ *
+ * TypeScript could not catch it because `readNdjson<T>` asserts a shape it does not check. The guard is therefore
+ * at the boundary: a row carrying NEITHER column is refused by name, because a null and an absent key mean
+ * different things and only one of them is a measurement.
+ *
+ * @param row - The artifact row.
+ * @returns The case, with `answerSurprise` read on the settled side.
+ * @throws When the row carries neither surprise column at all.
+ */
+export function toSplitCase(row: ArmRow): SplitCase {
+  // Read as an unvalidated record for the guard, because the declared type says the columns exist and the runtime
+  // is what decides: `readNdjson<T>` asserts a shape it never checks, which is the hole this function closes.
+  const columns = row as unknown as Record<string, unknown>;
+  if (!('rawSurprise' in columns) && !('priorSurprise' in columns)) {
+    throw new Error(
+      `${String(columns.datapack)}: the row carries no surprise column, so this artifact predates the axis it is being priced on`,
+    );
+  }
+  const settledIsTheModels = row.answer !== null && row.answer === row.rawAnswer;
+  const answerSurprise = settledIsTheModels
+    ? (row.rawSurprise ?? null)
+    : (row.priorSurprise ?? row.rawSurprise ?? null);
+  return {
+    datapack: row.datapack,
+    faultType: row.faultType,
+    truth: row.truth,
+    answer: row.answer,
+    entry: row.entry,
+    entryChildErrors: row.entryChildErrors,
+    belowFails: row.belowFails,
+    answerSurprise,
+    novelCaller: row.novelCaller,
+    novelRise: row.novelRise,
+  };
+}
+
 /** One bar's reading. */
 export interface KappaReading {
   readonly kappa: number;

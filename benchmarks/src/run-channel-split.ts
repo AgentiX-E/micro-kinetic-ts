@@ -23,8 +23,14 @@ import { FSE26Loader } from '../../packages/kinetic/src/benchmarks/index.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import type { ChannelDeparture } from './channel-kind.js';
 import { readChannelProfiles, trafficOnly } from './channel-kind.js';
-import type { Profiles, SplitCase } from './channel-split.js';
-import { crossValidate, KAPPA_GRID, MIN_CHANNEL_GAIN, resolvedUnder } from './channel-split.js';
+import type { ArmRow, Profiles, SplitCase } from './channel-split.js';
+import {
+  crossValidate,
+  KAPPA_GRID,
+  MIN_CHANNEL_GAIN,
+  resolvedUnder,
+  toSplitCase,
+} from './channel-split.js';
 import { buildTelemetry } from './query-agent.js';
 
 /** One case's profiles, as written to the artifact. Compact because it is 70 000 services of three numbers. */
@@ -158,7 +164,9 @@ function main(): void {
     console.log('\nprofiles written, no artifact to price: nothing to read');
     return;
   }
-  const rows = readNdjson<SplitCase>(args.artifact);
+  // Read through the mapping rather than by shape: the artifact records the surprise per SIDE, and a reader that
+  // asserted the settled column's name would see `undefined` in every row (see `toSplitCase`).
+  const rows = readNdjson<ArmRow>(args.artifact).map(toSplitCase);
   const report = crossValidate(rows, profiles);
   console.log(`\nartifact ${args.artifact}: ${rows.length} rows`);
   console.log(`folds ${report.sizes[0]} / ${report.sizes[1]}`);
