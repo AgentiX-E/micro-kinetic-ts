@@ -298,6 +298,10 @@ describe('reading an artifact row as a case', () => {
     expect(
       toSplitCase(armRow({ answer: null, rawSurprise: 900, priorSurprise: null })).answerSurprise,
     ).toBe(900);
+    // Neither side carries a measurement: a refusal, which is what the resolver reads it as rather than as quiet.
+    expect(
+      toSplitCase(armRow({ answer: null, rawSurprise: null, priorSurprise: null })).answerSurprise,
+    ).toBeNull();
   });
 
   it('refuses an artifact that carries neither column, rather than reading it as a refusal', () => {
