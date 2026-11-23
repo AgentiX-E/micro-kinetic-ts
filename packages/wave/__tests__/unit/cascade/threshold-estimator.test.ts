@@ -90,6 +90,31 @@ describe('ThresholdEstimator.estimate', () => {
       const high = e.estimate(threeNodeGraph, 0.5).extinctionThreshold;
       expect(low).toBeLessThanOrEqual(high);
     });
+
+    it('is a FUNCTION of its arguments: two calls on one graph return the same thresholds', () => {
+      // The defect this pins, found on CI as a "flaky" monotonicity failure: the power iteration that produces the
+      // spectral gap was seeded with `Math.random()`, so `extinctionThreshold = γ / spectralGap` was a random
+      // variable. The reading was `1` at γ = 0.05 against `0.804` at γ = 0.5 — impossible for one gap, and produced
+      // by two. Every threshold is derived from that gap, so a caller cannot average, compare or cache any of them
+      // if the answer moves between identical calls. Asserted five times over an integer-array graph, where the
+      // spectral gap is exact and the only possible source of variation was the start vector.
+      const e = new ThresholdEstimator();
+      const first = e.estimate(threeNodeGraph, 0.2);
+      for (let repeat = 0; repeat < 4; repeat += 1) {
+        expect(e.estimate(threeNodeGraph, 0.2)).toEqual(first);
+      }
+    });
+
+    it('keeps the spectral gap itself stable, which is the quantity every threshold is divided by', () => {
+      const e = new ThresholdEstimator();
+      const gap = e.estimate(threeNodeGraph).spectralGap;
+      for (let repeat = 0; repeat < 4; repeat += 1) {
+        expect(e.estimate(threeNodeGraph).spectralGap).toBe(gap);
+      }
+      // A gap of zero would put every threshold at its ceiling, so the determinism must not have been bought by
+      // starting the iteration somewhere the deflated matrix annihilates.
+      expect(gap).toBeGreaterThan(0);
+    });
   });
 
   // ── Spectral gap ──────────────────────────────────────────

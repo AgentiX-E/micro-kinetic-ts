@@ -54,6 +54,35 @@ export interface WaveThresholds {
  * Estimates the thresholds that determine whether an alert
  * becomes a propagating cascade, sustains itself, or dies out.
  */
+/**
+ * The vector a power iteration starts from, as a deterministic function of its length and a seed.
+ *
+ * ## Why a generator rather than `Math.random()`
+ *
+ * The iteration converges to the dominant eigenvector from any start that is not orthogonal to it, so the START is
+ * free — but the ANSWER must not be. A random start made every threshold derived from the spectral gap a random
+ * variable, and the failure that exposed it was a test asserting monotonicity in the dissipation rate: with two
+ * different gaps, `γ = 0.05` clamped to `1` while `γ = 0.5` read `0.804`, which no single gap can produce. A pure
+ * function that is not pure is not a worse estimator, it is an unassertable one.
+ *
+ * The generator is a 32-bit LCG (Numerical Recipes' constants) written with `Math.imul` so the multiply stays exact
+ * in 32 bits on every engine: reproducible, portable, and free of the low-bit structure that makes a bare LCG's first
+ * values correlated — the value taken is the HIGH half of the state, which is the part the recurrence mixes.
+ *
+ * @param length - How many components the vector needs.
+ * @param seed - The starting state; two iterations on one matrix must pass different seeds (see the caller).
+ * @returns A vector in `[-1, 1)`, which the caller normalises.
+ */
+function startVector(length: number, seed: number): Float64Array {
+  const vector = new Float64Array(length);
+  let state = seed >>> 0;
+  for (let index = 0; index < length; index += 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    vector[index] = (state / 0x1_0000_0000) * 2 - 1;
+  }
+  return vector;
+}
+
 export class ThresholdEstimator {
   /**
    * Estimate all critical thresholds for alert wave dynamics.
@@ -243,8 +272,13 @@ export class ThresholdEstimator {
   private computeSpectralGap(matrix: Float64Array, N: number): number {
     if (N <= 1) return 1.0;
 
-    const v = new Float64Array(N);
-    for (let i = 0; i < N; i++) v[i] = Math.random() * 2 - 1;
+    // A DETERMINISTIC start, and the reason is measured rather than aesthetic: this estimator is a pure function of
+    // its inputs except for these two vectors, so a random start makes `extinctionThreshold` (`γ / spectralGap`) a
+    // random quantity. The extinction test asks the threshold to increase with `γ`, and on CI it read `1` at
+    // `γ = 0.05` against `0.804` at `γ = 0.5` — an impossibility for ONE gap, produced by two gaps drawn from two
+    // random starts. The test was not flaky; the function was: an estimator whose answer changes between two calls
+    // with identical arguments cannot be asserted about at all.
+    const v = startVector(N, 0x9e3779b9);
     this.normalize(v);
 
     let lambda1 = 0;
@@ -283,8 +317,10 @@ export class ThresholdEstimator {
       }
     }
 
-    const w = new Float64Array(N);
-    for (let i = 0; i < N; i++) w[i] = Math.random() * 2 - 1;
+    // A DIFFERENT deterministic start for the deflated iteration, because the first eigenvector is exactly the
+    // vector this one must not be: `deflated` has `v` in its null space, so a second start equal to `v` would
+    // collapse to the zero vector and report a spectral gap of `|λ₁|` for every graph.
+    const w = startVector(N, 0x85ebca6b);
     this.normalize(w);
 
     let lambda2 = 0;
