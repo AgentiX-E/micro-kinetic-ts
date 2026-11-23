@@ -9366,3 +9366,135 @@ corpus it does not identify the thing it was introduced to identify. The next at
 the witness cannot reach needs a NEW COLUMN rather than a new bar: the answer's departure split by _what the traffic
 says_ (duration against status) is the only remaining candidate that is not already in the evidence, and it is
 untested.
+
+## 329 The column exists and the answer cannot carry it: `ReplaceCode` is 34 for 34 on the truth and 0 for 34 on the answer (iteration 329)
+
+328 closed the channel split naming one untested candidate: split the answer's departure by _what the traffic says_,
+duration against status. This iteration tested it, and the test failed for a reason that is worth more than the axis.
+
+### 329.1 The census: 87 families, 4 336 262 records, zero status-like
+
+| reading                      | value                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| label families               | **87**                                                                                                    |
+| series records               | **4 336 262**                                                                                             |
+| families matching a status   | **0**                                                                                                     |
+| the only error-shaped family | `http.response.error_rate` (42 695 records), classified **symptom**                                        |
+| HTTP latency families        | `http.server.request.duration` 42 714, `.max` 39 935, `http.client.request.duration.max` 18 510            |
+
+The duration/status split is therefore **not available as a new column**. What is available is a channel this corpus
+already publishes, which turns the axis from "return when the data arrives" into "the evidence is insufficient here
+and will not improve on this corpus" — a much stronger claim, and the one this iteration can defend.
+
+### 329.2 The measurand: the standardised form refuses on the entire gated population
+
+| column                                     | measured on | readable |
+| ------------------------------------------ | ----------- | -------- |
+| `symptom` (standardised surprise)          | 224 / 224   | **0**    |
+| `symptomRise` (absolute rise, per request) | 224 / 224   | **224**  |
+
+An error rate is flat at zero before the injection, so the pre-window median is zero and the standardisation has no
+denominator. The refusal is not occasional: it lands on **all 224** cases the rule addresses, which is the first whole
+population this programme has found to sit on a measurand's refusal. The profile file records both columns and the
+sweep reads the absolute rise against rate floors; the reader **refuses a three-slot line by name**, so the cached
+file from 328 cannot be read as a quiet symptom.
+
+### 329.3 The conditioned rule is refused, and the separability check let it through
+
+| reading                            |                                          value |
+| ---------------------------------- | ---------------------------------------------: |
+| population at `κ = 750`            |                 **74 reachable / 150 at risk** |
+| precision at every floor of the grid | **0.750** (3 reachable ∧ condition, 1 at risk) |
+| separable under the registered 0.68 |                                        **YES** |
+| every cell of the 30-cell sweep    |                              **648 / 641 (+3 / −1)** |
+| selected cell, both folds          |                              `κ 30 / φ 0.0001` |
+| held out                           |                          **+3 / −1** — REFUSED |
+| in-sample maximum                  |                         **1 289** (never claimed) |
+
+Priced on **both** artifacts — because a refusal that holds on one file is a reading and a refusal that holds on two is
+a statement:
+
+| artifact             | sha256             | its own answers | shipped   | held out  | delta     | in-sample max | verdict |
+| -------------------- | ------------------ | --------------: | --------- | --------- | --------- | ------------: | ------- |
+| run B `45032153035`  | `993e181f67a9565e` | 1 285 (90.37 %) | 644 / 641 | 648 / 640 | **+4 / −1** | 1 288 | REFUSED |
+| run R1 `45040043777` | `572952e8ab856422` | 1 287 (90.51 %) | 645 / 642 | 648 / 641 | **+3 / −1** | 1 289 | REFUSED |
+
+Two findings about the instrument, both reusable. **A precision criterion is gameable by a rare condition**: the
+condition here fires on 4 of 224 cases, so 3-to-1 clears 0.68 while meaning nothing — and it reads 0.750 on R1 against
+0.800 on B for the same configuration, which is the same defect measured twice. **A grid whose optimum is on its
+corner has located the edge of where it was allowed to look**, not an optimum — both folds chose the smallest bar and
+the smallest floor, and the floor coordinate is perfectly flat across all thirty cells.
+
+### 329.4 The finding: the column separates the populations on the TRUTH, 34 for 34, and on the answer 0 for 34
+
+Everything above is arithmetic. This is the mechanism, and it is why no bar on this channel can work as a resolver.
+Over the 34 gated `HTTPResponseReplaceCode` cases:
+
+| population      | error rate rises above zero | median rise |
+| --------------- | --------------------------: | ----------: |
+| the **truth**   |                  **34 / 34** |  **9.867 %** |
+| the **answer**  |                   **0 / 34** |          0 % |
+
+The corpus is not quiet — the **answer** is, and it must be: the gate settled on that service because it was loud in
+another channel, and a deep service that returns no errors is precisely a service whose error rate cannot rise. **A
+resolver that reads a column on the answer cannot use evidence that is defined on the truth.** `NetworkDelay` reads 0
+fires on 18 for the same reason, so the family the axis was written for and the family it was written against both
+fall silent together, and the four fires that remain are `HTTPRequestDelay` (1, break), `HTTPResponseDelay` (1,
+repair), `HTTPRequestAbort` (1, repair) and `HTTPResponseAbort` (1, repair).
+
+### 329.5 The signal exists and is oriented — and that is not yet a rule
+
+Three diagnostics at ¥0 on artifacts already in hand, three different questions:
+
+| question                                                                                        | reading                                                                                            |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| is the LOUDEST error rate the truth?                                                             | **no** — 12 of 160 on the gated population (7.5 %); the loudest is `loadgenerator` or the dashboard |
+| is the **deepest** rising service, by distance from the entry, the truth?                        | **36 of 39** where the answer is wrong (92.3 %), **1 of 52** where it is right (1.9 %) — precision **0.407** on 91 speaks |
+| is the deepest rising service across the resource **and** symptom channels the truth?            | **no** — 26 / 74 reachable at a 300 bar (35.1 %), and **0 / 74** at a 30 bar                        |
+
+The error rate rises on the path from the entry down to the source and **stops there**, so the deepest rising service
+is a bound from above on where the source sits. That is a property of the generator and it is the first candidate in
+this programme whose failure mode is **orientation** rather than strength. It is also the same shared-evidence disease
+328 named, in a second measurand: a rule that speaks on 91 of 224 and is right on 36 cannot be licensed by a split
+that is defined by already knowing the answer is wrong. 330 pre-registers the question; it is not answered here.
+
+### 329.6 The reconciliation: 644 / 641 → 645 / 642 was two dispatches, not two instruments
+
+328's log recorded the shipped surface at **644 / 641**; the census log recorded **645 / 642**. A two-case shift in the
+comparison column of a published number is chased to ground rather than waved through:
+
+| check                                                         | reading                                                  |
+| ------------------------------------------------------------- | -------------------------------------------------------- |
+| caused by the new symptom column?                             | **no** — 328's 3-slot profiles padded to five reproduce it byte for byte |
+| does re-resolution move the artifact?                         | **no** — **0 of 1 422** answers move, on **both** artifacts |
+| what does the artifact say its own surface is?                 | `agent Top@1 1285` on B, `1287` on R1, in their own logs  |
+| which runs are these?                                          | 328 priced **run B**, the census priced **run R1** — `327.4` |
+| how wide is that band?                                         | **±2 cases**, measured over three runs                   |
+
+Both files were then downloaded and priced: B's sha256 `993e181f67a9565e` reads **644 / 641 = 1 285** and reproduces
+328's sweep **cell for cell** (638/643, 642/642, 644/645, 644/644, 641/644, 640/644, pooled +0/+4, at-risk **153**);
+R1's `572952e8ab856422` reads **645 / 642 = 1 287**. So the difference is the measured dispatch band and nothing else. The instrument was never
+wrong; the log was under-determined. Three changes ship to make that impossible to repeat: `surfaceReading` prints
+what the artifact says before any rule reads it, to **two decimals** (1 285 and 1 287 of 1 422 are 90.37 % and 90.51 %,
+which one decimal renders as one number); the runner prints the artifact's **sha256** beside it; and the runner prints
+how many answers the resolvers move on re-application — the invariant that makes the baseline a re-reading rather
+than a second opinion, printing `WARNING: the baseline is not the file` when it is not zero.
+
+One number in this register moves with that identification: the at-risk population reads **150** here against 328's
+**153**, while reachable reads **74** in both. The at-risk half is defined by the answers being right, so it moves with
+the dispatch; the reachable half is defined by the answer being wrong and the gate firing, which is stable.
+
+### 329.7 What ships, and what is closed
+
+| item                                    | state                                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------------------------- |
+| `ENTRY_PRIOR_TRAFFIC_KAPPA`             | `null` — unchanged since 328                                                            |
+| `ENTRY_PRIOR_SYMPTOM_FLOOR`             | `null` — the axis ships disabled, so the rule is byte-for-byte 324–328 behaviour        |
+| surface                                 | **1 286.3 (90.46 %)**, three runs — unchanged                                          |
+| model spend                             | **¥0** — no arm ran; the census dispatch buys no paid arm and the guard was verified    |
+| instrument                              | census, 5-slot profile file, separability check, conditioned sweep, surface reading with digest, re-resolution invariant |
+
+**Closed**: the axis is refused on both of its readings — the column does not exist as a new column (§329.1) and the
+conditioning that replaces it repairs 3 and breaks 1 against a requirement of 7 per fold (§329.3). The publishable
+claim is the strong one: **`HTTPResponseReplaceCode` is unreachable from per-case evidence read on the answer, on the
+response side, on this corpus as it is published** — and §329.4 is the reason, measured 34 for 34 on the other side.
