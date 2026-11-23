@@ -65,13 +65,7 @@ interface ProfileLine {
 }
 
 /** The five slots one service's profile is written in, in the order the reader expects them. */
-type Slots = readonly [
-  number | null,
-  number | null,
-  number | null,
-  number | null,
-  number | null,
-];
+type Slots = readonly [number | null, number | null, number | null, number | null, number | null];
 
 /** The flags this runner accepts. */
 interface Args {
@@ -341,7 +335,14 @@ function main(): void {
   // conditioning column's own distribution, because a column that is absent on most of the population cannot cut it.
   const byFamily = new Map<
     string,
-    { cases: number; fires: number; repairs: number; breaks: number; rises: number[]; unmeasured: number }
+    {
+      cases: number;
+      fires: number;
+      repairs: number;
+      breaks: number;
+      rises: number[];
+      unmeasured: number;
+    }
   >();
   for (const one of rows) {
     const bucket = byFamily.get(one.faultType) ?? {
@@ -392,9 +393,7 @@ function main(): void {
     ['fault', 'addressed', 'unmeasured', 'p10', 'p50', 'p90'],
     [...byFamily]
       .filter(([, bucket]) => bucket.rises.length + bucket.unmeasured > 0)
-      .sort(
-        (a, b) => b[1].rises.length + b[1].unmeasured - (a[1].rises.length + a[1].unmeasured),
-      )
+      .sort((a, b) => b[1].rises.length + b[1].unmeasured - (a[1].rises.length + a[1].unmeasured))
       .map(([fault, bucket]) => [
         fault,
         String(bucket.rises.length + bucket.unmeasured),

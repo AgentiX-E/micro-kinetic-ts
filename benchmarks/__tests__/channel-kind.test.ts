@@ -186,7 +186,11 @@ describe('a service’s departure, split by channel', () => {
       rate('http.response.error_rate.other', 30, 0.2),
     ]);
     expect(departure.symptomRise).toBe(0.2);
-    expect(departureOf([{ ...rate('http.response.error_rate', 900, 0.4), delta: Number.POSITIVE_INFINITY }]).symptomRise).toBeNull();
+    expect(
+      departureOf([
+        { ...rate('http.response.error_rate', 900, 0.4), delta: Number.POSITIVE_INFINITY },
+      ]).symptomRise,
+    ).toBeNull();
   });
 
   it('takes each symptom measurand as its own maximum rather than off one series', () => {

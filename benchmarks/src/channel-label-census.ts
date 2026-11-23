@@ -87,11 +87,7 @@ export function censusRows(counts: ReadonlyMap<string, number>): CensusRow[] {
       statusLike: statusLikeLabel(label),
     }))
     .sort((left, right) =>
-      right.count === left.count
-        ? left.label < right.label
-          ? -1
-          : 1
-        : right.count - left.count,
+      right.count === left.count ? (left.label < right.label ? -1 : 1) : right.count - left.count,
     );
 }
 
@@ -126,8 +122,7 @@ export function renderCensus(rows: readonly CensusRow[]): string {
     `${'count'.padStart(width)}  ${'kind'.padEnd(kindWidth)}  label`,
     `${'-'.repeat(width)}  ${'-'.repeat(kindWidth)}  -----`,
     ...rows.map(
-      (one) =>
-        `${grouped(one.count).padStart(width)}  ${one.kind.padEnd(kindWidth)}  ${one.label}`,
+      (one) => `${grouped(one.count).padStart(width)}  ${one.kind.padEnd(kindWidth)}  ${one.label}`,
     ),
     '',
   ];

@@ -76,7 +76,11 @@ describe('counting the families a corpus writes', () => {
       ['a.series', 2],
       ['c.series', 9],
     ]);
-    expect(censusRows(counts).map((one) => one.label)).toEqual(['c.series', 'a.series', 'b.series']);
+    expect(censusRows(counts).map((one) => one.label)).toEqual([
+      'c.series',
+      'a.series',
+      'b.series',
+    ]);
   });
 
   it('breaks a tie by label in BOTH directions, so two walks of one corpus agree byte for byte', () => {
@@ -85,7 +89,11 @@ describe('counting the families a corpus writes', () => {
       ['a.series', 4],
       ['b.series', 4],
     ]);
-    expect(censusRows(counts).map((one) => one.label)).toEqual(['a.series', 'b.series', 'c.series']);
+    expect(censusRows(counts).map((one) => one.label)).toEqual([
+      'a.series',
+      'b.series',
+      'c.series',
+    ]);
   });
 
   it('carries each family’s channel kind and whether it is status-shaped', () => {

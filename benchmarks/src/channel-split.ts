@@ -559,7 +559,12 @@ export function separationOf(
   const readings: SeparationReading[] = floors.map((floor) => {
     const yes = reachable.filter((one) => admits(one, floor)).length;
     const no = atRisk.filter((one) => admits(one, floor)).length;
-    return { floor, reachable: yes, atRisk: no, precision: yes + no === 0 ? null : yes / (yes + no) };
+    return {
+      floor,
+      reachable: yes,
+      atRisk: no,
+      precision: yes + no === 0 ? null : yes / (yes + no),
+    };
   });
   // Narrowed by construction rather than by a cast at the end: a floor that admits nothing has no precision, and a
   // `best` is by definition a floor that admitted something.

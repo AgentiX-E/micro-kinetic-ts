@@ -171,7 +171,7 @@ on:
       query_channel_baseline_run:
         description: "The run id whose `agentic-measure` artifact carries the ANSWERS this dispatch prices the channel split against. Empty = price against this run's own arm, which only exists when one ran. A census dispatch skips both paid arms by design, so it must name a previous run here or it can only write profiles: the answers are evidence already bought, and re-buying them would make a ¥0 read cost ¥21"
         type: string
-        default: ""
+        default: ''
         required: false
 
       query_channel_split:

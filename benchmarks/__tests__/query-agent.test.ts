@@ -3074,24 +3074,54 @@ describe('the entry prior’s channel clauses', () => {
       entryAttribution(
         'leaf',
         evidence({
-          answerChannels: { resource: 900, traffic: 950, other: null, symptom: null, symptomRise: null },
+          answerChannels: {
+            resource: 900,
+            traffic: 950,
+            other: null,
+            symptom: null,
+            symptomRise: null,
+          },
         }),
         ENTRY_PRIOR_SURPRISE,
         200,
       ),
     ).toBeNull();
-    expect(entryAttribution('leaf', evidence({ answerChannels: null }), ENTRY_PRIOR_SURPRISE, 200)).toBeNull();
+    expect(
+      entryAttribution('leaf', evidence({ answerChannels: null }), ENTRY_PRIOR_SURPRISE, 200),
+    ).toBeNull();
   });
 
   it('reads the symptom floor as a CONDITION on the traffic clause, in both directions', () => {
     const pooled = { resource: 5, traffic: 900, other: null, symptom: null, symptomRise: 0.4 };
-    expect(entryAttribution('leaf', evidence({ answerChannels: pooled }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBe(
-      'front',
-    );
+    expect(
+      entryAttribution(
+        'leaf',
+        evidence({ answerChannels: pooled }),
+        ENTRY_PRIOR_SURPRISE,
+        200,
+        0.01,
+      ),
+    ).toBe('front');
     const quiet = { ...pooled, symptomRise: 0.001 };
-    expect(entryAttribution('leaf', evidence({ answerChannels: quiet }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBeNull();
+    expect(
+      entryAttribution(
+        'leaf',
+        evidence({ answerChannels: quiet }),
+        ENTRY_PRIOR_SURPRISE,
+        200,
+        0.01,
+      ),
+    ).toBeNull();
     const unmeasured = { ...pooled, symptomRise: null };
-    expect(entryAttribution('leaf', evidence({ answerChannels: unmeasured }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBeNull();
+    expect(
+      entryAttribution(
+        'leaf',
+        evidence({ answerChannels: unmeasured }),
+        ENTRY_PRIOR_SURPRISE,
+        200,
+        0.01,
+      ),
+    ).toBeNull();
   });
 });
 

@@ -222,8 +222,7 @@ describe('the cross-validated reading', () => {
     for (const [id, one] of profiles) {
       const shape = one.get('deep')!;
       if (shape.resource === 900) continue;
-      if (kept >= 3)
-        thinner.set(id, new Map([['deep', departure(900, 950, null)]]));
+      if (kept >= 3) thinner.set(id, new Map([['deep', departure(900, 950, null)]]));
       kept += 1;
     }
     const report = crossValidate(rows, thinner, [1, 200], MIN_CHANNEL_GAIN);
@@ -392,11 +391,16 @@ describe('the conditioned rule, priced on both folds and swapped', () => {
   }
 
   /** How many rows a predicate selects, per fold. */
-  function perFold(rows: readonly SplitCase[], keep: (one: SplitCase) => boolean): [number, number] {
+  function perFold(
+    rows: readonly SplitCase[],
+    keep: (one: SplitCase) => boolean,
+  ): [number, number] {
     const steps: [number, number] = [0, 0];
     rows.forEach((one, index) => {
       if (keep(one)) {
-        const familyIndex = rows.slice(0, index).filter((o) => o.faultType === one.faultType).length;
+        const familyIndex = rows
+          .slice(0, index)
+          .filter((o) => o.faultType === one.faultType).length;
         steps[foldOf(one.faultType, familyIndex)] += 1;
       }
     });
@@ -451,9 +455,12 @@ describe('the conditioned rule, priced on both folds and swapped', () => {
       const rise = wrong ? (fold === 0 ? 0.4 : 0.001) : fold === 0 ? 0.02 : 0;
       profiles.set(datapack, new Map([['deep', departure(5, 900, null, rise)]]));
     }
-    const report = crossValidateConditioned(rows, profiles, [750], [
-      0.0001, 0.001, 0.01, 0.05, 0.1,
-    ]);
+    const report = crossValidateConditioned(
+      rows,
+      profiles,
+      [750],
+      [0.0001, 0.001, 0.01, 0.05, 0.1],
+    );
     expect(report.selected[0].floor).toBeGreaterThan(report.selected[1].floor);
     expect(report.passes).toBe(false);
   });
