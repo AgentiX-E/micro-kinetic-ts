@@ -9606,3 +9606,42 @@ runner samples 100+100 by default, so a full-trace dispatch is `20.88 × 200 / 1
 ranking contribution of zero under every published metric in this field.
 
 Full audit: `docs/cost-audit-334-335.md`.
+
+## 331 The head-precedence rule: a loud head is what a conduit looks like (iteration 331)
+
+Pre-registered in `docs-repository:preregistration-331.md` and priced at **¥0** on both artifacts. The rule — *a
+resolver may not take an answer away from a head that is itself loud* — was refuted on its mechanism, not on its
+margin, and the refutation is a proof rather than a measurement.
+
+| reading | prediction | run R1 (`572952e8ab856422`, 1 287) | run B (`993e181f67a9565e`, 1 285) |
+| ------- | ---------- | ---------------------------------: | -------------------------------: |
+| P1: of the wrong overrides, the head is loud at κ=300 | ≥ 8 of 10 | **1** | **0** |
+| P2: of the right overrides, the head is loud at κ=300 | ≤ 20 % | **37.2 %** (81/218) | 36.7 % (80/218) |
+| P3: held-out gain | ≥ +7 each fold | −13 / −4, best cell on the grid corner | −14 / −6 |
+| P4: model answers touched | 0 | **0** | 0 |
+
+### 331.1 Why it cannot fire, in one sentence and then in numbers
+
+The guard asks whether the **fusion head** is loud; the front-door resolver asks whether **the answer it is about to
+rename** is quiet — at the same bar — so the two questions are negations of each other on the population the rule
+targets. On all ten wrongly overridden cases the head **is** the engine winner, so the premise had been read on that
+very service, and nine of the ten heads sit at 53.8, 66.2, 96.4, 107.7, 131.2, 156.0, 189.0, 223.9 and 282.6 — all
+under the resolver's own bar of 300, which is why it fired. At bars low enough to reach them (κ = 30 reaches 10 of 10)
+the guard also fires on **195 of 218** overrides that were right, because a conduit's traffic channel is loud by
+definition.
+
+### 331.2 The tenth case, and the residue that becomes 332
+
+`ts4-ts-inside-payment-service-stress-gc2kcm`: head `ts-inside-payment-service` at departure **5 596**, `priorSurprise`
+5 596, `rawAnswer` `ts-order-service` at departure **250** — and the front door renamed **the model's** answer, not the
+head. The resolver's premise is applied to *the last answer in the chain*, which is the model's whenever the model
+spoke; the guard was pointed at a service the resolver never examined. A rule that polices this rename must be stated
+over the answer the resolver is about to replace. That is pre-registered as 332 and is not a re-reading of this one.
+
+### 331.3 What ships
+
+The instrument only: `benchmarks/src/head-precedence.ts` (38 tests, coverage 100/100/100/100 across statements,
+branches, functions and lines) and `benchmarks/src/run-head-precedence.ts`, which prints both artifacts' digests
+before any table. The rule ships nowhere. **Axes this closes.** One: "loudness of the head" as a guard on resolver
+precedence. **Axes this opens.** One: the resolver's input is the model's answer, and that is a population nobody has
+priced.

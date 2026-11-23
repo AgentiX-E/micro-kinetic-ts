@@ -126,6 +126,10 @@ export default defineConfig({
         // null branches, the multi-label minimum, the missing-graph branch and the table's alignment are all
         // asserted by name in `causal-depth-slice.test.ts`.
         'src/causal-depth-slice.ts',
+        // Added with the module: the head-precedence rule's guard, its two refusals that are not about a number
+        // (an unmeasured profile and a disabled bar), the partition it shares with the channel split, and the
+        // three clauses that can refuse the rule whatever it reads. `head-precedence.test.ts` names each.
+        'src/head-precedence.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
