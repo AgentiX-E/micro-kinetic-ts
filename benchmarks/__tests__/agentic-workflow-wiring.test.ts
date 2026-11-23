@@ -798,6 +798,18 @@ describe('the channel split’s wiring', () => {
     expect(upload).toContain('artifacts/agentic/channel-split.txt');
   });
 
+  it('prices against a named PREVIOUS run, because a census dispatch buys no arm of its own', () => {
+    // The gap this closes, found by trying to dispatch the axis: `query_channel_split` skips both paid arms by
+    // design, so the step had no artifact to read and could only write profiles — the ¥0 read would have needed a
+    // second ¥21 arm to answer a question about evidence already bought.
+    expect(inputNames(WORKFLOW)).toContain('query_channel_baseline_run');
+    expect(measure).toContain('inputs.query_channel_baseline_run');
+    expect(measure).toContain('gh run download');
+    expect(measure).toContain('-n agentic-measure');
+    // The permission the download needs, stated on the workflow rather than discovered by a 404 in a runner.
+    expect(WORKFLOW).toContain('actions: read');
+  });
+
   it('writes the label census in the same walk, because a column that does not exist cannot be swept', () => {
     // 329's first question is answered by the walk that was going to run anyway: the census counts the families the
     // corpus writes. A dispatch that only printed it would lose it — the profiles were thrown away exactly once for

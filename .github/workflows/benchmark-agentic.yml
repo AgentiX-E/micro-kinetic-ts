@@ -168,6 +168,12 @@ on:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
         default: ''
+      query_channel_baseline_run:
+        description: "The run id whose `agentic-measure` artifact carries the ANSWERS this dispatch prices the channel split against. Empty = price against this run's own arm, which only exists when one ran. A census dispatch skips both paid arms by design, so it must name a previous run here or it can only write profiles: the answers are evidence already bought, and re-buying them would make a ¥0 read cost ¥21"
+        type: string
+        default: ""
+        required: false
+
       query_channel_split:
         description: "Price the channel split over the corpus after the arm: walk every case once, write each service's resource/traffic/other departure profile, and print the two-fold cross-validation of the bar that decides whether an answer whose departure lives only in the traffic channel is a conduit rather than a source. Costs NO model call — it re-reads evidence the case already carries — and ~25 minutes of walk. Off by default because a dispatch that is not asking this question should not pay for it"
         required: false
@@ -176,6 +182,11 @@ on:
 
 permissions:
   contents: read
+  #   Read on ACTIONS, not on contents: the channel census prices a new axis against the answers a PREVIOUS dispatch
+  #   already bought (`query_channel_baseline_run`). A workflow that could only see its own workspace would have to
+  #   buy a second arm to answer a question about evidence it already holds — which is the ¥15.6 mistake 328's guard
+  #   was written to stop.
+  actions: read
 
 jobs:
   measure:
@@ -422,8 +433,15 @@ jobs:
           ARTIFACT_ARG=()
           if [ -f artifacts/agentic/query-agent.ndjson ]; then
             ARTIFACT_ARG=(--artifact artifacts/agentic/query-agent.ndjson)
+          elif [ -n "${{ inputs.query_channel_baseline_run }}" ]; then
+            # A census dispatch buys no paid arm, so its answers come from the dispatch that already bought them.
+            mkdir -p artifacts/baseline
+            gh run download "${{ inputs.query_channel_baseline_run }}" \
+              --repo "${{ github.repository }}" -n agentic-measure -D artifacts/baseline
+            ARTIFACT_ARG=(--artifact artifacts/baseline/query-agent.ndjson)
+            echo "priced against run ${{ inputs.query_channel_baseline_run }}'s artifact"
           else
-            echo "::warning::query_channel_split was requested but the arm produced no artifact: profiles only"
+            echo "::warning::query_channel_split was requested, no arm ran and no baseline run was named: profiles only"
           fi
           pnpm exec tsx benchmarks/src/run-channel-split.ts \
             --data-dir "$HOME/rcabench/json" \
