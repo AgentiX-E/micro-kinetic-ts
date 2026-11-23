@@ -782,11 +782,20 @@ describe('the channel split’s wiring', () => {
     );
   });
 
-  it('refuses to price the rule against an artifact that cannot make it fire', () => {
-    // The engine's verdict rows carry no entry and no below-door premise, so a fallback to them would price a rule
-    // that cannot fire and print the zero as a reading. The step says NOT PRICED instead.
-    expect(measure).toContain('CHANNEL SPLIT NOT PRICED');
-    expect(measure).not.toContain('ANSWER_FILE=artifacts/agentic/per-case.ndjson');
+  it('prices against the arm’s artifact when there is one, and walks anyway when there is not', () => {
+    // The profiles are a property of the CORPUS. The first dispatch of this axis priced the rule and then threw the
+    // profiles away, so its zero could only be re-read by walking again — the class of defect this file exists for.
+    // The step therefore passes `--artifact` by PRESENCE and always writes the profile file.
+    expect(measure).toContain('ARTIFACT_ARG=(--artifact artifacts/agentic/query-agent.ndjson)');
+    expect(measure).toContain('profiles only');
+    expect(measure).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(measure).not.toContain('CHANNEL SPLIT NOT PRICED');
+  });
+
+  it('uploads both the profiles and the reading, because a walk nobody can re-read is a walk that must be repeated', () => {
+    const upload = measure.slice(measure.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/channel-profiles.ndjson');
+    expect(upload).toContain('artifacts/agentic/channel-split.txt');
   });
 
   it('keeps the runner and the two modules it prices with in the tree', () => {

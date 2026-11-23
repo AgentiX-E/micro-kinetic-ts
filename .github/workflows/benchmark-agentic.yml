@@ -410,23 +410,25 @@ jobs:
 
       - name: Price the channel split (corpus walk, no model call)
         # The corpus is already here and the answers are already in the arm's artifact, so the split's price is a
-        # walk rather than a second arm. The artifact is REQUIRED rather than optional: the rule reads the entry,
-        # the below-door premise and the answer together, and the engine's verdict rows carry none of the first two —
-        # a fallback to them would price a rule that cannot fire and call the zero a result.
+        # walk rather than a second arm. The walk runs WHETHER OR NOT an arm produced answers, because the profiles
+        # are a property of the CORPUS: the first dispatch of this axis priced the rule and then threw the profiles
+        # away, which made its zero re-readable only by walking again. A dispatch with no arm now writes the profiles
+        # and prices nothing, and the later read is free.
         if: inputs.query_channel_split
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
           set -o pipefail
-          if [ ! -f artifacts/agentic/query-agent.ndjson ]; then
-            echo "::warning::query_channel_split was requested but the arm produced no artifact, so the split was NOT PRICED"
-            echo "CHANNEL SPLIT NOT PRICED: no query-agent.ndjson" | tee artifacts/agentic/channel-split.txt
-            exit 0
+          ARTIFACT_ARG=()
+          if [ -f artifacts/agentic/query-agent.ndjson ]; then
+            ARTIFACT_ARG=(--artifact artifacts/agentic/query-agent.ndjson)
+          else
+            echo "::warning::query_channel_split was requested but the arm produced no artifact: profiles only"
           fi
           pnpm exec tsx benchmarks/src/run-channel-split.ts \
-            --artifact artifacts/agentic/query-agent.ndjson \
             --data-dir "$HOME/rcabench/json" \
-            --channel-out artifacts/agentic/channel-profiles.ndjson 2>&1 | tee artifacts/agentic/channel-split.txt
+            --channel-out artifacts/agentic/channel-profiles.ndjson \
+            "${ARTIFACT_ARG[@]}" 2>&1 | tee artifacts/agentic/channel-split.txt
 
       - name: Upload the measurement
         if: always()
@@ -446,6 +448,8 @@ jobs:
             artifacts/agentic/manifest.json
             artifacts/agentic/query-agent.ndjson
             artifacts/agentic/query-agent.txt
+            artifacts/agentic/channel-profiles.ndjson
+            artifacts/agentic/channel-split.txt
           if-no-files-found: warn
 
   study:
