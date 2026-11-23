@@ -36,7 +36,13 @@ import type { Telemetry, TelemetryMetric } from './query-agent.js';
  */
 export type ChannelKind = 'symptom' | 'resource' | 'traffic' | 'other';
 
-/** One service's strongest departure in each of the three non-symptom channels. */
+/**
+ * One service's strongest departure in each channel, on the measurand that channel can be read on.
+ *
+ * The three departure channels are standardised (`surprise`, in units of the series' own pre-window spread) so they
+ * can be compared with each other. The symptom channel is not: it is a rate, and the standardisation refuses exactly
+ * where the rate becomes interesting (see {@link ChannelDeparture.symptomRise}).
+ */
 export interface ChannelDeparture {
   /** Largest `surprise` among the resource series, or `null` when none could be standardised. */
   readonly resource: number | null;
@@ -44,6 +50,23 @@ export interface ChannelDeparture {
   readonly traffic: number | null;
   /** Largest `surprise` among the unclaimed series, or `null` when none could be standardised. */
   readonly other: number | null;
+  /**
+   * Largest `surprise` among the SYMPTOM series, or `null` when none could be standardised.
+   *
+   * Recorded because it is a measurement, and reported rather than read: on this corpus it is `null` on the cases it
+   * would matter for, which is finding 329.2 rather than a defect here.
+   */
+  readonly symptom: number | null;
+  /**
+   * Largest ABSOLUTE rise (`peak − baseline`) among the symptom series, or `null` when the case carries none.
+   *
+   * This is the measurand the symptom channel is actually read on, and the reason is a refusal rather than a taste.
+   * `surprise` divides by the pre-window's spread, so a series flat at ZERO before the injection has no standardised
+   * rise at all — and an error rate is flat at zero before the injection in every case where it is diagnostic. The
+   * refusal therefore lands, exactly and only, on the signal. A rate is already dimensionless (errors per request),
+   * so its rise is comparable across services without standardising it, and the floors it is read against are rates.
+   */
+  readonly symptomRise: number | null;
 }
 
 /** The channel kinds a departure is measured over, in the order a report reads them. */
@@ -82,14 +105,33 @@ export function departureOf(metrics: readonly TelemetryMetric[]): ChannelDepartu
     traffic: null,
     other: null,
   };
+  // The two symptom columns are maxima of their OWN measurand over the same series, taken separately: the loudest
+  // standardised rise and the largest absolute one are different questions and need not be the same series.
+  let symptom: number | null = null;
+  let symptomRise: number | null = null;
   for (const one of metrics) {
-    const kind = channelKindOf(one.label);
-    if (kind === 'symptom') continue;
+    if (channelKindOf(one.label) === 'symptom') {
+      if (one.surprise !== undefined && (symptom === null || one.surprise > symptom)) {
+        symptom = one.surprise;
+      }
+      if (Number.isFinite(one.delta) && (symptomRise === null || one.delta > symptomRise)) {
+        symptomRise = one.delta;
+      }
+      continue;
+    }
     if (one.surprise === undefined) continue;
-    const incumbent = best[kind];
-    if (incumbent === null || one.surprise > incumbent) best[kind] = one.surprise;
+    const incumbent = best[channelKindOf(one.label) as Exclude<ChannelKind, 'symptom'>];
+    if (incumbent === null || one.surprise > incumbent) {
+      best[channelKindOf(one.label) as Exclude<ChannelKind, 'symptom'>] = one.surprise;
+    }
   }
-  return { resource: best.resource, traffic: best.traffic, other: best.other };
+  return {
+    resource: best.resource,
+    traffic: best.traffic,
+    other: best.other,
+    symptom,
+    symptomRise,
+  };
 }
 
 /**
@@ -117,6 +159,43 @@ export function trafficOnly(departure: ChannelDeparture | null, kappa: number): 
   if (departure.resource !== null && departure.resource > kappa) return false;
   if (departure.other !== null && departure.other > departure.traffic) return false;
   return true;
+}
+
+/**
+ * Whether a service is a CONDUIT: calls failing through it, no work of its own, and latency above its own spread.
+ *
+ * Three clauses, and the third is the one iteration 329 adds to the two 328 priced.
+ *
+ * 1. **Traffic only** ({@link trafficOnly}) — the service's own container did nothing and nothing else in its profile
+ *    was louder than its traffic. Without this clause the rule names the front door for every service whose calls
+ *    are failing, which is every hop on the path.
+ * 2. **Its own error rate rose by at least `floor`** — the calls it carries are FAILING, not merely slower. The rise
+ *    is the absolute one, for the reason {@link ChannelDeparture.symptomRise} states: a rate flat at zero before the
+ *    injection has no standardised rise, and that is the case this clause is for.
+ * 3. **`floor === null` reads the POOLED rule** — 328's clause and nothing more. It is the comparison every
+ *    conditioned reading is stated against, and it is expressed here rather than in the caller so the two pricings
+ *    cannot drift into two implementations of one rule.
+ *
+ * The channel cannot say WHERE — a symptom rise is true of every hop on a failure's path, which is why 328 refused
+ * it as a localiser. It can say WHAT: an error-rate rise marks the family of faults that rewrites a response, and
+ * that is a classification rather than a location, which is the question this clause asks.
+ *
+ * @param departure - The service's profile, or `null` when the case does not carry that service.
+ * @param kappa - The resource ceiling, in units of the pre-window's own spread.
+ * @param floor - The error-rate rise a conduit must show, in errors per request, or `null` for the pooled rule.
+ * @returns True when the departure reads as a conduit carrying a failure.
+ */
+export function conduitUnder(
+  departure: ChannelDeparture | null,
+  kappa: number,
+  floor: number | null,
+): boolean {
+  if (!trafficOnly(departure, kappa)) return false;
+  if (floor === null) return true;
+  const rise = departure!.symptomRise;
+  // `null` is the producer's refusal and a `0` is a measured quiet: a rule that read the first as the second would
+  // fire on every case whose error-rate family is absent, which on this corpus is most of them.
+  return rise !== null && rise >= floor;
 }
 
 /**

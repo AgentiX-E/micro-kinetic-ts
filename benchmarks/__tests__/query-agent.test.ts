@@ -25,6 +25,7 @@ import {
   bySurprise,
   entryAttribution,
   entryOf,
+  entryPremise,
   executeTool,
   formatNumber,
   gateAdmits,
@@ -3022,6 +3023,75 @@ describe('the entry prior, as a predicate', () => {
 
   it('fails closed on a NaN, which is a failed measurement wearing a number', () => {
     expect(entryAttribution('leaf', evidence({ answerSurprise: Number.NaN }))).toBeNull();
+  });
+});
+
+describe('the entry prior’s premise, read on its own', () => {
+  const evidence = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    belowFails: false,
+    answerSurprise: 0,
+    answerChannels: null,
+    ...over,
+  });
+
+  it('names the entry when every clause holds, which is what the pricing counts as a case the rule addresses', () => {
+    // The population tables in the register are stated over this predicate (74 reachable, 153 at risk), so it has to
+    // be the resolver's own function rather than a restatement: two implementations of one premise is how a rule
+    // comes to be priced by one and shipped by another.
+    expect(entryPremise('leaf', evidence())).toBe('front');
+    expect(entryPremise('front', evidence())).toBeNull();
+    expect(entryPremise(null, evidence())).toBeNull();
+    expect(entryPremise('leaf', undefined)).toBeNull();
+    expect(entryPremise('leaf', evidence({ belowFails: true }))).toBeNull();
+    expect(entryPremise('leaf', evidence({ entryChildErrors: 1 }))).toBeNull();
+  });
+});
+
+describe('the entry prior’s channel clauses', () => {
+  const evidence = (over: Partial<EntryPriorEvidence> = {}): EntryPriorEvidence => ({
+    entry: 'front',
+    entryChildErrors: 0,
+    belowFails: false,
+    answerSurprise: ENTRY_PRIOR_SURPRISE + 100,
+    answerChannels: { resource: 5, traffic: 900, other: null, symptom: null, symptomRise: null },
+    ...over,
+  });
+
+  it('ships the bar disabled, so the axis reads the rule 324–328 shipped until a fold says otherwise', () => {
+    // `ENTRY_PRIOR_TRAFFIC_KAPPA` is `null` and this asserts it through the RESOLVER rather than through the
+    // constant: a constant read back is not a rule, and the defect worth pinning is a default that fires.
+    expect(entryAttribution('leaf', evidence())).toBeNull();
+  });
+
+  it('names the entry for a traffic-shaped answer once a bar is given', () => {
+    expect(entryAttribution('leaf', evidence(), ENTRY_PRIOR_SURPRISE, 200)).toBe('front');
+  });
+
+  it('refuses an answer that did work of its own, and one the case cannot profile', () => {
+    expect(
+      entryAttribution(
+        'leaf',
+        evidence({
+          answerChannels: { resource: 900, traffic: 950, other: null, symptom: null, symptomRise: null },
+        }),
+        ENTRY_PRIOR_SURPRISE,
+        200,
+      ),
+    ).toBeNull();
+    expect(entryAttribution('leaf', evidence({ answerChannels: null }), ENTRY_PRIOR_SURPRISE, 200)).toBeNull();
+  });
+
+  it('reads the symptom floor as a CONDITION on the traffic clause, in both directions', () => {
+    const pooled = { resource: 5, traffic: 900, other: null, symptom: null, symptomRise: 0.4 };
+    expect(entryAttribution('leaf', evidence({ answerChannels: pooled }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBe(
+      'front',
+    );
+    const quiet = { ...pooled, symptomRise: 0.001 };
+    expect(entryAttribution('leaf', evidence({ answerChannels: quiet }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBeNull();
+    const unmeasured = { ...pooled, symptomRise: null };
+    expect(entryAttribution('leaf', evidence({ answerChannels: unmeasured }), ENTRY_PRIOR_SURPRISE, 200, 0.01)).toBeNull();
   });
 });
 

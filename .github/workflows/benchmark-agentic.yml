@@ -428,6 +428,7 @@ jobs:
           pnpm exec tsx benchmarks/src/run-channel-split.ts \
             --data-dir "$HOME/rcabench/json" \
             --channel-out artifacts/agentic/channel-profiles.ndjson \
+            --label-out artifacts/agentic/channel-labels.json \
             "${ARTIFACT_ARG[@]}" 2>&1 | tee artifacts/agentic/channel-split.txt
 
       - name: Upload the measurement
@@ -449,6 +450,7 @@ jobs:
             artifacts/agentic/query-agent.ndjson
             artifacts/agentic/query-agent.txt
             artifacts/agentic/channel-profiles.ndjson
+            artifacts/agentic/channel-labels.json
             artifacts/agentic/channel-split.txt
           if-no-files-found: warn
 

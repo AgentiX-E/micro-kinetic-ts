@@ -798,11 +798,21 @@ describe('the channel split’s wiring', () => {
     expect(upload).toContain('artifacts/agentic/channel-split.txt');
   });
 
+  it('writes the label census in the same walk, because a column that does not exist cannot be swept', () => {
+    // 329's first question is answered by the walk that was going to run anyway: the census counts the families the
+    // corpus writes. A dispatch that only printed it would lose it — the profiles were thrown away exactly once for
+    // that reason — so the file is written and uploaded beside them.
+    expect(measure).toContain('--label-out artifacts/agentic/channel-labels.json');
+    const upload = measure.slice(measure.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/channel-labels.json');
+  });
+
   it('keeps the runner and the two modules it prices with in the tree', () => {
     for (const path of [
       'benchmarks/src/run-channel-split.ts',
       'benchmarks/src/channel-split.ts',
       'benchmarks/src/channel-kind.ts',
+      'benchmarks/src/channel-label-census.ts',
     ]) {
       expect(existsSync(resolve(repoRoot, path)), path).toBe(true);
     }

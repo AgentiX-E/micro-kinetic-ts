@@ -39,7 +39,7 @@ import type {
   BenchmarkLogEntry,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type { ChannelDeparture } from './channel-kind.js';
-import { channelKindOf, departureOf, trafficOnly } from './channel-kind.js';
+import { channelKindOf, conduitUnder, departureOf } from './channel-kind.js';
 import type { ChatClient } from './chat-completions.js';
 
 /** One metric's window summary, in the case's own units. */
@@ -1647,6 +1647,23 @@ export const ENTRY_PRIOR_SURPRISE = 300;
 export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;
 
 /**
+ * The error-rate rise a conduit must show before the front door may speak in its place, or `null` to read no floor.
+ *
+ * Iteration 329's clause, and it is a CONDITIONING of the bar above rather than a second rule: 328 measured the
+ * traffic-only bar repairing `HTTPResponseReplaceCode` **20 for 20** and breaking `NetworkDelay` **15 for 15**, so
+ * the axis was refused for non-identifiability rather than for its bar. The separating column is the answer's own
+ * error rate — a channel that cannot say WHERE a failure is, because it rises on every hop of the path, but that can
+ * say WHAT kind of failure it is: a rewritten response code fails calls, a delayed one does not.
+ *
+ * Read as an ABSOLUTE rise (`symptomRise`, in errors per request) rather than as a standardised surprise, because an
+ * error rate is flat at zero before an injection and the standardisation refuses a zero-median pre-window — a refusal
+ * that lands exactly on the cases this clause exists for.
+ *
+ * `null` is the disabled state and it is the shipped state until `channel-split.ts` reports `passes`.
+ */
+export const ENTRY_PRIOR_SYMPTOM_FLOOR: number | null = null;
+
+/**
  * The wall a resolver uses to separate an error-rate rise from a service's own departure.
  *
  * The split is the axis this resolver reads, and since iteration 328 it lives in `channel-kind.ts` as a four-way
@@ -1983,11 +2000,62 @@ export function entryAttribution(
   evidence: EntryPriorEvidence | undefined,
   threshold: number = ENTRY_PRIOR_SURPRISE,
   trafficKappa: number | null = ENTRY_PRIOR_TRAFFIC_KAPPA,
+  symptomFloor: number | null = ENTRY_PRIOR_SYMPTOM_FLOOR,
 ): string | null {
+  const premise = readEntryPremise(answer, evidence);
+  if (premise === null) return null;
+  if (premise.surprise > threshold) {
+    // The extension, and it ships DISABLED: `trafficKappa === null` makes this branch the `return null` every
+    // earlier iteration had. The axis is not shipped on its in-sample maximum (see `channel-split.ts` for the
+    // cross-validation that decides it), so a default that fired would be a rule nobody measured.
+    if (trafficKappa === null) return null;
+    if (!conduitUnder(premise.channels, trafficKappa, symptomFloor)) return null;
+  }
+  return premise.entry;
+}
+
+/**
+ * The front door's PREMISE: everything the rule must be true about before a bar is consulted.
+ *
+ * Split out of {@link entryAttribution} in iteration 329 for one reason: the pricing has to know which cases the rule
+ * ADDRESSES before it can ask whether a bar helps them, and a pricing that restated these six clauses would be a
+ * second implementation of one rule — the failure iteration 322 paid a dispatch to learn. So the population is read
+ * through the same function the resolver reads.
+ *
+ * @param answer - The service the gate settled on, or `null`.
+ * @param evidence - What {@link readEntryPrior} read, or `undefined` when the caller did not read it.
+ * @returns The entry the rule would name, or `null` when the premise does not hold.
+ */
+export function entryPremise(
+  answer: string | null,
+  evidence: EntryPriorEvidence | undefined,
+): string | null {
+  return readEntryPremise(answer, evidence)?.entry ?? null;
+}
+
+/** One reading of the premise, carrying the columns the bars need so they need not be re-narrowed. */
+interface EntryPremiseReading {
+  readonly entry: string;
+  readonly surprise: number;
+  readonly channels: ChannelDeparture | null;
+}
+
+/**
+ * Narrow every input and decide the premise, once.
+ *
+ * Each field is narrowed by MEASUREMENT rather than by truthiness, because these arrive from JSON: an artifact
+ * written before this iteration carries no such keys at all, and `undefined > threshold` is false — a predicate
+ * written with comparisons alone would fire on every row of every older artifact and call it a result.
+ *
+ * @param answer - The service the gate settled on, or `null`.
+ * @param evidence - What {@link readEntryPrior} read, or `undefined`.
+ * @returns The reading, or `null` when the premise does not hold.
+ */
+function readEntryPremise(
+  answer: string | null,
+  evidence: EntryPriorEvidence | undefined,
+): EntryPremiseReading | null {
   if (answer === null || evidence === undefined) return null;
-  // Each field is narrowed by MEASUREMENT rather than by truthiness, because these three arrive from JSON: an
-  // artifact written before this iteration carries no such keys at all, and `undefined > threshold` is false — a
-  // predicate written with comparisons alone would fire on every row of every older artifact and call it a result.
   if (typeof evidence.entry !== 'string') return null;
   if (evidence.entry === answer) return null;
   if (!Number.isFinite(evidence.entryChildErrors)) return null;
@@ -2000,14 +2068,11 @@ export function entryAttribution(
   if (typeof evidence.belowFails !== 'boolean') return null;
   if (evidence.belowFails) return null;
   if (!Number.isFinite(evidence.answerSurprise)) return null;
-  if (evidence.answerSurprise! > threshold) {
-    // The extension, and it ships DISABLED: `trafficKappa === null` makes this branch the `return null` every
-    // earlier iteration had. The axis is not shipped on its in-sample maximum (see `channel-split.ts` for the
-    // cross-validation that decides it), so a default that fired would be a rule nobody measured.
-    if (trafficKappa === null) return null;
-    if (!trafficOnly(evidence.answerChannels ?? null, trafficKappa)) return null;
-  }
-  return evidence.entry;
+  return {
+    entry: evidence.entry,
+    surprise: evidence.answerSurprise!,
+    channels: evidence.answerChannels ?? null,
+  };
 }
 
 /**

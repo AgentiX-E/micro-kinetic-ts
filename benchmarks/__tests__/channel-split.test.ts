@@ -11,10 +11,15 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelDeparture } from '../src/channel-kind.js';
 import {
   MIN_CHANNEL_GAIN,
+  MIN_SEPARATION_PRECISION,
+  SYMPTOM_GRID,
   correctUnder,
   crossValidate,
+  crossValidateConditioned,
   foldOf,
+  gateHolds,
   resolvedUnder,
+  separationOf,
   stableHash,
   toSplitCase,
   type Profiles,
@@ -50,8 +55,18 @@ function profilesOf(caseId: string, service: string, departure: ChannelDeparture
   return profiles;
 }
 
+/** A departure with the three non-symptom channels given and both symptom columns empty by default. */
+function departure(
+  resource: number | null,
+  traffic: number | null,
+  other: number | null,
+  symptomRise: number | null = null,
+): ChannelDeparture {
+  return { resource, traffic, other, symptom: null, symptomRise };
+}
+
 /** The traffic-shaped profile the axis exists for: no work of its own, a loud retry storm. */
-const TRAFFIC_SHAPED: ChannelDeparture = { resource: 5, traffic: 900, other: null };
+const TRAFFIC_SHAPED: ChannelDeparture = departure(5, 900, null);
 
 describe('the fold a case lands in', () => {
   it('is a function of the family and the index, and of nothing else', () => {
@@ -94,12 +109,12 @@ describe('what the rule does to one case', () => {
   });
 
   it('leaves the answer alone when the answer did work of its own', () => {
-    const worked: ChannelDeparture = { resource: 900, traffic: 950, other: null };
+    const worked: ChannelDeparture = departure(900, 950, null);
     expect(resolvedUnder(splitCase(), profilesOf('case-a', 'deep', worked), 200)).toBe('deep');
   });
 
   it('reads the bar it was given rather than a constant, so a sweep is one grid and one function', () => {
-    const mild: ChannelDeparture = { resource: 50, traffic: 900, other: null };
+    const mild: ChannelDeparture = departure(50, 900, null);
     expect(resolvedUnder(splitCase(), profilesOf('case-a', 'deep', mild), 200)).toBe('front');
     expect(resolvedUnder(splitCase(), profilesOf('case-a', 'deep', mild), 10)).toBe('deep');
   });
@@ -161,7 +176,7 @@ describe('the cross-validated reading', () => {
       rows.push(splitCase({ datapack, truth: worked ? ['deep'] : ['front'] }));
       profiles.set(
         datapack,
-        new Map([['deep', worked ? { resource: 900, traffic: 950, other: null } : TRAFFIC_SHAPED]]),
+        new Map([['deep', worked ? departure(900, 950, null) : TRAFFIC_SHAPED]]),
       );
     }
     return { rows, profiles };
@@ -208,7 +223,7 @@ describe('the cross-validated reading', () => {
       const shape = one.get('deep')!;
       if (shape.resource === 900) continue;
       if (kept >= 3)
-        thinner.set(id, new Map([['deep', { resource: 900, traffic: 950, other: null }]]));
+        thinner.set(id, new Map([['deep', departure(900, 950, null)]]));
       kept += 1;
     }
     const report = crossValidate(rows, thinner, [1, 200], MIN_CHANNEL_GAIN);
@@ -228,7 +243,7 @@ describe('the cross-validated reading', () => {
       // of 500 repairs fold 1 and not fold 0 — so each fold picks a different bar and neither survives the swap.
       const work = fold === 0 ? 20 : 400;
       rows.push(splitCase({ datapack, truth: ['front'] }));
-      profiles.set(datapack, new Map([['deep', { resource: work, traffic: 900, other: null }]]));
+      profiles.set(datapack, new Map([['deep', departure(work, 900, null)]]));
     }
     const report = crossValidate(rows, profiles, [30, 200, 500]);
     expect(report.selected[0]).not.toBe(report.selected[1]);
@@ -323,5 +338,227 @@ describe('reading an artifact row as a case', () => {
       novelCaller: 'mid',
       novelRise: 12,
     });
+  });
+});
+
+describe('the population the front door’s rule addresses', () => {
+  it('holds for a case whose premise is satisfied and whose answer moved past the threshold', () => {
+    expect(gateHolds(splitCase())).toBe(true);
+  });
+
+  it('refuses a case the premise refuses, clause by clause', () => {
+    // Every clause is a different mistake, and a population table that included one of these cases would be stating
+    // the rule's reach over cases it never speaks about.
+    expect(gateHolds(splitCase({ belowFails: true }))).toBe(false);
+    expect(gateHolds(splitCase({ entryChildErrors: 1 }))).toBe(false);
+    expect(gateHolds(splitCase({ entry: 'deep' }))).toBe(false);
+    expect(gateHolds(splitCase({ answer: null }))).toBe(false);
+    expect(gateHolds(splitCase({ entryChildErrors: null }))).toBe(false);
+  });
+
+  it('refuses a case whose answer did not move, which is the threshold rather than the premise', () => {
+    expect(gateHolds(splitCase({ answerSurprise: 300 }))).toBe(false);
+    expect(gateHolds(splitCase({ answerSurprise: 301 }))).toBe(true);
+    expect(gateHolds(splitCase({ answerSurprise: null }))).toBe(false);
+  });
+
+  it('refuses a case a witness already settled, because the front door never reads it', () => {
+    expect(gateHolds(splitCase({ novelCaller: 'mid', novelRise: 12 }))).toBe(false);
+  });
+});
+
+describe('the conditioned rule, priced on both folds and swapped', () => {
+  /**
+   * The corpus 329 exists for: every case is addressed by the rule, two thirds of them are wrong answers
+   * (repairable) and one third are right ones (at risk), and the two populations differ ONLY in the error rate the
+   * answer carries. Two thirds rather than a half because the wrong/right split must not track the fold's parity —
+   * a fixture whose populations fall into different folds measures the folds rather than the rule.
+   */
+  function twoPopulations(count: number): {
+    rows: SplitCase[];
+    profiles: Map<string, Map<string, ChannelDeparture>>;
+  } {
+    const rows: SplitCase[] = [];
+    const profiles = mutableProfiles();
+    for (let index = 0; index < count; index += 1) {
+      const datapack = `case-${index}`;
+      const wrong = index % 3 !== 0;
+      rows.push(splitCase({ datapack, truth: wrong ? ['front'] : ['deep'] }));
+      // The repairable population's answer is failing through (a rewritten response code); the at-risk
+      // population's is merely slow (a delay), which is the shape 328 could not tell apart.
+      profiles.set(datapack, new Map([['deep', departure(5, 900, null, wrong ? 0.4 : 0)]]));
+    }
+    return { rows, profiles };
+  }
+
+  /** How many rows a predicate selects, per fold. */
+  function perFold(rows: readonly SplitCase[], keep: (one: SplitCase) => boolean): [number, number] {
+    const steps: [number, number] = [0, 0];
+    rows.forEach((one, index) => {
+      if (keep(one)) {
+        const familyIndex = rows.slice(0, index).filter((o) => o.faultType === one.faultType).length;
+        steps[foldOf(one.faultType, familyIndex)] += 1;
+      }
+    });
+    return steps;
+  }
+
+  it('repairs what the pooled bar also repairs, and breaks none of what it broke', () => {
+    // This is the whole claim of 329 in one assertion: the conditioned rule keeps the repairs and refuses the harm.
+    const { rows, profiles } = twoPopulations(24);
+    const pooled = crossValidate(rows, profiles, [750]);
+    const conditioned = crossValidateConditioned(rows, profiles, [750], [0.01]);
+    expect(pooled.sweep[0]!.breaks).toBeGreaterThan(0);
+    expect(conditioned.cells[0]!.repairs).toBe(pooled.sweep[0]!.repairs);
+    expect(conditioned.cells[0]!.breaks).toBe(0);
+  });
+
+  it('selects a cell per fold and reads it once on the other, in both directions', () => {
+    const { rows, profiles } = twoPopulations(24);
+    const repairable = perFold(rows, (one) => !one.truth.includes('deep'));
+    const report = crossValidateConditioned(rows, profiles, [200, 750], [0.01, 0.05]);
+    expect(report.sizes[0] + report.sizes[1]).toBe(rows.length);
+    expect(report.selected[0].kappa).toBe(report.selected[1].kappa);
+    expect(report.selected[0].floor).toBe(report.selected[1].floor);
+    expect(report.heldOut[0]).toBe(report.mixed[0] + repairable[0]);
+    expect(report.heldOut[1]).toBe(report.mixed[1] + repairable[1]);
+    expect(report.passes).toBe(true);
+  });
+
+  it('sweeps every cell of both grids, in a fixed order', () => {
+    const { rows, profiles } = twoPopulations(6);
+    const report = crossValidateConditioned(rows, profiles, [30, 200], [0.01, 0.05]);
+    expect(report.cells.map((one) => `${one.kappa}/${one.floor}`)).toEqual([
+      '30/0.01',
+      '30/0.05',
+      '200/0.01',
+      '200/0.05',
+    ]);
+  });
+
+  it('refuses a reading whose two folds choose floors more than one step apart', () => {
+    // The second coordinate's guard: a selection over thirty cells needs a stability test that scales with it, and
+    // a floor that moves with the fold is a floor fitted to the fold. Fold 0 carries at-risk answers whose error rate
+    // rose slightly, so it must clear a HIGH floor to spare them; fold 1 carries none, so it takes the lowest floor
+    // that repairs its cases.
+    const rows: SplitCase[] = [];
+    const profiles = mutableProfiles();
+    for (let index = 0; index < 60; index += 1) {
+      const datapack = `case-${index}`;
+      const fold = foldOf('HTTPResponseReplaceCode', index);
+      const wrong = index % 3 !== 0;
+      rows.push(splitCase({ datapack, truth: wrong ? ['front'] : ['deep'] }));
+      const rise = wrong ? (fold === 0 ? 0.4 : 0.001) : fold === 0 ? 0.02 : 0;
+      profiles.set(datapack, new Map([['deep', departure(5, 900, null, rise)]]));
+    }
+    const report = crossValidateConditioned(rows, profiles, [750], [
+      0.0001, 0.001, 0.01, 0.05, 0.1,
+    ]);
+    expect(report.selected[0].floor).toBeGreaterThan(report.selected[1].floor);
+    expect(report.passes).toBe(false);
+  });
+
+  it('reads an empty corpus as no reading rather than as a perfect one', () => {
+    const report = crossValidateConditioned([], new Map(), [750], [0.01]);
+    expect(report.sizes).toEqual([0, 0]);
+    expect(report.passes).toBe(false);
+  });
+});
+
+describe('whether the conditioning column separates the two populations', () => {
+  /** A corpus with `repairable` wrong answers and `safe` right ones, both addressed by the rule. */
+  function populations(
+    repairable: number,
+    safe: number,
+    rise: (wrong: boolean, index: number) => number | null,
+  ): { rows: SplitCase[]; profiles: Map<string, Map<string, ChannelDeparture>> } {
+    const rows: SplitCase[] = [];
+    const profiles = mutableProfiles();
+    for (let index = 0; index < repairable + safe; index += 1) {
+      const datapack = `case-${index}`;
+      const wrong = index < repairable;
+      rows.push(splitCase({ datapack, truth: wrong ? ['front'] : ['deep'] }));
+      profiles.set(datapack, new Map([['deep', departure(5, 900, null, rise(wrong, index))]]));
+    }
+    return { rows, profiles };
+  }
+
+  it('reads the population sizes the rule addresses, not the whole corpus', () => {
+    const { rows, profiles } = populations(4, 6, () => 0.4);
+    const reading = separationOf(rows, profiles, 750, [0.01]);
+    expect(reading.reachableTotal).toBe(4);
+    expect(reading.atRiskTotal).toBe(6);
+  });
+
+  it('counts a case the premise refuses in neither population', () => {
+    const { rows, profiles } = populations(2, 2, () => 0.4);
+    rows.push(splitCase({ datapack: 'outside', belowFails: true }));
+    profiles.set('outside', new Map([['deep', departure(5, 900, null, 0.4)]]));
+    const reading = separationOf(rows, profiles, 750, [0.01]);
+    expect(reading.reachableTotal + reading.atRiskTotal).toBe(4);
+  });
+
+  it('reports the precision each floor reaches, and calls the column separable when one clears the bar', () => {
+    const { rows, profiles } = populations(3, 12, (wrong) => (wrong ? 0.4 : 0));
+    const reading = separationOf(rows, profiles, 750, [0.01]);
+    expect(reading.readings[0]).toEqual({
+      floor: 0.01,
+      reachable: 3,
+      atRisk: 0,
+      precision: 1,
+    });
+    expect(reading.separable).toBe(true);
+    expect(reading.best!.floor).toBe(0.01);
+  });
+
+  it('refuses a column whose two populations are equally likely to clear it', () => {
+    // The 328 situation, restated: the condition holds on both populations, so it separates nothing and no sweep
+    // may be run on it however the bar is chosen.
+    const { rows, profiles } = populations(3, 12, () => 0.4);
+    const reading = separationOf(rows, profiles, 750, [0.01]);
+    expect(reading.readings[0]!.precision).toBeCloseTo(3 / 15, 10);
+    expect(reading.readings[0]!.precision!).toBeLessThan(MIN_SEPARATION_PRECISION);
+    expect(reading.separable).toBe(false);
+  });
+
+  it('never reads an unmeasured error rate as a quiet one', () => {
+    // `null` is the producer's refusal: a case whose error-rate family the corpus does not carry must not be counted
+    // as a case the condition rejects on the merits, which would make the column look sharper than it is.
+    const { rows, profiles } = populations(2, 2, () => null);
+    const reading = separationOf(rows, profiles, 750, [0.01]);
+    expect(reading.readings[0]).toEqual({ floor: 0.01, reachable: 0, atRisk: 0, precision: null });
+    expect(reading.best).toBeNull();
+    expect(reading.separable).toBe(false);
+  });
+
+  it('takes the best floor rather than the first, and the default floor grid is the registered one', () => {
+    const { rows, profiles } = populations(3, 12, (wrong) => (wrong ? 0.4 : 0.005));
+    const reading = separationOf(rows, profiles, 750);
+    expect(reading.readings.map((one) => one.floor)).toEqual([...SYMPTOM_GRID]);
+    // At 0.01 all three repairable cases clear it and none of the safe ones do — and at 0.05 the same, so the tie
+    // goes to the smaller floor rather than to the sharper column.
+    expect(reading.best!.floor).toBe(0.01);
+    expect(reading.readings.map((one) => one.precision)).toEqual([3 / 15, 3 / 15, 1, 1, 1]);
+  });
+
+  it('admits nothing for a case the profile map does not carry, rather than reading it as a conduit', () => {
+    // A profile join miss is an ABSENT measurement: a rule that read it as "no work of its own" would fire on every
+    // row of an artifact priced against a corpus walked from a different directory.
+    const rows = [splitCase({ datapack: 'missing', truth: ['front'] })];
+    const reading = separationOf(rows, new Map(), 750, [0.01]);
+    expect(reading.reachableTotal).toBe(1);
+    expect(reading.readings[0]).toEqual({ floor: 0.01, reachable: 0, atRisk: 0, precision: null });
+  });
+
+  it('prices the condition at the bar it is given, rather than at a bar it chose', () => {
+    const { rows, profiles } = populations(3, 0, () => 0.4);
+    const worked: Profiles = new Map(
+      [...(profiles as Map<string, Map<string, ChannelDeparture>>)].map(([id]) => [
+        id,
+        new Map([['deep', departure(900, 900, null, 0.4)]]),
+      ]),
+    );
+    expect(separationOf(rows, worked, 750, [0.01]).reachableTotal).toBe(3);
+    expect(separationOf(rows, worked, 750, [0.01]).readings[0]!.reachable).toBe(0);
   });
 });

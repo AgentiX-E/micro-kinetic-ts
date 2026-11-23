@@ -106,6 +106,12 @@ export default defineConfig({
         // fold assignment is asserted by name in `channel-kind.test.ts` and `channel-split.test.ts`.
         'src/channel-kind.ts',
         'src/channel-split.ts',
+        // Added with the module: the corpus's LABEL census, which answers whether a status column exists at all.
+        // Its whole value is that a zero means "no column" rather than "no signal", and a renderer that printed
+        // the count without the consequence would leave a reader unable to tell those two apart — so the zero
+        // branch, the non-zero branch, the ordering and the accumulation across an incremental walk are all
+        // asserted by name in `channel-label-census.test.ts`.
+        'src/channel-label-census.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
