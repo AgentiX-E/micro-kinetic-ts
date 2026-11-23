@@ -817,3 +817,26 @@ describe('the channel split’s wiring', () => {
     expect(source).toContain('export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;');
   });
 });
+
+describe('the channel census buys no paid arm', () => {
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('skips both paid study arms on a census dispatch, because the census is a re-reading', () => {
+    // Measured, not supposed: a census dispatch with no query arm satisfies `query_agent_sample == ''`, which is
+    // the condition the two paid study arms run under — so the first one bought a 1 422-case elimination pass
+    // (≈ ¥20) to write a file nobody read. The census re-reads evidence the case already carries, so it must not
+    // be able to buy a model call by accident.
+    for (const step of ['Ask the model to rank', 'Ask the model to eliminate']) {
+      const arm = study.slice(study.indexOf(step));
+      const head = arm.slice(0, arm.indexOf('run:'));
+      expect(head, step).toContain('!inputs.query_channel_split');
+    }
+  });
+
+  it('says which of the three reasons stopped each arm, rather than leaving a missing row', () => {
+    for (const file of ['nomination.txt', 'eliminator.txt']) {
+      expect(study).toContain(`tee artifacts/agentic/${file}`);
+    }
+    expect(study.match(/asked for the channel census/g) ?? []).toHaveLength(2);
+  });
+});

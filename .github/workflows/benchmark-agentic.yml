@@ -712,7 +712,7 @@ jobs:
       #   the workflow, and a dispatch that buys one arm must not buy three. The offline arms it scores beside still
       #   run, so the control rows survive.
       - name: Ask the model to eliminate, then score every arm
-        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == ''
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == '' && !inputs.query_channel_split
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
@@ -741,7 +741,7 @@ jobs:
       #   nomination pass, and a bill that names one arm must not contain the other. The offline arms below still
       #   run, so a query-arm dispatch still reads the elimination and fusion control rows.
       - name: Ask the model to rank, then score the nomination arm
-        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == ''
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == '' && !inputs.query_channel_split
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
@@ -799,9 +799,12 @@ jobs:
             --concurrency 6 2>&1 | tee artifacts/agentic/nomination.txt
 
       - name: Say why the nomination arm did not run
-        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != ''
+        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != '' || inputs.query_channel_split
         run: |
-          if [ "${{ inputs.query_agent_sample }}" != "" ]; then
+          if [ "${{ inputs.query_channel_split }}" = "true" ]; then
+            echo "NOMINATION ARM NOT MEASURED: this dispatch asked for the channel census, which is uncounted" \
+              "evidence re-reading, and the paid arms are independent" | tee artifacts/agentic/nomination.txt
+          elif [ "${{ inputs.query_agent_sample }}" != "" ]; then
             echo "NOMINATION ARM NOT MEASURED: this dispatch asked for the free-investigation arm, and the" \
               "two are paid and independent" | tee artifacts/agentic/nomination.txt
           else
@@ -814,9 +817,12 @@ jobs:
       #   visible: the offline arms still run, and the reason the fourth one did not is printed by name rather than
       #   left as a missing row a reader would take for a refusal.
       - name: Say why the model arm did not run
-        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != ''
+        if: env.HAS_MODEL_KEY != 'true' || inputs.query_agent_sample != '' || inputs.query_channel_split
         run: |
-          if [ "${{ inputs.query_agent_sample }}" != "" ]; then
+          if [ "${{ inputs.query_channel_split }}" = "true" ]; then
+            echo "MODEL ARM NOT MEASURED: this dispatch asked for the channel census, which is uncounted" \
+              "evidence re-reading, and the paid arms are independent" | tee artifacts/agentic/eliminator.txt
+          elif [ "${{ inputs.query_agent_sample }}" != "" ]; then
             echo "MODEL ARM NOT MEASURED: this dispatch asked for the free-investigation arm, and the paid arms" \
               "are independent" | tee artifacts/agentic/eliminator.txt
           else
