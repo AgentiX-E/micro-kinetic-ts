@@ -13,6 +13,7 @@ import type { ChannelDeparture } from '../src/channel-kind.js';
 import {
   channelKindOf,
   conduitUnder,
+  departureFromSlots,
   departureOf,
   readChannelProfiles,
   trafficOnly,
@@ -308,5 +309,30 @@ describe('reading every service’s profile out of one case', () => {
     );
     const round: ChannelDeparture = JSON.parse(JSON.stringify(profiles.get('leaf')));
     expect(round).toEqual(profile(45, null, null));
+  });
+});
+
+describe('reading a profile back out of the file the walk wrote', () => {
+  it('reads the five slots in the order the writer put them in', () => {
+    // The order is the whole schema: a reader that took the symptom columns as two more surprises would read a
+    // standardised value where a rate belongs, and a rate floor compared against a surprise is a unit error that no
+    // table would reveal.
+    expect(departureFromSlots('case-a', [1, 2, 3, 4, 0.5])).toEqual({
+      resource: 1,
+      traffic: 2,
+      other: 3,
+      symptom: 4,
+      symptomRise: 0.5,
+    });
+    expect(departureFromSlots('case-a', [null, null, null, null, null])).toEqual(
+      profile(null, null, null),
+    );
+  });
+
+  it('refuses a shorter line BY NAME rather than reading a missing column as a measured quiet', () => {
+    // Iteration 329's cache predates the symptom column. Filling its missing slots with `null` would make an absent
+    // column indistinguishable from a measured zero — the defect this guard exists to prevent.
+    expect(() => departureFromSlots('case-old', [1, 2, 3])).toThrow(/3 slots/);
+    expect(() => departureFromSlots('case-old', [1, 2, 3])).toThrow(/case-old/);
   });
 });

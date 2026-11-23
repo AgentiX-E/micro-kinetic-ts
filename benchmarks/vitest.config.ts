@@ -112,6 +112,13 @@ export default defineConfig({
         // branch, the non-zero branch, the ordering and the accumulation across an incremental walk are all
         // asserted by name in `channel-label-census.test.ts`.
         'src/channel-label-census.ts',
+        // Added with the module: the ancestry bound, which is the first rule in this programme whose evidence is a
+        // RELATION rather than a number. Its whole claim is that a correct answer sits on the path to the rung and a
+        // contradictable one does not, so what is measured here is the graph arithmetic itself — the direction of the
+        // path, the tie-break that carries no preference for the truth, the refusal on a rung the entry cannot
+        // reach, the two-way sort that keeps a comparator from hiding an unreachable equality arm, and the control
+        // that holds the firing population constant while destroying the relation.
+        'src/channel-ancestry.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

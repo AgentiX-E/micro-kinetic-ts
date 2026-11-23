@@ -135,6 +135,37 @@ export function departureOf(metrics: readonly TelemetryMetric[]): ChannelDepartu
 }
 
 /**
+ * Read one service's profile back out of the file the corpus walk wrote.
+ *
+ * The schema is versioned by **arity** rather than by a field, and that is deliberate: a cache that predates a column
+ * is refused by name instead of being read with the new column empty, because an empty column and a measured zero are
+ * different statements and only one of them is a measurement. Iteration 329's file predates both symptom columns, and
+ * filling them with `null` would have made every case read as a measured quiet on exactly the channel the axis is for.
+ *
+ * @param datapack - The case the line describes, for the refusal's message.
+ * @param slots - The numbers the writer put in, in the order {@link ChannelDeparture} lists them.
+ * @returns The profile.
+ * @throws When the line carries a schema this reader does not know.
+ */
+export function departureFromSlots(
+  datapack: string,
+  slots: readonly (number | null)[],
+): ChannelDeparture {
+  if (slots.length !== 5) {
+    throw new Error(
+      `${datapack}: the profile carries ${slots.length} slots and this reader knows 5 — the file predates the symptom column, re-walk it (the walk costs no model call)`,
+    );
+  }
+  return {
+    resource: slots[0]!,
+    traffic: slots[1]!,
+    other: slots[2]!,
+    symptom: slots[3]!,
+    symptomRise: slots[4]!,
+  };
+}
+
+/**
  * Whether a service's departure lives ONLY in the traffic channel.
  *
  * Three statements, and each is a refusal of a different mistake:

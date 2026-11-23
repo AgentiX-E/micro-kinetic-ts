@@ -27,12 +27,13 @@
  * @module benchmarks/run-channel-split
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { FSE26Loader } from '../../packages/kinetic/src/benchmarks/index.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import type { ChannelDeparture } from './channel-kind.js';
-import { readChannelProfiles } from './channel-kind.js';
+import { departureFromSlots, readChannelProfiles } from './channel-kind.js';
 import type { CensusRow } from './channel-label-census.js';
 import { censusRows, countLabels, renderCensus } from './channel-label-census.js';
 import type { ArmRow, Profiles } from './channel-split.js';
@@ -46,6 +47,7 @@ import {
   gateHolds,
   resolvedUnder,
   separationOf,
+  surfaceReading,
   toSplitCase,
 } from './channel-split.js';
 import { buildTelemetry } from './query-agent.js';
@@ -176,36 +178,13 @@ function walkCorpus(dataDir: string): {
   return { lines, labels, skipped };
 }
 
-/**
- * Turn one written line back into a profile.
- *
- * @param datapack - The case the line describes, for the refusal's message.
- * @param slots - The five numbers, or the shorter shape an older walk wrote.
- * @returns The profile.
- * @throws When the line carries a schema this reader does not know, rather than reading a missing column as a null.
- */
-function profileOf(datapack: string, slots: readonly (number | null)[]): ChannelDeparture {
-  if (slots.length !== 5) {
-    throw new Error(
-      `${datapack}: the profile carries ${slots.length} slots and this reader knows 5 — the file predates the symptom column, re-walk it (the walk costs no model call)`,
-    );
-  }
-  return {
-    resource: slots[0]!,
-    traffic: slots[1]!,
-    other: slots[2]!,
-    symptom: slots[3]!,
-    symptomRise: slots[4]!,
-  };
-}
-
 /** Turn the written lines back into the map the reader takes. */
 function keyed(lines: readonly ProfileLine[]): Profiles {
   const profiles = new Map<string, ReadonlyMap<string, ChannelDeparture>>();
   for (const line of lines) {
     const services = new Map<string, ChannelDeparture>();
     for (const [id, slots] of Object.entries(line.services)) {
-      services.set(id, profileOf(line.datapack, slots));
+      services.set(id, departureFromSlots(line.datapack, slots));
     }
     profiles.set(line.datapack, services);
   }
@@ -255,12 +234,36 @@ function main(): void {
   // Read through the mapping rather than by shape: the artifact records the surprise per SIDE, and a reader that
   // asserted the settled column's name would see `undefined` in every row (see `toSplitCase`).
   const rows = readNdjson<ArmRow>(args.artifact).map(toSplitCase);
-  console.log(`\nartifact ${args.artifact}: ${rows.length} rows`);
+  // The artifact is NAMED, by digest, beside the column it supplies. A delta is only a delta from an identified file:
+  // 329 priced 1 287 where 328 had recorded 1 285, and without this line the difference between two dispatches reads
+  // as a difference between two instruments (see `surfaceReading`).
+  const digest = createHash('sha256')
+    .update(readFileSync(args.artifact))
+    .digest('hex')
+    .slice(0, 16);
+  const surface = surfaceReading(rows);
+  console.log(
+    `\nartifact ${args.artifact}: ${surface.rows} rows, sha256 ${digest}\n` +
+      `the artifact's own answers: ${surface.correct} (${surface.share} %)`,
+  );
 
   // ── 328's reading, reprinted so the conditioned one has a comparison in the same log ─────────────────────────
   const pooled = crossValidate(rows, profiles);
   console.log(`folds ${pooled.sizes[0]} / ${pooled.sizes[1]}`);
-  console.log(`shipped surface, per fold: ${pooled.mixed[0]} / ${pooled.mixed[1]}`);
+  console.log(
+    `shipped surface, per fold: ${pooled.mixed[0]} / ${pooled.mixed[1]} = ${pooled.mixed[0] + pooled.mixed[1]}`,
+  );
+  // The invariant that makes the baseline column a re-reading rather than a second opinion: an artifact the shipped
+  // resolvers produced must be left where it is by them. Measured every run, because the one time it was not read
+  // this way a two-case dispatch band was mistaken for a reproducibility defect.
+  let moved = 0;
+  for (const one of rows) if (resolvedUnder(one, profiles, null) !== one.answer) moved += 1;
+  console.log(
+    `re-reading through the shipped resolvers moves ${moved} of ${surface.rows} answers` +
+      (moved === 0
+        ? ' — the baseline column IS the file'
+        : ' — WARNING: the baseline is not the file'),
+  );
   console.log('\nthe pooled sweep (correct per fold, then what it changed)');
   table(
     ['kappa', 'fold 0', 'fold 1', 'repairs', 'breaks'],

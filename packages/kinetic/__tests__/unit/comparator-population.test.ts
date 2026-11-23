@@ -137,6 +137,24 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
       population: '`censusRows` of a label count Map, whose keys are unique by construction',
     },
   ],
+  'benchmarks/src/channel-ancestry.ts': [
+    // The rising set's order, and it is load-bearing rather than cosmetic: the RANDOMISED CONTROL draws its member by
+    // indexing into this list, so an order that depended on insertion would make the control's draw depend on the
+    // corpus walk rather than on the data. Service ids are unique within a case, so the two-way arm cannot meet equal
+    // operands -- and the equality arm that WOULD meet them is exactly the branch no corpus can reach.
+    {
+      signature: 'a < b',
+      population: '`risingUnder` of a case’s service Map, whose keys are unique by construction',
+    },
+  ],
+  'benchmarks/src/run-channel-ancestry.ts': [
+    // The per-family report's row order. A fault type is the KEY of the tally map, so the tie-break never meets two
+    // equal families; what it does decide is that two runs print the same table in the same order.
+    {
+      signature: 'a[0] < b[0]',
+      population: '`byFamily.entries()`, a Map keyed by fault type (unique)',
+    },
+  ],
   'benchmarks/src/term-gap-census.ts': [
     // The term-gap census's per-list ordering. Its keys are `Map` keys (term names), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded rather than exempted, because the census's
