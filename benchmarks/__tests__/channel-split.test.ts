@@ -21,6 +21,7 @@ import {
   resolvedUnder,
   separationOf,
   stableHash,
+  surfaceReading,
   toSplitCase,
   type Profiles,
   type SplitCase,
@@ -567,5 +568,68 @@ describe('whether the conditioning column separates the two populations', () => 
     );
     expect(separationOf(rows, worked, 750, [0.01]).reachableTotal).toBe(3);
     expect(separationOf(rows, worked, 750, [0.01]).readings[0]!.reachable).toBe(0);
+  });
+});
+
+describe('the artifact’s own reading, which every delta is a delta from', () => {
+  it('reads an empty artifact as nothing to report rather than as a zero percent', () => {
+    // A share of `0.00` for a file with no rows is a claim about a corpus; `-` is the refusal, and the log a reader
+    // compares across runs has to distinguish "no cases" from "no correct cases".
+    expect(surfaceReading([])).toEqual({ rows: 0, correct: 0, share: '-' });
+  });
+
+  it('counts only answers the truth names, and a two-name truth as either', () => {
+    const rows = [
+      splitCase({ datapack: 'a', truth: ['front'], answer: 'front' }),
+      splitCase({ datapack: 'b', truth: ['front', 'deep'], answer: 'deep' }),
+      splitCase({ datapack: 'c', truth: ['front'], answer: 'other' }),
+      splitCase({ datapack: 'd', truth: ['front'], answer: null }),
+    ];
+    expect(surfaceReading(rows)).toEqual({ rows: 4, correct: 2, share: '50.00' });
+  });
+
+  it('prints the share to two decimals so a two-case band is visible in the column', () => {
+    // 1 285 and 1 287 of 1 422 are 90.37 % and 90.51 %: a share rounded to one decimal renders the width of the
+    // measured dispatch band as a single number, which is how a two-case drift came to look like a defect.
+    const rows = Array.from({ length: 3 }, (_, index) =>
+      splitCase({ datapack: `case-${index}`, answer: index === 2 ? 'other' : 'front' }),
+    );
+    expect(surfaceReading(rows).share).toBe('66.67');
+    expect(surfaceReading(rows).correct).toBe(2);
+  });
+});
+
+describe('re-reading an artifact the shipped resolvers produced', () => {
+  // The reconciliation this asserts is the one iteration 329 had to perform by hand: a log that prices a rule on an
+  // artifact has TWO columns — what the file says, and what the rule makes of it — and if the second is not the
+  // first on an artifact the rule already ran on, then the delta between two iterations is partly the difference
+  // between two READERS. Measured on run R1's 1 422 rows, no answer moved; these four shapes are why.
+
+  it('leaves an answer the witness already renamed where it is', () => {
+    // The witness's own output: `novelCaller === answer`, and `interfaceAttribution` refuses rather than returning
+    // the same name it was given.
+    const settled = splitCase({ answer: 'mid', novelCaller: 'mid', novelRise: 40, truth: ['mid'] });
+    expect(resolvedUnder(settled, new Map(), null)).toBe('mid');
+  });
+
+  it('leaves an answer the front door already named where it is', () => {
+    // `entry === answer` is the premise's second refusal, and it is what makes the rename idempotent: a case the
+    // door settled on cannot be settled on again.
+    const settled = splitCase({ answer: 'front', entry: 'front', answerSurprise: 100 });
+    expect(resolvedUnder(settled, profilesOf('case-a', 'front', TRAFFIC_SHAPED), null)).toBe(
+      'front',
+    );
+  });
+
+  it('leaves an answer the premise cannot reach where it is', () => {
+    const silent = splitCase({ answerSurprise: null, novelRise: null });
+    expect(resolvedUnder(silent, new Map(), null)).toBe('deep');
+  });
+
+  it('leaves the model’s own answer alone where the door did not speak', () => {
+    // The shipped surface's largest population: the model answered, nothing below the entry fails, so neither
+    // resolver has a claim and the case settles exactly where the dispatch left it.
+    const model = splitCase({ entryChildErrors: 4, answerSurprise: 950 });
+    expect(resolvedUnder(model, profilesOf('case-a', 'deep', TRAFFIC_SHAPED), null)).toBe('deep');
   });
 });

@@ -266,6 +266,42 @@ export function correctUnder(
   return correct;
 }
 
+/** What an artifact says before any rule of this module reads it. */
+export interface SurfaceReading {
+  readonly rows: number;
+  readonly correct: number;
+  /** `correct / rows` to two decimals, or `-` for an artifact with no rows. */
+  readonly share: string;
+}
+
+/**
+ * The artifact's OWN reading: the answers the dispatch published, counted against the truth.
+ *
+ * ## Why this is a function and not a line in the runner
+ *
+ * Iteration 329 priced its rule on an artifact reading **645 / 642** where 328's log had recorded **644 / 641**, and
+ * the two-case difference looked like a reproducibility defect in the instrument. It was not: 328 priced run B
+ * (1 285) and the census priced run R1 (1 287), which is the two-case dispatch band `327.4` measured — but a log that
+ * prints only the SHIPPED SURFACE cannot say which artifact it read, so the difference had nowhere to be resolved
+ * except by hand. The reading is therefore named, printed beside the baseline column, and stated with the artifact's
+ * digest: a delta from a number nobody can identify is not a delta.
+ *
+ * The percentage carries two decimals for the same reason: 1 285 and 1 287 of 1 422 are 90.37 % and 90.51 %, and a
+ * column rounded to one decimal renders that band as a single number.
+ *
+ * @param rows - The parsed artifact, one case per row.
+ * @returns The row count, the correct count, and the share as text.
+ */
+export function surfaceReading(rows: readonly SplitCase[]): SurfaceReading {
+  let correct = 0;
+  for (const one of rows) if (one.answer !== null && one.truth.includes(one.answer)) correct += 1;
+  return {
+    rows: rows.length,
+    correct,
+    share: rows.length === 0 ? '-' : ((correct / rows.length) * 100).toFixed(2),
+  };
+}
+
 /**
  * Which fold each row lands in, in the corpus's own order.
  *

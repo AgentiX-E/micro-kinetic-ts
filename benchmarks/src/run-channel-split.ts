@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { FSE26Loader } from '../../packages/kinetic/src/benchmarks/index.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import type { ChannelDeparture } from './channel-kind.js';
-import { departureFromSlots, readChannelProfiles } from './channel-kind.js';
+import { readChannelProfiles } from './channel-kind.js';
 import type { CensusRow } from './channel-label-census.js';
 import { censusRows, countLabels, renderCensus } from './channel-label-census.js';
 import type { ArmRow, Profiles } from './channel-split.js';
@@ -178,13 +178,36 @@ function walkCorpus(dataDir: string): {
   return { lines, labels, skipped };
 }
 
+/**
+ * Turn one written line back into a profile.
+ *
+ * @param datapack - The case the line describes, for the refusal's message.
+ * @param slots - The five numbers, or the shorter shape an older walk wrote.
+ * @returns The profile.
+ * @throws When the line carries a schema this reader does not know, rather than reading a missing column as a null.
+ */
+function profileOf(datapack: string, slots: readonly (number | null)[]): ChannelDeparture {
+  if (slots.length !== 5) {
+    throw new Error(
+      `${datapack}: the profile carries ${slots.length} slots and this reader knows 5 — the file predates the symptom column, re-walk it (the walk costs no model call)`,
+    );
+  }
+  return {
+    resource: slots[0]!,
+    traffic: slots[1]!,
+    other: slots[2]!,
+    symptom: slots[3]!,
+    symptomRise: slots[4]!,
+  };
+}
+
 /** Turn the written lines back into the map the reader takes. */
 function keyed(lines: readonly ProfileLine[]): Profiles {
   const profiles = new Map<string, ReadonlyMap<string, ChannelDeparture>>();
   for (const line of lines) {
     const services = new Map<string, ChannelDeparture>();
     for (const [id, slots] of Object.entries(line.services)) {
-      services.set(id, departureFromSlots(line.datapack, slots));
+      services.set(id, profileOf(line.datapack, slots));
     }
     profiles.set(line.datapack, services);
   }
