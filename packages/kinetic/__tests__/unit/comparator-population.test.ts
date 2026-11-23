@@ -127,6 +127,16 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
   'benchmarks/src/fse26-report.ts': [
     { signature: 'a[0] < b[0]', population: '`perFaultType.entries()`, a Map' },
   ],
+  'benchmarks/src/channel-label-census.ts': [
+    // The census's row order, which has to be a function of the DATA rather than of the walk: two walks of one corpus
+    // must write the same file byte for byte. The tie-break sorts labels, and a label is the KEY of the count map, so
+    // two rows can never carry the same one — the `? -1 : 1` arm answers `1` for equal keys in both directions and
+    // that state is unreachable here, which is what makes it safe rather than merely conventional.
+    {
+      signature: 'a.label < b.label',
+      population: '`censusRows` of a label count Map, whose keys are unique by construction',
+    },
+  ],
   'benchmarks/src/term-gap-census.ts': [
     // The term-gap census's per-list ordering. Its keys are `Map` keys (term names), so they are distinct and the
     // two-arm tie-break never claims an order between equals — recorded rather than exempted, because the census's

@@ -79,16 +79,18 @@ export function countLabels(
  * @returns One row per family, ordered.
  */
 export function censusRows(counts: ReadonlyMap<string, number>): CensusRow[] {
-  return [...counts]
-    .map(([label, count]) => ({
-      label,
-      kind: channelKindOf(label),
-      count,
-      statusLike: statusLikeLabel(label),
-    }))
-    .sort((left, right) =>
-      right.count === left.count ? (left.label < right.label ? -1 : 1) : right.count - left.count,
-    );
+  return (
+    [...counts]
+      .map(([label, count]) => ({
+        label,
+        kind: channelKindOf(label),
+        count,
+        statusLike: statusLikeLabel(label),
+      }))
+      // `a`/`b` rather than `left`/`right` because the comparator census reads its signature off these two names, and a
+      // comparator it cannot name is a comparator outside the population whose safety the audit argues for.
+      .sort((a, b) => (b.count === a.count ? (a.label < b.label ? -1 : 1) : b.count - a.count))
+  );
 }
 
 /**
