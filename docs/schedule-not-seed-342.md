@@ -255,3 +255,26 @@ PY
 4. **P1, ¥0** — whether `DecompRCA v2`'s "short system-description document" (+7…+18 points) can be derived from this
    corpus at all: the arm's brief is already written from case metadata, so the question is whether a *usage* description
    of the system exists anywhere in the artifacts or must be authored.
+
+## 9. Field check, 342
+
+Three movements, none of which changes a number here; two change what a comparison may claim.
+
+* **ORCA Benchmark** (Traversal / Fireworks, updated 4 Nov 2026) — a **live-incident** hard-RCA ladder: 13 models,
+  three passes, `avg@3`. Best is GPT-6 Astra at **50.2 %** ($4.00, 1 144 s per task), then Claude Opus 5 at 44.3 %
+  ($5.33, 2 598 s), Kimi K3.1 Pro at 32.9 % ($0.71, 730 s); DeepSeek V4.1 Flash sits at **20.3 %** for **$0.17**.
+  Live incidents are harder than injected ones, so this project's 93.39 % and ORCA's 50.2 % are **not comparable
+  numbers**, and a table that put them in one column would be measuring the task. ORCA also varies the *model* and
+  fixes the harness — the opposite trade to RCAtlas, which varies the harness and fixes the model class.
+* **"Free to Look, Free to Reason"** now reports its method table: simple harnesses **65–77 % PR@1** over three
+  mid-tier models, published LLM agents **16–53 %**, non-LLM methods **6–39 %**, random **5.5 %**; and its Pareto
+  frontier over accuracy against *cost and time* has every optimal point on a simple harness. The overlap at the bottom
+  is the fact to carry: **NSigma (38.9 %) beats DecompRCA and mABC**, so a statistical method with no model outranks two
+  published agents.
+* **The axis nobody scores.** CARE-PO counts *removable* calls, SRE-1 scores a cited chain, ORCA scores an answer at a
+  price. **No public leaderboard scores the value of a call that was spent** — which is the axis this iteration prices.
+  That is a gap in the measurement surface, not a novelty claim: the schedule's contribution can only be argued from
+  this project's own artifacts, and the next competitor table must footnote it rather than rank us on it.
+
+The column this project still owes is **wall-clock**: the archived per-case rows (`accepted, datapack, faultType, pool,
+ranked, truthAnomalyBefore, truthRank`) carry no duration, so a cost/time Pareto point cannot be computed from them.
