@@ -10345,8 +10345,9 @@ estimates bracket it at **36–40 %**. The `−101` block is not convergence at 
 queries the culprit (48 vs 43 of 266), and with **no** query the free arm still answers **115 / 218 = 52.8 %** while the
 shortlist arm answers **14 / 223 = 6.3 %**. A 46.5-point collapse in a block where both arms did the same thing. The
 residual **24 cases (12 %)** are the same queries converting at 83.2 % instead of 98.0 %. **No tool weighting can reach
-this block, because the block is where the arm did NOT act** — which is why the "log evidence first" lever is priced at
-¥0 and left unbuilt rather than dispatched on this table's authority.
+this block, because the block is where the arm did NOT act** — so the "log evidence first" lever was rebuilt on a
+different premise rather than on a weight: iteration 345 appends the service's first `ERROR`/`FATAL` offset and count to
+each `TOOL metric` line (`docs/onset-channel-345.md`), which is the one thing the block can plausibly be short of.
 
 *341's reach ceiling was overstated by a fifth.* The published **98.33 %** conversion is the **hits** stratum's number:
 on a hit the culprit IS the engine's rank 1, so "queried the culprit" and "agreed with the engine" are one event, and the

@@ -168,6 +168,8 @@ on:
         description: "Whether the HARNESS holds an order the model can walk with `TOOL next`, or nothing: `engine` = the arm may spend a call on the next service in the engine's own order, one per call, so five calls reach five distinct services instead of the 1.9 the free arm averages; empty = the free arm, whose prompt is byte-identical to the one every published number was taken under. This is NOT `query_seed`: a seed prints the order into the prompt and was measured WORSE than no order (§318), while a schedule serves one name per call and discloses no sequence. Read the ceiling before dispatching: 29 of the 74 unqueried misses sit inside the engine's top five, which is the five calls the loop can execute (`--schedule engine` at the default budget), and 40 inside the top ten, which needs `query_max_rounds=11` and doubles the model calls per case — docs/schedule-not-seed-342.md §3"
       query_fleet_order:
         description: "Whether `TOOL fleet` prints the pipeline's own first five candidates beside the case's surprises: `engine` = a section appended to the fleet read, names only, in the engine's order, capped at the five calls the loop can execute; empty = the fleet read every published number was taken under. This is NOT a seed and NOT a schedule: the instruction stays byte-identical to the free arm's, so the only difference between the two arms is a section of a tool's OUTPUT. That property is the whole point — iteration 342b measured four appended prompt lines costing −43 pp while the tool those lines advertised was never called, so the next intervention changes what an investigation can SEE without changing what it is TOLD. It costs nothing: no extra call, no extra round, no extra prompt token. docs/schedule-dispatch-342.md §8"
+      query_evidence_order:
+        description: "Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count: `onset` = one field appended to each `TOOL metric` line (`err=+2s/7`, `err=-` when the service logged nothing); empty = the metric read every published number was taken under. This is the fourth arm of the `fleet`/`schedule` family and the only one that carries NO ranking: iteration 344 found the largest block of the shortlist arm's loss (49 %) on cases where the arm's behaviour was unchanged — the engine's misses, where neither arm queried the culprit and the free arm still answered 52.8 % against the shortlist arm's 6.3 % — and `TOOL logs`, the tool that carries the lines themselves, is opened in 0.44 of the five calls per case. A timestamp can be weighed against the model's own order; a list of names replaces it. No call, no round, no prompt token. docs/onset-channel-345.md"
       topology_brief:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
@@ -414,6 +416,10 @@ jobs:
           if [ -n "${{ inputs.query_fleet_order }}" ]; then
             FLEET_ARG+=(--fleet-order "${{ inputs.query_fleet_order }}")
           fi
+          ONSET_ARG=()
+          if [ -n "${{ inputs.query_evidence_order }}" ]; then
+            ONSET_ARG+=(--evidence-order "${{ inputs.query_evidence_order }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -428,6 +434,7 @@ jobs:
             "${RESOLVE_ARG[@]}" \
             "${SCHEDULE_ARG[@]}" \
             "${FLEET_ARG[@]}" \
+            "${ONSET_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run

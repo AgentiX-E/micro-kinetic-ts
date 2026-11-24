@@ -81,6 +81,16 @@ interface Args {
    * those lines advertised was never called.
    */
   readonly fleetOrder: 'none' | 'engine';
+  /**
+   * `onset` for the arm whose per-service `metric` reads carry the service's first `ERROR`/`FATAL` offset and count,
+   * `none` for every arm before it.
+   *
+   * `logs` — the tool that carries the lines themselves — is opened in 0.44 of the five calls per case, and iteration
+   * 344 found the largest block of the shortlist arm's loss on cases where the arm did NOT act. This channel moves the
+   * timestamp into a read the arm already makes 1.33 times per case, spends no call, and carries no ranking: a
+   * timestamp can be weighed against the model's own order, where a list of names replaces it.
+   */
+  readonly evidenceOrder: 'none' | 'onset';
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -134,6 +144,12 @@ function parseArgs(argv: readonly string[]): Args {
   if (fleetOrder !== 'none' && fleetOrder !== 'engine') {
     throw new Error('--fleet-order must be `none` or `engine`');
   }
+  // A fourth arm of the same shape as `--fleet-order`: it changes one field of a tool's output and defaults to none,
+  // so a run that does not ask for it prints the text every published number was taken under.
+  const evidenceOrder = map.get('evidence-order') ?? 'none';
+  if (evidenceOrder !== 'none' && evidenceOrder !== 'onset') {
+    throw new Error('--evidence-order must be `none` or `onset`');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -154,6 +170,7 @@ function parseArgs(argv: readonly string[]): Args {
     resolve: resolve as Resolution,
     schedule: schedule as Args['schedule'],
     fleetOrder: fleetOrder as Args['fleetOrder'],
+    evidenceOrder: evidenceOrder as Args['evidenceOrder'],
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -216,6 +233,7 @@ async function investigate(
   resolve: Resolution,
   schedule: readonly string[] | null,
   shortlist: readonly string[] | null,
+  onset: boolean,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -283,6 +301,7 @@ async function investigate(
       seeded: seed !== null,
       scheduled: schedule === null ? null : schedule.length,
       fleetOrder: shortlist === null ? 'none' : 'engine',
+      onsetOrder: onset ? 'onset' : 'none',
       // A row whose call FAILED still records an empty census rather than omitting the column: an artifact where the
       // field is missing cannot be distinguished from one written before the field existed.
       tools: {},
@@ -334,6 +353,7 @@ async function investigate(
     seeded: seed !== null,
     scheduled: schedule === null ? null : schedule.length,
     fleetOrder: shortlist === null ? 'none' : 'engine',
+    onsetOrder: onset ? 'onset' : 'none',
     // Counted while the directives ran, so a per-tool count here is not a count of the trace's last 2 000 characters.
     tools: outcome.tools,
     nextServed: outcome.nextServed,
@@ -464,6 +484,9 @@ async function main(): Promise<void> {
       // The shortlist is the SAME column the schedule reads, printed instead of served: one ranking, two arms, so a
       // reading of either is a reading of the engine's own order and not of a runner's recomputation.
       args.fleetOrder === 'engine' ? verdicts.get(datapack)!.ranked : null,
+      // The onset channel reads nothing from the verdicts: it is a property of the case's own log stream, so this arm
+      // is orthogonal to every order-carrying arm and can be combined with any of them.
+      args.evidenceOrder === 'onset',
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -483,7 +506,8 @@ async function main(): Promise<void> {
   console.log(
     `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
-      `gate ${args.gate}, fallback ${fallbackLabel}, schedule ${args.schedule}, fleet ${args.fleetOrder}`,
+      `gate ${args.gate}, fallback ${fallbackLabel}, schedule ${args.schedule}, fleet ${args.fleetOrder}, ` +
+      `onset ${args.evidenceOrder}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,

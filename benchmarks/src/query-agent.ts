@@ -497,18 +497,34 @@ export function parseCall(reply: string): ParsedCall {
  *
  * @param id - The service the series belongs to.
  * @param one - The series' window summary.
+ * @param withTrough - Whether the line is about a fall, and so should carry the low point.
+ * @param errors - The service's onset channel, when the arm carries one: its first `ERROR`/`FATAL` relative to the
+ *   injection and how many there were. Absent on every arm that does not, which is what keeps the free arm's text
+ *   byte-identical to the text every published number was taken under.
  * @returns The line.
  */
-function renderMetricLine(id: string, one: TelemetryMetric, withTrough = false): string {
+function renderMetricLine(
+  id: string,
+  one: TelemetryMetric,
+  withTrough = false,
+  errors?: { readonly offset: number | undefined; readonly count: number },
+): string {
   const z = one.surprise === undefined ? 'n/a' : formatNumber(one.surprise);
   // The trough is printed only where the line is ABOUT a fall. A rise line that carried it would be longer text for
   // the same information, and the rise section's wording predates this field: keeping it byte-identical is what lets
   // a dispatch attribute a difference in the arm's answers to the collapse axis alone.
   const low = withTrough ? `low=${formatNumber(one.trough)} ` : '';
+  // The onset channel is a SUFFIX and never a section: one existing line gains one field, no call is spent and no
+  // service is named that the model did not ask about. A service that logged nothing prints `-` rather than nothing,
+  // because silence would be read as "this arm does not report errors" and the whole line would be discounted.
+  const onset =
+    errors === undefined
+      ? ''
+      : ` err=${errors.offset === undefined ? '-' : `+${String(Math.round(errors.offset / 1000))}s`}/${String(errors.count)}`;
   return (
     `${id} ${one.label}: base=${formatNumber(one.baseline)} ${low}peak=${formatNumber(one.peak)} ` +
     `delta=${formatNumber(one.delta)} ratio=${formatNumber(one.ratio)} z=${z} ` +
-    `at=${Math.round(one.peakOffset / 1000)}s`
+    `at=${Math.round(one.peakOffset / 1000)}s${onset}`
   );
 }
 
@@ -610,6 +626,10 @@ export const ENGINE_ORDER_SURFACES = [
  *   fleet read shows only the case's surprises. It rides in a TOOL RESULT and never in the instruction: iteration 342b
  *   appended four lines to the prompt and cost 43 points while the tool those lines advertised was never called, so an
  *   intervention that changes what an investigation can see must not also change what it is told.
+ * @param onset - Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count. It
+ *   is a suffix on an existing line, spends no call, adds no round and carries no ranking — the difference between this
+ *   channel and the shortlist is that a timestamp can be weighed against the model's own order while a list of names
+ *   replaces it.
  * @returns The text the model is shown next, and whether that text answers the question.
  */
 export function executeTool(
@@ -617,6 +637,7 @@ export function executeTool(
   call: ParsedCall,
   schedule?: ScheduleCursor,
   shortlist?: readonly string[] | null,
+  onset = false,
 ): ToolResult {
   if (call.kind === 'unparsed') {
     return {
@@ -749,10 +770,15 @@ export function executeTool(
   if (tool === 'metric') {
     if (service.metrics.length === 0)
       return { ok: true, text: `${service.id}: no metrics in this case` };
+    // Read once for the whole read: the channel describes the SERVICE, so every line of a `metric` read carries the
+    // same pair rather than the pair of whichever series happened to be printed first.
+    const channel = onset
+      ? { offset: service.firstErrorOffset, count: service.errorCount }
+      : undefined;
     const ranked = [...service.metrics]
       .sort(bySurprise)
       .slice(0, METRIC_LINES)
-      .map((one) => renderMetricLine(service.id, one));
+      .map((one) => renderMetricLine(service.id, one, false, channel));
     // The rises alone would hide the one shape the prompt tells the model to take seriously: a service whose
     // traffic COLLAPSED is a candidate even when it reports nothing, and its ratio is at the bottom of a
     // rise-sorted list by construction.
@@ -760,7 +786,7 @@ export function executeTool(
       .filter((one) => one.fall > 0)
       .sort(byFall)
       .slice(0, COLLAPSE_LINES)
-      .map((one) => renderMetricLine(service.id, one, true));
+      .map((one) => renderMetricLine(service.id, one, true, channel));
     if (falls.length > 0) ranked.push('falling:', ...falls);
     return { ok: true, text: ranked.join('\n') };
   }
@@ -1446,6 +1472,9 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  *   only the case's surprises. Like `schedule` it is held by the harness and never printed in the instruction; unlike
  *   `schedule` it needs no new tool, so a difference between this arm and the free one is a difference in EVIDENCE
  *   with the prompt held byte-identical.
+ * @param onset - Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count.
+ *   `false` leaves every line of every read byte-identical to the text the published numbers were taken under, which is
+ *   the property that lets this arm's result be attributed to the field it added and nothing else.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1459,6 +1488,7 @@ export async function runQueryAgent(
   engine: EngineOpinion | null = null,
   schedule: readonly string[] | null = null,
   shortlist: readonly string[] | null = null,
+  onset = false,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
@@ -1685,6 +1715,7 @@ export async function runQueryAgent(
       call,
       schedule === null ? undefined : { order: schedule, cursor },
       shortlist,
+      onset,
     );
     // Counted AFTER the call, and on the directive's own name rather than on the result: a refused tool is still a
     // tool the arm reached for, and the question the census answers is what the arm did, not what it was allowed.
@@ -1801,6 +1832,13 @@ export interface QueryArmRow {
    * is not enough to tell a shortlist run from the published one when both share a prompt byte for byte.
    */
   readonly fleetOrder?: 'none' | 'engine';
+  /**
+   * Whether this row's `TOOL metric` reads carried the onset channel, or absent on an artifact written before it.
+   *
+   * Same reason as `fleetOrder`: the prompt is byte-identical to the free arm's in both cases, so the only thing that
+   * can tell the two apart is a column that says which arm wrote the row.
+   */
+  readonly onsetOrder?: 'none' | 'onset';
   /**
    * Every directive the investigation executed, by tool name, refusals included.
    *

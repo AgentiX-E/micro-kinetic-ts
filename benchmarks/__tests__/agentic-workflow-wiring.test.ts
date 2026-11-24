@@ -767,6 +767,22 @@ describe('the free-investigation arm’s wiring', () => {
     expect(WORKFLOW).toContain('byte-identical to the free arm');
   });
 
+  it('carries the onset channel on the same surface, as an ablation switch that defaults to off', () => {
+    // The fourth arm of this family and the first that carries no ranking. It is an ABLATION switch, not a new
+    // default: `--evidence-order` falls back to `none`, and an empty dispatch input sends no flag at all, so every
+    // run that does not ask for the channel prints the metric line the published numbers were taken under.
+    expect(inputNames(WORKFLOW)).toContain('query_evidence_order');
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('inputs.query_evidence_order');
+    expect(measure).toContain('ONSET_ARG+=(--evidence-order');
+    expect(measure).toContain('"${ONSET_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('evidence-order')");
+    // The description has to say what makes it different from the three presentations already refused, or a reader
+    // will file it beside them: it carries no ranking, and the prompt stays byte-identical.
+    expect(WORKFLOW).toContain('carries NO ranking');
+  });
+
   it('carries the FALLBACK on the same surface, because a surface the runner accepts must be dispatchable', () => {
     // The decoupling this input exists for: what the arm SHOWS and what a refusal FALLS BACK TO are two decisions,
     // and an arm with one and not the other is a surface nobody can ask for. The default is the shown order, which
