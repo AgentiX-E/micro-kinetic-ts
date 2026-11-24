@@ -4,11 +4,22 @@
  * ## What this measures, and why it is a join rather than an experiment
  *
  * 135 of 1 422 cases are answered wrongly on the shipping surface. The question a ranking answer has to ask first is
- * whether the engine ever put the truth in front of the model at all: the arm is shown the engine's top five, so a
- * case whose truth sits at rank 6–44 is not a reasoning failure, it is a **retrieval** failure, and no prompt, weight
- * or resolver can reach it. The classification below is computed from two artifacts that were already paid for — the
- * engine's ranked candidates with their scores, and the arm's answers — so the count is reproducible in one command
- * and costs nothing.
+ * whether the engine ever ranked the truth high enough to be shown: `SEED_WIDTH` is the width such a pipeline would
+ * show, so a case whose truth sits at rank 6–44 is beyond it, and no width narrower than that rank can put it in front
+ * of a reader. The classification below is computed from two artifacts that were already paid for — the engine's
+ * ranked candidates with their scores, and the arm's answers — so the count is reproducible in one command and costs
+ * nothing.
+ *
+ * ## What these classes are NOT, on the shipped configuration
+ *
+ * They are not a statement about what the model read. The shipped arm is **free**: its artifact carries
+ * `seeded: false` on all 1 422 answer rows, so no candidate list was handed to it at all, and the model's evidence is
+ * its own tool output. A class read from the engine's rank therefore describes the **pipeline's** reach — what a
+ * seeded arm *would* have been shown — and reading it as `the model was shown this and missed it` is a claim about a
+ * prompt that never existed. `reachCensusOf` below measures the arm's own reach from the `calls` column, and
+ * `formatReachCensus` prints which configuration each reading was taken on, so the two questions cannot be confused
+ * silently. The distinction is worth 102 cases: three quarters of the arm's misses never queried the causal service
+ * at all, which no seed width describes.
  *
  * ## Why the classes are five and not two
  *
@@ -28,7 +39,13 @@
  * @module benchmarks/retrieval-block
  */
 
-/** The number of candidates the arm is shown by default. */
+/**
+ * The number of candidates a SEEDED pipeline shows the arm.
+ *
+ * A width an experiment would set, not one the product uses: the shipped arm is free, and its artifact says so on
+ * every row (`seeded: false`). Reading this constant as "what the model saw" is the error the module docblock above
+ * records, and it is the reason {@link formatReachCensus} prints the seed state beside every reading taken here.
+ */
 export const SEED_WIDTH = 5;
 
 /** Where a case's truth sits in the engine's own ranking. */
@@ -284,5 +301,133 @@ export function formatRetrievalReport(
     `the block is ${block} of ${census.misses} misses (${share(block, census.misses)} %), and it is the only ` +
       'one of the four a wider seed can reach',
   );
+  return lines.join('\n');
+}
+
+// ── What the arm itself looked at ──
+
+/**
+ * One answer row, in the fields the reach census reads.
+ *
+ * The `calls` and `seeded` columns are the arm's own record of its investigation, and both are `null`-able on
+ * purpose: an artifact written before a column existed does not make the reading zero, it makes it unmeasured.
+ */
+export interface ArmAnswer {
+  /** Stable case id, carried so a refusal can name the row that produced it. */
+  readonly datapack: string;
+  /** The labelled services, any of which is a correct answer. */
+  readonly truth: readonly string[];
+  /** The services whose telemetry the arm queried, or `null` when the artifact does not record them. */
+  readonly calls: readonly string[] | null;
+  /** Whether the shipped surface answered the case correctly. */
+  readonly correct: boolean;
+  /** The artifact's own `seeded` flag, or `null` when it does not record one. */
+  readonly seeded: boolean | null;
+}
+
+/**
+ * The arm's own reach, over the answers it wrote.
+ *
+ * The three miss buckets are disjoint and exhaustive, which is the whole point: `queried` is a case the arm
+ * investigated the causal service for and still got wrong, `unqueried` is a case it never looked at, and `unrecorded`
+ * is a case whose artifact carries no call column. Collapsing the second into the first would report an absence as a
+ * measurement; collapsing the third into either would report a population that was never seen.
+ */
+export interface ReachCensus {
+  /** Answer rows read. */
+  readonly cases: number;
+  /** Rows whose `seeded` flag is `true` — the configuration this reading was taken on. */
+  readonly seeded: number;
+  /** Rows the surface answered correctly. */
+  readonly hits: number;
+  /** Rows it did not: `cases − hits`. */
+  readonly misses: number;
+  /** Misses whose truth the arm queried at least once. */
+  readonly queried: number;
+  /** Misses whose truth it never queried. */
+  readonly unqueried: number;
+  /** Misses with no `calls` column at all. */
+  readonly unrecorded: number;
+  /** Hits whose truth the arm queried — the control that keeps `queried` from being a constant. */
+  readonly hitsQueried: number;
+}
+
+/**
+ * Count what the arm looked at.
+ *
+ * @param answers - Every answer row.
+ * @returns The census.
+ */
+export function reachCensusOf(answers: readonly ArmAnswer[]): ReachCensus {
+  let seeded = 0;
+  let hits = 0;
+  let queried = 0;
+  let unqueried = 0;
+  let unrecorded = 0;
+  let hitsQueried = 0;
+  for (const one of answers) {
+    if (one.seeded === true) seeded += 1;
+    const asked = one.calls === null ? null : one.calls.some((name) => one.truth.includes(name));
+    if (one.correct) {
+      hits += 1;
+      if (asked === true) hitsQueried += 1;
+      continue;
+    }
+    if (asked === null) unrecorded += 1;
+    else if (asked) queried += 1;
+    else unqueried += 1;
+  }
+  return {
+    cases: answers.length,
+    seeded,
+    hits,
+    misses: answers.length - hits,
+    queried,
+    unqueried,
+    unrecorded,
+    hitsQueried,
+  };
+}
+
+/**
+ * Render the reach census, with the configuration it was read on.
+ *
+ * The share is over the CLASSIFIABLE misses rather than over all of them, and the line names that denominator, because
+ * a percentage over a population of which part was never recorded is the defect this file's guard census was
+ * introduced to stop.
+ *
+ * @param census - The census.
+ * @returns Two or three lines.
+ */
+export function formatReachCensus(census: ReachCensus): string {
+  const { cases, seeded, hits, misses, queried, unqueried, unrecorded, hitsQueried } = census;
+  if (cases === 0) return 'arm reach: 0 cases';
+  const classifiable = misses - unrecorded;
+  const share = classifiable === 0 ? '0.00' : ((100 * unqueried) / classifiable).toFixed(2);
+  const absent =
+    unrecorded === 0
+      ? ''
+      : `, and ${String(unrecorded)} ${unrecorded === 1 ? 'row carries' : 'rows carry'} no call column`;
+  const lines = [
+    `arm reach: ${String(cases)} answers, ${String(hits)} hits (${String(hitsQueried)} of them queried the truth), ` +
+      `${String(misses)} misses`,
+    `  never queried the causal service: ${String(unqueried)} / ${String(classifiable)} classifiable misses ` +
+      `(${share} %); the other ${String(queried)} queried it and still missed${absent}`,
+  ];
+  if (seeded === 0) {
+    lines.push(
+      "  the arm is free on every row (`seeded: false`), so the seed classes describe the PIPELINE's reach and not " +
+        'what the model read',
+    );
+  } else if (seeded === cases) {
+    lines.push(
+      `  the arm was seeded on ${String(seeded)} of ${String(cases)} rows, so the seed classes describe what it was shown`,
+    );
+  } else {
+    lines.push(
+      `  the arm was seeded on ${String(seeded)} of ${String(cases)} rows: the seed classes describe two ` +
+        'configurations at once',
+    );
+  }
   return lines.join('\n');
 }

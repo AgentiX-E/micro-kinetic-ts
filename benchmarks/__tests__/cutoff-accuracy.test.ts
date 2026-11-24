@@ -4,11 +4,14 @@ import {
   acAt,
   avgAt,
   censusPopulations,
+  chanceAt,
+  chanceAverageOf,
   cutoffTable,
   decompositionAt,
   formatCutoffs,
   formatDecomposition,
   hitRank,
+  liftOf,
   parseCensusLine,
   publishedRate,
   readCutoffs,
@@ -159,7 +162,15 @@ describe('a population', () => {
 
   it('reads an empty population as zeros rather than as a division by zero', () => {
     const reading = readCutoffs([], 5);
-    expect(reading).toEqual({ k: 5, cases: 0, ac: [0, 0, 0, 0, 0], avg: 0, floor: 0, absent: 0 });
+    expect(reading).toEqual({
+      k: 5,
+      cases: 0,
+      ac: [0, 0, 0, 0, 0],
+      avg: 0,
+      floor: 0,
+      lift: 0,
+      absent: 0,
+    });
   });
 
   it('refuses a cutoff it cannot read', () => {
@@ -413,5 +424,82 @@ describe('the retrieval-rerank decomposition', () => {
   it('says the rerank rate is undefined when nothing was retrieved, instead of printing 0 %', () => {
     const text = formatDecomposition(decompositionAt([at('a', 'c', null)], 5));
     expect(text).toContain('no candidate was retrieved');
+  });
+});
+
+describe('the chance baseline the evaluator now prints', () => {
+  it('is min(k, n) / n for a case whose pool could hold its answer', () => {
+    expect(chanceAt(1, 5, true)).toBeCloseTo(1 / 5, 12);
+    expect(chanceAt(3, 5, true)).toBeCloseTo(3 / 5, 12);
+    // Beyond the pool the cutoff cannot reach any more of it, so the chance stops rising.
+    expect(chanceAt(9, 5, true)).toBe(1);
+  });
+
+  it('is zero for a case whose answer was never in the pool, at every cutoff', () => {
+    for (const k of [1, 2, 5, 9]) expect(chanceAt(k, 10, false)).toBe(0);
+  });
+
+  it('is the closed form `uniformFloor` whenever every case is in its pool', () => {
+    for (const pool of [4, 6, 12, 49])
+      expect(chanceAverageOf([at('a', 'c', 2, pool)], 5)).toBeCloseTo(uniformFloor(5, pool), 12);
+  });
+
+  it('averages over the cuts, which is what the evaluator labels `Chance@5`', () => {
+    // n = 4: AC chances are 1/4, 2/4, 3/4, 4/4, 4/4 -- the mean is 0.70, and that is the number the field prints.
+    expect(chanceAverageOf([at('a', 'c', 1, 4)], 5)).toBeCloseTo(0.7, 12);
+    // Two cases: the mean of the per-case averages, never the average of a nominal pool size.
+    const mixed = [at('a', 'c', 1, 4), at('b', 'c', 1, 6)];
+    expect(chanceAverageOf(mixed, 5)).toBeCloseTo((0.7 + 0.5) / 2, 12);
+  });
+
+  it('charges an absent case nothing, so the same corpus reads a LOWER floor with it than without', () => {
+    const inPool = [at('a', 'c', 1, 4), at('b', 'c', 2, 4)];
+    const withAbsent = [...inPool, at('z', 'c', null, 4)];
+    expect(chanceAverageOf(inPool, 5)).toBeCloseTo(0.7, 12);
+    // 2 x 0.70 + 0 over three cases: an answer the pool never held cannot be found by any order over it.
+    expect(chanceAverageOf(withAbsent, 5)).toBeCloseTo(1.4 / 3, 12);
+  });
+
+  it('refuses a pool that is not a positive integer, like every other reader here', () => {
+    for (const pool of [0, -1, 2.5]) expect(() => chanceAt(1, pool, true)).toThrow(/pool/);
+  });
+
+  it('reads an empty population as zero rather than dividing by it', () => {
+    expect(chanceAverageOf([], 5)).toBe(0);
+  });
+});
+
+describe('the reading states its own baseline', () => {
+  const cases = [at('a', 'c', 1, 4), at('b', 'c', 3, 4), at('z', 'c', null, 4), at('d', 'c', 9, 4)];
+
+  it('computes the floor as the chance average over the SAME cases, not as a second formula', () => {
+    for (const k of [1, 2, 3, 4, 5]) {
+      expect(readCutoffs(cases, k).floor).toBeCloseTo(chanceAverageOf(cases, k), 12);
+    }
+  });
+
+  it('reports the lift as an EXCESS and not as a multiple, which is what the field prints', () => {
+    const reading = readCutoffs(cases, 5);
+    expect(liftOf(reading)).toBeCloseTo(reading.avg - reading.floor, 12);
+    // A ratio would be a different number, and printing one under the field's label would be a quiet redefinition.
+    const ratio = reading.avg / reading.floor;
+    expect(ratio).not.toBeCloseTo(liftOf(reading), 6);
+  });
+
+  it('reads a population that does nothing as zero lift, not as a negative one', () => {
+    // Every case absent: the metric is 0 and the floor is 0, so the excess is 0 rather than NaN.
+    const reading = readCutoffs([at('a', 'c', null, 4)], 5);
+    expect(reading.avg).toBe(0);
+    expect(reading.floor).toBe(0);
+    expect(liftOf(reading)).toBe(0);
+  });
+
+  it('prints the chance and the lift beside the average, so a cell cannot be quoted without its floor', () => {
+    const text = formatCutoffs(cutoffTable(cases, 5));
+    expect(text).toContain('Chance');
+    expect(text).toContain('Lift');
+    expect(text).toContain('floor');
+    for (const line of text.split('\n').slice(1))
+      expect(line.split(/\s+/).length).toBeGreaterThan(6);
   });
 });

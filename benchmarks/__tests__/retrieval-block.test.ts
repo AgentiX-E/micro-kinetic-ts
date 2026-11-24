@@ -14,10 +14,13 @@ import {
   SEED_WIDTH,
   censusRetrieval,
   classifyMiss,
+  formatReachCensus,
   formatRetrievalReport,
   gapSeparability,
   rankOfTruth,
+  reachCensusOf,
   wideningCurve,
+  type ArmAnswer,
   type RetrievalCase,
 } from '../src/retrieval-block.js';
 
@@ -218,5 +221,123 @@ describe('the report', () => {
     expect(text).toContain('0 cases, 0 hits, 0 misses');
     expect(text).toContain('0 of 0 misses (0.00 %)');
     expect(text).not.toContain('NaN');
+  });
+});
+
+describe('what the arm itself looked at', () => {
+  /** One answer row, with the fields the reach census reads. */
+  function answer(overrides: Partial<ArmAnswer> = {}): ArmAnswer {
+    return {
+      datapack: 'case',
+      truth: ['truth'],
+      calls: ['truth'],
+      correct: false,
+      seeded: false,
+      ...overrides,
+    };
+  }
+
+  it('separates a miss that queried the causal service from one that never did', () => {
+    const census = reachCensusOf([
+      answer({ calls: ['truth'] }),
+      answer({ calls: ['other'] }),
+      answer({ correct: true, calls: ['truth'] }),
+    ]);
+    expect(census).toMatchObject({ cases: 3, hits: 1, misses: 2, queried: 1, unqueried: 1 });
+  });
+
+  it('counts a query of ANY accepted name, because a multi-name truth is satisfied by one of them', () => {
+    const census = reachCensusOf([answer({ truth: ['db', 'api'], calls: ['api'] })]);
+    expect(census.queried).toBe(1);
+  });
+
+  it('reads an empty call list as a measured miss, not as an unrecorded one', () => {
+    const census = reachCensusOf([answer({ calls: [] })]);
+    expect(census).toMatchObject({ queried: 0, unqueried: 1, unrecorded: 0 });
+  });
+
+  it('refuses to classify a row whose artifact has no call column, and counts it apart', () => {
+    const census = reachCensusOf([answer({ calls: null })]);
+    // Not `unqueried`: an absent column is a population the instrument could not see, and calling it a miss the arm
+    // never investigated would be the same defect as reading an absence as a zero.
+    expect(census).toMatchObject({ queried: 0, unqueried: 0, unrecorded: 1 });
+  });
+
+  it('keeps the three buckets disjoint and exhaustive', () => {
+    const census = reachCensusOf([
+      answer({ calls: ['truth'] }),
+      answer({ calls: ['other'] }),
+      answer({ calls: null }),
+      answer({ correct: true }),
+    ]);
+    expect(census.queried + census.unqueried + census.unrecorded).toBe(census.misses);
+    expect(census.hits + census.misses).toBe(census.cases);
+    expect(census.hitsQueried).toBeLessThanOrEqual(census.hits);
+  });
+
+  it('counts the hits that queried the truth, so a reader that never records a query cannot pass as one that does', () => {
+    const blind = reachCensusOf([answer({ correct: true, calls: [] })]);
+    expect(blind.hitsQueried).toBe(0);
+    const seeing = reachCensusOf([answer({ correct: true, calls: ['truth'] })]);
+    expect(seeing.hitsQueried).toBe(1);
+  });
+
+  it('states the share against the population it could classify, and says how many rows it could not', () => {
+    const text = formatReachCensus(
+      reachCensusOf([
+        answer({ calls: ['other'] }),
+        answer({ calls: ['other'] }),
+        answer({ calls: null }),
+      ]),
+    );
+    expect(text).toContain('2 / 2');
+    expect(text).toContain('100.00 %');
+    expect(text).toContain('the other 0 queried it and still missed');
+    expect(text).toContain('1 row carries no call column');
+  });
+
+  it('says the arm is free when every row is, because the seed classes then describe the PIPELINE', () => {
+    const text = formatReachCensus(reachCensusOf([answer({}), answer({})]));
+    expect(text).toContain('free on every row');
+    expect(text).toContain("PIPELINE's reach");
+  });
+
+  it('says the arm was seeded when it was, which is the one case in which the seed classes describe what it read', () => {
+    const text = formatReachCensus(reachCensusOf([answer({ seeded: true })]));
+    expect(text).toContain('seeded on 1 of 1');
+    expect(text).not.toContain('free on every row');
+  });
+
+  it('reads an empty corpus as zero cases without a percentage', () => {
+    const text = formatReachCensus(reachCensusOf([]));
+    expect(text).toContain('0 cases');
+    expect(text).not.toContain('NaN');
+  });
+});
+
+describe('a census read on a mixed or partly-recorded artifact', () => {
+  function answer(overrides: Partial<ArmAnswer> = {}): ArmAnswer {
+    return {
+      datapack: 'case',
+      truth: ['truth'],
+      calls: ['other'],
+      correct: false,
+      seeded: false,
+      ...overrides,
+    };
+  }
+
+  it('refuses to describe a half-seeded artifact as either configuration', () => {
+    const text = formatReachCensus(reachCensusOf([answer({ seeded: true }), answer({})]));
+    expect(text).toContain('seeded on 1 of 2 rows');
+    expect(text).toContain('two configurations at once');
+    expect(text).not.toContain('free on every row');
+  });
+
+  it('pluralises the rows it could not classify, because one unread row and two are the same defect', () => {
+    const text = formatReachCensus(
+      reachCensusOf([answer({ calls: null }), answer({ calls: null })]),
+    );
+    expect(text).toContain('2 rows carry no call column');
   });
 });

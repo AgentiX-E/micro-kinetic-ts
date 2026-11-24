@@ -10155,3 +10155,68 @@ $1.09 against $0.59 per investigation), which is external evidence for the singl
 already uses. The first of the four was actionable inside this iteration and is done: `decompositionAt` and
 `formatDecomposition` in `benchmarks/src/cutoff-accuracy.ts` print the split under every cutoff table, and the split is
 an **identity** — `AC@1 = retrieval × rerank` at every `k`, asserted per cutoff — rather than a second measurement.
+
+## 341 The arm's own reach: 74 of 94 published misses never queried the causal service (iteration 341)
+
+**Owner of:** `docs/arm-reach-341.md` — the two censuses, the field's `Chance@k`/`Lift@k` definitions read from its code,
+the floor defect that reconciling them exposed, the re-priced queue and the falsifiers. This entry is the register's
+summary of it, not a substitute for it.
+
+The queue that 340 re-priced still described its misses by where the truth sits in the **engine's** ranking. That
+description assumes a seeded arm. The shipped arm is not seeded, and its artifact says so on every row —
+
+```
+$ jq -r .seeded /tmp/art328/query-agent.ndjson | sort | uniq -c
+   1422 false
+```
+
+— so `SEED_WIDTH` is a width an *experiment* would set and the class names describe the **pipeline's** reach. Measured
+against the arm's own `calls` column instead: **of the 94 shipped misses, 74 (78.72 %) never queried the causal service
+at all**; 20 queried it and still missed. On the arm's own answers the same split is 102 / 135 (75.56 %). Against the
+corpus the first is **5.20 pp**, the second **1.41 pp** — so the reasoning residue the queue carried as "37 cases,
+≈¥21" is 20 cases, and the largest remaining block was not in the queue at all.
+
+Four facts make those 74 a *reach* population rather than a hard one, and each is a file, not an opinion: the culprit is
+a key of the case's own `metrics` map **and** an endpoint of its own `traceEdges` in **all 74** (51 of 74 also carry log
+lines for it); the arm stops with **4.99** of its **ten** tool calls spent and **1.888** distinct services queried, in a
+corpus that carries ~50 services a case; in **40** of the 74 the culprit's id is already somewhere in the recorded
+transcript (a lower bound — a row keeps its last 2 000 characters); and the 74 are spread over six fault families, so
+this is a policy failure rather than one injector's blind spot.
+
+**Instruments.** `reachCensusOf` / `formatReachCensus` in `benchmarks/src/retrieval-block.ts` (34 tests,
+`100/100/100/100`) count three disjoint miss buckets — queried, unqueried, and **unrecorded** (no `calls` column), so an
+absent column can never read as a measured absence; the share is printed over the classifiable misses and names its
+denominator; and the row states which configuration it was read on, because "the arm is free on every row" and "the arm
+was seeded on every row" are opposite claims about the same number. `SEED_WIDTH`'s docblock and the module header were
+corrected to say what they measure.
+
+**The field's two columns, from its code rather than its changelog.** `RCAEval` prints `Chance@5` and `Lift@5`
+(`main.py --report-chance`), and two of the three definitions are not what their names imply: `Chance@5` is
+`chance_average(5)`, the mean of `min(k, n)/n` over the cuts — `0.70` on a four-service cell, not `1.00`; it is
+therefore **this module's `floor`**, and the identity is asserted per cutoff rather than argued; and `Lift@5` is
+`average(k) - chance_average(k)`, an **excess**, so a ratio printed under that label would be a different number
+wearing the field's name. `CutoffReading` now carries `lift` beside `avg` and `floor`, `formatCutoffs` prints both
+columns, and a test asserts the ratio is not the lift.
+
+**The defect that reconciliation exposed.** `absent` has always been documented as "unreachable at every cutoff, by
+construction", and the floor was charged `uniformFloor(k, pool)` for every case including those whose answer the pool
+never held — two statements that cannot both hold, since an answer outside the pool cannot be found by any order over
+it. `chanceAt(k, pool, inPool)` returns `0` for those, the floor is the mean over cuts of that per case, and the
+corpus's three row states are now distinct: measured-in-pool, measured-absent (`0` and `0`), and unmeasured (excluded
+from both populations by `censusPopulations`, which is why the answer metric is defined on 735 rows and the order
+metric on 726).
+
+**The rewritten law, to sit beside the aperture.** An engine-side change converts only on cases the arm gets wrong and
+no rule settles — 135, **9.5 %**. An arm-side change converts on cases the arm never investigated — 74, **5.2 %**, with
+the evidence already in the case file. The levers are disjoint and the second is the larger one.
+
+**Field check.** RCAtlas (late Oct 2026, 90 incidents over eight datasets) publishes the ordering this register argued
+from the inside — plain harnesses 65–77 % PR@1 against 16–53 % for five published SOP agents and 6–39 % for
+statistical/causal methods, with every Pareto-optimal configuration a simple harness — and names the mechanism
+("hard-coded investigation paths skip the decisive evidence"), which is this iteration's 74 cases seen from the other
+side: ours has no SOP at all and still looks in the wrong place, because a budget without a policy is not a search.
+CARE-PO (`arXiv:2611.12125`) finds 82.8 % of agent trajectories carrying a removable call and 68.0 % of calls removable,
+which makes the unspent half of our budget the normal state of the art rather than this harness's defect. SRE-1
+(ResolveAI, 18 Nov 2026) puts a process-scored competitor in production: 38.8 % single / 71 % five-run ensemble pass on
+49 live cases at −37 % cost against the strongest frontier model, over 400+ tools and a citation-bearing causal chain —
+a column this corpus still cannot score.

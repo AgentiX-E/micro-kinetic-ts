@@ -35,6 +35,7 @@ import {
   type LedgerCase,
 } from './miss-ledger.js';
 import { ENGINE_CERTAINTY_MARGIN, engineCertainty } from './query-agent.js';
+import { formatReachCensus, reachCensusOf, type ArmAnswer } from './retrieval-block.js';
 import { renderSurfaceLine, type SurfaceRow } from './surface-diff.js';
 
 /** The bar the first-hop rule ships at. */
@@ -66,6 +67,10 @@ interface AnswerLine {
   readonly entryChildErrors: number | null;
   readonly belowFails: boolean | null;
   readonly rawAnswer: string | null;
+  /** The services whose telemetry the arm queried, or absent on an artifact that predates the column. */
+  readonly calls?: readonly string[] | null;
+  /** The arm's own `seeded` flag, or absent on an artifact that predates it. */
+  readonly seeded?: boolean | null;
 }
 
 /** One case as the engine's per-case verdict wrote it. */
@@ -283,6 +288,31 @@ function main(): void {
     writeFileSync(args.surfaceOut, `${rows.map(renderSurfaceLine).join('\n')}\n`);
     console.log(`  shipped surface: ${rows.length} rows -> ${args.surfaceOut}`);
   }
+
+  // What the arm INVESTIGATED, which is a different question from what the engine ranked. The 340 entry established
+  // that the two artifacts are joined rather than dependent; this is the reading that says where the arm's own
+  // attention went, and it is the only one of the two that can price a change to the arm's policy.
+  const shippedCorrect = new Map(
+    shipped.map((one) => [one.datapack, right(one.truth, one.published)]),
+  );
+  const armAnswers = (correctOf: (one: AnswerLine) => boolean): ArmAnswer[] =>
+    answers.map((one) => ({
+      datapack: one.datapack,
+      truth: one.truth,
+      calls: one.calls ?? null,
+      correct: correctOf(one),
+      seeded: one.seeded ?? null,
+    }));
+  console.log("\narm reach, on the arm's own answers");
+  console.log(formatReachCensus(reachCensusOf(armAnswers((one) => right(one.truth, one.answer)))));
+  console.log('arm reach, on the shipped surface');
+  console.log(
+    formatReachCensus(
+      reachCensusOf(
+        armAnswers((one) => shippedCorrect.get(one.datapack) ?? right(one.truth, one.answer)),
+      ),
+    ),
+  );
 
   console.log(formatGuardCensus(guardCensusOf(margins)));
   console.log(`\n${formatLedger(ledgerOf(shipped))}`);

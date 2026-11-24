@@ -51,8 +51,22 @@ export interface CutoffReading {
   readonly ac: readonly number[];
   /** `Avg@k`, the mean of `ac`. */
   readonly avg: number;
-  /** The mean of the per-case uniform floors, over the SAME cases — never over a nominal pool size. */
+  /**
+   * The mean of the per-case uniform floors, over the SAME cases — never over a nominal pool size.
+   *
+   * This is the number the evaluator prints as `Chance@5`: `chanceAverage` of `chance_accuracy(1..k)`. Named `floor`
+   * here because that is what it is, and printed under the evaluator's own label so a reader can put the two tables
+   * side by side without a translation.
+   */
   readonly floor: number;
+  /**
+   * `avg − floor`, which is the evaluator's `Lift@5`: an EXCESS, not a multiple.
+   *
+   * The distinction is not cosmetic. `RCAEval`'s `Evaluator.lift(k)` is `average(k) - chance_average(k)`, so a ratio
+   * printed under that label would be a different number wearing the field's name — the exact defect this module was
+   * written to stop repeating. The ratio is still computable by a reader who wants it; it is not this field.
+   */
+  readonly lift: number;
   /** Cases whose accepted answer is absent from the order entirely: unreachable at every cutoff, by construction. */
   readonly absent: number;
 }
@@ -123,6 +137,65 @@ export function uniformFloor(k: number, pool: number): number {
   return inside / (pool * k);
 }
 
+/**
+ * `AC@k` that a uniformly random order over a pool of `n` would reach, per case.
+ *
+ * `min(k, n) / n` when the answer is in the pool, and `0` when it is not: no order over a set that does not contain
+ * the answer can place it in the first `k`, so a case recorded absent contributes nothing to the baseline. That
+ * second branch is not decoration — the evaluator carries the same distinction as `answer_in_candidates`, and the
+ * default assumption it documents ("the answer is an injected member of the ranked system") is FALSE on nine rows of
+ * the census this corpus reads. A floor that charged those nine a positive chance would be quoting a baseline the
+ * corpus cannot reach, which is the mirror image of quoting an accuracy without one.
+ *
+ * @param k - The cutoff.
+ * @param pool - The size of the candidate set the order was drawn from.
+ * @param inPool - Whether the accepted answer was among those candidates.
+ * @returns The chance rate, in `[0, 1]`.
+ */
+export function chanceAt(k: number, pool: number, inPool = true): number {
+  requireCutoff(k);
+  if (!Number.isInteger(pool) || pool < 1) {
+    throw new Error(`a pool must be a positive integer, got ${String(pool)}`);
+  }
+  return inPool ? Math.min(k, pool) / pool : 0;
+}
+
+/**
+ * The mean over the cuts of {@link chanceAt}, which is what the evaluator labels `Chance@k`.
+ *
+ * For a pool of four at `k = 5` the per-cut chances are `0.25, 0.5, 0.75, 1, 1` and the mean is `0.70` — the number
+ * `sota-comparison.md` quotes as the floor a four-service cell pays. The mean is over CASES of the per-case mean,
+ * never a quotient of pooled counts: a corpus of one four-service cell and one forty-service cell must not let the
+ * larger pool decide the reading.
+ *
+ * @param cases - The population.
+ * @param k - The cutoff.
+ * @returns The chance average, `0` over an empty population.
+ */
+export function chanceAverageOf(cases: readonly CutoffCase[], k: number): number {
+  requireCutoff(k);
+  if (cases.length === 0) return 0;
+  let total = 0;
+  for (const one of cases) {
+    const inPool = one.hitRank !== null;
+    for (let j = 1; j <= k; j += 1) total += chanceAt(j, one.pool, inPool);
+  }
+  return total / (cases.length * k);
+}
+
+/**
+ * The reading's excess over its own baseline.
+ *
+ * A named accessor rather than arithmetic at each call site, because the wrong arithmetic here (a ratio) is a
+ * plausible-looking number and the right one (a difference) is what the field publishes.
+ *
+ * @param reading - The reading.
+ * @returns `avg − floor`.
+ */
+export function liftOf(reading: CutoffReading): number {
+  return reading.avg - reading.floor;
+}
+
 /** Read one population at one cutoff. */
 export function readCutoffs(cases: readonly CutoffCase[], k: number): CutoffReading {
   requireCutoff(k);
@@ -133,16 +206,21 @@ export function readCutoffs(cases: readonly CutoffCase[], k: number): CutoffRead
   for (const one of cases) {
     for (let j = 1; j <= k; j += 1) ac[j - 1] = ac[j - 1]! + acAt(one.hitRank, j);
     avg += avgAt(one.hitRank, k);
-    floor += uniformFloor(k, one.pool);
+    // Per cut and per case, so an absent answer is charged `0` rather than a share of a pool it was never in.
+    const inPool = one.hitRank !== null;
+    for (let j = 1; j <= k; j += 1) floor += chanceAt(j, one.pool, inPool);
     if (one.hitRank === null) absent += 1;
   }
   const n = cases.length;
+  const mean = n === 0 ? 0 : avg / n;
+  const baseline = n === 0 ? 0 : floor / (n * k);
   return {
     k,
     cases: n,
     ac: ac.map((value) => (n === 0 ? 0 : value / n)),
-    avg: n === 0 ? 0 : avg / n,
-    floor: n === 0 ? 0 : floor / n,
+    avg: mean,
+    floor: baseline,
+    lift: mean - baseline,
     absent,
   };
 }
@@ -299,7 +377,8 @@ function row(label: string, reading: CutoffReading): string {
   const ac = reading.ac.map((value) => pct(value).padStart(7)).join('  ');
   return (
     `${label.padEnd(22)} ${String(reading.cases).padStart(4)}  ${ac}  ` +
-    `${pct(reading.avg).padStart(7)}  ${pct(reading.floor).padStart(7)}  ${String(reading.absent).padStart(3)}`
+    `${pct(reading.avg).padStart(7)}  ${pct(reading.floor).padStart(7)}  ` +
+    `${pct(reading.lift).padStart(7)}  ${String(reading.absent).padStart(3)}`
   );
 }
 
@@ -311,7 +390,9 @@ export function formatCutoffs(table: CutoffTable): string {
   );
   const lines = [
     `cutoff ${String(k)} — accuracy at each cut, the mean of them, and the floor a random order of the same pool pays`,
-    `${'cell'.padEnd(22)} ${'n'.padStart(4)}  ${heads}  ${'Avg'.padStart(7)}  ${'floor'.padStart(7)}  ${'abs'.padStart(3)}`,
+    `the floor is the evaluator's Chance@${String(k)} and Lift is \`Avg − Chance\` (an excess, not a ratio)`,
+    `${'cell'.padEnd(22)} ${'n'.padStart(4)}  ${heads}  ${'Avg'.padStart(7)}  ${'Chance'.padStart(7)}  ` +
+      `${'Lift'.padStart(7)}  ${'abs'.padStart(3)}`,
   ];
   for (const one of table.cells) lines.push(row(one.cell, one));
   lines.push(row('pooled', table.pooled));
