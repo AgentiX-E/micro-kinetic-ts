@@ -184,3 +184,47 @@ assumed.
    branch, and whether it is the same nine cases every run, is a corpus question with a `1.2 pp` denominator.
 3. **`AC@3` on TrainTicket.** `95.9 %` pooled at the third cut against `91.7 %` at the first is headroom that a
    scoring change can reach without widening anything; the three TrainTicket cells are where it sits.
+
+## 10. A competitor update that arrived with this reading, and it changes one of the open items
+
+**DecompRCA** (`arXiv:2609.36686`, *Where Root Cause Analysis Fails: A Retrieval-Reranking Decomposition*, code at
+`github.com/cruiseresearchgroup/DecompRCA`) publishes the same distinction this iteration measured, from the other
+direction. Its decomposition splits a `top@k` miss into **retrieval failure** (the truth was never considered) and
+**reranking failure** (it was considered and ranked too low), and its audit of four benchmarks reports that on
+**microservice** benchmarks "retrieval is nearly solved (98–100 %)" — because an injected fault drives the faulty
+service's own metric far above its baseline.
+
+Our census says the same thing from the inside, and more sharply: `abs` is **zero on all nine cells** (§2), so
+**every** miss on this corpus is a reranking miss. Two independently built instruments agree, which is what turns
+"our misses are depth misses" from a reading of one file into a property of the benchmark.
+
+Three consequences, and the third is a correction to this iteration's own plan:
+
+1. **The ceiling is a reranker question, not a graph question.** If retrieval is solved at this granularity, no
+   improvement to candidate construction can move `AC@1`; only ordering can. That is consistent with the 338 ledger
+   (evidence terms decide, the kinetic term ties) and it is the strongest argument yet for the theory's next use being
+   **relational ordering** rather than another channel.
+2. **Their pipeline is the shape we already ship.** A multi-signal retriever plus an LLM reranker, "no causal graph or
+   labelled data required", matching or beating the best baseline on all six suites by up to `+12` points — that is the
+   gated arm's architecture, measured by someone else on someone else's data.
+3. **Their `+7 … +18` is the variant arm T did NOT test.** Their largest published effect comes from adding a
+   **hand-written** system-description document — one that states what a service is *for*, as well as who calls whom.
+   Our arm T used a **derived** brief (the union call graph, one string for the corpus) and read **`1 166` against the
+   control's `1 165`**: `+1` net, conditional precision `85.7 %` on 14 overrides, and a falsifier that missed firing by
+   one case. `docs/agentic-topology-brief.md` §6 predicts exactly this — a derived brief "can say who calls whom and it
+   cannot say what a service is for" — so their number does not refute arm T and arm T does not refute theirs. What is
+   now established is that the **derivable** part is worth `+1` case and that the remaining question is a document no
+   dispatch can derive.
+
+**Evaluation-set verification, from the primary source.** RCAEval's own figshare record
+(`DOI 10.6084/m9.figshare.31048672`) states 735 cases over three suites — RE1 375 (125 per system, `cpu`/`mem`/`disk`/
+`delay`/`loss`), RE2 270 (six fault types, metrics **and** logs **and** traces), RE3 90 (code-level `F1..F5`, multi-source)
+— and, decisively for how our cells may be read, **RE1 is metrics-only by construction**. Three of our nine cells
+therefore have no log or trace channel to use, which is why no "all channels" claim in the register may be read across
+suites.
+
+**What it changes in §9.** Item 4, "DecompRCA-style system-description prompt", is no longer an untested idea priced at
+`¥0.6` for a pilot: the **derived** version has been measured (`+1`, arm T, §313 of the register) and the remaining
+variant is a hand-written document that needs its own provenance argument. The next step is therefore `¥0`: read their
+released implementation and decide whether a **purpose-stating** description is derivable from the corpus at all — and
+if it is not, whether a hand-written one can be held to the same one-string-per-corpus guard arm T satisfied.

@@ -10059,3 +10059,11 @@ this system"* is closed — the protocol is now identical and the comparison is 
 priced: **RICE-CM as a method** (the protocol is comparable, the four components are not reproduced — a build, not a
 reading), and **`AC@3` on TrainTicket** (`4.2 pp` pooled between the first and third cut, `10 pp` on
 `RE3:TrainTicket`), which is headroom a scoring change can reach without widening the presentation.
+
+**A competitor update that arrived with the reading.** `DecompRCA` (`arXiv:2609.36686`, code at
+`github.com/cruiseresearchgroup/DecompRCA`) decomposes a `top@k` miss into **retrieval** and **reranking** failure and
+reports that on microservice benchmarks retrieval is "nearly solved (98–100 %)" — which is this entry's `abs 0` on all
+nine cells, measured by a different instrument. Two consequences: the remaining ceiling is a **reranker** question and
+no candidate-construction change can move `AC@1`; and their largest published effect (`+7 … +18`) is a **hand-written**
+description, not the derived brief arm T already measured at `+1` (`1 166` vs `1 165`). The open item is therefore not
+"run the system-description arm" but "settle whether *purpose* is derivable from this corpus", at ¥0.
