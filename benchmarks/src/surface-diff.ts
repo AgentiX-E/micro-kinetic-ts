@@ -256,7 +256,9 @@ export function formatSurfaceDiff(
     for (const fold of [0, 1] as const) {
       const repairs = diff.repairs.filter((flip) => foldOfCase(flip.datapack) === fold).length;
       const breaks = diff.breaks.filter((flip) => foldOfCase(flip.datapack) === fold).length;
-      lines.push(`fold ${fold}: delta ${signed(repairs - breaks)} (${repairs} repairs, ${breaks} breaks)`);
+      lines.push(
+        `fold ${fold}: delta ${signed(repairs - breaks)} (${repairs} repairs, ${breaks} breaks)`,
+      );
     }
   }
   return lines.join('\n');

@@ -39,7 +39,9 @@ function readLines(path: string): unknown[] {
       try {
         return JSON.parse(one.line) as unknown;
       } catch (error) {
-        throw new Error(`surface-diff: ${path} line ${one.index + 1} is not JSON — ${String(error)}`);
+        throw new Error(
+          `surface-diff: ${path} line ${one.index + 1} is not JSON — ${String(error)}`,
+        );
       }
     });
 }

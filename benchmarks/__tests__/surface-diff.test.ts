@@ -113,8 +113,12 @@ describe('the comparison of two surfaces', () => {
   });
 
   it('refuses two files with different case sets, naming the difference rather than scoring one side', () => {
-    expect(() => diffSurfaces([row('a', 'x', true)], [])).toThrow(/1 in the first file.*0 in the second/);
-    expect(() => diffSurfaces([], [row('a', 'x', true)])).toThrow(/0 in the first file.*1 in the second/);
+    expect(() => diffSurfaces([row('a', 'x', true)], [])).toThrow(
+      /1 in the first file.*0 in the second/,
+    );
+    expect(() => diffSurfaces([], [row('a', 'x', true)])).toThrow(
+      /0 in the first file.*1 in the second/,
+    );
   });
 
   it('names an id that only one side carries', () => {
@@ -138,12 +142,12 @@ describe('the comparison of two surfaces', () => {
   });
 
   it('refuses a duplicated id inside one file, because the second row would be silently dropped', () => {
-    expect(() => diffSurfaces([row('a', 'x', true), row('a', 'y', true)], [row('a', 'x', true)])).toThrow(
-      /twice/,
-    );
-    expect(() => diffSurfaces([row('a', 'x', true)], [row('a', 'x', true), row('a', 'y', true)])).toThrow(
-      /twice/,
-    );
+    expect(() =>
+      diffSurfaces([row('a', 'x', true), row('a', 'y', true)], [row('a', 'x', true)]),
+    ).toThrow(/twice/);
+    expect(() =>
+      diffSurfaces([row('a', 'x', true)], [row('a', 'x', true), row('a', 'y', true)]),
+    ).toThrow(/twice/);
   });
 
   it('measures an empty corpus as zero rather than as a division by zero', () => {
