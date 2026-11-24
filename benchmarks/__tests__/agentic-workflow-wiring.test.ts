@@ -751,6 +751,22 @@ describe('the free-investigation arm’s wiring', () => {
     expect(WORKFLOW).toContain('query_max_rounds=11');
   });
 
+  it('carries the FLEET SHORTLIST on the same surface, and it is neither a seed nor a schedule', () => {
+    // 342b measured a paragraph appended to the instruction costing −43 pp while the tool it advertised was never
+    // called, so the next arm changes EVIDENCE and not TEXT: the shortlist rides inside `TOOL fleet`, the prompt is the
+    // free arm's byte for byte, and no extra call is spent. A workflow that could not ask for it would leave the only
+    // text-free intervention in this line undispatchable.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(inputNames(WORKFLOW)).toContain('query_fleet_order');
+    expect(measure).toContain('inputs.query_fleet_order');
+    expect(measure).toContain('FLEET_ARG+=(--fleet-order');
+    expect(measure).toContain('"${FLEET_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('fleet-order')");
+    // The description has to say why it is not the two arms already refused, or a reader will file it beside them.
+    expect(WORKFLOW).toContain('byte-identical to the free arm');
+  });
+
   it('carries the FALLBACK on the same surface, because a surface the runner accepts must be dispatchable', () => {
     // The decoupling this input exists for: what the arm SHOWS and what a refusal FALLS BACK TO are two decisions,
     // and an arm with one and not the other is a surface nobody can ask for. The default is the shown order, which

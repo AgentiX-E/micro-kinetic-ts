@@ -10285,3 +10285,33 @@ extra cost.
 **Closed here:** "spend more calls" as the reach lever (the wall is rounds, and the ceiling doubles for 2× the price —
 priced, not assumed); "the arm wastes its budget" as a diagnosis (it spends all five); and the reading of §318 that a
 schedule had already been refuted (it had not — a seed had).
+
+## 343 The shortlist inside the fleet read, and the census that makes an arm readable (iteration 343)
+
+*The correction 342b's own artifact forced.* `TRACE_CHARS = 2 000` is a record of the END of an investigation, and
+**532 of 532** rows in both arms of the 342b sample begin `[earlier results elided]`, keeping **4.11** of 5 executed
+directives (free arm **4.05** on the same ids). So a per-tool table computed from a `trace` is a table of the tail:
+`TOOL fleet` and `TOOL services` are **0.000 in both arms** — they are the calls an investigation makes FIRST, and the
+first block is the one elision removes. Two 342b claims are withdrawn with that measurement: "the fleet read was never
+common (0.5 %)" (a different denominator; 0.000 on these 532 ids) and "the route was never walked" (`0 of 532 traces name
+next` is a statement about the last four calls, since a `next` issued first is invisible by construction). What survives
+is the tail's composition — `TOOL logs` **73.7 % → 25.2 %**, `TOOL edges` **60.5 % → 97.4 %**, both arms eliding the same
+number of blocks — and every outcome column (184 vs 266, retention 52.26 %).
+
+*The instrument.* `QueryOutcome.tools` / `QueryOutcome.nextServed`, written into the artifact as row fields and printed
+by the job log as a `census:` line, count directives **as they run**, so neither a 2 000-character cap nor elision can
+reach them; a refused tool is counted because a refused tool is still what the arm reached for. Ten tests in
+`query-agent-shortlist.test.ts` were written before the code, plus one wiring test for `query_fleet_order`.
+
+*The arm.* `--fleet-order none|engine` prints the pipeline's own first `PIPELINE_LINES = 5` candidates **inside `TOOL
+fleet`**, names only, after the two surprise sections. It is neither a seed nor a schedule: the instruction is
+byte-identical to the published one (asserted in a test), no call is spent, no round is added, and no prompt token is
+charged. That property is the whole design — 342b's −43 pp came from four appended prompt lines whose advertised tool was
+never demonstrably called, so the next intervention changes what an investigation can SEE and not what it is TOLD.
+
+*Pre-registered before the artifact exists.* H1 the section is read (`tools.fleet ≥ 1` on ≥ 50 % of the 532 rows; below
+10 % the premise "the arm starts at `fleet`" is false and the shortlist must ride in the first result of any kind); H2
+the reach converts (agent Top@1 ≥ **425** of 532, the +2.01 pp point estimate over the free arm's 414); H3 it costs
+nothing (retention of the engine's hits ≥ **96 %**, a veto); H4 the census agrees with the trace where the trace can
+speak. Full record: `fleet-shortlist-343.md`. **Open:** the shortlist's reading, and the `fleet` rows of 342b that no
+artifact of that arm can settle.

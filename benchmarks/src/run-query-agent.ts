@@ -71,6 +71,16 @@ interface Args {
    * the sequence. That distinction is the whole point — §318 measured the printed order as WORSE than no order.
    */
   readonly schedule: 'none' | 'engine';
+  /**
+   * Whether `TOOL fleet` prints the pipeline's own first five candidates beside the case's surprises.
+   *
+   * `engine` for the arm that shows the shortlist, `none` for the fleet read every earlier arm printed. This is NOT a
+   * seed and NOT a schedule: the instruction is byte-identical to the free arm's, and the only difference is a section
+   * of a tool's OUTPUT — so a difference between the two arms is a difference in evidence, not in what the model was
+   * told. That property is why it exists: 342b measured four appended prompt lines costing 43 points while the tool
+   * those lines advertised was never called.
+   */
+  readonly fleetOrder: 'none' | 'engine';
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -118,6 +128,12 @@ function parseArgs(argv: readonly string[]): Args {
   if (schedule !== 'none' && schedule !== 'engine') {
     throw new Error('--schedule must be `none` or `engine`');
   }
+  // A shortlist is a third arm of the same family and defaults to `none`, so a run that does not ask for it prints the
+  // fleet read every published number was taken under.
+  const fleetOrder = map.get('fleet-order') ?? 'none';
+  if (fleetOrder !== 'none' && fleetOrder !== 'engine') {
+    throw new Error('--fleet-order must be `none` or `engine`');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -137,6 +153,7 @@ function parseArgs(argv: readonly string[]): Args {
     gate: gate as GatePolicy,
     resolve: resolve as Resolution,
     schedule: schedule as Args['schedule'],
+    fleetOrder: fleetOrder as Args['fleetOrder'],
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -198,6 +215,7 @@ async function investigate(
   gate: GatePolicy,
   resolve: Resolution,
   schedule: readonly string[] | null,
+  shortlist: readonly string[] | null,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -238,6 +256,7 @@ async function investigate(
       fallbackOrder,
       engine,
       schedule,
+      shortlist,
     );
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
@@ -263,6 +282,11 @@ async function investigate(
       trace: '',
       seeded: seed !== null,
       scheduled: schedule === null ? null : schedule.length,
+      fleetOrder: shortlist === null ? 'none' : 'engine',
+      // A row whose call FAILED still records an empty census rather than omitting the column: an artifact where the
+      // field is missing cannot be distinguished from one written before the field existed.
+      tools: {},
+      nextServed: 0,
       // The INCUMBENT is a property of the case and the order, not of the investigation: a case whose call failed
       // still had one, and a row that said it did not would raise the gate-table caveat on a seeded arm.
       incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
@@ -309,6 +333,10 @@ async function investigate(
     trace: outcome.trace,
     seeded: seed !== null,
     scheduled: schedule === null ? null : schedule.length,
+    fleetOrder: shortlist === null ? 'none' : 'engine',
+    // Counted while the directives ran, so a per-tool count here is not a count of the trace's last 2 000 characters.
+    tools: outcome.tools,
+    nextServed: outcome.nextServed,
     // What the LOOP had, which is the fallback's first name the case actually carries.
     incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
     rounds: outcome.rounds,
@@ -433,6 +461,9 @@ async function main(): Promise<void> {
       // runner that recomputed an order would be scheduling a route no other artifact can reproduce, so this is the
       // same `ranked` column the seed reads and the same width the artifact carried.
       args.schedule === 'engine' ? verdicts.get(datapack)!.ranked : null,
+      // The shortlist is the SAME column the schedule reads, printed instead of served: one ranking, two arms, so a
+      // reading of either is a reading of the engine's own order and not of a runner's recomputation.
+      args.fleetOrder === 'engine' ? verdicts.get(datapack)!.ranked : null,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -452,7 +483,7 @@ async function main(): Promise<void> {
   console.log(
     `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
-      `gate ${args.gate}, fallback ${fallbackLabel}`,
+      `gate ${args.gate}, fallback ${fallbackLabel}, schedule ${args.schedule}, fleet ${args.fleetOrder}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,
@@ -462,6 +493,28 @@ async function main(): Promise<void> {
   console.log(
     `answered share ${((summary.answered / Math.max(summary.cases, 1)) * 100).toFixed(1)}% · ` +
       `rounds per case ${(kept.reduce((sum, row) => sum + row.rounds, 0) / Math.max(kept.length, 1)).toFixed(2)}`,
+  );
+  // The census, printed BEFORE the accuracy lines because it decides whether they can be read at all. It exists in
+  // this form because 342b's per-tool table had to be computed from the artifact's `trace`, which keeps only its last
+  // 2 000 characters — so the first call of every investigation was elided and `TOOL fleet`, usually the first call,
+  // was reported at 0.5 %. A census counted as the directives run cannot be elided.
+  const cases = Math.max(kept.length, 1);
+  const toolTotals = new Map<string, number>();
+  for (const row of kept) {
+    for (const [tool, count] of Object.entries(row.tools ?? {})) {
+      toolTotals.set(tool, (toolTotals.get(tool) ?? 0) + count);
+    }
+  }
+  console.log(
+    `census: distinct services ${(kept.reduce((sum, row) => sum + row.calls.length, 0) / cases).toFixed(3)} · ` +
+      `calls per case ${(kept.reduce((sum, row) => sum + row.toolCalls, 0) / cases).toFixed(2)} · ` +
+      `next served ${kept.reduce((sum, row) => sum + (row.nextServed ?? 0), 0)}`,
+  );
+  console.log(
+    `  tools per case ${[...toolTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([tool, count]) => `${tool} ${(count / cases).toFixed(2)}`)
+      .join(' · ')}`,
   );
   console.log(
     `agent Top@1 ${summary.agentCorrect} · engine Top@1 on the same cases ${summary.engineCorrect}`,

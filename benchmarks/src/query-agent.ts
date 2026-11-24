@@ -151,6 +151,16 @@ export const FAILED_LINES = 6;
 /** How many services one `fleet` call may print, largest rise first. */
 export const FLEET_LINES = 8;
 
+/**
+ * How many of the pipeline's own candidates a `fleet` read prints when the arm carries a shortlist.
+ *
+ * Five because that is the number of calls the loop can execute at the default budget — six rounds minus the forced
+ * one, which accepts an answer and nothing else — and the shortlist exists to make those five reachable: 29 of the 74
+ * unqueried misses sit inside the engine's first five positions (`docs/schedule-not-seed-342.md` §3). A wider section
+ * would be the fleet read the arm already has, with an opinion attached.
+ */
+export const PIPELINE_LINES = 5;
+
 /** How many collapsing series a `fleet` or `metric` answer carries beside the rises. */
 export const COLLAPSE_LINES = 2;
 
@@ -575,12 +585,17 @@ export function scheduleNames(telemetry: Telemetry, order: readonly string[]): s
  * @param telemetry - The case's tool view.
  * @param call - The parsed directive.
  * @param schedule - The order `next` walks, or `undefined` for an arm that carries none.
+ * @param shortlist - The pipeline's own order, printed inside `TOOL fleet`, or `null`/`undefined` for an arm whose
+ *   fleet read shows only the case's surprises. It rides in a TOOL RESULT and never in the instruction: iteration 342b
+ *   appended four lines to the prompt and cost 43 points while the tool those lines advertised was never called, so an
+ *   intervention that changes what an investigation can see must not also change what it is told.
  * @returns The text the model is shown next, and whether that text answers the question.
  */
 export function executeTool(
   telemetry: Telemetry,
   call: ParsedCall,
   schedule?: ScheduleCursor,
+  shortlist?: readonly string[] | null,
 ): ToolResult {
   if (call.kind === 'unparsed') {
     return {
@@ -660,6 +675,19 @@ export function executeTool(
     if (falls.length > 0) {
       lines.push(`falling: ${falls.length} of ${entries.length} services`);
       for (const entry of falls) lines.push(`  ${renderMetricLine(entry.id, entry.metric, true)}`);
+    }
+    // The pipeline's shortlist, when the arm carries one. It goes LAST so that the two surprise sections keep the
+    // positions every earlier arm printed them at, and it carries NAMES ONLY: a metric beside a candidate would put a
+    // second ranking system in the same list, and the section's whole claim is "this is the other system's order".
+    const ranked =
+      shortlist === undefined || shortlist === null ? [] : scheduleNames(telemetry, shortlist);
+    if (ranked.length > 0) {
+      const printed = ranked.slice(0, PIPELINE_LINES);
+      lines.push(
+        `pipeline order: the first ${String(printed.length)} of ${String(ranked.length)} ranked services this case ` +
+          'carries',
+      );
+      for (const id of printed) lines.push(`  ${id}`);
     }
     return { ok: true, text: lines.join('\n') };
   }
@@ -893,6 +921,21 @@ export interface QueryOutcome {
   /** Why the last answer was refused, when one was. */
   readonly answerRefused: string | null;
   readonly exchanges: readonly QueryExchange[];
+  /**
+   * Every directive the investigation EXECUTED, by tool name, refusals included.
+   *
+   * The artifact's `trace` keeps the last 2 000 characters, so a per-tool count taken from it measures the tail of an
+   * investigation and elides the FIRST call whenever the rest is longer — which is how `TOOL fleet` came to be reported
+   * at 0.5 % in iteration 342b when the fleet read is the first thing most investigations do. This census is counted as
+   * the directives run, so elision cannot reach it, and a refusal is counted because a refused tool is still a tool the
+   * arm reached for.
+   */
+  readonly tools: Readonly<Record<string, number>>;
+  /**
+   * Slots `TOOL next` actually served. Zero on every arm that carries no schedule, and the only honest way to say
+   * whether a schedule was walked: `next` in {@link tools} counts the asking, this counts the answering.
+   */
+  readonly nextServed: number;
   /** The end of the investigation, as the artifact keeps it. */
   readonly trace: string;
   readonly rounds: number;
@@ -1376,6 +1419,10 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  * @param engine - The engine's opinion, for the resolvers that read it.
  * @param schedule - The order a `next` directive walks, or `null` for an arm that carries none. Held by the harness
  *   and never printed: this is the difference between a schedule and a seed.
+ * @param shortlist - The pipeline's own order, printed inside `TOOL fleet`, or `null` for an arm whose fleet read shows
+ *   only the case's surprises. Like `schedule` it is held by the harness and never printed in the instruction; unlike
+ *   `schedule` it needs no new tool, so a difference between this arm and the free one is a difference in EVIDENCE
+ *   with the prompt held byte-identical.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1388,10 +1435,14 @@ export async function runQueryAgent(
   fallback: QuerySeed | null = seed,
   engine: EngineOpinion | null = null,
   schedule: readonly string[] | null = null,
+  shortlist: readonly string[] | null = null,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
   const cited = new Set<string>();
+  /** Counted as the directives run, because the artifact's trace cannot carry the ones it elides. */
+  const tools: Record<string, number> = {};
+  let nextServed = 0;
   // The incumbent: what the gate defends and what a refusal ships. It is NOT necessarily what the prompt shows.
   const priorTop = priorTopOf(fallback, telemetry);
   let rounds = 0;
@@ -1468,6 +1519,8 @@ export async function runQueryAgent(
       investigated,
       answerRefused,
       exchanges,
+      tools,
+      nextServed,
       trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
       rounds,
       toolCalls,
@@ -1584,6 +1637,7 @@ export async function runQueryAgent(
         break;
       }
       const accepted = executeTool(telemetry, call);
+      tools.answer = (tools.answer ?? 0) + 1;
       if (accepted.resolved !== undefined) {
         const gated = admit(accepted.resolved);
         exchanges.push({
@@ -1607,8 +1661,13 @@ export async function runQueryAgent(
       telemetry,
       call,
       schedule === null ? undefined : { order: schedule, cursor },
+      shortlist,
     );
+    // Counted AFTER the call, and on the directive's own name rather than on the result: a refused tool is still a
+    // tool the arm reached for, and the question the census answers is what the arm did, not what it was allowed.
+    tools[call.tool] = (tools[call.tool] ?? 0) + 1;
     if (result.cursor !== undefined) cursor = result.cursor;
+    if (result.served !== undefined) nextServed += 1;
     if (call.tool === 'answer' && result.resolved !== undefined) {
       const gated = admit(result.resolved);
       exchanges.push({
@@ -1711,6 +1770,23 @@ export interface QueryArmRow {
    * that matters — a schedule of five cannot spend the ten calls the budget allows.
    */
   readonly scheduled?: number | null;
+  /**
+   * Whether this row's `TOOL fleet` printed the pipeline's shortlist, or `null`/absent on an artifact written before
+   * the column existed.
+   *
+   * Recorded for the reason `scheduled` is: a row must say which arm produced it, and "the prompt was the free arm's"
+   * is not enough to tell a shortlist run from the published one when both share a prompt byte for byte.
+   */
+  readonly fleetOrder?: 'none' | 'engine';
+  /**
+   * Every directive the investigation executed, by tool name, refusals included.
+   *
+   * Absent on artifacts written before iteration 343, which is itself a reading: those artifacts have to be read
+   * through their 2 000-character `trace`, and the tail is not the investigation.
+   */
+  readonly tools?: Readonly<Record<string, number>>;
+  /** Slots `TOOL next` served on this case. `0` on every arm with no schedule, and distinct from asking for one. */
+  readonly nextServed?: number;
   /**
    * Whether the arm had an order the gate defends and a refusal settles on, which is not the same as showing one.
    *
