@@ -235,6 +235,16 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     // own rule is that every `? -1 : 1` site states the list it sorts.
     { signature: 'a[0] < b[0]', population: '`classCounts.entries()`, a Map keyed by class name' },
   ],
+  'benchmarks/src/miss-ledger.ts': [
+    // The ledger's cross-tab order. Two rows of one class can never share a channel, because the map that
+    // produces them is keyed by the PAIR — so the tie-break's operands are never equal on any path, and the
+    // equality arm the two-way `? -1 : 1` would answer wrongly does not exist here. Recorded rather than
+    // exempted, because the census's rule is that every site states the list it sorts.
+    {
+      signature: 'a.channel < b.channel',
+      population: '`channels.values()`, a Map keyed by `(class, channel)`',
+    },
+  ],
   'benchmarks/src/prior-floor.ts': [
     // The prior census's support ranking. Its first arm compares COUNTS, so the tie-break is reached on every
     // pair of services with equal support — the common case in these cells rather than the corner one, which
