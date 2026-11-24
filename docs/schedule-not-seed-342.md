@@ -1,5 +1,11 @@
 # 342 — The schedule, not the seed: and the budget the arm actually spends is five, not ten
 
+> **Read `schedule-dispatch-342.md` before quoting any number below.** Everything here is a **¥0 offline ceiling** read
+> off an artifact that already existed. The dispatch that tested it (532 cases, ¥7.36) **refused the arm**: 45 repairs
+> against the free arm's 153 on the same population, and 139 of 266 engine-correct cases retained against the free arm's
+> 1 134 of 1 156. The ceiling was right about where the culprit sits and wrong about what a route costs; the entry that
+> records the refusal is `schedule-dispatch-342.md`, and the lever "a schedule competes with the fleet read" is closed.
+
 ## 1. Two corrections before anything else
 
 Both came out of building this iteration's instrument, and both change a number the register has been carrying.

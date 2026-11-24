@@ -10272,6 +10272,16 @@ unqueriedMisses + unrecordedMisses = misses`), `null` for a truth the pool never
 a test that fails if the ceiling is ever printed as the estimate. `formatConversion`'s `cases === 0` guard was removed
 as unreachable and the reason is written where it stood.
 
+**The dispatch refused the arm.** 532 cases (all 266 engine misses + 266 engine hits), `--schedule engine`, ¥7.36:
+**agent Top@1 184 against the engine's 266**, 45 repairs against 127 breaks, and **139 of 266** engine-correct cases
+retained against the free arm's 1 134 of 1 156. Projected onto the sample that is **77.8 % for the free arm against
+34.6 %** — a −43 pp sign error against the +2.01 pp ceiling, and it is an instruction defect, not a coding one: v1 of the
+prompt sold the schedule as a replacement for `TOOL fleet` (eight services per call), stated a budget of ten calls the
+loop cannot execute, and served a single-service view that carries neither `ERROR` lines nor failed-interface counts.
+Full record: `schedule-dispatch-342.md`. **Closed:** a schedule that competes with the fleet read. **Open:** the same
+premise implemented as a `fleet` section, which adds engine-ranked services to what the fleet already shows at zero
+extra cost.
+
 **Closed here:** "spend more calls" as the reach lever (the wall is rounds, and the ceiling doubles for 2× the price —
 priced, not assumed); "the arm wastes its budget" as a diagnosis (it spends all five); and the reading of §318 that a
 schedule had already been refuted (it had not — a seed had).

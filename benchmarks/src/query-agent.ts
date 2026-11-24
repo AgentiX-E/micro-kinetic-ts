@@ -773,13 +773,25 @@ export const QUERY_SYSTEM_PROMPT = [
  * What the line deliberately does NOT say: which services the schedule will serve, in which order, or that the order
  * is the engine's. The seeded prompt disclosed all three and lost to the free arm (§318); the schedule discloses the
  * existence of a route and one step of it at a time, which is the difference between a suggestion and a budget.
+ *
+ * ## Two versions, and only one of them has been measured
+ *
+ * **v1** (iteration 342's dispatch) read *"…spends one call, so ten calls reach ten distinct services instead of
+ * whatever the fleet read happened to surface"*. It was wrong twice: the loop executes five calls and not ten, and the
+ * second clause sells the schedule as a REPLACEMENT for `TOOL fleet` — which is the one tool the free arm leans on, at
+ * eight services per call. Measured on 532 cases, that arm repaired **45 of 266** engine misses and retained **139 of
+ * 266** engine hits, against the free arm's 153 and 1 134 (`docs/schedule-dispatch-342.md`). The numbers belong to v1.
+ *
+ * **v2** is the text below: no call count, and the sentence that says what the route costs in width. It is a REPAIR of
+ * a misleading instruction and it has NOT been dispatched — a reading taken under it is a new arm, not a re-read of
+ * 342's.
  */
 export const SCHEDULE_TOOL_LINE = [
   '',
-  "A schedule is available: `TOOL next` answers with the next service in the pipeline's own order and spends one",
-  'call, so ten calls reach ten distinct services instead of whatever the fleet read happened to surface. It is a',
-  'route and not an instruction: naming a service yourself stays available, and a service the schedule would not',
-  'reach is exactly the case worth spending a call on.',
+  "A schedule is available: `TOOL next` answers with the next service in the pipeline's own order, one service per",
+  'call. It is a SUPPLEMENT and not a substitute — `TOOL fleet` shows eight services at once for one call, so an',
+  'investigation that spends every call here sees FEWER services than one that does not. Naming a service yourself',
+  'stays available, and a service the schedule would not reach is exactly the case worth spending a call on.',
 ].join('\n');
 
 /**
