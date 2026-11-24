@@ -580,6 +580,27 @@ export function scheduleNames(telemetry: Telemetry, order: readonly string[]): s
 }
 
 /**
+ * Every surface through which the engine's order can reach a model, named so a guard can count them.
+ *
+ * The list exists because the order has now been presented three ways and lost all three: printed into the instruction
+ * (§318, 81.08 % against the free arm's 93.39 %), served one service per call (342b, 52.26 % retention) and shown as a
+ * five-name section inside `TOOL fleet` (343, 60.15 % retention, −38.53 pp). The register closes the axis; this constant
+ * is what makes a FOURTH presentation fail in the test suite on the day it is written, instead of after its dispatch.
+ *
+ * Each `fence` is a comment that must appear beside the call site, so the count in
+ * `__tests__/engine-order-surface.test.ts` is a count of marked places and not of string occurrences:
+ *
+ * - `schedule` — one name per call, through `TOOL next`, held by the harness and never printed as a sequence.
+ * - `shortlist` — the first {@link PIPELINE_LINES} candidates appended to a `fleet` read, names only.
+ *
+ * @see docs/early-convergence-344.md — the decomposition that closed the third form.
+ */
+export const ENGINE_ORDER_SURFACES = [
+  { name: 'schedule', fence: 'ENGINE-ORDER SURFACE: schedule' },
+  { name: 'shortlist', fence: 'ENGINE-ORDER SURFACE: shortlist' },
+] as const;
+
+/**
  * Execute one directive against the telemetry.
  *
  * @param telemetry - The case's tool view.
@@ -613,6 +634,7 @@ export function executeTool(
         text: 'refused: this arm carries no schedule; name a service with `TOOL metric <service>`',
       };
     }
+    // ENGINE-ORDER SURFACE: schedule — the order is consumed one service per call and the sequence is never printed.
     const usable = scheduleNames(telemetry, schedule.order);
     if (schedule.cursor >= usable.length) {
       return {
@@ -679,6 +701,7 @@ export function executeTool(
     // The pipeline's shortlist, when the arm carries one. It goes LAST so that the two surprise sections keep the
     // positions every earlier arm printed them at, and it carries NAMES ONLY: a metric beside a candidate would put a
     // second ranking system in the same list, and the section's whole claim is "this is the other system's order".
+    // ENGINE-ORDER SURFACE: shortlist — five names, at the END of the read, and the whole section is refused by 343.
     const ranked =
       shortlist === undefined || shortlist === null ? [] : scheduleNames(telemetry, shortlist);
     if (ranked.length > 0) {
