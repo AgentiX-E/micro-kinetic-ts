@@ -11,7 +11,7 @@ reach; it is a statement about where the information ends.
 
 ## 1. The ledger
 
-`benchmarks/src/miss-ledger.ts` (42 tests, coverage **100 / 98.03 / 100 / 100**) and `run-miss-ledger.ts`, over four
+`benchmarks/src/miss-ledger.ts` (44 tests, coverage **100 / 100 / 100 / 100**) and `run-miss-ledger.ts`, over four
 pinned artifacts:
 
 | input | sha256 |

@@ -9833,8 +9833,8 @@ deployable bars refuted in 334), and model drift (50-case stratified bound, `≈
 
 ## 337 The 94 misses have names, and no promotion rule buys them (iteration 337)
 
-The surface is unchanged at **1 328 / 1 422 = 93.39 %** and the iteration is ¥0. `benchmarks/src/miss-ledger.ts` (42
-tests, coverage 100 / 98.03 / 100 / 100) classifies every miss from four pinned artifacts and prices the rule families
+The surface is unchanged at **1 328 / 1 422 = 93.39 %** and the iteration is ¥0. `benchmarks/src/miss-ledger.ts` (44
+tests, coverage 100 / 100 / 100 / 100) classifies every miss from four pinned artifacts and prices the rule families
 that could have bought them. The full reading, with the digests of the four inputs and the reproduce command, is
 `miss-ledger-337.md`.
 

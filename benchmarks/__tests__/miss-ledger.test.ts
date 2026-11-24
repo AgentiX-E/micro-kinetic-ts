@@ -649,6 +649,61 @@ describe('the readings a plan reads before it spends money', () => {
     expect(text).toContain('+1');
   });
 
+  it('prints a loss with no sign, which is the cell a reader scans for', () => {
+    // One repair against two breaks: the delta is negative, and a renderer that prefixed it with `+` would turn
+    // the table's one actionable column into noise.
+    const text = formatPromotion(
+      promotionReadings([
+        ledgerCase({
+          datapack: 'gain',
+          truth: ['svc-a'],
+          published: 'svc-b',
+          engineTop1: 'svc-a',
+          truthRank: 1,
+          answeredBy: 'model',
+        }),
+        ledgerCase({
+          datapack: 'loss-a',
+          truth: ['svc-a'],
+          published: 'svc-a',
+          engineTop1: 'svc-b',
+          truthRank: 8,
+          answeredBy: 'model',
+        }),
+        ledgerCase({
+          datapack: 'loss-b',
+          truth: ['svc-a'],
+          published: 'svc-a',
+          engineTop1: 'svc-c',
+          truthRank: 9,
+          answeredBy: 'model',
+        }),
+      ]),
+    );
+    expect(text).toMatch(/engine-over-any\s+3\s+1\s+2\s+-1/);
+  });
+
+  it('counts a fire that changes nothing as neither a repair nor a break', () => {
+    // A promotion of a case the pipeline was already wrong about answers the same wrong name: it is a fire,
+    // and it must not enter either population, or the concentration spread would gain a point that describes
+    // neither outcome.
+    const reading = stabilityReading(
+      [
+        ledgerCase({
+          truth: ['svc-z'],
+          published: 'svc-b',
+          engineTop1: 'svc-a',
+          truthRank: 9,
+          ...concentrated(4.0, { a: 3.98 }, { a: 0 }),
+        }),
+      ],
+      0.5,
+    );
+    expect(reading.fired).toBe(1);
+    expect(reading.repairs.measured).toBe(0);
+    expect(reading.breaks.measured).toBe(0);
+  });
+
   it('prints an em dash for a population with nothing measured in it', () => {
     const text = formatStability(
       stabilityReading(
