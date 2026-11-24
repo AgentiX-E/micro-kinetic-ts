@@ -10183,6 +10183,19 @@ corpus that carries ~50 services a case; in **40** of the 74 the culprit's id is
 transcript (a lower bound — a row keeps its last 2 000 characters); and the 74 are spread over six fault families, so
 this is a policy failure rather than one injector's blind spot.
 
+**What a stated policy already reaches.** "74 reachable" is not a plan; the budget is ten calls, so the question is how
+many of the 74 have the culprit inside the first ten a stated ordering would put first. Against the ordering the
+pipeline already computes: **40 of the 74 (54.1 %) sit within the engine's top ten** (29 within the top five; 16 at
+11–20; 18 beyond 20), and over all 94 misses 58 (61.7 %). So a schedule that spends its ten calls on the engine's own
+first ten candidates would have queried the culprit in 40 cases — **2.81 pp** — for no extra token and no widening.
+The two forties are not the same forty: the 40 whose culprit is named in the transcript and the 40 inside the engine's
+top ten overlap in only **19** cases, so their union is **61 of the 74 (82.4 %)** — the routes are complementary, and a
+reader who merged them would conclude the schedule had nothing to add.
+This also explains a result this register has carried as a mystery: §318 measured a **seeded PROMPT** as worse than the
+free arm, and showing a model an order is not the same as ordering its **calls** — the first invites anchoring on the
+engine's first choice, the second spends a finite budget where the evidence is most likely to be. The seed was refused
+on measurement; the **schedule** has never been run, and now has a ceiling.
+
 **Instruments.** `reachCensusOf` / `formatReachCensus` in `benchmarks/src/retrieval-block.ts` (34 tests,
 `100/100/100/100`) count three disjoint miss buckets — queried, unqueried, and **unrecorded** (no `calls` column), so an
 absent column can never read as a measured absence; the share is printed over the classifiable misses and names its
