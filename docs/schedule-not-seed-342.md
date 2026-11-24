@@ -153,7 +153,7 @@ Three findings, in increasing order of consequence:
    — on the population the arm actually investigated. On the population it did not, retrieval is **26.79 %**. A single
    number over the corpus (87.83 %) averages a solved problem with an unsolved one, which is why this is a split and not
    a refinement.
-2. **The split is the mechanism.** `Retrieval@1` inside the queried split is 88.90 % and outside it 7.14 %: the arm looks
+2. **The split is the mechanism.** `Retrieval@1` inside the queried split is 88.23 % and outside it 7.14 %: the arm looks
    where the engine points and spends its 1.888 distinct-service calls there. The misses it never investigated are
    therefore the ones the engine ranked third to fifth — exactly the slots a five-call schedule adds.
 3. **The schedule is a selector, not a ranker.** Since the unqueried population is where retrieval fails, widening the

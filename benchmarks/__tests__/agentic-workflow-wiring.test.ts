@@ -733,6 +733,24 @@ describe('the free-investigation arm’s wiring', () => {
     }
   });
 
+  it('carries the SCHEDULE on the same surface, and keeps it distinct from the seed', () => {
+    // The route is the axis this iteration opens, and the two words are not interchangeable: a `seed` prints the
+    // order into the prompt and measured WORSE than no order (§318), while a `schedule` serves one name per call and
+    // discloses no sequence. A workflow that offered only the first would make the second unreachable from the UI,
+    // and a reader would take the refuted arm for the untested one.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(inputNames(WORKFLOW)).toContain('query_schedule');
+    expect(measure).toContain('inputs.query_schedule');
+    expect(measure).toContain('SCHEDULE_ARG+=(--schedule');
+    expect(measure).toContain('"${SCHEDULE_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('schedule')");
+    expect(runner).toContain('`none` or `engine`');
+    // The dispatch description must carry the price, because the ceiling at width ten needs a second model call per
+    // case and a reader who took it for the zero-cost width would over-pay by the whole difference.
+    expect(WORKFLOW).toContain('query_max_rounds=11');
+  });
+
   it('carries the FALLBACK on the same surface, because a surface the runner accepts must be dispatchable', () => {
     // The decoupling this input exists for: what the arm SHOWS and what a refusal FALLS BACK TO are two decisions,
     // and an arm with one and not the other is a surface nobody can ask for. The default is the shown order, which

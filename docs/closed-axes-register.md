@@ -10262,7 +10262,7 @@ prices, one flag apart — the 341 number was the second one quoted as if it wer
 *The second axis.* The same corpus's `Retrieval@5` split by the arm's own record is **99.25 %** on the population it
 investigated and **26.79 %** on the population it did not (`reach-decomposition.ts`, `--split-at 5`), so DecompRCA v2's
 "retrieval nearly solved (98–100 %)" is one split of two and the pooled 87.83 % averages a solved problem with an
-unsolved one. `Retrieval@1` inside the queried split is 88.90 % against 7.14 % outside it, which is the mechanism: the
+unsolved one. `Retrieval@1` inside the queried split is 88.23 % against 7.14 % outside it, which is the mechanism: the
 arm looks where the engine points, so the misses it never investigated are the ones the engine ranked third to fifth —
 exactly the slots a five-call schedule adds.
 

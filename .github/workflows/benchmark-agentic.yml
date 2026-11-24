@@ -164,6 +164,8 @@ on:
         description: "Whether a SETTLED answer is re-read after the gate: `entry-prior` = attribute the failure to the service requests enter through when nothing below it raised an error rate and the answer's own non-symptom channels stayed under 300 units of its pre-window spread; `edge-novel` = that rule PLUS the interface witness first: answer with the caller of the interface that carried a request SHAPE its callee had never seen, skipping the traffic generator, which is a root of the call graph and never a label. empty/`none` = the arm as iterations 318-321 shipped it. Needs no model call and no second dispatch, because both are second readers of evidence the case already carries. Iteration 323's second rule (a service that LOST traffic is a victim) is refuted and is not shipped: every case in this corpus has one, so it localises nothing"
         required: false
         default: ''
+      query_schedule:
+        description: "Whether the HARNESS holds an order the model can walk with `TOOL next`, or nothing: `engine` = the arm may spend a call on the next service in the engine's own order, one per call, so five calls reach five distinct services instead of the 1.9 the free arm averages; empty = the free arm, whose prompt is byte-identical to the one every published number was taken under. This is NOT `query_seed`: a seed prints the order into the prompt and was measured WORSE than no order (§318), while a schedule serves one name per call and discloses no sequence. Read the ceiling before dispatching: 29 of the 74 unqueried misses sit inside the engine's top five, which is the five calls the loop can execute (`--schedule engine` at the default budget), and 40 inside the top ten, which needs `query_max_rounds=11` and doubles the model calls per case — docs/schedule-not-seed-342.md §3"
       topology_brief:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
@@ -398,6 +400,12 @@ jobs:
           if [ -n "${{ inputs.query_resolve }}" ]; then
             RESOLVE_ARG+=(--resolve "${{ inputs.query_resolve }}")
           fi
+          # A schedule is a ROUTE, not a policy the model is told about: the order stays in the harness and the model
+          # reads one service per call. An empty input keeps the free arm's prompt byte-identical to the published one.
+          SCHEDULE_ARG=()
+          if [ -n "${{ inputs.query_schedule }}" ]; then
+            SCHEDULE_ARG+=(--schedule "${{ inputs.query_schedule }}")
+          fi
           pnpm exec tsx benchmarks/src/run-query-agent.ts \
             --data-dir "$HOME/rcabench/json" \
             --verdicts artifacts/agentic/per-case.ndjson \
@@ -410,6 +418,7 @@ jobs:
             "${GATE_ARG[@]}" \
             "${FALLBACK_ARG[@]}" \
             "${RESOLVE_ARG[@]}" \
+            "${SCHEDULE_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
       - name: Say why the free-investigation arm did not run
