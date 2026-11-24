@@ -9935,22 +9935,40 @@ the other.
 
 ### 338.4 CIE's conjunction: refused on every mode, and the reason is our own decomposition
 
-Three modes of the conjunction (minimum of the normalised axes, product of the normalised axes, raw product) and a
-faithful mapping (internal = the component's own evidence, external = the propagation values) were measured on the
-pool: **800 / 800 / 800** against the sum's 1 073, and **745 / 748 / 748** under the faithful mapping. Refused on both
-folds of every mode.
+Three modes of the conjunction (minimum of the normalised axes, product of the normalised axes, raw product) were
+measured under **four specifications of the external axis**, all printed by `run-conjunctive.ts` from the same dump:
+
+| external axis | normMin | normProduct | product |
+| ------------- | ------: | ----------: | ------: |
+| the eight external channels, shipped weights | 800 | 800 | 800 |
+| the same eight, at their measured values | **492** | 499 | 499 |
+| propagated failure only (`rise`, `temporal`, `collision`) | 193 | 199 | 199 |
+| downstream `rise` only | 190 | 201 | 201 |
+
+Additive reference: 1 073. Refused under every specification, on every mode and on both folds.
 
 The structural reason is the finding worth keeping: **the external axis carries weight `0` in the shipped vector on
 this corpus.** Six propagation terms are inert (§338.1), so the axis reduces to `lat` (14.5 % of candidates) and
 `failedEdge` (5.6 %); the conjunction then ranks the 15 % that carry it and discards the rest. Rebuilding the axis from
-the *unweighted* values does not help — adding `rise`, `temporal` or `collision` at any non-zero weight gives 209, 60
-and 80 cases respectively, flat across 0.02 to 0.4 — because those terms are anti-predictive as written, which is why
-they were pruned.
+the *unweighted* values does not help, and not because it stays sparse — **53 893 of 69 688** candidates carry a
+positive external deviation once the values are read. The trend across the four specifications is monotone in how much
+of the external axis the conjunction is handed (800 → 492 → 193 → 190), which is the opposite of what a theorem about
+that axis predicts. Separately, adding `rise`, `temporal` or `collision` to the additive score at any non-zero weight
+gives 209, 60 and 80 cases, flat across 0.02 to 0.4, because those terms are anti-predictive as written.
 
-**Axes this closes.** Two: "adopt CIE's conjunctive score" (three modes, two mappings, both folds, all negative) and
-"re-enable the propagation terms to build the external axis" (flat and catastrophic at every weight). **Axes this
-opens.** One, and it is a specification rather than a weight: a **pool-relative** external axis — the candidate's share
-of the pool's total propagated failure — which nothing in the current dump computes.
+**Correction.** An earlier draft of this section quoted **745 / 748 / 748** for a "faithful mapping" and 2 400
+candidates carrying an external deviation. That specification is not in the repository and no subset of the eleven
+non-internal channels the dump carries reproduces it (exhaustive: 2 048 subsets, two internal definitions, no `normMin`
+of 745). The number is withdrawn; the four rows above replace it and are the runner's own output.
+
+**Axes this closes.** Three: "adopt CIE's conjunctive score" (three modes, four specifications of the axis, both folds,
+all negative), "re-enable the propagation terms to build the external axis" (flat and catastrophic at every weight),
+and — the iteration's own specification — "define the external axis as a **pool-relative share** of propagated
+failure" (the normalised modes divide by the pool's maximum, so rows 3 and 4 are exactly that, and they are the worst
+readings). The last is the decisive one: the dump carries the unweighted values, so the specification was tested before
+anyone built it. What closes the direction is the framework's **premise** — CIE scores deviation magnitude and nothing
+else, while 541 of our cases are carried by `log` and `podState`, which a conjunction over two deviation axes cannot
+see. **Axes this opens.** None from CIE; the next opening is elsewhere.
 
 ### 338.5 The published-surface ladder: two terms are one-directional, one is a cliff
 

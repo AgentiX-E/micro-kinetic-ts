@@ -37,6 +37,33 @@ export type { TermRow };
 /** The three forms the conjunction takes once both axes are finite. */
 export type ConjunctiveMode = 'normMin' | 'normProduct' | 'product';
 
+/**
+ * Which number each axis reads.
+ *
+ * `weighted` is the shipped score's contribution — weight times value — and it is the basis every mode was measured on
+ * first. `raw` reads the dump's **values** while ignoring their weights, which is what makes a refuted axis testable:
+ * the propagation terms carry weight 0 in the shipped vector, so their contribution is zero while their value is a
+ * full measurement. Reading the raw basis is how this module could ask whether a pool-relative propagation share would
+ * carry signal *before* anyone built it into the engine.
+ */
+export type AxisBasis = 'weighted' | 'raw';
+
+/**
+ * Which channels form the two axes, and which number each one reads.
+ *
+ * The external axis is not one object: the shipped vector's external channels are `lat` and `failedEdge` (every other
+ * propagation channel carries weight `0`, §1.2 of the register), and a *different* axis is obtained by naming only the
+ * channels that measure propagated failure. Those are different specifications of CIE's rule, they give different
+ * answers, and the difference is the reading — so the specification is a parameter here and is printed beside every
+ * number it produced, rather than being an unstated property of a script.
+ */
+export interface AxisSpec {
+  /** Which number each axis reads; defaults to the shipped contributions. */
+  readonly basis?: AxisBasis;
+  /** The channels that count as external; defaults to `EXTERNAL_TERMS`. */
+  readonly external?: readonly string[];
+}
+
 /** The modes in the order the reading prints them. */
 export const CONJUNCTIVE_MODES: readonly ConjunctiveMode[] = ['normMin', 'normProduct', 'product'];
 
@@ -129,6 +156,13 @@ export interface FoldReading {
 export interface ConjunctionReading {
   /** Cases with a non-empty accepted set. */
   readonly cases: number;
+  /**
+   * The specification the numbers were measured under.
+   *
+   * Carried in the reading rather than printed beside it, because two specifications of the same rule give different
+   * numbers and a table that cannot name its own axis is a table that can be quoted as the other one.
+   */
+  readonly spec: string;
   /** Top-1 over the additive score. */
   readonly additive: number;
   /** Cases where the accepted answer has no candidate carrying both axes. */
@@ -139,8 +173,25 @@ export interface ConjunctionReading {
   readonly verdict: 'candidate' | 'refused';
 }
 
+/** A specification with both fields resolved, so no function below reads a default of its own. */
+interface ResolvedSpec {
+  readonly basis: AxisBasis;
+  readonly external: readonly string[];
+}
+
+/** Fill in the defaults of a specification. */
+function specOf(spec: AxisSpec): ResolvedSpec {
+  return { basis: spec.basis ?? 'weighted', external: spec.external ?? EXTERNAL_TERMS };
+}
+
+/** A specification as one line, so the reading can print the axis it measured. */
+function describeSpec(spec: ResolvedSpec): string {
+  return `${spec.basis} basis, external = ${spec.external.join(', ')}`;
+}
+
 /** Split one candidate's contributions by axis. */
-export function axisShares(candidate: ConjunctiveCandidate): AxisShares {
+export function axisShares(candidate: ConjunctiveCandidate, spec: AxisSpec = {}): AxisShares {
+  const { basis, external: externalTerms } = specOf(spec);
   let internal = 0;
   let external = 0;
   let other = 0;
@@ -149,22 +200,25 @@ export function axisShares(candidate: ConjunctiveCandidate): AxisShares {
   for (const row of candidate.terms) {
     const contribution = contributionOf(row);
     if (contribution === null) continue;
+    // The raw basis reads the value and ignores the weight; an unmeasured pair is still skipped, because `null` is
+    // the dump's only way of saying "not computed" and no basis can invent a measurement.
+    const share = basis === 'raw' ? row.value! : contribution;
     if (INTERNAL_TERMS.includes(row.name)) {
-      internal += contribution;
+      internal += share;
       hasInternal = true;
-    } else if (EXTERNAL_TERMS.includes(row.name)) {
-      external += contribution;
+    } else if (externalTerms.includes(row.name)) {
+      external += share;
       hasExternal = true;
     } else {
-      other += contribution;
+      other += share;
     }
   }
   return { internal, external, other, hasInternal, hasExternal };
 }
 
 /** Whether a candidate carries both axes — the precondition for the conjunction to say anything about it. */
-export function isRankable(candidate: ConjunctiveCandidate): boolean {
-  const shares = axisShares(candidate);
+export function isRankable(candidate: ConjunctiveCandidate, spec: AxisSpec = {}): boolean {
+  const shares = axisShares(candidate, spec);
   return shares.hasInternal && shares.hasExternal;
 }
 
@@ -192,9 +246,12 @@ function deviation(value: number): number {
 function axisMax(
   candidates: readonly ConjunctiveCandidate[],
   axis: 'internal' | 'external',
+  spec: ResolvedSpec,
 ): number {
   let max = 0;
-  for (const candidate of candidates) max = Math.max(max, deviation(axisShares(candidate)[axis]));
+  for (const candidate of candidates) {
+    max = Math.max(max, deviation(axisShares(candidate, spec)[axis]));
+  }
   return max;
 }
 
@@ -207,14 +264,16 @@ function axisMax(
 export function conjunctiveTopOne(
   candidates: readonly ConjunctiveCandidate[],
   mode: ConjunctiveMode,
+  spec: AxisSpec = {},
 ): AxisTop {
-  const rankable = candidates.filter(isRankable);
+  const resolved = specOf(spec);
+  const rankable = candidates.filter((candidate) => isRankable(candidate, resolved));
   if (rankable.length === 0) return { id: null, tied: false };
-  const maxInternal = axisMax(rankable, 'internal');
-  const maxExternal = axisMax(rankable, 'external');
+  const maxInternal = axisMax(rankable, 'internal', resolved);
+  const maxExternal = axisMax(rankable, 'external', resolved);
 
   const keyOf = (candidate: ConjunctiveCandidate): number => {
-    const shares = axisShares(candidate);
+    const shares = axisShares(candidate, resolved);
     const internal = deviation(shares.internal);
     const external = deviation(shares.external);
     if (mode === 'product') return internal * external;
@@ -251,6 +310,7 @@ function readMode(
   cases: readonly ConjunctiveCase[],
   mode: ConjunctiveMode,
   additive: number,
+  spec: AxisSpec,
 ): ModeReading {
   let correct = 0;
   let undecided = 0;
@@ -259,7 +319,7 @@ function readMode(
     { cases: 0, additive: 0, conjunctive: 0, gain: 0 },
   ];
   cases.forEach((one, index) => {
-    const top = conjunctiveTopOne(one.candidates, mode);
+    const top = conjunctiveTopOne(one.candidates, mode, spec);
     const add = additiveTopOne(one.candidates);
     if (top.id === null) undecided += 1;
     const hit = isCorrect(top.id, one.truth);
@@ -275,7 +335,11 @@ function readMode(
 }
 
 /** Measure all three modes on a corpus. */
-export function conjunctionReading(corpus: readonly ConjunctiveCase[]): ConjunctionReading {
+export function conjunctionReading(
+  corpus: readonly ConjunctiveCase[],
+  spec: AxisSpec = {},
+): ConjunctionReading {
+  const resolved = specOf(spec);
   const cases = corpus.filter((one) => one.truth.length > 0);
   let additive = 0;
   for (const one of cases) {
@@ -284,14 +348,15 @@ export function conjunctionReading(corpus: readonly ConjunctiveCase[]): Conjunct
   let truthUnrankable = 0;
   for (const one of cases) {
     const accepted = one.candidates.filter((candidate) => one.truth.includes(candidate.id));
-    if (!accepted.some(isRankable)) truthUnrankable += 1;
+    if (!accepted.some((candidate) => isRankable(candidate, resolved))) truthUnrankable += 1;
   }
-  const modes = CONJUNCTIVE_MODES.map((mode) => readMode(cases, mode, additive));
+  const modes = CONJUNCTIVE_MODES.map((mode) => readMode(cases, mode, additive, resolved));
   // Sorted rather than reduced: `sort` is stable, so a tie keeps the printed mode order, and the comparison has no
   // arm that only one distribution of modes can reach.
   const best = cases.length === 0 ? null : [...modes].sort((a, b) => b.correct - a.correct)[0]!;
   return {
     cases: cases.length,
+    spec: describeSpec(resolved),
     additive,
     truthUnrankable,
     modes,
@@ -332,6 +397,7 @@ export function formatConjunction(reading: ConjunctionReading): string {
     ...body.map(line),
     '',
     `cases ${String(reading.cases)}, accepted answer with no second axis ${String(reading.truthUnrankable)}`,
+    `spec ${reading.spec}`,
     `verdict ${reading.verdict}` +
       (reading.best === null
         ? ''

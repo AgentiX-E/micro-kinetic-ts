@@ -292,6 +292,121 @@ describe('the instruments at their edges', () => {
   });
 });
 
+describe('the raw basis', () => {
+  /**
+   * The reason the basis exists: the shipped vector zeroes the propagation channels, so on the weighted basis a
+   * channel can be loud and still contribute nothing. Reading the value is how a pool-relative propagation share is
+   * priced before anyone builds it, and the numbers below are the whole difference between the two bases.
+   */
+  const silenced: readonly ConjunctiveCase[] = [
+    testCase(
+      'c1',
+      ['svc-root'],
+      [
+        candidate('svc-root', [term('selfAnomalyLog1p', 1, 1), term('rise', 0, 0.2)]),
+        candidate('svc-propagator', [term('selfAnomalyLog1p', 1, 0.1), term('rise', 0, 20)]),
+      ],
+    ),
+  ];
+
+  it('reads a channel the weight vector silences at its measured value', () => {
+    const one = silenced[0]!.candidates[1]!;
+    expect(axisShares(one).external).toBe(0);
+    expect(axisShares(one, { basis: 'raw' }).external).toBe(20);
+  });
+
+  it('reads the value rather than the product on a term that carries a weight', () => {
+    const weighted = candidate('svc-a', [term('selfAnomalyLog1p', 3, 2)]);
+    expect(axisShares(weighted).internal).toBe(6);
+    expect(axisShares(weighted, { basis: 'raw' }).internal).toBe(2);
+  });
+
+  it('refuses an unmeasured pair on the raw basis too, because no basis can invent a measurement', () => {
+    // The dump says "not computed" with a null pair, and that is a statement about the artifact rather than about the
+    // component: a basis that turned it into a zero of its own would rank the candidate for the dump's coverage.
+    const unmeasured = candidate('svc-a', [
+      term('selfAnomalyLog1p', 1, 1),
+      term('rise', null, null),
+    ]);
+    expect(isRankable(unmeasured, { basis: 'raw' })).toBe(false);
+    expect(axisShares(unmeasured, { basis: 'raw' }).hasExternal).toBe(false);
+  });
+
+  it('agrees with the weighted basis on which candidates can be ranked', () => {
+    // Two bases, two answers to "how much", one answer to "is this measurable": the conjunction's precondition is a
+    // property of the dump, not of the vector that scales it.
+    for (const one of silenced) {
+      for (const entry of one.candidates) {
+        expect(isRankable(entry, { basis: 'raw' })).toBe(isRankable(entry));
+      }
+    }
+  });
+
+  it('hands the silenced channel to the conjunction, which then prefers the loud propagator', () => {
+    // The root is the additive winner and stays so on the weighted basis, where the external axis is flat at zero for
+    // the whole pool. Read the values and the pool has an external axis again — one that rewards the propagator. This
+    // is the measurement that refutes a pool-relative propagation share before it is built.
+    const pool = silenced[0]!.candidates;
+    expect(additiveTopOne(pool)).toEqual({ id: 'svc-root', tied: false });
+    expect(conjunctiveTopOne(pool, 'normMin')).toEqual({ id: 'svc-root', tied: false });
+    expect(conjunctiveTopOne(pool, 'normMin', { basis: 'raw' })).toEqual({
+      id: 'svc-propagator',
+      tied: false,
+    });
+  });
+
+  it('carries the basis into the reading, so the two tables are two measurements', () => {
+    expect(conjunctionReading(silenced).additive).toBe(1);
+    expect(conjunctionReading(silenced).modes.find((one) => one.mode === 'normMin')!.correct).toBe(
+      1,
+    );
+    expect(
+      conjunctionReading(silenced, { basis: 'raw' }).modes.find((one) => one.mode === 'normMin')!
+        .gain,
+    ).toBe(-1);
+  });
+});
+
+describe('the named external axis', () => {
+  /**
+   * One pool, two axes. `svc-latency` is loud on the latency channel and silent on downstream rise; `svc-rise` is the
+   * reverse. Which of them the conjunction can even see is decided by the specification, not by the dump.
+   */
+  const pool: readonly ConjunctiveCandidate[] = [
+    candidate('svc-latency', [term('selfAnomalyLog1p', 1, 1), term('lat', 1, 5)]),
+    candidate('svc-rise', [term('selfAnomalyLog1p', 1, 2), term('rise', 0, 1)]),
+  ];
+
+  it('reads a candidate as rankable or not depending on which channels the axis names', () => {
+    expect(isRankable(pool[0]!)).toBe(true);
+    expect(isRankable(pool[0]!, { external: ['rise'] })).toBe(false);
+    expect(isRankable(pool[1]!, { external: ['rise'] })).toBe(true);
+  });
+
+  it('ranks only the candidates the named axis can see', () => {
+    // The shipped axis ranks the latency-loud candidate; the rise-only axis excludes it entirely and answers the other
+    // — which is the whole reason the specification has to be printed beside the number.
+    expect(conjunctiveTopOne(pool, 'normMin')).toEqual({ id: 'svc-latency', tied: false });
+    expect(conjunctiveTopOne(pool, 'normMin', { external: ['rise'] })).toEqual({
+      id: 'svc-rise',
+      tied: false,
+    });
+  });
+
+  it('carries the specification into the reading, so no table can be quoted as another table', () => {
+    const one = [testCase('c1', ['svc-latency'], pool)];
+    const shipped = conjunctionReading(one);
+    const raw = conjunctionReading(one, { basis: 'raw' });
+    const narrow = conjunctionReading(one, { basis: 'raw', external: ['rise'] });
+    expect(shipped.spec).toBe(
+      'weighted basis, external = lat, rise, temporal, collision, failedEdge, trace, emission, victim',
+    );
+    expect(raw.spec).toContain('raw basis');
+    expect(narrow.spec).toBe('raw basis, external = rise');
+    expect(formatConjunction(narrow)).toContain('spec raw basis, external = rise');
+  });
+});
+
 describe('the axes when a component improves', () => {
   it('normalises a pool whose every internal axis is an improvement', () => {
     // Both candidates improved their own metric — measured, and negative. The pool's largest internal deviation is

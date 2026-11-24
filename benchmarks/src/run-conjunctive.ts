@@ -16,6 +16,15 @@
  * 2. The three modes against the additive score, with the gain, the undecided count and both folds.
  * 3. The verdict, which is `refused` unless the best mode buys at least one case over the additive score.
  *
+ * ## Why both bases are printed
+ *
+ * The shipped weight vector zeroes the propagation channels, so on the `weighted` basis a propagation term contributes
+ * nothing and the conjunction sees a candidate's internal deviation only. The `raw` basis reads the same dump's
+ * **values**, which is how a pool-relative propagation share can be priced *before* anyone builds it into the engine:
+ * if the conjunction cannot beat the additive score even when the silenced channel is handed to it for free, then the
+ * share has no signal to carry and the engine change is refuted before it exists. Printing both makes that comparison
+ * one command rather than one argument.
+ *
  * Usage:
  *   npx tsx benchmarks/src/run-conjunctive.ts --terms <terms.ndjson> --answers <query-agent.ndjson>
  *
@@ -30,6 +39,7 @@ import {
   conjunctionReading,
   formatConjunction,
   isRankable,
+  type AxisSpec,
 } from './conjunctive-score.js';
 import { corpusOf, parseAnswerLine, parseTermLine } from './term-dump.js';
 
@@ -66,6 +76,25 @@ function digestOf(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 16);
 }
 
+/**
+ * The specifications the runner prints, in the order it prints them.
+ *
+ * The first is the shipped score's two axes. The second hands the conjunction every external channel at its measured
+ * value — the vector zeroes most of them, so this is the most generous form of the axis the dump permits. The third
+ * and fourth are the narrowed axes the register quotes: the channels that measure *propagated failure* only, with and
+ * without the kinetic neighbours. They are printed from the same module and the same dump, so every number in the
+ * register is a command a reader can run rather than a script that no longer exists.
+ */
+const SPECS: readonly { label: string; spec: AxisSpec }[] = [
+  { label: 'shipped axes, shipped weights', spec: {} },
+  { label: 'every external channel, measured values', spec: { basis: 'raw' } },
+  {
+    label: 'propagated failure only, measured values',
+    spec: { basis: 'raw', external: ['rise', 'temporal', 'collision'] },
+  },
+  { label: 'downstream rise only, measured values', spec: { basis: 'raw', external: ['rise'] } },
+];
+
 /** Entry point. */
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
@@ -78,34 +107,41 @@ function main(): void {
   );
   const corpus = corpusOf(rows, truth);
 
-  let candidates = 0;
-  let internalMeasured = 0;
-  let externalMeasured = 0;
-  let rankable = 0;
-  for (const one of corpus) {
-    for (const candidate of one.candidates) {
-      candidates += 1;
-      const shares = axisShares(candidate);
-      if (shares.hasInternal) internalMeasured += 1;
-      if (shares.hasExternal) externalMeasured += 1;
-      if (isRankable(candidate)) rankable += 1;
-    }
-  }
-  const share = (value: number): string =>
-    candidates === 0 ? '(0.00 %)' : `(${((100 * value) / candidates).toFixed(2)} %)`;
-
   console.log(
     [
       `terms   ${args.terms} sha256 ${digestOf(args.terms)}`,
       `answers ${args.answers} sha256 ${digestOf(args.answers)}`,
       `cases ${String(corpus.length)}`,
+    ].join('\n'),
+  );
+
+  for (const { label, spec } of SPECS) {
+    let candidates = 0;
+    let internalMeasured = 0;
+    let externalMeasured = 0;
+    let rankable = 0;
+    for (const one of corpus) {
+      for (const candidate of one.candidates) {
+        candidates += 1;
+        const shares = axisShares(candidate, spec);
+        if (shares.hasInternal) internalMeasured += 1;
+        if (shares.hasExternal) externalMeasured += 1;
+        if (isRankable(candidate, spec)) rankable += 1;
+      }
+    }
+    const share = (value: number): string =>
+      candidates === 0 ? '(0.00 %)' : `(${((100 * value) / candidates).toFixed(2)} %)`;
+    const reading = conjunctionReading(corpus, spec);
+    console.log('');
+    console.log(`--- ${label} [${reading.spec}]`);
+    console.log(
       `candidates ${String(candidates)}: internal measured ${String(internalMeasured)} ` +
         `${share(internalMeasured)}, external ${String(externalMeasured)} ${share(externalMeasured)}, ` +
         `both ${String(rankable)} ${share(rankable)}`,
-    ].join('\n'),
-  );
-  console.log('');
-  console.log(formatConjunction(conjunctionReading(corpus)));
+    );
+    console.log('');
+    console.log(formatConjunction(reading));
+  }
 }
 
 main();

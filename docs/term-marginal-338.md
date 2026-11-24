@@ -88,32 +88,63 @@ Our score is additive, so CIE's guarantee is the conditional one; that is not in
 conjunction **wins cases here**, and the term dump answers it for ¥0: both axes are reconstructed per candidate and
 the pool is re-ranked with no engine run.
 
-| mode | conjunctive | additive | gain | fold 0 | fold 1 |
-| ---- | ----------: | -------: | ---: | -----: | -----: |
-| `normMin` (min of the two normalised axes) | 800 (56.26 %) | 1 073 | **−273** | −133 | −140 |
-| `normProduct` (product of the two normalised axes) | 800 (56.26 %) | 1 073 | **−273** | −135 | −138 |
-| `product` (raw product) | 800 (56.26 %) | 1 073 | **−273** | −135 | −138 |
+The dump carries every channel, so the external axis is not one object — it is a **specification**, and four of them
+are worth reading. All four are printed by `run-conjunctive.ts` from the same dump, and every reading carries its own
+specification line (`ConjunctionReading.spec`), because two specifications of the same rule give different numbers and
+a table that cannot name its own axis can be quoted as another table:
 
-**Refused, on every mode and on both folds.** The reason is structural and it is the more valuable half of the finding:
+| external axis | basis | normMin | normProduct | product | candidates with a positive external deviation |
+| ------------- | ----- | ------: | ----------: | ------: | --------------------------------------------: |
+| the eight external channels, shipped weights | `weighted` | 800 (56.26 %) | 800 (56.26 %) | 800 (56.26 %) | 15 % (`lat`, `failedEdge` only) |
+| the same eight, at their measured values | `raw` | **492** (34.60 %) | 499 (35.09 %) | 499 (35.09 %) | 53 893 / 69 688 |
+| propagated failure only — `rise`, `temporal`, `collision` | `raw` | 193 (13.57 %) | 199 (13.99 %) | 199 (13.99 %) | 53 693 / 69 688 |
+| downstream `rise` only | `raw` | 190 (13.36 %) | 201 (14.14 %) | 201 (14.14 %) | 38 417 / 69 688 |
+
+Additive reference: the written sum's own order, **1 073 (75.46 %)**.
+
+**Refused under every specification, on every mode and on both folds.** On the shipped specification the fold split is
+−133 / −140, −135 / −138 and −135 / −138. The reason is structural and it is the more valuable half of the finding:
 
 1. **The external axis is not measured on this corpus.** Under the shipped vector the propagation terms carry weight
    `0.0000` (§1.2), so the external axis reduces to `lat` (0.5615, on 14.5 % of candidates) and `failedEdge` (3.0, on
    5.6 %). A conjunction over an axis that is zero for 85 % of the pool ranks the 15 % that carry it and discards the
    rest — 800 cases.
-2. **Rebuilding the axis from the unweighted values does not rescue it.** The dump carries the *values* of `rise`,
-   `temporal` and `collision` even though their weights are zero, so a faithful CIE mapping is computable: internal =
-   `selfAnomalyLog1p`, external = the propagation values. Measured, `normMin` gives **745**, `normProduct` **748**,
-   `product` **748** — worse, not better, and with only **2 400 of 69 688** candidates carrying any external deviation
-   once `log`/`podState` are classed as internal (they describe the component itself).
-3. **Adding the propagation values to the additive score is catastrophic at every weight.** The scan is flat because
+2. **Rebuilding the axis from the unweighted values makes it worse, not better.** This is the direct test of the one
+   hypothesis the first reading leaves open — that the axis is merely under-scaled — and it fails on a dense axis:
+   **53 893 of 69 688** candidates carry a positive external deviation once the values are read, and the conjunction
+   still loses **574** cases (492 / 499). Density is not the missing ingredient.
+3. **Narrowing the axis to propagated failure does not rescue it either.** With the external axis defined as the
+   channels that measure what the component is *seen to cause* — `rise`, `temporal`, `collision` — the reading is
+   **193 / 199**, and with downstream `rise` alone **190 / 201**. The ordering across the four specifications is
+   monotone in how much of the external axis the conjunction is handed: **800 → 492 → 193 → 190**. A theorem whose
+   subject is the external axis predicts the opposite trend.
+4. **Adding the propagation values to the additive score is catastrophic at every weight.** The scan is flat because
    the effect is not a weight: any non-zero weight on `rise` gives **209**, on `temporal` **60**, on `collision` **80**,
    at 0.02 and at 0.4 alike. The terms are not weak — they are **anti-predictive** as written, which is why the vector
    carries them at zero, and why re-enabling them is not a route to anything.
+5. **The pool-relative axis was this iteration's own specification and it is the worst of the four.** The previous
+   draft closed §2 by naming the one experiment that could reopen the conjunction: an external axis defined as the
+   candidate's share of the pool's largest propagated failure rather than a per-candidate bonus. Rows 3 and 4 of the
+   table *are* that experiment (the normalised modes divide by the pool's maximum, so the axis is a share), and it is
+   where the conjunction does worst.
 
-So the axis CIE's theorem needs does not exist in our engine in a form that carries ranking signal. That is a
-statement about our decomposition, not about their proof, and it names the only experiment that could reopen it:
-**a pool-relative external axis** — the candidate's share of the pool's total propagated failure — rather than a
-per-candidate bonus. Nothing in the current dump computes that, and it is not a weight change.
+**Correction.** The previous draft of this section quoted a "faithful mapping" at `normMin` **745**, `normProduct`
+**748**, `product` **748**, together with a claim that only 2 400 of 69 688 candidates carried an external deviation.
+Those numbers came from a hand script whose external set is not recoverable, and no specification in the repository
+reproduces them: exhaustively measuring all **2 048** subsets of the eleven non-internal channels the dump carries —
+under internal = `selfAnomalyLog1p` + `selfTime`, and again under internal = those plus the two evidence terms the
+prose classed as internal — produces no subset whose `normMin` is 745. The claim is therefore **withdrawn**, and the
+2 400 is contradicted by measurement: the narrowest of the four specifications still has 38 417 candidates with a
+positive external deviation. The conclusion the withdrawn number was supporting is unchanged and is now carried by
+four readings the runner prints.
+
+The five readings together close the direction, and the reason is not the axis's sparsity or its scale — it is the
+framework's **premise**. CIE ranks by deviation magnitude alone: its score is a function of the internal and external
+axes and of nothing else. Our surface is carried by channels the theorem does not model — `log` and `podState` alone
+are worth 541 cases — so any conjunction over two deviation axes *discards the evidence that produces the accuracy*.
+The 800 of row 1 is what remains when the evidence is thrown away and the axes are sparse; the 492 of row 2 is what
+remains when they are dense; the 190 of row 4 is what remains when the axis is narrowed to the one channel the theorem
+was written for. None is a statement about CIE's proof; all are statements about our regime.
 
 ## 3. The published-surface ablations (¥0, local, no endpoint)
 
@@ -165,7 +196,8 @@ Five readings, and the asymmetry between them is the finding.
 npx tsx benchmarks/src/run-term-marginal.ts \
   --terms <terms.ndjson> --answers <query-agent.ndjson> --cases <per-case.ndjson>
 
-# The first competitor's theorem, on our pool (¥0, seconds).
+# The first competitor's theorem, on our pool (¥0, seconds). Prints all four specifications of the
+# external axis, each with the line that names it, so no row of §2 needs a script that is not here.
 npx tsx benchmarks/src/run-conjunctive.ts \
   --terms <terms.ndjson> --answers <query-agent.ndjson>
 
@@ -185,5 +217,7 @@ npx tsx benchmarks/src/run-fse26.ts \
    1 328 cannot be verified without a dispatch, and seven flips are not a mandate. What the ladder does establish is
    that the shipped weight sits just inside a cliff (×2 costs 37 cases and repairs none), which is a robustness
    argument for 0.5 that the next dispatch can settle for ≈¥21.
-3. **The external axis remains unbuilt.** §2's conclusion is a specification, not a result: the pool-relative
-   propagation share has to be computed by the engine before the conjunction can be tested for real.
+3. **The external axis is refuted rather than unbuilt.** §2 measured four specifications of it — shipped weights,
+   every channel at its measured value, propagated failure only, and downstream rise alone — and the best of them is
+   the one the engine already has (800), with the narrowing axis strictly worse (492 → 193 → 190). No engine work is
+   required, and none is planned: the direction is closed by the framework's premise, not by our coverage.
