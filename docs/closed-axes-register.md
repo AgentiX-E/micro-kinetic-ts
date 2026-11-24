@@ -10138,3 +10138,20 @@ engine is therefore worth between `0` and `3` on the surface, with an expected c
 is not a proxy for the product number, and the two cannot be inferred from each other; breadth's 28 addressable cases
 are 21 % of the aperture and the reasoning residue's 37 are 27 %, so those two are where the next iteration's value
 is — not in another weight.
+
+**The field check, and the column it forced.** Four movements this week, in full in `field-survey-340.md`:
+DecompRCA reached **v2 as an accepted NeurIPS'26 paper** (`arXiv:2609.36686v2`) whose microservice half reports
+retrieval "nearly solved (98–100 %)" and whose graph result is that no learned causal graph "clearly beat[s] the best
+statistical baseline" — both of which this register reached first, from a different instrument, which is the strongest
+corroboration it has recorded; **RCAEval shipped the decomposition as an official flag** (`--report-decomposition K`,
+printing `Retrieval@K` and `Rerank@1`) together with an opt-in chance floor (`--report-chance`), so a reading taken
+only on `Avg@5` is no longer comparable with the field's own table and our `abs 0` must be printed in their two
+numbers; **Alibaba's BRiSE family** (RCA-100: 103 cases, six modalities, a 3–4-step causal chain with **661 numeric
+checkpoints**; AIOps2025: 400 cases) opened a **process-scored** front whose `Reason` pillar grades the transcript —
+a thing this corpus cannot score, and whose two published findings ("fault injections ≠ fault cases", and 62.5 % of
+cases needing two or more modalities) are this register's `unwidenable 20` and its single-channel refusal under other
+names; and **Greptime's Agent RCA Bench** measured the query interface as a variable (105/168 correct against 130/168,
+$1.09 against $0.59 per investigation), which is external evidence for the single-surface design `buildTelemetry`
+already uses. The first of the four was actionable inside this iteration and is done: `decompositionAt` and
+`formatDecomposition` in `benchmarks/src/cutoff-accuracy.ts` print the split under every cutoff table, and the split is
+an **identity** — `AC@1 = retrieval × rerank` at every `k`, asserted per cutoff — rather than a second measurement.
