@@ -9830,3 +9830,57 @@ the same absence — and the test is the fence.
 **Axes this closes.** One: "the guard's input is not a product column" — the reason 334 could not ship. **Axes this
 leaves open.** The 74 retrieval misses (truth at engine rank 6–44, breadth the only axis that reaches them and both
 deployable bars refuted in 334), and model drift (50-case stratified bound, `≈ ¥0.74`, publication-only).
+
+## 337 The 94 misses have names, and no promotion rule buys them (iteration 337)
+
+The surface is unchanged at **1 328 / 1 422 = 93.39 %** and the iteration is ¥0. `benchmarks/src/miss-ledger.ts` (42
+tests, coverage 100 / 98.03 / 100 / 100) classifies every miss from four pinned artifacts and prices the rule families
+that could have bought them. The full reading, with the digests of the four inputs and the reproduce command, is
+`miss-ledger-337.md`.
+
+### 337.1 The ledger, read from the artifact rather than from a configuration
+
+| class | cases | channel split (model / prior / interface / entry) |
+| ----- | ----: | ------------------------------------------------ |
+| engine-was-right | 9 | 6 / — / — / 3 |
+| seen-not-taken | 37 | 17 / 19 / — / 1 |
+| breadth | 48 | 28 / 19 / — / 1 |
+| absent | 0 | — |
+
+The boundaries are the engine's own `truthRank` — its rank among **all** candidates — so rank 1 is precedence, 2–5 is
+reasoning, 6 and beyond is breadth, and an unranked truth is a pool failure. **Absent is zero again**, on a better
+surface than 334's.
+
+### 337.2 `unwidenable 20`: breadth's addressable ceiling is 28
+
+Twenty of the forty-eight breadth misses were settled by a channel that never reads the seed. A widening arm pays tokens
+on every case it is applied to and cannot touch those twenty at any width, so the axis's ceiling is **28**, not 48 — the
+number the next plan has to be written against.
+
+### 337.3 Four promotion scopings, four negative prices
+
+| rule | fires | repairs | breaks | delta | precision |
+| ---- | ----: | ------: | -----: | ----: | --------: |
+| model agrees with the engine → publish the engine | 62 | 1 | 59 | −58 | 0.017 |
+| engine over the model's channel | 78 | 6 | 60 | −54 | 0.091 |
+| engine over any channel | 205 | 9 | 181 | −172 | 0.047 |
+| engine over a quiet answer | 83 | 1 | 77 | −76 | 0.013 |
+
+The engine alone is right on **1 156** and the pipeline on **1 328**: the channels earn **+172** by moving away from the
+engine, and the nine residues are that trade's price. This is the fourth precedence family refused (§331 loudness, §332
+head, §336 margin, §337 promotion) and the first with the price beside the prize.
+
+### 337.4 The stability axis of §336 is closed
+
+The share of the margin carried by its largest single term, on the surface the guard is added to, at bar 0.5: repairs
+**0.867 / 1.011 / 1.377**, breaks **0.404 / 1.114 / 1.570** — the breaks' interval contains the repairs', `separates
+false`. Structural rather than statistical: every one of the 20 shipped repairs carries ≥ **86.7 %** of its margin on
+`selfAnomaly`, so a statistic dominated by the theory's own quantity cannot separate good decisions from bad.
+
+**Axes this closes.** Four: "reclaim the residue by promoting the engine" (four scopings, −54 to −172), "separate the
+guard's repairs from its breaks by term concentration" (`separates false`), "a widened seed reaches the breadth block"
+(at most 28 addressable), and "the LLM arm is worse than the engine" (the arm reads 1 287 against 1 156; what loses is
+the model's naming as the answer, 615 of 1 422). **Axes this opens.** Three, all external: CIE's **conjunctive**
+internal × external score (arXiv:2601.21359v2; ours is additive and only bounded), DecompRCA's system-description prompt
+(**+7..+18**, aimed at the 37 seen-not-taken), and Cloud-OpsBench's **evidence-closure** metric (754 cases, 29–33 % of
+correct answers fail closure).

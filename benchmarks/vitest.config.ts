@@ -142,6 +142,13 @@ export default defineConfig({
         // loudness about the answer. The refusals are the test — an unmeasured margin, an unranked case and a null
         // answer must all pass the answer through — and the four clauses that can refuse the reading are asserted.
         'src/engine-certainty.ts',
+        // Added with the module: the miss ledger, which names each remaining miss and prices the rules that could
+        // have bought it. Its whole value is that the three populations stay apart — a precedence residue, a
+        // reasoning failure and a breadth failure are three different budgets — and that a rule which never fired
+        // reports `null` precision instead of a perfect one, so `miss-ledger.test.ts` asserts the class boundaries
+        // (rank 1, rank 5, rank 6, unranked), the four refusals the promotion sweep makes, and both directions of
+        // the concentration reading's separation test.
+        'src/miss-ledger.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
