@@ -23,6 +23,7 @@ import {
   scheduleReadingOf,
   type ScheduledCase,
 } from './investigation-schedule.js';
+import { formatReachDecomposition, reachDecompositionOf } from './reach-decomposition.js';
 
 /** The flags this runner accepts. */
 interface Args {
@@ -30,6 +31,8 @@ interface Args {
   readonly terms: string;
   readonly surface: string;
   readonly width: number;
+  /** The cutoff the retrieval split is taken at, or `null` when it is not asked for. */
+  readonly splitAt: number | null;
 }
 
 /** Read an ndjson file into parsed objects, keeping the line number for a refusal. */
@@ -122,7 +125,14 @@ function parseArgs(argv: readonly string[]): Args {
   const width = raw === '' ? SCHEDULE_WIDTH : Number(raw);
   if (!Number.isInteger(width) || width < 0)
     throw new Error(`--width must be a non-negative integer`);
-  return { answers, terms, surface: map.get('surface') ?? '', width };
+  // The retrieval split is a SECOND reading and is asked for by name: a default cutoff would print a table nobody
+  // requested and invite it to be quoted as the schedule's, which is the confusion this runner exists to prevent.
+  const rawSplit = map.get('split-at') ?? '';
+  const splitAt = rawSplit === '' ? null : Number(rawSplit);
+  if (splitAt !== null && (!Number.isInteger(splitAt) || splitAt < 1)) {
+    throw new Error('--split-at must be a positive integer');
+  }
+  return { answers, terms, surface: map.get('surface') ?? '', width, splitAt };
 }
 
 /**
@@ -177,6 +187,11 @@ export function main(argv: readonly string[]): number {
     const reading = scheduleReadingOf(cases, args.width);
     process.stdout.write(`${formatScheduleReading(reading)}\n`);
     process.stdout.write(`${formatConversion(reading, conversionOf(reading))}\n`);
+    if (args.splitAt !== null) {
+      process.stdout.write(
+        `${formatReachDecomposition(reachDecompositionOf(cases, args.splitAt), args.splitAt)}\n`,
+      );
+    }
     if (skipped > 0) {
       process.stdout.write(
         `  ${String(skipped)} rows were not in the term dump and are excluded\n`,

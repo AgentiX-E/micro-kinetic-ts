@@ -187,6 +187,12 @@ export default defineConfig({
         // bucket, a truth the pool never held is `unreachable` rather than "infinitely far", a repeated id cannot
         // consume a second slot, and a width that is not a non-negative integer is refused rather than coerced.
         'src/investigation-schedule.ts',
+        // Added with the module: the retrieval decomposition split by what the arm's own record says it did. Its whole
+        // value is that the field's headline ("retrieval is nearly solved") is true of ONE of the two populations and
+        // false of the other — 99.25 % against 26.79 % at five — so the refusals are the test: an absent record is its
+        // own split rather than a negative one, an empty split reports `null` rather than zero, and an unreachable
+        // label counts against retrieval instead of being excluded from its denominator.
+        'src/reach-decomposition.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

@@ -10259,6 +10259,13 @@ estimate, at the 98.33 % conversion measured on the 1 198 investigations that di
 ten calls (`--max-rounds 11`, 2× model calls, ≈ ¥0.029/case) it is **40 (2.81 pp)** and **2.77 pp**. Two widths, two
 prices, one flag apart — the 341 number was the second one quoted as if it were free.
 
+*The second axis.* The same corpus's `Retrieval@5` split by the arm's own record is **99.25 %** on the population it
+investigated and **26.79 %** on the population it did not (`reach-decomposition.ts`, `--split-at 5`), so DecompRCA v2's
+"retrieval nearly solved (98–100 %)" is one split of two and the pooled 87.83 % averages a solved problem with an
+unsolved one. `Retrieval@1` inside the queried split is 88.90 % against 7.14 % outside it, which is the mechanism: the
+arm looks where the engine points, so the misses it never investigated are the ones the engine ranked third to fifth —
+exactly the slots a five-call schedule adds.
+
 *The instrument.* `benchmarks/src/investigation-schedule.ts`, 36 tests, `100/100/100/100`, plus
 `query-agent-schedule.test.ts` over the directive and the loop: three disjoint miss populations (`queriedMisses +
 unqueriedMisses + unrecordedMisses = misses`), `null` for a truth the pool never held rather than "infinitely far", and

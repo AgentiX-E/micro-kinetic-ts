@@ -134,6 +134,32 @@ is a property of this artifact and not a law.
 case: 5 → 10 calls, so ¥0.0147 → ≈ ¥0.029 per case. Both readings are in the runner, one flag apart, because "what the
 schedule buys for the budget already authorised" and "what the next five calls would buy" are two decisions.
 
+### 3.1 The retrieval split, and why the field's "98–100 %" does not transfer
+
+`--split-at 5` cuts the same corpus's `Retrieval@k` by the arm's own record:
+
+```
+retrieval at 5, split by what the arm's own record says it did
+split           n   Retrieval@k   Rerank@1   hits
+queried      1198       99.25 %    88.90 %   1178
+unqueried     224       26.79 %    26.67 %    150
+unrecorded      0     undefined  undefined      0
+the two observed splits: 1249 of 1422 cases have the culprit inside the first 5 (87.83 %)
+```
+
+Three findings, in increasing order of consequence:
+
+1. **The field's headline is one split of two.** `DecompRCA v2`'s "retrieval nearly solved (98–100 %)" is our **99.25 %**
+   — on the population the arm actually investigated. On the population it did not, retrieval is **26.79 %**. A single
+   number over the corpus (87.83 %) averages a solved problem with an unsolved one, which is why this is a split and not
+   a refinement.
+2. **The split is the mechanism.** `Retrieval@1` inside the queried split is 88.90 % and outside it 7.14 %: the arm looks
+   where the engine points and spends its 1.888 distinct-service calls there. The misses it never investigated are
+   therefore the ones the engine ranked third to fifth — exactly the slots a five-call schedule adds.
+3. **The schedule is a selector, not a ranker.** Since the unqueried population is where retrieval fails, widening the
+   *ranking* cannot reach it (the engine already ranked 29 of those 74 inside five); spending the *calls* on those
+   positions can. That is the whole difference between the two levers this register keeps apart.
+
 ## 4. The instrument, and the defect it refused
 
 `benchmarks/src/investigation-schedule.ts`, 36 tests, **100 / 100 / 100 / 100**; `query-agent-schedule.test.ts`, 17
@@ -222,8 +248,10 @@ PY
 
 1. **P0, ¥0** — the run itself: `--schedule engine` over the corpus at the authorised budget, priced from the artifact
    that already exists (§3's ceiling is offline; the dispatch is the last step, not the first).
-2. **P1, ¥0** — the same three buckets on the `Retrieval@K`/`Rerank@1` axis, so the next competitor table compares two
-   axes rather than one: this corpus's `Retrieval@5` on the unqueried misses (29/74) is not the "98–100 %" DecompRCA v2
-   reports, and the difference is which population is being counted.
-3. **P1, ≈¥2** — the double-budget arm (74 cases, `--max-rounds 11`), which converts 40 into a rate rather than a
+2. **P1, ≈¥2** — the double-budget arm (74 cases, `--max-rounds 11`), which converts 40 into a rate rather than a
    ceiling.
+3. **P1, ¥0 — done in this iteration.** The `Retrieval@K`/`Rerank@1` split by the arm's own record is §3.1;
+   `reach-decomposition.ts`, 18 tests, `100/100/100/100`.
+4. **P1, ¥0** — whether `DecompRCA v2`'s "short system-description document" (+7…+18 points) can be derived from this
+   corpus at all: the arm's brief is already written from case metadata, so the question is whether a *usage* description
+   of the system exists anywhere in the artifacts or must be authored.
