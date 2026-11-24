@@ -10330,3 +10330,42 @@ schedule (342b, one name per call) **52.26 %** retention; shortlist (this, a fiv
 forms — the text-free form, which should have been the strongest, is refused hardest on retention. **Open:** raising
 `maxRounds` with **no** order shown (341 prices it at 40 of 74 for 2× the model calls), which no iteration since 318 has
 run because every dispatch went to a presentation.
+
+## 344 Early convergence priced: 40 % of the shortlist's loss, and a conversion rate read on the wrong stratum (iteration 344)
+
+*The question 343 left asserted.* 343 named **substitution** as the mechanism of its −38.53 pp and did not price it.
+The same 532 paired ids, at ¥0, split by (is the engine right) × (did the investigation query the culprit) × (is the
+answer correct): **414 − 209 = 205** decomposes into **−107** (engine hits, queried: the free arm queries the culprit in
+246 of 266, the shortlist arm in 161 — **85 fewer per-service queries**, which is the whole of `distinct` 1.895 → 1.615),
+**+6** (engine hits, did not query), **−3** (engine misses, queried) and **−101** (engine misses, did not query).
+
+*Convergence is the smaller half, and the shape of the other half rules out every budget knob.* The `−107` block is worth
+at most **83 cases (40 %)** at the free arm's 98.0 % conversion — 74 (36 %) under an independent reweighting, so the two
+estimates bracket it at **36–40 %**. The `−101` block is not convergence at all: on the engine's MISSES neither arm
+queries the culprit (48 vs 43 of 266), and with **no** query the free arm still answers **115 / 218 = 52.8 %** while the
+shortlist arm answers **14 / 223 = 6.3 %**. A 46.5-point collapse in a block where both arms did the same thing. The
+residual **24 cases (12 %)** are the same queries converting at 83.2 % instead of 98.0 %. **No tool weighting can reach
+this block, because the block is where the arm did NOT act** — which is why the "log evidence first" lever is priced at
+¥0 and left unbuilt rather than dispatched on this table's authority.
+
+*341's reach ceiling was overstated by a fifth.* The published **98.33 %** conversion is the **hits** stratum's number:
+on a hit the culprit IS the engine's rank 1, so "queried the culprit" and "agreed with the engine" are one event, and the
+hits supply 246 of the 294 culprits the rate is computed over (83.7 %). Reach cases are **misses** by definition, and the
+misses stratum converts at **79.2 %**. Restated where the ceiling applies: **1.61 pp** at width 5 and **2.23 pp** at width
+10, not 2.01 and 2.77. Second time this programme used a blended rate on a stratified question, and the first time the
+blend was caught before a dispatch rather than after one.
+
+*What ships.* Two guards, written before the code they fence. `benchmarks/__tests__/engine-order-surface.test.ts` —
+`ENGINE_ORDER_SURFACES` names the **two** surfaces through which the engine's order may enter a model's context
+(`schedule`, `shortlist`), each call site carries an `ENGINE-ORDER SURFACE:` fence, the count of `scheduleNames(` uses
+must equal the list's length, and an arm carrying neither prints nothing from the order. A fourth presentation now fails
+in the suite on the day it is written. `benchmarks/__tests__/budget-surface.test.ts` — `DEFAULT_QUERY_BUDGET` is
+**6 / 10**, `usableCallsOf` is **5**, `--max-rounds` is parsed in exactly one file, the dispatch input defaults to the
+empty string, and **no `packages/*/src` file knows the vocabulary** (`maxToolCalls`, `transcriptChars`, `usableCallsOf`,
+`QUERY_BUDGET`). The round ceiling is a measurement knob and this is what "evaluation side only" means to the build.
+
+*Withdrawn.* 342b's v2 prompt (the one that no longer claims ten calls) is **not** dispatched. It repairs wording, and
+the presentation it repairs retains 52.26 % of the engine's correct answers — a 47-point deficit that no sentence about
+how many calls exist can close. Keeping it as a pending arm would re-open a closed axis on a cosmetic pretext. Full
+record: `early-convergence-344.md`. **Open:** a wider investigation with **no** order shown (`--max-rounds 11`, ¥14,
+re-priced here from 2.77 pp to 2.23 pp) — the only arm on this axis never run.

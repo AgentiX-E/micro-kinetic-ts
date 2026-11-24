@@ -44,6 +44,12 @@ the labelled service):
 | the 74 unqueried misses | 29 (39.2 %) | **40 (54.1 %)** | 16 | 18 |
 | all 94 misses | 46 (48.9 %) | 58 (61.7 %) | 17 | 19 |
 
+> **Correction, iteration 344.** The conversion rate this section multiplies by (98.33 %) is the **hit stratum's** rate:
+> on a case the engine already answers, the culprit *is* the engine's rank 1, so "queried the culprit" and "agreed with
+> the engine" are the same event, and those cases supply 83.7 % of the queries the rate is computed over. The reach cases
+> below are by definition **misses**, and the misses stratum converts at **79.2 %**. Restated at the stratum the ceiling
+> applies to: **1.61 pp** at width 5 and **2.23 pp** at width 10, not 2.01 and 2.77 — see `early-convergence-344.md` §4.
+
 So a policy that spends five calls on the engine's own first five candidates would have **queried the culprit in 29 of
 the 74** — **2.04 pp** of the corpus — without a single extra token and without widening anything; the same policy at ten
 calls reaches **40 (2.81 pp)** but costs a second model call per case (`--max-rounds 11`). Both numbers are in
