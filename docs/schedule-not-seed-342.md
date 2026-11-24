@@ -278,3 +278,37 @@ Three movements, none of which changes a number here; two change what a comparis
 
 The column this project still owes is **wall-clock**: the archived per-case rows (`accepted, datapack, faultType, pool,
 ranked, truthAnomalyBefore, truthRank`) carry no duration, so a cost/time Pareto point cannot be computed from them.
+
+## 10. Pre-registration for the dispatch — written before the artifact exists
+
+The run is `benchmark-agentic.yml` with `query_agent_sample=266, query_schedule=engine`, which is **532 cases**: every
+one of the 266 cases the engine answers at rank ≠ 1, and 266 it answers at rank 1. The choice of 266 rather than a
+round number is not cosmetic — it is the population that CONTAINS all 74, checked rather than assumed:
+
+```
+unqueried misses 74   with engine rank 1: 0   engine misses total 266
+```
+
+So the sample is exhaustive over the population this iteration is about, and its control stratum is the same size.
+
+**H1 — the route is used.** Mean distinct services per investigation rises from the free arm's **1.888** to **≥ 3.0**,
+and at least **50 %** of investigations carry one `TOOL next` in their transcript. Falsified if the mean stays below
+2.5: the model read the line and chose the fleet read instead, which prices the prompt's persuasive power rather than
+the route.
+
+**H2 — the reach converts.** Of the 74, **≥ 10** (13.5 %) are repaired, i.e. the culprit is queried via the schedule and
+the answer is right. Floor set at a third of the ceiling (29 × 98.33 % = 28.5), because a scheduled query is not the
+same act as a chosen one and the 20 queried-and-missed cases are the prior for that discount. **< 5** is a failure of
+the mechanism, not of the model.
+
+**H3 — the route does not cost what it buys.** On the 266 engine-correct cases, the surface stays at **≥ 96 %** of its
+published accuracy on that stratum. A schedule that repairs ten misses and breaks fifteen is a loss, and the
+pre-registration says so before the number can be read as progress.
+
+**The decision this pre-registers.** Net repair (repairs − breaks) **≥ 8 cases (0.56 pp)** justifies the full-corpus
+dispatch; **< 3** closes the lever in the register with its number; between the two, the reading is "mechanism works,
+magnitude insufficient" and the next step is a schedule of width ten with the doubling priced explicitly.
+
+**What would falsify the *instrument* rather than the arm.** If `calls` in the new artifact records fewer services than
+the transcript shows `next` directives, the recording rule is wrong (a served slot must be counted as investigated),
+and the reading is void regardless of what the answers say.
