@@ -10067,3 +10067,74 @@ nine cells, measured by a different instrument. Two consequences: the remaining 
 no candidate-construction change can move `AC@1`; and their largest published effect (`+7 … +18`) is a **hand-written**
 description, not the derived brief arm T already measured at `+1` (`1 166` vs `1 165`). The open item is therefore not
 "run the system-description arm" but "settle whether *purpose* is derivable from this corpus", at ¥0.
+
+## 340 The queue's last two 「¥21」 items were never ¥21: a weight is a local run and a join (iteration 340)
+
+**Owner of:** `docs/cost-audit-340.md` — the price structure, the three sentences the correction turns on, the two
+instruments it required and the measurement. This entry is the register's summary of it, not a substitute for it.
+
+The queue carried `--self-anomaly-weight 0.5` and `fingerprint_top_k = 22` at **≈ ¥21 each**. That figure is
+`¥0.0147 × 1 422` — the price of ONE full-cloud arm dispatch — applied to two changes that never reach a cloud call.
+The engine is **¥0.00 per case** (`docs/sota-comparison.md:92`, the cost row's own text), and the module that fires the
+first weight is a multiplication on a slope (`packages/tree/src/pruning/pruner.ts:4269`). The second is not an arm at
+all: `fingerprintTopK` "sets the width of the PRESENTATION dump and leaves the published ranking at `analyze(graph, 5)`
+… the ranking is computed before the field is read" (`benchmarks/src/fse26-run-config.ts:87-95`), so no rank can move
+and the price of a width is zero by construction.
+
+**The one sentence the number came from is contradicted by the arm's own protocol.** `term-marginal-338.md` §6.2
+withheld the weight because "the arm's answers were produced from the shipped engine, so the published 1 328 cannot be
+verified without a dispatch". The arm does not read the engine's ranking, and three places say so in the same words —
+`benchmarks/src/query-agent.ts`'s module doc, this register at §327.2's neighbourhood (the `docs/closed-axes-register`
+line quoted in 3067's vicinity), and `docs/free-investigation.md:156`: *"Seeding is a SEPARATE arm and is off here, so
+the free arm means free."* Its artifact agrees: five retrieval tools over the case's own telemetry, with `engineRank`
+written BESIDE the answer as a comparison rather than read by the loop. A weight cannot move an answer the weight never
+entered, so the published surface is a **join** — two artifacts that change with the weight (`per-case`, `terms`) onto
+two that do not (`answers`, corpus walk).
+
+**The instrument that correction requires, and the defect building it found.** `benchmarks/src/surface-diff.ts`
+(`27` tests, `100/100/100/100`) compares two published surfaces case by case: a net delta is not a finding, a repair
+and a break are two populations, two files with different case sets are REFUSED rather than scored on their
+intersection, a duplicated id is refused rather than letting the last row win, and the held-out folds are assigned by
+the module because a case's fold depends on its position in the corpus order. `run-miss-ledger.ts` gained
+`--surface-out` so the shipped surface is written by the runner that defines it. Making the comparison exposed
+**`guardCensusOf` / `formatGuardCensus`** (`benchmarks/src/engine-certainty.ts`, `100/100/100/100` over `33` tests):
+the certainty guard reads `top1Score − top2Score`, and the stored artifact every earlier surface reading was taken on
+carries **neither column**, so the guard was not "idle" — it was never evaluated, and it printed `1 308` (the
+first-hop surface) where the register had been quoting `1 328`. The two states are now different lines.
+
+**The measurement, at ¥0.** `--self-anomaly-weight 0.5` on the full corpus in this sandbox (no API key in the
+environment, so the semantic layer degrades to TF-IDF and the run is marked `DEGRADED`): **Top@1 81.5 %, Top@3 86.5 %,
+Top@5 87.9 %, 1 422 cases, 0 load errors, 0 engine errors** — `0.8150 × 1 422 = 1 158.9` → **1 159**, which is §3's
+row of `docs/term-marginal-338.md` to the case. The ablation table is reproducible for the price of the electricity,
+which is the whole point: nine weights per iteration is a throughput question, not a budget one.
+
+**The cost model that follows, in five rules.** A change that does not appear in the arm's transcript is never a
+dispatch. A join is not a measurement. If an arm genuinely must be re-run, the ceiling arm is 74 cases at ≈ ¥2 and a
+stratified 50 at ¥0.74, not 1 422 at ¥21. A cache hit is the same answer at 25 % of the price (W30's ¥41.46 list
+against ¥10.53 cache over the same 1 422 cases). And an unmeasured column is a VALUE: any rule that reads one must say
+how much of the corpus it could see, or a reading becomes a claim about a population it never saw — which is the
+`guardCensus` defect above, generalised.
+
+**And the reading, once the instrument existed, is a REFUSAL.** Both arms were joined onto the same stored answers
+and the same corpus walk, with the guard census reporting `evaluated on 1422 / 1422 cases, margin measured on every
+one` on both sides:
+
+| surface | shipped | `--self-anomaly-weight 0.5` | delta | repairs / breaks |
+| ------- | ------: | --------------------------: | ----: | ---------------: |
+| arm answers | 1 287 | 1 287 | +0 | 0 / 0 |
+| + first hop | 1 308 | 1 308 | +0 | 0 / 0 |
+| **shipped (with the guard)** | **1 328 (93.39 %)** | **1 328 (93.39 %)** | **+0** | **0 / 0** |
+
+The engine moved `+5 / −2 = +3`, and the case-by-case cross-reference names where each movement went: **four of the
+five repairs and both breaks are MASKED** — a case the arm already answers correctly cannot be repaired again, because
+the published surface does not consult the engine on it — and the one unmasked repair is a case where the engine now
+leads with the truth while the surface still publishes the arm's wrong answer, i.e. exactly the case a promotion rule
+exists for, and that family is priced at `−52 / −44 / −152 / −70` over the corpus. The weight is therefore refused on
+the reading the ¥21 was meant to buy, and the numeral that made it look attractive is the engine's, not the product's.
+
+**The law that follows, which belongs in every future estimate.** An engine delta converts to a published delta only on
+cases the arm gets WRONG and no rule already settles: **135 of 1 422 — a 9.5 % aperture**. A weight worth `+3` on the
+engine is therefore worth between `0` and `3` on the surface, with an expected conversion under a third. Engine Top@1
+is not a proxy for the product number, and the two cannot be inferred from each other; breadth's 28 addressable cases
+are 21 % of the aperture and the reasoning residue's 37 are 27 %, so those two are where the next iteration's value
+is — not in another weight.

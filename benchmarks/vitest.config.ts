@@ -173,6 +173,13 @@ export default defineConfig({
         // nine real census rows carry no `truthRank`, and scoring them as misses would move every cutoff by 1.2 pp
         // while leaving the surface intact.
         'src/cutoff-accuracy.ts',
+        // Added with the module: the A/B comparison of two published surfaces. Its whole value is that a net delta
+        // is not a finding — a repair and a break are two populations, and a comparison over the intersection would
+        // report a movement on a denominator neither file states. So the refusals ARE the test: two case sets that
+        // differ raise instead of scoring what they share, a duplicated id raises instead of letting the last row
+        // win, a non-boolean `correct` raises instead of reading a truthy string as a hit, and the fold assignment
+        // refuses an id it was not given rather than defaulting it into the first half.
+        'src/surface-diff.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

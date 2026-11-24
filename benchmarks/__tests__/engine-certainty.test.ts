@@ -19,6 +19,8 @@ import {
   certaintyUnder,
   crossValidateCertainty,
   formatCertaintyReport,
+  formatGuardCensus,
+  guardCensusOf,
   type CertaintyCase,
   type CertaintyValidation,
   type PublishedCase,
@@ -387,5 +389,40 @@ describe('the report', () => {
       passes: false,
     });
     expect(refused).toContain('does not pass -- fold 1 gains 2');
+  });
+});
+
+describe('the census of a guard that may not have been evaluated at all', () => {
+  it('counts the cases whose pair was measured', () => {
+    expect(guardCensusOf([1, 2, null, 0.5])).toEqual({ cases: 4, measured: 3 });
+  });
+
+  it('counts a zero margin as measured, because a tie is a reading and not an absence', () => {
+    expect(guardCensusOf([0])).toEqual({ cases: 1, measured: 1 });
+  });
+
+  it('reports an empty population as zero rather than as a rate', () => {
+    expect(guardCensusOf([])).toEqual({ cases: 0, measured: 0 });
+  });
+
+  it('says the guard fired on every case when every pair was measured', () => {
+    expect(formatGuardCensus(guardCensusOf([1, 2]))).toContain('margin measured on every one');
+  });
+
+  it('names the population it could NOT evaluate, and what that costs the reading', () => {
+    const text = formatGuardCensus(guardCensusOf([1, null, null]));
+    expect(text).toContain('1 / 3');
+    expect(text).toContain('2 carry no measured pair');
+    expect(text).toContain('cannot fire there');
+  });
+
+  it('refuses to let a wholly unmeasured guard read as a guard that changed nothing', () => {
+    const text = formatGuardCensus(guardCensusOf([null, null]));
+    expect(text).toContain('not evaluated');
+    expect(text).toContain("first-hop rule's alone");
+  });
+
+  it('prints an empty population without a percentage', () => {
+    expect(formatGuardCensus(guardCensusOf([]))).toContain('0 cases');
   });
 });

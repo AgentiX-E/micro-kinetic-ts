@@ -21,9 +21,9 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
-import { CERTAINTY_GRID } from './engine-certainty.js';
+import { CERTAINTY_GRID, formatGuardCensus, guardCensusOf } from './engine-certainty.js';
 import { firstHopUnder, type HopCase } from './first-hop.js';
 import {
   formatLedger,
@@ -35,6 +35,7 @@ import {
   type LedgerCase,
 } from './miss-ledger.js';
 import { ENGINE_CERTAINTY_MARGIN, engineCertainty } from './query-agent.js';
+import { renderSurfaceLine, type SurfaceRow } from './surface-diff.js';
 
 /** The bar the first-hop rule ships at. */
 const FIRST_HOP_BETA = 50;
@@ -45,6 +46,14 @@ interface Args {
   readonly cases: string;
   readonly edges: string;
   readonly terms: string;
+  /**
+   * Where the SHIPPED surface is written, one case per line, when the caller asks for it.
+   *
+   * Empty means "do not write", because a push-triggered run has no second surface to compare against and an
+   * artifact nobody reads is a file the workflow has to carry. The default is therefore the absence, which is
+   * also the state every earlier artifact was produced in.
+   */
+  readonly surfaceOut: string;
 }
 
 /** One answer as the arm published it. */
@@ -108,7 +117,10 @@ function parseArgs(argv: readonly string[]): Args {
   if (answers === '' || cases === '' || edges === '' || terms === '') {
     throw new Error('--answers, --cases, --edges and --terms are all required');
   }
-  return { answers, cases, edges, terms };
+  // Read through the same pair-loop as the four inputs rather than from a flag scan of its own: a second
+  // parser is how `--surface-out` and its value would come to disagree about which token is the path.
+  const surfaceOut = map.get('surface-out') ?? '';
+  return { answers, cases, edges, terms, surfaceOut };
 }
 
 /** Read an ndjson file into rows, skipping blank lines. */
@@ -189,6 +201,9 @@ function main(): void {
   const base: LedgerCase[] = [];
   const hopped: LedgerCase[] = [];
   const shipped: LedgerCase[] = [];
+  // Every case's margin, kept so the report can say how much of the corpus the guard could see. A surface read
+  // without this line cannot distinguish "the guard did not fire" from "the guard was never asked".
+  const margins: (number | null)[] = [];
   let missing = 0;
   for (const one of answers) {
     const verdict = verdicts.get(one.datapack);
@@ -218,6 +233,7 @@ function main(): void {
       Number.isFinite(top2)
         ? top1 - top2
         : null;
+    margins.push(margin);
     const guard = engineCertainty(after, { top1: engineTop1, margin }, ENGINE_CERTAINTY_MARGIN);
     const line = terms.get(one.datapack);
     const pool = new Set((line?.candidates ?? []).map((candidate) => candidate.id));
@@ -255,6 +271,20 @@ function main(): void {
       ` / ${shipped.length} (${((100 * count(shipped)) / Math.max(1, shipped.length)).toFixed(2)} %)`,
   );
 
+  // The shipped surface, written only when a caller asked for it. Every flip this file can support is a comparison
+  // against ANOTHER file produced the same way, so the writer is stated here — beside the population it printed —
+  // rather than in a second script that would have to re-derive which of the three surfaces was the shipped one.
+  if (args.surfaceOut !== '') {
+    const rows: SurfaceRow[] = shipped.map((one) => ({
+      datapack: one.datapack,
+      answer: one.published,
+      correct: right(one.truth, one.published),
+    }));
+    writeFileSync(args.surfaceOut, `${rows.map(renderSurfaceLine).join('\n')}\n`);
+    console.log(`  shipped surface: ${rows.length} rows -> ${args.surfaceOut}`);
+  }
+
+  console.log(formatGuardCensus(guardCensusOf(margins)));
   console.log(`\n${formatLedger(ledgerOf(shipped))}`);
   console.log(`\npromotion sweep on the shipped surface`);
   console.log(formatPromotion(promotionReadings(shipped)));

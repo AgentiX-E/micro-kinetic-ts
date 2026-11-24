@@ -324,3 +324,60 @@ export function formatCertaintyReport(reading: CertaintyValidation): string {
   );
   return lines.join('\n');
 }
+
+// ── The census of a guard that may not have been evaluated ──
+
+/**
+ * How much of a corpus a guard could actually see.
+ *
+ * The guard reads the engine's own margin, and the margin exists only where the artifact carries both of the pair's
+ * sort values. An artifact written before those columns existed therefore does not make the guard fail — it makes it
+ * SILENT, and a silent guard and a guard that measured nothing are the same number on the report. That is the defect
+ * this census exists to close: the difference between "the guard did not fire" and "the guard was never asked" is
+ * invisible in every count this repository printed, and the two readings call for opposite decisions.
+ */
+export interface GuardCensus {
+  /** The cases the surface carries. */
+  readonly cases: number;
+  /** The cases whose pair carried a measured margin. */
+  readonly measured: number;
+}
+
+/**
+ * Count the cases whose margin was measured.
+ *
+ * A margin of `0` is MEASURED: a tie between the engine's first two candidates is a reading, and the one state this
+ * function separates is the absence of the pair rather than the absence of a difference.
+ *
+ * @param margins - One margin per case, `null` where the pair was not measured.
+ * @returns The two counts.
+ */
+export function guardCensusOf(margins: readonly (number | null)[]): GuardCensus {
+  let measured = 0;
+  for (const margin of margins) if (margin !== null) measured += 1;
+  return { cases: margins.length, measured };
+}
+
+/**
+ * Render the census, refusing to let an unmeasured guard read as an idle one.
+ *
+ * @param census - The two counts.
+ * @returns One line.
+ */
+export function formatGuardCensus(census: GuardCensus): string {
+  const { cases, measured } = census;
+  if (cases === 0) return 'guard: 0 cases';
+  if (measured === cases) {
+    return `guard: evaluated on ${cases} / ${cases} cases, margin measured on every one`;
+  }
+  if (measured === 0) {
+    return (
+      `guard: not evaluated — ${cases} cases carry no measured pair, so a delta this file shows is the ` +
+      "first-hop rule's alone"
+    );
+  }
+  return (
+    `guard: evaluated on ${measured} / ${cases} cases, ${cases - measured} carry no measured pair — ` +
+    'the guard cannot fire there'
+  );
+}

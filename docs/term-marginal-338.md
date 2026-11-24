@@ -213,10 +213,24 @@ npx tsx benchmarks/src/run-fse26.ts \
 1. **The 1 328 surface is untouched.** The ledger prices implementations; it does not add a case. The arm's 94 misses
    are unchanged, and §337's four refusals stand.
 2. **A weight change is not shippable on this evidence.** `--self-anomaly-weight 0.5` is +3 cases on the engine's own
-   surface and positive in both folds, but the arm's answers were produced from the shipped engine, so the *published*
-   1 328 cannot be verified without a dispatch, and seven flips are not a mandate. What the ladder does establish is
-   that the shipped weight sits just inside a cliff (×2 costs 37 cases and repairs none), which is a robustness
-   argument for 0.5 that the next dispatch can settle for ≈¥21.
+   surface and positive in both folds, but seven flips are not a mandate. What the ladder does establish is that the
+   shipped weight sits just inside a cliff (×2 costs 37 cases and repairs none), which is a robustness argument for
+   0.5.
+
+   **Correction (iteration 340).** This clause originally continued *"the arm's answers were produced from the shipped
+   engine, so the published 1 328 cannot be verified without a dispatch … which the next dispatch can settle for
+   ≈¥21"*. **That sentence was wrong, and the ¥21 it put in the queue was never a measurement of this arm.** The arm
+   does not read the engine's ranking — its module doc, `docs/closed-axes-register.md:8067` and
+   `docs/free-investigation.md:156` all say so in the same words ("Seeding is a SEPARATE arm and is off here"), and its
+   transcript confirms it: five retrieval tools over the case's own telemetry, with `engineRank` written beside the
+   answer as a comparison rather than read by the loop. A weight cannot move an answer the weight never entered, so the
+   published surface is a **join** of two artifacts that change with the weight (`per-case`, `terms`) onto two that do
+   not (`answers`, corpus walk) — `¥0`, seconds, no endpoint. The instrument for that join is `surface-diff.ts` plus
+   `run-miss-ledger.ts --surface-out` (iteration 340), and it is what the next reading of this weight uses.
+   `docs/cost-audit-340.md` records the full correction, the price structure it corrects, and the guard census built
+   while making it — which found that the stored artifact every earlier surface reading was taken on carries no
+   `top1Score`/`top2Score`, so its certainty guard was never evaluated at all.
+
 3. **The external axis is refuted rather than unbuilt.** §2 measured four specifications of it — shipped weights,
    every channel at its measured value, propagated failure only, and downstream rise alone — and the best of them is
    the one the engine already has (800), with the narrowing axis strictly worse (492 → 193 → 190). No engine work is
