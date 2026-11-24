@@ -183,6 +183,26 @@ has never been run because every iteration since 318 has spent its dispatch on a
    number would be stale and the −38.53 pp overstated. The free artifact is 5 days old, the ids are identical, and the
    model is the same string — the assumption is that the endpoint has not changed, which is stated and not measured.
 
+### 7.4 Field check, read after the numbers and not before
+
+Two results from outside this repository bear on the mechanism, and both were fetched after the reading:
+
+- **arXiv 2611.05720, "Cognitive Bias Signatures in Search-Equipped LLM Agents" (Xiao & Yu, AWS).** A controlled
+  harness over 10 models and 1 000 synthetic search worlds: putting the document that supports the WRONG candidate first
+  raised wrong-candidate adoption in **9 of 10 models**, and — the part that matters here — **order sensitivity is larger
+  under ACTIVE search than when the same evidence is supplied passively**. This reading is that finding in a different
+  domain: the seed arm (order printed passively in the prompt) lost **12 pp**, while this arm (order delivered inside a
+  tool result the model then searched with) lost **38.5 pp**. The field's stage decomposition names where our loss lives:
+  not retrieval (the arm did not search for the answer more), but the ANSWER stage, after the candidate list was read.
+- **"Continual Search" (MegaRCA-Mix).** Its premise is that one-shot RCA fails by **anchoring on the first plausible
+  diagnosis and stopping**, and that keeping the model iterating over unexamined evidence lifts GPT-5.5's F1 from 0.349
+  to 0.498. That is the argument for the one lever this axis leaves open — more rounds with **no** order shown — and it
+  is also a warning about our own instrument: the arm's `distinct services 1.615` says it stops earlier than the free
+  arm does, so a search-shaped intervention is priced but not yet built.
+
+Neither paper reports a hard-RCA leaderboard number that this iteration could have beaten; both describe the failure
+mode this iteration measured, which is why they are cited as corroboration and not as a baseline.
+
 ## 8. Cost of the whole axis
 
 |                 |       cash | what it bought                                                                        |
