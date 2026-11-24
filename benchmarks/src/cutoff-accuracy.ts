@@ -317,3 +317,73 @@ export function formatCutoffs(table: CutoffTable): string {
   lines.push(row('pooled', table.pooled));
   return lines.join('\n');
 }
+
+// ── The retrieval-rerank decomposition ──
+
+/**
+ * A population's `top@k` split into the two failures it conflates.
+ *
+ * `top@k` mixes "the cause was never in the pool" with "it was there and ranked too low". The benchmark this project
+ * reports on now prints the split itself (`main.py --report-decomposition K` in `phamquiluan/RCAEval`, from
+ * `arXiv:2609.36686`), so a reading taken only on `Avg@5` is no longer comparable with the field's own table.
+ *
+ * The split here is an IDENTITY rather than a second measurement: `AC@1 = retrieval × rerank`, exactly, at every `k`.
+ * That is what makes it safe to print beside the accuracy it decomposes — a decomposition that could disagree with
+ * its own total would be a second instrument, and this corpus has paid for two sources of one number before.
+ */
+export interface RankDecomposition {
+  /** The cutoff this reading was taken at. */
+  readonly k: number;
+  /** Cases with a non-empty accepted set. */
+  readonly cases: number;
+  /** Cases whose accepted answer is inside the first `k` positions. */
+  readonly retrieved: number;
+  /** `retrieved / cases` — the share a perfect reranker could have converted. */
+  readonly retrieval: number;
+  /** `hits / retrieved` — the share of what was retrieved that a reranker put first. */
+  readonly rerank: number;
+}
+
+/**
+ * Split one population's `top@k` at `k`.
+ *
+ * @param cases - The population.
+ * @param k - The cutoff.
+ * @returns The two rates and the population they are over.
+ */
+export function decompositionAt(cases: readonly CutoffCase[], k: number): RankDecomposition {
+  requireCutoff(k);
+  let retrieved = 0;
+  let hits = 0;
+  for (const one of cases) {
+    if (one.hitRank !== null && one.hitRank <= k) retrieved += 1;
+    if (one.hitRank === 1) hits += 1;
+  }
+  const n = cases.length;
+  return {
+    k,
+    cases: n,
+    retrieved,
+    retrieval: n === 0 ? 0 : retrieved / n,
+    rerank: retrieved === 0 ? 0 : hits / retrieved,
+  };
+}
+
+/**
+ * Render the split.
+ *
+ * The rerank rate's denominator is the RETRIEVED population, and when that is empty the line says so instead of
+ * printing `0.00 %` — a zero over an empty denominator is the defect this module's census reader already refuses.
+ *
+ * @param reading - The reading.
+ * @returns One line.
+ */
+export function formatDecomposition(reading: RankDecomposition): string {
+  const head =
+    `Retrieval@${String(reading.k)} ${pct(reading.retrieval)} (${String(reading.retrieved)} / ` +
+    `${String(reading.cases)} cases)`;
+  if (reading.retrieved === 0) {
+    return `${head}, Rerank@1 undefined — no candidate was retrieved`;
+  }
+  return `${head}, Rerank@1 ${pct(reading.rerank)} (${String(Math.round(reading.rerank * reading.retrieved))} / ${String(reading.retrieved)} retrieved)`;
+}

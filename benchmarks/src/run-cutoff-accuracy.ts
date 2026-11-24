@@ -33,7 +33,9 @@ import { readFileSync } from 'node:fs';
 import {
   censusPopulations,
   cutoffTable,
+  decompositionAt,
   formatCutoffs,
+  formatDecomposition,
   parseCensusLine,
   publishedRate,
   type CensusRow,
@@ -118,6 +120,11 @@ function main(): void {
   );
   console.log('');
   console.log(formatCutoffs(cutoffTable(split.measured, args.k)));
+
+  // The split the benchmark itself now prints (`--report-decomposition`), so this table and the field's own are
+  // read in the same two numbers instead of the same one plus a translation the reader has to do.
+  console.log('');
+  console.log(formatDecomposition(decompositionAt(split.measured, args.k)));
 
   // The answer's own AC@1 beside the order's, per cell. They agree on this artifact — its `truthRank` is a position
   // in the PUBLISHED order — so the column that matters is `passes`, which must read 0 here and reads 83 on the

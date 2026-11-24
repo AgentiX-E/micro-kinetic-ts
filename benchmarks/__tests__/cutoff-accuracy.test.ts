@@ -5,7 +5,9 @@ import {
   avgAt,
   censusPopulations,
   cutoffTable,
+  decompositionAt,
   formatCutoffs,
+  formatDecomposition,
   hitRank,
   parseCensusLine,
   publishedRate,
@@ -351,5 +353,65 @@ describe('the answer rate, as distinct from the order rate', () => {
 
   it('reads an empty census as zero rather than as a division by zero', () => {
     expect(publishedRate([])).toEqual({ cases: 0, correct: 0, rate: 0 });
+  });
+});
+
+describe('the retrieval-rerank decomposition', () => {
+  const cases = [at('a', 'c', 1), at('b', 'c', 2), at('c', 'c', 4), at('d', 'c', null)];
+
+  it('separates "never retrieved" from "retrieved but ranked too low"', () => {
+    const reading = decompositionAt(cases, 5);
+    expect(reading.cases).toBe(4);
+    expect(reading.retrieved).toBe(3);
+    expect(reading.retrieval).toBeCloseTo(0.75, 10);
+    expect(reading.rerank).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('is an identity, not a second measurement: AC@1 equals retrieval times rerank', () => {
+    for (const k of [1, 2, 3, 4, 5]) {
+      const reading = decompositionAt(cases, k);
+      const ac1 = cases.reduce((sum, one) => sum + acAt(one.hitRank, 1), 0) / cases.length;
+      expect(reading.retrieval * reading.rerank).toBeCloseTo(ac1, 10);
+    }
+  });
+
+  it('reads the rerank rate as one at k = 1, where everything retrieved is first by definition', () => {
+    // Not a degenerate case to be smoothed over: at k = 1 the retrieved population IS the hits, so the conditional
+    // rate is 1 and the ONLY failure mode left is retrieval. That is exactly what the split is for.
+    const reading = decompositionAt(cases, 1);
+    expect(reading.retrieved).toBe(1);
+    expect(reading.rerank).toBeCloseTo(1, 10);
+    expect(reading.retrieval).toBeCloseTo(0.25, 10);
+  });
+
+  it('reads an all-absent corpus as zero retrieval and zero rerank, not as NaN', () => {
+    const reading = decompositionAt([at('a', 'c', null), at('b', 'c', null)], 5);
+    expect(reading).toMatchObject({ retrieved: 0, retrieval: 0, rerank: 0 });
+  });
+
+  it('reads an empty corpus as zero rather than dividing by it', () => {
+    expect(decompositionAt([], 5)).toMatchObject({
+      cases: 0,
+      retrieved: 0,
+      retrieval: 0,
+      rerank: 0,
+    });
+  });
+
+  it('refuses a cutoff below one, like every other reader here', () => {
+    expect(() => decompositionAt(cases, 0)).toThrow(/cutoff/);
+  });
+
+  it('names both numbers and the population they are over', () => {
+    const text = formatDecomposition(decompositionAt(cases, 5));
+    expect(text).toContain('Retrieval@5');
+    expect(text).toContain('75.0 %');
+    expect(text).toContain('33.3 %');
+    expect(text).toContain('4 cases');
+  });
+
+  it('says the rerank rate is undefined when nothing was retrieved, instead of printing 0 %', () => {
+    const text = formatDecomposition(decompositionAt([at('a', 'c', null)], 5));
+    expect(text).toContain('no candidate was retrieved');
   });
 });
