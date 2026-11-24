@@ -107,4 +107,86 @@ jq -s '{cases: length,
 
 ## 7. The reading
 
-Filled in after the dispatch, against the four hypotheses above. Nothing in §1–§6 may be edited to fit it.
+Run **45437298998**, `query_fleet_order=engine`, `query_agent_sample=266`, everything else empty; **532 cases**, the
+_same_ 532 ids as 342b (verified by set equality, not by construction), **¥7.17**, 43 m 44 s for the workflow.
+`fleetOrder: "engine"` on all 532 rows — the flag reached the arm.
+
+```
+cases 532 · answered 532 · stops {"answered":532}
+census: distinct services 1.615 · calls per case 5.00 · next served 0
+  tools per case metric 1.33 · edges 1.22 · failed 1.00 · fleet 1.00 · answer 1.00 · logs 0.44
+agent Top@1 209 · engine Top@1 on the same cases 266
+repairs 49 · breaks 106 · precision 0.316
+retained 160/266 of the engine's own (0.602) · repaired 49/266 of its misses
+```
+
+| hypothesis                                                  | bar                                 | measured                                                                                                                                                                                           | verdict                                    |
+| ----------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| H1 the section is read                                      | `tools.fleet ≥ 1` on ≥ 50 % of rows | **532 / 532 = 100 %**, exactly 1.00 fleet calls per case                                                                                                                                           | **passes**                                 |
+| H2 the reach converts                                       | agent Top@1 ≥ 425                   | **209**; the free arm on the same ids is **414**                                                                                                                                                   | **fails — −205 cases, −38.53 pp**          |
+| H3 it costs nothing                                         | retention ≥ 96 %                    | **60.15 %** (160/266)                                                                                                                                                                              | **fails, and is the veto**                 |
+| H4 the census agrees with the tail where the tail can speak | rank order agrees                   | agrees **exactly** for the two late tools (`logs` 44.2 % both, `services` 0 % both) and disagrees for the early ones: `fleet` **0.0 % → 100 %**, `failed` 69.9 % → 95.1 %, `metric` 79.3 % → 100 % | **passes, and quantifies the 342b defect** |
+
+H1 is the number that also settles 342b. `TOOL fleet` is called in **every** case, so the 0.5 % that entry published
+for the fleet read was elision and nothing else. H4 puts a size on the rest of that table: the tail understated
+`failed` by 25 points and `metric` by 21, and was accurate only for the tools a good investigation calls LAST.
+
+### 7.1 The mechanism: a presented ranking is a candidate SET, and the model substitutes
+
+The prompt was byte-identical to the free arm's, so this cannot be instruction contamination. The section was not
+elided from the first turn. What the answers show is a substitution:
+
+| where the arm's answer sits          |     arm | free arm |
+| ------------------------------------ | ------: | -------: |
+| = the engine's rank 1                |     198 |  **359** |
+| another name inside the printed five | **140** |       64 |
+| outside the five entirely            |     194 |      109 |
+
+On the 266 cases the engine has RIGHT — where the truth _is_ the engine's rank 1 by definition — the arm answers
+rank 1 in only **158** cases against the free arm's **261**, and answers a _sibling of the printed list_ in **44**
+instead of 1. Every one of those 44 is a wrong answer manufactured by the section.
+
+The section does not make the model follow the engine. It makes it **choose from the engine**, and its choice is worse
+than either ranker: it investigates _less_ (1.615 distinct services against the free arm's 1.895), agrees with the
+engine _less_ (37.2 % of answers are the engine's rank 1, against 67.5 %), and scores far worse (39.29 % against
+77.82 %). Two rankings in one context — the fleet's surprise order and the pipeline's order — and the model reconciles
+them into a third one that is the worst of the three.
+
+### 7.2 Three presentations of the same order, three losses
+
+This is the third time this programme has handed the engine's order to the arm. The three arms differ only in HOW:
+
+| arm              | presentation                                 | pair-read                            |                                retention of the engine's correct answers |
+| ---------------- | -------------------------------------------- | ------------------------------------ | -----------------------------------------------------------------------: |
+| seed (§318)      | printed in the prompt, top-30                | 1 153 vs the engine's 1 156 on 1 422 | ~0 on the corpus, and 1 153 = **81.08 %** against the free arm's 93.39 % |
+| schedule (342b)  | served one name per call through `TOOL next` | 184 vs 266 on these 532              |                                                              **52.26 %** |
+| shortlist (this) | a five-name section inside `TOOL fleet`      | 209 vs 266 on these 532              |                                                              **60.15 %** |
+
+Three forms, three losses, one factor in common: **the order**. The programme's remaining reach lever is therefore not
+"show the arm where to look" — that instruction has now been priced three ways and refused three times — but "make the
+arm's own investigation wider", which is a different purchase (rounds and calls) and has never been tested with the
+engine's ranking absent.
+
+**What closes.** "Give the arm the engine's ranking" is CLOSED in all three of its known forms, with the strongest form
+(the one that adds no text and costs no call) measured last and refused hardest on retention. What stays open: raising
+`maxRounds` with **no** order shown, which the 341 reach reading prices at 40 of 74 for 2× the model calls, and which
+has never been run because every iteration since 318 has spent its dispatch on a presentation.
+
+### 7.3 Falsifiers for this reading
+
+1. If the arm's answers had clustered on the engine's rank 1 (≥ 90 % of hits retained), the section would have been
+   read as a prior and the loss would have been "the engine was wrong on half this sample" — a sampling artefact. It
+   did not: the arm answered a sibling of the printed five in 140 cases.
+2. If `tools.logs` had risen, the loss could be read as the arm reading _more_ evidence and being misled by it. It
+   fell: 0.44 log calls per case, less than the free arm's tail share implied.
+3. If the same arm with `--fleet-order none` on the same 532 ids scored materially below 414, then this sample's free
+   number would be stale and the −38.53 pp overstated. The free artifact is 5 days old, the ids are identical, and the
+   model is the same string — the assumption is that the endpoint has not changed, which is stated and not measured.
+
+## 8. Cost of the whole axis
+
+|                 |       cash | what it bought                                                                        |
+| --------------- | ---------: | ------------------------------------------------------------------------------------- |
+| 342b (schedule) |      ¥7.36 | a refused route and a withdrawn mechanism                                             |
+| 343 (shortlist) |      ¥7.17 | a refused presentation, a working census, and the crosstab that names the mechanism   |
+| **the axis**    | **¥14.53** | "show the arm the engine's order" closed in three forms, each with a retention number |

@@ -10309,9 +10309,24 @@ byte-identical to the published one (asserted in a test), no call is spent, no r
 charged. That property is the whole design — 342b's −43 pp came from four appended prompt lines whose advertised tool was
 never demonstrably called, so the next intervention changes what an investigation can SEE and not what it is TOLD.
 
-*Pre-registered before the artifact exists.* H1 the section is read (`tools.fleet ≥ 1` on ≥ 50 % of the 532 rows; below
-10 % the premise "the arm starts at `fleet`" is false and the shortlist must ride in the first result of any kind); H2
-the reach converts (agent Top@1 ≥ **425** of 532, the +2.01 pp point estimate over the free arm's 414); H3 it costs
-nothing (retention of the engine's hits ≥ **96 %**, a veto); H4 the census agrees with the trace where the trace can
-speak. Full record: `fleet-shortlist-343.md`. **Open:** the shortlist's reading, and the `fleet` rows of 342b that no
-artifact of that arm can settle.
+*Pre-registered before the artifact exists, and refused by its own measurement* (run **45437298998**, the same 532 ids
+as 342b, ¥7.17): **H1 passes** — `TOOL fleet` is called in **532 / 532** cases, 1.00 per case, so 342b's 0.5 % fleet
+figure was elision and nothing else; **H2 fails** — agent Top@1 **209** against the free arm's **414** (−205 cases,
+**−38.53 pp**) and against the bar of 425; **H3 fails, and is the veto** — **160 / 266 = 60.15 %** of the engine's
+correct answers retained; **H4 passes and sizes the 342b defect** — the tail agrees with the census exactly for the
+tools called LAST (`logs` 44.2 % both, `services` 0 % both) and understates the ones called FIRST (`fleet` 0.0 % →
+**100 %**, `failed` 69.9 % → 95.1 %, `metric` 79.3 % → 100 %).
+
+*The mechanism is substitution, measured on the answers.* On the 266 cases the engine has right, the arm answers its
+rank 1 in **158** cases against the free arm's **261**, and answers a **sibling of the printed five** in **44**
+instead of 1 — 140 siblings over the whole sample against 64. The section does not make the model follow the engine; it
+makes it **choose from** the engine, and its choice is worse than either ranker: fewer distinct services investigated
+(1.615 against 1.895), less agreement (37.2 % of answers are the engine's rank 1, against 67.5 %), and 39.29 % against
+77.82 %. Two rankings in one context, and the model reconciles them into a third that is the worst of the three.
+
+*Three presentations, three losses.* Seed (§318, printed in the prompt) **81.08 %** against the free arm's 93.39 %;
+schedule (342b, one name per call) **52.26 %** retention; shortlist (this, a five-name section in `TOOL fleet`)
+**60.15 %**. Full record: `fleet-shortlist-343.md`. **Closed:** "show the arm the engine's order" in all three known
+forms — the text-free form, which should have been the strongest, is refused hardest on retention. **Open:** raising
+`maxRounds` with **no** order shown (341 prices it at 40 of 74 for 2× the model calls), which no iteration since 318 has
+run because every dispatch went to a presentation.

@@ -684,8 +684,8 @@ export function executeTool(
     if (ranked.length > 0) {
       const printed = ranked.slice(0, PIPELINE_LINES);
       lines.push(
-        `pipeline order: the first ${String(printed.length)} of ${String(ranked.length)} ranked services this case ` +
-          'carries',
+        `pipeline order: the first ${String(printed.length)} of ${String(ranked.length)} ranked services ` +
+          'this case carries',
       );
       for (const id of printed) lines.push(`  ${id}`);
     }

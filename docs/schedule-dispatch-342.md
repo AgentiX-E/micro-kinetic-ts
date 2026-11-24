@@ -171,6 +171,10 @@ arm, its pre-registration, and the numbers.
 2. **If the free arm re-run on this exact 266/266 sample scores materially below the 77.8 % projection**, the projection
    is wrong and the −43 pp is overstated by the difference. The projection assumes the free arm's rates transfer across
    strata, which is stated here as an assumption rather than measured.
-3. **If a `fleet` with an engine-order section moves accuracy negatively too**, then the engine's order is
-   counterproductive when shown as _evidence_, not only when shown as _instruction_ — and the whole position-first
-   analysis of §1.2 collapses for a third reason.
+3. **Falsifier 3 fired in 343.** It read: _"if a `fleet` with an engine-order section moves accuracy negatively too,
+   then the engine's order is counterproductive when shown as evidence, not only when shown as instruction — and the
+   whole position-first analysis of `schedule-not-seed-342.md` §1.2 collapses for a third reason."_ Run 45437298998
+   dispatched exactly that arm on exactly these 532 ids: **209 against the free arm's 414** (−38.53 pp), retention
+   **60.15 %**, with the prompt byte-identical to the free arm's. The order is now refused in three presentations —
+   printed, served, and shown — and `fleet-shortlist-343.md` §7.1 names the mechanism: a presented ranking is read as a
+   candidate SET, and the model substitutes a sibling of it for the answer it would otherwise have found itself.
