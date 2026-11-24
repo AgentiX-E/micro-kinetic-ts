@@ -9996,3 +9996,66 @@ The kinetic weight sits **just inside a cliff**: ×2 repairs nothing and breaks 
 positive in both folds. 0.5 is therefore the better default on robustness grounds as well as accuracy (+3, +2 top-3,
 +1 top-5), but seven flips do not mandate a default change that also alters what the arm is asked — the next dispatch
 (≈¥21) settles it on the surface that ships.
+
+## 339 The competitor's metric is our metric, and their AC@1 is bounded by it (iteration 339)
+
+**Owner of:** `docs/cutoff-accuracy-339.md` — the reading, its floors, the nine unmeasured census rows and the
+reproduction commands. This entry is the register's summary of it, not a substitute for it.
+
+The register carried the closest competitor — DeCoR / RICE-CM, `DOI 10.1186/s13677-026-01009-x`, which **assumes a
+known fault-onset time** and is therefore the one external method whose premise matches `detectMADOnset` — behind the
+sentence *"its metric is Avg@5, ours is Acc@1, so the numbers are not comparable directly"*. That sentence was wrong.
+`Avg@5` is `(1/k) Σ_{j=1..k} AC@j` by its own abbreviations table, every term is an indicator on one integer, and the
+census this repository writes after every RCAEval run carries that integer (`truthRank`) and the pool it was ranked in
+(`pool`). The gap was a missing **column**, not a missing population, and `benchmarks/src/cutoff-accuracy.ts` supplies
+it as a module (`37` tests, `100/100/100/100`) rather than as a paragraph.
+
+**The nine cells** (census of run `45314745837` at `9588dda4`, digests `62dd882e…` / `b126a462…` / `3118005c…`,
+byte-identical to the previous full run's):
+
+| cell | n | AC@1 | AC@3 | AC@5 | Avg@5 | floor |
+| ---- | -: | ---: | ---: | ---: | ----: | ----: |
+| RE1:OnlineBoutique | 125 | 90.4 % | 96.0 % | 100 % | 96.2 % | 56.5 % |
+| RE1:SockShop | 123 | 96.7 % | 100 % | 100 % | 99.0 % | 30.3 % |
+| RE1:TrainTicket | 125 | 90.4 % | 96.8 % | 99.2 % | 95.7 % | 4.7 % |
+| RE2:OnlineBoutique | 87 | 96.6 % | 97.7 % | 100 % | 98.2 % | 39.5 % |
+| RE2:SockShop | 89 | 100 % | 100 % | 100 % | 100 % | 25.7 % |
+| RE2:TrainTicket | 90 | 84.4 % | 87.8 % | 90.0 % | 88.0 % | 4.4 % |
+| RE3:OnlineBoutique | 27 | 96.3 % | 96.3 % | 96.3 % | 96.3 % | 34.6 % |
+| RE3:SockShop | 30 | 80.0 % | 93.3 % | 93.3 % | 89.3 % | 23.4 % |
+| RE3:TrainTicket | 30 | 73.3 % | 83.3 % | 86.7 % | 81.3 % | 4.4 % |
+| **pooled** | 726 | 91.7 % | 95.9 % | 97.7 % | **95.4 %** | 26.5 % |
+
+`abs` is zero on all nine cells: every miss on this corpus is a **depth** miss, which is the shape the 1 422-case
+ledger prices as breadth.
+
+**The comparison, and the bound that needs no protocol assumption.** DeCoR reports `0.6000 / 0.7040 / 0.4864` on a
+300-case subset of SS1 / SS2 / OB. Our reading on those fleets is `Avg@5 ≥ 0.893` on every Sock Shop suite and
+`≥ 0.962` on every Online Boutique suite — invariant under the mapping, because which of `RE1/RE2/RE3` is their "SS1"
+is not published and all three exceed their best cell either way. Stronger, and independent of any mapping:
+`Avg@k ≥ AC@1` **by definition**, so a method that publishes only a cutoff average publishes an upper bound on its own
+first-choice accuracy. Their bound on OB is `0.4864`; our `AC@1` there is `0.904`. The inequality is asserted in
+`cutoff-accuracy.test.ts` over every rank and every cutoff rather than reasoned about, because it is the one claim every
+external comparison leans on.
+
+**The floor, which is why a cutoff average needs one.** A uniformly random order over a pool of `n` scores
+`(1/(n·k)) Σ_{j=1..k} min(j, n)` — `0.70` at `n = 4`, `0.50` at `n = 6`, `0.25` at `n = 12`, `0.047` at `n = 64`.
+On `RE1:OnlineBoutique`, whose pool has a median of **6**, a random order therefore scores `56.5 %` `Avg@5`, more than
+half of our `96.2 %`. And the sharper reading: `arXiv:2609.27069` measures a ranker that reads **no telemetry at all**
+at `Avg@5 0.488` on this benchmark, and DeCoR's Online Boutique row is `0.0016` **below** it. That is not a criticism
+of their proof — it is what a twelve-service fleet does to a method that ranks by relational evidence alone, and it is
+the reason a floor now travels beside every row.
+
+**Nine rows the metric cannot reach.** Of the 735 census rows, **nine** carry no `truthRank` (RE1 2, RE2 4, RE3 3), so
+the answer's `AC@1` is defined on 735 cases and every cutoff on 726 — `90.61 % (666/735)` against `91.73 % (666/726)`.
+The module carries `rankMeasured` as a field rather than collapsing an absent column into `null`, and
+`censusPopulations` returns both populations, so a reading cannot quote one over the other's denominator. On this
+artifact the two columns agree to the case on every cell (`passes 0`), which is a property of the **file** —
+`truthRank` is a position in the published order — and the `+83` reordering stays visible only on the 1 422-case
+surface, whose dump keeps the sum's order beside the published one.
+
+**Axes this closes.** One, and it is a hedge rather than a hypothesis: *"`Avg@5` competitors cannot be compared with
+this system"* is closed — the protocol is now identical and the comparison is a command. **Axes this opens.** Two, both
+priced: **RICE-CM as a method** (the protocol is comparable, the four components are not reproduced — a build, not a
+reading), and **`AC@3` on TrainTicket** (`4.2 pp` pooled between the first and third cut, `10 pp` on
+`RE3:TrainTicket`), which is headroom a scoring change can reach without widening the presentation.

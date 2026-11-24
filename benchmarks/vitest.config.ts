@@ -163,6 +163,16 @@ export default defineConfig({
         // additive base and both folds are asserted, and the refusals are the test — a candidate with one axis
         // measured is excluded rather than scored zero, and a case whose whole pool lacks an axis is `undecided`.
         'src/conjunctive-score.ts',
+        // Added with the module: the cutoff-average metric every `Avg@5`-publishing competitor is quoted in, and the
+        // floor a random order of the same pool pays. Its whole value is that neither number is a convention this
+        // repository invented — `Avg@k` is defined as the mean of `AC@1..k`, and the floor is an expectation with a
+        // closed form — so the tests assert the DEFINITION against the closed forms rather than asserting the code
+        // against itself: the average against `max(0, k+1-r)/k`, the floor against an enumeration over every rank the
+        // pool allows, the sandwich `AC@k >= Avg@k >= AC@1` that every external comparison leans on, and each of the
+        // census reader's refusals by the line it names. The one that is not arithmetic is the `rankMeasured` flag:
+        // nine real census rows carry no `truthRank`, and scoring them as misses would move every cutoff by 1.2 pp
+        // while leaving the surface intact.
+        'src/cutoff-accuracy.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
