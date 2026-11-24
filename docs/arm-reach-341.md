@@ -18,9 +18,13 @@ Four facts make the 74 a *reach* population rather than a hard one:
 1. **The evidence was there in every one of them.** For all 74, the labelled culprit is a key of the case's own
    `metrics` map AND an endpoint of its own `traceEdges`; 51 of the 74 also carry log lines for it. Nothing was
    missing from the corpus; the arm did not ask.
-2. **The budget was not the wall.** `DEFAULT_QUERY_BUDGET` allows six rounds and **ten** tool calls; the artifact's own
-   rows average **4.99** calls and **1.888** distinct services. The arm stops early with half its budget unspent, and a
-   case carries ~50 services (`query-agent.ts`, the fleet-read rationale).
+2. **The budget was not the wall.** `DEFAULT_QUERY_BUDGET` states six rounds and ten tool calls, and the second number
+   never binds: the loop gives its last turn to the answer, so **five** calls are executable and the artifact's own rows
+   carry 4.99 of them (`jq -r .toolCalls` → `1 416 × 5, 6 × 4`). The arm spends its budget to the last call on **1.888**
+   distinct services — the other three calls are the argument-free tools — while a case carries ~50 services
+   (`query-agent.ts`, the fleet-read rationale). **Correction, iteration 342:** this paragraph first read "the arm stops
+   early with half its budget unspent", which was read off the stated ten rather than off what the loop can execute; the
+   withdraw-and-replace is in `schedule-not-seed-342.md` §1.1, and it re-prices the ceiling below by a factor of two.
 3. **The name was often already on screen.** In 40 of the 74 the culprit's id appears somewhere in the recorded
    transcript — a lower bound, because the transcript a row keeps is its last 2 000 characters (`TRACE_CHARS`). So the
    failure is not "the name never appeared"; in at least half of the 74 it appeared and the investigation moved on.
@@ -30,18 +34,21 @@ Four facts make the 74 a *reach* population rather than a hard one:
 
 ### 1.1 What a stated policy would already have reached
 
-"74 reachable in principle" is not a plan. The arm's budget is ten tool calls, so the question a policy has to answer
-is: *of the 74, how many have the culprit inside the ten services a stated ordering would have put first?* Measured
-against the ordering the pipeline already computes (`truthRank`, the engine's own position for the labelled service):
+"74 reachable in principle" is not a plan. The arm's budget is **five executable calls** (§1.2 and iteration 342), so
+the question a policy has to answer is: *of the 74, how many have the culprit inside the services a stated ordering would
+have put first?* Measured against the ordering the pipeline already computes (`truthRank`, the engine's own position for
+the labelled service):
 
 | population | culprit in the engine's top 5 | top 10 | 11–20 | beyond 20 |
 | ---------- | ----------------------------: | -----: | ----: | --------: |
 | the 74 unqueried misses | 29 (39.2 %) | **40 (54.1 %)** | 16 | 18 |
 | all 94 misses | 46 (48.9 %) | 58 (61.7 %) | 17 | 19 |
 
-So a policy that spends its ten calls on the engine's own first ten candidates would have **queried the culprit in 40
-of the 74** — **2.81 pp** of the corpus — without a single extra token and without widening anything. The remaining 34
-need an ordering the engine does not have, which is the interesting research question; the 40 are a selection rule.
+So a policy that spends five calls on the engine's own first five candidates would have **queried the culprit in 29 of
+the 74** — **2.04 pp** of the corpus — without a single extra token and without widening anything; the same policy at ten
+calls reaches **40 (2.81 pp)** but costs a second model call per case (`--max-rounds 11`). Both numbers are in
+`schedule-not-seed-342.md` §3, one flag apart. The remaining 34 of the 74 need an ordering the engine does not have,
+which is the interesting research question; the 29 are a selection rule.
 
 **The two forties are not the same forty.** The 40 whose culprit was already named in the transcript and the 40 inside
 the engine's top ten overlap in only **19** cases, so the two routes are complementary and their union is **61 of the
@@ -152,7 +159,7 @@ order metric on 726, and printing one number over the other's denominator is how
 
 | axis | population | price in the queue | reading now | verdict |
 | ---- | ---------: | -----------------: | ----------- | ------- |
-| arm reach — never queried the culprit | 74 (5.20 pp) | not in the queue | the culprit is in `metrics` and `traceEdges` in **all 74**; budget is 10 calls, 4.99 used; **40 of the 74 are inside the engine's top ten**, i.e. reachable by a stated schedule | **P0**, the largest single block |
+| arm reach — never queried the culprit | 74 (5.20 pp) | not in the queue | the culprit is in `metrics` and `traceEdges` in **all 74**; the budget is 5 executable calls and 4.99 are spent; **29 of the 74 are inside the engine's top five** (2.04 pp at zero extra cost) and 40 inside the top ten (2.81 pp at 2× calls) — both reachable by a stated schedule | **P0**, the largest single block |
 | reasoning — queried and missed | 20 (1.41 pp) | ≈ ¥21 (labelled "37 cases") | the true reasoning residue is 20, not 37 | P1, ceiling cut by 46 % |
 | breadth — engine rank > 5 | 48 | ≈ ¥2 (74-case ceiling arm) | the arm is free (`seeded: false` × 1 422); a seed it never reads cannot move it | **retired** as an arm lever |
 | precedence residue | 9 | — | four scopings, all negative | closed |
@@ -232,7 +239,9 @@ PY
 ## 10. Next
 
 1. **P0, ¥0** — a *schedule*, not a seed: hand the arm no order in its prompt (the seeded prompt is refuted, §318) but
-   let its ten calls follow the engine's first ten candidates. The ceiling is measured: **40 of the 74**, 2.81 pp.
+   let its calls follow the engine's own candidates. The ceiling is measured at both prices: **29 of the 74** at the
+   authorised five calls (2.04 pp) and **40** at ten (2.81 pp, 2× model calls). Shipped in iteration 342 as `TOOL next`
+   plus `--schedule none|engine`; the readings are in `schedule-not-seed-342.md`.
 2. **P1, ¥2** — a 74-case ceiling arm at the same budget under that schedule, to convert 40 into a rate; the ordering
    is computable offline before any dispatch, so the arm run is the last step rather than the first.
 3. **P1, ¥0** — write the `Retrieval@K`/`Rerank@1` split of *this* corpus into the same three buckets, so the next

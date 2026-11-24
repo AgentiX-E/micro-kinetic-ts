@@ -180,6 +180,13 @@ export default defineConfig({
         // win, a non-boolean `correct` raises instead of reading a truthy string as a hit, and the fold assignment
         // refuses an id it was not given rather than defaulting it into the first half.
         'src/surface-diff.ts',
+        // Added with the module: the investigation's schedule, which is the first instrument in this package that
+        // prices a ROUTE rather than a ranking. Its whole value is that it never reports one number where there are
+        // two — a structural ceiling and the point estimate the arm's own conversion buys — and that it keeps the
+        // three miss populations apart, so the refusals are the test: a row with no call column is neither measured
+        // bucket, a truth the pool never held is `unreachable` rather than "infinitely far", a repeated id cannot
+        // consume a second slot, and a width that is not a non-negative integer is refused rather than coerced.
+        'src/investigation-schedule.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

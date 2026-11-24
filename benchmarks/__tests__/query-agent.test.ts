@@ -47,6 +47,8 @@ import {
   renderSeed,
   renderTranscript,
   runQueryAgent,
+  SCHEDULE_TOOL_LINE,
+  SCHEDULED_SYSTEM_PROMPT,
   stride,
   summariseGatePolicies,
   summariseQueryArm,
@@ -463,9 +465,11 @@ describe('parseCall', () => {
 
   it('knows every tool in the prompt list', () => {
     for (const tool of QUERY_TOOLS) {
-      // Three tools take no argument because they are questions about the CASE rather than about one service.
+      // Four tools take no argument because they are questions about the CASE rather than about one service.
       const argument =
-        tool === 'services' || tool === 'failed' || tool === 'fleet' ? '' : ' payment';
+        tool === 'services' || tool === 'failed' || tool === 'fleet' || tool === 'next'
+          ? ''
+          : ' payment';
       expect(parseCall(`TOOL ${tool}${argument}`)).toEqual({
         kind: 'tool',
         tool,
@@ -1113,9 +1117,20 @@ describe('runQueryAgent', () => {
 describe('the prompt', () => {
   it('names every tool it will accept and no tool it will refuse', () => {
     for (const tool of QUERY_TOOLS) {
-      expect(QUERY_SYSTEM_PROMPT).toContain(tool);
+      expect(SCHEDULED_SYSTEM_PROMPT).toContain(tool);
     }
-    expect(QUERY_SYSTEM_PROMPT).toContain('ANSWER <service>');
+    expect(SCHEDULED_SYSTEM_PROMPT).toContain('ANSWER <service>');
+  });
+
+  it("leaves the free arm's prompt byte-identical, so the schedule is the only difference between the two arms", () => {
+    // The one line the schedule adds is `next`, and the free arm must not carry it: a prompt that offered a tool the
+    // arm refuses would be a refusal the model cannot act on, and a prompt that differed in any other byte would make
+    // the two arms incomparable.
+    expect(QUERY_SYSTEM_PROMPT).not.toContain('TOOL next');
+    expect(SCHEDULED_SYSTEM_PROMPT.startsWith(QUERY_SYSTEM_PROMPT)).toBe(true);
+    expect(SCHEDULED_SYSTEM_PROMPT.slice(QUERY_SYSTEM_PROMPT.length)).toBe(
+      `\n${SCHEDULE_TOOL_LINE}`,
+    );
   });
 
   it('caps the log lines a single call may print', () => {

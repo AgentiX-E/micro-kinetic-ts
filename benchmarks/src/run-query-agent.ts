@@ -64,6 +64,13 @@ interface Args {
   readonly gate: GatePolicy;
   /** Whether a settled answer is re-read by the entry prior. `none` is the arm as 318–321 shipped it. */
   readonly resolve: Resolution;
+  /**
+   * Whether the harness holds an order the model can walk with `TOOL next`, or `none` for the free arm.
+   *
+   * `engine` is not `seed`: nothing is printed in the prompt, so the model reads one service per call and never sees
+   * the sequence. That distinction is the whole point — §318 measured the printed order as WORSE than no order.
+   */
+  readonly schedule: 'none' | 'engine';
 }
 
 /** Read the flags this runner accepts, refusing an unknown one rather than ignoring it. */
@@ -105,6 +112,12 @@ function parseArgs(argv: readonly string[]): Args {
   if (!resolvers.includes(resolve as Resolution)) {
     throw new Error('--resolve must be `none`, `entry-prior` or `edge-novel`');
   }
+  // A schedule, like a gate, is a policy a run STATES. The default is `none`, so every arm measured before this flag
+  // existed keeps its prompt byte-identical and its reading unchanged.
+  const schedule = map.get('schedule') ?? 'none';
+  if (schedule !== 'none' && schedule !== 'engine') {
+    throw new Error('--schedule must be `none` or `engine`');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -123,6 +136,7 @@ function parseArgs(argv: readonly string[]): Args {
     fallback: fallback as Args['fallback'],
     gate: gate as GatePolicy,
     resolve: resolve as Resolution,
+    schedule: schedule as Args['schedule'],
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -183,6 +197,7 @@ async function investigate(
   fallback: 'none' | 'engine',
   gate: GatePolicy,
   resolve: Resolution,
+  schedule: readonly string[] | null,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -222,6 +237,7 @@ async function investigate(
       resolve,
       fallbackOrder,
       engine,
+      schedule,
     );
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
@@ -246,6 +262,7 @@ async function investigate(
       stop: 'error',
       trace: '',
       seeded: seed !== null,
+      scheduled: schedule === null ? null : schedule.length,
       // The INCUMBENT is a property of the case and the order, not of the investigation: a case whose call failed
       // still had one, and a row that said it did not would raise the gate-table caveat on a seeded arm.
       incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
@@ -291,6 +308,7 @@ async function investigate(
     stop: outcome.stop,
     trace: outcome.trace,
     seeded: seed !== null,
+    scheduled: schedule === null ? null : schedule.length,
     // What the LOOP had, which is the fallback's first name the case actually carries.
     incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
     rounds: outcome.rounds,
@@ -411,6 +429,10 @@ async function main(): Promise<void> {
       args.fallback === 'seed' ? args.seed : args.fallback,
       args.gate,
       args.resolve,
+      // The schedule is the engine's order, which is also what a seed would show — and here it is NEVER shown. A
+      // runner that recomputed an order would be scheduling a route no other artifact can reproduce, so this is the
+      // same `ranked` column the seed reads and the same width the artifact carried.
+      args.schedule === 'engine' ? verdicts.get(datapack)!.ranked : null,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);

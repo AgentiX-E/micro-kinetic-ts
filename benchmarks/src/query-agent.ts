@@ -161,6 +161,7 @@ const MESSAGE_CHARS = 140;
 export const QUERY_TOOLS = [
   'services',
   'fleet',
+  'next',
   'metric',
   'logs',
   'edges',
@@ -413,6 +414,26 @@ export interface ToolResult {
   readonly text: string;
   /** The service an `answer` directive resolved to, when it was accepted. */
   readonly resolved?: string;
+  /** The cursor `next` advanced to, and `undefined` for every other directive. */
+  readonly cursor?: number;
+  /** The service a `next` directive consumed, so the loop can record it as investigated. */
+  readonly served?: string;
+}
+
+/**
+ * The order a `next` directive walks, and how far it has walked.
+ *
+ * The order is the ENGINE's, filtered to the services this case can describe, and it is held HERE rather than in the
+ * prompt. That is the whole distinction this parameter exists for: iteration 318 measured a **seeded** prompt as
+ * worse than a free arm — a printed list invites the model to re-rank it, which this repository has priced at chance
+ * (`z = −9.26` over 5 335 claims) — while a **schedule** hands the model one service per call and discloses no
+ * sequence at all. Same information the harness already owns, a different reader.
+ */
+export interface ScheduleCursor {
+  /** Candidate ids in the engine's order, best first. Names this case does not carry are skipped. */
+  readonly order: readonly string[];
+  /** How many of them `next` has already served. */
+  readonly cursor: number;
 }
 
 /**
@@ -452,7 +473,8 @@ export function parseCall(reply: string): ParsedCall {
     const name = parts[1]!.toLowerCase();
     if (!(QUERY_TOOLS as readonly string[]).includes(name)) return { kind: 'unparsed', text: line };
     const argument = parts.slice(2).join(' ');
-    const argumentFree = name === 'services' || name === 'failed' || name === 'fleet';
+    const argumentFree =
+      name === 'services' || name === 'failed' || name === 'fleet' || name === 'next';
     if (argumentFree && argument !== '') return { kind: 'unparsed', text: line };
     if (!argumentFree && argument === '') return { kind: 'unparsed', text: line };
     return { kind: 'tool', tool: name as QueryTool, argument };
@@ -523,13 +545,43 @@ export function bySurprise(a: TelemetryMetric, b: TelemetryMetric): number {
 }
 
 /**
+ * The services a schedule can actually serve: the order's names, de-duplicated, restricted to the case's directory.
+ *
+ * Both filters are correctness rather than tidiness. A name the case does not carry cannot be described by any tool,
+ * and serving it would spend one of the budget's ten calls to show the model a directory error. A repeated name would
+ * spend a second call on a service the investigation has already seen — and the schedule's whole value is that its
+ * slots land on distinct services.
+ *
+ * @param telemetry - The case's tool view.
+ * @param order - Candidate ids, best first.
+ * @returns The servable names, strongest first.
+ */
+export function scheduleNames(telemetry: Telemetry, order: readonly string[]): string[] {
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const id of order) {
+    if (id === '') continue;
+    if (seen.has(id)) continue;
+    if (!telemetry.services.has(id)) continue;
+    seen.add(id);
+    kept.push(id);
+  }
+  return kept;
+}
+
+/**
  * Execute one directive against the telemetry.
  *
  * @param telemetry - The case's tool view.
  * @param call - The parsed directive.
+ * @param schedule - The order `next` walks, or `undefined` for an arm that carries none.
  * @returns The text the model is shown next, and whether that text answers the question.
  */
-export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult {
+export function executeTool(
+  telemetry: Telemetry,
+  call: ParsedCall,
+  schedule?: ScheduleCursor,
+): ToolResult {
   if (call.kind === 'unparsed') {
     return {
       ok: false,
@@ -537,6 +589,35 @@ export function executeTool(telemetry: Telemetry, call: ParsedCall): ToolResult 
     };
   }
   const { tool, argument } = call;
+  if (tool === 'next') {
+    // A refusal rather than an empty result, for the reason every other refusal in this function is one: an arm that
+    // carries no schedule must not teach the model that the case has no services left.
+    if (schedule === undefined) {
+      return {
+        ok: false,
+        text: 'refused: this arm carries no schedule; name a service with `TOOL metric <service>`',
+      };
+    }
+    const usable = scheduleNames(telemetry, schedule.order);
+    if (schedule.cursor >= usable.length) {
+      return {
+        ok: false,
+        text:
+          `refused: the schedule is exhausted after ${String(usable.length)} services; ` +
+          'name a service with `TOOL metric <service>` or answer',
+      };
+    }
+    const id = usable[schedule.cursor]!;
+    // The schedule serves exactly what `TOOL metric <service>` would have shown, by CALLING it: one rendering, so a
+    // scheduled read and a named read cannot drift into two different views of the same service.
+    const answered = executeTool(telemetry, { kind: 'tool', tool: 'metric', argument: id });
+    return {
+      ok: answered.ok,
+      text: `next ${String(schedule.cursor + 1)}/${String(usable.length)} — ${id}\n${answered.text}`,
+      cursor: schedule.cursor + 1,
+      served: id,
+    };
+  }
   if (tool === 'services') {
     const names = [...telemetry.services.keys()].sort();
     return { ok: true, text: `services (${names.length}): ${names.join(', ')}` };
@@ -681,6 +762,35 @@ export const QUERY_SYSTEM_PROMPT = [
   'Your budget is stated in every turn. An investigation that ends without an answer scores ZERO, so when a turn',
   'says LAST the only accepted reply is ANSWER: spend the turns before it on what decides the answer.',
 ].join('\n');
+
+/**
+ * The line an arm with a schedule adds to its standing instruction.
+ *
+ * Appended rather than folded into {@link QUERY_SYSTEM_PROMPT}, so the free arm's prompt stays byte-identical to the
+ * one every published number in this repository was taken under. A schedule that edits the shared constant would
+ * move two arms at once, and the resulting difference could not be attributed to either.
+ *
+ * What the line deliberately does NOT say: which services the schedule will serve, in which order, or that the order
+ * is the engine's. The seeded prompt disclosed all three and lost to the free arm (§318); the schedule discloses the
+ * existence of a route and one step of it at a time, which is the difference between a suggestion and a budget.
+ */
+export const SCHEDULE_TOOL_LINE = [
+  '',
+  "A schedule is available: `TOOL next` answers with the next service in the pipeline's own order and spends one",
+  'call, so ten calls reach ten distinct services instead of whatever the fleet read happened to surface. It is a',
+  'route and not an instruction: naming a service yourself stays available, and a service the schedule would not',
+  'reach is exactly the case worth spending a call on.',
+].join('\n');
+
+/**
+ * The standing instruction of an arm that carries a schedule.
+ *
+ * Exported as the COMPOSITION rather than assembled at the call site, so the one prompt every accepted directive
+ * must appear in is a value a test can read. `QUERY_SYSTEM_PROMPT` stays untouched beside it: the free arm's prompt
+ * is the one every published number in this repository was taken under, and a schedule that edited it would move two
+ * arms at once.
+ */
+export const SCHEDULED_SYSTEM_PROMPT = `${QUERY_SYSTEM_PROMPT}\n${SCHEDULE_TOOL_LINE}`;
 
 /** One exchange: the directive, and the text it produced. */
 export interface QueryExchange {
@@ -1251,6 +1361,9 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  * @param policy - What an override must show before it replaces the prior.
  * @param resolution - Which post-answer reader may rename the settled answer.
  * @param fallback - The order a refusal settles on, and the incumbent the gate defends. Defaults to {@link seed}.
+ * @param engine - The engine's opinion, for the resolvers that read it.
+ * @param schedule - The order a `next` directive walks, or `null` for an arm that carries none. Held by the harness
+ *   and never printed: this is the difference between a schedule and a seed.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1262,6 +1375,7 @@ export async function runQueryAgent(
   resolution: Resolution = 'none',
   fallback: QuerySeed | null = seed,
   engine: EngineOpinion | null = null,
+  schedule: readonly string[] | null = null,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
@@ -1276,6 +1390,8 @@ export async function runQueryAgent(
   let stop: QueryOutcome['stop'] = 'rounds';
   let rawAnswer: string | null = null;
   let gateRefusals = 0;
+  /** How far a `next` directive has walked. Harness state, never shown: the schedule discloses one step, not a list. */
+  let cursor = 0;
 
   // Read once: the witness is a property of the CASE, not of the answer, so every settlement in this investigation
   // reads the same interface evidence.
@@ -1422,7 +1538,7 @@ export async function runQueryAgent(
     // only thing worth saying is the answer, and both are ANNOUNCED in the prompt that asks for it.
     const forcing = rounds === budget.maxRounds || callsLeft === 0;
     const completion = await client.complete({
-      system: QUERY_SYSTEM_PROMPT,
+      system: schedule === null ? QUERY_SYSTEM_PROMPT : SCHEDULED_SYSTEM_PROMPT,
       user: buildUserPrompt(
         telemetry,
         exchanges,
@@ -1475,7 +1591,12 @@ export async function runQueryAgent(
       exchanges.push({ round: rounds, directive, result: call.text, ok: false });
       continue;
     }
-    const result = executeTool(telemetry, call);
+    const result = executeTool(
+      telemetry,
+      call,
+      schedule === null ? undefined : { order: schedule, cursor },
+    );
+    if (result.cursor !== undefined) cursor = result.cursor;
     if (call.tool === 'answer' && result.resolved !== undefined) {
       const gated = admit(result.resolved);
       exchanges.push({
@@ -1502,10 +1623,21 @@ export async function runQueryAgent(
     // directory key — `executeTool` resolves these three tools by exact key and `buildTelemetry` sets `id` from that
     // key — so no second lookup is needed and none is written, because a guard no case can reach is a branch that
     // reports coverage rather than correctness.
-    if (result.ok && (call.tool === 'metric' || call.tool === 'logs' || call.tool === 'edges')) {
-      if (!cited.has(call.argument)) {
-        cited.add(call.argument);
-        investigated.push(call.argument);
+    //
+    // `next` is a per-service query whose service the DIRECTIVE does not name, so the name comes from what the tool
+    // served. It is recorded under the same rule as the other three: a schedule that showed the model a service is a
+    // citation, and a gate that refused an answer about a scheduled service would be refusing evidence the harness
+    // itself handed over.
+    const served =
+      call.tool === 'next'
+        ? result.served
+        : call.tool === 'metric' || call.tool === 'logs' || call.tool === 'edges'
+          ? call.argument
+          : undefined;
+    if (result.ok && served !== undefined) {
+      if (!cited.has(served)) {
+        cited.add(served);
+        investigated.push(served);
       }
     }
   }
@@ -1559,6 +1691,14 @@ export interface QueryArmRow {
    * precision that mixed the two populations would average two different measurements.
    */
   readonly seeded: boolean;
+  /**
+   * How many slots the schedule this arm walked had, or `null` for a free arm.
+   *
+   * Recorded for the reason `seeded` is: a scheduled run and a free run differ only in how the arm chose its calls,
+   * and a precision that pooled them would average two different policies under one name. The width is the number
+   * that matters — a schedule of five cannot spend the ten calls the budget allows.
+   */
+  readonly scheduled?: number | null;
   /**
    * Whether the arm had an order the gate defends and a refusal settles on, which is not the same as showing one.
    *

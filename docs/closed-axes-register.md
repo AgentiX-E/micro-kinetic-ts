@@ -10228,8 +10228,43 @@ from the inside — plain harnesses 65–77 % PR@1 against 16–53 % for five pu
 statistical/causal methods, with every Pareto-optimal configuration a simple harness — and names the mechanism
 ("hard-coded investigation paths skip the decisive evidence"), which is this iteration's 74 cases seen from the other
 side: ours has no SOP at all and still looks in the wrong place, because a budget without a policy is not a search.
-CARE-PO (`arXiv:2611.12125`) finds 82.8 % of agent trajectories carrying a removable call and 68.0 % of calls removable,
-which makes the unspent half of our budget the normal state of the art rather than this harness's defect. SRE-1
+CARE-PO (`arXiv:2611.12125`) finds 82.8 % of agent trajectories carrying a removable call and 68.0 % of calls
+removable. **Corrected in 342:** this entry first read that as "the unspent half of our budget is the normal state of
+the art", and the arm has no unspent half — six rounds execute five calls and the artifact carries 4.99 of them. What
+CARE-PO prices here is not slack but *choice*: if most calls are removable, then which five are spent IS the policy,
+and a schedule is the cheapest way to change it. SRE-1
 (ResolveAI, 18 Nov 2026) puts a process-scored competitor in production: 38.8 % single / 71 % five-run ensemble pass on
 49 live cases at −37 % cost against the strongest frontier model, over 400+ tools and a citation-bearing causal chain —
 a column this corpus still cannot score.
+
+**342 — the schedule is not the seed, and the budget the arm spends is five.** Two corrections and one instrument; the
+full record is `schedule-not-seed-342.md`, and the withdrawal it supersedes is noted in `arm-reach-341.md`.
+
+*The budget.* `DEFAULT_QUERY_BUDGET` states `maxRounds: 6, maxToolCalls: 10`, and the second number never binds: the
+loop's last turn is answer-only, so **five** calls are executable and the shipped artifact carries 4.99 of them
+(`jq -r .toolCalls` → `1 416 × 5, 6 × 4`). The 341 entry's "4.99 of ten, half unspent" is wrong and is withdrawn; the
+zero-cost width of a schedule is therefore **five**, not ten. `usableCallsOf(budget) = min(maxToolCalls, maxRounds − 1)`
+is the one place that arithmetic lives, and a test pins it to the loop's own `forcing` condition.
+
+*The mechanism.* 341's mystery — a seeded prompt losing to a free arm (§318) — is not a mystery once the two objects are
+separated: a **seed** prints the order, which invites re-ranking a prior (priced at chance, `z = −9.26` over 5 335
+claims), while a **schedule** keeps the order in the harness and serves one service per call. The arm's own artifact
+says which the model responds to: the 20 misses that queried the culprit had it at engine **median position 2** and the
+74 that did not at **9**, on 1.888 distinct services out of five calls — the model looks where the engine points and
+stops after fewer than two services.
+
+*The two prices.* `TOOL next` plus `--schedule none|engine` ship the route; `run-schedule-reading.ts` prices it on
+artifacts already paid for. At the authorised five calls the ceiling is **29 of the 74 (2.04 pp)** and the point
+estimate, at the 98.33 % conversion measured on the 1 198 investigations that did query the culprit, is **2.01 pp**; at
+ten calls (`--max-rounds 11`, 2× model calls, ≈ ¥0.029/case) it is **40 (2.81 pp)** and **2.77 pp**. Two widths, two
+prices, one flag apart — the 341 number was the second one quoted as if it were free.
+
+*The instrument.* `benchmarks/src/investigation-schedule.ts`, 36 tests, `100/100/100/100`, plus
+`query-agent-schedule.test.ts` over the directive and the loop: three disjoint miss populations (`queriedMisses +
+unqueriedMisses + unrecordedMisses = misses`), `null` for a truth the pool never held rather than "infinitely far", and
+a test that fails if the ceiling is ever printed as the estimate. `formatConversion`'s `cases === 0` guard was removed
+as unreachable and the reason is written where it stood.
+
+**Closed here:** "spend more calls" as the reach lever (the wall is rounds, and the ceiling doubles for 2× the price —
+priced, not assumed); "the arm wastes its budget" as a diagnosis (it spends all five); and the reading of §318 that a
+schedule had already been refuted (it had not — a seed had).
