@@ -9884,3 +9884,97 @@ the model's naming as the answer, 615 of 1 422). **Axes this opens.** Three, all
 internal × external score (arXiv:2601.21359v2; ours is additive and only bounded), DecompRCA's system-description prompt
 (**+7..+18**, aimed at the 37 seen-not-taken), and Cloud-OpsBench's **evidence-closure** metric (754 cases, 29–33 % of
 correct answers fail closure).
+
+## 338 What each implementation contributes, and the first competitor with a theorem (iteration 338)
+
+Iteration 338 is **¥0** and the surface is unchanged: **1 328 / 1 422 = 93.39 %** on the arm's answers, **1 156**
+(81.29 %) for the engine alone, **1 073** (75.46 %) for the written sum's own order. It adds the table this register has
+been missing since the first ablation — what each term in the score contributes, in the target's own units — and it
+runs CIE's theorem against our pool. Full reading: `term-marginal-338.md`.
+
+### 338.1 The ledger: two terms carry 541 of 1 073 decisions, eleven are inert
+
+`benchmarks/src/term-marginal.ts` (33 tests, coverage 100 / 100 / 100 / 100) removes one term from every sum, re-orders
+every pool and reports the change in Top-1, with the count of *ties* the removal created printed beside it.
+
+| term | marginal | ties | role |
+| ---- | -------: | ---: | ---- |
+| `log` (binary evidence) | **−341** | 6 | load-bearing |
+| `podState` (8.0, 100 % precision on 294 cases) | **−200** | 2 | load-bearing |
+| `selfAnomalyLog1p` (the kinetic onset term) | **+5** | **60** | **tie-maker** |
+| `lat` | −58 | 2 | load-bearing |
+| `failedEdge` | −42 | 0 | load-bearing |
+| `dualFamily`, `stability`, `pool` | 0 | 0–2 | decorative |
+| six terms at weight 0 and five never measured | 0 | 0 | inert |
+
+Two readings are new and both are uncomfortable.
+
+1. **The kinetic term's marginal is positive, and its gain is ties.** Removing `selfAnomalyLog1p` makes 60 pools tie at
+   the top, and the tie is settled by the pool's arrival order — the engine's published order. Its whole range is
+   `log1p(1) = 0.6931`, smaller than a single binary `log` bonus (`1.0`) and one ninth of a `podState` bonus (`8.0`).
+2. **Where the deviation is the only thing in the pool, it does not identify the root.** Partitioning the corpus by
+   whether *any* candidate carries a non-zero evidence term: **1 072 / 1 368 (78.36 %)** where something was observed,
+   **1 / 54 (1.85 %)** where only the deviation was. The partition is structural — drawn on the pool, not on the
+   winner — so it is not a function of the outcome it explains.
+
+### 338.2 The classifier was wrong and the data said so
+
+The first version called a term `decorative` when its largest possible contribution was below the corpus's median
+decision gap (0.6277). It classified `lat` decorative, and removing `lat` costs 58 cases: the cases `lat` decides are
+exactly the ones whose gap is below the median. A corpus-wide statistic cannot classify a term that decides a
+sub-population, so the roles are now entirely measured — `inert`, `load-bearing`, `decorative`, `tie-maker`,
+`harmful` — and the gap is context in the table rather than a threshold. Second instrument defect found by running a
+new module on real data; like §336's `NaN`, it was in the instrument and not in the product.
+
+### 338.3 The sum's order is not the engine's order, and the register must say which it quotes
+
+Two relational passes reorder the list *after* scoring, so the engine publishes **1 156** correct first choices while
+the written sum's maximum is right on **1 073** — **83** cases of difference. Every marginal above is a property of
+the sum. The runner prints both numbers with the count of disagreements on the same line, so neither can be quoted as
+the other.
+
+### 338.4 CIE's conjunction: refused on every mode, and the reason is our own decomposition
+
+Three modes of the conjunction (minimum of the normalised axes, product of the normalised axes, raw product) and a
+faithful mapping (internal = the component's own evidence, external = the propagation values) were measured on the
+pool: **800 / 800 / 800** against the sum's 1 073, and **745 / 748 / 748** under the faithful mapping. Refused on both
+folds of every mode.
+
+The structural reason is the finding worth keeping: **the external axis carries weight `0` in the shipped vector on
+this corpus.** Six propagation terms are inert (§338.1), so the axis reduces to `lat` (14.5 % of candidates) and
+`failedEdge` (5.6 %); the conjunction then ranks the 15 % that carry it and discards the rest. Rebuilding the axis from
+the *unweighted* values does not help — adding `rise`, `temporal` or `collision` at any non-zero weight gives 209, 60
+and 80 cases respectively, flat across 0.02 to 0.4 — because those terms are anti-predictive as written, which is why
+they were pruned.
+
+**Axes this closes.** Two: "adopt CIE's conjunctive score" (three modes, two mappings, both folds, all negative) and
+"re-enable the propagation terms to build the external axis" (flat and catastrophic at every weight). **Axes this
+opens.** One, and it is a specification rather than a weight: a **pool-relative** external axis — the candidate's share
+of the pool's total propagated failure — which nothing in the current dump computes.
+
+### 338.5 The published-surface ladder: two terms are one-directional, one is a cliff
+
+Nine local runs (¥0, no endpoint, ~16 min each) moved one weight and re-ran the whole corpus. The baseline reproduces
+the published artifact **byte for byte** (`sha256 da336800ec7c0ce1…`), so every delta is the flag's.
+
+| configuration | Top@1 | delta | repairs / breaks |
+| ------------- | ----: | ----: | ---------------: |
+| shipped | **1 156** | — | — |
+| `--self-anomaly-weight 0.5` | **1 159** | **+3** | 5 / 2 |
+| `--self-anomaly-weight 0` | 1 158 | +2 | 16 / 14 |
+| `--pod-state-weight 4` | 1 155 | −1 | 0 / 1 |
+| `--dual-family-weight 0 --stability-weight 0` | 1 156 | 0 | 6 / 6 |
+| `--log-weight 2` | 1 148 | −8 | 4 / 12 |
+| `--self-anomaly-weight 2` | 1 119 | −37 | 0 / 37 |
+| `--failed-edge-weight 0` | 1 110 | −46 | 0 / 46 |
+| `--lat-weight 0` | 1 086 | −70 | 3 / 73 |
+
+`lat` and `failedEdge` lose cases in one direction only (3/73 and 0/46): a term whose removal is near-pure loss is
+doing work no other term does — the opposite of what a marginal over the sum said about `lat`, and the defect §338.2
+records. `podState` is at a plateau (halving an 8.0 bonus moves one case) and the decorative pair is exactly neutral
+(6/6, 81 cases moved, net 0), which is the first independent confirmation of a role from §338.1.
+
+The kinetic weight sits **just inside a cliff**: ×2 repairs nothing and breaks 37, ×0.5 repairs 5 and breaks 2 and is
+positive in both folds. 0.5 is therefore the better default on robustness grounds as well as accuracy (+3, +2 top-3,
++1 top-5), but seven flips do not mandate a default change that also alters what the arm is asked — the next dispatch
+(≈¥21) settles it on the surface that ships.

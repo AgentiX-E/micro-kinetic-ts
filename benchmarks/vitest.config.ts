@@ -149,6 +149,20 @@ export default defineConfig({
         // (rank 1, rank 5, rank 6, unranked), the four refusals the promotion sweep makes, and both directions of
         // the concentration reading's separation test.
         'src/miss-ledger.ts',
+        // Added with the module: the term marginal ledger, which is the only reading in this programme that answers
+        // "what does this implementation contribute" in the units the target is measured in. Its whole value is the
+        // distinction between a term that is absent, one that is measured and cannot decide, one that buys ties, and
+        // one that decides — so `term-marginal.test.ts` asserts each of the four by name, plus the score identity that
+        // makes every marginal a property of the engine rather than of this module.
+        'src/term-marginal.ts',
+        // Added with the module: the reader both pool instruments share. It is measured because a reader that dropped
+        // a candidate or read an unmeasured weight as zero would move the denominator of every published number while
+        // leaving the surface intact, and `term-dump.test.ts` asserts each refusal by the line it names.
+        'src/term-dump.ts',
+        // Added with the module: the first competitor's theorem, measured on our own pool. The three modes, the
+        // additive base and both folds are asserted, and the refusals are the test — a candidate with one axis
+        // measured is excluded rather than scored zero, and a case whose whole pool lacks an axis is `undecided`.
+        'src/conjunctive-score.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
