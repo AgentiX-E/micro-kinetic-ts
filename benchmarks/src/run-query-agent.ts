@@ -510,9 +510,17 @@ async function main(): Promise<void> {
     maxToolCalls: args.budget.maxToolCalls,
     seed: args.seed,
     gate: args.gate,
+    // The EFFECTIVE fallback, not the flag: `--fallback seed` with `--seed none` settles on nothing, and a record that
+    // printed the flag would say a free arm had a prior. This is the field iteration 346 needed and did not have.
+    fallback: args.fallback === 'seed' ? args.seed : args.fallback,
+    resolve: args.resolve,
     schedule: args.schedule,
     fleetOrder: args.fleetOrder,
     evidenceOrder: args.evidenceOrder,
+    // The harness itself. The instruction the model reads is a function of this tree, so two artifacts from different
+    // commits are two instruments — GitHub sets `GITHUB_SHA` on every job, and a local run says `null` rather than
+    // inventing a revision from a dirty working copy.
+    revision: process.env.GITHUB_SHA ?? null,
   });
   writeFileSync(`${args.out}.meta.json`, `${JSON.stringify(meta, null, 2)}\n`);
 
@@ -527,8 +535,8 @@ async function main(): Promise<void> {
   console.log(
     `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
-      `gate ${args.gate}, fallback ${fallbackLabel}, schedule ${args.schedule}, fleet ${args.fleetOrder}, ` +
-      `onset ${args.evidenceOrder}`,
+      `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
+      `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, revision ${meta.revision ?? 'unrecorded'}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,

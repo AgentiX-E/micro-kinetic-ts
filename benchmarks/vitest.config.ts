@@ -198,6 +198,14 @@ export default defineConfig({
         // the refusals are the test: a clock that ends before it starts throws rather than writing a negative
         // duration, and the four flags collapse to `free` or to a `+`-joined list a diff can show.
         'src/run-metadata.ts',
+        // Added with the module: the gate a paired delta has to pass before it is a measurement. The record above says
+        // WHICH configuration an artifact is; this one refuses to compare two artifacts that differ outside the axis
+        // the caller names — the check that would have stopped a `gate contrast, fallback engine, resolve edge-novel`
+        // artifact from being read as the same "free arm" as a bare one, and a 236-case configuration delta from being
+        // published as model drift. Its refusals are the test (a model, a budget, a revision, an absent flag), and so
+        // are the two statistics: the exact conditional binomial, and the continuity-corrected chi-square whose 0.243
+        // for 22 against 14 is the figure this programme already published.
+        'src/arm-comparison.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

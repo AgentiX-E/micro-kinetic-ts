@@ -10413,3 +10413,39 @@ effect looks like. **Reopened:** the presentation axis, with its strongest form 
 carries the retraction; the arithmetic is right and the object is wrong). **Unchanged:** 344's within-run findings, the
 98.33 %-was-a-hits-stratum correction, the 1.61 / 2.23 pp ceilings, both guards, and the rule that a control is the free
 arm dispatched in the same batch.
+
+### 347 The two files were never the same arm — a 244-case gap that is 186 configurations and 58 instructions
+
+**The reading that ends the drift.** 346 compared two artifacts it called *the free arm*. They ran different harnesses.
+The 2026-11-22 artifact (run `45085062340`, arm 00:26–00:58Z) ran `gate contrast, fallback engine, resolve edge-novel`
+and its own rows say **287 of its 532 sampled cases were answered by something other than the model** — 155 by the
+prior, 71 by the entry-prior rule, 61 by the interface witness. The 2026-11-25 artifact (run `45519251447`) ran all
+three at `none` and answered **532 of 532** from the model. Neither record named `fallback` or `resolve`: both read
+`free`-plus-`gate=contrast`, and the two fields that decide the comparison were absent from the file written to make
+comparisons safe.
+
+**The decomposition, on the same 532 ids.** `model` 245 cases: 180 → 122. `prior` 155: 105 → 40. `entry` 71: 68 → 2.
+`interface` 61: 61 → 6. So **186 of the 244 cases were never a model answer in either run** (the 287 non-model rows:
+234 right then, 48 right now), and the model's own 245 lose 58. Among those 245, the 139 whose answer string is
+identical are **correct in 139 of 139** in both runs — zero disagreements — and the 106 that changed are the cases where
+the final turn differs: 589 of the old run's 1 422 investigations ended on the round cap (`stop: rounds`) because a
+fallback existed and nothing forced an answer, while today's loop tells the model on its last turn that an unanswered
+case scores zero.
+
+**Reversed.** The drift, its "level 174 ± 6", the claim that 414 may not be compared with anything current, and the
+retraction of the standing — `1 328 / 1 422 = 93.39 %` is a **pipeline** reading and a bare arm cannot speak to it.
+**Still invalid, for the corrected reason:** 342b's −43 pp and 343's −38.53 pp compared a bare arm to a pipeline
+control. **Still standing:** 346's same-day **+31 shortlist** (bare against bare, 16 vs 47, p < 0.001); 344's
+within-run findings; 341's 98.33 %-was-a-hits-stratum correction and the 1.61 / 2.23 pp ceilings. **Restated standing:**
+the 11-22 pipeline artifact is **1 287 / 1 422 = 90.51 %** (repairs 153, breaks 22, precision 0.874, ¥20.87), and the
+published 93.39 % adds two deterministic guards over it (+50 first hop, +20 engine certainty). The model's marginal
+contribution to the pipeline is **+131 cases over the engine alone**.
+
+**Shipped.** `run-metadata.ts` now **requires** `fallback` and `resolve` and records `revision` (`GITHUB_SHA`);
+`arm-comparison.ts` refuses a pairing whose two records differ outside the declared axis (model, budget, revision, and
+any `arms` key — an absent flag is a difference, not a default) and prints both McNemar forms, the exact conditional
+binomial and the continuity-corrected chi-square the published 0.243 comes from; `run-arm-comparison.ts` exits 1 rather
+than printing a table beside a warning; `benchmark-agentic.yml` gains `query_control=free`, which runs the control in
+the **same job** with the harness flags forwarded and the three presentation flags omitted, and derives the comparison
+axis from the dispatch. The `.meta.json` files were also written and **never uploaded** until now. Full record:
+`arm-configuration-347.md`.

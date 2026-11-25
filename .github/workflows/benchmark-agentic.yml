@@ -170,6 +170,10 @@ on:
         description: "Whether `TOOL fleet` prints the pipeline's own first five candidates beside the case's surprises: `engine` = a section appended to the fleet read, names only, in the engine's order, capped at the five calls the loop can execute; empty = the fleet read every published number was taken under. This is NOT a seed and NOT a schedule: the instruction stays byte-identical to the free arm's, so the only difference between the two arms is a section of a tool's OUTPUT. That property is the whole point — iteration 342b measured four appended prompt lines costing −43 pp while the tool those lines advertised was never called, so the next intervention changes what an investigation can SEE without changing what it is TOLD. It costs nothing: no extra call, no extra round, no extra prompt token. docs/schedule-dispatch-342.md §8"
       query_evidence_order:
         description: "Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count: `onset` = one field appended to each `TOOL metric` line (`err=+2s/7`, `err=-` when the service logged nothing); empty = the metric read every published number was taken under. This is the fourth arm of the `fleet`/`schedule` family and the only one that carries NO ranking: iteration 344 found the largest block of the shortlist arm's loss (49 %) on cases where the arm's behaviour was unchanged — the engine's misses, where neither arm queried the culprit and the free arm still answered 52.8 % against the shortlist arm's 6.3 % — and `TOOL logs`, the tool that carries the lines themselves, is opened in 0.44 of the five calls per case. A timestamp can be weighed against the model's own order; a list of names replaces it. No call, no round, no prompt token. docs/onset-channel-345.md"
+      query_control:
+        description: "Run this dispatch's CONTROL in the same job and print the paired comparison: `free` = the same runner, the same sample, minutes apart, with the three PRESENTATION flags (`query_schedule`, `query_fleet_order`, `query_evidence_order`) at their default and every HARNESS flag (`query_seed`, `query_gate`, `query_fallback`, `query_resolve`) exactly as dispatched, writing `query-agent.control.ndjson` beside the arm. It doubles the dispatch's token cost, and it is the only form in which a delta is an arm effect. Iteration 346 published a 236-case \"model drift\" from exactly this comparison done wrong: the 2026-11-22 artifact ran `gate contrast, fallback engine` with the resolvers on and settled 287 of its 532 sampled cases WITHOUT the model, the 2026-11-25 artifact ran all three off and answered every case from the model, and 186 of the 244-case gap was never a model answer in either run. The comparison step refuses to print a delta when the two records differ outside the presentation axis, which is the check that would have caught it. docs/arm-configuration-347.md"
+        required: false
+        default: ''
       topology_brief:
         description: "Carry a corpus topology brief in the nomination prompt: `auto` = derive it from this corpus's own call graphs (empty = off; any other value is refused, because a hand-written document is a different arm)"
         required: false
@@ -437,6 +441,76 @@ jobs:
             "${ONSET_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.txt
 
+      # ── The control, in the SAME job ──
+      #
+      #   Every arm this programme has refused since 342b was refused against a control dispatched on another day, under
+      #   another configuration, or both. 346 is the cost: a 236-case "drift" that was `gate contrast, fallback engine`
+      #   plus the resolvers on one side and all three off on the other, with 186 of the 244 cases never a model answer
+      #   in either file.
+      #
+      #   The fix is not care, it is distance: this step runs the SAME runner on the SAME sample minutes later. The
+      #   HARNESS flags (`seed`, `gate`, `fallback`, `resolve`) are forwarded exactly as dispatched, because they are
+      #   the product's decisions and not the axis; the three PRESENTATION flags are omitted, because they are the
+      #   axis. The comparison step below then refuses the pairing outright if the two records disagree anywhere else.
+      - name: Free-investigation control (same batch)
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample != '' && inputs.query_control == 'free'
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          CONTROL_BUDGET=()
+          if [ -n "${{ inputs.query_max_rounds }}" ]; then
+            CONTROL_BUDGET+=(--max-rounds "${{ inputs.query_max_rounds }}")
+          fi
+          if [ -n "${{ inputs.query_max_tool_calls }}" ]; then
+            CONTROL_BUDGET+=(--max-tool-calls "${{ inputs.query_max_tool_calls }}")
+          fi
+          CONTROL_SEED=()
+          if [ -n "${{ inputs.query_seed }}" ]; then
+            CONTROL_SEED+=(--seed "${{ inputs.query_seed }}")
+          fi
+          CONTROL_HARNESS=()
+          if [ -n "${{ inputs.query_gate }}" ]; then
+            CONTROL_HARNESS+=(--gate "${{ inputs.query_gate }}")
+          fi
+          if [ -n "${{ inputs.query_fallback }}" ]; then
+            CONTROL_HARNESS+=(--fallback "${{ inputs.query_fallback }}")
+          fi
+          if [ -n "${{ inputs.query_resolve }}" ]; then
+            CONTROL_HARNESS+=(--resolve "${{ inputs.query_resolve }}")
+          fi
+          pnpm exec tsx benchmarks/src/run-query-agent.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --verdicts artifacts/agentic/per-case.ndjson \
+            --out artifacts/agentic/query-agent.control.ndjson \
+            --model "${{ inputs.model }}" \
+            --sample-misses "${{ inputs.query_agent_sample }}" \
+            --sample-correct "${{ inputs.query_agent_sample }}" \
+            "${CONTROL_BUDGET[@]}" \
+            "${CONTROL_SEED[@]}" \
+            "${CONTROL_HARNESS[@]}" \
+            --concurrency 6 2>&1 | tee artifacts/agentic/query-agent.control.txt
+
+      - name: The arm against its own control
+        if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample != '' && inputs.query_control == 'free'
+        run: |
+          set -o pipefail
+          # The axis is DERIVED from the dispatch rather than typed, so it cannot name a flag that did not move and
+          # cannot omit one that did.
+          AXIS=""
+          if [ -n "${{ inputs.query_schedule }}" ]; then AXIS="${AXIS},schedule"; fi
+          if [ -n "${{ inputs.query_fleet_order }}" ]; then AXIS="${AXIS},fleet"; fi
+          if [ -n "${{ inputs.query_evidence_order }}" ]; then AXIS="${AXIS},onset"; fi
+          AXIS="${AXIS#,}"
+          pnpm exec tsx benchmarks/src/run-arm-comparison.ts \
+            --first artifacts/agentic/query-agent.control.ndjson \
+            --second artifacts/agentic/query-agent.ndjson \
+            --first-meta artifacts/agentic/query-agent.control.ndjson.meta.json \
+            --second-meta artifacts/agentic/query-agent.ndjson.meta.json \
+            --axis "$AXIS" \
+            --first-label "control ($AXIS off)" \
+            --second-label "arm ($AXIS on)" 2>&1 | tee artifacts/agentic/query-comparison.txt
+
       - name: Say why the free-investigation arm did not run
         if: env.HAS_MODEL_KEY != 'true' && inputs.query_agent_sample != ''
         run: |
@@ -495,6 +569,11 @@ jobs:
             artifacts/agentic/manifest.json
             artifacts/agentic/query-agent.ndjson
             artifacts/agentic/query-agent.txt
+            artifacts/agentic/query-agent.control.ndjson
+            artifacts/agentic/query-agent.control.ndjson.meta.json
+            artifacts/agentic/query-agent.control.txt
+            artifacts/agentic/query-agent.ndjson.meta.json
+            artifacts/agentic/query-comparison.txt
             artifacts/agentic/channel-profiles.ndjson
             artifacts/agentic/channel-labels.json
             artifacts/agentic/channel-split.txt

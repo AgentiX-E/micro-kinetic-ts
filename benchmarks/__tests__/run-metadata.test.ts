@@ -37,6 +37,11 @@ describe('run metadata', () => {
     evidenceOrder: 'none' as const,
     seed: 'none' as const,
     gate: 'none' as const,
+    // Required rather than optional, and required on purpose: these two fields are the ones whose absence from the
+    // record let a `gate contrast + fallback engine + resolve edge-novel` artifact be compared with a bare arm and the
+    // difference published as model drift. A field the compiler demands is a field no future runner can forget.
+    fallback: 'none' as const,
+    resolve: 'none',
   };
 
   it('records when the run happened, because a row cannot', () => {

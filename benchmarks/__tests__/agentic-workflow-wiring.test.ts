@@ -953,3 +953,91 @@ describe('the census workflow, which exists so a walk does not pay for an engine
     expect(census).toContain('CI=false pnpm build');
   });
 });
+
+/**
+ * The control that has to travel with the arm.
+ *
+ * Every arm this programme refused between 342b and 346 was refused against a control taken on another day, under
+ * another configuration, or both — and 346 is what that costs: a **236-case "model drift"** whose two files ran
+ * `gate contrast, fallback engine` with the resolvers on one side and all three off on the other. 186 of the 244-case
+ * gap was never a model answer in either run. Nothing in either artifact said so, because `fallback` and `resolve`
+ * were not in the record.
+ *
+ * The fix is distance, not care: the control runs in the same job, on the same sample, minutes later. These assertions
+ * are on the workflow text because the failure mode is a MISSING OR EXTRA LINE — a control step that forwarded the
+ * arm's presentation flag would be the arm twice, and one that dropped a harness flag would be 346 again.
+ */
+describe('the arm carries its own control', () => {
+  /** One step's block, from its `- name:` to the next `- name:` at the same depth. */
+  function step(name: string): string {
+    const start = WORKFLOW_CODE.indexOf(`- name: ${name}`);
+    expect(start).toBeGreaterThan(-1);
+    const next = WORKFLOW_CODE.indexOf('\n      - name: ', start);
+    return WORKFLOW_CODE.slice(start, next === -1 ? undefined : next);
+  }
+
+  const control = step('Free-investigation control (same batch)');
+  const comparison = step('The arm against its own control');
+
+  it('declares the input, so the control is a dispatch anybody can state', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_control');
+  });
+
+  it('runs the same runner on the same sample, and writes a different file', () => {
+    expect(control).toContain('tsx benchmarks/src/run-query-agent.ts');
+    expect(control).toContain('--out artifacts/agentic/query-agent.control.ndjson');
+    expect(control).toContain('--sample-misses "${{ inputs.query_agent_sample }}"');
+    expect(control).toContain('--sample-correct "${{ inputs.query_agent_sample }}"');
+    // The arm's own artifact is not overwritten: a control that wrote to the same path would leave one file where a
+    // reader expected two and a comparison of the file with itself.
+    expect(control).not.toContain('--out artifacts/agentic/query-agent.ndjson');
+  });
+
+  it('forwarding the harness and omitting the presentation is the whole contract', () => {
+    // The harness flags are the product's decisions; they must be identical on both sides or the delta is not the arm.
+    for (const flag of ['--gate', '--fallback', '--resolve', '--seed']) {
+      expect(control).toContain(flag);
+    }
+    // The presentation flags ARE the axis, and `run-arm-comparison` refuses the pairing if they leak into the control
+    // without being declared — so the control must not carry them at all.
+    for (const flag of ['--schedule', '--fleet-order', '--evidence-order']) {
+      expect(control).not.toContain(flag);
+    }
+  });
+
+  it('compares the two artifacts through the record that says what they are', () => {
+    expect(comparison).toContain('tsx benchmarks/src/run-arm-comparison.ts');
+    expect(comparison).toContain('--first artifacts/agentic/query-agent.control.ndjson');
+    expect(comparison).toContain('--second artifacts/agentic/query-agent.ndjson');
+    // Both metadata files, because the refusal lives there: two row files alone cannot say whether they were measured
+    // on the same model, the same budget, the same revision or the same harness.
+    expect(comparison).toContain(
+      '--first-meta artifacts/agentic/query-agent.control.ndjson.meta.json',
+    );
+    expect(comparison).toContain('--second-meta artifacts/agentic/query-agent.ndjson.meta.json');
+    // The axis is derived from the dispatch rather than typed, so it cannot name a flag that did not move.
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_schedule }}" ]; then AXIS="${AXIS},schedule"; fi',
+    );
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_fleet_order }}" ]; then AXIS="${AXIS},fleet"; fi',
+    );
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_evidence_order }}" ]; then AXIS="${AXIS},onset"; fi',
+    );
+    expect(comparison).toContain('--axis "$AXIS"');
+  });
+
+  it('uploads both records beside both artifacts, because a comparison nobody can re-read must be re-bought', () => {
+    // The `meta.json` files were written last iteration and never uploaded: the record existed and no artifact
+    // carried it, which is the same failure one level down.
+    for (const file of [
+      'artifacts/agentic/query-agent.control.ndjson',
+      'artifacts/agentic/query-agent.control.ndjson.meta.json',
+      'artifacts/agentic/query-agent.ndjson.meta.json',
+      'artifacts/agentic/query-comparison.txt',
+    ]) {
+      expect(WORKFLOW).toContain(file);
+    }
+  });
+});

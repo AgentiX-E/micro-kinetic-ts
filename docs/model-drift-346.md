@@ -1,5 +1,17 @@
 # The arm that was not an arm: a 236-case drift between two days, and three published signs that must flip
 
+> **RETRACTED IN PART — 2026-11-25, iteration 347.** The two files this entry compares were never the same arm. The
+> 2026-11-22 artifact ran `gate contrast, fallback engine` with the resolvers on and settled **287 of its 532 sampled
+> cases without the model at all**; the 2026-11-25 artifact ran all three off and answered every case from the model.
+> **186 of the 244-case gap was never a model answer in either run**, and on the 139 cases where both runs produced the
+> same answer, correctness agrees on 139 of 139. Nothing about the supplier moved: what this entry reads as model drift
+> is a configuration delta plus one final-turn instruction, and both are in this repository. Withdrawn with it — the
+> "level around 174 ± 6", the claim that 414 may not be compared with anything current, and the retraction of the
+> standing, because `1 328 / 1 422 = 93.39 %` is a **pipeline** reading and a bare arm cannot speak to it. What still
+> stands: the same-day **+31 for the shortlist** (bare against bare), and the provenance lesson, which is why
+> `run-metadata.ts` now requires `fallback` and `resolve` and records `revision`. Full record:
+> `arm-configuration-347.md`.
+
 This entry exists because a run was read instead of trusted. Iteration 345 dispatched an arm, the job log said
 `onset onset`, the flag parsed, 532 rows were written — and `err=` appears in **0 of 532** transcripts. The parameter
 was never passed. `runQueryAgent` had gained an eleventh argument and its one call site still passed ten, so the arm
