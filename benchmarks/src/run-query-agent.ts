@@ -17,9 +17,10 @@ import { FSE26Loader } from '../../packages/kinetic/src/benchmarks/index.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
 import {
-  DEFAULT_QUERY_BUDGET,
   buildTelemetry,
+  DEFAULT_QUERY_BUDGET,
   engineOpinionOf,
+  floorReadingNote,
   gateTableCaveat,
   netBetween,
   onPriorCone,
@@ -618,6 +619,10 @@ async function main(): Promise<void> {
     `repairs ${summary.repairs} · breaks ${summary.breaks} · precision ` +
       `${summary.precision === null ? 'n/a' : summary.precision.toFixed(3)}`,
   );
+  // Printed BESIDE the ratio rather than in the docs, because the ratio is the line a reader quotes. A floored case can
+  // be neither a repair nor a break, so the population behind these three numbers shrank.
+  const floorNote = floorReadingNote(args.certaintyFloor);
+  if (floorNote !== null) console.log(floorNote);
   // The two strata are the two halves of the reading: what the arm KEPT of what it was given, and what it FOUND of
   // what it was not. One number called accuracy averages them and can hide either.
   console.log(

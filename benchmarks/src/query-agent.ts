@@ -2584,6 +2584,27 @@ export interface EngineOpinion {
 export const ENGINE_CERTAINTY_MARGIN: number | null = 1.5;
 
 /**
+ * The sentence a run at a certainty floor has to print beside its repairs and breaks.
+ *
+ * A floored case is settled by the engine, so it is never a repair and never a break — by construction, not by
+ * measurement. With a floor on, `repairs / (repairs + breaks)` is therefore computed over the cases that still called
+ * the model: the population SHRANK, and the ratio is not comparable with an unfloored run's. That is the class of error
+ * iteration 347 published as a 236-case "model drift" — two files that were never the same arm — and the cheapest place
+ * to stop it is where the number is printed.
+ *
+ * @param floor - The dispatched certainty floor.
+ * @returns A caveat to print after the precision line, or `null` when no floor is on and there is nothing to caveat.
+ */
+export function floorReadingNote(floor: number): string | null {
+  if (!(floor > 0)) return null;
+  return (
+    `floor ${floor}: repairs, breaks and precision cover only the cases that still called the model — ` +
+    'a floored case is settled by the engine and can be neither — so they are NOT comparable with a run at floor 0. ' +
+    'The comparable line is the corpus accuracy and the cost stratum `certainty`'
+  );
+}
+
+/**
  * The engine's opinion, taken from a verdict row's own two columns.
  *
  * One owner for the derivation, because the sign is not obvious: the columns describe the pair the row PUBLISHED, and

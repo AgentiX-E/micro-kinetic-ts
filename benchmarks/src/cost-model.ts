@@ -47,6 +47,13 @@ export interface CostRow {
   readonly datapack: string;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  /**
+   * Prompt tokens the endpoint reported as cache hits, or absent on an artifact written before the column existed.
+   *
+   * Absent is not zero: it means the run PROBABLY had a cache and the record cannot say how much, which is a different
+   * statement from a run that hit nothing.
+   */
+  readonly cacheHitTokens?: number | null;
   readonly answeredBy: string | null;
   readonly correct: boolean;
   readonly engineWinner: string | null;
@@ -71,6 +78,16 @@ export interface CostAudit {
   readonly outputTokens: number;
   /** The fraction of the bill that is prompt tokens. The number every saving has to move. */
   readonly inputShare: number;
+  /**
+   * Prompt tokens the endpoint served from cache, or `null` when no row declares the column.
+   *
+   * `null` and `0` are different readings and the audit keeps them apart: a null says this artifact cannot state its
+   * cache behaviour, a zero says the cache served nothing. Conflating them is how iteration 349 withdrew a 75 %
+   * saving on the strength of a probe that measured a 191-token prompt instead of a workload.
+   */
+  readonly cacheHitTokens: number | null;
+  /** `cacheHitTokens / inputTokens`, or `null` when unrecorded. */
+  readonly cacheHitShare: number | null;
   readonly total: number;
   readonly perCase: number;
   readonly strata: readonly CostStratum[];
@@ -126,6 +143,12 @@ function assertRates(rates: TokenRates): void {
       `outputPerMillion must be zero or positive, got ${String(rates.outputPerMillion)}`,
     );
   }
+  // A hit that costs MORE than a miss is not a tariff, it is a typo that would invert every saving in the report.
+  if (rates.cacheHitPerMillion !== undefined && !(rates.cacheHitPerMillion >= 0)) {
+    throw new Error(
+      `cacheHitPerMillion must be zero or positive, got ${String(rates.cacheHitPerMillion)}`,
+    );
+  }
 }
 
 /**
@@ -146,14 +169,34 @@ export function byCostThenName(
   return 0;
 }
 
-/** The cost of a token pair, in CNY. */
+/**
+ * The cost of a token triple, in CNY.
+ *
+ * `promptTokens` is the endpoint's own total input, and `cacheHitTokens` is a SUBSET of it — `prompt_cache_hit_tokens`
+ * plus `prompt_cache_miss_tokens` equals `prompt_tokens` in the endpoint's `usage`. So the miss count is the
+ * difference, floored at zero: a record whose hit column exceeded its prompt column would be corrupt, and billing the
+ * difference as negative input would turn a corrupt row into a discount.
+ *
+ * A rate table with no hit price bills every prompt token at the miss price. That is the no-cache bound, and it is the
+ * default because a cheaper number nobody named must not appear in a report.
+ */
 export function costOf(
-  tokens: { readonly promptTokens: number; readonly completionTokens: number },
+  tokens: {
+    readonly promptTokens: number;
+    readonly completionTokens: number;
+    readonly cacheHitTokens?: number | null;
+  },
   rates: TokenRates = DEEPSEEK_CHAT_RATES,
 ): number {
   assertRates(rates);
+  const hit =
+    rates.cacheHitPerMillion === undefined
+      ? 0
+      : Math.min(Math.max(tokens.cacheHitTokens ?? 0, 0), Math.max(tokens.promptTokens, 0));
+  const miss = Math.max(tokens.promptTokens - hit, 0);
   return (
-    (tokens.promptTokens * rates.inputPerMillion +
+    (miss * rates.inputPerMillion +
+      hit * (rates.cacheHitPerMillion ?? rates.inputPerMillion) +
       tokens.completionTokens * rates.outputPerMillion) /
     1_000_000
   );
@@ -194,13 +237,34 @@ export function auditCost(
     .sort(byCostThenName);
   const inputTokens = rows.reduce((sum, row) => sum + row.promptTokens, 0);
   const outputTokens = rows.reduce((sum, row) => sum + row.completionTokens, 0);
-  const inputCost = (inputTokens * rates.inputPerMillion) / 1_000_000;
-  const total = inputCost + (outputTokens * rates.outputPerMillion) / 1_000_000;
+  const recorded = rows.filter(
+    (row) => row.cacheHitTokens !== undefined && row.cacheHitTokens !== null,
+  );
+  const cacheHitTokens =
+    recorded.length === 0
+      ? null
+      : recorded.reduce((sum, row) => sum + (row.cacheHitTokens ?? 0), 0);
+  // Through `costOf` and not through the two column totals: the cache split is per ROW, and a total that multiplied
+  // the summed prompt tokens by the miss price would report the no-cache bill beside strata priced with the cache —
+  // two arithmetics in one table, which is the shape of every retraction in this file's history.
+  const inputCost = rows.reduce((sum, row) => {
+    const hit = Math.min(Math.max(row.cacheHitTokens ?? 0, 0), Math.max(row.promptTokens, 0));
+    const miss = Math.max(row.promptTokens - hit, 0);
+    return (
+      sum +
+      (miss * rates.inputPerMillion + hit * (rates.cacheHitPerMillion ?? rates.inputPerMillion)) /
+        1_000_000
+    );
+  }, 0);
+  const total = rows.reduce((sum, row) => sum + costOf(row, rates), 0);
   return {
     cases: rows.length,
     inputTokens,
     outputTokens,
     inputShare: total === 0 ? 0 : inputCost / total,
+    cacheHitTokens,
+    cacheHitShare:
+      cacheHitTokens === null || inputTokens === 0 ? null : cacheHitTokens / inputTokens,
     total,
     perCase: total / rows.length,
     strata,

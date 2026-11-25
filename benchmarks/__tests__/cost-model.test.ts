@@ -33,17 +33,23 @@ function row(over: Partial<CostRow> = {}): CostRow {
 }
 
 describe('the rate table', () => {
-  it('carries the served model at 1.87 times less than the table every artifact was priced with', () => {
-    // Not a discount the programme collected: a correction to an estimate. The endpoint serves `deepseek-flash` at
-    // 0.15 / 0.60 USD per million, and 2 / 8 CNY is 1.87x that after conversion — so every figure this repository has
-    // published as "CNY" is an upper bound, and the ratio is stated here so it cannot drift.
-    expect(DEEPSEEK_CHAT_RATES.inputPerMillion / DEEPSEEK_FLASH_RATES.inputPerMillion).toBeCloseTo(
-      1.87,
-      1,
+  it('is the same tariff at two time tiers, and the older table is the PEAK one', () => {
+    // Iteration 349 read the 1.87× as a conversion error. It is not: the published CNY card lists 1 / 4 off-peak and
+    // 2 / 8 at peak, exactly double, so the table every artifact was priced with is a real tariff and the runs behind
+    // those figures were mostly taken under the other one. Stated as a ratio so the two columns cannot drift apart.
+    expect(DEEPSEEK_CHAT_RATES.inputPerMillion / DEEPSEEK_FLASH_RATES.inputPerMillion).toBe(2);
+    expect(DEEPSEEK_CHAT_RATES.outputPerMillion / DEEPSEEK_FLASH_RATES.outputPerMillion).toBe(2);
+    expect(DEEPSEEK_CHAT_RATES.cacheHitPerMillion! / DEEPSEEK_FLASH_RATES.cacheHitPerMillion!).toBe(
+      2,
     );
-    expect(
-      DEEPSEEK_CHAT_RATES.outputPerMillion / DEEPSEEK_FLASH_RATES.outputPerMillion,
-    ).toBeCloseTo(1.87, 1);
+  });
+
+  it('prices a cache hit at 1/50th of a miss, which is why a two-number table cannot price a run', () => {
+    // The ratio the whole report turns on: 81.25 % of one run's prompt tokens were hits, and a table that billed them
+    // at the miss price overstated that run by 4.9×.
+    expect(DEEPSEEK_FLASH_RATES.inputPerMillion / DEEPSEEK_FLASH_RATES.cacheHitPerMillion!).toBe(
+      50,
+    );
   });
 
   it('is one table, re-exported rather than restated', () => {
@@ -375,5 +381,68 @@ describe('byCostThenName', () => {
     // Two strata cannot share a name inside one audit, but a comparator that returned a non-zero for equal input
     // would make `sort` unstable across engines — the defect that costs a reader the ability to diff two reports.
     expect(byCostThenName({ cost: 1, by: 'x' }, { cost: 1, by: 'x' })).toBe(0);
+  });
+});
+
+describe('the cache, which is 81 % of the tokens and 7 % of the bill', () => {
+  it('bills a hit at the hit price and a miss at the miss price', () => {
+    // 1 000 prompt tokens of which 800 hit: 200 at 1.00 + 800 at 0.02 = 216 micro-CNY, against 1 000 at the miss price.
+    const priced = costOf(
+      { promptTokens: 1_000, completionTokens: 0, cacheHitTokens: 800 },
+      DEEPSEEK_FLASH_RATES,
+    );
+    expect(priced).toBeCloseTo(0.000216, 9);
+    expect(priced).toBeLessThan(
+      costOf({ promptTokens: 1_000, completionTokens: 0 }, DEEPSEEK_FLASH_RATES),
+    );
+  });
+
+  it('bills every prompt token at the miss price when the table states no hit price', () => {
+    // The no-cache bound, and the reason the hit price is opt-in: a cheaper number nobody named must not appear.
+    const rates = { inputPerMillion: 1, outputPerMillion: 4 };
+    expect(
+      costOf({ promptTokens: 1_000, completionTokens: 0, cacheHitTokens: 800 }, rates),
+    ).toBeCloseTo(0.001, 9);
+  });
+
+  it('floors a corrupt hit count at the prompt count instead of turning it into a discount', () => {
+    // A record whose hit column exceeds its prompt column is corrupt; billing the difference as negative input would
+    // report a refund.
+    expect(
+      costOf(
+        { promptTokens: 10, completionTokens: 0, cacheHitTokens: 5_000 },
+        DEEPSEEK_FLASH_RATES,
+      ),
+    ).toBeCloseTo(10 * 0.02 * 1e-6, 12);
+    expect(
+      costOf({ promptTokens: -5, completionTokens: 0, cacheHitTokens: 3 }, DEEPSEEK_FLASH_RATES),
+    ).toBe(0);
+  });
+
+  it('refuses a negative hit price, which would invert every saving in the report', () => {
+    expect(() =>
+      costOf(
+        { promptTokens: 1, completionTokens: 0 },
+        { inputPerMillion: 1, outputPerMillion: 1, cacheHitPerMillion: -1 },
+      ),
+    ).toThrow(/cacheHitPerMillion/);
+  });
+
+  it('reports an unrecorded cache as unknown and a recorded zero as zero', () => {
+    const unrecorded = auditCost([row({ promptTokens: 1_000, completionTokens: 0 })]);
+    expect(unrecorded.cacheHitTokens).toBeNull();
+    expect(unrecorded.cacheHitShare).toBeNull();
+    const zero = auditCost([row({ promptTokens: 1_000, completionTokens: 0, cacheHitTokens: 0 })]);
+    expect(zero.cacheHitTokens).toBe(0);
+    expect(zero.cacheHitShare).toBe(0);
+    const half = auditCost([
+      row({ promptTokens: 1_000, completionTokens: 0, cacheHitTokens: 500 }),
+    ]);
+    expect(half.cacheHitShare).toBeCloseTo(0.5, 9);
+  });
+
+  it('survives an artifact whose only rows are unmeasured, without dividing by zero', () => {
+    const empty = auditCost([row({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 0 })]);
+    expect(empty.cacheHitShare).toBeNull();
   });
 });

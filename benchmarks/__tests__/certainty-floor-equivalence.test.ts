@@ -214,3 +214,23 @@ describe('the floor is a price knob, not a resolver', () => {
     expect(outcome.rounds).toBeGreaterThan(0);
   });
 });
+
+describe('the reading a floored run is allowed to publish', () => {
+  it('says nothing at floor 0, because there is nothing to caveat', async () => {
+    const { floorReadingNote } = await import('../src/query-agent.js');
+    expect(floorReadingNote(0)).toBeNull();
+    // And a negative floor is a typo that the runner refuses; the note does not invent a reading for it.
+    expect(floorReadingNote(-1)).toBeNull();
+  });
+
+  it('names the shrunken population beside the ratio a reader will quote', async () => {
+    const { floorReadingNote } = await import('../src/query-agent.js');
+    const note = floorReadingNote(1.5);
+    expect(note).not.toBeNull();
+    // The three claims a reader needs, each of which was a published error once: the stratum, the incomparability, and
+    // the line that IS comparable.
+    expect(note).toContain('floor 1.5');
+    expect(note).toContain('NOT comparable');
+    expect(note).toContain('certainty');
+  });
+});

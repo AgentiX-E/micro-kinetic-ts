@@ -55,7 +55,9 @@ function parse(argv: readonly string[]): Args {
   }
   const artifact = map.get('artifact') ?? '';
   if (artifact === '') throw new Error('--artifact is required');
-  const floors = (map.get('floors') ?? '0.3,0.5,0.8,0.9,1.0,1.2').split(',').map((one) => {
+  // 1.5 is in the default list because it is the bar the workflow ships: a report that omitted the shipped
+  // configuration would price every floor except the one a reader is about to dispatch.
+  const floors = (map.get('floors') ?? '0.3,0.5,0.8,0.9,1.0,1.2,1.5').split(',').map((one) => {
     const value = Number(one);
     if (!Number.isFinite(value))
       throw new Error(`--floors must be comma-separated numbers, got \`${one}\``);
@@ -67,6 +69,11 @@ function parse(argv: readonly string[]): Args {
     rates: {
       inputPerMillion: number(map, 'input-price', DEEPSEEK_CHAT_RATES.inputPerMillion),
       outputPerMillion: number(map, 'output-price', DEEPSEEK_CHAT_RATES.outputPerMillion),
+      cacheHitPerMillion: number(
+        map,
+        'hit-price',
+        DEEPSEEK_CHAT_RATES.cacheHitPerMillion ?? DEEPSEEK_CHAT_RATES.inputPerMillion,
+      ),
     },
   };
 }
@@ -99,6 +106,11 @@ function readRows(path: string): CostRow[] {
       ...(Object.hasOwn(parsed, 'engineMargin')
         ? { engineMargin: Number(parsed['engineMargin']) }
         : {}),
+      // Same rule as `engineMargin`: absent stays absent, so the audit can tell a file that never recorded the cache
+      // from one that recorded a zero.
+      ...(Object.hasOwn(parsed, 'cacheHitTokens')
+        ? { cacheHitTokens: Number(parsed['cacheHitTokens']) }
+        : {}),
       truth: Array.isArray(parsed['truth']) ? (parsed['truth'] as string[]) : [],
     });
   }
@@ -123,6 +135,15 @@ function report(rows: readonly CostRow[], args: Args): string {
       `the question costs ${(audit.inputTokens / audit.cases).toFixed(0)} tokens a case; the answer costs ${(audit.outputTokens / audit.cases).toFixed(1)}`,
     );
   }
+  // The cache line, printed only when the artifact can speak to it: `null` is "this file cannot say", `0` is "it served
+  // nothing", and a report that showed them the same would repeat iteration 349's withdrawal.
+  lines.push(
+    audit.cacheHitTokens === null
+      ? 'cache: not recorded by this artifact — the bill above is the no-cache bound'
+      : `cache: ${audit.cacheHitTokens.toLocaleString('en-US')} prompt tokens served from cache ` +
+          `(${pct(audit.cacheHitShare ?? 0)} of input) at ${args.rates.cacheHitPerMillion ?? 'the miss'} ` +
+          `per million`,
+  );
   lines.push('');
   lines.push(
     `${'settled by'.padEnd(12)} ${'cases'.padStart(6)} ${'correct'.padStart(8)} ${'CNY'.padStart(8)} ${'per case'.padStart(9)} ${'wasted'.padStart(8)}`,

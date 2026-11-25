@@ -1,48 +1,77 @@
 /**
- * What an endpoint charges, as two numbers.
+ * What an endpoint charges, as three numbers.
  *
  * Kept apart from the audit so a different provider is a different table rather than a different module: the
  * programme's LLM is behind a provider-agnostic boundary, and its PRICES have to be behind one too or the audit
  * silently becomes a DeepSeek audit.
  *
- * ## Why the input rate is the cache-MISS rate
+ * ## Three prices, because the cache is real and it is not a rounding term
  *
- * `deepseek-chat` prices a prompt token at **2 CNY per million** on a cache miss and a fraction of that on a hit.
- * Run `45531140696` spent 20.81 CNY on 10 221 261 prompt and 46 085 completion tokens, which is exactly the miss
- * arithmetic — so **not one prefix was served from cache**, and the audit prices what was actually charged rather
- * than what the cheaper rate would have been. A rate table that quoted the hit price would report a bill 4×
- * smaller than the invoice and make every saving below look unnecessary.
+ * The rate card has a **cache-hit** input price, a **cache-miss** input price, and an output price, and on
+ * `deepseek-flash` the first is **1/50th** of the second — so a table with two numbers cannot price a run. This module
+ * learned that twice, in opposite directions:
+ *
+ *   * iteration 349 concluded from a four-request probe that **the cache serves nothing** — two byte-identical 191-token
+ *     bodies both read `prompt_cache_hit_tokens: 0` — and withdrew 348's 75 % saving on that evidence.
+ *   * iteration 351's acceptance run read **6 204 649 of 7 636 769 prompt tokens as cache hits: 81.25 %**, because a
+ *     real investigation repeats a ~5 800-token system prompt across 1 062 calls and a 191-token probe does not.
+ *
+ * Both readings are correct and the second is the one that prices a workload. What the probe establishes is narrower
+ * than it was published as: **a short prompt does not cache**. Automation that only ever recurs on long, stable
+ * prefixes — which is every agent — hits at 81 %, and the record now proves it per call (`cacheHitTokens`).
+ *
+ * ## The tariff has two time tiers, and the old table was the peak one
+ *
+ * The published CNY card charges, per million tokens:
+ *
+ * | | off-peak | peak |
+ * | --- | -------: | ---: |
+ * | input, cache hit | 0.02 | 0.04 |
+ * | input, cache miss | 1 | 2 |
+ * | output | 4 | 8 |
+ *
+ * Peak is **exactly double**, Monday–Friday 01:00–04:00 and 06:00–10:00 UTC. So the **2 / 8** table every earlier
+ * artifact was priced with is not an estimate and not a conversion error: **it is the peak column**, and the runs it
+ * priced were mostly taken off-peak. That is a cleaner account than 349's "1.87× over-statement", which came from
+ * converting the USD off-peak figures at 7.13 rather than reading the CNY card.
  */
 export interface TokenRates {
-  /** CNY per million prompt tokens, on a cache miss. */
+  /** CNY per million prompt tokens, on a cache MISS. */
   readonly inputPerMillion: number;
   /** CNY per million completion tokens. */
   readonly outputPerMillion: number;
+  /**
+   * CNY per million prompt tokens, on a cache HIT.
+   *
+   * Optional, and its ABSENCE is a deliberate conservative bound rather than an oversight: a table that states only a
+   * miss price bills every prompt token at that price, which is what the invoice would have been with no cache at all.
+   * A reader who wants the cheaper reading has to name the hit price, so the two readings can never be confused.
+   */
+  readonly cacheHitPerMillion?: number;
 }
 
-/** `deepseek-chat`, as invoiced: 2 CNY per million in, 8 per million out. */
-export const DEEPSEEK_CHAT_RATES: TokenRates = { inputPerMillion: 2, outputPerMillion: 8 };
+/**
+ * The peak tariff: 2 / 8 CNY per million, cache hit 0.04.
+ *
+ * Kept as the DEFAULT so that every figure this programme has published stays re-derivable from the artifact that
+ * produced it. It is a real tariff and not a mistake — it is the column that applies between 01:00 and 04:00 and
+ * between 06:00 and 10:00 UTC on weekdays, when several of the runs behind those figures were dispatched.
+ */
+export const DEEPSEEK_CHAT_RATES: TokenRates = {
+  inputPerMillion: 2,
+  outputPerMillion: 8,
+  cacheHitPerMillion: 0.04,
+};
 
 /**
- * `deepseek-flash`, off-peak, at the published USD rates converted at 7.13 — the model this endpoint actually serves.
+ * `deepseek-flash` off-peak — the model this endpoint actually serves, at the tariff most runs are taken under.
  *
- * The probe of 2026-11-25 (`probe-endpoint.yml`, four requests of eight tokens) answered three questions and this
- * table is the third's consequence:
- *
- *   * the key reaches exactly two models, `deepseek-flash` and `deepseek-v4-pro`. **`deepseek-chat` is not among
- *     them** — it was retired, and a request for it is served by `deepseek-flash`, which the response's own `model`
- *     field confirms. Every artifact this programme wrote names a model the endpoint no longer offers;
- *   * the same body sent twice read `prompt_cache_hit_tokens: 0` both times on both models, so a prompt of this shape
- *     does not cache here and the 75 % saving `cost-structure-348.md` lists as open does not exist at any price;
- *   * the published rates are **$0.15 in / $0.60 out per million** off-peak, which at 7.13 is **1.07 / 4.28 CNY** —
- *     against the **2 / 8** this repository has been pricing with since the first arm.
- *
- * ## Which table a reading should use
- *
- * `DEEPSEEK_CHAT_RATES` for anything that has to be comparable with a published figure: every artifact in this
- * programme was priced at 2 / 8, and re-pricing them at the newer table would make a month of reports disagree with
- * each other for a reason that has nothing to do with the arms. `DEEPSEEK_FLASH_RATES` for what the next run will
- * cost. The gap is **1.87×**, and it is a correction to the ESTIMATE and not to any accuracy reading — token counts
- * are the endpoint's own, and the ratio of input to output does not move.
+ * Every number here is on the published CNY card, read rather than converted: 1 / 4 with a 0.02 cache-hit price. The
+ * model name is `deepseek-flash` because that is what `GET /v1/models` returns and what the response's own `model`
+ * field reports; a request naming `deepseek-chat` is still answered, by this model, at this price.
  */
-export const DEEPSEEK_FLASH_RATES: TokenRates = { inputPerMillion: 1.07, outputPerMillion: 4.28 };
+export const DEEPSEEK_FLASH_RATES: TokenRates = {
+  inputPerMillion: 1,
+  outputPerMillion: 4,
+  cacheHitPerMillion: 0.02,
+};
