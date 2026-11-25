@@ -198,7 +198,9 @@ function parseArgs(argv: readonly string[]): Args {
       // Absent unless the dispatch asks, because zero is not a small cap — it is the statement that results are
       // rendered whole, which is what every artifact before iteration 355 did. The 60-character floor keeps a cut from
       // removing the text a tool's own line is made of; a cap smaller than a directive's answer is not a lever.
-      ...(number('result-chars', 0) > 0 ? { resultChars: Math.max(60, number('result-chars', 0)) } : {}),
+      ...(number('result-chars', 0) > 0
+        ? { resultChars: Math.max(60, number('result-chars', 0)) }
+        : {}),
     },
   };
 }

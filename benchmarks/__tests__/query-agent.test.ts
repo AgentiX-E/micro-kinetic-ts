@@ -679,7 +679,10 @@ describe('the cut that enters the transcript, which is the column the bill charg
     // 6.2 M tokens of accumulated history cost 7.3 % because the cache serves them at 1/50th. A front-eliding cap attacks
     // the cheap column and moves the prefix, which loses the cache as well (measured: hits per call 974.7 -> 501.0 for
     // a bill that rose). This cuts the expensive column instead, once, where the block enters.
-    const text = renderTranscript([exchange(1, long(400))], { ...DEFAULT_QUERY_BUDGET, resultChars: 100 });
+    const text = renderTranscript([exchange(1, long(400))], {
+      ...DEFAULT_QUERY_BUDGET,
+      resultChars: 100,
+    });
     expect(text).toContain(long(100));
     expect(text).not.toContain(long(101));
     expect(text).toContain('[cut 300 chars]');
@@ -697,7 +700,10 @@ describe('the cut that enters the transcript, which is the column the bill charg
   });
 
   it('leaves a result that fits alone, and says nothing about a cut that did not happen', () => {
-    const text = renderTranscript([exchange(1, long(100))], { ...DEFAULT_QUERY_BUDGET, resultChars: 100 });
+    const text = renderTranscript([exchange(1, long(100))], {
+      ...DEFAULT_QUERY_BUDGET,
+      resultChars: 100,
+    });
     expect(text).toContain(long(100));
     expect(text).not.toContain('[cut');
   });
@@ -713,8 +719,15 @@ describe('the cut that enters the transcript, which is the column the bill charg
   it('is applied through the prompt, not only in the renderer', () => {
     // The defect iteration 354 paid for: a knob the renderer honours and the prompt never passes. Asserted at the
     // prompt, because that is the string the model is charged for.
-    const prompt = buildUserPrompt(buildTelemetry(makeCase()), [exchange(1, long(400))], undefined, undefined,
-      'none', undefined, { ...DEFAULT_QUERY_BUDGET, resultChars: 60 });
+    const prompt = buildUserPrompt(
+      buildTelemetry(makeCase()),
+      [exchange(1, long(400))],
+      undefined,
+      undefined,
+      'none',
+      undefined,
+      { ...DEFAULT_QUERY_BUDGET, resultChars: 60 },
+    );
     expect(prompt).toContain(long(60));
     expect(prompt).toContain('[cut 340 chars]');
   });
@@ -1183,11 +1196,7 @@ describe('the per-turn prompt, which is a growth curve and not a number', () => 
   it('records a zero for a call the endpoint reported no cache for, rather than leaving the curve short', async () => {
     // A short array would shift every later entry onto the wrong call — a defect that produces a plausible curve, which
     // is the same shape as the shared-array defect above. Absent reads as zero here exactly as it does in the total.
-    const client = countingClient(
-      [6_000, 6_200],
-      ['TOOL fleet', 'ANSWER payment'],
-      [0, 5_800],
-    );
+    const client = countingClient([6_000, 6_200], ['TOOL fleet', 'ANSWER payment'], [0, 5_800]);
     const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
     expect(outcome.turnHitTokens).toHaveLength(outcome.turnTokens.length);
   });
