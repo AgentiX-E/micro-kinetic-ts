@@ -557,6 +557,10 @@ async function main(): Promise<void> {
     fleetOrder: args.fleetOrder,
     evidenceOrder: args.evidenceOrder,
     certaintyFloor: args.certaintyFloor,
+    // Omitted when it is the default, so this run's record compares with every artifact written before the field.
+    ...(args.budget.transcriptChars === DEFAULT_QUERY_BUDGET.transcriptChars
+      ? {}
+      : { transcriptChars: args.budget.transcriptChars }),
     // The harness itself. The instruction the model reads is a function of this tree, so two artifacts from different
     // commits are two instruments — GitHub sets `GITHUB_SHA` on every job, and a local run says `null` rather than
     // inventing a revision from a dirty working copy.

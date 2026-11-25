@@ -41,6 +41,14 @@ export interface RunInputs extends RunArms {
   readonly maxRounds: number;
   readonly maxToolCalls: number;
   /**
+   * The transcript cap this run used, or omitted when it was the harness default.
+   *
+   * Omitted rather than stated for the reason `seed=none` is not named in {@link RunMetadata.arms}: a record that
+   * spelled every default would make every artifact written before the field existed a difference. A cap that is NOT
+   * the default is a different arm — it decides what the model can still see — so it is named in `arms` as well.
+   */
+  readonly transcriptChars?: number;
+  /**
    * The harness's own revision, when the run could name one.
    *
    * The instruction the model reads is a function of the code, so two artifacts from different commits are two
@@ -57,7 +65,12 @@ export interface RunMetadata {
   readonly endedAt: string;
   readonly durationSeconds: number;
   readonly cases: number;
-  readonly budget: { readonly maxRounds: number; readonly maxToolCalls: number };
+  readonly budget: {
+    readonly maxRounds: number;
+    readonly maxToolCalls: number;
+    /** Absent on every record written before iteration 354, and on those whose cap was the default. */
+    readonly transcriptChars?: number;
+  };
   /** `free`, or a `+`-joined list of the arms that are not at their default. */
   readonly arms: string;
   /** The harness revision, or `null` when the run could not name one. */
@@ -97,13 +110,20 @@ export function runMetadataOf(inputs: RunInputs): RunMetadata {
   if (inputs.fleetOrder !== 'none') named.push(`fleet=${inputs.fleetOrder}`);
   if (inputs.evidenceOrder !== 'none') named.push(`onset=${inputs.evidenceOrder}`);
   if (inputs.certaintyFloor > 0) named.push(`floor=${String(inputs.certaintyFloor)}`);
+  // After the floor, because both are pre-call settings and the transcript is the one the model's own window sees.
+  if (inputs.transcriptChars !== undefined)
+    named.push(`transcript=${String(inputs.transcriptChars)}`);
   return {
     model: inputs.model,
     startedAt: inputs.startedAt,
     endedAt: inputs.endedAt,
     durationSeconds: Math.round((ended - started) / 1_000),
     cases: inputs.cases,
-    budget: { maxRounds: inputs.maxRounds, maxToolCalls: inputs.maxToolCalls },
+    budget: {
+      maxRounds: inputs.maxRounds,
+      maxToolCalls: inputs.maxToolCalls,
+      ...(inputs.transcriptChars === undefined ? {} : { transcriptChars: inputs.transcriptChars }),
+    },
     arms: named.length === 0 ? 'free' : named.join('+'),
     revision: inputs.revision ?? null,
   };

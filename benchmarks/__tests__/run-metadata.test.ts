@@ -45,6 +45,17 @@ describe('run metadata', () => {
     resolve: 'none',
   };
 
+  it('states the transcript cap when it is not the harness default, and stays silent when it is', () => {
+    // A cap changes what the model can still SEE, so two runs that differ only in it are two arms — the same argument
+    // the floor's banner line makes. It is named only when it is not the default, for the reason `seed=none` is not
+    // named: a record that spelled every default would make every old artifact a difference.
+    expect(runMetadataOf(base).budget.transcriptChars).toBeUndefined();
+    const capped = runMetadataOf({ ...base, transcriptChars: 900 });
+    expect(capped.budget.transcriptChars).toBe(900);
+    expect(capped.arms).toContain('transcript=900');
+    expect(runMetadataOf(base).arms).toBe('free');
+  });
+
   it('records when the run happened, because a row cannot', () => {
     const meta = runMetadataOf(base);
     expect(meta.startedAt).toBe('2026-11-25T00:35:25.000Z');

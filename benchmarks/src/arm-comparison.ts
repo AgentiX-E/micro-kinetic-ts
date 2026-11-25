@@ -250,6 +250,16 @@ export function comparisonRefusal(
   if (budgetOf(first) !== budgetOf(second)) {
     differences.push(`budget: ${budgetOf(first)} vs ${budgetOf(second)}`);
   }
+  // The transcript cap sits inside the budget because that is where a runner states it, but it is compared
+  // SEPARATELY: rounds and calls are the investigation's shape and must match, while the cap is allowed to be the axis
+  // of a comparison — that is the whole point of dispatching one. Named `transcript` so a caller can declare it.
+  const charsOf = (meta: RunMetadata): string =>
+    meta.budget.transcriptChars === undefined
+      ? 'default chars'
+      : `${String(meta.budget.transcriptChars)} chars`;
+  if (charsOf(first) !== charsOf(second) && !axis.includes('transcript')) {
+    differences.push(`transcript: ${charsOf(first)} vs ${charsOf(second)}`);
+  }
   // The revision is the harness itself. Two artifacts from different commits are a comparison of CODE, which is a
   // legitimate experiment (a bisect) and never an arm effect — so it is refused unless the caller says so.
   if ((first.revision ?? null) !== (second.revision ?? null) && !axis.includes('revision')) {

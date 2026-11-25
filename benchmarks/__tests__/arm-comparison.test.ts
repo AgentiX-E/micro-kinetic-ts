@@ -238,6 +238,21 @@ describe('the refusal', () => {
     ).toContain('budget: 11 rounds / 10 calls vs 6 rounds / 10 calls');
   });
 
+  it('refuses two artifacts that differ only in the transcript cap, unless the cap IS the axis', () => {
+    // The cap is a harness setting: it decides what the model can still see, so a delta across it is the cap's. A
+    // comparison that ignored it would publish the cap as the arm effect — the exact error iteration 346 made with a
+    // gate, in a smaller field.
+    const reference = { budget: { maxRounds: 6, maxToolCalls: 10, transcriptChars: 9_000 } };
+    const capped = { budget: { maxRounds: 6, maxToolCalls: 10, transcriptChars: 900 } };
+    expect(comparisonRefusal(meta(reference), meta(capped), ['transcript'])).toBeNull();
+    expect(comparisonRefusal(meta(reference), meta(capped), [])).toContain(
+      'transcript: 9000 chars vs 900 chars',
+    );
+    // And the cap does not license a budget difference: rounds still have to match.
+    const wider = { budget: { maxRounds: 11, maxToolCalls: 10, transcriptChars: 900 } };
+    expect(comparisonRefusal(meta(reference), meta(wider), ['transcript'])).toContain('budget:');
+  });
+
   it('refuses two revisions, because the instruction is a function of the code', () => {
     expect(comparisonRefusal(meta({ revision: 'aaa' }), meta({ revision: 'bbb' }), [])).toContain(
       'revision: `aaa` vs `bbb`',
