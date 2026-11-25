@@ -10501,6 +10501,12 @@ on a full-corpus run at ¥20.81 when the question each asked was a paired delta 
 stratified sample (`--sample-misses` / `--sample-correct`, both already shipped) costs ¥6.8 and resolves 5 points at
 p < 0.01; the full corpus added resolution below 1.5 points, which no decision here has ever turned on.
 
+**Every CNY figure above is an upper bound by 1.87×**, and the cache saving is withdrawn: a four-request probe of the
+endpoint (349) found that the served model's published rate is $0.15 / $0.60 per million — 1.07 / 4.28 — rather than
+the 2 / 8 these numbers are priced at, and that two byte-identical calls read `prompt_cache_hit_tokens: 0`. The
+structure is a token ratio and survives the correction; the money column does not. Full record:
+`cost-structure-348.md`.
+
 ### 349 The model in every artifact is retired, the cache serves nothing, and the price was an estimate
 
 **Four requests of eight tokens, ¥0.001, and three answers.** `GET /v1/models` returns **two** models — `deepseek-flash`
