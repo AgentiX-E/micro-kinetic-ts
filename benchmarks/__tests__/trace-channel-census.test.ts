@@ -65,7 +65,7 @@ function ranked(serviceId: string): RankedService {
 }
 
 describe('TRACE_CHANNELS', () => {
-  it('names the three trace-derived inputs the FSE\'26 loader forwards, and only those', () => {
+  it("names the three trace-derived inputs the FSE'26 loader forwards, and only those", () => {
     // Exhaustive by construction: the record's keys ARE the union.
     expect(Object.keys(TRACE_CHANNELS).sort()).toEqual([
       'call-graph-edges',
@@ -269,9 +269,7 @@ describe('topOneHit', () => {
   });
 
   it('reads position 0 only, not any position in the accepted set', () => {
-    expect(
-      topOneHit([ranked('ts-cart-service'), ranked('ts-a')], new Set(['ts-a'])),
-    ).toBe(false);
+    expect(topOneHit([ranked('ts-cart-service'), ranked('ts-a')], new Set(['ts-a']))).toBe(false);
   });
 });
 
@@ -354,11 +352,36 @@ describe('formatTraceCensusLine', () => {
       { 'call-graph-edges': true, 'failed-edges': true, 'edge-latency': true, 'all-trace': true },
       { 'call-graph-edges': true, 'failed-edges': true, 'edge-latency': true, 'all-trace': true },
       { 'call-graph-edges': false, 'failed-edges': true, 'edge-latency': true, 'all-trace': false },
-      { 'call-graph-edges': false, 'failed-edges': false, 'edge-latency': true, 'all-trace': false },
-      { 'call-graph-edges': false, 'failed-edges': false, 'edge-latency': true, 'all-trace': false },
-      { 'call-graph-edges': false, 'failed-edges': false, 'edge-latency': true, 'all-trace': false },
-      { 'call-graph-edges': false, 'failed-edges': false, 'edge-latency': false, 'all-trace': false },
-      { 'call-graph-edges': false, 'failed-edges': false, 'edge-latency': false, 'all-trace': false },
+      {
+        'call-graph-edges': false,
+        'failed-edges': false,
+        'edge-latency': true,
+        'all-trace': false,
+      },
+      {
+        'call-graph-edges': false,
+        'failed-edges': false,
+        'edge-latency': true,
+        'all-trace': false,
+      },
+      {
+        'call-graph-edges': false,
+        'failed-edges': false,
+        'edge-latency': true,
+        'all-trace': false,
+      },
+      {
+        'call-graph-edges': false,
+        'failed-edges': false,
+        'edge-latency': false,
+        'all-trace': false,
+      },
+      {
+        'call-graph-edges': false,
+        'failed-edges': false,
+        'edge-latency': false,
+        'all-trace': false,
+      },
       { 'call-graph-edges': true, 'failed-edges': false, 'edge-latency': true, 'all-trace': false },
       { 'call-graph-edges': true, 'failed-edges': false, 'edge-latency': true, 'all-trace': false },
     ];

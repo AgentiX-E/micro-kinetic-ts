@@ -261,7 +261,7 @@ describe('the census reads the source it claims to read', () => {
     ]);
   });
 
-  it('keeps the own-path list two-sided, so a prefix cannot hide somebody else\'s artefact', () => {
+  it("keeps the own-path list two-sided, so a prefix cannot hide somebody else's artefact", () => {
     // Half one: every prefix names a directory that EXISTS at this repository's root. `assets/` was not one when
     // the merged record began naming `assets/accuracy-vs-cost-332.png` — the figure lived in the documentation
     // repository — so the prefix would have excluded a path that resolves nowhere in this checkout. A prefix for
@@ -274,9 +274,10 @@ describe('the census reads the source it claims to read', () => {
     // if a real artefact ever starts with one, the prefix is wrong and this fails rather than going quiet.
     for (const token of verdictOf.keys()) {
       for (const prefix of OWN_PATH_PREFIXES) {
-        expect(token.startsWith(prefix), `${token} is excluded by the own-path prefix ${prefix}`).toBe(
-          false,
-        );
+        expect(
+          token.startsWith(prefix),
+          `${token} is excluded by the own-path prefix ${prefix}`,
+        ).toBe(false);
       }
     }
   });

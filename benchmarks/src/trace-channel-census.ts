@@ -268,7 +268,10 @@ export function accumulateTraceCase(
       const hit = hits[arm];
       const lost = !hit && baselineHit ? [...previous.lost, caseId] : previous.lost;
       const gained = hit && !baselineHit ? [...previous.gained, caseId] : previous.gained;
-      return [arm, { hits: previous.hits + (hit ? 1 : 0), total: previous.total + 1, lost, gained }];
+      return [
+        arm,
+        { hits: previous.hits + (hit ? 1 : 0), total: previous.total + 1, lost, gained },
+      ];
     }),
   ) as Record<TraceArmName, TraceArmTally>;
   return { arms };

@@ -52,9 +52,9 @@ import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
 import { discoverCaseDirs } from './case-discovery.js';
 import { extractOwnFlags } from './cli-args.js';
-import { buildFse26EngineOptions } from './fse26-engine-options.js';
-import { parseFSE26Args } from './fse26-cli.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
+import { parseFSE26Args } from './fse26-cli.js';
+import { buildFse26EngineOptions } from './fse26-engine-options.js';
 import {
   acceptedServices,
   accumulateTraceCase,
@@ -100,14 +100,16 @@ async function main(): Promise<void> {
   const dirs = discoverCaseDirs(opts.dataDir).sort();
   const selected = opts.maxCases > 0 ? dirs.slice(0, opts.maxCases) : dirs;
 
-  console.log('Micro-Kinetic — trace-channel census (FSE\'26)');
+  console.log("Micro-Kinetic — trace-channel census (FSE'26)");
   console.log('═'.repeat(65));
   console.log(`Data:    ${opts.dataDir}`);
   console.log(`Cases:   ${selected.length} of ${dirs.length} discovered`);
   console.log(
     `Profile: ${opts.faultFreeProfilePath === undefined ? 'absent' : (profileRead?.digest ?? 'absent')}`,
   );
-  console.log(`Engines: ${TRACE_ARM_NAMES.length} arms (1 control, ${Object.keys(TRACE_CHANNELS).length} singles, 1 composite)`);
+  console.log(
+    `Engines: ${TRACE_ARM_NAMES.length} arms (1 control, ${Object.keys(TRACE_CHANNELS).length} singles, 1 composite)`,
+  );
 
   let census = createTraceCensus();
   let loadErrors = 0;
