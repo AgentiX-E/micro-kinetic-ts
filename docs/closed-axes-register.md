@@ -10370,3 +10370,31 @@ the presentation it repairs retains 52.26 % of the engine's correct answers — 
 how many calls exist can close. Keeping it as a pending arm would re-open a closed axis on a cosmetic pretext. Full
 record: `early-convergence-344.md`. **Open:** a wider investigation with **no** order shown (`--max-rounds 11`, ¥14,
 re-priced here from 2.77 pp to 2.23 pp) — the only arm on this axis never run.
+
+## 346 A 236-case drift between two days, and three published signs that flip (iteration 346)
+
+*The mistake that found it.* 345 dispatched an arm whose flag never reached the loop — `runQueryAgent` had gained an
+eleventh parameter and its call site still passed ten — so the run that came back was a **plain free arm**. Its artifact
+says so: `err=` appears in **0 of 532** transcripts.
+
+*What that arm measured.* On the same 532 ids as every arm since 342b: free **414** (11-23 09:21), schedule **184**
+(11-24 14:27), shortlist **209** (11-24 16:27), free **178** (11-24 23:36). The first and last are the same arm, and
+McNemar on the paired cases gives **245 discordant one way and 9 the other (Δ −236, p < 0.001)**. Same prompt (fenced by
+a test), same corpus (same `converterDigest`), same 532 ids. Nothing in a row recorded which day it was from.
+
+*The signs, re-read against the same day's control.* shortlist **209 vs 178 = +31 (+5.8 pp, 16 vs 47, p < 0.001)**;
+schedule **184 vs 178 = +6 (15 vs 21, p = 0.405)**; shortlist vs schedule **+25 (11 vs 36, p < 0.001)**. So "three
+presentations, three losses" is **withdrawn**: against a control of the same day, the section inside `TOOL fleet` is the
+only arm in this line with a measured **positive** effect, and the schedule is indistinguishable from free. **Open
+again:** the presentation axis, with its strongest form now the one 343 published as the worst.
+
+*The standing is not comparable.* 1 328 / 1 422 = **93.39 %** is an 11-23 measurement by the arm that scores **33.46 %**
+on the 532-case sample today. Unless §5.2 of `model-drift-346.md` fires, no current dispatch can reproduce it, and every
+number in `sota-comparison.md` is a comparison between a measurement and a memory. **Cause: unverified** — the supplier's
+model behind the name, supplier-side routing, or an unfenced change here; the first is the only one invisible to every
+run in this repository, because every run records the model's **name**.
+
+*What ships.* `<artifact>.meta.json` (`startedAt`/`endedAt`/`durationSeconds`/`model`/`budget`/`arms` as one string);
+`agent-runner-wiring.test.ts`, which asserts the call site and the signature agree on the **count** of arguments and
+reports the missing **name**; and the rule this session earned — **an arm's control is the free arm dispatched in the
+same batch, never the free arm in the file**.

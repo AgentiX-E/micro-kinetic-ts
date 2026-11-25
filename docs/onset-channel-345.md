@@ -86,6 +86,26 @@ statement the whole line is trying to earn.
 existing line. If the decision rule closes the axis, the cost of closing it is that one dispatch — against ¥14.53 for
 the three presentations that came before it.
 
-## 7. The reading
+## 7. The reading: the arm never ran
 
-Filled in after the dispatch, against the four hypotheses above. Nothing in §1–§6 may be edited to fit it.
+Dispatch **45511391073**, 532 cases, ¥6.86. The job log says `onset onset`; the artifact says the channel reached **no
+tool at all** — `err=` appears in **0 of 532** transcripts, and the `TOOL metric` lines are byte-identical to the free
+arm's. `runQueryAgent` had gained an eleventh parameter and its one call site still passed ten, so `onset` took its
+default and every case ran the free arm.
+
+**All four hypotheses are therefore unjudged, and none of them may be read as failed.** The numbers the run did produce
+belong to §346 instead, because they are the free arm's:
+
+| quantity                      |        this run | free arm, 11-23 | free arm, 11-24 (this run) |
+| ----------------------------- | --------------: | --------------: | -------------------------: |
+| agent Top@1                   |             178 |             414 |                **178** |
+| engine hits                   | 134 / 266 = 50.4 % | 261 / 266 = 98.1 % | — |
+| engine misses, no query       |   16 / 228 = 7.0 % | 115 / 218 = 52.8 % | — |
+| `= engine rank 1` in answers  |             160 |             359 | — |
+
+The one thing this dispatch did establish is the size of the thing it should have controlled for: **the same arm scores
+236 cases lower one day later** (McNemar 245 vs 9, p < 0.001). `model-drift-346.md` is that reading.
+
+**Nothing in §1–§6 is edited.** The design of the channel stands, the seven tests that fence it pass, and the arm can be
+re-dispatched unchanged now that the flag is passed — but its control must be a free arm dispatched in the same batch,
+not the free arm in the file.
