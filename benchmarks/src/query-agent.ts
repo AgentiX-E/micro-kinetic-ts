@@ -1009,6 +1009,17 @@ export interface QueryOutcome {
    * without the time would be reporting the half of the trade this harness can measure for free.
    */
   readonly turnLatencyMs: readonly number[];
+  /**
+   * The cache-served share of each call's prompt, in the same order as {@link turnTokens}.
+   *
+   * `turnTokens` splits the total by call; this splits each call by PRICE, and the two answer different questions.
+   * The endpoint serves a prefix at a fraction of the miss rate, so a cap that removes tokens from the cache-served
+   * region lowers the prompt total and RAISES the bill — iteration 354 measured exactly that (7.64 M → 4.70 M tokens,
+   * 1.69 → 1.70 CNY) and could only infer the mechanism from two totals, because no artifact in this programme
+   * carried the per-call split. A lever whose whole question is "which tokens did the cap remove" needs the answer
+   * recorded where the cap acted, not reconstructed afterwards.
+   */
+  readonly turnHitTokens: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /**
@@ -1574,6 +1585,14 @@ export async function runQueryAgent(
   /** One entry per model call. Built here, inside the investigation, so no two cases can share a curve. */
   const turnTokens: number[] = [];
   const turnLatencyMs: number[] = [];
+  /**
+   * The cached share of each call, and the one number that says whether a cap removed cheap tokens.
+   *
+   * Read off the same `completion` the totals are read from, at the same instant, so the per-call split and the
+   * total cannot drift: a harness that summed hits in one place and curve in another is the defect iterations 351 and
+   * 353 both paid for — one implementation pricing, another shipping.
+   */
+  const turnHitTokens: number[] = [];
   let promptTokens = 0;
   let completionTokens = 0;
   let servedModel = '';
@@ -1655,6 +1674,7 @@ export async function runQueryAgent(
       toolCalls,
       turnTokens,
       turnLatencyMs,
+      turnHitTokens,
       promptTokens,
       servedModel,
       cacheHitTokens,
@@ -1781,6 +1801,7 @@ export async function runQueryAgent(
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
     turnLatencyMs.push(Date.now() - turnStartedAt);
+    turnHitTokens.push(completion.cacheHitTokens ?? 0);
     cacheHitTokens += completion.cacheHitTokens ?? 0;
     // The LAST name the endpoint reported wins: a run that was rerouted mid-flight is a run whose later turns were
     // served by whatever it was rerouted to, and the artifact should say the name the endpoint finished on.
@@ -2047,6 +2068,14 @@ export interface QueryArmRow {
    * context on one model while using a third of the tokens).
    */
   readonly turnLatencyMs?: readonly number[];
+  /**
+   * The cache-served share of each call's prompt, in call order, or absent on an artifact that predates the column.
+   *
+   * Its SUM is `cacheHitTokens` on every row that carries it, and its every element is at most the matching element of
+   * `turnTokens` — the two invariants a decoder should state, because a per-call split that does not add up to the
+   * total is a second arithmetic rather than a finer view of the first.
+   */
+  readonly turnHitTokens?: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /** What the endpoint said it served, which is not what the runner asked for. See {@link QueryOutcome.servedModel}. */

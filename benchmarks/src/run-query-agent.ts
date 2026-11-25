@@ -393,6 +393,9 @@ async function investigate(
     toolCalls: outcome.toolCalls,
     turnTokens: outcome.turnTokens,
     turnLatencyMs: outcome.turnLatencyMs,
+    // The per-call split of the cache column: which CALL was served cheap is the question a transcript cap turns on,
+    // and a total cannot answer it — the same reason `turnTokens` exists beside `promptTokens`.
+    turnHitTokens: outcome.turnHitTokens,
     promptTokens: outcome.promptTokens,
     completionTokens: outcome.completionTokens,
     // What the endpoint SAID it served, and what it served from cache. The first is not the model that was asked

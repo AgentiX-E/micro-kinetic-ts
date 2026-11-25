@@ -1026,15 +1026,25 @@ function scriptedClient(
 
 describe('the per-turn prompt, which is a growth curve and not a number', () => {
   /** A model whose prompt counts are scripted per call, so a growth curve is a fact rather than an average. */
-  function countingClient(counts: readonly number[], replies: readonly string[]): QueryAgentClient {
+  function countingClient(
+    counts: readonly number[],
+    replies: readonly string[],
+    hits: readonly number[] = [],
+  ): QueryAgentClient {
     let index = 0;
     return {
       model: 'fake',
       complete: () => {
         const promptTokens = counts[index] ?? 0;
         const text = replies[Math.min(index, replies.length - 1)] ?? '';
+        const cacheHitTokens = hits[index];
         index += 1;
-        return Promise.resolve({ text, promptTokens, completionTokens: 5 });
+        return Promise.resolve({
+          text,
+          promptTokens,
+          completionTokens: 5,
+          ...(cacheHitTokens === undefined ? {} : { cacheHitTokens }),
+        });
       },
     };
   }
@@ -1075,6 +1085,42 @@ describe('the per-turn prompt, which is a growth curve and not a number', () => 
       buildTelemetry(makeCase()),
     );
     expect(held).toEqual([10, 20]);
+  });
+
+  it('records the cached share of every call, so the cap can be read by PRICE and not only by size', async () => {
+    // 354's finding is that a transcript cap removed the tokens the endpoint had been serving at the cached rate: the
+    // prompt total fell 38.5 % and the bill rose. That reading came from two totals and an argument about them. This
+    // column is the same measurement taken where the cap acted — one entry per call — so the next arm states which
+    // call lost its cache instead of inferring it from a case total.
+    const client = countingClient(
+      [6_000, 6_200, 6_400],
+      ['TOOL fleet', 'TOOL metric payment', 'ANSWER payment'],
+      [0, 5_800, 6_000],
+    );
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnHitTokens).toEqual([0, 5_800, 6_000]);
+  });
+
+  it('sums the per-call hits to the arm own cache total, which is the only check that the two are one measurement', async () => {
+    const client = countingClient(
+      [6_000, 6_200, 6_400],
+      ['TOOL fleet', 'TOOL metric payment', 'ANSWER payment'],
+      [0, 5_800, 6_000],
+    );
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnHitTokens.reduce((sum, one) => sum + one, 0)).toBe(outcome.cacheHitTokens);
+  });
+
+  it('records a zero for a call the endpoint reported no cache for, rather than leaving the curve short', async () => {
+    // A short array would shift every later entry onto the wrong call — a defect that produces a plausible curve, which
+    // is the same shape as the shared-array defect above. Absent reads as zero here exactly as it does in the total.
+    const client = countingClient(
+      [6_000, 6_200],
+      ['TOOL fleet', 'ANSWER payment'],
+      [0, 5_800],
+    );
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnHitTokens).toHaveLength(outcome.turnTokens.length);
   });
 });
 

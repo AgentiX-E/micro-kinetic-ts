@@ -38,6 +38,14 @@ export interface CapRow {
   readonly completionTokens: number;
   readonly cacheHitTokens?: number;
   readonly turnTokens?: readonly number[];
+  /**
+   * The cache-served share of each call, or absent on an artifact written before the column existed.
+   *
+   * A call column rather than a case total, because the question a cap raises is WHICH tokens it removed: `turnTokens`
+   * says what each call was charged, this says how much of each call the endpoint charged at the cached rate, and the
+   * difference between the two is the only place a cap's saving can appear.
+   */
+  readonly turnHitTokens?: readonly number[];
   readonly turnLatencyMs?: readonly number[];
 }
 
@@ -191,13 +199,26 @@ export function capReadingOf(anchor: readonly CapRow[], capped: readonly CapRow[
  * every call, plus a TRANSCRIPT that grows; a `--transcript-chars` wall can only remove the second. Averaging per call
  * index separates them, because the opening is in every point of the curve and the transcript is in the growth.
  *
+ * The column is a PARAMETER because there are two curves and they do not answer the same question: `turnTokens` says
+ * how big each call was, `turnHitTokens` says how much of it the endpoint served from cache. A cap that removes
+ * tokens from the cached region shrinks the first curve while leaving the second untouched — the pattern iteration 354
+ * had to infer from two totals, and the one a curve can state.
+ *
  * @param rows - The artifact's rows.
+ * @param read - Which per-call column to average.
  * @returns One point per call index that at least one row reached, or `[]` when no row carries the column.
  */
-export function perCallCurveOf(rows: readonly CapRow[]): CallPoint[] {
+export function perCallCurveOf(
+  rows: readonly CapRow[],
+  read: (row: CapRow) => readonly number[] | undefined,
+): CallPoint[] {
   const sums = new Map<number, { total: number; cases: number }>();
   for (const row of rows) {
-    for (const [index, tokens] of (row.turnTokens ?? []).entries()) {
+    // Read once and skip: a `?? []` here would put a coalesce on a column that is absent by design on every artifact
+    // older than this reading, and an empty column is not a zero-token call.
+    const column = read(row);
+    if (column === undefined) continue;
+    for (const [index, tokens] of column.entries()) {
       const call = index + 1;
       const point = sums.get(call) ?? { total: 0, cases: 0 };
       point.total += tokens;

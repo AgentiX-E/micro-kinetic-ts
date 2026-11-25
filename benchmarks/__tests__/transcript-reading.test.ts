@@ -26,6 +26,7 @@ function row(over: Partial<CapRow> = {}): CapRow {
     completionTokens: 32,
     cacheHitTokens: 5_850,
     turnTokens: [1_200, 1_200, 1_200, 1_200, 1_200, 1_200],
+    turnHitTokens: [0, 1_170, 1_170, 1_170, 1_170, 1_170],
     turnLatencyMs: [900, 900, 900, 900, 900, 900],
     ...over,
   };
@@ -204,11 +205,14 @@ describe('the verdict, in the reader own words', () => {
 
 describe('the per-call curve', () => {
   it('averages each call index over the cases that made it, so a growth curve is not a single total', () => {
-    const curve = perCallCurveOf([
-      row({ turnTokens: [1_000, 1_100] }),
-      row({ turnTokens: [3_000, 3_100] }),
-      row({ turnTokens: [2_000] }),
-    ]);
+    const curve = perCallCurveOf(
+      [
+        row({ turnTokens: [1_000, 1_100] }),
+        row({ turnTokens: [3_000, 3_100] }),
+        row({ turnTokens: [2_000] }),
+      ],
+      (one) => one.turnTokens,
+    );
     expect(curve).toEqual([
       { call: 1, cases: 3, mean: 2_000 },
       { call: 2, cases: 2, mean: 2_100 },
@@ -218,14 +222,46 @@ describe('the per-call curve', () => {
   it('answers with nothing when no row carries the column, rather than with a flat zero curve', () => {
     // An artifact written before `turnTokens` existed has a total and no curve. A zero would be a measurement of a run
     // that spent nothing; `[]` says this file cannot answer.
-    expect(perCallCurveOf([row({ turnTokens: undefined })])).toEqual([]);
+    expect(perCallCurveOf([row({ turnTokens: undefined })], (one) => one.turnTokens)).toEqual([]);
   });
 
   it('skips the calls a case did not make instead of counting them as zero, which would bend the curve down', () => {
-    const curve = perCallCurveOf([
-      row({ turnTokens: [1_000, 2_000] }),
-      row({ turnTokens: [1_000] }),
-    ]);
+    const curve = perCallCurveOf(
+      [row({ turnTokens: [1_000, 2_000] }), row({ turnTokens: [1_000] })],
+      (one) => one.turnTokens,
+    );
     expect(curve[1]).toEqual({ call: 2, cases: 1, mean: 2_000 });
+  });
+
+  it('curves the cached column too, because a total cannot say WHICH call the endpoint discounted', () => {
+    // The paired reading has both totals and can only compare them. The question a cap raises is positional: if the
+    // hits sit on call 2 onward in the anchor and on nothing in the capped arm, the cap removed the cached region, and
+    // no arithmetic over totals distinguishes that from the cap removing full-price tokens.
+    const curve = perCallCurveOf(
+      [row({ turnHitTokens: [0, 1_000, 1_000] }), row({ turnHitTokens: [0, 800, 600] })],
+      (one) => one.turnHitTokens,
+    );
+    expect(curve).toEqual([
+      { call: 1, cases: 2, mean: 0 },
+      { call: 2, cases: 2, mean: 900 },
+      { call: 3, cases: 2, mean: 800 },
+    ]);
+  });
+
+  it('keeps the two curves on their own denominators, so a column one case lacks does not shrink the other', () => {
+    // A case that recorded its prompt and not its hits belongs in the prompt curve and nowhere else. Sharing one
+    // denominator would silently divide the hit curve by rows that never contributed to it.
+    const rows = [
+      row({ turnTokens: [1_200, 1_500], turnHitTokens: [0, 900] }),
+      row({ turnTokens: [1_400], turnHitTokens: undefined }),
+    ];
+    expect(perCallCurveOf(rows, (one) => one.turnTokens)).toEqual([
+      { call: 1, cases: 2, mean: 1_300 },
+      { call: 2, cases: 1, mean: 1_500 },
+    ]);
+    expect(perCallCurveOf(rows, (one) => one.turnHitTokens)).toEqual([
+      { call: 1, cases: 1, mean: 0 },
+      { call: 2, cases: 1, mean: 900 },
+    ]);
   });
 });

@@ -78,6 +78,9 @@ function loadRows(path: string): CapRow[] {
         ? { cacheHitTokens: Number(parsed['cacheHitTokens']) }
         : {}),
       ...(Object.hasOwn(parsed, 'turnTokens') ? { turnTokens: numbers(parsed['turnTokens']) } : {}),
+      ...(Object.hasOwn(parsed, 'turnHitTokens')
+        ? { turnHitTokens: numbers(parsed['turnHitTokens']) }
+        : {}),
       ...(Object.hasOwn(parsed, 'turnLatencyMs')
         ? { turnLatencyMs: numbers(parsed['turnLatencyMs']) }
         : {}),
@@ -104,29 +107,40 @@ function billOf(reading: CapReading, side: 'anchor' | 'capped'): BillTotals {
   };
 }
 
+/** One per-call curve, or the artifact's own admission that it does not carry the column. */
+function curveLine(
+  label: string,
+  rows: readonly CapRow[],
+  read: (row: CapRow) => readonly number[] | undefined,
+): string {
+  const curve = perCallCurveOf(rows, read);
+  if (curve.length === 0) return `${label}: not recorded by this artifact`;
+  return `${label}: ${curve.map((point) => `${String(point.call)}:${point.mean.toFixed(0)}`).join(' ')}`;
+}
+
 /** Render the reading. */
 function report(anchor: readonly CapRow[], capped: readonly CapRow[], args: Args): string {
   const reading = capReadingOf(anchor, capped);
   const rates = servedRatesAt(args.cappedAt);
   const tariff = tariffAt(args.cappedAt);
   // The counting and the wording live in `transcript-reading.ts`, because this file cannot be imported by a test. What
-  // is left here is the bill — composed by `billLine`, the same function the runner prints — and the curve.
-  const lines = [
+  // is left here is the bill — composed by `billLine`, the same function the runner prints — and the curves.
+  //
+  // FOUR curves and not two: the paired reading says how many tokens each side spent and how much of them the endpoint
+  // served from cache, and the curves say WHERE. A cap that shrinks the prompt curve while the hit curve holds is a cap
+  // that removed full-price tokens and would show up as a saving; the opposite pattern is iteration 354's negative
+  // result, and a reader who sees only the totals cannot tell the two apart.
+  return [
     ...capVerdictOf(reading),
     '',
     `anchor  ${billLine(billOf(reading, 'anchor'), rates, tariff)}`,
     `capped  ${billLine(billOf(reading, 'capped'), rates, tariff)}`,
-  ];
-  const curve = perCallCurveOf(capped);
-  if (curve.length === 0) {
-    lines.push('', 'per-call curve: not recorded by this artifact');
-  } else {
-    lines.push(
-      '',
-      `per-call prompt, capped arm: ${curve.map((point) => `${String(point.call)}:${point.mean.toFixed(0)}`).join(' ')}`,
-    );
-  }
-  return lines.join('\n');
+    '',
+    curveLine('per-call prompt, anchor', anchor, (row) => row.turnTokens),
+    curveLine('per-call prompt, capped', capped, (row) => row.turnTokens),
+    curveLine('per-call hits,   anchor', anchor, (row) => row.turnHitTokens),
+    curveLine('per-call hits,   capped', capped, (row) => row.turnHitTokens),
+  ].join('\n');
 }
 
 function main(): void {
