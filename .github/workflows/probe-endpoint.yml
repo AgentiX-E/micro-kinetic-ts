@@ -1,0 +1,108 @@
+name: Probe — endpoint identity and prompt cache
+
+# Three questions, answered by the endpoint itself for well under 0.01 CNY.
+#
+# 1. **Which models does this key reach, and is `deepseek-chat` still one of them?** Every published number this
+#    programme has is stamped with the string `deepseek-chat`, which is a TARGET and not a version. If that string is
+#    now served by a different model, then two artifacts a month apart are two instruments — and iteration 346 spent a
+#    day reading exactly that kind of difference as supplier drift before 347 found a configuration delta underneath.
+#    The answer here is the list the key is actually entitled to.
+#
+# 2. **Does the usage block carry a cache field at all?** `benchmarks/src/chat-completions.ts` reads `prompt_tokens`
+#    and `completion_tokens` and nothing else, so a cached prefix would be invisible in every artifact. Run
+#    `45531140696` spent 20.81 CNY on 10 221 261 prompt tokens against 46 085 completion at the rates this repository
+#    documents — which is the arithmetic of a hundred per cent miss. That is an INFERENCE from a price, and this step
+#    replaces it with the endpoint's own report.
+#
+# 3. **Do two identical calls reuse a prefix?** The second call below sends a byte-identical body to the first. If the
+#    cache works at all, its `prompt_cache_hit_tokens` is the whole 750-character system prompt; if it is zero, then a
+#    language-model prompt of this shape does not cache on this endpoint and the 75 % saving the audit assumes is not
+#    available at any price.
+#
+# Nothing here is a benchmark, nothing writes an artifact, and the two requests together cost less than a hundredth of
+# one corpus case. It runs on dispatch only.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask which models the key is entitled to
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -o pipefail
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "no key: the probe cannot answer anything without one"
+            exit 1
+          fi
+          code=$(curl -sS -o models.json -w '%{http_code}' https://api.deepseek.com/v1/models \
+            -H "Authorization: Bearer $DEEPSEEK_API_KEY")
+          echo "HTTP $code"
+          python3 - <<'PY'
+          import json
+          try:
+              payload = json.load(open('models.json'))
+          except Exception as error:
+              print('unreadable body:', error)
+              raise SystemExit(1)
+          rows = payload.get('data') if isinstance(payload, dict) else None
+          if not isinstance(rows, list):
+              print(json.dumps(payload)[:800])
+              raise SystemExit(0)
+          print(f'{len(rows)} models')
+          for row in rows:
+              print(' ', row.get('id'), ' owned by', row.get('owned_by'))
+          PY
+
+      - name: One call, and the same call again, reading the usage the runner never reads
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -o pipefail
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          KEY = os.environ['DEEPSEEK_API_KEY']
+          SYSTEM = (
+              'You are an RCA investigation arm. You are given a case with a set of services and their telemetry. '
+              'Deliver one line: ANSWER <service>. ' + ('A caller that reports errors is usually the victim. ' * 14)
+          )
+          def call(model: str, tag: str):
+              body = json.dumps({
+                  'model': model,
+                  'temperature': 0,
+                  'max_tokens': 8,
+                  'messages': [
+                      {'role': 'system', 'content': SYSTEM},
+                      {'role': 'user', 'content': 'Deliverable: one ANSWER line. The case carries 50 services.'},
+                  ],
+              }).encode()
+              request = urllib.request.Request(
+                  'https://api.deepseek.com/v1/chat/completions',
+                  data=body,
+                  headers={'content-type': 'application/json', 'authorization': f'Bearer {KEY}'},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      payload = json.loads(response.read())
+              except urllib.error.HTTPError as error:
+                  print(f'{tag}: HTTP {error.code} {error.read()[:300].decode(errors="replace")}')
+                  return None
+              print(f'{tag}: model field = {payload.get("model")!r}')
+              print(f'{tag}: usage = {json.dumps(payload.get("usage"))}')
+              return payload
+
+          # The name every published number is stamped with, and the name the endpoint's own docs now list.
+          call('deepseek-chat', 'deepseek-chat  #1')
+          call('deepseek-chat', 'deepseek-chat  #2 (identical body)')
+          call('deepseek-flash', 'deepseek-flash #1')
+          call('deepseek-flash', 'deepseek-flash #2 (identical body)')
+          PY
