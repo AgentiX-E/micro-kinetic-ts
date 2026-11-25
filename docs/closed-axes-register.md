@@ -10441,6 +10441,14 @@ the 11-22 pipeline artifact is **1 287 / 1 422 = 90.51 %** (repairs 153, breaks 
 published 93.39 % adds two deterministic guards over it (+50 first hop, +20 engine certainty). The model's marginal
 contribution to the pipeline is **+131 cases over the engine alone**.
 
+**And re-measured, because the retraction above could not stand on arithmetic alone.** A full-corpus dispatch with the
+same flags (run `45531140696`, ¥20.81) returned **1 328 / 1 422 = 93.39 %** with **180 repairs and 8 breaks** (precision
+**0.957**), retention 0.993, and the two guards applied inside the artifact (`door` 28, `certainty` 20). Paired against
+the 11-22 artifact on the same 1 422 ids: **42 gained, 1 lost, Δ +41, p < 0.001** — the guards' own worth as a paired
+delta for the first time. The number 346 called unreproducible at any price reproduces at ¥21, and higher. **What is
+left is 94 cases:** 8 breaks (5 model, 3 `entry-prior`), 86 un-repaired engine misses — of which **37 sit inside the
+engine's top five and 12 more inside the top ten**, and 20 at rank 21 or deeper.
+
 **Shipped.** `run-metadata.ts` now **requires** `fallback` and `resolve` and records `revision` (`GITHUB_SHA`);
 `arm-comparison.ts` refuses a pairing whose two records differ outside the declared axis (model, budget, revision, and
 any `arms` key — an absent flag is a difference, not a default) and prints both McNemar forms, the exact conditional

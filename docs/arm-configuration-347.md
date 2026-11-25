@@ -118,6 +118,32 @@ The model's marginal contribution to the pipeline is **+131 cases over the engin
 153 repairs against 22 breaks at precision 0.874. That is the number the "does the LLM help" question is answered by,
 and it was never the number being compared.
 
+### 4.1 The re-measure, and what it returned
+
+Dispatched at 02:11 on 11-25 over the full corpus with the same flags (`gate contrast, fallback engine, resolve
+edge-novel`), run `45531140696`, **¥20.81**:
+
+```
+cases 1422 · answered 1422 · answered by the model 636 · by the prior 516
+repairs 180 · breaks 8 · precision 0.957
+retained 1148/1156 of the engine's own (0.993) · repaired 180/266 of its misses
+agent Top@1 1328 · engine Top@1 on the same cases 1156
+```
+
+**1 328 / 1 422 = 93.39 %**, in one artifact, with the two deterministic guards applied inside it (`door` 28 answers,
+`certainty` 20). Against the 11-22 artifact on the same 1 422 ids: **42 cases gained, 1 lost, Δ +41, p < 0.001** — which
+is the guards' own worth, measured as a paired delta for the first time. The model's marginal contribution is now
+**+172 over the engine alone** (180 repairs − 8 breaks), and the precision of an admitted override is **0.957** against
+0.874 in November.
+
+The "cannot be reproduced at any price" claim of 346 is answered by a ¥21 dispatch: the number reproduces, and it
+reproduces *higher*.
+
+**What is left: 94 cases.** Eight are breaks (5 by the model, 3 by the `entry-prior` resolver) and 86 are engine misses
+the arm did not repair. Of those 86, **37 sit inside the engine's own top five** and 12 more inside the top ten — 49
+cases, 3.4 points, reachable by a re-ranker. The remaining 20 sit at rank 21 or deeper, which is the retrieval block no
+scoring change can reach.
+
 ## 5. What ships, so that this cannot be read again
 
 Three changes, each a field or a check rather than a paragraph:
@@ -150,13 +176,12 @@ derived axis, and the four files the artifact must now carry (the `meta.json` fi
 
 ## 6. What this closes and what it opens
 
-**Closes:** the drift hypothesis, and with it the reason 346 withheld the standing. The measurement line's oldest
-defect — a delta between two files whose configurations differ — now has an executable refusal.
+**Closes the drift:** the hypothesis itself, and with it the reason 346 withheld the standing. The measurement line's oldest defect — a delta between two files whose configurations differ — now has an executable refusal.
 
-**Opens, at ¥21:** the standing itself. A free arm over all 1 422 cases with the shipped pipeline flags is dispatched
-as this iteration lands; its own gate table re-scores `none`/`cited`/`cone`/`contrast`/`lag` from one artifact, so the
-shipped gate is re-decided at no extra cost. Until it returns, this file quotes **90.51 %** as the last _pipeline_
-reading (11-22) and states plainly that it is not today's.
+**Closes the standing, at ¥21:** the dispatch returned **1 328 / 1 422 = 93.39 %** (§4.1), and its own gate
+table re-scores `none`/`cited`/`cone`/`contrast`/`lag` from one artifact at no extra cost: `lag` reads 83.05 % of the
+corpus at precision 0.766 and `contrast` 90.58 % resolved, so the shipped gate is confirmed by today's artifact rather
+than inherited from November's.
 
 **Does not open:** the bare arm is still the wrong instrument for this question, and the presentation axis
 (`fleet`/`schedule`/`onset`) has never been measured against a pipeline control. The +31 the shortlist earned was
