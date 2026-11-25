@@ -25,6 +25,7 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import {
+  extractOwnFlags,
   parseFieldDecimals,
   parseNodeCount,
   parseUnitInterval,
@@ -336,5 +337,59 @@ describe('the trace weight has one owner, and both runners read it', () => {
     // (both arms with `injectTime` on) is what moved the pin into the engine: `RE3:TrainTicket` gained 13
     // cases and lost none, and the six cells that can see a trace term did not flip a single case.
     expect(DEFAULT_TRACE_WEIGHT).toBe(1);
+  });
+});
+
+describe('extractOwnFlags', () => {
+  it('removes the flags the runner owns and forwards the rest untouched', () => {
+    // The point of the function: the shared parser must not learn a runner's private flags, and the runner must
+    // not restate the shared vocabulary to get its own.
+    const { passthrough, own } = extractOwnFlags(
+      ['--data-dir', '/tmp/x', '--expect-baseline', '1186', '--log-weight', '1'],
+      ['--expect-baseline'],
+    );
+    expect(passthrough).toEqual(['--data-dir', '/tmp/x', '--log-weight', '1']);
+    expect(own).toEqual({ '--expect-baseline': '1186' });
+  });
+
+  it('keeps the order of the forwarded arguments, because the shared parser is positional', () => {
+    // `--log-weight --log-mode count` consuming `--log-mode` as the weight is the recorded failure; a filter
+    // that reordered would create the same class of bug from the other side.
+    const { passthrough } = extractOwnFlags(
+      ['--a', '1', '--expect-baseline', '9', '--b', '2'],
+      ['--expect-baseline'],
+    );
+    expect(passthrough).toEqual(['--a', '1', '--b', '2']);
+  });
+
+  it('throws when an owned flag is the last token', () => {
+    // A silent absence is indistinguishable from "the flag was never asked for", which is how a run publishes
+    // an unchecked control while appearing to check it.
+    expect(() => extractOwnFlags(['--expect-baseline'], ['--expect-baseline'])).toThrow(
+      /--expect-baseline requires a value/,
+    );
+  });
+
+  it('throws when an owned flag is followed by another flag', () => {
+    // The `hasValue` rule, applied to a runner's own flag: a flag never consumes the next flag.
+    expect(() =>
+      extractOwnFlags(['--expect-baseline', '--output', 'x'], ['--expect-baseline']),
+    ).toThrow(/requires a value/);
+  });
+
+  it('returns an empty own map when no owned flag is present', () => {
+    const { passthrough, own } = extractOwnFlags(['--data-dir', '/tmp/x'], ['--expect-baseline']);
+    expect(passthrough).toEqual(['--data-dir', '/tmp/x']);
+    expect(own).toEqual({});
+  });
+
+  it('takes the last occurrence when a flag is repeated, as the shared parser does', () => {
+    // Not a preference: matching the shared parser's behaviour is the only way a repeated flag means the same
+    // thing to both parsers.
+    const { own } = extractOwnFlags(
+      ['--expect-baseline', '1', '--expect-baseline', '2'],
+      ['--expect-baseline'],
+    );
+    expect(own['--expect-baseline']).toBe('2');
   });
 });

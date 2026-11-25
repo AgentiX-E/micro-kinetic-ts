@@ -126,3 +126,43 @@ export function parseNodeCount(raw: string, shipped: number): number {
   if (!Number.isInteger(value) || value < 0) return shipped;
   return value;
 }
+
+/**
+ * Split a runner's OWN flags out of the argument vector, leaving the rest for a shared parser.
+ *
+ * A second runner over the same vocabulary — this programme has one for the engine and, since the trace-channel
+ * census, one per ablation — needs to add flags of its own without teaching the shared parser about them. The
+ * shared parser is right to reject what it does not know: `--log-mode count` was once dropped from a
+ * hand-written chain and a dispatch that asked for `count` silently ran `logicHttp`. But a runner that
+ * re-implemented the whole vocabulary to add one flag would be the "two owners of a constant" defect this
+ * module exists to prevent, so it removes exactly the flags it owns and forwards the rest untouched.
+ *
+ * A flag whose value is missing is reported at the flag rather than silently absent, for
+ * {@link hasValue}'s reason: a flag left without a value must not consume the next flag, and it must not
+ * look to the run like a flag that was never asked for.
+ *
+ * @param argv - The argument vector.
+ * @param flags - The flags this runner owns.
+ * @returns The arguments the shared parser should see, and the owned flags' values, keyed by flag.
+ * @throws When an owned flag is the last token, or is followed by another flag.
+ */
+export function extractOwnFlags(
+  argv: readonly string[],
+  flags: readonly string[],
+): { readonly passthrough: readonly string[]; readonly own: Readonly<Record<string, string>> } {
+  const passthrough: string[] = [];
+  const own: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (!flags.includes(arg)) {
+      passthrough.push(arg);
+      continue;
+    }
+    if (!hasValue(argv, i + 1)) {
+      throw new Error(`${arg} requires a value`);
+    }
+    own[arg] = argv[i + 1]!;
+    i += 1;
+  }
+  return { passthrough, own };
+}

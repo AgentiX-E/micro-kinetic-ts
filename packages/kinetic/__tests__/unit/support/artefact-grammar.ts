@@ -31,8 +31,30 @@
 export const ARTEFACT_TOKEN =
   /arXiv:\d{4}\.\d{4,5}|github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|[A-Za-z0-9][A-Za-z0-9-]*\.github\.io\/[A-Za-z0-9/._-]*[A-Za-z0-9._-]|10\.\d{4,}\/zenodo\.\d+|`([a-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+)`/g;
 
-/** This repository's own top-level directories: a backticked path into one of these is not an artefact. */
+/**
+ * This repository's own top-level directories: a backticked path into one of these is not an artefact.
+ *
+ * ## Why `assets/` is here and `cases/` is not
+ *
+ * Both were matched by the `OWNER/REPO` shorthand when the documentation repository's iteration records were
+ * merged, and the obvious repair was to add both. **Only one of them is ours.** `assets/accuracy-vs-cost-332.png`
+ * is a figure in this repository; `cases/core90_cases.csv` is a file **inside RCAtlas-Core's `ufile.io`
+ * package** — a competitor's file, written as a relative path in a paragraph about what the package contains.
+ * Listing `cases/` here would have told the inventory that a competitor's data file was ours and needed no row,
+ * which is the same failure as a gate that reads the answer key: the exclusion would have been a claim about the
+ * population dressed as a formatting rule.
+ *
+ * **The fence that keeps this list honest is two-sided**, and both halves are asserted in
+ * `competitor-artefact-availability.test.ts`:
+ *
+ * 1. every prefix names a directory that EXISTS at this repository's root, so a prefix cannot be added for a
+ *    neighbour this checkout has never seen — which is what `assets/` was before it was copied here;
+ * 2. no REGISTERED artefact token begins with a prefix, so a prefix cannot swallow somebody else's repository.
+ *    `assets` and `cases` are both plausible repository names, and adding one of them is exactly the change that
+ *    could hide a real artefact behind a directory rule.
+ */
 export const OWN_PATH_PREFIXES = [
+  'assets/',
   'docs/',
   'scripts/',
   'packages/',

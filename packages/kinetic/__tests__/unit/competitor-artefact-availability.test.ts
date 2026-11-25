@@ -38,12 +38,13 @@
  * reports the wrong rows; at sentence granularity it reports exactly the two real ones.
  */
 
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { artefactTokens, sentences } from './support/artefact-grammar.js';
+import { OWN_PATH_PREFIXES, artefactTokens, sentences } from './support/artefact-grammar.js';
 import { readRepoFile } from './support/repo-file.js';
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
@@ -258,6 +259,26 @@ describe('the census reads the source it claims to read', () => {
     expect(artefactTokens('`luoyu100.github.io/projects/toolrca/project`')).toEqual([
       'luoyu100.github.io/projects/toolrca/project',
     ]);
+  });
+
+  it('keeps the own-path list two-sided, so a prefix cannot hide somebody else\'s artefact', () => {
+    // Half one: every prefix names a directory that EXISTS at this repository's root. `assets/` was not one when
+    // the merged record began naming `assets/accuracy-vs-cost-332.png` — the figure lived in the documentation
+    // repository — so the prefix would have excluded a path that resolves nowhere in this checkout. A prefix for
+    // a directory this repository does not have is an exclusion nobody can check.
+    for (const prefix of OWN_PATH_PREFIXES) {
+      expect(existsSync(resolve(repoRoot, prefix)), `${prefix} is not a directory here`).toBe(true);
+    }
+    // Half two: no REGISTERED artefact begins with one of them. `assets` and `cases` are both plausible
+    // repository names, so this is the check that decides whether adding a prefix would swallow a competitor:
+    // if a real artefact ever starts with one, the prefix is wrong and this fails rather than going quiet.
+    for (const token of verdictOf.keys()) {
+      for (const prefix of OWN_PATH_PREFIXES) {
+        expect(token.startsWith(prefix), `${token} is excluded by the own-path prefix ${prefix}`).toBe(
+          false,
+        );
+      }
+    }
   });
 
   it('reports the exact defect it was written for', () => {
