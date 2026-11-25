@@ -420,7 +420,11 @@ describe('the usage fields that make a cost claim a measurement', () => {
         },
       }),
     }));
-    const client = createChatClient({ apiKey: KEY, model: 'deepseek-chat', endpoint: endpoint.endpoint });
+    const client = createChatClient({
+      apiKey: KEY,
+      model: 'deepseek-chat',
+      endpoint: endpoint.endpoint,
+    });
     const answer = await client.complete({ system: 's', user: 'u' });
     expect(answer.cacheHitTokens).toBe(768);
     expect(answer.cacheMissTokens).toBe(232);
