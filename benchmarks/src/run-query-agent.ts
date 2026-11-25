@@ -391,6 +391,7 @@ async function investigate(
     priorTop: incumbentName,
     rounds: outcome.rounds,
     toolCalls: outcome.toolCalls,
+    turnTokens: outcome.turnTokens,
     promptTokens: outcome.promptTokens,
     completionTokens: outcome.completionTokens,
     // What the endpoint SAID it served, and what it served from cache. The first is not the model that was asked
@@ -573,6 +574,10 @@ async function main(): Promise<void> {
   const fallbackLabel = args.fallback === 'seed' ? args.seed : args.fallback;
   console.log(
     `Free-investigation arm — asked for ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
+      // The transcript wall is a HARNESS setting: it decides what the model can still see, so a capped run and an
+      // uncapped one are two arms and a banner that printed the same sentence for both would be reporting the
+      // configuration the reader assumed rather than the one that ran.
+      `${args.budget.transcriptChars} transcript chars, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
       `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
       `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, ` +

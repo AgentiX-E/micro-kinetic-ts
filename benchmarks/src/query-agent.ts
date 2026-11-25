@@ -989,6 +989,17 @@ export interface QueryOutcome {
   readonly trace: string;
   readonly rounds: number;
   readonly toolCalls: number;
+  /**
+   * The prompt tokens every model call was charged, in call order.
+   *
+   * A total cannot price a transcript cap, and this is why: the prompt is an OPENING (the incident line, the gate, the
+   * seed list) repeated on every call plus a TRANSCRIPT that grows, so the same total is produced by a large constant
+   * and a large constant by a small one. Run `45595943761` spent 1 432 120 uncached prompt tokens over 6 366 calls and
+   * the artifact records neither the opening's share nor the growth rate — which is the whole of what iteration 354
+   * needs to decide whether eliding the transcript is worth its accuracy. One array per row makes the split readable
+   * from the artifact rather than from a second dispatch.
+   */
+  readonly turnTokens: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /**
@@ -1416,6 +1427,7 @@ export function buildUserPrompt(
   seed?: QuerySeed | null,
   policy: GatePolicy = 'none',
   incumbent?: string | null,
+  budget: QueryBudget = DEFAULT_QUERY_BUDGET,
 ): string {
   const names = [...telemetry.services.keys()].sort();
   const head = [
@@ -1440,7 +1452,12 @@ export function buildUserPrompt(
   const gate = renderGate(policy, priorTop);
   if (gate !== '') head.push('', gate);
   const opening = head.join('\n');
-  const transcript = renderTranscript(exchanges);
+  // The budget, not the default. Until iteration 354 this line read `renderTranscript(exchanges)`, so every prompt was
+  // rendered at `DEFAULT_QUERY_BUDGET.transcriptChars` and the runner's `--transcript-chars` reached only the trace,
+  // which overrides the same field with `TRACE_CHARS`. The wall was 9 000 characters on every run ever dispatched and
+  // the flag was decoration — the defect a cost reading cannot survive, because the lever it prices is the lever it
+  // could not move.
+  const transcript = renderTranscript(exchanges, budget);
   return transcript === '' ? `${opening}\n\nNo queries yet.` : `${opening}\n\n${transcript}`;
 }
 
@@ -1545,6 +1562,8 @@ export async function runQueryAgent(
   const priorTop = priorTopOf(fallback, telemetry);
   let rounds = 0;
   let toolCalls = 0;
+  /** One entry per model call. Built here, inside the investigation, so no two cases can share a curve. */
+  const turnTokens: number[] = [];
   let promptTokens = 0;
   let completionTokens = 0;
   let servedModel = '';
@@ -1624,6 +1643,7 @@ export async function runQueryAgent(
       trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
       rounds,
       toolCalls,
+      turnTokens,
       promptTokens,
       servedModel,
       cacheHitTokens,
@@ -1742,8 +1762,10 @@ export async function runQueryAgent(
         seed,
         policy,
         priorTop,
+        budget,
       ),
     });
+    turnTokens.push(completion.promptTokens);
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
     cacheHitTokens += completion.cacheHitTokens ?? 0;
@@ -1996,6 +2018,14 @@ export interface QueryArmRow {
   readonly novelRise: number | null;
   readonly rounds: number;
   readonly toolCalls: number;
+  /**
+   * The prompt every model call was charged, in call order, or absent on an artifact that predates the column.
+   *
+   * Optional rather than required for the reason `cacheHitTokens` is `null` rather than zero: an artifact written
+   * before this column existed cannot say where its tokens went, and a decoder that demanded the array would refuse
+   * to read every run this programme has published. Its SUM is `promptTokens` on every row that carries it.
+   */
+  readonly turnTokens?: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /** What the endpoint said it served, which is not what the runner asked for. See {@link QueryOutcome.servedModel}. */

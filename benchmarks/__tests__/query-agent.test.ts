@@ -581,6 +581,31 @@ describe('formatNumber', () => {
   });
 });
 
+describe('the transcript cap the dispatch set, which until iteration 354 reached nothing', () => {
+  it('elides the prompt transcript under a tight cap, so the flag is a wall rather than a word', async () => {
+    // The defect this pins: `buildUserPrompt` called `renderTranscript(exchanges)` with NO budget argument, so every
+    // prompt was rendered at `DEFAULT_QUERY_BUDGET.transcriptChars` and the runner's `--transcript-chars` reached only
+    // the TRACE — which overrides the same field with `TRACE_CHARS` two lines later. A knob that changes nothing is
+    // worse than no knob: it reports a configuration nobody ran, and the cost of the transcript could not be measured
+    // by a dispatch at all.
+    const client = scriptedClient(['TOOL logs a', 'TOOL logs b', 'TOOL logs c', 'ANSWER payment']);
+    await runQueryAgent(client, buildTelemetry(makeCase()), {
+      ...DEFAULT_QUERY_BUDGET,
+      transcriptChars: 120,
+    });
+    const last = client.seen[client.seen.length - 1] ?? '';
+    expect(last).toContain('elided');
+  });
+
+  it('leaves the corpus own transcripts intact at the default cap, which is why the flag never bit', async () => {
+    // The other half of the reading: the corpus's final traces are ~1 700 characters, so a 9 000-character wall had
+    // never bound and its inertness could not be noticed from any artifact.
+    const client = scriptedClient(['TOOL logs a', 'TOOL logs b', 'ANSWER payment']);
+    await runQueryAgent(client, buildTelemetry(makeCase()));
+    for (const prompt of client.seen) expect(prompt).not.toContain('elided');
+  });
+});
+
 describe('renderTranscript', () => {
   const exchange = (round: number, result: string): QueryExchange => ({
     round,
@@ -973,6 +998,60 @@ function scriptedClient(
     },
   };
 }
+
+describe('the per-turn prompt, which is a growth curve and not a number', () => {
+  /** A model whose prompt counts are scripted per call, so a growth curve is a fact rather than an average. */
+  function countingClient(counts: readonly number[], replies: readonly string[]): QueryAgentClient {
+    let index = 0;
+    return {
+      model: 'fake',
+      complete: () => {
+        const promptTokens = counts[index] ?? 0;
+        const text = replies[Math.min(index, replies.length - 1)] ?? '';
+        index += 1;
+        return Promise.resolve({ text, promptTokens, completionTokens: 5 });
+      },
+    };
+  }
+
+  it('records one count per model call, in call order', async () => {
+    // Iteration 354 asks whether eliding the transcript pays for itself, and the artifact in hand cannot answer it:
+    // it carries a TOTAL prompt count and a trace truncated to its last 2 000 characters, so the opening's cost and
+    // the transcript's growth are summed into one number and there is no way to tell which one a cap would remove.
+    // One array per row is the difference between a lever that can be priced and a lever that can only be hoped for.
+    const client = countingClient(
+      [700, 900, 1_100, 1_300],
+      ['TOOL fleet', 'TOOL metric payment', 'TOOL trace payment', 'ANSWER payment'],
+    );
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnTokens).toEqual([700, 900, 1_100, 1_300]);
+  });
+
+  it('sums to the arm own prompt total, which is the only check that the two are one measurement', async () => {
+    const client = countingClient(
+      [700, 900, 1_100],
+      ['TOOL fleet', 'TOOL metric payment', 'ANSWER payment'],
+    );
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnTokens.reduce((sum, one) => sum + one, 0)).toBe(outcome.promptTokens);
+  });
+
+  it('hands each settlement its own array, so a second case cannot append to the first case curve', async () => {
+    // The array is built inside the investigation. Sharing one across cases would make every row after the first
+    // carry a prefix belonging to another case — a defect that reads as a plausible growth curve, which is exactly
+    // the shape of thing this column exists to make honest.
+    const first = await runQueryAgent(
+      countingClient([10, 20], ['TOOL fleet', 'ANSWER payment']),
+      buildTelemetry(makeCase()),
+    );
+    const held = first.turnTokens;
+    await runQueryAgent(
+      countingClient([30, 40, 50], ['TOOL fleet', 'TOOL metric payment', 'ANSWER payment']),
+      buildTelemetry(makeCase()),
+    );
+    expect(held).toEqual([10, 20]);
+  });
+});
 
 describe('the trace the artifact keeps', () => {
   it('carries what was asked and what came back, so a wrong answer is diagnosable', async () => {

@@ -148,6 +148,10 @@ on:
         description: 'Tool calls the free-investigation arm may EXECUTE per case (empty = the runner default, 10). A corpus case carries ~50 services and each single-service tool spends one call on one of them, so this is the width of the investigation and the axis `TOOL fleet` was added against'
         required: false
         default: ''
+      query_transcript_chars:
+        description: "Characters of investigation transcript the free-investigation arm carries into its next prompt, oldest results elided first (empty = the runner default, 9 000). This is the one lever measured on the BILL rather than on the ranking: of run `45595943761` 1.69 CNY, cache-miss input is 84.6 % and output 8.1 %, and the uncached prompt is the opening repeated six times plus a transcript that grows — 1 432 120 uncached tokens over 6 366 calls. The opening cannot be elided without changing what the arm is TOLD; the transcript can, and every published number was taken at 9 000 characters, which never binds (the corpus's own final traces are ~1 700 characters). So this input prices a wall the arm has never hit: the accuracy it costs, and the tokens it saves. A capped run and an uncapped one are different arms, so the value is forwarded to the control too. docs/transcript-lever-354.md"
+        required: false
+        default: ''
       query_seed:
         description: "Which order to show the free-investigation arm BEFORE its first turn: `engine` = the engine's own top-5 (a prior, and the arm's floor becomes the engine's accuracy) or empty/`none` = a free arm, whose first sight of the case is its first tool call. The two arms have different floors, so this is an ablation switch and not a quality knob"
         required: false
@@ -171,7 +175,7 @@ on:
       query_evidence_order:
         description: "Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count: `onset` = one field appended to each `TOOL metric` line (`err=+2s/7`, `err=-` when the service logged nothing); empty = the metric read every published number was taken under. This is the fourth arm of the `fleet`/`schedule` family and the only one that carries NO ranking: iteration 344 found the largest block of the shortlist arm's loss (49 %) on cases where the arm's behaviour was unchanged — the engine's misses, where neither arm queried the culprit and the free arm still answered 52.8 % against the shortlist arm's 6.3 % — and `TOOL logs`, the tool that carries the lines themselves, is opened in 0.44 of the five calls per case. A timestamp can be weighed against the model's own order; a list of names replaces it. No call, no round, no prompt token. docs/onset-channel-345.md"
       query_certainty_floor:
-        description: "Skip the model entirely on a case whose ENGINE margin already clears this value; empty or `0` = off. This is the certainty guard read BEFORE the call instead of after it, and it settles on the same name: a case above the floor is a case whose model answer the run would have discarded anyway, so the floor is a price cut and not a configuration change. Run `45531140696` cost 11.13 CNY at the served model's rates (98.23 % of it prompt tokens, 10 221 261 in against 46 085 out), and 786 of its 1 422 cases were settled by something other than the model after each had paid for six turns: 6.10 CNY, 54.82 %, for answers that were then discarded. Measured on that artifact: above margin **0.8630 the engine answer and the shipped answer agree on EVERY case** — 0 repaired against 0 broken, not a net zero — so any floor above it changes no answer, and the highest margin at which the engine would have DESTROYED a correct case is 0.8630 (it stops repairing at 0.5707). At the guard's own bar of **1.5 the floor silences 360 cases (25.3 %) for 2.83 CNY (25.4 %)**; at the corpus-fitted frontier of 0.8630 it silences **582 (40.9 %) for 4.57 CNY (41.1 %)**. The default below is 1.5 because that bar is INHERITED from the guard rather than fitted to one corpus; 0.8630 IS one of the corpus's own margins, which is what makes it a fit, and it stays available for an ablation. A skipped case reports `rounds: 0`, zero tokens and answers `engine.top1` under the `certainty` stratum. Price any artifact offline first with `tsx benchmarks/src/run-cost-audit.ts --artifact <path>`. docs/certainty-floor-351.md"
+        description: "Skip the model entirely on a case whose ENGINE margin already clears this value; empty or `0` = off. This is the certainty guard read BEFORE the call instead of after it, and it settles on the same name: a case above the floor is a case whose model answer the run would have discarded anyway, so the floor is a price cut and not a configuration change. Run `45531140696` cost 10.41 CNY on the CNY card's off-peak column (98.23 % of it prompt tokens, 10 221 261 in against 46 085 out), and 786 of its 1 422 cases were settled by something other than the model after each had paid for six turns: 5.71 CNY, 54.82 %, for answers that were then discarded. Measured on that artifact: above margin **0.8630 the engine answer and the shipped answer agree on EVERY case** — 0 repaired against 0 broken, not a net zero — so any floor above it changes no answer, and the highest margin at which the engine would have DESTROYED a correct case is 0.8630 (it stops repairing at 0.5707). At the guard's own bar of **1.5 the floor silences 360 cases (25.3 %) for 2.65 CNY (25.4 %)**; at the corpus-fitted frontier of 0.8630 it silences **582 (40.9 %) for 4.27 CNY (41.1 %)**, and the acceptance run `45595943761` cost **1.69 CNY with the cache as measured**. The default below is 1.5 because that bar is INHERITED from the guard rather than fitted to one corpus; 0.8630 IS one of the corpus's own margins, which is what makes it a fit, and it stays available for an ablation. A skipped case reports `rounds: 0`, zero tokens and answers `engine.top1` under the `certainty` stratum. Price any artifact offline first with `tsx benchmarks/src/run-cost-audit.ts --artifact <path>`. docs/certainty-floor-351.md"
         required: false
         default: '1.5'
       query_control:
@@ -390,6 +394,11 @@ jobs:
           if [ -n "${{ inputs.query_max_tool_calls }}" ]; then
             BUDGET_ARG+=(--max-tool-calls "${{ inputs.query_max_tool_calls }}")
           fi
+          # The transcript wall is a budget in the runner's own sense — it decides how much of the investigation the
+          # model can still see — so it travels with the other two rather than with the presentation flags.
+          if [ -n "${{ inputs.query_transcript_chars }}" ]; then
+            BUDGET_ARG+=(--transcript-chars "${{ inputs.query_transcript_chars }}")
+          fi
           # A seed is stated or it is absent: `none` is the free arm, and any other word is refused by the runner.
           SEED_ARG=()
           if [ -n "${{ inputs.query_seed }}" ]; then
@@ -476,6 +485,11 @@ jobs:
           fi
           if [ -n "${{ inputs.query_max_tool_calls }}" ]; then
             CONTROL_BUDGET+=(--max-tool-calls "${{ inputs.query_max_tool_calls }}")
+          fi
+          # Forwarded because the cap changes what the model SEES: a control without it would be a different arm and
+          # the paired delta would be the cap's rather than the presentation axis's.
+          if [ -n "${{ inputs.query_transcript_chars }}" ]; then
+            CONTROL_BUDGET+=(--transcript-chars "${{ inputs.query_transcript_chars }}")
           fi
           CONTROL_SEED=()
           if [ -n "${{ inputs.query_seed }}" ]; then

@@ -348,6 +348,36 @@ describe('the agentic line runs where the corpus and the keys are', () => {
   });
 });
 
+describe('the transcript wall is a dispatch input, because a wall nobody can move is a constant', () => {
+  it('declares the cap, and states that empty is the runner own default', () => {
+    // The cap is the one lever this programme has that is measured on the BILL rather than on the ranking: 84.6 % of
+    // run `45595943761`'s 1.69 CNY was cache-miss input, and the uncached prompt is an opening repeated on every call
+    // plus a transcript that grows. Every published number was taken at 9 000 characters, which never binds — the
+    // corpus's own final traces are ~1 700 — so the cap has to be a dispatch input or the lever cannot be priced.
+    expect(inputNames(WORKFLOW)).toContain('query_transcript_chars');
+    const block = WORKFLOW.slice(WORKFLOW.indexOf('query_transcript_chars:'));
+    expect(block.slice(0, block.indexOf('query_seed:'))).toContain("default: ''");
+  });
+
+  it('forwards it through the budget array, and never as an unconditional flag', () => {
+    // Same shape as every other optional input: an empty value must reach the runner as NO argument, so the runner's
+    // own default stays the published configuration. A flag typed onto the invocation would be an override wearing the
+    // conditional form's clothes.
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_transcript_chars \}\}" \]; then\n\s+BUDGET_ARG\+=\(--transcript-chars/,
+    );
+  });
+
+  it('forwards it to the control too, because a capped run and an uncapped one are two arms', () => {
+    // The control exists to separate the presentation axis from everything else, and its step forwards the HARNESS
+    // flags while dropping the three presentation ones. The cap belongs with the harness: it changes what the model
+    // SEES, so a control without it would report the cap's delta as the axis's.
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_transcript_chars \}\}" \]; then\n\s+CONTROL_BUDGET\+=\(--transcript-chars/,
+    );
+  });
+});
+
 describe('the shard action is one owner for the corpus', () => {
   it('declares the three outputs its callers read, each bound to a step that produces it', () => {
     const block = ACTION.split('\noutputs:\n')[1]!.split('\nruns:\n')[0]!;

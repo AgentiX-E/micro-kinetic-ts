@@ -128,7 +128,11 @@ describe('the runner-to-loop wiring', () => {
     // dispatch and a ¥7.76 one, which is the reading iteration 347 was published on.
     const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
     const banner = text.slice(text.indexOf('Free-investigation arm'));
-    expect(banner.slice(0, 900)).toContain('floor ${');
+    // Sliced to the end of the concatenation rather than to a fixed 900 characters: the banner has grown a clause per
+    // iteration, and a width that has to be edited each time is a test measuring its own padding.
+    expect(banner.slice(0, banner.indexOf('console.log', banner.indexOf('revision')))).toContain(
+      'floor ${',
+    );
   });
 
   it("prices the run with the audit's own function, at the column the run started under", () => {
@@ -145,6 +149,14 @@ describe('the runner-to-loop wiring', () => {
     // The two-constant table is gone: a runner that kept it could print a second, different bill in the same file.
     expect(text).not.toContain('PRICES');
     expect(text).not.toContain('at the declared prices');
+  });
+
+  it('states the transcript wall in the banner, because a capped run is a different arm', () => {
+    // The cap decides how much of the investigation the model can still see, so two runs that differ only in it are
+    // two arms. A banner that printed the same sentence for both would report the configuration the reader assumed
+    // rather than the one that ran — which is what the floor's line was added for one iteration ago.
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    expect(text).toContain('${args.budget.transcriptChars} transcript chars');
   });
 
   it('records the incumbent NAME on both exits, because a boolean cannot be re-read as a name', () => {
