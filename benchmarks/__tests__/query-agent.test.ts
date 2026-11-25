@@ -606,6 +606,31 @@ describe('the transcript cap the dispatch set, which until iteration 354 reached
   });
 });
 
+describe('the wall clock, because the compression literature says tokens are not time', () => {
+  it('records the per-turn latency, so a cheaper run that is slower can be seen to be slower', async () => {
+    // `arXiv:2609.32961` measured exactly this on SWE-bench Verified and Terminal-Bench: a policy using a third of the
+    // tokens ran 1.2–1.8x LONGER on one model, and reported that fewer tokens is not the same claim as cheaper. A
+    // transcript cap is that policy's crude form, so the reading that says whether it paid has to carry time beside
+    // money — otherwise the one iteration that spends a dispatch to save tokens can report a saving that cost more of
+    // the only resource nobody bills for by the token.
+    const client: QueryAgentClient = {
+      model: 'fake',
+      complete: () => {
+        turn += 1;
+        return Promise.resolve({
+          text: turn === 1 ? 'TOOL fleet' : 'ANSWER payment',
+          promptTokens: 10,
+          completionTokens: 5,
+        });
+      },
+    };
+    let turn = 0;
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()));
+    expect(outcome.turnLatencyMs).toHaveLength(2);
+    for (const ms of outcome.turnLatencyMs) expect(ms).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe('renderTranscript', () => {
   const exchange = (round: number, result: string): QueryExchange => ({
     round,

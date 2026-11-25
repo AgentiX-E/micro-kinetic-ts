@@ -392,6 +392,7 @@ async function investigate(
     rounds: outcome.rounds,
     toolCalls: outcome.toolCalls,
     turnTokens: outcome.turnTokens,
+    turnLatencyMs: outcome.turnLatencyMs,
     promptTokens: outcome.promptTokens,
     completionTokens: outcome.completionTokens,
     // What the endpoint SAID it served, and what it served from cache. The first is not the model that was asked

@@ -1000,6 +1000,15 @@ export interface QueryOutcome {
    * from the artifact rather than from a second dispatch.
    */
   readonly turnTokens: readonly number[];
+  /**
+   * The wall clock every model call took, in milliseconds, in the same order as {@link turnTokens}.
+   *
+   * Recorded because the compression literature's sharpest negative result is about time rather than money:
+   * `arXiv:2609.32961` found policies using a third of the tokens running 1.2-1.8x longer on Terminal-Bench, so a
+   * saving in tokens is not yet a saving. A cap is that family's crude form, and a reading that reported the money
+   * without the time would be reporting the half of the trade this harness can measure for free.
+   */
+  readonly turnLatencyMs: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /**
@@ -1564,6 +1573,7 @@ export async function runQueryAgent(
   let toolCalls = 0;
   /** One entry per model call. Built here, inside the investigation, so no two cases can share a curve. */
   const turnTokens: number[] = [];
+  const turnLatencyMs: number[] = [];
   let promptTokens = 0;
   let completionTokens = 0;
   let servedModel = '';
@@ -1644,6 +1654,7 @@ export async function runQueryAgent(
       rounds,
       toolCalls,
       turnTokens,
+      turnLatencyMs,
       promptTokens,
       servedModel,
       cacheHitTokens,
@@ -1748,6 +1759,7 @@ export async function runQueryAgent(
     // Two ways to be out of runway: the rounds, or the calls. Either one turns this turn into the turn where the
     // only thing worth saying is the answer, and both are ANNOUNCED in the prompt that asks for it.
     const forcing = rounds === budget.maxRounds || callsLeft === 0;
+    const turnStartedAt = Date.now();
     const completion = await client.complete({
       system: schedule === null ? QUERY_SYSTEM_PROMPT : SCHEDULED_SYSTEM_PROMPT,
       user: buildUserPrompt(
@@ -1768,6 +1780,7 @@ export async function runQueryAgent(
     turnTokens.push(completion.promptTokens);
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
+    turnLatencyMs.push(Date.now() - turnStartedAt);
     cacheHitTokens += completion.cacheHitTokens ?? 0;
     // The LAST name the endpoint reported wins: a run that was rerouted mid-flight is a run whose later turns were
     // served by whatever it was rerouted to, and the artifact should say the name the endpoint finished on.
@@ -2026,6 +2039,14 @@ export interface QueryArmRow {
    * to read every run this programme has published. Its SUM is `promptTokens` on every row that carries it.
    */
   readonly turnTokens?: readonly number[];
+  /**
+   * The wall clock of every model call, in milliseconds, or absent on an artifact that predates the column.
+   *
+   * The sum is the case's model time: a reading of what a transcript cap SAVED has to be able to say what it cost in
+   * the resource no invoice names (`arXiv:2609.32961`, whose compressed policies ran 1.2-1.8x longer than the full
+   * context on one model while using a third of the tokens).
+   */
+  readonly turnLatencyMs?: readonly number[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /** What the endpoint said it served, which is not what the runner asked for. See {@link QueryOutcome.servedModel}. */
