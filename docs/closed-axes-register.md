@@ -10601,6 +10601,10 @@ nothing. Full record: `certainty-floor-351.md`.
 
 ### 352 The cache serves 81 % of the tokens at 1/50 the price, and a probe cannot see it (iteration 352)
 
+> **Superseded by §354.** The decomposition below is wrong in one part: the repeated text is a **543.8-token
+> opening**, not a 5 800-token system prompt, and the uncached column is the **one block that is new on each call**.
+> The per-token argument survives — a miss token costs 50 times a hit token — and the lever it points at is the block.
+
 **A probe cannot price a workload.** 349 sent the same 191-token body twice and read `prompt_cache_hit_tokens: 0` on
 both models, and on that evidence this register closed the 75 % saving as never available at any price. The workload
 says otherwise: run `45595943761` recorded **6 204 649 of 7 636 769 prompt tokens as cache hits, 81.25 %** — **5 842
@@ -10647,3 +10651,62 @@ what produced 15.55 for a 1.69 run. `PRICES` is gone from `run-query-agent.ts`, 
 that the curve steps there. What this does not fix is stated in the same place: the windows are transcribed from the
 card rather than queried, the line prices an artifact rather than a case, and the transcript lever — 84.6 % of the
 bill — is still unpriced. Full record: `bill-line-353.md`.
+
+### 354 The knob that priced the transcript reached nothing, and the cheap tokens were the ones it removed (iteration 354)
+
+**The flag was inert on every run this tree ever dispatched.** `--transcript-chars` travelled from the workflow through
+the runner into `trace`, and two lines later `TRACE_CHARS = 2 000` overwrote it; `buildUserPrompt` called
+`renderTranscript(exchanges)` with **no budget at all**, so every prompt was rendered at the default 9 000 characters.
+The wall was never reached — the corpus's own final trace is ~1 700 characters — so no artifact could have caught it.
+This is the third iteration running of one defect class: 351 priced one rule and executed another, 353 printed one
+arithmetic and computed another, 354 moved a lever that was not connected. Fixed by passing the budget through, and by
+a red test that asks a 120-character cap to say `elided` **inside the prompt**.
+
+**Three arms on the full corpus, differing only in the cap.** At 1 200 and 600 characters against the anchor
+`45595943761`: accuracy **−9**, **−19** and (alone, on `b9ba1df`) **−13** cases — −0.63 / −1.34 / −0.91 pp — with paired
+discordants **+6/−15**, **+5/−24** and **+6/−19**. The acceptance test is the trajectory, because accuracy is a sum over
+1 422 cases and a cap that repairs one and breaks another is indistinguishable from a cap that changed nothing
+(`CoACT`, `arXiv:2607.02911`): **54.50 %, 46.13 % and 46.34 %** of cases made the same directives in the same order. The
+tool census says what changed: `TOOL logs` **794 → 40 → 34** (−95 / −96 %), `TOOL failed` 1 078 → 1 653 → 1 651,
+`TOOL edges` 1 160 → 1 569 → 1 509. An arm that cannot re-read what it found stops asking for long lists and starts
+asking for verdicts.
+
+**The cap removed 38.3 % of the tokens and 11.8 % of the money, and two thirds of the money came from somewhere it did
+not act.** Run alone the 600-character arm costs **1.493 against 1.693**. It fell because the arm **changed tools**: a
+list of verdicts is a shorter observation than a dump of log lines, so the full-price column fell 9.4 % (225.0 → 203.5
+tokens a call) and that term is **67 %** of the saving — against **28 %** from the cache and 5 % from shorter answers.
+The cache column is the one that costs: **hits per call halve, 974.7 → 535.8**, and both caps land on the same figure
+although they differ by 44 tokens a call, so elision removes one stable block rather than a slope — the region the
+endpoint had been serving at 1/50th the miss price. Destroying 45 % of the cache-served tokens bought 0.056 CNY.
+
+**The first reading of that money was wrong, and the third dispatch is why.** The two capped arms ran concurrently on
+one key while the anchor ran alone, and the concurrent 600 arm read **1.70** — "no money". Alone it reads 1.49. The
+decomposition is exact: the **window** removes 438.9 cache-served tokens a call that vanish (2.79 M, costing nothing to
+lose); the **contention** moves 34.8 a call from the hit column into the miss column (0.22 M, **+0.22 CNY**); and the
+two nearly cancelled inside the concurrent artifact. The dichotomy this iteration first wrote down — "contention, or
+the window" — was false, because it assumed the bill follows the cache.
+
+**The bill, to the token.** The capped artifact's per-call curve puts the **opening at 543.8 tokens**: the first call
+carries no transcript, so that point is the standing instruction plus the head and nothing a cap can reach, and
+543.8 × 6 372 calls is **3.47 M** of the 4.70 M the arm spent. The rest is the **newest observation on each call** —
+225 tokens at full price × 6 366 calls = **¥1.432, 84.6 %** of the anchor's bill, against ¥0.124 for the 6.2 M tokens of
+accumulated history (7.3 %) and ¥0.137 of output (8.1 %). The history is not what the run pays for, which is what
+reverses 352's "shorten the transcript" recommendation rather than confirming it.
+
+**What this closes and what it opens.** The front-eliding family is closed as a lever over the history — 45 % of the
+cache-served tokens for 0.056 CNY is a bad trade — and not closed as evidence about cost, because the saving it did
+produce came through the one channel it did not intend: the size of the observation. That channel now has an
+instrument, `--result-chars`, which truncates a result as it **enters** the transcript, keeps every byte already read
+and leaves the prefix alone: at 100 tokens a block instead of ~200 the bill reads **¥1.06, −37 %** against the anchor's
+other two columns, judged by the same free test (trajectories preserved per case). Two columns were added to make that
+dispatch readable rather than inferred: `turnTokens` (one prompt count per call, which located the 543.8-token
+opening) and `turnHitTokens` (the cached share of each call, so the next arm states which call lost its cache instead
+of deriving it from a case total).
+
+**What this does not establish.** Contention is measured (0.22 M tokens, **¥0.22**) but not paired: the alone arm ran
+23 minutes later and on a different revision (`b9ba1df`, the bill-line fix rather than an arm change), so the sign of
+the decomposition is not in doubt and its standard error is. And **501–536 cache-served tokens a call is 92–99 % of the
+543.8-token opening**, which a strict byte-prefix cache could not serve — the budget line changes every turn and sits in
+the third line of the head — so the endpoint caches more generously than a prefix match, or counts hits differently
+than its documentation implies. Every figure above prices the reported counts, which is what an invoice charges, and
+none assumes the mechanism. Full record: `docs/transcript-lever-354.md`.
