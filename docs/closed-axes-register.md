@@ -10799,3 +10799,42 @@ Fenced as the ablation it is: the channel → field mapping is a `Record` over t
 silently unablatable; the control is asserted against the published cell and the run REFUSES on disagreement rather
 than printing a table about another configuration; and the label — accepted set, fault type, metrics, logs, injection
 time — is copied through every strip, because a gain bought by narrowing the answer set is the `engineRank` defect.
+
+### 357 `--result-chars 600` keeps every answer and costs 89 % more (iteration 357)
+
+The axis this iteration's plan called P0 was the entry-side cut: shorten the tool result, project ¥1.06 (−37 %),
+keep the trajectories. It ran — `45695839124`, 1 422 cases, 23 min 41 s of model time, success — and it is
+**refused, because it is not cheaper.**
+
+| | anchor `45595943761` | arm `45695839124` |
+| --- | ---: | ---: |
+| agent Top@1 | **1 327** | **1 327** |
+| prompt tokens | 7 636 769 | 6 232 574 (−18.4 %) |
+| cache hits | 6 204 875 (81.25 %) | 3 238 016 (51.95 %) |
+| **uncached prompt** | **1 431 894** | **2 994 558 (+109.1 %)** |
+| **bill, off-peak `1 / 4 / hit 0.02`** | **¥1.69** | **¥3.20 (+88.8 %)** |
+| per case | ¥0.00119 | ¥0.00225 |
+
+**The accuracy test passed and the ledger failed.** Not one case moved, so the cut really did delete observation
+text and nothing else. But a cache hit is **50×** cheaper than a miss on this card, and the cut removed 1.40 M
+prompt tokens while destroying 2.97 M tokens of cache hits:
+
+```
+cache hits lost   2.9669 M × ¥0.02 = +¥0.0593
+misses added      1.5627 M × ¥1.00 = +¥1.5627      net +¥1.5034  →  ¥1.69 → ¥3.20
+```
+
+**The projection was wrong about the mechanism, not only the magnitude.** `result_chars` was modelled as an
+entry-side cut that leaves the cached prefix alone. It is not: each turn's RESULT becomes part of the NEXT turn's
+prefix, so shortening results shortens the cacheable region for every subsequent round. The plan's own kill
+criterion said `cacheHitTokens` per call must stay near 975; measured, it **halved to 508** from ~1 170.
+
+**This is the fourth lever in five iterations that priced the token it saved and not the structure it broke** (§351
+a rule the arm did not run, §353 a bill nobody computed, §354 a knob that reached nothing, §355 a table describing a
+standing it no longer had). The new part is that the bill was read on the real card instead of projected from a
+token count.
+
+The shipped cost row is unchanged at **¥0.00119 a case** — the anchor's, on the off-peak card with 81.25 % cache —
+and `result_chars` keeps its shipped value. What the refusal leaves behind is a named quantity: the cache share has
+two observed states, **81 % uncut and 52 % cut**, and any future entry-side cut must predict its effect on
+`turnHitTokens` before it is dispatched rather than after.
