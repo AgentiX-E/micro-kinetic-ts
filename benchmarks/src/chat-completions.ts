@@ -40,6 +40,17 @@ export interface ChatCompletion {
   readonly promptTokens: number;
   /** Completion tokens as reported by `usage`, or zero when the endpoint reported none. */
   readonly completionTokens: number;
+  /**
+   * Prompt tokens the endpoint served from its prompt cache, or zero.
+   *
+   * Carried because a cost claim without it is an inference. `docs/cost-structure-348.md` reports that the full-corpus
+   * run paid for every prompt token at the miss rate, and that reading came from a price and a total rather than from
+   * the endpoint — a probe on 2026-11-25 sent a byte-identical body twice and read `prompt_cache_hit_tokens: 0` both
+   * times, which settles the question but only for that prompt. A run that states a cache saving has to show this.
+   */
+  readonly cacheHitTokens: number;
+  /** Prompt tokens charged at the miss rate. `hit + miss` is `promptTokens` when the endpoint reports both. */
+  readonly cacheMissTokens: number;
   /** Attempts it took, so a run can report how much of its latency was the endpoint's queue. */
   readonly attempts: number;
 }
@@ -140,6 +151,8 @@ interface ParsedBody {
   readonly model: string;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  readonly cacheHitTokens: number;
+  readonly cacheMissTokens: number;
 }
 
 /** Pull the assistant message out of a response body, refusing a body that has none. */
@@ -175,6 +188,10 @@ function parseBody(body: string): ParsedBody | string {
     model: typeof record['model'] === 'string' ? record['model'] : '',
     promptTokens: reported('prompt_tokens'),
     completionTokens: reported('completion_tokens'),
+    // Zero when absent, and zero is the honest reading: an endpoint that does not report a cache served nothing from
+    // one, so a caller that treats absence as "unknown" would have to invent a third state in a column of a bill.
+    cacheHitTokens: reported('prompt_cache_hit_tokens'),
+    cacheMissTokens: reported('prompt_cache_miss_tokens'),
   };
 }
 

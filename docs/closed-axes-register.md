@@ -10500,3 +10500,51 @@ repository cannot assert by reading its own code. Stated as an open question rat
 on a full-corpus run at ¥20.81 when the question each asked was a paired delta on the engine's 266 misses. A 466-case
 stratified sample (`--sample-misses` / `--sample-correct`, both already shipped) costs ¥6.8 and resolves 5 points at
 p < 0.01; the full corpus added resolution below 1.5 points, which no decision here has ever turned on.
+
+### 349 The model in every artifact is retired, the cache serves nothing, and the price was an estimate
+
+**Four requests of eight tokens, ¥0.001, and three answers.** `GET /v1/models` returns **two** models — `deepseek-flash`
+and `deepseek-v4-pro`. `deepseek-chat` is **not among them**: the alias was retired, and a request for it is *served
+anyway*, by `deepseek-flash`, which the response's own `model` field reports. Every artifact this programme wrote
+carries the name that was ASKED FOR, so **every one of them names a model that no longer exists**, including the
+93.39 % standing. What that changes is comparability across the retirement date and not the readings: the arm that ran
+ran, and the response named it.
+
+**The cache, closed with a no.** The same body, twice, on both models:
+
+```
+deepseek-chat  #1 {"prompt_tokens":191,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":191}
+deepseek-chat  #2 {"prompt_tokens":191,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":191}
+deepseek-flash #1 {"prompt_tokens":216,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":216}
+deepseek-flash #2 {"prompt_tokens":216,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":216}
+```
+
+**Zero on the second identical call.** 348 listed "recovering the cache would cut the input price by up to 75 % — more
+than every other row combined" as the largest open item; it is closed, and the 75 % was never available. What replaces
+the inference is the endpoint's own field, recorded per call from now on: a run that claims a cache saving has to
+**show** one.
+
+**The price was an estimate, by 1.87×.** This repository prices a run at 2 CNY per million in and 8 out; every "CNY"
+figure it has published is that arithmetic, applied to the endpoint's own token counts. The served model's published
+off-peak rate is **$0.15 / $0.60 per million** — **1.07 / 4.28** at 7.13. So **run `45531140696` cost 11.13 CNY and not
+20.81**, which is **0.0078 per case** and **1/820th** of the only competitor that publishes a per-case price. The
+structure is untouched: 98.23 % input, 222 tokens of question per token of answer, 786 cases settled without the model
+at 54.82 % of the bill, and the 0.87 floor's 41.1 % — every one of those is a token ratio, and a price table cancels
+out of it. The ratio stays bounded on both sides, which is why the floor is still the one saving on the table.
+
+**A risk the probe found on the way past, and did not walk into.** The `deepseek-flash` responses carry
+`completion_tokens_details.reasoning_tokens: 8` — the model spent its whole eight-token budget thinking, because
+**thinking is on by default on that name**. The shipped arms spend 5.4 completion tokens per call, which is impossible
+with thinking on, so the retired alias was serving it with thinking **off**. Migrating the requested name without also
+disabling thinking would multiply the output bill tenfold and look like a price change rather than a configuration one;
+the migration is therefore one change — `deepseek-flash` with thinking disabled, served name and reasoning tokens both
+recorded — and it is not made here.
+
+**Shipped.** `ChatCompletion` carries `cacheHitTokens` / `cacheMissTokens` parsed from the endpoint's own `usage`, with
+absence reading as zero (an endpoint that reports no cache served nothing from one); `QueryOutcome.servedModel` and
+`QueryArmRow.servedModel` record what the endpoint SAID it served, empty when it says nothing and **never the requested
+name**; `QueryArmRow.cacheHitTokens` sums the split across turns; `DEEPSEEK_FLASH_RATES` sits beside
+`DEEPSEEK_CHAT_RATES` with the 1.87 asserted by a test; the banner reads `asked for deepseek-chat`; and
+`probe-endpoint.yml` is dispatch-only, four requests, no artifact — the next time a supplier moves, the answer costs a
+hundredth of a corpus case instead of a day spent reading two files that disagree. Full record:
+`endpoint-probe-349.md`.

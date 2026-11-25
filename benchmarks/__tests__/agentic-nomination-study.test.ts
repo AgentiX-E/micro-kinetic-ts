@@ -41,6 +41,8 @@ function fakeClient(reply: (user: string) => string): ChatClient {
       model: 'fake-model',
       promptTokens: 10,
       completionTokens: 2,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
       attempts: 1,
     }),
   };

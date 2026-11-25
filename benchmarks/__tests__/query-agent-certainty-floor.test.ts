@@ -275,3 +275,135 @@ describe('the certainty floor', () => {
     expect(outcome.toolCalls).toBe(0);
   });
 });
+
+/**
+ * What the loop records about the endpoint itself.
+ *
+ * The probe of 2026-11-25 answered `deepseek-chat` with `model: "deepseek-flash"`, so a record that carries only the
+ * requested name is a record of a model that no longer exists — every artifact in this programme has one. And the
+ * same probe read `prompt_cache_hit_tokens: 0` on a byte-identical second call, which makes a cache saving something
+ * a run must SHOW rather than argue from a price.
+ */
+describe('the endpoint the loop actually reached', () => {
+  it('records the served name and the cache split the endpoint reports', async () => {
+    const turns: string[] = [];
+    const served = {
+      model: 'fake',
+      complete: async () => {
+        turns.push('t');
+        return {
+          text: 'ANSWER checkout',
+          promptTokens: 100,
+          completionTokens: 5,
+          model: 'deepseek-flash',
+          cacheHitTokens: 60,
+        };
+      },
+    };
+    const outcome = await runQueryAgent(
+      served,
+      telemetry(),
+      undefined,
+      null,
+      'none',
+      'none',
+      order,
+      opinion(0.1),
+      null,
+      null,
+      false,
+      0,
+    );
+    expect(outcome.servedModel).toBe('deepseek-flash');
+    // Per turn, so a six-turn investigation that hit the cache once shows six hundredths of the total, not one.
+    expect(outcome.cacheHitTokens).toBe(60 * turns.length);
+  });
+
+  it('treats an empty served name the same as an absent one, because both mean the endpoint did not say', async () => {
+    const blank = {
+      model: 'asked-for',
+      complete: async () => ({
+        text: 'ANSWER checkout',
+        promptTokens: 10,
+        completionTokens: 2,
+        model: '',
+      }),
+    };
+    const outcome = await runQueryAgent(
+      blank,
+      telemetry(),
+      undefined,
+      null,
+      'none',
+      'none',
+      order,
+      opinion(0.1),
+      null,
+      null,
+      false,
+      0,
+    );
+    // The alternative — recording the empty string over a previous turn's real name — would let a mid-run blank
+    // erase what the endpoint had already told us.
+    expect(outcome.servedModel).toBe('');
+  });
+
+  it('records an empty name when the endpoint names nothing, rather than the name that was asked for', async () => {
+    const silent = {
+      model: 'asked-for',
+      complete: async () => ({ text: 'ANSWER checkout', promptTokens: 10, completionTokens: 2 }),
+    };
+    const outcome = await runQueryAgent(
+      silent,
+      telemetry(),
+      undefined,
+      null,
+      'none',
+      'none',
+      order,
+      opinion(0.1),
+      null,
+      null,
+      false,
+      0,
+    );
+    expect(outcome.servedModel).toBe('');
+    expect(outcome.cacheHitTokens).toBe(0);
+  });
+});
+
+describe('a mid-run blank does not erase the name already recorded', () => {
+  it('keeps the last NON-EMPTY served name across turns', async () => {
+    // A rerouted run is exactly this shape: the first turns were served by one model and a later turn reported
+    // nothing. Recording the blank would make the artifact say "unknown" about a run whose first half is known.
+    let turn = 0;
+    const flaky = {
+      model: 'asked-for',
+      complete: async () => {
+        turn += 1;
+        return {
+          text: 'TOOL metric checkout',
+          promptTokens: 10,
+          completionTokens: 2,
+          model: turn === 1 ? 'deepseek-flash' : '',
+        };
+      },
+    };
+    const outcome = await runQueryAgent(
+      flaky,
+      telemetry(),
+      { maxRounds: 3, maxToolCalls: 10, transcriptChars: 8000 },
+      null,
+      'none',
+      'none',
+      order,
+      opinion(0.1),
+      null,
+      null,
+      false,
+      0,
+    );
+    expect(outcome.rounds).toBe(3);
+    expect(outcome.servedModel).toBe('deepseek-flash');
+  });
+});

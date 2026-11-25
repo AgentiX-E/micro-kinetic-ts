@@ -89,6 +89,8 @@ class ScriptedClient implements ChatClient {
       model: 'deepseek-chat',
       promptTokens: 100,
       completionTokens: 10,
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
       attempts: 1,
       ...this.reported,
     };

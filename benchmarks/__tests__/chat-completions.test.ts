@@ -117,6 +117,10 @@ describe('createChatClient', () => {
       model: 'deepseek-chat',
       promptTokens: 812,
       completionTokens: 9,
+      // An endpoint whose usage block carries no cache split is reported as zero hits, which is the same fact the
+      // whole-corpus run was read as: every prompt token charged at the miss rate.
+      cacheHitTokens: 0,
+      cacheMissTokens: 0,
       attempts: 1,
     });
     expect(endpoint.seen).toHaveLength(1);
@@ -384,5 +388,80 @@ describe('retryAfterMs', () => {
     expect(retryAfterMs('Sat, 14 Nov 2026 00:00:00 GMT', now)).toBe(0);
     expect(retryAfterMs('soon', now)).toBe(0);
     expect(retryAfterMs(new Date(now - 1000).toUTCString(), now)).toBe(0);
+  });
+});
+
+/**
+ * The two usage fields the runner never read, and why they are the difference between a claim and a measurement.
+ *
+ * `docs/cost-structure-348.md` reports that run `45531140696` paid for **10 221 261 prompt tokens with no cache hit**
+ * — and it says so on the strength of 20.81 CNY against a published price, which is an INFERENCE. A probe of the
+ * endpoint on 2026-11-25 sent the same body twice and read `prompt_cache_hit_tokens: 0` both times, so the inference
+ * was right and unprovable-in-advance. These cases make it provable in the artifact: a hit and a miss are recorded
+ * per call, and a run that claims a saving has to show them.
+ *
+ * The model field is here for a sharper reason. The endpoint answers `deepseek-chat` with **`model:
+ * "deepseek-flash"`** — the requested name is gone and the served name is not. Every artifact this programme has
+ * written says `deepseek-chat` because that is what was ASKED FOR, so the record has been naming a model that no
+ * longer exists. `servedModel` is what the endpoint says it ran.
+ */
+describe('the usage fields that make a cost claim a measurement', () => {
+  it('reports the cache split the endpoint sends, in both directions', async () => {
+    const endpoint = await endpointWith(async () => ({
+      status: 200,
+      body: JSON.stringify({
+        model: 'deepseek-flash',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ANSWER db' } }],
+        usage: {
+          prompt_tokens: 1_000,
+          completion_tokens: 12,
+          prompt_cache_hit_tokens: 768,
+          prompt_cache_miss_tokens: 232,
+        },
+      }),
+    }));
+    const client = createChatClient({ apiKey: KEY, model: 'deepseek-chat', endpoint: endpoint.endpoint });
+    const answer = await client.complete({ system: 's', user: 'u' });
+    expect(answer.cacheHitTokens).toBe(768);
+    expect(answer.cacheMissTokens).toBe(232);
+    // And the served name is the endpoint's, not the caller's: the two differ today and the difference is the point.
+    expect(answer.model).toBe('deepseek-flash');
+  });
+
+  it('reads an absent cache block as zero hits rather than as an unmeasured field', async () => {
+    const endpoint = await endpointWith(async () => ({
+      status: 200,
+      body: JSON.stringify({
+        model: 'm',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'x' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 1 },
+      }),
+    }));
+    const client = createChatClient({ apiKey: KEY, model: 'm', endpoint: endpoint.endpoint });
+    const answer = await client.complete({ system: 's', user: 'u' });
+    expect(answer.cacheHitTokens).toBe(0);
+    expect(answer.cacheMissTokens).toBe(0);
+  });
+
+  it('keeps the hit count out of the prompt count, so a bill cannot be double-counted', async () => {
+    const endpoint = await endpointWith(async () => ({
+      status: 200,
+      body: JSON.stringify({
+        model: 'm',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'x' } }],
+        usage: {
+          prompt_tokens: 900,
+          completion_tokens: 3,
+          prompt_cache_hit_tokens: 900,
+          prompt_cache_miss_tokens: 0,
+        },
+      }),
+    }));
+    const client = createChatClient({ apiKey: KEY, model: 'm', endpoint: endpoint.endpoint });
+    const answer = await client.complete({ system: 's', user: 'u' });
+    // `promptTokens` stays the endpoint's total: it is what the endpoint bills and what every artifact already holds.
+    // The split is carried BESIDE it, because a reader who only had the split would have to add it back.
+    expect(answer.promptTokens).toBe(900);
+    expect(answer.cacheHitTokens + answer.cacheMissTokens).toBe(900);
   });
 });

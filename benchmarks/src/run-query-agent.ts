@@ -333,6 +333,10 @@ async function investigate(
       toolCalls: 0,
       promptTokens: 0,
       completionTokens: 0,
+      // Empty rather than the requested name: a call that failed was served by nothing, and a record that filled in
+      // the request would be claiming a model answered when none did.
+      servedModel: '',
+      cacheHitTokens: 0,
       rawAnswer: null,
       answeredBy: null,
       calls: [],
@@ -383,6 +387,11 @@ async function investigate(
     toolCalls: outcome.toolCalls,
     promptTokens: outcome.promptTokens,
     completionTokens: outcome.completionTokens,
+    // What the endpoint SAID it served, and what it served from cache. The first is not the model that was asked
+    // for — `deepseek-chat` is answered by `deepseek-flash` — and the second is how a run proves a cache saving
+    // instead of inferring one from a price.
+    servedModel: outcome.servedModel,
+    cacheHitTokens: outcome.cacheHitTokens,
     rawAnswer: outcome.rawAnswer,
     answeredBy: outcome.answeredBy,
     calls: outcome.investigated,
@@ -556,7 +565,7 @@ async function main(): Promise<void> {
   const seededWidth = sample.length === 0 ? 0 : (verdicts.get(sample[0]!)?.ranked.length ?? 0);
   const fallbackLabel = args.fallback === 'seed' ? args.seed : args.fallback;
   console.log(
-    `Free-investigation arm — ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
+    `Free-investigation arm — asked for ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
       `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
       `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, revision ${meta.revision ?? 'unrecorded'}`,

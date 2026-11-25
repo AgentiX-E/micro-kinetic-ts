@@ -127,11 +127,20 @@ counts into the record.
 
 ## 8. What this does not fix
 
+> **CORRECTED, 2026-11-25, iteration 349.** Two claims in this section were wrong and one number throughout the file is
+> an estimate rather than an invoice. A four-request probe of the endpoint (`endpoint-probe-349.md`) found that
+> **the prompt cache serves nothing**: the same body sent twice read `prompt_cache_hit_tokens: 0` both times on both
+> models, so the 75 % below does not exist at any price and is closed with a no. It also found that **`deepseek-chat`
+> is retired** — the key reaches only `deepseek-flash` and `deepseek-v4-pro`, and a request for the old name is served
+> by `deepseek-flash` — and that the served model's published rate is **$0.15 / $0.60 per million**, which at 7.13 is
+> **1.87× less** than the 2 / 8 this file prices with. So **every CNY figure here is an upper bound**: the run cost
+> **11.13 CNY, not 20.81**, which is **0.0078 per case**. The structure — 98.23 % input, 222 to 1, 786 discarded cases,
+> 54.82 % — is untouched, because it is token arithmetic and a price table cancels out of it.
+
 **The cache.** 10.2 M prompt tokens were charged at the miss rate, so no prefix was reused across 8 530 calls to the
-same endpoint with a byte-identical 750-character system prompt. Recovering it would cut the input price by up to 75 %
-and is worth more than every other row in §5 combined — but it is an endpoint-side property this repository cannot
-assert by reading its own code, so it is stated here as an open question with a measurement attached rather than as a
-saving.
+same endpoint with a byte-identical 750-character system prompt. **Probed and closed:** a byte-identical second call
+reads `prompt_cache_hit_tokens: 0`, so a prompt of this shape does not cache here and the 75 % below was never
+available.
 
 **The 266 misses still cost what they cost.** They are the cases the model exists for: 180 repairs, 0.957 precision.
 Cutting further means cutting the product.

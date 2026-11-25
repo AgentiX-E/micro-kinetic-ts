@@ -9,7 +9,7 @@ import {
   skipAt,
   type CostRow,
 } from '../src/cost-model.js';
-import { DEEPSEEK_CHAT_RATES as RATES_DIRECT } from '../src/token-rates.js';
+import { DEEPSEEK_FLASH_RATES, DEEPSEEK_CHAT_RATES as RATES_DIRECT } from '../src/token-rates.js';
 
 /**
  * A row as an artifact writes it, in the fields the audit reads.
@@ -32,6 +32,19 @@ function row(over: Partial<CostRow> = {}): CostRow {
 }
 
 describe('the rate table', () => {
+  it('carries the served model at 1.87 times less than the table every artifact was priced with', () => {
+    // Not a discount the programme collected: a correction to an estimate. The endpoint serves `deepseek-flash` at
+    // 0.15 / 0.60 USD per million, and 2 / 8 CNY is 1.87x that after conversion — so every figure this repository has
+    // published as "CNY" is an upper bound, and the ratio is stated here so it cannot drift.
+    expect(DEEPSEEK_CHAT_RATES.inputPerMillion / DEEPSEEK_FLASH_RATES.inputPerMillion).toBeCloseTo(
+      1.87,
+      1,
+    );
+    expect(
+      DEEPSEEK_CHAT_RATES.outputPerMillion / DEEPSEEK_FLASH_RATES.outputPerMillion,
+    ).toBeCloseTo(1.87, 1);
+  });
+
   it('is one table, re-exported rather than restated', () => {
     // The audit imports the rates from `token-rates` and re-exports them for callers that only need the audit. Two
     // tables would drift silently: a provider change would move one price and leave the other billing at the old one.

@@ -991,6 +991,16 @@ export interface QueryOutcome {
   readonly toolCalls: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  /**
+   * The model the endpoint said it served, or `''` when it said nothing.
+   *
+   * Distinct from the model the runner REQUESTED, and the distinction is not academic: a probe of this endpoint on
+   * 2026-11-25 sent `deepseek-chat` and was answered by `deepseek-flash`, so a record that carries only the request
+   * names a model that no longer exists.
+   */
+  readonly servedModel: string;
+  /** Prompt tokens served from the endpoint's cache across every turn. */
+  readonly cacheHitTokens: number;
   readonly stop: 'answered' | 'rounds' | 'tool-calls';
 }
 
@@ -1441,6 +1451,17 @@ export interface QueryAgentClient {
     text: string;
     promptTokens: number;
     completionTokens: number;
+    /**
+     * The model the endpoint reported SERVING, when it reported one.
+     *
+     * Optional at the port and recorded in the artifact, because it is not the model that was asked for: on
+     * 2026-11-25 the endpoint answered a request for `deepseek-chat` with `model: "deepseek-flash"`, and every
+     * artifact this programme wrote before that probe names a model the endpoint no longer serves. A fake client
+     * that reports nothing is not pretending to know.
+     */
+    model?: string;
+    /** Prompt tokens the endpoint served from its cache, when it reported a split. Absent reads as zero. */
+    cacheHitTokens?: number;
   }>;
 }
 
@@ -1509,6 +1530,8 @@ export async function runQueryAgent(
   let toolCalls = 0;
   let promptTokens = 0;
   let completionTokens = 0;
+  let servedModel = '';
+  let cacheHitTokens = 0;
   let answerRefused: string | null = null;
   let stop: QueryOutcome['stop'] = 'rounds';
   let rawAnswer: string | null = null;
@@ -1585,6 +1608,8 @@ export async function runQueryAgent(
       rounds,
       toolCalls,
       promptTokens,
+      servedModel,
+      cacheHitTokens,
       completionTokens,
       stop,
     };
@@ -1701,6 +1726,10 @@ export async function runQueryAgent(
     });
     promptTokens += completion.promptTokens;
     completionTokens += completion.completionTokens;
+    cacheHitTokens += completion.cacheHitTokens ?? 0;
+    // The LAST name the endpoint reported wins: a run that was rerouted mid-flight is a run whose later turns were
+    // served by whatever it was rerouted to, and the artifact should say the name the endpoint finished on.
+    if (completion.model !== undefined && completion.model !== '') servedModel = completion.model;
     const call = parseCall(completion.text);
     // The terminal act is rendered with its own keyword, not as `TOOL answer`: a transcript that spells the answer
     // the same way it spells a query cannot be read to say when the investigation stopped.
@@ -1940,6 +1969,10 @@ export interface QueryArmRow {
   readonly toolCalls: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  /** What the endpoint said it served, which is not what the runner asked for. See {@link QueryOutcome.servedModel}. */
+  readonly servedModel: string;
+  /** Prompt tokens served from the endpoint's cache, so a cost saving can be shown rather than inferred. */
+  readonly cacheHitTokens: number;
 }
 
 /**

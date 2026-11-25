@@ -409,6 +409,8 @@ describe('runStudy', () => {
         model: 'deepseek-chat',
         promptTokens: 700,
         completionTokens: 45,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
         attempts: 1,
       }),
     };
@@ -498,6 +500,8 @@ describe('runStudy', () => {
         model: 'deepseek-chat',
         promptTokens: 500,
         completionTokens: 4,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
         attempts: 1,
       }),
     };
@@ -548,6 +552,8 @@ describe('runStudy', () => {
           model: 'deepseek-chat',
           promptTokens: 500,
           completionTokens: 4,
+          cacheHitTokens: 0,
+          cacheMissTokens: 0,
           attempts: 1,
         };
       },
