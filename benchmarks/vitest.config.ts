@@ -55,6 +55,10 @@ export default defineConfig({
       // and need the benchmark corpora, so they are exercised by the workflow
       // rather than here. That is a known gap, not a claim that they are trivial.
       include: [
+        // The trace-channel census's pure half: five arms, a strip that may not touch the label, and the
+        // accumulator the report renders from. Its tests import it directly, which is what makes its absence
+        // here a hole rather than a choice — the same hole `semantic-config.ts` sat in.
+        'src/trace-channel-census.ts',
         'src/semantic-config.ts',
         'src/rcaeval-topology.ts',
         'src/rcaeval-semantic.ts',

@@ -93,12 +93,39 @@ const NOT_THE_RCAEVAL_CORPUS: readonly string[] = [
   // those columns names the service the artifact already answered with. The witness file it writes is the case's
   // own evidence, not a ranking input — nothing downstream of it ranks anything.
   'run-edge-novel-census.ts',
+  // Iteration 356: the trace-channel census. It loads FSE'26 cases because the ablation IS an edit to the
+  // case -- empty one bridge field and re-score -- so the case must be the thing it holds, and it assembles no
+  // corpus: the five arms are five readings of ONE case, and nothing it writes is a ranking input. It is an
+  // outsider for the same reason `run-fse26.ts` is: a different loader, a different case format, no spans.
+  'run-trace-census.ts',
   // Iteration 328: the channel split, read off each case's own metric families. It loads FSE'26 cases because the
   // KIND of channel a departure lives in is a column of the CASE, and it assembles no corpus: what it prices is how
   // often one predicate over those columns would rename an answer the artifact already settled. The profile file
   // it writes is the case's own evidence, not a ranking input.
   'run-channel-split.ts',
 ];
+
+/**
+ * A file's text with every innermost parenthesised group emptied, applied until it stops changing.
+ *
+ * The assertion below is about ARGUMENT COUNT. A regex over raw text cannot count arguments, because a nested
+ * call puts a comma inside an argument list without adding an argument:
+ * `loader.toBenchmarkCase(rawForArm(base, arm))` is a ONE-argument call that reads as `(a, b)`. That false
+ * positive was found by the trace-channel census, whose call is exactly that shape — so the nesting is
+ * flattened first and the fence keeps measuring what it says it measures instead of being relaxed.
+ *
+ * @param text - The file's source.
+ * @returns The source with nested groups collapsed to `()`.
+ */
+function flattenNesting(text: string): string {
+  let current = text;
+  let previous: string;
+  do {
+    previous = current;
+    current = current.replace(/\([^()]*\)/g, '()');
+  } while (current !== previous);
+  return current;
+}
 
 describe('the corpus has one owner, and four paths used to assemble it', () => {
   it('routes every RCAEval assembler through the owner, and reaches the loader or augmenter nowhere else', () => {
@@ -110,7 +137,7 @@ describe('the corpus has one owner, and four paths used to assemble it', () => {
       // The RCAEval conversion is the THREE-argument one (`case, graph, suiteName`). The FSE'26 loader's
       // `toBenchmarkCase(raw)` is a different loader over a different corpus, so the assertion is scoped to
       // the signature that carries an assembled graph.
-      expect(text, `${name} must not convert a raw case itself`).not.toMatch(
+      expect(flattenNesting(text), `${name} must not convert a raw case itself`).not.toMatch(
         /\.toBenchmarkCase\([^)]*,\s*[a-zA-Z]/,
       );
       expect(text, `${name} must not augment a graph itself`).not.toContain(

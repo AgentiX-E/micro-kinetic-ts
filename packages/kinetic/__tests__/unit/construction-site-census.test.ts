@@ -156,6 +156,12 @@ describe('every place that builds the engine, classified', () => {
       'benchmarks/src/run-ablation.ts',
       'benchmarks/src/run-fse26.ts',
       'benchmarks/src/run-rcaeval.ts',
+      // Iteration 356: the trace-channel census. It is `derived` for the same reason the three above are —
+      // its two arguments come from `buildFse26EngineOptions`, so the configuration the ablation was taken
+      // at is a record rather than a literal at the call site. It exists because `arXiv:2603.02057`'s
+      // sentence about trace-based methods cannot price this engine's dependence on that channel, and the
+      // engine is a pure function of a case on disk, so the answer costs no model call.
+      'benchmarks/src/run-trace-census.ts',
     ]);
     expect(sitesOfKind('shipped-defaults')).toEqual([
       'benchmarks/src/run-all.ts',
