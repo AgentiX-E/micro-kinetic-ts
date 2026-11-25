@@ -66,6 +66,12 @@ export default defineConfig({
         // against `0` for a weight a gate zeroed, and a whole ranking against the reported top five — so the
         // newline shape, the null round-trip, the count it reports and the truncation on construction are all
         // asserted rather than trusted.
+        // Added with the module: the transcript cap's paired reading. Its whole value is the THREE distinctions it
+        // draws — a preserved trajectory against a moved one, a moved trajectory against a moved ANSWER (a cap can
+        // change what the arm names without changing what it looked at), and an unrecorded cache or clock against a
+        // zero — so every one of them is asserted here rather than trusted. `run-cap-reading.ts` stays outside the
+        // denominator for the reason every `run-*.ts` does: it calls `main()` at import time.
+        'src/transcript-reading.ts',
         'src/terms-dump.ts',
         // Added with the module: the dual-family census reads the term's POPULATION off the ranking the
         // correctness checks count from. Its whole value is the distinction it draws — a paid member, a
