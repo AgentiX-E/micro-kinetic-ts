@@ -56,6 +56,17 @@ describe('run metadata', () => {
     expect(runMetadataOf(base).arms).toBe('free');
   });
 
+  it('states the per-result cut beside the cap, because the two levers are not the same lever', () => {
+    // The transcript cap drops old blocks from the front and moves the prefix; the result cut renders each block once,
+    // on entry, and leaves the prefix alone. Two runs that differ in WHICH lever they used would otherwise be two
+    // records that differ in a number, and a reader would take the difference for a cap size.
+    expect(runMetadataOf(base).budget.resultChars).toBeUndefined();
+    const cut = runMetadataOf({ ...base, resultChars: 100 });
+    expect(cut.budget.resultChars).toBe(100);
+    expect(cut.arms).toContain('result=100');
+    expect(cut.arms).not.toContain('transcript=');
+  });
+
   it('records when the run happened, because a row cannot', () => {
     const meta = runMetadataOf(base);
     expect(meta.startedAt).toBe('2026-11-25T00:35:25.000Z');

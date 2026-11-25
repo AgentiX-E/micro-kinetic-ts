@@ -932,6 +932,20 @@ export interface QueryBudget {
   readonly maxToolCalls: number;
   /** Characters of transcript carried into the next prompt, oldest results elided first. */
   readonly transcriptChars: number;
+  /**
+   * Characters of each RESULT that reach the prompt, or absent for the whole result.
+   *
+   * A different lever from {@link transcriptChars}, and iteration 354 measured why it is the one that can pay. Cutting
+   * the transcript drops old blocks from the FRONT, so every later prompt begins somewhere else — the prefix moves, the
+   * endpoint's cache stops matching, and a run that spent 38.5 % fewer tokens was billed 1 % more (hits per call
+   * 974.7 → 501.0). Cutting a result as it ENTERS decides that block's final form once: the prompt of call N+1 extends
+   * the prompt of call N byte for byte, the history stays readable, and the tokens removed are the ones the bill charges
+   * full price for — 225 a call, 84.6 % of it.
+   *
+   * Absent rather than defaulted, because every artifact this programme has published was rendered without a cut and a
+   * silent default would re-render them.
+   */
+  readonly resultChars?: number;
 }
 
 /** Defaults: six turns, ten calls, and a 9 000-character transcript. */
@@ -1051,9 +1065,7 @@ export function renderTranscript(
   exchanges: readonly QueryExchange[],
   budget: QueryBudget = DEFAULT_QUERY_BUDGET,
 ): string {
-  const blocks = exchanges.map(
-    (exchange) => `${exchange.directive}\n=> ${exchange.ok ? '' : 'REFUSED '}${exchange.result}`,
-  );
+  const blocks = exchanges.map((exchange) => renderBlock(exchange, budget));
   const kept: string[] = [];
   let total = 0;
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
@@ -1068,6 +1080,30 @@ export function renderTranscript(
 
 /** The stand-in a transcript uses for a result it no longer carries. */
 const ELIDED = '[earlier results elided]';
+
+/**
+ * One exchange as the prompt carries it: the directive, the refusal mark, and the result — optionally cut.
+ *
+ * The cut keeps the HEAD, because the tools print strongest-first (`metric`, `fleet`) or earliest-first (`logs`), so the
+ * first characters are the ones that decide the next action; a tail-keeping cut would be a different experiment and is
+ * not what this flag claims to do. The marker names the number of characters removed, so a row's trace can be read to
+ * say how much of a result the model never saw without re-deriving it from the cap.
+ *
+ * Deterministic in (result, cap): the same block renders to the same string on every later call, which is the property
+ * that lets the endpoint serve the history from cache.
+ *
+ * @param exchange - The exchange.
+ * @param budget - The budget whose `resultChars` bounds the result.
+ * @returns The block as text.
+ */
+function renderBlock(exchange: QueryExchange, budget: QueryBudget): string {
+  const cap = budget.resultChars;
+  const result =
+    cap === undefined || exchange.result.length <= cap
+      ? exchange.result
+      : `${exchange.result.slice(0, cap)}[cut ${String(exchange.result.length - cap)} chars]`;
+  return `${exchange.directive}\n=> ${exchange.ok ? '' : 'REFUSED '}${result}`;
+}
 
 /**
  * An order handed to the model BEFORE it investigates.
@@ -1669,7 +1705,15 @@ export async function runQueryAgent(
       exchanges,
       tools,
       nextServed,
-      trace: renderTranscript(exchanges, { ...budget, transcriptChars: TRACE_CHARS }),
+      // The trace keeps the results WHOLE even under a per-result cut, because the row's job is to say what the model
+      // never saw: a trace that had been cut the same way could not answer "was this answer wrong because the tail of
+      // that result was missing", which is the only question a cut makes worth asking. What the model actually read is
+      // the prompt, which is regenerated from these exchanges and the same budget.
+      trace: renderTranscript(exchanges, {
+        ...budget,
+        transcriptChars: TRACE_CHARS,
+        resultChars: undefined,
+      }),
       rounds,
       toolCalls,
       turnTokens,

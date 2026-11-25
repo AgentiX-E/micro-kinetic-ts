@@ -195,6 +195,10 @@ function parseArgs(argv: readonly string[]): Args {
         500,
         number('transcript-chars', DEFAULT_QUERY_BUDGET.transcriptChars),
       ),
+      // Absent unless the dispatch asks, because zero is not a small cap — it is the statement that results are
+      // rendered whole, which is what every artifact before iteration 355 did. The 60-character floor keeps a cut from
+      // removing the text a tool's own line is made of; a cap smaller than a directive's answer is not a lever.
+      ...(number('result-chars', 0) > 0 ? { resultChars: Math.max(60, number('result-chars', 0)) } : {}),
     },
   };
 }
@@ -564,6 +568,8 @@ async function main(): Promise<void> {
     ...(args.budget.transcriptChars === DEFAULT_QUERY_BUDGET.transcriptChars
       ? {}
       : { transcriptChars: args.budget.transcriptChars }),
+    // Same rule: stated only when the run is not rendering results whole.
+    ...(args.budget.resultChars === undefined ? {} : { resultChars: args.budget.resultChars }),
     // The harness itself. The instruction the model reads is a function of this tree, so two artifacts from different
     // commits are two instruments — GitHub sets `GITHUB_SHA` on every job, and a local run says `null` rather than
     // inventing a revision from a dirty working copy.
@@ -586,6 +592,9 @@ async function main(): Promise<void> {
       // uncapped one are two arms and a banner that printed the same sentence for both would be reporting the
       // configuration the reader assumed rather than the one that ran.
       `${args.budget.transcriptChars} transcript chars, ` +
+      // The per-result cut is the OTHER lever over the same prompt — it decides what each observation carries — so it is
+      // stated beside the cap rather than beside the presentation flags.
+      `result ${args.budget.resultChars === undefined ? 'whole' : `${args.budget.resultChars} chars`}, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
       `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
       `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, ` +

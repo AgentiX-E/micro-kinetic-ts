@@ -49,6 +49,15 @@ export interface RunInputs extends RunArms {
    */
   readonly transcriptChars?: number;
   /**
+   * The per-result cut this run rendered with, or omitted when it rendered results whole.
+   *
+   * Beside `transcriptChars` because the two are the two levers over the same prompt and they are NOT interchangeable:
+   * the transcript cap drops old blocks from the front and moves the prefix, this cuts each block once on entry and
+   * leaves the prefix alone. A record that named one and not the other would let a reader compare two arms that differ
+   * in which lever they used and read the difference as a cap size.
+   */
+  readonly resultChars?: number;
+  /**
    * The harness's own revision, when the run could name one.
    *
    * The instruction the model reads is a function of the code, so two artifacts from different commits are two
@@ -70,6 +79,8 @@ export interface RunMetadata {
     readonly maxToolCalls: number;
     /** Absent on every record written before iteration 354, and on those whose cap was the default. */
     readonly transcriptChars?: number;
+    /** Absent on every record written before iteration 355, and on those that rendered results whole. */
+    readonly resultChars?: number;
   };
   /** `free`, or a `+`-joined list of the arms that are not at their default. */
   readonly arms: string;
@@ -113,6 +124,9 @@ export function runMetadataOf(inputs: RunInputs): RunMetadata {
   // After the floor, because both are pre-call settings and the transcript is the one the model's own window sees.
   if (inputs.transcriptChars !== undefined)
     named.push(`transcript=${String(inputs.transcriptChars)}`);
+  // Its own name and not `transcript`: the two levers move the same characters by different mechanisms, and an arm
+  // string that spelled them alike would make the two undispatched arms indistinguishable in the record.
+  if (inputs.resultChars !== undefined) named.push(`result=${String(inputs.resultChars)}`);
   return {
     model: inputs.model,
     startedAt: inputs.startedAt,
@@ -123,6 +137,7 @@ export function runMetadataOf(inputs: RunInputs): RunMetadata {
       maxRounds: inputs.maxRounds,
       maxToolCalls: inputs.maxToolCalls,
       ...(inputs.transcriptChars === undefined ? {} : { transcriptChars: inputs.transcriptChars }),
+      ...(inputs.resultChars === undefined ? {} : { resultChars: inputs.resultChars }),
     },
     arms: named.length === 0 ? 'free' : named.join('+'),
     revision: inputs.revision ?? null,

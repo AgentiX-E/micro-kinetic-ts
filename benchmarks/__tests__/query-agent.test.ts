@@ -665,6 +665,75 @@ describe('renderTranscript', () => {
   });
 });
 
+describe('the cut that enters the transcript, which is the column the bill charges for', () => {
+  const long = (n: number): string => 'x'.repeat(n);
+  const exchange = (round: number, result: string): QueryExchange => ({
+    round,
+    directive: `TOOL logs s${round}`,
+    result,
+    ok: true,
+  });
+
+  it('cuts a result as it enters, so the block is small from the call that first carries it', () => {
+    // 354 priced the bill to the token: 84.6 % of it is the ONE BLOCK that is new on each call, at full price, and the
+    // 6.2 M tokens of accumulated history cost 7.3 % because the cache serves them at 1/50th. A front-eliding cap attacks
+    // the cheap column and moves the prefix, which loses the cache as well (measured: hits per call 974.7 -> 501.0 for
+    // a bill that rose). This cuts the expensive column instead, once, where the block enters.
+    const text = renderTranscript([exchange(1, long(400))], { ...DEFAULT_QUERY_BUDGET, resultChars: 100 });
+    expect(text).toContain(long(100));
+    expect(text).not.toContain(long(101));
+    expect(text).toContain('[cut 300 chars]');
+  });
+
+  it('renders a cut block identically on every later call, because a prefix that moves cannot be cached', () => {
+    // The whole reason to cut on entry rather than on render-per-call: the block's final form is decided once, so the
+    // prompt of call N+1 extends the prompt of call N byte for byte.
+    const first = exchange(1, long(400));
+    const second = exchange(2, 'b'.repeat(50));
+    const budget: QueryBudget = { ...DEFAULT_QUERY_BUDGET, resultChars: 100 };
+    const short = renderTranscript([first], budget);
+    const long_ = renderTranscript([first, second], budget);
+    expect(long_.startsWith(short)).toBe(true);
+  });
+
+  it('leaves a result that fits alone, and says nothing about a cut that did not happen', () => {
+    const text = renderTranscript([exchange(1, long(100))], { ...DEFAULT_QUERY_BUDGET, resultChars: 100 });
+    expect(text).toContain(long(100));
+    expect(text).not.toContain('[cut');
+  });
+
+  it('never cuts the directive or the refusal mark, so the arm own actions stay legible', () => {
+    const text = renderTranscript(
+      [{ round: 1, directive: 'TOOL logs payment', result: long(500), ok: false }],
+      { ...DEFAULT_QUERY_BUDGET, resultChars: 20 },
+    );
+    expect(text.startsWith('TOOL logs payment\n=> REFUSED ')).toBe(true);
+  });
+
+  it('is applied through the prompt, not only in the renderer', () => {
+    // The defect iteration 354 paid for: a knob the renderer honours and the prompt never passes. Asserted at the
+    // prompt, because that is the string the model is charged for.
+    const prompt = buildUserPrompt(buildTelemetry(makeCase()), [exchange(1, long(400))], undefined, undefined,
+      'none', undefined, { ...DEFAULT_QUERY_BUDGET, resultChars: 60 });
+    expect(prompt).toContain(long(60));
+    expect(prompt).toContain('[cut 340 chars]');
+  });
+
+  it('leaves the trace whole, because the row has to be able to say what the model never saw', async () => {
+    // A trace cut the same way could not answer "was this answer wrong because the tail of that result was missing" —
+    // the one question a cut makes worth asking. The prompt is what the model read; the trace is what the case said.
+    const client = scriptedClient(['TOOL logs payment', 'ANSWER payment']);
+    const outcome = await runQueryAgent(client, buildTelemetry(makeCase()), {
+      ...DEFAULT_QUERY_BUDGET,
+      resultChars: 10,
+    });
+    const traced = outcome.exchanges[0]?.result ?? '';
+    expect(traced.length).toBeGreaterThan(10);
+    expect(outcome.trace).toContain(traced.slice(0, 40));
+    expect(outcome.trace).not.toContain('[cut');
+  });
+});
+
 describe('buildUserPrompt', () => {
   it('states the case size and the deliverable, and says when nothing has been asked', () => {
     const prompt = buildUserPrompt(buildTelemetry(makeCase()), []);

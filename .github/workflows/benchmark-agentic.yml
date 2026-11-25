@@ -152,6 +152,10 @@ on:
         description: "Characters of investigation transcript the free-investigation arm carries into its next prompt, oldest results elided first (empty = the runner default, 9 000). This is the one lever measured on the BILL rather than on the ranking: of run `45595943761` 1.69 CNY, cache-miss input is 84.6 % and output 8.1 %, and the uncached prompt is the opening repeated six times plus a transcript that grows — 1 432 120 uncached tokens over 6 366 calls. The opening cannot be elided without changing what the arm is TOLD; the transcript can, and every published number was taken at 9 000 characters, which never binds (the corpus's own final traces are ~1 700 characters). So this input prices a wall the arm has never hit: the accuracy it costs, and the tokens it saves. A capped run and an uncapped one are different arms, so the value is forwarded to the control too. docs/transcript-lever-354.md"
         required: false
         default: ''
+      query_result_chars:
+        description: "Characters of EACH tool result the free-investigation arm carries into the prompt, or empty = the result whole (the way every artifact before iteration 355 was rendered). This is the lever the bill actually charges for: `query_transcript_chars` elides OLD blocks from the front, which moves the prompt's prefix and forfeits the endpoint's cache — measured at 600 characters it removed 38.5 % of the prompt tokens and raised the bill 1.69 -> 1.70, with cache hits per call halving 974.7 -> 501.0. A cut applied ON ENTRY renders each block once and leaves every later prompt a byte-for-byte extension of the one before it, and it attacks the column that is 84.6 % of the bill: 225 full-price input tokens a call against 0.124 CNY for all 6.2 M tokens of accumulated history. At 100 characters a result instead of ~200 the same arithmetic reads 1.06 CNY, -37 %, and the acceptance test is the trajectory (trajectories preserved per case), which costs no model call. A cut run and a whole-result run are different arms, and the value is forwarded to the control too. docs/transcript-lever-354.md"
+        required: false
+        default: ''
       query_seed:
         description: "Which order to show the free-investigation arm BEFORE its first turn: `engine` = the engine's own top-5 (a prior, and the arm's floor becomes the engine's accuracy) or empty/`none` = a free arm, whose first sight of the case is its first tool call. The two arms have different floors, so this is an ablation switch and not a quality knob"
         required: false
@@ -399,6 +403,11 @@ jobs:
           if [ -n "${{ inputs.query_transcript_chars }}" ]; then
             BUDGET_ARG+=(--transcript-chars "${{ inputs.query_transcript_chars }}")
           fi
+          # The per-result cut rides with the cap: both decide what the prompt carries, and the second is the one that
+          # removes full-price tokens without moving the prefix.
+          if [ -n "${{ inputs.query_result_chars }}" ]; then
+            BUDGET_ARG+=(--result-chars "${{ inputs.query_result_chars }}")
+          fi
           # A seed is stated or it is absent: `none` is the free arm, and any other word is refused by the runner.
           SEED_ARG=()
           if [ -n "${{ inputs.query_seed }}" ]; then
@@ -490,6 +499,9 @@ jobs:
           # the paired delta would be the cap's rather than the presentation axis's.
           if [ -n "${{ inputs.query_transcript_chars }}" ]; then
             CONTROL_BUDGET+=(--transcript-chars "${{ inputs.query_transcript_chars }}")
+          fi
+          if [ -n "${{ inputs.query_result_chars }}" ]; then
+            CONTROL_BUDGET+=(--result-chars "${{ inputs.query_result_chars }}")
           fi
           CONTROL_SEED=()
           if [ -n "${{ inputs.query_seed }}" ]; then

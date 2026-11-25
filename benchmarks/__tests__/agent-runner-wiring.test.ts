@@ -159,6 +159,14 @@ describe('the runner-to-loop wiring', () => {
     expect(text).toContain('${args.budget.transcriptChars} transcript chars');
   });
 
+  it('states the per-result cut beside the wall, because the two levers are not the same arm', () => {
+    // Both decide what the prompt carries and they are not interchangeable: the wall drops old blocks from the front,
+    // the cut renders each block once on entry. Iteration 354 measured the first (38.5 % fewer tokens, 1 % dearer), so a
+    // banner that named only the wall would report the configuration the reader assumed for the lever that has not run.
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    expect(text).toContain('result ${args.budget.resultChars === undefined');
+  });
+
   it('records the incumbent NAME on both exits, because a boolean cannot be re-read as a name', () => {
     // Two row literals write an artifact: the one for a case that failed and the one for a case that ran. A column
     // added to one of them is the defect this file exists for — `incumbent` was already written twice, and the next

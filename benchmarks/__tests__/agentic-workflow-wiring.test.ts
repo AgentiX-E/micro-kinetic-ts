@@ -333,12 +333,13 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(PROFILE_ACTION).toContain('--data-dir "${{ inputs.data-dir }}"');
   });
 
-  it('stays inside the dispatch input limit', () => {
-    // The hard `workflow_dispatch` limit is 25. This file is a separate workflow PRECISELY because the
-    // other one is at 25; the count is asserted on every workflow elsewhere, and here on this one because
-    // the next axis will be tempted to arrive as a new input.
-    expect(inputNames(WORKFLOW).length).toBeLessThanOrEqual(25);
-    expect(inputNames(WORKFLOW).length).toBeGreaterThan(0);
+  it('has spent the dispatch input limit, so the count is now an exact 25', () => {
+    // The hard `workflow_dispatch` limit is 25. This file is a separate workflow PRECISELY because
+    // `fse26-benchmark.yml` is at 25, and this one had a single slot left — which iteration 355 spent on
+    // `query_result_chars`, the cut that removes full-price tokens instead of cache-served ones. From here the
+    // assertion is exact: the next axis cannot arrive as a new input without either a workflow of its own (the
+    // solution this file itself is) or a removal recorded as a decision rather than discovered as a validation error.
+    expect(inputNames(WORKFLOW)).toHaveLength(25);
   });
 
   it('leaves the other benchmark workflow at the exact 25 inputs the census pins', () => {
@@ -374,6 +375,32 @@ describe('the transcript wall is a dispatch input, because a wall nobody can mov
     // SEES, so a control without it would report the cap's delta as the axis's.
     expect(WORKFLOW).toMatch(
       /if \[ -n "\$\{\{ inputs\.query_transcript_chars \}\}" \]; then\n\s+CONTROL_BUDGET\+=\(--transcript-chars/,
+    );
+  });
+});
+
+describe('the per-result cut is the lever that charges the bill, not the cache', () => {
+  it('declares the cut, and states that empty renders every result whole', () => {
+    // `query_transcript_chars` elides OLD blocks from the front, which moves the prefix and forfeits the endpoint's
+    // cache: measured on the full corpus, 600 characters removed 38.5 % of the prompt tokens and raised the bill
+    // 1.69 -> 1.70, with hits per call halving 974.7 -> 501.0. A cut applied on ENTRY decides each block's final form
+    // once, so every later prompt extends the previous one byte for byte, and it removes the tokens that are 84.6 % of
+    // the bill instead of the ones that are 7.3 %. Nothing has measured it yet, which is why it has to be dispatchable
+    // rather than a constant.
+    expect(inputNames(WORKFLOW)).toContain('query_result_chars');
+    const block = WORKFLOW.slice(WORKFLOW.indexOf('query_result_chars:'));
+    expect(block.slice(0, block.indexOf('query_seed:'))).toContain("default: ''");
+  });
+
+  it('forwards it through the budget array, and never as an unconditional flag', () => {
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_result_chars \}\}" \]; then\n\s+BUDGET_ARG\+=\(--result-chars/,
+    );
+  });
+
+  it('forwards it to the control too, because a cut run and a whole-result run are two arms', () => {
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_result_chars \}\}" \]; then\n\s+CONTROL_BUDGET\+=\(--result-chars/,
     );
   });
 });
