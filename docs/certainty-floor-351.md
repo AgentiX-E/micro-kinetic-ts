@@ -189,3 +189,8 @@ At 1.69 CNY the bill splits **cache-miss input 84.6 %, output 8.1 %, cached inpu
 longer the system prompt (5 842 cached tokens a call, 7.3 % of the bill) but the transcript (1 349 uncached tokens a
 call, 84.6 %). `--transcript-chars` already exists; what is missing is the accuracy reading of a shorter one, and that
 is the next iteration's first item rather than this one's.
+
+> **Corrected by iteration 354.** The flag existed and reached nothing: `buildUserPrompt` called
+> `renderTranscript(exchanges)` with no budget, so every prompt was rendered at the harness default and the runner's
+> value reached only the `trace`. The wall was 9 000 characters on every run, which never bound. The lever was not
+> untested — it was unwired, and the reading below is now a reading of something. `transcript-lever-354.md`.

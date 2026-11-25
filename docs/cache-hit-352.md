@@ -96,8 +96,11 @@ of the only closed competitor's published per-case price.
 
 ## 6. What to do next, in the order the numbers put it
 
-1. **Shorten the transcript.** 1 349 uncached tokens a call is 84.6 % of the bill. `--transcript-chars` is already a
-   flag; what is missing is a reading of what a shorter transcript costs in accuracy.
+1. **Shorten the transcript.** 1 349 uncached tokens a case is 84.6 % of the bill. `--transcript-chars` is already a
+   flag — **and iteration 354 found it reached nothing**: `buildUserPrompt` rendered the transcript at the harness
+   default regardless of the flag, so every prompt ever dispatched used 9 000 characters and the knob had never been
+   connected. `transcript-lever-354.md`. What is missing is still the reading of what a shorter transcript costs in
+   accuracy, and that dispatch now measures something.
 2. **The floor's frontier.** 0.8630 remains the corpus-fitted optimum, worth a further 15.7 points of saving. It is
    priced, not shipped.
 3. **The refusal stratum.** 427 cases, 0.66 CNY — the largest remaining block, and the one where the engine was *not*

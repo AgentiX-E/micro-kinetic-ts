@@ -12,9 +12,14 @@
 
 import { readFileSync } from 'node:fs';
 
-import { billLine } from './cost-model.js';
+import { billLine, type BillTotals } from './cost-model.js';
 import { servedRatesAt, tariffAt } from './token-rates.js';
-import { capReadingOf, perCallCurveOf, type CapRow } from './transcript-reading.js';
+import {
+  capReadingOf,
+  perCallCurveOf,
+  type CapReading,
+  type CapRow,
+} from './transcript-reading.js';
 
 /** The flags this runner accepts. */
 interface Args {
@@ -80,6 +85,24 @@ function loadRows(path: string): CapRow[] {
   return rows;
 }
 
+/**
+ * The bill's own inputs for one side of the pair.
+ *
+ * The hit count is DERIVED — `prompt - uncached` — because the reading keeps the uncached total rather than the hit
+ * total: a cap only ever removes uncached tokens, so the uncached figure is the one both sides of the comparison are
+ * about. `null` when the side records no hits at all, which `billLine` prints as "cache unrecorded" rather than as a
+ * 0 % hit rate.
+ */
+function billOf(reading: CapReading, side: 'anchor' | 'capped'): BillTotals {
+  const promptTokens = reading.tokens[side];
+  const hits = promptTokens - reading.uncached[side];
+  return {
+    promptTokens,
+    completionTokens: reading.completion[side],
+    cacheHitTokens: hits === 0 ? null : hits,
+  };
+}
+
 /** Render the reading. */
 function report(anchor: readonly CapRow[], capped: readonly CapRow[], args: Args): string {
   const reading = capReadingOf(anchor, capped);
@@ -102,26 +125,11 @@ function report(anchor: readonly CapRow[], capped: readonly CapRow[], args: Args
       ` (${share(saved > 0 ? saved : 0, reading.uncached.anchor)} removed)`,
     `model time ${reading.latencyMs === null ? 'not recorded' : `${String(reading.latencyMs.anchor)} -> ${String(reading.latencyMs.capped)} ms`}`,
     '',
-    billLine(
-      {
-        promptTokens: reading.tokens.anchor,
-        completionTokens: reading.completion.anchor,
-        cacheHitTokens:
-          reading.uncached.anchor === 0 ? null : reading.tokens.anchor - reading.uncached.anchor,
-      },
-      rates,
-      tariff,
-    ).replace('est.', 'anchor est.'),
-    billLine(
-      {
-        promptTokens: reading.tokens.capped,
-        completionTokens: reading.completion.capped,
-        cacheHitTokens:
-          reading.uncached.capped === 0 ? null : reading.tokens.capped - reading.uncached.capped,
-      },
-      rates,
-      tariff,
-    ).replace('est.', 'capped est.'),
+    // Both bills from `billLine`, at the column the capped run was taken under, PREFIXED rather than edited: a line
+    // this file rewrote would be a second arithmetic, which is exactly the defect iteration 353 spent an iteration
+    // deleting from the runner.
+    `anchor  ${billLine(billOf(reading, 'anchor'), rates, tariff)}`,
+    `capped  ${billLine(billOf(reading, 'capped'), rates, tariff)}`,
   ];
   const curve = perCallCurveOf(capped);
   if (curve.length === 0) {

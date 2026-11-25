@@ -82,7 +82,7 @@ cost nothing.
 | - | ------ | --------- | -----: | ---------- | --------------: |
 | 1 | `--certainty-floor 0.87` | skip the model where the engine already decided | 41.1 % | simulated on 1 422 cases | 12.3 CNY |
 | 2 | stratified acceptance samples | a paired delta on 266 misses + 200 hits, not on all 1 422 | 67 % **per experiment** | exact binomial power, §6 | 0 — the flag exists (`--sample-misses`, `--sample-correct`) |
-| 3 | shorter transcripts | `--transcript-chars` from 2 000 to 1 200 | 15–25 % of input | untested | 15 CNY |
+| 3 | shorter transcripts | `--transcript-chars` from 2 000 to 1 200 | 15–25 % of input | untested — and until iteration 354 the flag was **inert**, so an arm dispatched to test it would have measured the default | 15 CNY |
 
 **(2) is the one that answers "why is every step this expensive".** Every arm of the last six iterations was accepted
 or rejected on a **full-corpus** run at 20.81 CNY, when the question each asked was a paired delta on the engine's
