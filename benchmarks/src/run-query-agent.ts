@@ -39,6 +39,7 @@ import {
   type QuerySeed,
   type Resolution,
 } from './query-agent.js';
+import { runMetadataOf } from './run-metadata.js';
 
 /** Declared prices, per million tokens, in CNY. Estimates: the arm's own report carries the token counts. */
 const PRICES = { promptPerMillion: 2, completionPerMillion: 8 } as const;
@@ -275,6 +276,7 @@ async function investigate(
       engine,
       schedule,
       shortlist,
+      onset,
     );
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
@@ -425,6 +427,9 @@ async function pool<T, R>(
 
 /** Entry point. */
 async function main(): Promise<void> {
+  // Recorded before anything else: this record exists because a run was once compared with one from two days
+  // earlier and the difference was read as an arm effect.
+  const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv.slice(2));
   const key = process.env[CHAT_KEY_VARIABLE] ?? '';
   if (key.trim() === '') {
@@ -494,6 +499,22 @@ async function main(): Promise<void> {
   });
   const kept = rows.filter((row): row is QueryArmRow => row !== null);
   writeFileSync(args.out, `${kept.map((row) => JSON.stringify(row)).join('\n')}\n`);
+  // Beside the rows rather than inside them: 532 copies of a header is a file that says it 532 times and is read
+  // zero times, and the fields that make two runs comparable are the ones a reader needs exactly once.
+  const meta = runMetadataOf({
+    model: args.model,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    cases: sample.length,
+    maxRounds: args.budget.maxRounds,
+    maxToolCalls: args.budget.maxToolCalls,
+    seed: args.seed,
+    gate: args.gate,
+    schedule: args.schedule,
+    fleetOrder: args.fleetOrder,
+    evidenceOrder: args.evidenceOrder,
+  });
+  writeFileSync(`${args.out}.meta.json`, `${JSON.stringify(meta, null, 2)}\n`);
 
   const summary = summariseQueryArm(kept);
   const cost =

@@ -193,6 +193,11 @@ export default defineConfig({
         // own split rather than a negative one, an empty split reports `null` rather than zero, and an unreachable
         // label counts against retrieval instead of being excluded from its denominator.
         'src/reach-decomposition.ts',
+        // Added with the module: the sibling record that makes two artifacts comparable at all. It exists because
+        // iteration 345 compared a run with one from two days earlier and read a 236-case drift as an arm effect, so
+        // the refusals are the test: a clock that ends before it starts throws rather than writing a negative
+        // duration, and the four flags collapse to `free` or to a `+`-joined list a diff can show.
+        'src/run-metadata.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let
