@@ -10747,3 +10747,55 @@ this one.
 network faults, their common signature is an error channel that stayed flat, and the only legal way to read that
 signature is the channel gate that is already refused. **The rule ships as it is, at 93.3 % precision on the population
 it addresses, and the 5 breaks are its price.**
+
+### 356 The trace channel is worth 15.5 points and none of it is topology (iteration 356)
+
+`arXiv:2603.02057` says **"trace-based methods largely fail"** on a GPU-driven LLM inference deployment, and this
+engine's largest single FSE'26 gain is `failedTraceEdges`, so the sentence has stood in the record since 355 as a
+warning about a channel. Read at source this iteration, both halves of the premise changed.
+
+**The paper is a finding over two implementations.** Its abstract says *"Across 24 methods (20 metric-based, two
+trace-based, and two multi-source)"*. So the failure is 2 of 2 trace METHODS, not a property of trace DATA, and it
+cannot separate "traces do not carry root cause on an inference stack" from "these two trace methods were built for a
+request-path topology". The paper motivated the census; it could not supply the number.
+
+**The number, measured on 1 422 cases at zero model calls, control asserted at the published 1 186 (83.40 %):**
+
+| arm | hits | Δ | lost | gained |
+| --- | ---: | ---: | ---: | ---: |
+| `baseline` | 1 186 | — | 0 | 0 |
+| `call-graph-edges` (`traceEdges: []`) | **1 186** | **+0.0 pp** | **0** | **0** |
+| `failed-edges` (`failedTraceEdges: []`) | 1 031 | **−10.9 pp** | 155 | 0 |
+| `edge-latency` (`traceEdgeLatency: []`) | 1 114 | −5.1 pp | 74 | 2 |
+| `all-trace` | 966 | **−15.5 pp** | 222 | 2 |
+
+**The zero is the finding, and it is a claim about what kind of method this is.** Removing every observed
+`[caller, callee]` pair the bridge recorded changes **not one case in 1 422**, on any fault type. The call graph is
+`buildFSE26StaticEdges` — the **static topology** — and the trace-derived edges are pure redundancy on top of it.
+**This engine does not discover topology from traces; it asserts it, and uses traces to measure per-edge failure and
+per-edge latency.** So the paper's finding cannot reach this engine through a topology channel, because there is no
+topology channel to fail; it can only reach it through the two measurement channels, and those cost 10.9 pp and
+5.1 pp.
+
+**The two measurement channels own disjoint fault families, which the loader's docblock asserted and nothing had
+measured.** `failed-edges` loses 74 of its 155 on the four network fault types (233 cases: `NetworkPartition` 29,
+`NetworkBandwidth` 18, `NetworkLoss` 14, `NetworkCorrupt` 13): a network fault makes a call fail or never complete,
+and the per-edge failure record is the only input that says *which* edge stopped carrying traffic — the containment
+order reads the same channel, so it loses both at once. `edge-latency` is the continuous counterpart and loses where
+nothing fails and everything slows: `NetworkDelay` 9 of 20, `JVMLatency` 3 of 6, both **42.9 %**. 155 + 74 = 229
+against a composite loss of 222, so the two overlap on only **seven cases**.
+
+**And 294 cases never needed a trace at all**: `JVMMemoryStress` 171/171, `ContainerKill` 89/89, `PodFailure` 24/24,
+`PodKill` 10/10 — every one at **100 %** and **zero loss** under full ablation. Crash and saturation faults are solved
+from metrics alone, and they are the fault families closest to a GPU inference stack's own failure modes.
+
+**What the axis does not close.** The zero is conditional on the static topology being correct, and this corpus cannot
+create the alternative: with a right prior, observed edges add nothing, and on an unknown topology there is no prior
+to be redundant with. **So the defensible claim is narrower than "this engine does not need traces" — it is that this
+engine's topology is a PRIOR rather than a MEASUREMENT, which is exactly the assumption an inference stack would
+break, and what that would cost is the one quantity here that remains unpriced.**
+
+Fenced as the ablation it is: the channel → field mapping is a `Record` over the union so a fourth channel cannot be
+silently unablatable; the control is asserted against the published cell and the run REFUSES on disagreement rather
+than printing a table about another configuration; and the label — accepted set, fault type, metrics, logs, injection
+time — is copied through every strip, because a gain bought by narrowing the answer set is the `engineRank` defect.
