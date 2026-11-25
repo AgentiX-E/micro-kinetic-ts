@@ -206,6 +206,13 @@ export default defineConfig({
         // are the two statistics: the exact conditional binomial, and the continuity-corrected chi-square whose 0.243
         // for 22 against 14 is the figure this programme already published.
         'src/arm-comparison.ts',
+        // Added with the modules: the bill, and the one saving that is taken before the call instead of after the
+        // run. The audit's whole value is the split it makes — 98.2 % of 20.81 CNY is prompt tokens, and 786 of 1 422
+        // cases were settled without the model after paying six turns each — plus the refusals that stop it being
+        // read off a file that never recorded a margin. `token-rates.ts` is separate so a different provider is a
+        // different table rather than a different audit.
+        'src/cost-model.ts',
+        'src/token-rates.ts',
         'src/evidence-audit-census.ts',
         // Added with the module: the direction term's gate, counted as DECISIONS rather than as capability. The
         // whole value is the three distinctions it draws — a name refusal, a bar refusal, and a case the gate let

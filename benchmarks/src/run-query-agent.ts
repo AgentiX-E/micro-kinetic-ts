@@ -66,6 +66,15 @@ interface Args {
   /** Whether a settled answer is re-read by the entry prior. `none` is the arm as 318–321 shipped it. */
   readonly resolve: Resolution;
   /**
+   * Skip the model entirely on a case whose engine margin already clears this value. `0` is off, which is the
+   * product and every arm before 348.
+   *
+   * Not an arm in the presentation sense: a skipped case ships the same name a refusal would have shipped, so the
+   * comparison against a `0` run is a comparison of PRICE at equal answers, not of accuracy. It is a product knob
+   * for that reason — the user chooses what a certain case costs.
+   */
+  readonly certaintyFloor: number;
+  /**
    * Whether the harness holds an order the model can walk with `TOOL next`, or `none` for the free arm.
    *
    * `engine` is not `seed`: nothing is printed in the prompt, so the model reads one service per call and never sees
@@ -151,6 +160,12 @@ function parseArgs(argv: readonly string[]): Args {
   if (evidenceOrder !== 'none' && evidenceOrder !== 'onset') {
     throw new Error('--evidence-order must be `none` or `onset`');
   }
+  // A price knob rather than an arm: it reads a number, and a number outside the range a margin is measured on is a
+  // typo that would otherwise skip the whole corpus (`1e9`) or nothing at all, silently, in a ¥20 dispatch.
+  const certaintyFloor = number('certainty-floor', 0);
+  if (!(certaintyFloor >= 0) || !Number.isFinite(certaintyFloor)) {
+    throw new Error('--certainty-floor must be a finite engine margin at or above 0');
+  }
   const dataDir = map.get('data-dir') ?? '';
   const verdicts = map.get('verdicts') ?? '';
   const out = map.get('out') ?? '';
@@ -172,6 +187,7 @@ function parseArgs(argv: readonly string[]): Args {
     schedule: schedule as Args['schedule'],
     fleetOrder: fleetOrder as Args['fleetOrder'],
     evidenceOrder: evidenceOrder as Args['evidenceOrder'],
+    certaintyFloor,
     budget: {
       maxRounds: Math.max(1, number('max-rounds', DEFAULT_QUERY_BUDGET.maxRounds)),
       maxToolCalls: Math.max(1, number('max-tool-calls', DEFAULT_QUERY_BUDGET.maxToolCalls)),
@@ -235,6 +251,7 @@ async function investigate(
   schedule: readonly string[] | null,
   shortlist: readonly string[] | null,
   onset: boolean,
+  certaintyFloor: number,
 ): Promise<QueryArmRow | null> {
   const loader = new FSE26Loader();
   let raw;
@@ -277,6 +294,7 @@ async function investigate(
       schedule,
       shortlist,
       onset,
+      certaintyFloor,
     );
   } catch (error) {
     // The DETAIL and not only the status: a 400 without the endpoint's own sentence turned one iteration into a
@@ -492,6 +510,10 @@ async function main(): Promise<void> {
       // The onset channel reads nothing from the verdicts: it is a property of the case's own log stream, so this arm
       // is orthogonal to every order-carrying arm and can be combined with any of them.
       args.evidenceOrder === 'onset',
+      // The price knob travels the same road as the arm switches: a floor read here and dropped at the second hop
+      // would spend the whole budget and report a saving that never happened — the exact defect iteration 345 paid
+      // for with `onset`, which parsed, logged and reached 0 of 532 cases.
+      args.certaintyFloor,
     );
     done += 1;
     if (done % 10 === 0) process.stderr.write(`\r${done}/${sample.length}`);
@@ -517,6 +539,7 @@ async function main(): Promise<void> {
     schedule: args.schedule,
     fleetOrder: args.fleetOrder,
     evidenceOrder: args.evidenceOrder,
+    certaintyFloor: args.certaintyFloor,
     // The harness itself. The instruction the model reads is a function of this tree, so two artifacts from different
     // commits are two instruments — GitHub sets `GITHUB_SHA` on every job, and a local run says `null` rather than
     // inventing a revision from a dirty working copy.

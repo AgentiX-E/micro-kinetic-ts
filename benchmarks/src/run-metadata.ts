@@ -20,6 +20,16 @@ export interface RunArms {
   readonly schedule: 'none' | 'engine';
   readonly fleetOrder: 'none' | 'engine';
   readonly evidenceOrder: 'none' | 'onset';
+  /**
+   * The engine margin at or above which the model is never called, or `0` for off.
+   *
+   * It belongs in this record for the same reason `fallback` does, and more sharply: a floor CHANGES THE ANSWER on
+   * every case it touches (the case settles on the fallback's name instead of the model's), so two runs at two floors
+   * are two configurations and a delta between them is not an arm effect. `0` is omitted from the `arms` string
+   * because it is the default every published number was taken under, and an absent flag is a difference rather than
+   * a default — exactly the rule that caught the 346 pairing.
+   */
+  readonly certaintyFloor: number;
 }
 
 /** The fields a run record carries. */
@@ -86,6 +96,7 @@ export function runMetadataOf(inputs: RunInputs): RunMetadata {
   if (inputs.schedule !== 'none') named.push(`schedule=${inputs.schedule}`);
   if (inputs.fleetOrder !== 'none') named.push(`fleet=${inputs.fleetOrder}`);
   if (inputs.evidenceOrder !== 'none') named.push(`onset=${inputs.evidenceOrder}`);
+  if (inputs.certaintyFloor > 0) named.push(`floor=${String(inputs.certaintyFloor)}`);
   return {
     model: inputs.model,
     startedAt: inputs.startedAt,

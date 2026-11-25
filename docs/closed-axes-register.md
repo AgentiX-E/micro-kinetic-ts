@@ -10457,3 +10457,46 @@ than printing a table beside a warning; `benchmark-agentic.yml` gains `query_con
 the **same job** with the harness flags forwarded and the three presentation flags omitted, and derives the comparison
 axis from the dispatch. The `.meta.json` files were also written and **never uploaded** until now. Full record:
 `arm-configuration-347.md`.
+
+### 348 The bill was never a rate: 98 % of it is the question, and 55 % of it bought discarded answers
+
+**The decomposition, from the artifact's own columns.** Run `45531140696` cost **20.81 CNY** for 1 422 cases:
+**10 221 261 prompt tokens against 46 085 completion — 222 to 1**, which at the endpoint's two prices is 20.44 of
+input and 0.37 of output. **98.23 % of the money is the question.** Every arm of the previous six iterations was
+discussed as though the two columns were interchangeable, and none of them moved the one that carries the bill.
+
+**Where it went.** Grouped by the resolver that settled the case: `model` 636 cases ¥9.40, `prior` 516 ¥7.51,
+`interface` 148 ¥2.15, `entry` 74 ¥1.07, `door` 28 ¥0.40, `certainty` 20 ¥0.29. **786 of the 1 422 cases were settled
+by something other than the model, after each had paid for six turns: 11.41 CNY, 54.82 % of the run, spent on answers
+then discarded.** The `interface` row is the sharpest — 148 cases, **148 correct**, not one of which needed a call. The
+per-case cost is 0.0143–0.0148 across all six strata, which is the tell: the loop spends its budget whether or not the
+result is used.
+
+**The one signal available at the door.** The engine's margin separates the populations almost perfectly (hits at a
+median 0.872, misses at 0.081). Simulated on the artifact, skipped cases answering with the engine's winner:
+floor 0.30 → 964 skipped, ¥14.18, **−23 cases**; 0.50 → 771, ¥11.32, −12; 0.80 → 603, ¥8.85, −2;
+**0.87 → 582 skipped, ¥8.55, ±0 cases, accuracy unchanged at 93.39 %**; 1.00 → 520, ¥7.64, +0. The loss-free region
+is bounded on both sides, which is what makes the figure a measurement rather than a knob.
+
+**Not a bug in the resolver.** Discarding those answers is correct — the interface witness is 148/148 because it reads
+the failing interface and the model does not. The defect is **placement**: whether a model will fail is not knowable
+before it fails, so the decision that could have been taken at the door is taken at the exit.
+
+**Shipped.** `cost-model.ts` (`costOf`, `auditCost`, `skipAt`, `lossFreeFloor`) at 100 % statements / branches /
+functions / lines over 26 cases, refusing an artifact with no `engineMargin` column and treating a `null` margin as
+unknown rather than high; `token-rates.ts`, the two prices behind an interface, **the input rate being the cache-MISS
+rate because the invoice is the miss arithmetic**; `run-cost-audit.ts`, which prices any artifact offline so the
+question is a command rather than a paragraph; and `--certainty-floor`, wired through **both** hops and pinned by two
+assertions in `agent-runner-wiring.test.ts`, because iteration 345's `onset` is what a price knob dropped at a hop
+looks like — parsed, logged, present in 0 of 532 transcripts. A skipped case is the same arm at a lower price: the
+fallback's name, `rounds: 0`, zero tokens, empty transcript, attributed to `prior`, no new vocabulary in the artifact.
+
+**Open, with a measurement attached.** 10.2 M prompt tokens were charged at the miss rate across 8 530 calls to one
+endpoint with a byte-identical 750-character system prompt, so **no prefix was reused**. Recovering the cache would cut
+the input price by up to 75 % — more than every other row above combined — but it is an endpoint-side property this
+repository cannot assert by reading its own code. Stated as an open question rather than a saving.
+
+**Also dropped, with no dispatch:** the acceptance rule. Every arm of the last six iterations was accepted or rejected
+on a full-corpus run at ¥20.81 when the question each asked was a paired delta on the engine's 266 misses. A 466-case
+stratified sample (`--sample-misses` / `--sample-correct`, both already shipped) costs ¥6.8 and resolves 5 points at
+p < 0.01; the full corpus added resolution below 1.5 points, which no decision here has ever turned on.

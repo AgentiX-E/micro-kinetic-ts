@@ -303,6 +303,7 @@ describe('the record the comparison reads', () => {
       schedule: 'none',
       fleetOrder: 'none',
       evidenceOrder: 'none',
+      certaintyFloor: 0,
     });
     // The 2026-11-22 artifact's own banner reads `gate contrast, fallback engine`; before this change the record it
     // wrote beside 1 422 rows said only `gate=contrast`, and the resolvers were recorded nowhere at all.
@@ -324,6 +325,7 @@ describe('the record the comparison reads', () => {
       schedule: 'none' as const,
       fleetOrder: 'none' as const,
       evidenceOrder: 'none' as const,
+      certaintyFloor: 0,
     };
     expect(runMetadataOf(base).revision).toBeNull();
     expect(runMetadataOf({ ...base, revision: '3a1f333' }).revision).toBe('3a1f333');
@@ -344,6 +346,7 @@ describe('the record the comparison reads', () => {
       schedule: 'none' as const,
       fleetOrder: 'none' as const,
       evidenceOrder: 'none' as const,
+      certaintyFloor: 0,
     };
     expect(runMetadataOf(base).arms).toBe('free');
   });

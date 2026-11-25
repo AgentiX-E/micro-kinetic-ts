@@ -89,4 +89,36 @@ describe('the runner-to-loop wiring', () => {
     const args = argsOf(text.slice(callOpen + 1, callClose));
     expect(args[signature.indexOf('onset')]).toContain('evidenceOrder');
   });
+
+  it('carries the certainty floor the same road, because a saving dropped at a hop is a saved invoice', () => {
+    // `--certainty-floor` is the first flag in this programme whose WRONG behaviour is invisible in the artifact: a
+    // floor parsed and then defaulted spends the full budget and reads exactly like a run that never asked for it.
+    // Iteration 345's `onset` is the proof — parsed, logged, and present in 0 of 532 transcripts.
+    const passed = passedArguments();
+    const declared = declaredParameters();
+    const index = declared.indexOf('certaintyFloor');
+    expect(index).toBeGreaterThan(0);
+    expect(passed[index]).toBe('certaintyFloor');
+
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    const sigStart = text.indexOf('async function investigate(');
+    const sigOpen = text.indexOf('(', sigStart);
+    const sigClose = text.indexOf('): Promise<QueryArmRow | null>', sigOpen);
+    const signature = argsOf(text.slice(sigOpen + 1, sigClose)).map((one) =>
+      one.split(':')[0]!.trim(),
+    );
+    const callStart = text.indexOf('await investigate(');
+    const callOpen = text.indexOf('(', callStart);
+    const callClose = text.indexOf(');', callOpen);
+    const args = argsOf(text.slice(callOpen + 1, callClose));
+    expect(args[signature.indexOf('certaintyFloor')]).toContain('certaintyFloor');
+  });
+
+  it('refuses a floor that is not a finite margin, rather than skipping the corpus or nothing', () => {
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    // A typo in a ¥20 dispatch must be a throw and not a silent `NaN >= x`, which is false for every case and looks
+    // exactly like a floor of zero.
+    expect(text).toContain("number('certainty-floor', 0)");
+    expect(text).toContain('Number.isFinite(certaintyFloor)');
+  });
 });

@@ -35,6 +35,7 @@ describe('run metadata', () => {
     schedule: 'none' as const,
     fleetOrder: 'none' as const,
     evidenceOrder: 'none' as const,
+    certaintyFloor: 0,
     seed: 'none' as const,
     gate: 'none' as const,
     // Required rather than optional, and required on purpose: these two fields are the ones whose absence from the
@@ -97,5 +98,35 @@ describe('run metadata', () => {
     expect(() => runMetadataOf({ ...base, endedAt: '2026-11-24T23:00:00.000Z' })).toThrow(
       /endedAt/,
     );
+  });
+});
+
+describe('the certainty floor in the record', () => {
+  const base = {
+    model: 'deepseek-chat',
+    startedAt: '2026-11-25T00:35:25.000Z',
+    endedAt: '2026-11-25T01:46:00.000Z',
+    cases: 1_422,
+    maxRounds: 6,
+    maxToolCalls: 10,
+    seed: 'none' as const,
+    gate: 'none' as const,
+    fallback: 'none' as const,
+    resolve: 'none' as const,
+    schedule: 'none' as const,
+    fleetOrder: 'none' as const,
+    evidenceOrder: 'none' as const,
+    certaintyFloor: 0,
+  };
+
+  it('is named when it is on, because a floor changes the answer and not only the price', () => {
+    // A run at floor 0.87 answers 582 cases with the fallback's name instead of the model's. Two runs at two floors
+    // are two configurations, and a delta between them is not an arm effect — the same rule that caught the 346
+    // pairing, applied to the newest knob before it can cost a day.
+    expect(runMetadataOf({ ...base, certaintyFloor: 0.87 }).arms).toContain('floor=0.87');
+  });
+
+  it('is absent when it is off, so every artifact before this flag reads unchanged', () => {
+    expect(runMetadataOf({ ...base, certaintyFloor: 0 }).arms).toBe('free');
   });
 });

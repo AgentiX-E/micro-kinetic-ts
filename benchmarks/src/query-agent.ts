@@ -1475,6 +1475,12 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  * @param onset - Whether a per-service `metric` read carries the service's first `ERROR`/`FATAL` offset and count.
  *   `false` leaves every line of every read byte-identical to the text the published numbers were taken under, which is
  *   the property that lets this arm's result be attributed to the field it added and nothing else.
+ * @param certaintyFloor - Skip the investigation entirely when the engine's own margin already clears this value.
+ *   `0` disables it, which is the shipped product and every arm before 348. Measured on run `45531140696`: a floor of
+ *   **0.90** leaves the corpus accuracy unchanged while **566 of the 1 422 cases never call the model at all**, worth
+ *   **8.32 CNY of the 20.81** — 40 % of the bill bought answers that were discarded. A skipped case settles on the
+ *   fallback's first name (or the engine's winner when the arm has no fallback), reports `rounds: 0` and zero tokens,
+ *   and is attributed to `prior`, because that is exactly what it is: the fallback answering without a model.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1489,6 +1495,7 @@ export async function runQueryAgent(
   schedule: readonly string[] | null = null,
   shortlist: readonly string[] | null = null,
   onset = false,
+  certaintyFloor = 0,
 ): Promise<QueryOutcome> {
   const exchanges: QueryExchange[] = [];
   const investigated: string[] = [];
@@ -1648,6 +1655,27 @@ export async function runQueryAgent(
     answerRefused = text;
     return { ok: false, text };
   };
+
+  // The certainty floor, evaluated BEFORE the first call rather than after the last one.
+  //
+  // Every saving this programme has measured was a saving on a run already paid for: 786 of the 1 422 cases in run
+  // `45531140696` were settled by something other than the model, and every one of them bought six turns to find
+  // that out — 11.42 CNY, 55 % of the bill, for answers that were then discarded. Whether a model will fail is not
+  // knowable in advance. Whether the ENGINE was already sure is, and that is the one signal available before the
+  // call: at a floor of 0.90 it silences 566 cases and moves the corpus accuracy by nothing.
+  //
+  // The answer is the fallback's first name, or the engine's winner when the arm has no fallback — which is what a
+  // refusal on this case would have shipped anyway, so a skipped case is not a different arm, it is the same arm at
+  // a lower price. `rounds: 0` and zero tokens are how an artifact says so without a new vocabulary.
+  if (
+    certaintyFloor > 0 &&
+    engine !== null &&
+    engine.margin !== null &&
+    engine.margin >= certaintyFloor
+  ) {
+    const certain = priorTop ?? engine.top1;
+    if (certain !== null) return settle('answered', certain, 'prior');
+  }
 
   while (rounds < budget.maxRounds) {
     rounds += 1;

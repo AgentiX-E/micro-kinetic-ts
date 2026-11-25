@@ -1041,3 +1041,44 @@ describe('the arm carries its own control', () => {
     }
   });
 });
+
+/**
+ * The price knob in the workflow, and the two ways it can be wrong.
+ *
+ * `query_certainty_floor` is the first flag in this programme whose failure mode is a **correct-looking bill**:
+ * parsed and then dropped at a hop, it spends the full budget and produces an artifact indistinguishable from a run
+ * that never asked for it — iteration 345's `onset` reached 0 of 532 transcripts that way. And forwarded to the arm
+ * but not to the control, it produces a paired delta that is the floor's own effect, which is the 346 defect with a
+ * new costume.
+ */
+describe('the certainty floor travels with the arm and with its control', () => {
+  function step(name: string): string {
+    const start = WORKFLOW_CODE.indexOf(`- name: ${name}`);
+    expect(start).toBeGreaterThan(-1);
+    const next = WORKFLOW_CODE.indexOf('\n      - name: ', start);
+    return WORKFLOW_CODE.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('declares the input, so the price is a dispatch anybody can state', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_certainty_floor');
+  });
+
+  it('reaches the runner from the arm step', () => {
+    const arm = step('Free-investigation arm');
+    expect(arm).toContain('--certainty-floor');
+    expect(arm).toContain('${{ inputs.query_certainty_floor }}');
+  });
+
+  it('reaches the runner from the control step too, or the delta is the floor rather than the axis', () => {
+    const control = step('Free-investigation control (same batch)');
+    expect(control).toContain('--certainty-floor');
+    expect(control).toContain('${{ inputs.query_certainty_floor }}');
+  });
+
+  it('is not an axis: a comparison may not name it, because it is a harness setting and not a presentation one', () => {
+    // `run-arm-comparison` refuses a pairing whose records differ outside the declared axis, and the floor is in
+    // `arms` — so a dispatch that changed the floor between the two would be refused rather than priced.
+    const comparison = step('The arm against its own control');
+    expect(comparison).not.toContain('certainty');
+  });
+});
