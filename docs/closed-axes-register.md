@@ -10838,3 +10838,57 @@ The shipped cost row is unchanged at **¥0.00119 a case** — the anchor's, on t
 and `result_chars` keeps its shipped value. What the refusal leaves behind is a named quantity: the cache share has
 two observed states, **81 % uncut and 52 % cut**, and any future entry-side cut must predict its effect on
 `turnHitTokens` before it is dispatched rather than after.
+
+### 358 The mirror was one document short of itself, and the merge found the fence first (iteration 358)
+
+The code repository's `docs/sota-comparison.md` was **2 746 lines** against the record's **4 107**. Overwriting the
+smaller was the obvious repair and it was wrong four times over, because in four places the **smaller copy was the
+newer one**:
+
+| what | code copy | record copy | right |
+| ---- | --------- | ----------- | ----- |
+| `§0`'s FSE'26 basis cell | "Re-anchored **THREE** times", names `§0p-ix` and `§314` | "Re-anchored **TWICE**", ends at `75.46 %` | code — the record's own line 544 prints `81.29 %`, so its basis explained a cell its own table no longer carried |
+| the note block under the table | "superseded by **`1156/1422 = 81.29%`** … (§0p-ix, register §314)" | stops at `1073/1422 = 75.46%` | code |
+| "**Retired since, in the same two forms**" | present — the paragraph the retired-reading assertion checks itself against | absent | code |
+| the `standing-anchor` marker | `config 7438373f894f` | `config 1fa9e7bca975` | code, and **computable**: `anchor-config-fingerprint.test.ts` derives the digest from `parseRCAEvalArgs([])`'s own `signals:` line, so the mirror carried a fingerprint of a configuration the engine stopped shipping |
+
+The record copy is newer in every other respect — 12 standing rows against 11, the cost row re-priced from `¥0.029`
+to the measured `CNY 0.0012`, a newer agentic basis naming which of the two dispatches the price is taken from, and
+**1 361 lines of entries dated 2026-11-22 … 2026-11-26** the code copy never received. So the merge is a union at
+cell granularity with a mechanical acceptance test: **every heading and every table-row first cell present in
+either copy is present in the merged one** — 63/50 from the code copy, 128/78 from the record copy, **0 missing
+either way**, 4 118 lines. The two files now differ in exactly one cell, a cross-repo path that is local here and
+foreign there.
+
+**And the fence broke first, on its own subject's whitespace.** `standing-anchor.test.ts` located the five tables it
+reads by padded header literals — `'| evaluation                              | metric'` — which is one formatter's output
+on one day. The merged table's first column is two characters wider (a row added since carries a longer name), so
+**all five tables read as absent** and the failure said the document lacked a table it carried. Every assertion
+below those literals was unreachable: a fence whose identity predicate is whitespace reports edits, not defects.
+The repair is header-**cell** identity, with a regression test that shows the predicate is invariant under padding
+and still rejects a different table, a longer prefix and prose.
+
+### 359 The competitor's release expired eleven hours ago, and its benchmark ships the labels we were going to invent (iteration 359)
+
+Two facts about the field moved while this iteration was reading them, at CNY 0.00.
+
+**RCAtlas is one step further away than the record said.** `arXiv:2610.35767` §4 points at `ufile.io/5ww9iyfb`; the
+landing page still answers 200 and still names `rcatlas_release.tar.gz` at **51.3 KB**, and the file itself is now
+**Premium Access Only** — *"The hosting period for this file has now expired, only paid users can download it"* —
+with the page's own counter reading `1795609132` = **2026-11-25 20:18 CST**, eleven hours before this reading. The
+previous standing was *"an index and a label table, not the telemetry"*; today's is **not the index either**, and the
+hypothesis that depended on it is not merely unpriced but unpriceable.
+
+**Cloud-OpsBench hands over the axis this programme could not score.** `arXiv:2603.00468` (v3) links
+`github.com/LLM4Ops/Cloud-OpsBench` — **MIT**, 52 stars, 244 MB, pushed 2026-11-03 — and its top level is a runnable
+baseline (`agents/cloudops_agent`, `agents/cloudops_skill_agent`, `benchmark/`, `cloudopsbench_mcp/`, `interact.py`)
+plus **`process-label/{boutique,trainticket}`** and **`golden-trajectory/{boutique,trainticket}`**. Its JRA is joint
+over root cause **and evidence closure** on **two of our own systems**, which turns the record's one unclosed metric
+axis from *invent a metric* into **adopt a competitor's labels**.
+
+Twelve artefact tokens entered with the merge and had to be registered **in the same change**, because both fences
+are two-sided — a token named and not registered fails, and a row for a token the document no longer names fails
+too, so rows and merge cannot be split. They are now rows in **two** inventories, which is the point: availability
+asks *can a comparison be run*, population asks *on what cases*, and `10.5281/zenodo.14590730` answers
+`RESOLVES-WITHOUT-METHOD` and `OURS` at once. `56 / 56` named against registered; **no accuracy figure moved and no
+run was dispatched.**

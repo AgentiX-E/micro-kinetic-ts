@@ -76,6 +76,52 @@ function section(from: string, to: string): string {
   return DOC.slice(start, end);
 }
 
+/**
+ * The line index of the first table whose header cells BEGIN with `prefix`, or -1.
+ *
+ * A table's identity is its header CELLS. The five literals this replaces were padded header lines — a table was
+ * found by `'| evaluation                              | metric'`, which is the whitespace one formatter happened to
+ * produce on one day, not the table's name. The defect that exposed it was a merge: the code repository's copy of
+ * this document was synchronised with the fuller one, one column widened by two spaces because a new competitor's
+ * name in a row below was longer, and **all five tables this fence reads moved out from under their assertions**.
+ * The failure read as a missing table, which is a statement about the fence rather than about the document.
+ *
+ * Cell equality has the property the fence needs and padding does not: it is invariant under every edit that does
+ * not change what the table SAYS, and it still rejects a table whose header says something else.
+ *
+ * @param text - The document to search.
+ * @param prefix - The leading cells the header must carry, compared after trimming.
+ * @returns The zero-based line index, or -1 when no table begins with that header.
+ */
+function tableOffset(text: string, prefix: readonly string[]): number {
+  const lines = text.split('\n');
+  for (const [index, line] of lines.entries()) {
+    if (!line.startsWith('|')) continue;
+    const cells = line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
+    if (cells.length >= prefix.length && prefix.every((want, k) => cells[k] === want)) return index;
+  }
+  return -1;
+}
+
+/** A table of the document, located by its header cells, and the text that ends it. */
+function tableSection(prefix: readonly string[], to: string): string {
+  const offset = tableOffset(DOC, prefix);
+  expect(offset, `a table headed ${prefix.join(' | ')} is in the document`).toBeGreaterThanOrEqual(
+    0,
+  );
+  const start = DOC.split('\n')
+    .slice(0, offset)
+    .reduce((chars, line) => chars + line.length + 1, 0);
+  const end = DOC.indexOf(to, start);
+  expect(end, `${to} follows the ${prefix[0]} table`).toBeGreaterThan(start);
+  return DOC.slice(start, end);
+}
+
 const readings = anchor();
 const byKey = (key: string): Reading => {
   const found = readings.find((r) => r.key === key);
@@ -222,6 +268,41 @@ describe('the standing document is anchored to one battery', () => {
     }
   });
 
+  it('finds a table by its header cells, so re-padding one cannot switch this fence off', () => {
+    // The defect this replaces was measured on a merge, not imagined. Five literals of the form
+    // `'| evaluation                              | metric'` located the five tables below by their PADDING, and a
+    // synchronisation with the fuller copy of this document widened one column by two spaces; every one of the five
+    // then read as absent, and the failure said the document lacked a table it carried. A fence whose identity
+    // predicate is a formatter's output is a fence that reports edits, not defects.
+    const prefix = ['evaluation', 'metric'];
+    const narrow = '| evaluation | metric | ours |\n| --- | --- | --- |\n| **a** | b | c |';
+    const wide =
+      '| evaluation          | metric | ours |\n| ------------------- | ------ | ---- |\n| **a** | b | c |';
+    expect(tableOffset(narrow, prefix), 'an unpadded header is found').toBe(0);
+    expect(tableOffset(wide, prefix), 'the same table, re-padded, is the same table').toBe(0);
+    // Non-vacuity, in the three directions the predicate could fail to reject: a different table, a length that
+    // cannot carry the prefix, and a line that is not a table at all.
+    expect(
+      tableOffset('| method | Top-1 |\n| --- | --- |', prefix),
+      'another table is not this one',
+    ).toBe(-1);
+    expect(
+      tableOffset(narrow, ['evaluation', 'metric', 'absent']),
+      'a longer prefix must match',
+    ).toBe(-1);
+    expect(tableOffset('evaluation | metric', prefix), 'prose is not a table').toBe(-1);
+    // And the document itself: the five tables are still found, at five distinct offsets.
+    const offsets = [
+      ['evaluation', 'metric'],
+      ['suite', 'OnlineBoutique'],
+      ['method', 'Top-1'],
+      ['method', 'AC@1 / R@1'],
+      ['population', 'GALA+ AC@1'],
+    ].map((cells) => tableOffset(DOC, cells));
+    expect(offsets, 'every table this fence reads is located').not.toContain(-1);
+    expect(new Set(offsets).size, 'and each prefix names a different table').toBe(offsets.length);
+  });
+
   it('does not print any of the readings the correction retired', () => {
     // The regions are TABLES, and only tables: \u00a70p, \u00a71's explanation and \u00a72b-ii's retraction box NAME the
     // retired numbers on purpose \u2014 a correction that cannot name what it corrected is not one. What a table
@@ -229,14 +310,11 @@ describe('the standing document is anchored to one battery', () => {
     // a basis cell saying "\u006071.1\u0060 before iteration 129" is a table printing 71.1, and a reader skimming the row
     // sees the number without the clause. That is how this defect survived four earlier readings.
     const current = [
-      section('| evaluation                              | metric', '**Ranking: FIRST ON'),
-      section('| suite                         | OnlineBoutique', '**Every number above'),
-      section('| method                     | Top-1', '> Two traps avoided here'),
-      section(
-        '| method                       | AC@1 / R@1',
-        '> **The rows above whose populations',
-      ),
-      section('| population                     | GALA+ AC@1', '> **This table was wrong'),
+      tableSection(['evaluation', 'metric'], '**Ranking: FIRST ON'),
+      tableSection(['suite', 'OnlineBoutique'], '**Every number above'),
+      tableSection(['method', 'Top-1'], '> Two traps avoided here'),
+      tableSection(['method', 'AC@1 / R@1'], '> **The rows above whose populations'),
+      tableSection(['population', 'GALA+ AC@1'], '> **This table was wrong'),
     ].join('\n');
     // Non-vacuity: five tables, and each one carries at least one of our own readings.
     const totalFraction = `${byKey('TOTAL').correct}/${byKey('TOTAL').total}`;
