@@ -10554,3 +10554,96 @@ name**; `QueryArmRow.cacheHitTokens` sums the split across turns; `DEEPSEEK_FLAS
 `probe-endpoint.yml` is dispatch-only, four requests, no artifact — the next time a supplier moves, the answer costs a
 hundredth of a corpus case instead of a day spent reading two files that disagree. Full record:
 `endpoint-probe-349.md`.
+
+### 351 The floor priced one rule and shipped another, and the correction is a per-case identity (iteration 351)
+
+**One rule priced, another shipped.** `--certainty-floor` was added as the first saving taken *before* the call, and it
+settled a skipped case on `priorTop ?? engine.top1`. The certainty guard — the rule the floor is a pre-call form of —
+settles on `engine.top1`, and `cost-model.skipAt`, the function that decided whether the floor was worth buying,
+credited a skipped case with `engineRight`, the **guard's** answer. So for one iteration this tree priced one rule and
+ran another: the defect `applyResolver`'s own comment records from iteration 322, reproduced by the iteration that
+quoted it.
+
+**Three disagreements, and the third hid the first.** (1) the answer: `priorTop ?? engine.top1` against `engine.top1`;
+(2) the boundary: `margin >= floor` against `engineCertainty`'s `margin > bar`; (3) the stratum: `answeredBy: 'prior'`
+against `'certainty'`. The third is what made it invisible — the stratified bill in `cost-structure-348.md` showed a
+`certainty` stratum of 20 cases (the guard's, applied *after* the call) and a `prior` stratum of 516 that silently
+contained every floored case, so a floored case and a refused one were merged into one row of one table.
+
+**It was latent, and that is stated rather than excused.** The run both rules were read on ships `--fallback engine`,
+so `priorTop` *is* `engineWinner`: **1 422 of 1 422 cases agree** on the acceptance artifact. Both rules shipped the
+same name there; only the stratum and the boundary differed. A `--fallback seed` arm would have shipped a different
+answer, and no artifact in this tree was taken on one — so the fix is required by the rules and by the arithmetic, not
+merely by a reading.
+
+**The correction buys an identity, not a delta.** `SkipReading` now carries `gains` and `losses` separately, because a
+net delta cannot distinguish a rule that changes nothing from a rule that changes sixty and sums to zero. Above the
+corpus's fitted frontier both are **zero on every one of the 1 422 cases**. `ruleEdges` names why in two numbers: the
+highest margin at which shipping the engine's answer would have **destroyed** a correct case is **0.8630**, and the
+highest at which it would have **repaired** one is **0.5707**. Between them the rule is a straight loss with nothing to
+offset it; above both it is inert — so 0.87 was never a frontier, only the first probe above the cliff.
+
+**1.5 is inherited, and the proof does not mention a corpus.** The default is `ENGINE_CERTAINTY_MARGIN`, for a reason
+that holds on any artifact: `applyResolver` applies the guard *last*, over `door ?? settled`, so for any case whose
+engine margin exceeds that bar the shipped pipeline overwrites whatever the model said. A pre-call floor at the same
+bar therefore cannot change an answer; it can only stop paying for a turn that was going to be discarded. Two
+preconditions, both checkable in the artifact: the resolver is armed, and the arm settles on some name (a refusal
+settles on the prior and the guard then renames it). The one shape outside the argument is a case with no prior and no
+model answer, where the arm ships silence and the floor ships the engine's name — a case already scoring zero.
+
+**Six predictions, one dispatch, six hits.** Run `45595943761` (`--seed none --gate contrast --fallback engine
+--resolve edge-novel --certainty-floor 1.5`, 1 422 cases, dispatched two days after a run that measured nothing because
+`query_agent_sample` was left empty): **360** cases at `rounds: 0` with zero tokens and an empty trace, all 360 on
+`engineWinner` attributed `certainty`, **0 gained / 0 lost**, corpus **93.32 %** (1 327/1 422, the one-case gap inside
+the 1 062 that still called), **1.69 CNY**, and **no** `servedModel` on the 360 against 1 062 `deepseek-flash`. The
+`certainty` stratum now reads `360 cases · 0.00 CNY · 360 correct` — the only row in the table that bought nothing, for
+nothing. Full record: `certainty-floor-351.md`.
+
+### 352 The cache serves 81 % of the tokens at 1/50 the price, and a probe cannot see it (iteration 352)
+
+**A probe cannot price a workload.** 349 sent the same 191-token body twice and read `prompt_cache_hit_tokens: 0` on
+both models, and on that evidence this register closed the 75 % saving as never available at any price. The workload
+says otherwise: run `45595943761` recorded **6 204 649 of 7 636 769 prompt tokens as cache hits, 81.25 %** — **5 842
+hit against 1 349 miss a call** across 1 062 calls — because an agent repeats a ~5 800-token system prompt and not a
+~1 350-token telemetry block. What 349 established is narrower than it was published as: **a short prompt does not
+cache**. It has no stable prefix to hit.
+
+**The card has two columns and the old table was the dearer one.** Off-peak **1 / 4 / 0.02**, peak **2 / 8 / 0.04**,
+peak exactly double, weekdays 01:00–04:00 and 06:00–10:00 UTC. So the 2 / 8 every artifact in this tree was priced with
+is a real tariff — the *peak* one — and 349's "1.87x over-statement" was the USD card converted at 7.13 rather than the
+CNY card read. The acceptance run cost **1.69 CNY, 0.00119 a case**, against 7.77 with no cache and 15.55 at peak.
+
+**The lever flips.** Cache-miss input is now **84.6 %** of the bill, output 8.1 %, the cached system prompt 7.3 % — so
+shortening the **transcript** (1 349 uncached tokens a call) is worth fifty times per token what shortening the system
+prompt is, and that reverses every prompt-length recommendation in this register. Full record: `cache-hit-352.md`.
+
+**A negative result worth its own line.** Because the shipped arm runs `--fallback engine`, `priorTop` equals
+`engineWinner` on all 1 422 cases, so a floor that settles on `priorTop ?? engine.top1` collapses to the engine arm's
+**81.29 %**. A two-signal floor is not measurable on an arm where the prior IS the engine's ranking; it needs a
+`--fallback seed` arm that no artifact here holds.
+
+### 353 The bill the runner printed was not the bill (iteration 353)
+
+**One sentence, two arithmetics.** Every run of the free-investigation arm ends with `tokens P+C · est. ¥X at the
+declared prices`, and `X` was `P x 2 + C x 8` — the peak column, with every prompt token billed as a cache **miss**.
+Run `45595943761` cost **1.69** and its own last line said **15.55**: a **9.2x** overstatement in the line most readers
+see before any table, three lines above an audit block that had the right number. `costOf` had priced the cache
+correctly since 352; the constant and the function never met.
+
+**Fixed by deleting the constant.** `billLine` composes the sentence from `costOf` — the function `auditCost` prices
+its strata and its total with — so the printed figure and the table can only disagree if the line stops being called.
+`billNote` prints the counterfactual (*with every prompt at the miss price the same run would read ¥7.77*) because
+that is what every earlier report carried, and a silent correction is what makes a series untrustworthy.
+`QueryArmSummary.cacheHitTokens` carries the column, clamped per row and `null` — not zero — when no row declared it,
+because the runner could not price a cache whose count it never received.
+
+**The tier is a clock, not a default.** `tariffAt` / `servedRatesAt` read `[01:00, 04:00)` and `[06:00, 10:00)` UTC on
+weekdays — half-open, so no instant is billed at both — and apply them to the artifact's own `startedAt`. A repricing
+months later lands on the column the run was billed under, not on the clock of whoever reads it; a constant is exactly
+what produced 15.55 for a 1.69 run. `PRICES` is gone from `run-query-agent.ts`, and so is the phrase that named it.
+
+**And one floor stops printing twice.** `distinctFloors` dedupes at the printed resolution (`5e-4`), so the cliff
+`0.8629602…` and a requested `0.863` are one row: a table that lists one floor as two readings invites the conclusion
+that the curve steps there. What this does not fix is stated in the same place: the windows are transcribed from the
+card rather than queried, the line prices an artifact rather than a case, and the transcript lever — 84.6 % of the
+bill — is still unpriced. Full record: `bill-line-353.md`.

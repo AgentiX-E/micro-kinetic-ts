@@ -2710,3 +2710,37 @@ eleven, `8.7 pp` behind `Sonnet · ThinkDepth.ai`'s `90.0%` on that paper's 500-
 entry: the FSE'26 surface's profile is derived inside its own job from its own corpus and never reaches the RCAEval
 workflow. §0p-viii's sentence that "every cell in this document was produced with the containment pass inert" is
 therefore **true of the nine cells and false of this one from this entry forward**, and it is corrected there.
+
+## 2026-11-25 — three corrections in one day, and the cost standing restated at the column the runs were taken under
+
+**The floor was a second rule.** Iteration 351 found that `--certainty-floor` settled on `priorTop ?? engine.top1` while
+the shipped certainty guard settles on `engine.top1`, fired `>=` against `>`, and reported the stratum `prior` instead
+of `certainty` — the third disagreement hiding the first. It was latent here (the arm runs `--fallback engine`, so
+`priorTop` is `engineWinner` on **1 422 of 1 422** cases) and one configuration away from being live. Corrected, the
+floor is provably inert above the corpus's fitted frontier: 0 cases gained, 0 lost, **582 silenced** at 0.8630 and
+**360** at the inherited `ENGINE_CERTAINTY_MARGIN = 1.5`. `certainty-floor-351.md`.
+
+**The cache pays 81 % of the bill's tokens, and the probe that closed it could not see them.** Run `45595943761`
+recorded **6 204 649 of 7 636 769 prompt tokens as hits (81.25 %)** and cost **1.69 CNY, 0.00119 a case** — against
+7.77 with no cache. The 349 probe's four `prompt_cache_hit_tokens: 0` readings are a statement about a 191-token
+prompt, not about a workload. `cache-hit-352.md`.
+
+**The line that printed the bill was 9.2x wrong.** `run-query-agent.ts` ended every run with `P x 2 + C x 8` labelled
+"the declared prices": peak column, cache as a miss — 15.55 for a run that cost 1.69. It is now `cost-model.billLine`,
+priced at the column in force at the artifact's own `startedAt`, with the no-cache counterfactual printed beside it.
+`bill-line-353.md`.
+
+**The standing, at the column the runs were taken under (off-peak 1 / 4 / hit 0.02 CNY per million):**
+
+| system | Acc@1 | CNY / case | vs ours |
+| ------ | ----: | ---------: | ------: |
+| **ours · floor 1.5, cache as measured** | **93.32** | **0.0012** | — |
+| ours · floor 1.5, cache as a miss | 93.32 | 0.0055 | 4.6x |
+| ours · floor 0, cache as a miss | 93.39 | 0.0073 | 6.1x |
+| RCLAgent V2 · Qwen | 53.4 | 6.39 | **5 370x** |
+| Sonnet · ThinkDepth.ai | 90.0 | 32.94 | **27 673x** |
+
+**No accuracy in this document moved.** The nine RCAEval cells, the FSE'26 surface and the benchmark head-to-head are
+untouched by all three iterations: 353 has no artifact of its own and reprices two existing ones, and 352's only
+measurement is on the arm's own artifact. What moved is the money column and its attribution — and the attribution now
+says the transcript (84.6 % of the bill) is the largest unpriced lever this programme has.

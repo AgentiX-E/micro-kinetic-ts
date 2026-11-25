@@ -142,5 +142,19 @@ same endpoint with a byte-identical 750-character system prompt. **Probed and cl
 reads `prompt_cache_hit_tokens: 0`, so a prompt of this shape does not cache here and the 75 % below was never
 available.
 
+> **CORRECTED, 2026-11-25, iterations 352-353 — the probe was not the workload, and the 75 % is back.** A 191-token body
+> sent twice reads `prompt_cache_hit_tokens: 0` because it has no stable prefix to index. The workload does: run
+> `45595943761` recorded **6 204 649 of 7 636 769 prompt tokens as hits, 81.25 %** — 5 842 hit against 1 349 miss a call
+> over 1 062 calls — and cost **1.69 CNY, 0.00119 a case**. So the sentence above is false as written and true only of
+> short prompts: *a 191-token probe does not cache.* `cache-hit-352.md`.
+>
+> **Two more corrections in the same iteration.** (i) 1.07 / 4.28 is not a price anybody bills: the CNY card lists
+> **1 / 4 off-peak** and **2 / 8 peak**, so the 2 / 8 this file prices with is the PEAK column and the 1.87x "upper
+> bound" was the USD card converted at 7.13. Every CNY figure here is **10.41 / 20.81 of the peak column**. (ii) The
+> runner's own last line printed `P x 2 + C x 8` as "the declared prices" — 15.55 for the run that cost 1.69 — until
+> iteration 353 made the sentence `cost-model.billLine`, priced at the column in force at the artifact's `startedAt`.
+> `bill-line-353.md`. The token ratios (98.23 % input, 222 to 1, 786 discarded cases at 54.82 %) are price-free and
+> survive all three.
+
 **The 266 misses still cost what they cost.** They are the cases the model exists for: 180 repairs, 0.957 precision.
 Cutting further means cutting the product.

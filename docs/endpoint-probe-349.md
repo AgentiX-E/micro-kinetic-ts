@@ -30,6 +30,17 @@ worth 186 of the 244 cases. The third exists and is now named rather than assume
 
 ## 2. The prompt cache does not serve anything, at any price
 
+> **Withdrawn by iteration 352 — the claim is about a 191-token prompt, not about the workload.** Run `45595943761`
+> recorded **6 204 649 of 7 636 769 prompt tokens as cache hits, 81.25 %**: an agent repeats a ~5 800-token system
+> prompt across a thousand calls, and a four-request probe repeats nothing long enough to index. What survives is
+> narrower and still useful — **a short prompt does not cache**. `cache-hit-352.md`.
+>
+> **And the 1.87x was a conversion error, not a correction.** The card states its prices in CNY in two time tiers —
+> **1 / 4** off-peak, **2 / 8** peak, peak exactly double — so the 1.07 / 4.28 below (the USD card at 7.13) is a third
+> table nobody bills from and the 2 / 8 this repository used is the peak column. Run `45531140696` cost **10.41 CNY,
+> 0.0073 a case**, not 11.13. Iteration 353 then removed the last constant price in the tree: `run-query-agent.ts`
+> prices each artifact at the column in force at its own `startedAt`. `bill-line-353.md`.
+
 The same body, sent twice, on both models:
 
 ```
