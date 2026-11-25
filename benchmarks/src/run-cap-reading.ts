@@ -16,6 +16,7 @@ import { billLine, type BillTotals } from './cost-model.js';
 import { servedRatesAt, tariffAt } from './token-rates.js';
 import {
   capReadingOf,
+  capVerdictOf,
   perCallCurveOf,
   type CapReading,
   type CapRow,
@@ -108,26 +109,11 @@ function report(anchor: readonly CapRow[], capped: readonly CapRow[], args: Args
   const reading = capReadingOf(anchor, capped);
   const rates = servedRatesAt(args.cappedAt);
   const tariff = tariffAt(args.cappedAt);
-  const share = (part: number, whole: number): string =>
-    whole === 0 ? '—' : `${((part / whole) * 100).toFixed(2)} %`;
-  const saved = reading.uncached.anchor - reading.uncached.capped;
+  // The counting and the wording live in `transcript-reading.ts`, because this file cannot be imported by a test. What
+  // is left here is the bill — composed by `billLine`, the same function the runner prints — and the curve.
   const lines = [
-    `transcript cap — paired on ${String(reading.shared)} cases` +
-      (reading.onlyAnchor === 0 && reading.onlyCapped === 0
-        ? ''
-        : ` (only anchor ${String(reading.onlyAnchor)}, only capped ${String(reading.onlyCapped)})`),
-    // The trajectory line is the acceptance test, printed first because it is the one the literature names: an
-    // agent's loop is deterministic given its actions, so a preserved next action preserves everything after it.
-    `trajectory preserved ${String(reading.trajectoryPreserved)} (${share(reading.trajectoryPreserved, reading.shared)})` +
-      ` · directives changed ${String(reading.trajectoryChanged)} · answer changed ${String(reading.answerChanged)}`,
-    `accuracy: +${String(reading.gains)} gained / -${String(reading.losses)} lost`,
-    `uncached prompt ${reading.uncached.anchor.toLocaleString('en-US')} -> ${reading.uncached.capped.toLocaleString('en-US')} tokens` +
-      ` (${share(saved > 0 ? saved : 0, reading.uncached.anchor)} removed)`,
-    `model time ${reading.latencyMs === null ? 'not recorded' : `${String(reading.latencyMs.anchor)} -> ${String(reading.latencyMs.capped)} ms`}`,
+    ...capVerdictOf(reading),
     '',
-    // Both bills from `billLine`, at the column the capped run was taken under, PREFIXED rather than edited: a line
-    // this file rewrote would be a second arithmetic, which is exactly the defect iteration 353 spent an iteration
-    // deleting from the runner.
     `anchor  ${billLine(billOf(reading, 'anchor'), rates, tariff)}`,
     `capped  ${billLine(billOf(reading, 'capped'), rates, tariff)}`,
   ];

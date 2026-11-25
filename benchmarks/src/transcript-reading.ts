@@ -209,3 +209,40 @@ export function perCallCurveOf(rows: readonly CapRow[]): CallPoint[] {
     .sort(([a], [b]) => a - b)
     .map(([call, point]) => ({ call, cases: point.cases, mean: point.total / point.cases }));
 }
+
+/** A percentage with a sign, at the resolution the paired counts are reported at. */
+function pct(part: number, whole: number): string {
+  return whole === 0 ? '—' : `${((part / whole) * 100).toFixed(2)} %`;
+}
+
+/**
+ * The verdict, in the words a reader needs — and in the order the acceptance test implies.
+ *
+ * The trajectory comes first because it is the acceptance test, not a summary of one: an arm that looked at the same
+ * evidence in the same order and named the same service is an arm a cap did not change, whatever the accuracy column
+ * says afterwards.
+ *
+ * @param reading - The paired reading.
+ * @returns One line per finding, in reading order.
+ */
+export function capVerdictOf(reading: CapReading): string[] {
+  const signed = (value: number): string =>
+    `${value >= 0 ? '-' : '+'}${Math.abs(value).toFixed(2)} %`;
+  const saved = reading.uncached.anchor - reading.uncached.capped;
+  const unpaired =
+    reading.onlyAnchor === 0 && reading.onlyCapped === 0
+      ? ''
+      : ` (only anchor ${String(reading.onlyAnchor)}, only capped ${String(reading.onlyCapped)})`;
+  return [
+    `transcript cap — paired on ${String(reading.shared)} cases${unpaired}`,
+    `trajectory preserved ${String(reading.trajectoryPreserved)} (${pct(reading.trajectoryPreserved, reading.shared)})` +
+      ` · directives changed ${String(reading.trajectoryChanged)} · answer changed ${String(reading.answerChanged)}`,
+    `accuracy: +${String(reading.gains)} gained / -${String(reading.losses)} lost`,
+    // SIGNED, and never clamped: a cap that removes cache-served tokens can make the uncached total RISE, and a line
+    // that reported `max(0, saved)` would print "0.00 % removed" for a run whose uncached tokens grew — the one reading
+    // that cannot be true, on the one measurement this module exists to take.
+    `uncached prompt ${reading.uncached.anchor.toLocaleString('en-US')} -> ${reading.uncached.capped.toLocaleString('en-US')} tokens` +
+      ` (${signed((saved / Math.max(reading.uncached.anchor, 1)) * 100)}${saved < 0 ? ', the cap ADDED tokens' : ''})`,
+    `model time ${reading.latencyMs === null ? 'not recorded' : `${String(reading.latencyMs.anchor)} -> ${String(reading.latencyMs.capped)} ms`}`,
+  ];
+}

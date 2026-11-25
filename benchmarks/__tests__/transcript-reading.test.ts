@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   capReadingOf,
+  capVerdictOf,
   perCallCurveOf,
   trajectoryOf,
   type CapRow,
@@ -139,6 +140,64 @@ describe('the branches a clean pair of artifacts never reaches', () => {
     ).toBe(1);
     expect(capReadingOf(anchor, [row({ calls: ['fleet', 'logs svc'] })]).trajectoryPreserved).toBe(
       1,
+    );
+  });
+});
+
+describe('the verdict, in the reader own words', () => {
+  const line = (reading: ReturnType<typeof capReadingOf>, startsWith: string): string =>
+    capVerdictOf(reading).find((one) => one.startsWith(startsWith)) ?? '';
+
+  it('reports the uncached change SIGNED, because a cap can make it rise', () => {
+    // The first version of this line clamped the saving at zero and printed "0.00 % removed" for a run whose uncached
+    // tokens had gone UP by 5 % — the one reading that cannot be true, on the one measurement the iteration exists to
+    // take. The sign is the finding: a cap that removes cached tokens makes the remainder dearer.
+    const up = capReadingOf(
+      [row({ promptTokens: 1_000, cacheHitTokens: 800 })],
+      [row({ promptTokens: 700, cacheHitTokens: 200 })],
+    );
+    expect(line(up, 'uncached prompt')).toContain('+');
+    expect(line(up, 'uncached prompt')).toContain('ADDED');
+    const down = capReadingOf(
+      [row({ promptTokens: 1_000, cacheHitTokens: 800 })],
+      [row({ promptTokens: 1_000, cacheHitTokens: 900 })],
+    );
+    expect(line(down, 'uncached prompt')).toContain('-');
+    expect(line(down, 'uncached prompt')).not.toContain('ADDED');
+  });
+
+  it('leads with the trajectory, because that is the acceptance test and not a summary of one', () => {
+    expect(capVerdictOf(capReadingOf([row()], [row()]))[1]).toContain(
+      'trajectory preserved 1 (100.00 %)',
+    );
+  });
+
+  it('says the clock is unrecorded rather than reporting zero milliseconds', () => {
+    const reading = capReadingOf(
+      [row({ turnLatencyMs: undefined })],
+      [row({ turnLatencyMs: undefined })],
+    );
+    expect(line(reading, 'model time')).toContain('not recorded');
+  });
+
+  it('names the cases only one artifact carries, instead of printing a paired count that hides them', () => {
+    const reading = capReadingOf(
+      [row({ datapack: 'a' }), row({ datapack: 'b' })],
+      [row({ datapack: 'a' })],
+    );
+    expect(capVerdictOf(reading)[0]).toContain('only anchor 1');
+  });
+
+  it('answers a share of nothing with a dash, not with a NaN or a confident 0 %', () => {
+    // Two artifacts that share no case at all: a paired reading of zero is a refusal dressed as a measurement, and a
+    // percentage of it has no value. The dash says so in the one place a reader looks.
+    const reading = capReadingOf([row({ datapack: 'a' })], [row({ datapack: 'b' })]);
+    expect(capVerdictOf(reading)[1]).toContain('trajectory preserved 0 (—)');
+  });
+
+  it('prints no parenthetical when the two artifacts carry the same cases', () => {
+    expect(capVerdictOf(capReadingOf([row()], [row()]))[0]).toBe(
+      'transcript cap — paired on 1 cases',
     );
   });
 });
