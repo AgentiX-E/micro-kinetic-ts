@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { FSE26Loader } from '../../packages/kinetic/src/benchmarks/index.js';
 import { discoverCaseDirs } from './case-discovery.js';
 import { CHAT_KEY_VARIABLE, createChatClient } from './chat-completions.js';
+import { billLine, billNote } from './cost-model.js';
 import {
   buildTelemetry,
   DEFAULT_QUERY_BUDGET,
@@ -41,9 +42,7 @@ import {
   type Resolution,
 } from './query-agent.js';
 import { runMetadataOf } from './run-metadata.js';
-
-/** Declared prices, per million tokens, in CNY. Estimates: the arm's own report carries the token counts. */
-const PRICES = { promptPerMillion: 2, completionPerMillion: 8 } as const;
+import { servedRatesAt, tariffAt } from './token-rates.js';
 
 /** The command line. */
 interface Args {
@@ -564,10 +563,11 @@ async function main(): Promise<void> {
   writeFileSync(`${args.out}.meta.json`, `${JSON.stringify(meta, null, 2)}\n`);
 
   const summary = summariseQueryArm(kept);
-  const cost =
-    (summary.promptTokens * PRICES.promptPerMillion +
-      summary.completionTokens * PRICES.completionPerMillion) /
-    1_000_000;
+  // The tariff in force when THIS run started, not when it was read: the card has two columns 2× apart, and a line that
+  // picked one as a constant would overstate every off-peak run — which is what this line did until iteration 353.
+  const startedAtDate = new Date(startedAt);
+  const rates = servedRatesAt(startedAtDate);
+  const tariff = tariffAt(startedAtDate);
   process.stderr.write('\n');
   const seededWidth = sample.length === 0 ? 0 : (verdicts.get(sample[0]!)?.ranked.length ?? 0);
   const fallbackLabel = args.fallback === 'seed' ? args.seed : args.fallback;
@@ -577,7 +577,7 @@ async function main(): Promise<void> {
       `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
       `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, ` +
       // The floor changes what the arm SPENDS and how many cases it answers without a model, so a banner that omitted
-      // it would print the same line for a ¥11.13 run and a ¥8.30 one — the reading a human takes before any table.
+      // it would print the same line for a ¥10.41 run and a ¥7.76 one — the reading a human takes before any table.
       `floor ${args.certaintyFloor > 0 ? args.certaintyFloor : 'none'}, ` +
       `revision ${meta.revision ?? 'unrecorded'}`,
   );
@@ -630,9 +630,12 @@ async function main(): Promise<void> {
       `(${summary.retention === null ? 'n/a' : summary.retention.toFixed(3)}) · ` +
       `repaired ${summary.repairs}/${summary.cases - summary.engineHits} of its misses`,
   );
-  console.log(
-    `tokens ${summary.promptTokens}+${summary.completionTokens} · est. ¥${cost.toFixed(2)} at the declared prices`,
-  );
+  // The bill, from the same function the audit's table is built with, and at the column this run was billed under.
+  // `billLine` reads `cacheHitTokens`, which the summary now carries: an artifact whose 81 % cache hits are priced as
+  // misses is not a conservative estimate of the invoice, it is a different number (1.69 → 15.55 on run 45595943761).
+  console.log(billLine(summary, rates, tariff));
+  const billCaveat = billNote(summary, rates);
+  if (billCaveat !== null) console.log(billCaveat);
   // The three policies, from ONE artifact. `dispatched` is the arm that ran; the other two are re-scores, so the
   // table costs nothing and the shipped surface is checkable against the priced one.
   // The sample is half misses and half hits BY CONSTRUCTION, so a reading on it is an EXCHANGE RATE and not an

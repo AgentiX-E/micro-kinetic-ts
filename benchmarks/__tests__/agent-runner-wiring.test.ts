@@ -124,11 +124,27 @@ describe('the runner-to-loop wiring', () => {
 
   it('prints the floor in the banner, because a run at 1.5 and a run at 0 spend different money', () => {
     // The banner is the only line a human reads before the tables, and the floor is the one flag that changes what the
-    // arm SPENDS without changing what it answers. A banner that omitted it would print the same sentence for an ¥11
-    // dispatch and a ¥8 one, which is the reading iteration 347 was published on.
+    // arm SPENDS without changing what it answers. A banner that omitted it would print the same sentence for an ¥10.41
+    // dispatch and a ¥7.76 one, which is the reading iteration 347 was published on.
     const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
     const banner = text.slice(text.indexOf('Free-investigation arm'));
     expect(banner.slice(0, 900)).toContain('floor ${');
+  });
+
+  it("prices the run with the audit's own function, at the column the run started under", () => {
+    // The last line of a run is the only cost figure most readers see, and for four iterations it was computed inline
+    // from two constants: `prompt × 2 + completion × 8`, the peak column with every prompt token billed as a miss.
+    // Run `45595943761` cost 1.69 and the line said 15.55. Three things have to hold at the call site, and each fails
+    // silently on its own: the number comes from `billLine`, the card comes from the clock (not from `new Date()`, which
+    // would reprice the same artifact differently every time it is read), and the cache column reaches the line at all.
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    expect(text).toContain('console.log(billLine(summary, rates, tariff))');
+    expect(text).toContain('const rates = servedRatesAt(startedAtDate)');
+    expect(text).toContain('const tariff = tariffAt(startedAtDate)');
+    expect(text).toContain('const startedAtDate = new Date(startedAt)');
+    // The two-constant table is gone: a runner that kept it could print a second, different bill in the same file.
+    expect(text).not.toContain('PRICES');
+    expect(text).not.toContain('at the declared prices');
   });
 
   it('records the incumbent NAME on both exits, because a boolean cannot be re-read as a name', () => {

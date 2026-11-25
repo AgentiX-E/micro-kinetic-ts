@@ -1232,6 +1232,38 @@ describe('summariseQueryArm', () => {
     expect(summariseQueryArm([row({})]).precision).toBeNull();
   });
 
+  it('sums the cache column, because the line the runner prints is priced from it', () => {
+    // `billLine` reads this field. Until iteration 353 the summary did not carry it, so the runner priced 6 204 649
+    // cached tokens at the miss price and printed 15.55 for a run that cost 1.69.
+    const summary = summariseQueryArm([
+      row({ promptTokens: 7_000, cacheHitTokens: 5_800 }),
+      row({ promptTokens: 7_400, cacheHitTokens: 6_100 }),
+    ]);
+    expect(summary.cacheHitTokens).toBe(11_900);
+    expect(summary.promptTokens).toBe(14_400);
+  });
+
+  it('reports the cache as unmeasured when no row carries the column, not as zero hits', () => {
+    // Absent is not zero. A zero claims the cache served nothing — the reading iteration 349 published on the strength
+    // of a 191-token probe — while an absent column claims only that this artifact cannot say.
+    const bare = (over: Partial<QueryArmRow>): QueryArmRow => {
+      const without = row(over);
+      delete (without as { cacheHitTokens?: number }).cacheHitTokens;
+      return without;
+    };
+    expect(summariseQueryArm([bare({}), bare({})]).cacheHitTokens).toBeNull();
+  });
+
+  it('clamps a corrupt cache row and drops the one it could not measure', () => {
+    // A failed case is out of the population for every other field, so it is out of this one too; and a row claiming
+    // more hits than prompt tokens is corrupt, which must not become a discount.
+    const summary = summariseQueryArm([
+      row({ stop: 'error', promptTokens: 0, cacheHitTokens: 900 }),
+      row({ promptTokens: 1_000, cacheHitTokens: 5_000 }),
+    ]);
+    expect(summary.cacheHitTokens).toBe(1_000);
+  });
+
   it('counts an unanswered case as answered-by-nobody rather than as a wrong answer', () => {
     const summary = summariseQueryArm([
       row({ answer: null, correct: false, engineRank: 1, stop: 'rounds' }),

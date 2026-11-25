@@ -75,3 +75,48 @@ export const DEEPSEEK_FLASH_RATES: TokenRates = {
   outputPerMillion: 4,
   cacheHitPerMillion: 0.02,
 };
+
+/** Which of the card's two columns applies. Named rather than boolean because it is printed beside a price. */
+export type Tariff = 'peak' | 'off-peak';
+
+/**
+ * The card's peak windows, in UTC, as `[from, to)` hours on a weekday.
+ *
+ * Half-open on purpose: a closed interval bills 04:00:00 at both tariffs, and the boundary is the one place nobody
+ * looks for a 2× error.
+ */
+const PEAK_WINDOWS_UTC: readonly (readonly [number, number])[] = [
+  [1, 4],
+  [6, 10],
+];
+
+/**
+ * Whether the peak column applies at `when`.
+ *
+ * The card charges peak on **weekdays** between **01:00 and 04:00** and between **06:00 and 10:00 UTC** — the schedule
+ * `cache-hit-352.md` records. Read from the instant the run STARTED, which every artifact records as `startedAt`, so
+ * repricing an artifact months later lands on the column it was billed under rather than on the current clock.
+ */
+export function isPeakTariff(when: Date): boolean {
+  const day = when.getUTCDay();
+  // 0 is Sunday and 6 is Saturday: the card discounts the whole weekend, inside the windows included.
+  if (day === 0 || day === 6) return false;
+  const minutes = when.getUTCHours() * 60 + when.getUTCMinutes();
+  return PEAK_WINDOWS_UTC.some(([from, to]) => minutes >= from * 60 && minutes < to * 60);
+}
+
+/** The column in force at `when`, for a line that has to say which one it used. */
+export function tariffAt(when: Date): Tariff {
+  return isPeakTariff(when) ? 'peak' : 'off-peak';
+}
+
+/**
+ * The card the endpoint bills at the tier in force at `when`.
+ *
+ * Identity, not a third table: the peak column of the served model's card IS {@link DEEPSEEK_CHAT_RATES} — 2 / 8 with a
+ * 0.04 hit price, exactly double the off-peak column. A separate constant would let the two drift, and the drift would
+ * be invisible until someone compared two runs taken at different hours.
+ */
+export function servedRatesAt(when: Date): TokenRates {
+  return isPeakTariff(when) ? DEEPSEEK_CHAT_RATES : DEEPSEEK_FLASH_RATES;
+}

@@ -38,9 +38,9 @@
  * an old file with no `engineMargin` gets an error, not a skip curve.
  */
 
-import { type TokenRates, DEEPSEEK_CHAT_RATES } from './token-rates.js';
+import { type Tariff, type TokenRates, DEEPSEEK_CHAT_RATES } from './token-rates.js';
 
-export { DEEPSEEK_CHAT_RATES, type TokenRates };
+export { DEEPSEEK_CHAT_RATES, type Tariff, type TokenRates };
 
 /** The columns this audit reads. A subset of a query-arm row, so an artifact can be passed straight in. */
 export interface CostRow {
@@ -202,6 +202,85 @@ export function costOf(
   );
 }
 
+/** The tokens a run spent, in the shape a bill reads. `cacheHitTokens: null` means unrecorded, not zero. */
+export interface BillTotals {
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly cacheHitTokens?: number | null;
+}
+
+/** The hit tokens the bill was computed from — clamped to the prompt column, `null` when no row recorded one. */
+function billedHits(totals: BillTotals): number | null {
+  if (totals.cacheHitTokens === undefined || totals.cacheHitTokens === null) return null;
+  return Math.min(Math.max(totals.cacheHitTokens, 0), Math.max(totals.promptTokens, 0));
+}
+
+/** The card, as the tail of a printed line: `1 / 4 / hit 0.02`, or `1 / 4, no hit price`. */
+function cardLabel(rates: TokenRates): string {
+  const head = `${rates.inputPerMillion} / ${rates.outputPerMillion}`;
+  return rates.cacheHitPerMillion === undefined
+    ? `${head}, no hit price`
+    : `${head} / hit ${rates.cacheHitPerMillion}`;
+}
+
+/**
+ * The one cost sentence a runner prints, priced by the same function the audit prices its table with.
+ *
+ * This used to be written inline in `run-query-agent.ts` as `prompt × 2 + completion × 8` and printed as "the declared
+ * prices". It was the peak column, with every prompt token billed as a miss: run `45595943761` cost **1.69 CNY** and the
+ * line beside its own artifact said **15.55**. The arithmetic is not restated here — it IS `costOf` — so the sentence
+ * and the table can only disagree if this function stops being called.
+ *
+ * @param totals - The run's tokens, `cacheHitTokens` absent or `null` when the artifact never recorded the column.
+ * @param rates - The card to price with. Its absence of a hit price is the no-cache bound, not an omission.
+ * @param tariff - Which column `rates` is, named so a price cannot be read a fortnight later without its tier.
+ */
+export function billLine(totals: BillTotals, rates: TokenRates, tariff: Tariff): string {
+  const hits = billedHits(totals);
+  const share =
+    hits === null
+      ? 'cache unrecorded'
+      : `${((totals.promptTokens === 0 ? 0 : hits / totals.promptTokens) * 100).toFixed(2)} % served from cache`;
+  return (
+    `tokens ${totals.promptTokens}+${totals.completionTokens} · ${share} · ` +
+    `est. ¥${costOf(totals, rates).toFixed(2)} at the ${tariff} column (${cardLabel(rates)})`
+  );
+}
+
+/**
+ * What the line above would have read with no cache at all, or `null` when there is nothing to add.
+ *
+ * Printed rather than dropped because every cost figure this programme published before iteration 353 was that number,
+ * and a reader comparing a new report with an old one has to be able to see where the difference came from. `null` when
+ * the run served nothing from cache (the line already IS the no-cache reading) — a note that repeats the line is noise,
+ * and noise beside a price is what teaches a reader to skip the note.
+ */
+export function billNote(totals: BillTotals, rates: TokenRates): string | null {
+  const hits = billedHits(totals);
+  const cost = costOf(totals, rates);
+  if (hits === null) {
+    return (
+      `  no row recorded a cache, so ¥${cost.toFixed(2)} bills every prompt at the miss price — ` +
+      'a bound, not an invoice'
+    );
+  }
+  if (rates.cacheHitPerMillion === undefined) {
+    return (
+      `  the table names no hit price, so ¥${cost.toFixed(2)} bills every prompt at the miss price — ` +
+      'a bound, not a discount'
+    );
+  }
+  if (hits === 0) return null;
+  const noCache =
+    (totals.promptTokens * rates.inputPerMillion +
+      totals.completionTokens * rates.outputPerMillion) /
+    1_000_000;
+  return (
+    `  with every prompt at the miss price the same run would read ¥${noCache.toFixed(2)} — ` +
+    'the number the two-number line printed'
+  );
+}
+
 /**
  * Price an artifact, and say where the money went.
  *
@@ -238,12 +317,11 @@ export function auditCost(
   const inputTokens = rows.reduce((sum, row) => sum + row.promptTokens, 0);
   const outputTokens = rows.reduce((sum, row) => sum + row.completionTokens, 0);
   const recorded = rows.filter(
-    (row) => row.cacheHitTokens !== undefined && row.cacheHitTokens !== null,
+    (row): row is CostRow & { cacheHitTokens: number } =>
+      row.cacheHitTokens !== undefined && row.cacheHitTokens !== null,
   );
   const cacheHitTokens =
-    recorded.length === 0
-      ? null
-      : recorded.reduce((sum, row) => sum + (row.cacheHitTokens ?? 0), 0);
+    recorded.length === 0 ? null : recorded.reduce((sum, row) => sum + row.cacheHitTokens, 0);
   // Through `costOf` and not through the two column totals: the cache split is per ROW, and a total that multiplied
   // the summed prompt tokens by the miss price would report the no-cache bill beside strata priced with the cache —
   // two arithmetics in one table, which is the shape of every retraction in this file's history.
@@ -338,6 +416,26 @@ export function skipAt(
     delta: gains - losses,
     accuracy: (keptCorrect + skippedRight) / rows.length,
   };
+}
+
+/**
+ * The floors a report prints: sorted, and deduped by the value that is PRINTED.
+ *
+ * The cliff `ruleEdges` returns is a corpus margin like `0.8629602…`, so a reader who also asks for `0.863` would
+ * otherwise see the same row twice under two spellings — and a table that lists one floor as two readings invites the
+ * conclusion that the curve has a step there. Deduped at `5e-4`, which is the resolution the row is printed at.
+ *
+ * @param floors - The requested floors, in any order, with any duplicates.
+ * @returns The same floors, ascending, one per printed value.
+ */
+export function distinctFloors(floors: readonly number[]): number[] {
+  const kept: number[] = [];
+  for (const floor of [...floors].sort((a, b) => a - b)) {
+    const previous = kept[kept.length - 1];
+    if (previous !== undefined && Math.abs(previous - floor) < 5e-4) continue;
+    kept.push(floor);
+  }
+  return kept;
 }
 
 /**

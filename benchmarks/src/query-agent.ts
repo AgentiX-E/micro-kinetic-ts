@@ -2728,6 +2728,15 @@ export interface QueryArmSummary {
   readonly retention: number | null;
   readonly promptTokens: number;
   readonly completionTokens: number;
+  /**
+   * Prompt tokens the endpoint served from cache, clamped per row to that row's own prompt column.
+   *
+   * `null` when NO row declared the column — which is not zero: an artifact written before iteration 352 cannot state
+   * its cache behaviour, while one that carries the column and a zero says the cache served nothing. The distinction is
+   * the one `auditCost` already keeps, and it is kept here identically so the line the runner prints and the table the
+   * audit prints cannot price two different runs.
+   */
+  readonly cacheHitTokens: number | null;
 }
 
 /**
@@ -2753,6 +2762,20 @@ export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary
   const decided = repairs + breaks;
   const engineHits = measured.filter((row) => row.engineRank === 1).length;
   const engineHitsRetained = measured.filter((row) => row.engineRank === 1 && row.correct).length;
+  // The clamp is PER ROW and matches `costOf`: `prompt_cache_hit_tokens` is a subset of `prompt_tokens`, so a row whose
+  // hit column exceeds its prompt column is corrupt, and summing the excess would buy the run a discount for corruption.
+  const recorded = measured.filter(
+    (row): row is QueryArmRow & { cacheHitTokens: number } =>
+      row.cacheHitTokens !== undefined && row.cacheHitTokens !== null,
+  );
+  const cacheHitTokens =
+    recorded.length === 0
+      ? null
+      : recorded.reduce(
+          (sum, row) =>
+            sum + Math.min(Math.max(row.cacheHitTokens, 0), Math.max(row.promptTokens, 0)),
+          0,
+        );
   return {
     cases: measured.length,
     answered,
@@ -2767,6 +2790,7 @@ export function summariseQueryArm(rows: readonly QueryArmRow[]): QueryArmSummary
     retention: engineHits === 0 ? null : engineHitsRetained / engineHits,
     promptTokens: measured.reduce((sum, row) => sum + row.promptTokens, 0),
     completionTokens: measured.reduce((sum, row) => sum + row.completionTokens, 0),
+    cacheHitTokens,
   };
 }
 

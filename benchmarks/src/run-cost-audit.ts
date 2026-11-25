@@ -25,7 +25,14 @@
 
 import { readFileSync } from 'node:fs';
 
-import { auditCost, lossFreeFloor, ruleEdges, skipAt, type CostRow } from './cost-model.js';
+import {
+  auditCost,
+  distinctFloors,
+  lossFreeFloor,
+  ruleEdges,
+  skipAt,
+  type CostRow,
+} from './cost-model.js';
 import { DEEPSEEK_CHAT_RATES, type TokenRates } from './token-rates.js';
 
 /** The command line. */
@@ -167,9 +174,12 @@ function report(rows: readonly CostRow[], args: Args): string {
   lines.push('');
   const free = lossFreeFloor(rows, args.rates);
   const edges = ruleEdges(rows);
-  const floors = [
-    ...new Set([...args.floors, ...(edges.destroys === null ? [] : [edges.destroys])]),
-  ].sort((a, b) => a - b);
+  // Deduped by the value that is PRINTED, not by identity: the cliff is a corpus margin like 0.8629602…, so a reader
+  // who also asks for 0.863 would otherwise see the same row twice under two spellings and read it as two readings.
+  const floors = distinctFloors([
+    ...args.floors,
+    ...(edges.destroys === null ? [] : [edges.destroys]),
+  ]);
   lines.push(
     `${'floor'.padStart(6)} ${'skipped'.padStart(8)} ${'saved CNY'.padStart(10)} ${'gain'.padStart(6)} ${'loss'.padStart(6)} ${'accuracy'.padStart(10)}`,
   );

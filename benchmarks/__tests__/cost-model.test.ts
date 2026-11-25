@@ -5,6 +5,7 @@ import {
   auditCost,
   byCostThenName,
   costOf,
+  distinctFloors,
   lossFreeFloor,
   ruleEdges,
   skipAt,
@@ -255,6 +256,23 @@ describe('ruleEdges', () => {
     expect(reading.losses).toBe(0);
   });
 
+  it('keeps the MAXIMUM when the destroying margins arrive in ascending order', () => {
+    // The edge is a maximum, not "the last one seen". Artifact order is the sample's order, which is the corpus's, so a
+    // walk that kept the last destroying margin would answer a different number on a different export of the same run —
+    // and the floor derived from it would be a fit to the file rather than to the arm.
+    const edges = ruleEdges([
+      row({ datapack: 'low', engineMargin: 0.3, correct: true, engineWinner: 'wrong' }),
+      row({ datapack: 'low-repair', engineMargin: 0.2, correct: false, engineWinner: 'svc' }),
+      row({ datapack: 'high', engineMargin: 0.86, correct: true, engineWinner: 'wrong' }),
+      row({ datapack: 'high-repair', engineMargin: 0.55, correct: false, engineWinner: 'svc' }),
+      // And two that would LOWER each edge, so the maximum is asserted from both directions rather than by first sight.
+      row({ datapack: 'lower-repair', engineMargin: 0.1, correct: false, engineWinner: 'svc' }),
+      row({ datapack: 'lower-destroy', engineMargin: 0.2, correct: true, engineWinner: 'wrong' }),
+    ]);
+    expect(edges.destroys).toBeCloseTo(0.86, 9);
+    expect(edges.repairs).toBeCloseTo(0.55, 9);
+  });
+
   it('reports no cliff when nothing is ever destroyed, which is a different claim from a zero margin', () => {
     const edges = ruleEdges([row({ engineMargin: 2, correct: true })]);
     expect(edges.destroys).toBeNull();
@@ -289,6 +307,25 @@ describe('the reading this iteration publishes', () => {
     expect(audit.strata.filter((s) => s.by !== 'model').reduce((sum, s) => sum + s.cases, 0)).toBe(
       2,
     );
+  });
+});
+
+describe('the floor column a report prints', () => {
+  it('lists one row per printed value, because the cliff is a margin and 0.863 is a rounding of it', () => {
+    // `ruleEdges` answers with the corpus's own margin, `0.8629602…`. A reader who also asked for 0.863 would see the
+    // same reading twice under two spellings, which looks like a step in a curve that has none.
+    expect(distinctFloors([0.863, 0.8629602, 0.5])).toEqual([0.5, 0.8629602]);
+  });
+
+  it('keeps floors that differ by more than the printed resolution, and sorts them', () => {
+    expect(distinctFloors([1.5, 0.3, 0.5, 0.87])).toEqual([0.3, 0.5, 0.87, 1.5]);
+    // 0.863 and 0.870 print differently and are two rows; 0.863 and 0.8634 print the same and are one.
+    expect(distinctFloors([0.8634, 0.863])).toEqual([0.863]);
+  });
+
+  it('answers with nothing for nothing, rather than with a placeholder row', () => {
+    expect(distinctFloors([])).toEqual([]);
+    expect(distinctFloors([1.5])).toEqual([1.5]);
   });
 });
 
@@ -417,6 +454,16 @@ describe('the cache, which is 81 % of the tokens and 7 % of the bill', () => {
     expect(
       costOf({ promptTokens: -5, completionTokens: 0, cacheHitTokens: 3 }, DEEPSEEK_FLASH_RATES),
     ).toBe(0);
+  });
+
+  it('prices an artifact conservatively when the table states no hit price', () => {
+    // The audit's strata and its total both go through `costOf`, so a two-number table bills every prompt token at the
+    // miss price in BOTH — the cache is still COUNTED (900 of 1 000), it is simply not discounted.
+    const rows = [row({ promptTokens: 1_000, completionTokens: 0, cacheHitTokens: 900 })];
+    const bound = auditCost(rows, { inputPerMillion: 1, outputPerMillion: 4 });
+    expect(bound.total).toBeCloseTo(0.001, 9);
+    expect(bound.cacheHitTokens).toBe(900);
+    expect(bound.inputShare).toBeCloseTo(1, 9);
   });
 
   it('refuses a negative hit price, which would invert every saving in the report', () => {
