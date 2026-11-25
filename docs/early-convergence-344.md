@@ -1,5 +1,13 @@
 # Early convergence, measured: how much of the shortlist's loss is the model stopping sooner
 
+> **Retracted in part, iteration 346.** The 205-case gap this entry decomposes is **414 − 209 across a day boundary**.
+> A free arm dispatched on 11-24 scored **178** and another on 11-25 scored **170**, against **414** on 11-23 (McNemar
+> 252 vs 8, p < 0.001), so the two runs being subtracted are two measurements of a drifting world rather than two arms.
+> Read against the same day's control the shortlist is **+31 cases (p < 0.001)**, i.e. positive, and the gap this entry
+> splits does not exist in that form. **The arithmetic below is correct; its object is wrong.** The within-run
+> observations survive — the paired strata, the conversion split by stratum, and the fact that 98.33 % was a
+> hits-stratum rate — because those compare two columns of *one* run. See `model-drift-346.md`.
+
 Iteration 343 closed the axis "show the arm the engine's order" in its third form. Its reading named a mechanism —
 _substitution_: a presented ranking is read as a candidate set, and the model's reconciliation of two rankings is worse
 than either. This entry does what that reading only asserted: **it prices early convergence against the other halves of

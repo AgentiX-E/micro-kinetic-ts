@@ -10398,3 +10398,18 @@ run in this repository, because every run records the model's **name**.
 `agent-runner-wiring.test.ts`, which asserts the call site and the signature agree on the **count** of arguments and
 reports the missing **name**; and the rule this session earned — **an arm's control is the free arm dispatched in the
 same batch, never the free arm in the file**.
+
+*The repeat, and the level it establishes.* A free arm dispatched at 00:35 on 11-25 returned **170 / 532** against
+345's **178** the night before: **Δ −8, McNemar 22 vs 14, p = 0.243** — no difference. Against 11-23's 414 the same arm
+is **Δ −244, 252 vs 8, p < 0.001**. So the drift is a **level around 174 ± 6 today**, not a stable 414 with a bad night,
+and §5.1 of `model-drift-346.md` fires while §5.2 does not.
+
+*The axis, re-read against that level.* shortlist **+39 cases (+7.33 pp, 11 vs 50, p < 0.001)** against the 11-25 control
+and **+31 (+5.83 pp, 16 vs 47, p < 0.001)** against the 11-24 one; schedule **+14 (p = 0.054)** and **+6 (p = 0.405)**.
+**The section inside `TOOL fleet` is the only intervention in this programme with a measured gain, under both controls.**
+The schedule is positive in sign and significant under neither, which on 532 cases is what a null with a small real
+effect looks like. **Reopened:** the presentation axis, with its strongest form the one 343 published as its worst.
+**Withdrawn with it:** 344's 205-case decomposition — its gap is a day boundary, not two arms (`early-convergence-344.md`
+carries the retraction; the arithmetic is right and the object is wrong). **Unchanged:** 344's within-run findings, the
+98.33 %-was-a-hits-stratum correction, the 1.61 / 2.23 pp ceilings, both guards, and the rule that a control is the free
+arm dispatched in the same batch.
