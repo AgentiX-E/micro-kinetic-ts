@@ -103,7 +103,7 @@ describe('the certainty floor', () => {
     expect(outcome.promptTokens).toBeGreaterThan(0);
   });
 
-  it('spends nothing at all on a case the engine already decided, and answers the fallback name', async () => {
+  it('spends nothing at all on a case the engine already decided, and answers the engine name', async () => {
     const fake = client();
     const outcome = await runQueryAgent(
       fake,
@@ -124,13 +124,14 @@ describe('the certainty floor', () => {
     expect(outcome.rounds).toBe(0);
     expect(outcome.promptTokens).toBe(0);
     expect(outcome.completionTokens).toBe(0);
-    // And it answers the same name a refusal would have shipped, attributed to the prior because that is what it is.
+    // And it answers the ENGINE's name, attributed to `certainty` — the guard's own rule and the guard's own stratum.
+    // `prior` was the answer until iteration 351, and it is the no-model arm's rule: `skipAt` prices the guard.
     expect(outcome.answer).toBe('checkout');
-    expect(outcome.answeredBy).toBe('prior');
+    expect(outcome.answeredBy).toBe('certainty');
     expect(outcome.stop).toBe('answered');
   });
 
-  it('leaves a case at the floor itself to the engine, because the boundary is inclusive', async () => {
+  it('leaves a case sitting on the floor itself to the model, because the guard it mirrors is strict', async () => {
     const fake = client();
     const outcome = await runQueryAgent(
       fake,
@@ -146,7 +147,9 @@ describe('the certainty floor', () => {
       false,
       0.9,
     );
-    expect(outcome.rounds).toBe(0);
+    // Exclusive, not inclusive: `engineCertainty` fires on `margin > bar`, so an inclusive floor would settle a case
+    // the guard leaves alone. The equivalence is asserted case by case in `certainty-floor-equivalence.test.ts`.
+    expect(outcome.rounds).toBeGreaterThan(0);
   });
 
   it('investigates a case whose margin is below the floor', async () => {

@@ -273,6 +273,10 @@ async function investigate(
   const fallbackOrder: QuerySeed | null =
     fallback === 'engine' ? { source: 'engine', candidates: verdict.ranked } : null;
   const telemetry = buildTelemetry(bench);
+  // The incumbent's NAME, and not only whether one exists. `incumbent` answers "was the gate defending anything";
+  // the name answers "did the prior agree with the engine", which is the next floor rule worth pricing and the one
+  // question this artifact could not be asked — a boolean cannot be re-read as a name later. Costs no token.
+  const incumbentName = priorTopOf(fallbackOrder, telemetry);
   let outcome: QueryOutcome;
   try {
     // The engine's opinion travels BESIDE the seed: a free arm is shown no order and still ships a case the engine
@@ -328,7 +332,8 @@ async function investigate(
       nextServed: 0,
       // The INCUMBENT is a property of the case and the order, not of the investigation: a case whose call failed
       // still had one, and a row that said it did not would raise the gate-table caveat on a seeded arm.
-      incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
+      incumbent: incumbentName !== null,
+      priorTop: incumbentName,
       rounds: 0,
       toolCalls: 0,
       promptTokens: 0,
@@ -382,7 +387,8 @@ async function investigate(
     tools: outcome.tools,
     nextServed: outcome.nextServed,
     // What the LOOP had, which is the fallback's first name the case actually carries.
-    incumbent: priorTopOf(fallbackOrder, telemetry) !== null,
+    incumbent: incumbentName !== null,
+    priorTop: incumbentName,
     rounds: outcome.rounds,
     toolCalls: outcome.toolCalls,
     promptTokens: outcome.promptTokens,
@@ -568,7 +574,11 @@ async function main(): Promise<void> {
     `Free-investigation arm — asked for ${args.model}, budget ${args.budget.maxRounds} rounds, ` +
       `seed ${args.seed}${args.seed === 'engine' ? ` (top-${seededWidth} of the engine order)` : ''}, ` +
       `gate ${args.gate}, fallback ${fallbackLabel}, resolve ${args.resolve}, schedule ${args.schedule}, ` +
-      `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, revision ${meta.revision ?? 'unrecorded'}`,
+      `fleet ${args.fleetOrder}, onset ${args.evidenceOrder}, ` +
+      // The floor changes what the arm SPENDS and how many cases it answers without a model, so a banner that omitted
+      // it would print the same line for a ¥11.13 run and a ¥8.30 one — the reading a human takes before any table.
+      `floor ${args.certaintyFloor > 0 ? args.certaintyFloor : 'none'}, ` +
+      `revision ${meta.revision ?? 'unrecorded'}`,
   );
   console.log(
     `cases ${summary.cases} · answered ${summary.answered} · stops ${JSON.stringify(countStops(kept))}`,

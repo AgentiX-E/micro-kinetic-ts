@@ -25,7 +25,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { auditCost, lossFreeFloor, skipAt, type CostRow } from './cost-model.js';
+import { auditCost, lossFreeFloor, ruleEdges, skipAt, type CostRow } from './cost-model.js';
 import { DEEPSEEK_CHAT_RATES, type TokenRates } from './token-rates.js';
 
 /** The command line. */
@@ -145,29 +145,46 @@ function report(rows: readonly CostRow[], args: Args): string {
   }
   lines.push('');
   const free = lossFreeFloor(rows, args.rates);
-  const floors = [...new Set([...args.floors, ...(free === null ? [] : [free.floor])])].sort(
-    (a, b) => a - b,
-  );
+  const edges = ruleEdges(rows);
+  const floors = [
+    ...new Set([...args.floors, ...(edges.destroys === null ? [] : [edges.destroys])]),
+  ].sort((a, b) => a - b);
   lines.push(
-    `${'floor'.padStart(6)} ${'skipped'.padStart(8)} ${'saved CNY'.padStart(10)} ${'cases'.padStart(7)} ${'accuracy'.padStart(9)}`,
+    `${'floor'.padStart(6)} ${'skipped'.padStart(8)} ${'saved CNY'.padStart(10)} ${'gain'.padStart(6)} ${'loss'.padStart(6)} ${'accuracy'.padStart(10)}`,
   );
   for (const floor of floors) {
     const reading = skipAt(rows, floor, args.rates);
-    const mark = free !== null && Math.abs(floor - free.floor) < 1e-9 ? '  <- loss-free' : '';
-    const delta = `${reading.delta >= 0 ? '+' : ''}${String(reading.delta)}`.padStart(7);
+    const mark =
+      edges.destroys !== null && Math.abs(floor - edges.destroys) < 1e-9
+        ? '  <- no case moves'
+        : '';
     lines.push(
-      `${floor.toFixed(2).padStart(6)} ${String(reading.skipped).padStart(8)} ` +
-        `${money(reading.saved).padStart(10)} ${delta} ${pct(reading.accuracy).padStart(9)}${mark}`,
+      `${floor.toFixed(3).padStart(6)} ${String(reading.skipped).padStart(8)} ` +
+        `${money(reading.saved).padStart(10)} ${String(reading.gains).padStart(6)} ` +
+        `${String(reading.losses).padStart(6)} ${pct(reading.accuracy).padStart(10)}${mark}`,
+    );
+  }
+  lines.push('');
+  if (edges.destroys === null) {
+    lines.push(
+      'the engine answer never destroys a correct case in this artifact: every floor is loss-free',
+    );
+  } else {
+    // The distance between these two numbers is the whole difference between a rule and a fit. Stated in margins
+    // rather than in cases, because it is the next corpus that has to clear it.
+    lines.push(
+      `the engine answer stops destroying cases above ${edges.destroys.toFixed(4)} and stops repairing them ` +
+        `above ${edges.repairs === null ? 'no margin at all' : edges.repairs.toFixed(4)}: every floor above ` +
+        `${edges.destroys.toFixed(4)} changes no case in this artifact`,
     );
   }
   if (free !== null) {
-    lines.push('');
     lines.push(
-      `loss-free floor ${free.floor.toFixed(2)}: ${String(free.skipped)} cases (${pct(free.skipped / audit.cases)}) skipped, ` +
-        `${money(free.saved)} CNY saved (${pct(free.saved / audit.total)}), accuracy unchanged at ${pct(free.accuracy)}`,
+      `maximal no-op floor ${free.floor.toFixed(4)}: ${String(free.skipped)} cases (${pct(free.skipped / audit.cases)}) silenced, ` +
+        `${money(free.saved)} CNY saved (${pct(free.saved / audit.total)}), ` +
+        `${String(free.gains)} gained against ${String(free.losses)} lost, accuracy ${pct(free.accuracy)}`,
     );
   } else {
-    lines.push('');
     lines.push('no loss-free floor: every skip in this artifact costs at least one case');
   }
   return lines.join('\n');

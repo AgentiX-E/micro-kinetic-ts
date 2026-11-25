@@ -806,9 +806,10 @@ describe('the free-investigation arm’s wiring', () => {
     // hardcoding it is precisely the state that shipped, so "the text appears at least once" would have passed.
     const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
     expect(runner).not.toContain('incumbent: false');
-    expect(
-      runner.match(/incumbent: priorTopOf\(fallbackOrder, telemetry\) !== null/g),
-    ).toHaveLength(2);
+    // Read ONCE and written on both exits, which is strictly stronger than computing it twice: two calls could
+    // disagree about the case, and iteration 351 needs the NAME for the next floor rule, not only the flag.
+    expect(runner.match(/const incumbentName = priorTopOf\(/g) ?? []).toHaveLength(1);
+    expect(runner.match(/^\s+incumbent: incumbentName !== null,$/gm) ?? []).toHaveLength(2);
   });
 });
 

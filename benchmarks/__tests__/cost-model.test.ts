@@ -6,6 +6,7 @@ import {
   byCostThenName,
   costOf,
   lossFreeFloor,
+  ruleEdges,
   skipAt,
   type CostRow,
 } from '../src/cost-model.js';
@@ -131,9 +132,34 @@ describe('skipAt', () => {
     const reading = skipAt(rows, 1);
     expect(reading.skipped).toBe(2);
     // Skipped cases answer with the engine's winner, so `b` becomes right: the delta is +1, not −1.
+    expect(reading.gains).toBe(1);
+    expect(reading.losses).toBe(0);
     expect(reading.delta).toBe(1);
     expect(reading.saved).toBeGreaterThan(0);
     expect(reading.accuracy).toBeCloseTo(1, 9);
+  });
+
+  it('separates a repair from a break, because a net zero over 30 and 30 is not a no-op', () => {
+    // The single number `delta` cannot tell a rule that changes no answer from a rule that changes two and happens
+    // to sum to nothing. The pair can, and the next corpus moves the second one.
+    const rows = [
+      row({ datapack: 'r', engineMargin: 2, correct: false, engineWinner: 'svc', truth: ['svc'] }),
+      row({ datapack: 'b', engineMargin: 2, correct: true, engineWinner: 'wrong', truth: ['svc'] }),
+    ];
+    const reading = skipAt(rows, 1);
+    expect(reading.gains).toBe(1);
+    expect(reading.losses).toBe(1);
+    expect(reading.delta).toBe(0);
+    // And the accuracy is unchanged although two of two answers moved, which is exactly the reading the pair adds.
+    expect(reading.accuracy).toBeCloseTo(0.5, 9);
+  });
+
+  it('is exclusive at the floor, because the shipped rule it prices is', () => {
+    // `engineCertainty` fires on `margin > bar`. An inclusive price would sell a case the arm investigates, and the
+    // only corpus on which that is invisible is one whose margins never equal a round number.
+    const rows = [row({ datapack: 'edge', engineMargin: 0.9 })];
+    expect(skipAt(rows, 0.9).skipped).toBe(0);
+    expect(skipAt(rows, 0.9 - 1e-9).skipped).toBe(1);
   });
 
   it('treats a missing margin as below every floor, so an old artifact cannot silently skip everything', () => {
@@ -169,9 +195,14 @@ describe('lossFreeFloor', () => {
     ];
     const floor = lossFreeFloor(rows);
     expect(floor).not.toBeNull();
-    // The boundary is the last margin that still clears: 1.5, not 3 and not 0.2.
-    expect(floor!.floor).toBeCloseTo(1.5, 9);
+    // The threshold is the highest margin that still DESTROYS a case — `d`, at 0.2 — and not the lowest margin in
+    // the skipped set. That is the number a reader can act on: one step below it and the saving starts costing
+    // cases. `skipAt` reproduces the same three skips from it, because the comparison is exclusive and `d` sits
+    // exactly on the threshold rather than above it.
+    expect(floor!.floor).toBeCloseTo(0.2, 9);
     expect(floor!.skipped).toBe(3);
+    expect(floor!.gains).toBe(0);
+    expect(floor!.losses).toBe(0);
     expect(floor!.delta).toBe(0);
   });
 
@@ -179,6 +210,62 @@ describe('lossFreeFloor', () => {
     // Every case is a repair the engine gets wrong, so any skip loses one.
     const rows = [row({ engineMargin: 5, correct: true, engineWinner: 'wrong', truth: ['svc'] })];
     expect(lossFreeFloor(rows)).toBeNull();
+  });
+
+  it('silences every measured case when the engine answer never destroys one', () => {
+    // No cliff means no threshold to sit under: the rule is loss-free everywhere, so the maximal saving is every
+    // case that carries a margin. A floor returned as `null` here would hide a saving, not protect one.
+    const rows = [
+      row({ datapack: 'a', engineMargin: 3 }),
+      row({ datapack: 'b', engineMargin: 0.1 }),
+      row({ datapack: 'c', engineMargin: null }),
+    ];
+    const floor = lossFreeFloor(rows);
+    expect(floor).not.toBeNull();
+    expect(floor!.skipped).toBe(2);
+    expect(floor!.losses).toBe(0);
+    // The unmeasured row keeps its call: the floor is a threshold on a number, and this case has none.
+    expect(floor!.accuracy).toBeCloseTo(1, 9);
+  });
+});
+
+describe('ruleEdges', () => {
+  it('names the highest margin at which the engine answer destroys a correct case, and the highest it repairs', () => {
+    // These two numbers are the whole difference between a rule and a fit: above the first, the floor changes no
+    // case at all, and the saving is proved rather than observed.
+    const rows = [
+      row({ datapack: 'destroy-high', engineMargin: 0.86, correct: true, engineWinner: 'wrong' }),
+      row({ datapack: 'destroy-low', engineMargin: 0.3, correct: true, engineWinner: 'wrong' }),
+      row({ datapack: 'repair', engineMargin: 0.55, correct: false, engineWinner: 'svc' }),
+      row({ datapack: 'same', engineMargin: 4, correct: true }),
+    ];
+    const edges = ruleEdges(rows);
+    expect(edges.destroys).toBeCloseTo(0.86, 9);
+    expect(edges.repairs).toBeCloseTo(0.55, 9);
+    // Above the cliff the priced rule is a no-op, which is the claim a dispatch can then falsify in one run.
+    const reading = skipAt(rows, edges.destroys!);
+    expect(reading.skipped).toBe(1);
+    expect(reading.gains).toBe(0);
+    expect(reading.losses).toBe(0);
+  });
+
+  it('reports no cliff when nothing is ever destroyed, which is a different claim from a zero margin', () => {
+    const edges = ruleEdges([row({ engineMargin: 2, correct: true })]);
+    expect(edges.destroys).toBeNull();
+    expect(edges.repairs).toBeNull();
+  });
+
+  it('ignores a case whose margin was never measured, because an absent number has no edge', () => {
+    const edges = ruleEdges([
+      row({ engineMargin: null, correct: true, engineWinner: 'wrong' }),
+      row({ engineMargin: 0.4, correct: true, engineWinner: 'wrong' }),
+    ]);
+    expect(edges.destroys).toBeCloseTo(0.4, 9);
+  });
+
+  it('refuses an artifact with no margin column, for the same reason the curve does', () => {
+    const noMargin = [{ ...row(), engineMargin: undefined }] as unknown as CostRow[];
+    expect(() => ruleEdges(noMargin)).toThrow(/engineMargin/);
   });
 });
 

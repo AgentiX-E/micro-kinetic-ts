@@ -16,8 +16,19 @@
  *
  * That is not free to recover: whether a model will fail is not knowable before it fails. What IS knowable is the
  * engine's own margin, and a case whose margin already clears a floor is one the model is unlikely to move. This
- * module prices that: at a floor of **0.90 the model is skipped on 566 cases, saving 8.32 CNY (40 %) with the
- * corpus accuracy unchanged** — measured on the artifact, not hoped for.
+ * module prices that, in the units the decision is taken in: at the certainty guard's own bar the floor silences
+ * **360 cases (25.3 %) for 2.83 CNY (25.4 %)**, and at the corpus's fitted frontier of 0.87 it silences **580
+ * (40.8 %) for 4.56 CNY (40.9 %)** with **zero repairs and zero breaks** — not a net zero, a per-case identity.
+ * {@link ruleEdges} says why: above 0.8630 the engine's answer and the shipped answer agree on every case, so the
+ * floor there changes no answer at all.
+ *
+ * ## The rule this module must price is the rule the arm ships
+ *
+ * `skipAt` credits a skipped case with the ENGINE's answer, so the floor must settle on the engine's answer. It does:
+ * `runQueryAgent` ships `engine.top1`, which is what the certainty guard ships for the same margin. Iteration 348
+ * shipped the fallback's first name instead, and the artifact would then have priced a rule the arm never ran — the
+ * defect iteration 322 paid a dispatch to learn, and the reason the comparison here is strict (`>`) exactly as
+ * `engineCertainty`'s is.
  *
  * ## Why the arithmetic lives here and not in a notebook
  *
@@ -67,15 +78,42 @@ export interface CostAudit {
 
 /** What a floor would do: how many cases it would not call the model on, and what that costs in accuracy. */
 export interface SkipReading {
-  /** The engine margin at or above which the model is not called. */
+  /** The engine margin above which the model is not called. Exclusive, because the guard it mirrors is. */
   readonly floor: number;
   readonly skipped: number;
   /** Tokens not spent, in CNY. */
   readonly saved: number;
+  /**
+   * Cases the floor would REPAIR, and cases it would BREAK, reported apart from their difference.
+   *
+   * `delta` alone cannot tell a no-op from a coin flip: a floor that repairs 30 cases and breaks 30 reads as a net
+   * zero and is not one — it is a rule that changes 60 answers and happens to sum to nothing, and the next corpus
+   * would move it. The pair is the reading; the net is the summary.
+   */
+  readonly gains: number;
+  readonly losses: number;
   /** Cases gained minus cases lost, against the artifact's own answers. */
   readonly delta: number;
   /** The corpus accuracy the run would read with the floor in place, as a fraction. */
   readonly accuracy: number;
+}
+
+/**
+ * Where the engine's own answer stops being interchangeable with what the arm shipped.
+ *
+ * The floor's risk is one-sided and measurable per case: shipping `engine.top1` on a case the model got right destroys
+ * it, and on a case the model got wrong it repairs it. Both events have a margin, so both have a maximum, and above
+ * the larger of the two the rule changes NO case — which is a stronger statement than "the corpus accuracy did not
+ * move", because it holds case by case and it says where the next corpus would break it.
+ */
+export interface RuleEdges {
+  /**
+   * The highest engine margin at which shipping the engine's answer would have destroyed a correct one. Every floor
+   * above it is a provable no-op on this corpus; `null` when the rule never destroys.
+   */
+  readonly destroys: number | null;
+  /** The highest margin at which it would have repaired one. Above this the rule has nothing left to gain. */
+  readonly repairs: number | null;
 }
 
 /** Refuse a rate table that would make a bill free or inverted: a zero price hides a runaway run. */
@@ -204,7 +242,8 @@ export function skipAt(
   const margins = marginsOf(rows);
   let skipped = 0;
   let saved = 0;
-  let delta = 0;
+  let gains = 0;
+  let losses = 0;
   let keptCorrect = 0;
   let skippedRight = 0;
   for (let index = 0; index < rows.length; index += 1) {
@@ -212,7 +251,9 @@ export function skipAt(
     const margin = margins[index];
     // A null margin is not a high margin. A case whose engine opinion was never recorded keeps its model call,
     // because skipping it would be a decision taken on a number that does not exist.
-    if (margin === null || margin === undefined || margin < floor) {
+    // The comparison is STRICT because the shipped floor is: it mirrors `engineCertainty`, which fires on
+    // `margin > bar`, and a price that used `>=` would sell a case the arm would have investigated.
+    if (margin === null || margin === undefined || margin <= floor) {
       if (row.correct) keptCorrect += 1;
       continue;
     }
@@ -220,55 +261,67 @@ export function skipAt(
     saved += costOf(row, rates);
     const right = engineRight(row);
     if (right) skippedRight += 1;
-    delta += (right ? 1 : 0) - (row.correct ? 1 : 0);
+    if (right === row.correct) continue;
+    if (right) gains += 1;
+    else losses += 1;
   }
-  return { floor, skipped, saved, delta, accuracy: (keptCorrect + skippedRight) / rows.length };
+  return {
+    floor,
+    skipped,
+    saved,
+    gains,
+    losses,
+    delta: gains - losses,
+    accuracy: (keptCorrect + skippedRight) / rows.length,
+  };
+}
+
+/**
+ * The two margins at which the rule stops mattering.
+ *
+ * Read once per artifact and quoted beside the floor: a floor chosen BELOW `destroys` is a fit to this corpus, and a
+ * floor chosen above it is a rule whose direction has been checked on every case the corpus carries. The distance
+ * between the two numbers is what a reader needs to decide whether a saving has been proved or merely observed.
+ */
+export function ruleEdges(rows: readonly CostRow[]): RuleEdges {
+  const margins = marginsOf(rows);
+  let destroys: number | null = null;
+  let repairs: number | null = null;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    const margin = margins[index];
+    if (margin === null || margin === undefined) continue;
+    const right = engineRight(row);
+    if (right === row.correct) continue;
+    if (right) {
+      if (repairs === null || margin > repairs) repairs = margin;
+    } else if (destroys === null || margin > destroys) destroys = margin;
+  }
+  return { destroys, repairs };
 }
 
 /**
  * The floor that skips the most cases without losing one.
  *
- * Walked from the highest margin down and stopped at the first loss, because the curve is not monotone in the
- * saving and a reader who is shown only its maximum cannot see where it turns. The floor returned is the SMALLEST
- * margin in the skipped set rather than the last probe, so it can be handed to `skipAt` and reproduce the reading.
+ * Derived from {@link ruleEdges} rather than from its own walk, so the floor it returns and the floor {@link skipAt}
+ * prices cannot be two different rules: the lowest threshold with zero losses is exactly the highest margin at which
+ * the engine's answer would have destroyed a correct one, and the reading below is `skipAt` at that threshold. The
+ * earlier version walked the sorted margins and stopped at the first net-negative step, which answers a different
+ * question — a floor can be net-negative and still be quoting a threshold one case away from the one it measured.
+ *
+ * Returns `null` when the answer skips nothing: a floor that silences no case is not a saving, and reporting one as
+ * the "loss-free floor" would put a zero in the column a reader scans for the decision.
  */
 export function lossFreeFloor(
   rows: readonly CostRow[],
   rates: TokenRates = DEEPSEEK_CHAT_RATES,
 ): SkipReading | null {
-  const margins = marginsOf(rows);
-  const ordered = rows
-    .map((row, index) => ({ row, margin: margins[index] }))
-    .filter(
-      (entry): entry is { row: CostRow; margin: number } =>
-        entry.margin !== null && entry.margin !== undefined,
-    )
-    .sort((a, b) => b.margin - a.margin);
-  let taken = 0;
-  let saved = 0;
-  let delta = 0;
-  let floor: number | null = null;
-  for (const entry of ordered) {
-    const step = (engineRight(entry.row) ? 1 : 0) - (entry.row.correct ? 1 : 0);
-    if (delta + step < 0) break;
-    delta += step;
-    taken += 1;
-    saved += costOf(entry.row, rates);
-    floor = entry.margin;
-  }
-  if (floor === null) return null;
-  const keptCorrect = rows
-    .filter(
-      (row, index) =>
-        !(margins[index] !== null && margins[index] !== undefined && margins[index]! >= floor!),
-    )
-    .filter((row) => row.correct).length;
-  const skippedRight = ordered.slice(0, taken).filter((entry) => engineRight(entry.row)).length;
-  return {
-    floor,
-    skipped: taken,
-    saved,
-    delta,
-    accuracy: (keptCorrect + skippedRight) / rows.length,
-  };
+  const margins = marginsOf(rows).filter((margin): margin is number => margin !== null);
+  if (margins.length === 0) return null;
+  const { destroys } = ruleEdges(rows);
+  // Nothing is ever destroyed: the rule is loss-free at every threshold, so the maximal saving is the one that
+  // silences every case with a measured margin.
+  const floor = destroys ?? Math.min(...margins) - Number.EPSILON;
+  const reading = skipAt(rows, floor, rates);
+  return reading.skipped === 0 ? null : reading;
 }

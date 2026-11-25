@@ -121,4 +121,24 @@ describe('the runner-to-loop wiring', () => {
     expect(text).toContain("number('certainty-floor', 0)");
     expect(text).toContain('Number.isFinite(certaintyFloor)');
   });
+
+  it('prints the floor in the banner, because a run at 1.5 and a run at 0 spend different money', () => {
+    // The banner is the only line a human reads before the tables, and the floor is the one flag that changes what the
+    // arm SPENDS without changing what it answers. A banner that omitted it would print the same sentence for an ¥11
+    // dispatch and a ¥8 one, which is the reading iteration 347 was published on.
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    const banner = text.slice(text.indexOf('Free-investigation arm'));
+    expect(banner.slice(0, 900)).toContain('floor ${');
+  });
+
+  it('records the incumbent NAME on both exits, because a boolean cannot be re-read as a name', () => {
+    // Two row literals write an artifact: the one for a case that failed and the one for a case that ran. A column
+    // added to one of them is the defect this file exists for — `incumbent` was already written twice, and the next
+    // floor rule ("the prior and the engine name the same service") needs the name, not the flag.
+    const text = readFileSync(resolve(SRC, 'run-query-agent.ts'), 'utf8');
+    const writes = text.match(/^\s+priorTop: incumbentName,$/gm) ?? [];
+    expect(writes).toHaveLength(2);
+    // And read once, so the two rows cannot disagree about the case.
+    expect(text.match(/const incumbentName = priorTopOf\(/g) ?? []).toHaveLength(1);
+  });
 });

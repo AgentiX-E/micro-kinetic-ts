@@ -1497,11 +1497,28 @@ const LAST_TURN_ONLY = 'refused: this was the last turn, and only `ANSWER <servi
  *   `false` leaves every line of every read byte-identical to the text the published numbers were taken under, which is
  *   the property that lets this arm's result be attributed to the field it added and nothing else.
  * @param certaintyFloor - Skip the investigation entirely when the engine's own margin already clears this value.
- *   `0` disables it, which is the shipped product and every arm before 348. Measured on run `45531140696`: a floor of
- *   **0.90** leaves the corpus accuracy unchanged while **566 of the 1 422 cases never call the model at all**, worth
- *   **8.32 CNY of the 20.81** — 40 % of the bill bought answers that were discarded. A skipped case settles on the
- *   fallback's first name (or the engine's winner when the arm has no fallback), reports `rounds: 0` and zero tokens,
- *   and is attributed to `prior`, because that is exactly what it is: the fallback answering without a model.
+ *   `0` disables it, which is the shipped product and every arm before 348.
+ *
+ *   **The floor is the certainty guard read before the call instead of after it**, and it settles on the same name:
+ *   {@link engineCertainty} answers `engine.top1` when `margin > bar`, so a case above the floor is a case whose
+ *   model answer the run would have discarded anyway. That equivalence is the whole argument — a skipped case is the
+ *   same arm at a lower price, not a different one — and it is why this branch ships `engine.top1` and not the
+ *   fallback's first name. Iteration 348 shipped `priorTop ?? engine.top1` here, which is the no-model arm's rule:
+ *   a different rule priced by `cost-model.skipAt`, which credits a skipped case with `engineRight`. Two rules that
+ *   read one column and answer differently are two rules, and the artifact would have measured the one nobody runs.
+ *
+ *   Measured on run `45531140696` (1 422 cases, 93.39 %, ¥11.13 at the served model's rates): no floor at or above
+ *   **0.8630** changes a single case's correctness — the highest margin at which the engine's answer would have
+ *   DESTROYED a correct one is 0.8630, and the highest at which it would have REPAIRED one is 0.5707, so the whole
+ *   half-line above 0.8630 is a provable no-op on this corpus. At the guard's own bar the floor silences **360 cases
+ *   (25.3 %) for 2.83 CNY (25.4 %)**, and at the corpus's fitted frontier of 0.87 it silences **580 (40.8 %) for
+ *   4.56 CNY (40.9 %)** with an accuracy identical to the last digit. The bar is therefore inherited from the guard
+ *   rather than fitted to the corpus: 0.87 sits 0.007 above the cliff, which is a parameter of this corpus and not
+ *   of the rule.
+ *
+ *   A skipped case reports `rounds: 0` and zero tokens, and is attributed to `certainty` because that is who settled
+ *   it. It fires whether or not a resolver is armed: the runner's default `--resolve` is `none`, so coupling the two
+ *   would make the floor inert in the configuration that dispatches it.
  * @returns The answer, the transcript, and what the arm spent.
  */
 export async function runQueryAgent(
@@ -1689,17 +1706,20 @@ export async function runQueryAgent(
   // knowable in advance. Whether the ENGINE was already sure is, and that is the one signal available before the
   // call: at a floor of 0.90 it silences 566 cases and moves the corpus accuracy by nothing.
   //
-  // The answer is the fallback's first name, or the engine's winner when the arm has no fallback — which is what a
-  // refusal on this case would have shipped anyway, so a skipped case is not a different arm, it is the same arm at
-  // a lower price. `rounds: 0` and zero tokens are how an artifact says so without a new vocabulary.
+  // The answer is `engine.top1`, which is what the certainty guard ships for the same margin. The two rules read one
+  // column, so they must answer the same name or the floor is a different arm: iteration 348 shipped
+  // `priorTop ?? engine.top1` here, and `cost-model.skipAt` — which prices a skipped case with `engineWinner` against
+  // `truth` — would have been measuring a rule the arm never ran. The comparison is STRICT for the same reason:
+  // `engineCertainty` fires on `margin > bar`, so an inclusive floor would disagree with it on the one margin both
+  // rules can be compared at.
   if (
     certaintyFloor > 0 &&
     engine !== null &&
+    engine.top1 !== null &&
     engine.margin !== null &&
-    engine.margin >= certaintyFloor
+    engine.margin > certaintyFloor
   ) {
-    const certain = priorTop ?? engine.top1;
-    if (certain !== null) return settle('answered', certain, 'prior');
+    return settle('answered', engine.top1, 'certainty');
   }
 
   while (rounds < budget.maxRounds) {
@@ -1912,6 +1932,15 @@ export interface QueryArmRow {
    * fallback existed the two were the same decision, so a row that carries only `seeded` is read that way.
    */
   readonly incumbent?: boolean;
+  /**
+   * The incumbent's own name — the fallback's first candidate — or `null` when the arm had no fallback.
+   *
+   * `incumbent` answers *whether* the gate was defending anything; this answers *what*. The difference is the next
+   * question this programme has to price and cannot: a floor that fires when the PRIOR and the ENGINE name the same
+   * service is a two-signal rule, and a boolean cannot be re-read as a name after the run. Absent on artifacts
+   * written before the column existed, which is why a reader must treat absent and `null` as different answers.
+   */
+  readonly priorTop?: string | null;
   /**
    * The model's own answer, before any gate — what an ungated arm would have returned on this case.
    *
