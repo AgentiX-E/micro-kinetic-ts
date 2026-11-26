@@ -11859,13 +11859,18 @@ re-export from the entry point.
 
 **Coverage.** `benchmarks/src/cloudopsbench-engine-options.ts` **100 / 100 / 100 / 100**; the benchmarks package
 **99.57 / 98.92 / 99.32 / 99.67**; 9 424 tests in 382 files (was 9 417 in 381); the seven new tests are the arithmetic
-above and no test was relaxed.
+above and no test was relaxed. §372's audit then added an eighth (9 425) without touching one of them.
 
 **What is NOT claimed.** No number moved: this iteration changes no ranking, no baseline and no digest, and it is the
 only iteration in this register since §360 that can say that. Cloud-OpsBench has NOT been re-measured at the enrolled
 triple — the fix makes that run *statable* and *reproducible*, which is the precondition rather than the reading. The
 metric published there is `CA@1`, which the pin cannot move by construction; the depth is the open measurement, and it
 stays open work (b) below.
+
+**And the reason (a) is not a dispatch yet.** No workflow in this repository downloads Cloud-OpsBench — the corpus is a
+3.7 GB MIT checkout at `github.com/LLM4Ops/Cloud-OpsBench` — so the one corpus whose arm rotted (§371) is also the one
+corpus scored by hand. A cached dataset bridge of the kind `cache-datasets.yml` already provides for RCAEval is the
+durable fix and precedes the measurement; the dispatch is the cheap half of it.
 
 **Open work, in order.** (a) Cloud-OpsBench at the enrolled triple (`0.1 / 0 / tail`), one dispatch: `CA@1` should be
 unchanged and the depth is the question; (b) the re-run of the two registered §6 arms WITH
