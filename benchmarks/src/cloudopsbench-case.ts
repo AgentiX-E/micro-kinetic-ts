@@ -26,7 +26,7 @@
  *
  * @module benchmarks/src/cloudopsbench-case
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
@@ -254,14 +254,19 @@ export type CaseRead =
  */
 export function listCaseIds(root: string): string[] {
   const ids: string[] = [];
-  const base = join(root, 'benchmark');
-  for (const system of readdirSync(base).sort()) {
-    if (!statSync(join(base, system)).isDirectory()) continue;
-    for (const category of readdirSync(join(base, system)).sort()) {
-      const categoryDir = join(base, system, category);
-      if (!statSync(categoryDir).isDirectory()) continue;
-      for (const id of readdirSync(categoryDir).sort()) {
-        if (!statSync(join(categoryDir, id)).isDirectory()) continue;
+  // `readdirSync(…, { withFileTypes: true })` and not `statSync` per entry: the dirent already knows whether an
+  // entry is a directory, and the DOT test belongs on the same line as the directory test -- a rule this repository
+  // enforces from `scripts/test_rcaeval_provenance.py`, which found this module on its first push. A dot NAME is a
+  // `.DS_Store` FILE in the published tree and a dot DIRECTORY in anyone's checkout; the second would otherwise be
+  // descended into and its contents listed as cases.
+  const descent = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort(compareCasePaths);
+  for (const system of descent(join(root, 'benchmark'))) {
+    for (const category of descent(join(root, 'benchmark', system))) {
+      for (const id of descent(join(root, 'benchmark', system, category))) {
         ids.push(`${system}/${category}/${id}`);
       }
     }
