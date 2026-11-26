@@ -610,6 +610,13 @@ export default defineConfig({
         // both produce a table that looks better than the run — and its bookkeeping is asserted either way. The
         // runner beside it (`run-edge-novel-census.ts`) is an entry point and stays outside, as every `run-*` is.
         'src/edge-novel-census.ts',
+        // Added with the closure labels: the ONE input format this repository does not own. Included because it
+        // is the whole of what makes the evidence-closure axis adoptable rather than invented — the scope of a
+        // `fault_object`, whether a milestone is decidable from a tool name alone, and the parse that refuses a
+        // malformed label instead of scoring it as a miss — and because a format is exactly the kind of thing
+        // that changes upstream without anybody here touching a line. The reader runs over all 754 published
+        // labels and refuses none of them; a change there fails here rather than mis-scoring a corpus.
+        'src/closure-labels.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

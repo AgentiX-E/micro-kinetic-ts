@@ -10892,3 +10892,47 @@ too, so rows and merge cannot be split. They are now rows in **two** inventories
 asks *can a comparison be run*, population asks *on what cases*, and `10.5281/zenodo.14590730` answers
 `RESOLVES-WITHOUT-METHOD` and `OURS` at once. `56 / 56` named against registered; **no accuracy figure moved and no
 run was dispatched.**
+
+### 360 The competitor's labels parse, and a tenth of its cases can be scored from a tool name (iteration 360)
+
+§359 established that `arXiv:2603.00468` ships `process-label/{boutique,trainticket}`. This entry prices the
+adoption instead of proposing it: their format is now a module with tests, and it was run over the whole corpus.
+
+| | measured |
+| --- | ---: |
+| `milestone.json` files | **754** (`boutique` 550, `trainticket` 204) |
+| **refused by the parser** | **0** |
+| `fault_object` scoped to a **service** (`app/<name>`) | **659** (87.4 %) |
+| …`node` | 48 |
+| …`namespace` | 47 |
+| …an unseen prefix | **0** |
+| milestones | **2 478** (2: 95, 3: 392, 4: 223, 5: 44) |
+| milestones decidable from a tool **name** alone | **473 = 19.1 %** |
+| cases with EVERY milestone name-level | **76** |
+| …with SOME | 306 |
+| …with NONE | **372** |
+| admissible uses | 6 654 (473 argument-free, 6 181 with arguments, 1 098 carry `evidence_patterns`) |
+| distinct tools | **12** — `GetResources` 3 265, `DescribeResource` 1 487, `CheckServiceConnectivity` 390, `GetAppYAML` 379, `GetErrorLogs` 331, `GetClusterConfiguration` 248, `GetAlerts` 208, `GetSourceCode` 98, `ListCodeFiles` 98, `GetRecentLogs` 72, `CheckNodeServiceStatus` 50, `GetServiceDependencies` 28 |
+
+**The root-cause half needs no metric and no fuzzy match.** `app/adservice` and this engine's accepted set
+`{adservice}` are the same object once the prefix is stripped, and 659 of 754 labels are in that form. The other
+95 name a **node** or a **namespace**, which this engine cannot express as an answer at all — not as an error, but
+as a different alphabet. So a blended figure over 754 would charge us for 95 cases we cannot answer by
+construction, which is the population defect this register has refused four times; the two subsets are counted and
+reported separately.
+
+**The evidence half is a tool-call presence test, and that is where the artifact stops.** 83.5 % of admissible uses
+carry arguments — in practice a `namespace`, a resource type, sometimes a name — and a milestone is satisfied by
+the RIGHT call, not any call. Our arm's artifact records `tools: Record<string, number>`: names and counts. That is
+enough for **473 milestones**, and for **76 cases in full**. The missing piece is exactly one recorded field — the
+per-call argument — and its price is now a number rather than a worry: **678 of 754 cases**.
+
+**What this entry does NOT claim.** It does not score this engine on their labels: the 12-row tool mapping has not
+been written, and quoting the 76 name-level cases as a closure rate would be a fraction of the wrong denominator.
+It also does not claim their corpus is ours: `process-label` is 550 OnlineBoutique + 204 TrainTicket, replayed
+incidents with runtime verification, and the only comparison it licenses is a metric adoption, not a cell.
+
+The module is `benchmarks/src/closure-labels.ts`, 100 % on all four coverage dimensions, and its tests are what
+make an upstream format change fail here rather than mis-score a corpus: three scope prefixes, 2–5 milestones,
+twelve tool names, argument-free and pattern-carrying uses, and the parse that refuses a malformed label instead of
+reading it as a miss.
