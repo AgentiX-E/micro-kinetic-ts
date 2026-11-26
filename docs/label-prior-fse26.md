@@ -300,3 +300,23 @@ Three things, and the first is the only one that touches the ranking:
 * the order is now built by ONE closure over "which score decides" (`orderNodes`), so the silent order is the same
   pipeline with the prior's contribution read as zero rather than a second approximation of it. It is called twice
   only when a `tail` arm is armed and speaking; the shipped path sorts exactly as often as it did.
+
+### 4.4 Reproduced through the dispatch surface, to the case
+
+The panel's numbers were produced by local runs, which is a weaker claim than it looks: a reading nobody can
+re-dispatch is a reading that cannot be checked. As of `598b6896` the arm is dispatchable on this half and has been
+reproduced through the workflow:
+
+> `Benchmark — FSE'26 RCABench` run
+> [`45866784993`](https://github.com/AgentiX-E/micro-kinetic-ts/actions/runs/45866784993), input
+> `ranking_knobs=label_prior_weight=0.1,label_prior_margin_gate=0,label_prior_jurisdiction=tail`.
+
+Its configuration line prints `labelPriorWeight=0.1 labelPriorMarginGate=0 labelPriorJurisdiction=tail` beside
+`failureContainmentScope=global-measured`, and its artifact reads **`Top@1` 1 186 (83.40 %), `Top@3` 1 260
+(88.61 %), `Top@5` 1 282 (90.15 %) of 1 422** — the table in §4.1, to the case, on a different machine, a different
+dataset download and a different day. Recomputing the three depths from the run's own per-case dump returns
+`1186 / 1260 / 1282` independently of the runner's counters, so the artifact is sufficient on its own.
+
+That is the third reading this iteration adds and the cheapest one: **the arm is a dispatch, not a local result.** The
+first reading was the six-arm table, the second the golden pre-registration, and this one is the one that makes the
+other two checkable by anyone with a PAT and 40 minutes of runner time.
