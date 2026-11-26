@@ -70,18 +70,20 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   dualFamilyGateMode:
     'the dual-family gate\u2019s comparison (min | channel), shipped at channel: it changes WHICH bar the gate sets rather than any term\u2019s magnitude, so it is a discrete population choice a dispatch states and a weight search cannot move',
   labelPriorWeight:
-    'the label prior, shipped OFF and measured outside this search space: its input is a per-CASE history of ' +
-    'labelled incidents rather than anything a tuning corpus carries, so a weight this search moved would be ' +
-    'priced against a profile the search cannot build — the pair and the margin that gates it live in ' +
-    'docs/label-prior.md',
+    'the label prior, shipped at the enrolled 0.1 and measured outside this search space: its input is a per-CASE ' +
+    'history of labelled incidents rather than anything a tuning corpus carries, so a weight this search moved ' +
+    'would be priced against a profile the search cannot build — the triple it belongs to lives in ' +
+    'docs/label-prior.md section 5',
   labelPriorMarginGate:
-    'the margin at which that prior may speak, shipped at 0.02: it selects WHERE the term is spent rather than how ' +
-    'much it is worth, so it is a discrete population of rankings a dispatch states — a search over weights could ' +
-    'only move it by accident, the same reason dualFamilyGate is held',
+    'the margin at which that prior may speak, shipped at 0 because the jurisdiction below pins the head: the gate ' +
+    'selects WHERE the term is spent rather than how much it is worth, so it is a discrete population of rankings ' +
+    'a dispatch states — a search over weights could only move it by accident, the same reason dualFamilyGate is ' +
+    'held',
   labelPriorJurisdiction:
-    'WHERE that prior may act (everywhere | tail), the third name of the same configuration: it selects a position ' +
-    'in the reported order rather than a magnitude, so a continuous search could only interpolate between two ' +
-    'orders — a discrete population a dispatch states, the same reason labelPriorMarginGate is held',
+    'WHERE that prior may act (everywhere | tail), shipped at tail and the reason the gate may ship at 0: it ' +
+    'selects a position in the reported order rather than a magnitude, so a continuous search could only ' +
+    'interpolate between two orders — a discrete population a dispatch states, the same reason labelPriorMarginGate ' +
+    'is held. Editing this without the gate ships a configuration nobody measured',
   victimWeight:
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:

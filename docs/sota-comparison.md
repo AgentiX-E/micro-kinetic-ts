@@ -589,14 +589,15 @@ therefore **true of the nine cells and false of this one from this entry forward
 The digest moves **`8a7eb902ec8e → c0b34f8091f2`**, and again **nothing the ranking does has changed**. The line
 gained one field: `labelPriorJurisdiction=everywhere`.
 
-**Why it has to be printed.** The label prior ships at weight `0`, and iteration 369 gave it a second way to spend a
-non-zero weight: `everywhere` sums it with the rest of the ranking, `tail` clamps the head of the order the engine
-would report without it and lets the prior reorder positions 2..n. The two words are the difference between the
+**Why it has to be printed.** At this entry the label prior shipped at weight `0`, and iteration 369 gave it a second
+way to spend a non-zero weight: `everywhere` sums it with the rest of the ranking, `tail` clamps the head of the order the
+engine would report without it and lets the prior reorder positions 2..n. The two words are the difference between the
 **refused** arm and the **one that survives** on the FSE'26 panel — `Top@1` `1 186 → 1 184 / 1 176 / 1 182` in the
 three summed arms against invariance by construction in the pinned one, with `+24` cases at each of `Top@3` and
 `Top@5` in every armed arm (`docs/label-prior-fse26.md` §2.4). A golden-half artifact that recorded the weight and
 the gate but not the jurisdiction could not tell a pinned run from the shipped one, which is the state §0p-viii
-records for `containmentExcursions` — a configuration the artifact could not state.
+records for `containmentExcursions` — a configuration the artifact could not state. **§0p-xi then spent the word: the
+field is what made the enrolment statable at all.**
 
 **The prediction, stated before the run rather than after it.** At the shipped weight the term is not read at all:
 `priorSpeaks` short-circuits on `labelPriorWeight !== 0`, so the order is built once, exactly as it was, and the

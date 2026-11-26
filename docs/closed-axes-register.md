@@ -11811,3 +11811,70 @@ line in `benchmarks/__tests__/rcaeval-reported-config.test.ts`, `benchmarks/base
 (re-anchored), `docs/sota-comparison.md` (§0p-xi + marker), `docs/label-prior.md` §5/§6,
 `docs/label-prior-fse26.md` §4.2.1/§4.5. 9 417 tests green in 381 files, oxlint 0 warnings over 781 files, prettier
 clean, `nx typecheck` 15 projects green, `packages/tree` coverage 99.6 / 98.1 / 99.4 / 99.9.
+
+## §371 Iteration 370 — the configuration claim that stopped being true (iteration 370)
+
+The enrolment moved three constants and left every NUMBER in place. What it also left in place was a runner that had
+been restating one of those constants by hand, and this iteration is the reading of that: **the Cloud-OpsBench runner
+could no longer run the configuration it said it ran.**
+
+**The defect, in one line.** `run-cloudopsbench.ts` decided whether to build a per-case label history from the RAW
+command line — `const priorArmed = (args.labelPriorWeight ?? 0) !== 0` — and the `?? 0` was the engine's default only
+while the engine's default WAS `0`. At the enrolled `0.1`, a bare `--data-dir <checkout>` reached the engine with
+weight `0.1` and attached **no history to any case**: every `p(v)` was absent, the term was skipped, and the run
+printed `label prior  shipped default (0, the ablation)` beside a ranking that was, from that commit on, the ablation
+under the shipped configuration's name. The report was self-consistent and the claim was false, which is the failure
+mode this programme prices highest.
+
+**Why nothing caught it.** The module is a `run-*.ts` entry point, so `benchmarks/__tests__/coverage-scope.test.ts`
+holds that no test may import it and it sits outside the coverage denominator by design. That census is right — the
+entry point does I/O and calls `main()` — but the consequence is that a DECISION lived there with no test and no
+measurement: the two numbers, "what the engine was configured with" and "what the runner decided to prepare", were
+equal by coincidence and never compared by anything.
+
+**The second defect in the same place, which the first one hid.** `parseCloudOpsArgs` had no
+`--label-prior-jurisdiction`, and the parser's default for it moved `everywhere → tail` with the enrolment. So every
+Cloud-OpsBench arm recorded in `docs/label-prior.md` §6 — `0.5577` at `β = 0.05 / τ = 0.02` and `0.5769` at
+`β = 0.1 / τ = 0.02` — was measured at `everywhere` and can no longer be reproduced from the command line that
+produced it, because the word that differs cannot be named on that runner. A published reading became unreachable
+without a single number changing.
+
+**The fix, and why it is a projection rather than a second constant.** The resolved option object is now produced by
+`benchmarks/src/cloudopsbench-engine-options.ts` — `resolveEngineOptions(overrides)` and
+`pricesLabelPrior(engine)` — in a module that is NOT a `run-*` entry point, so a test can hold both halves. The runner
+calls it once, hands the object to the container, and asks the same object whether a history is needed. Every printed
+configuration line and the per-case JSON dump now read the RESOLVED values: `null` used to mean "shipped", and after
+the enrolment a reader cannot recover which configuration produced a dump from a `null`. `--label-prior-jurisdiction`
+was added to the Cloud-OpsBench parser, refusing an unknown word rather than falling back to the shipped one — the
+RCAEval parser's opposite convention, and deliberately: this parser refuses every other flag, and a fallback would run
+the pinned arm under a name the operator did not ask for.
+
+**TDD, in the order it happened.** Five tests in `cloudopsbench-prior-arming.test.ts` and two in
+`cloudopsbench-cli.test.ts` were written first and read red — `resolveEngineOptions is not a function` (5 failures) and
+`expected [Function] to throw /--label-prior-jurisdiction is tail or everywhere/ but got 'unknown argument
+"--label-prior-jurisdiction"'` (2 failures) — and the implementation followed. The first full-suite run after the fix
+failed one test, `coverage-scope`: `imported by a test but not in coverage.include: ['run-cloudopsbench']`. That is the
+census doing exactly what it documents, and it is what forced the projection into its own module rather than a
+re-export from the entry point.
+
+**Coverage.** `benchmarks/src/cloudopsbench-engine-options.ts` **100 / 100 / 100 / 100**; the benchmarks package
+**99.57 / 98.92 / 99.32 / 99.67**; 9 424 tests in 382 files (was 9 417 in 381); the seven new tests are the arithmetic
+above and no test was relaxed.
+
+**What is NOT claimed.** No number moved: this iteration changes no ranking, no baseline and no digest, and it is the
+only iteration in this register since §360 that can say that. Cloud-OpsBench has NOT been re-measured at the enrolled
+triple — the fix makes that run *statable* and *reproducible*, which is the precondition rather than the reading. The
+metric published there is `CA@1`, which the pin cannot move by construction; the depth is the open measurement, and it
+stays open work (b) below.
+
+**Open work, in order.** (a) Cloud-OpsBench at the enrolled triple (`0.1 / 0 / tail`), one dispatch: `CA@1` should be
+unchanged and the depth is the question; (b) the re-run of the two registered §6 arms WITH
+`--label-prior-jurisdiction everywhere`, which is now the only way to state them, and which also prices what the default
+change did to that corpus; (c) the per-cell depth pattern of §370 (a); (d) the margin theorem.
+
+**State.** `benchmarks/src/cloudopsbench-engine-options.ts` (new), `benchmarks/src/run-cloudopsbench.ts` (arming,
+print, dump, re-exports), `benchmarks/src/cloudopsbench-cli.ts` (`--label-prior-jurisdiction`, three doc blocks),
+`benchmarks/vitest.config.ts` (allow-list), `benchmarks/__tests__/cloudopsbench-prior-arming.test.ts` (new),
+`benchmarks/__tests__/cloudopsbench-cli.test.ts` (2 new, 1 rewritten), doc-block corrections in
+`packages/optimize/src/integration.ts`, `packages/tree/src/pruning/pruner.ts`, `benchmarks/src/fse26-cli.ts`,
+`benchmarks/src/rcaeval-cli.ts`, `docs/label-prior.md` §6 and `docs/sota-comparison.md` §0p-x.

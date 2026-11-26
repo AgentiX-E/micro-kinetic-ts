@@ -2,6 +2,7 @@
  * The runner's own flags: what each one means, and what a refusal has to say.
  */
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_LABEL_PRIOR_JURISDICTION } from '../../packages/tree/src/index.js';
 
 import { parseCloudOpsArgs } from '../src/cloudopsbench-cli.js';
 
@@ -134,12 +135,47 @@ describe('the Cloud-OpsBench runner’s command line', () => {
     }
   });
 
-  it('leaves the label prior unarmed unless a weight is given', () => {
-    // The arm has to be OFF by default in the strongest sense: not "armed at zero", but absent from the parsed
-    // options entirely, so `createContainer` hands the engine the shipped configuration object.
+  it('leaves the label prior ABSENT unless a weight is given, so the shipped configuration stands', () => {
+    // Absent rather than "armed at zero": `createContainer` then hands the engine the shipped configuration object,
+    // and the shipped weight is `DEFAULT_LABEL_PRIOR_WEIGHT` — 0.1 since iteration 369, which is ARMED. The
+    // distinction this test defends is therefore "the flag was not passed" versus "the flag was passed as 0", and
+    // not "the term is off"; the runner reads its arming decision off the RESOLVED weight for exactly this reason.
     const base = parseCloudOpsArgs(['--data-dir', '/tmp/cob']);
     expect(base.labelPriorWeight).toBeUndefined();
     expect(base.labelPriorMarginGate).toBeUndefined();
+    expect(base.labelPriorJurisdiction).toBeUndefined();
+  });
+
+  it('reads the POSITION the prior may act in, because the shipped one is not the one the registered arms used', () => {
+    // Every Cloud-OpsBench arm in docs/label-prior.md §6 (`0.5577` at 0.05 / 0.02, `0.5769` at 0.1 / 0.02) was run
+    // before the pin existed, i.e. at `everywhere`. The shipped jurisdiction moved to `tail` in iteration 369, so
+    // those command lines no longer reproduce those numbers unless the word can be named — which is why this flag
+    // exists rather than being implied by the default.
+    expect(DEFAULT_LABEL_PRIOR_JURISDICTION).toBe('tail');
+    for (const word of ['tail', 'everywhere'] as const) {
+      expect(
+        parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-jurisdiction', word])
+          .labelPriorJurisdiction,
+      ).toBe(word);
+    }
+    // A flag alone is a legal arm: it changes nothing without a weight, the rule the gate above already follows.
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-jurisdiction', 'everywhere'])
+        .labelPriorWeight,
+    ).toBeUndefined();
+  });
+
+  it('refuses a jurisdiction word the engine does not know, rather than reproducing the shipped one', () => {
+    // The RCAEval parser falls back to the shipped word here, on the rule that a typo must reproduce a published
+    // configuration rather than invent one. This parser refuses instead, because every other flag in it refuses and a
+    // dispatch here is a shell line a reader typed: a failure names the word, while a fallback silently re-runs the
+    // pinned arm under a name the operator did not ask for.
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-jurisdiction', 'head']),
+    ).toThrow(/--label-prior-jurisdiction is tail or everywhere/);
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-jurisdiction']),
+    ).toThrow(/needs a value/);
   });
 
   it('reads the label prior price and gate, together or apart', () => {

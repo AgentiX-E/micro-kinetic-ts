@@ -8,7 +8,11 @@
  * @module benchmarks/src/cloudopsbench-cli
  */
 
-import type { DualFamilyGateMode } from '../../packages/tree/src/index.js';
+import {
+  isLabelPriorJurisdiction,
+  type DualFamilyGateMode,
+  type LabelPriorJurisdiction,
+} from '../../packages/tree/src/index.js';
 
 /** Parsed command line. */
 export interface CloudOpsArgs {
@@ -61,21 +65,34 @@ export interface CloudOpsArgs {
    */
   readonly dualFamilyGateMode: DualFamilyGateMode | undefined;
   /**
-   * The label prior's price, or `undefined` for the shipped 0.
+   * The label prior's price, or `undefined` for the shipped {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0.1.
    *
    * The one term whose input is not this case's telemetry: how often each service is the deployment's answer,
    * counted over the corpus and excluding the case being scored. It was refused ungated — it lifts a cell whose
    * heads are half a unit apart and collapses one whose heads are a hundredth apart — so the price travels with
-   * the gate below rather than alone, and the pair is what the arm measured.
+   * the gate below rather than alone, and the triple with the jurisdiction below is what the arm measured.
    */
   readonly labelPriorWeight: number | undefined;
   /**
-   * The smallest top-1 margin at which the label prior may speak, or `undefined` for the shipped 0.02.
+   * The smallest top-1 margin at which the label prior may speak, or `undefined` for the shipped
+   * {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0.
    *
    * A gate on the ENGINE's own `top1 − top2`, read before the prior is added: the deployment does not know which
-   * cell it is in, and always knows this number.
+   * cell it is in, and always knows this number. It ships at 0 only because the jurisdiction ships at `tail`; the
+   * pair is one configuration, and this flag exists so an arm that moves one half can name the other.
    */
   readonly labelPriorMarginGate: number | undefined;
+  /**
+   * Where in the ranking the label prior may act, or `undefined` for the shipped
+   * {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `tail`.
+   *
+   * `everywhere` sums it with the rest of the ranking; `tail` clamps the head of the order the engine would report
+   * without the prior and lets it reorder 2..n, which makes `Top@1` invariant at any weight. **Every arm in
+   * `docs/label-prior.md` §6 was measured at `everywhere`, before the pin existed**, and the shipped word has since
+   * moved to `tail` — so reproducing one of those readings needs this flag, and the flag exists rather than being
+   * inferred because a default that silently reinterprets a published command line is the defect.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction | undefined;
 }
 
 /** The two graph arms, as the command line spells them. */
@@ -114,6 +131,7 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let dualFamilyGateMode: DualFamilyGateMode | undefined;
   let labelPriorWeight: number | undefined;
   let labelPriorMarginGate: number | undefined;
+  let labelPriorJurisdiction: LabelPriorJurisdiction | undefined;
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -186,6 +204,17 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       }
       labelPriorMarginGate = parsed;
       index += 1;
+    } else if (one === '--label-prior-jurisdiction') {
+      const value = valueOf(index, '--label-prior-jurisdiction');
+      // A VOCABULARY, refused rather than defaulted: the RCAEval parser falls back to the shipped word so that a typo
+      // reproduces a published configuration, but every other flag here refuses, and the shipped word MOVED in
+      // iteration 369 — a fallback would run the pinned arm under a name the operator did not ask for, which is a
+      // number from a configuration nobody chose.
+      if (!isLabelPriorJurisdiction(value)) {
+        throw new Error(`--label-prior-jurisdiction is tail or everywhere, got "${value}"`);
+      }
+      labelPriorJurisdiction = value;
+      index += 1;
     } else if (one === '--topology') {
       const value = valueOf(index, '--topology');
       if (value !== 'registry' && value !== 'ring') {
@@ -214,5 +243,6 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
     dualFamilyGateMode,
     labelPriorWeight,
     labelPriorMarginGate,
+    labelPriorJurisdiction,
   };
 }

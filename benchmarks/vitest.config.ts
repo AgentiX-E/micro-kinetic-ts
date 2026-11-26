@@ -691,6 +691,12 @@ export default defineConfig({
         // term that spoke and agreed, so the two are counted apart — and a run that never armed the term is a
         // third state rather than a zero.
         'src/label-prior-reach.ts',
+        // Added with the module, and it should have existed before the enrolment: the Cloud-OpsBench runner answered
+        // "is the label prior priced?" from the RAW command line, which agreed with the engine only while the shipped
+        // weight was `0`. The projection answers it from the resolved options, and what is measured here is the pair
+        // of facts that keeps the two from drifting again — the resolved weight IS the shipped default when no flag
+        // is passed, and an absent flag does not overwrite that default with `undefined`.
+        'src/cloudopsbench-engine-options.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

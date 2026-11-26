@@ -1175,8 +1175,10 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * only carry the population's counts, and removing the current case from them needs the label the engine
    * must never see.
    *
-   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0, the ablation: at 0 the profile is neither read nor
-   * required, and the ranking is bit-identical to the engine that had no such term.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0.1, the enrolled arm: on the FSE'26 panel it holds `Top@1` at
+   * 1 186 (1/1, p = 1.000) while gaining 24 and 27 cases at `Top@3` and `Top@5`, and on the nine RCAEval cells it
+   * leaves `AC@1` at 666 of 666 while lifting the nine-cell `Avg@5` mean 92.47 -> 94.48 %. 0 remains the ablation:
+   * at 0 the profile is neither read nor required, and the ranking is bit-identical to the engine with no such term.
    */
   readonly labelPriorWeight: number;
   /**
@@ -1187,7 +1189,9 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * know which cell it is in, but it always knows this number, which is why the threshold is read off the
    * engine's own `top1 − top2` BEFORE the term is added.
    *
-   * Ships at {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0.02, the pair's measured threshold. Inert at weight 0.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0, and only because the jurisdiction below pins the head:
+   * under the pin the gate protects nothing and costs depth (tau = 0.02 reads +16 / +19 instead of +24 / +27,
+   * withholding 89 cases). A zero gate with `everywhere` is the refused ungated arm.
    */
   readonly labelPriorMarginGate: number;
   /**
@@ -1199,8 +1203,9 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * arm is structural rather than priced: `tail` makes `Top@1` invariant by construction at any weight. See
    * `pruning/label-prior.ts` and `docs/label-prior-fse26.md` §2.4.
    *
-   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `everywhere`, the arm every published cell was taken with.
-   * Inert at weight 0.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `tail`, the enrolled arm and the only one whose head cost
+   * is zero BY CONSTRUCTION rather than by measurement. `everywhere` stays reachable and stays measured — it is the
+   * configuration every pre-369 published cell ran — but its record is a head that moves for no gain.
    */
   readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**

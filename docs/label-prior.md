@@ -144,16 +144,17 @@ choose (0.1, 0.015); a reader who wanted to be unable to damage a cell would cho
 The default stays at 0.02 because the second criterion is the one this project applies to every enrolment, and because
 `Top@3` is not a board we are measured on.
 
-**Not yet cleared — and iteration 368 cleared half 2 the hard way: by refusing it.** The term ships at weight 0, so no
-default moved and no ranking changed. Enrolling it needs both halves of the kill criterion this project applies to every
-term:
+**Cleared — and not by the arm this section first priced.** While the paragraph you are reading was being written the
+term shipped at weight 0: no default had moved and no ranking had changed, and enrolment needed both halves of the kill
+criterion this project applies to every term:
 
-1. **the nine RCAEval cells** — a dispatch with `labelprior=0.1 labelpriorgate=0.02` must hold every cell;
-2. **the FSE'26 panel** — **now measurable, and measured: refused.** The runner derives the history from the corpus it
-   scores (`fse26-label-history.ts`), so both fields are dispatchable on that half and the census rows carry
-   `ranking_knobs`. Four arms on the 1,422 cases, one commit, one profile, one flag apart — the head of the ranking is
-   separated by a **median 0.6277**, sixty times this document's `trainticket` cell, and the term therefore loses
-   `Top@1` at every price while gaining at depth:
+1. **the nine RCAEval cells** — a dispatch must hold every cell and must lift the depth mean. Read in run `45859433294`
+   on the enrolled triple (`0.1 / 0 / tail`): `AC@1` **666 of 666 cell for cell**, nine-cell `Avg@5` **92.47 → 94.48 %**;
+2. **the FSE'26 panel** — **measurable since iteration 368, and measured: the summed arm was refused there.** The
+   runner derives the history from the corpus it scores (`fse26-label-history.ts`), so both fields are dispatchable on
+   that half and the census rows carry `ranking_knobs`. Four arms on the 1,422 cases, one commit, one profile, one flag
+   apart — the head of the ranking is separated by a **median 0.6277**, sixty times this document's `trainticket` cell,
+   and the term therefore loses `Top@1` at every price while gaining at depth:
 
 | arm | `Top@1` | `Top@3` | `Top@5` | gained / lost | exact p |
 | --- | ---: | ---: | ---: | ---: | ---: |

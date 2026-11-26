@@ -535,8 +535,11 @@ export interface Fse26CliOptions {
   /**
    * Weight on the LABEL prior — how much a service being this deployment's past answer is worth.
    *
-   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0, which is the ablation: at 0 the term is not priced and the
-   * history is not even read, so the shipped ranking is bit-identical to the engine that had no such term.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0.1, the enrolled arm: it holds `Top@1` on this panel at 1 186
+   * (1 gained, 1 lost, `p = 1.000`) while gaining 24 and 27 cases at `Top@3` and `Top@5`, and on the nine RCAEval
+   * cells it leaves `AC@1` at 666 of 666 while lifting the nine-cell `Avg@5` mean 92.47 → 94.48 %. `0` remains the
+   * ablation and remains reachable: at 0 the term is not priced and the history is not even read, so the ranking is
+   * bit-identical to the engine that had no such term.
    *
    * ## Why this half needed a profile built for it
    *
@@ -553,19 +556,24 @@ export interface Fse26CliOptions {
    *
    * Read off the engine's own `top1 − top2` BEFORE the term is added, because a gate computed from the gated
    * score would be the term's own output deciding whether the term runs. Ships at
-   * {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE}, the plateau boundary the Cloud-OpsBench sweep measured; inert at
-   * weight 0. `label-prior-reach.ts` measures what it saw on THIS corpus, so a silent arm is a median rather
-   * than an inference.
+   * {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0: the plateau boundary the Cloud-OpsBench sweep measured
+   * (`tau ∈ [0.015, 0.02]`) is a gate on THAT corpus, and this one's median head margin is 0.6277 — sixty times it —
+   * so on this panel the gate withholds 89 cases and buys nothing. Under the `tail` jurisdiction below it is a
+   * substitute for the pin rather than a complement (`+16 / +19` at `tau = 0.02` against `+24 / +27` at 0).
+   * `label-prior-reach.ts` measures what it saw on THIS corpus, so a silent arm is a median rather than an
+   * inference.
    */
   readonly labelPriorMarginGate: number;
   /**
    * Where in the ranking the label prior may act: `everywhere` (summed with the rest) or `tail` (the base head is
    * clamped and the prior reorders 2..n).
    *
-   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `everywhere`, the arm every published cell was taken with;
-   * inert at weight 0. The `tail` arm exists because this half's measurement separated the two positions: the term
-   * loses `Top@1` here at every price and gate while gaining 24 cases at each of `Top@3` and `Top@5`, so the only
-   * arm that can survive is the one that makes position 1 not its to move.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `tail`, the only arm whose head cost is zero BY CONSTRUCTION
+   * rather than by measurement — this panel is where the two positions separated: the term loses `Top@1` here at
+   * every price and gate while gaining 24 cases at each of `Top@3` and `Top@5`, so the only arm that can survive is
+   * the one that makes position 1 not its to move. `everywhere` stays reachable and stays measured: it is the arm
+   * every published cell before iteration 369 was taken with, and a dispatch that reproduces one of those needs the
+   * word.
    */
   readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**

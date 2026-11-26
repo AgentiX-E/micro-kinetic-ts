@@ -470,17 +470,22 @@ export interface CliOptions {
    * The smallest top-1 margin at which the label prior may speak
    * (see `TreePrunerOptions.labelPriorMarginGate`).
    *
-   * Shipped as the PAIR's measured threshold rather than as 0, because 0 is "speak everywhere" — the ungated arm
-   * that was refused. Travels as `labelpriorgate=<margin>`; one configuration with the weight above.
+   * Ships at {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0, and only because the jurisdiction below ships at `tail`:
+   * under the pin the gate protects nothing and costs depth — on the FSE'26 panel `tau = 0.02` reads `+16 / +19` at
+   * `Top@3 / Top@5` where `0` reads `+24 / +27`, withholding 89 cases. A zero gate with `everywhere` is the ungated
+   * arm that was refused. Travels as `labelpriorgate=<margin>`; one configuration with the weight above.
    */
   labelPriorMarginGate: number;
   /**
    * Where in the ranking the label prior may act (`TreePrunerOptions.labelPriorJurisdiction`).
    *
    * `everywhere` sums it with the rest; `tail` clamps the base head and lets it reorder 2..n, which makes `Top@1`
-   * invariant at any weight. Travels as `labelpriorjurisdiction=<word>`; the golden half carries the field so the
-   * arm is dispatchable on BOTH halves of a kill criterion that is an AND, and so the artifact of a pinned run
-   * cannot be mistaken for the shipped configuration.
+   * invariant at any weight. Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `tail`, the arm both halves of the
+   * kill criterion were satisfied at; `everywhere` stays reachable and is what every pre-369 published cell ran, so
+   * an old dispatch that moved only the weight now needs this word to reproduce its number. Travels as
+   * `labelpriorjurisdiction=<word>`; the golden half carries the field so the arm is dispatchable on BOTH halves of
+   * a kill criterion that is an AND, and so the artifact of a pinned run cannot be mistaken for the shipped
+   * configuration.
    */
   labelPriorJurisdiction: LabelPriorJurisdiction;
   /**

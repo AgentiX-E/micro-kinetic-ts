@@ -26,6 +26,12 @@
  * cell there is telemetry and not options. `--no-inject-time` forwards no injection time, which is the ablation
  * that separates "the alert window told it where to look" from "the metric table did".
  *
+ * The label prior is the one option whose VALUE also decides what this runner has to prepare: at a non-zero weight
+ * the term reads a per-case history that has to be attached to the cases before they are scored, and at `0` it reads
+ * nothing. Both decisions are therefore taken from one resolved option object (`resolveEngineOptions`) rather than
+ * from the command line — the previous version asked the RAW flag, which agreed with the engine only while the
+ * shipped weight was `0`.
+ *
  * @module benchmarks/run-cloudopsbench
  */
 
@@ -49,6 +55,11 @@ import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { acceptedTruthServiceIds } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { listCaseIds, readCloudOpsCase, type CloudOpsCase } from './cloudopsbench-case.js';
 import { parseCloudOpsArgs } from './cloudopsbench-cli.js';
+import {
+  pricesLabelPrior,
+  resolveEngineOptions,
+  type EngineOverrides,
+} from './cloudopsbench-engine-options.js';
 import { formatCellTable, formatRate, scoreByCell, type CellScore } from './cloudopsbench-score.js';
 import {
   REFUSAL_ORDER,
@@ -61,8 +72,7 @@ import {
   withLabelPrior,
   type LabelledCase,
 } from './label-prior-profiles.js';
-import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
-import { buildRCAEvalEngineOptions } from './rcaeval-engine-options.js';
+import type { RCAEvalEngineOptions } from './rcaeval-engine-options.js';
 import { initRCAEvalTopology } from './rcaeval-topology.js';
 
 /**
@@ -103,44 +113,37 @@ export function loadSelection(
 }
 
 /**
- * The engine options an ablation arm may move, as a subset of the RCAEval parser's own object.
+ * The engine options an ablation arm may move, and the two questions asked of the resolved object.
  *
- * A named object rather than positional parameters: three arms arrived in three iterations (`--topology`,
- * `--dual-family-weight`, `--dual-family-gate`), and a fourth positional argument is the shape where a caller passes
- * `undefined` in the wrong slot and gets the shipped engine while believing it moved something. Every field is
- * optional and an absent field leaves the parser's value untouched, so the shipped arm stays byte-identical to the
- * anchor fingerprint's by construction.
+ * Re-exported from `cloudopsbench-engine-options.ts` rather than declared here, so the four sibling scripts that
+ * assemble their container from this module keep one import path — and so the projection itself is measured by a
+ * test, which a `run-*.ts` entry point cannot be.
  */
-export type EngineOverrides = Partial<
-  Pick<
-    CliOptions,
-    | 'dualFamilyWeight'
-    | 'dualFamilyGate'
-    | 'dualFamilyGateMode'
-    | 'labelPriorWeight'
-    | 'labelPriorMarginGate'
-  >
->;
+export {
+  pricesLabelPrior,
+  resolveEngineOptions,
+  type EngineOverrides,
+} from './cloudopsbench-engine-options.js';
 
-/** DI assembly, sharing every option with the RCAEval cells. */
-export function createContainer(
+/** DI assembly over RESOLVED engine options, sharing every one of them with the RCAEval cells. */
+export function createContainerFrom(
+  engine: RCAEvalEngineOptions,
   useInjectTime: boolean,
-  overrides: EngineOverrides = {},
 ): BenchmarkRunner {
-  const parsed = parseRCAEvalArgs([]);
-  // Drop the absent keys rather than spreading an object whose fields may be `undefined`: `{...parsed, x: undefined}`
-  // would overwrite a shipped value with `undefined`, which the engine reads as an invalid number and defaults — a
-  // different object from the one the anchor fingerprint hashes.
-  const named = Object.entries(overrides).filter(([, value]) => value !== undefined);
-  const engine = buildRCAEvalEngineOptions(
-    named.length === 0 ? parsed : { ...parsed, ...Object.fromEntries(named) },
-  );
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(engine.signals, engine.topology));
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   return new BenchmarkRunner(container, classifier, undefined, undefined, useInjectTime);
+}
+
+/** DI assembly, sharing every option with the RCAEval cells: the overrides laid over the shipped ones. */
+export function createContainer(
+  useInjectTime: boolean,
+  overrides: EngineOverrides = {},
+): BenchmarkRunner {
+  return createContainerFrom(resolveEngineOptions(overrides), useInjectTime);
 }
 
 /** Render the refusal counts, one line each, in the order a case is charged. */
@@ -177,20 +180,30 @@ async function main(): Promise<void> {
     throw new Error(`${dataDir}: no scorable case, so there is nothing to score`);
   }
 
-  const runner = createContainer(args.useInjectTime, {
+  const overrides: EngineOverrides = {
     dualFamilyWeight: args.dualFamilyWeight,
     dualFamilyGate: args.dualFamilyGate,
     dualFamilyGateMode: args.dualFamilyGateMode,
     labelPriorWeight: args.labelPriorWeight,
     labelPriorMarginGate: args.labelPriorMarginGate,
-  });
+    labelPriorJurisdiction: args.labelPriorJurisdiction,
+  };
+  // Resolved ONCE: the same object configures the engine and answers whether a history has to be built for it.
+  const engineOptions = resolveEngineOptions(overrides);
+  const runner = createContainerFrom(engineOptions, args.useInjectTime);
   // ── The label prior, attached to the cases it is estimated FROM ────────────────────────────────────
   //
   // Built here rather than in the engine because it reads the corpus's LABELS: the engine may not see the answer to
   // the case it is scoring, and this construction removes that case from its own history before anything is scored
-  // (see `label-prior-profiles.ts`). Attached only when the arm is armed, so a run at the shipped weight scores the
-  // exact objects the loader built and the anchor stays byte-identical.
-  const priorArmed = (args.labelPriorWeight ?? 0) !== 0;
+  // (see `label-prior-profiles.ts`). Attached only when the arm is priced, so a run at weight 0 scores the exact
+  // objects the loader built and the anchor stays byte-identical.
+  //
+  // The predicate reads `engineOptions` and not `args`, which is the whole correction: `(args.labelPriorWeight ?? 0)`
+  // stood here until iteration 370 and agreed with the engine only while the shipped weight was 0. At the enrolled
+  // 0.1 a bare run reached the engine with weight 0.1 and attached NO history, so every `p(v)` was absent, the term
+  // was skipped, and the report called the result "shipped default (0, the ablation)". A configuration claim has to
+  // be derived from the configuration, not restated beside it.
+  const priorArmed = pricesLabelPrior(engineOptions);
   const labelled: readonly LabelledCase[] = selection.suite.cases.map((one) => ({
     caseId: one.id,
     // The corpus cell's system, not the case's own `datasetName`: the pool a deployment's history covers is the
@@ -215,14 +228,20 @@ async function main(): Promise<void> {
   process.stdout.write(
     `call graph                  ${args.topology === 'registry' ? 'registry (the deployment)' : 'RING (ablation: not the deployment)'}\n`,
   );
+  // Every number below is READ OFF the options the engine got, and the flag only chooses which of the two labels to
+  // print. The previous version restated the literal too (`shipped default (0, the ablation)`, `shipped default
+  // (0.25)`), which is a claim about the configuration that no longer consults it — it is how a report of the
+  // ablation came to carry the enrolled configuration's name one line after the enrolment.
+  const shown = (passed: boolean, value: number | string): string =>
+    passed ? `${value} (arm)` : `shipped default (${value})`;
   process.stdout.write(
-    `dual-family weight          ${args.dualFamilyWeight === undefined ? 'shipped default (0.25)' : `${args.dualFamilyWeight} (ablation)`}\n`,
+    `dual-family weight          ${shown(args.dualFamilyWeight !== undefined, engineOptions.signals.dualFamilyWeight)}\n`,
   );
   process.stdout.write(
-    `dual-family gate            ${args.dualFamilyGate === undefined ? 'shipped default (0.25)' : `${args.dualFamilyGate} (ablation)`} / ${args.dualFamilyGateMode ?? 'channel'}\n`,
+    `dual-family gate            ${shown(args.dualFamilyGate !== undefined, engineOptions.signals.dualFamilyGate)} / ${engineOptions.signals.dualFamilyGateMode}\n`,
   );
   process.stdout.write(
-    `label prior                 ${args.labelPriorWeight === undefined ? 'shipped default (0, the ablation)' : `${args.labelPriorWeight} (arm)`} / gate ${args.labelPriorMarginGate ?? 0.02}\n`,
+    `label prior                 ${shown(args.labelPriorWeight !== undefined, engineOptions.signals.labelPriorWeight)} / gate ${engineOptions.signals.labelPriorMarginGate} / ${engineOptions.signals.labelPriorJurisdiction}${priorArmed ? '' : ' — no history built (the ablation)'}\n`,
   );
   // The prior's own census, printed beside its price: a term whose input is a history has to say how big that
   // history was and how many candidates it could speak about, or a reader cannot tell "the arm did nothing" from
@@ -249,11 +268,16 @@ async function main(): Promise<void> {
           dataDir,
           useInjectTime: args.useInjectTime,
           topology: args.topology,
-          dualFamilyWeight: args.dualFamilyWeight ?? null,
-          dualFamilyGate: args.dualFamilyGate ?? null,
-          dualFamilyGateMode: args.dualFamilyGateMode ?? null,
-          labelPriorWeight: args.labelPriorWeight ?? null,
-          labelPriorMarginGate: args.labelPriorMarginGate ?? null,
+          // The RESOLVED values, not the flags: `null` used to mean "shipped", and after iteration 369 a reader
+          // cannot recover which configuration produced these numbers from a `null` — the shipped weight moved and
+          // the shipped jurisdiction moved with it. A dump states what ran.
+          dualFamilyWeight: engineOptions.signals.dualFamilyWeight,
+          dualFamilyGate: engineOptions.signals.dualFamilyGate,
+          dualFamilyGateMode: engineOptions.signals.dualFamilyGateMode,
+          labelPriorWeight: engineOptions.signals.labelPriorWeight,
+          labelPriorMarginGate: engineOptions.signals.labelPriorMarginGate,
+          labelPriorJurisdiction: engineOptions.signals.labelPriorJurisdiction,
+          labelPriorHistoryBuilt: priorArmed,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(
