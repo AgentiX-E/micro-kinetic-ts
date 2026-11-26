@@ -1,0 +1,9 @@
+{
+  "collection_timestamp": "2026-05-18T21:56:02",
+  "GetResources:{\"resource_type\":\"pods\",\"name\":\"\",\"namespace\":\"boutique\"}": "NAME  READY  STATUS",
+  "GetErrorLogs:{\"namespace\":\"boutique\",\"service_name\":\"adservice\"}": "java.lang.OutOfMemoryError",
+  "GetServiceDependencies:{\"service_name\":\"adservice\"}": "frontend -> adservice",
+  "GetClusterConfiguration": {"nodes": ["worker-02"]},
+  "CheckServiceConnectivity-boutique-redis-cart-6379": "redis-cart open Connection Succeeded",
+  "GetSourceCode:not-json": "unreadable"
+}

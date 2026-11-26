@@ -617,6 +617,18 @@ export default defineConfig({
         // that changes upstream without anybody here touching a line. The reader runs over all 754 published
         // labels and refuses none of them; a change there fails here rather than mis-scoring a corpus.
         'src/closure-labels.ts',
+        // Added with the Cloud-OpsBench loader: the only reader of a corpus whose layout this repository does not
+        // own. Its whole value is the four things a wrong guess would silently corrupt — the LAST hyphen that keeps
+        // `redis-cart` a service, an EMPTY cell that is a gap rather than the zero `Number('')` would return, a
+        // malformed row counted rather than dropped, and an `alert.json` that states no window answering `null`
+        // instead of a window at epoch zero. Every branch is asserted in `cloudopsbench-case.test.ts`.
+        'src/cloudopsbench-case.ts',
+        // Added with the Cloud-OpsBench census: the twelve-row reach table and the audit of the competitor's own
+        // replay surface. Included because the two numbers it produces ARE the decision — 472 of 2 478 milestones
+        // are inside a metric/log/edge surface and 0 of 754 cases are — and because a table that defaulted an
+        // unknown tool to reachable would over-report the one quantity the axis turns on. The synonym list, the
+        // second key convention, the argument-free bare key and the unnamed counter are all asserted by name.
+        'src/cloudopsbench-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

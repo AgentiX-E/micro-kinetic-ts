@@ -4103,7 +4103,12 @@ it would be dishonest to place it as one:
   so 0.78 there and 0.9332 here are two different fractions of two different denominators. Its own finding is the
   warning worth carrying: ~30 % of the cases an agent answered correctly had not collected the evidence its answer
   implied — a property this programme's metric cannot see at all, because its arm answers in six turns whatever it
-  looked at.
+  looked at. **Measured in iteration 361**, that corpus holds **170 metric-bearing cases of 754** (not the 76 this
+  document's earlier reading assumed), of which **166** name a service their own series carry — a population of
+  real size, and the one this engine can be scored on next. The same census REFUSED the evidence-closure axis at
+  case level: **0 of 754 cases** have every milestone inside a metric/log/edge surface, because the corpus's twelve
+  tools read Kubernetes objects and no tool of the twelve returns a series — so `ECR` needs a tool family, not a
+  recorded argument (`docs/closed-axes-register.md` §361).
 - RCAtlas-Core's 90 cases span pod and node faults, which this corpus does not.
 
 What IS comparable is the cost axis, and it is the axis on which this programme is not close to anyone:

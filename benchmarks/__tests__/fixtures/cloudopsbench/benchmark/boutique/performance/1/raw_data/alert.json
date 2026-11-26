@@ -1,0 +1,20 @@
+{
+  "status": "has_anomalies",
+  "alert_count": 2,
+  "alerts": [
+    {
+      "type": "Service",
+      "name": "adservice",
+      "time_range": "2026-05-18 21:55:52 ~ 2026-05-18 21:56:02",
+      "status": "ABNORMAL",
+      "evidence": ["RESOURCE_SATURATION [cpu core] | Normal=0.03 cores -> Current=0.16 cores (+375.0%)"]
+    },
+    {
+      "type": "Node",
+      "name": "worker-02",
+      "time_range": "2026-05-18 21:55:57 ~ 2026-05-18 21:56:02",
+      "status": "ABNORMAL",
+      "evidence": ["RESOURCE_SATURATION [cpu utilization] | Normal=3.15% -> Current=4.91% (+55.9%)"]
+    }
+  ]
+}

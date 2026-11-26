@@ -27,11 +27,27 @@
  * **Only 473 of 2 478 milestones (19.1 %) can be judged from a tool NAME.** 76 cases have every milestone at
  * that level, 306 have some, and **372 need the arguments for every milestone**. Our artifact records
  * `tools: Record<string, number>` — names and counts, no arguments — so the closure axis is adoptable for 76 of
- * 754 cases today and needs one recorded field (the per-call argument) for the other 678.
+ * 754 cases today.
  *
- * That number is the reason this module stops where it does. It scores at name level, which is what the artifact
- * can support, and it reports the scorable denominator beside the score so a reading of `76 %` can never be
- * mistaken for `76 %` of the corpus.
+ * ## Why recording the argument is NOT the price of the rest, which iteration 361 measured
+ *
+ * The obvious reading of the paragraph above is "add one field and 678 cases become scorable". That reading is
+ * wrong, and it is wrong for a reason outside this format: the argument only matters to a scorer that can emit a
+ * CALL of the tool the use names, and this engine's observation surface is metrics, logs and call edges. The
+ * corpus's twelve tools read Kubernetes objects. `benchmarks/src/cloudopsbench-census.ts` declares the twelve rows
+ * and measures the consequence — **0 of 754 cases have every milestone inside a metric/log/edge surface**, 363
+ * have some, 391 have none — so the price of the axis is a tool family, not a field. This module therefore keeps
+ * the format (which is cheap and pinned) and refuses the field, because a recorded argument that can change no
+ * score is a column no reader would ever be able to use.
+ *
+ * ## The corpus's own replay surface covers 96.0 % of what its labels demand
+ *
+ * `benchmark/<case>/tool_cache.json` is the pre-rendered view the competitor's own agent reads, so it doubles as
+ * an oracle: a milestone whose every admissible use is absent from it is a label the published artifact cannot
+ * check. Measured over all 754 (iteration 361): **2 379 of 2 478 milestones (96.0 %), 655 of 754 cases in full**,
+ * and the 4.0 % residual is not noise — `GetSourceCode` (98 uses) and `GetRecentLogs` (72) appear in NO case's
+ * cache, and 47 further `GetResources` calls are absent where a label demands them. Two of twelve tools never
+ * cached, 170 admissible uses that no replay can satisfy.
  *
  * ## What the scope split means for a comparison
  *
@@ -60,7 +76,64 @@ export interface ClosureToolUse {
   readonly tool: string;
   /** The argument object's keys, sorted, so a digest is comparable without keeping the values. */
   readonly argumentKeys: readonly string[];
+  /**
+   * The argument VALUES the use requires, each as the alias list the corpus states, keys sorted.
+   *
+   * Kept beside {@link argumentKeys} rather than replacing it because the two answer different questions and the
+   * corpus needs both: the key list is what decides whether a NAME-only artifact can score the milestone, and the
+   * values are what decides whether a call happened with the right argument. `resource_type: ["pods", "pod"]` is
+   * one requirement written two ways, so a scorer that compared strings would report a miss for the synonym.
+   */
+  readonly arguments: Readonly<Record<string, readonly string[]>>;
   readonly evidencePatterns: readonly string[];
+}
+
+/** One call an arm made, in the competitor's own vocabulary, for scoring against a label. */
+export interface ClosureCall {
+  readonly tool: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Normalise one argument value for comparison.
+ *
+ * Lower case and trimmed, because the corpus and a replayed call disagree on neither more nor less than that: the
+ * labels write `pods` where a cache key writes `pods`, and a comparison that kept case would turn a synonym list
+ * into a single accepted spelling.
+ *
+ * @param value - A scalar argument value.
+ * @returns The comparable form.
+ */
+function normaliseArgument(value: unknown): string {
+  return String(value).trim().toLowerCase();
+}
+
+/**
+ * Whether one call satisfies one admissible use.
+ *
+ * SUBSET rather than equality: the use enumerates the arguments its evidence requires, and a call that carries
+ * those keys is that read. Equality would make `output_wide` decide whether a pod listing counts as evidence about
+ * pods, which is a formatting flag and not a different read — and the corpus itself treats the three renderings of
+ * one listing as one `GetResources`.
+ *
+ * A missing key is a miss, and a value outside the alias list is a miss: `arguments: {"name": "adservice"}` is not
+ * satisfied by a call that listed the namespace.
+ *
+ * @param call - The call, in the competitor's vocabulary.
+ * @param use - The admissible use.
+ * @returns Whether the call is evidence for the milestone this use belongs to.
+ */
+export function matchesUse(call: ClosureCall, use: ClosureToolUse): boolean {
+  if (call.tool !== use.tool) return false;
+  for (const [key, allowed] of Object.entries(use.arguments)) {
+    const raw = call.arguments[key];
+    if (raw === undefined) return false;
+    // A list argument is matched element-wise: `resource_type: ["pods"]` and `resource_type: "pods"` are the same
+    // read, and the cache key that records one of them is written both ways across the corpus.
+    const values = Array.isArray(raw) ? raw : [raw];
+    if (!values.some((one) => allowed.includes(normaliseArgument(one)))) return false;
+  }
+  return true;
 }
 
 /** One milestone: what evidence a case's answer implies, and which calls would count as it. */
@@ -227,9 +300,18 @@ export function parseClosureLabel(text: string, caseId: string): ClosureParse {
       uses: uses.map((use) => {
         const one = use as Record<string, unknown>;
         const args = one.arguments;
+        const stated =
+          typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {};
+        const keys = Object.keys(stated).sort();
         return {
           tool: String(one.tool_name ?? ''),
-          argumentKeys: typeof args === 'object' && args !== null ? Object.keys(args).sort() : [],
+          argumentKeys: keys,
+          arguments: Object.fromEntries(
+            keys.map((key) => {
+              const value = stated[key];
+              return [key, (Array.isArray(value) ? value : [value]).map(normaliseArgument)];
+            }),
+          ),
           evidencePatterns: Array.isArray(one.evidence_patterns)
             ? one.evidence_patterns.map((pattern) => String(pattern))
             : [],

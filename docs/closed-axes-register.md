@@ -10936,3 +10936,66 @@ The module is `benchmarks/src/closure-labels.ts`, 100 % on all four coverage dim
 make an upstream format change fail here rather than mis-score a corpus: three scope prefixes, 2–5 milestones,
 twelve tool names, argument-free and pattern-carrying uses, and the parse that refuses a malformed label instead of
 reading it as a miss.
+
+### 361 The closure axis is not one field away: 0 of 754 cases lie inside a metric/log/edge surface, and the corpus's own replay covers 96.0 % of its labels (iteration 361)
+
+§360 priced the evidence-closure axis at **one recorded field** — the per-call argument — for **678 of 754 cases**. That price was
+measured on the *recording* and not on the *reach*, and this entry replaces it with the reach. It also corrects a number in
+`docs/cloud-opsbench-connection.md` that had been carried since iteration 310, in the direction that understates what is comparable.
+
+**Three measurements, all ¥0, all from files the competitor published.** The census is a module
+(`benchmarks/src/cloudopsbench-census.ts` + `cloudopsbench-case.ts`), 100 % on all four coverage dimensions, and the runner
+`benchmarks/src/run-cloudopsbench-census.ts` prints the three tables below from a checkout.
+
+| | measured |
+| --- | ---: |
+| case directories under `benchmark/` | **754** (a `.DS_Store` beside them is a file, not a case) |
+| cases read / refused | **754 / 0** |
+| `process-label/…/milestone.json` parsed | **754 / 0 refused** |
+| cases carrying `tool_cache.json` | **754** |
+| cases carrying `raw_data/metrics.csv` | **170 (22.5 %)** |
+| …with an `alert.json` that states a window | 164 |
+| …whose labelled service is one of their own series | **166 (97.6 %)** |
+| rows per CSV / services per case | 46–53 / 15–51 |
+
+| reach of a metric/log/edge arm | measured |
+| --- | ---: |
+| milestones | 2 478 |
+| reachable (some admissible use this surface can emit) | **472 = 19.0 %** |
+| cases with EVERY milestone reachable | **0** |
+| …with SOME | 363 |
+| …with NONE | **391** |
+| reachable uses by tool | `GetErrorLogs` 331, `GetResources` 245, `GetRecentLogs` 72, `GetServiceDependencies` 28 |
+
+| the corpus against its own replay surface | measured |
+| --- | ---: |
+| admissible uses | 6 654 |
+| satisfiable by a call in `tool_cache.json` | **6 437 = 96.7 %** |
+| milestones closed by it | **2 379 = 96.0 %** |
+| cases fully / partly / not checkable | **655 / 99 / 0** |
+| unsatisfied uses | `GetSourceCode` 98, `GetRecentLogs` 72, `GetResources` 47 |
+
+**Why the field would have bought nothing.** A milestone is closed by a CALL, and the corpus's twelve tools read Kubernetes
+objects while this arm reads series, log tails and edges. Four of the twelve are producible here (`GetErrorLogs`,
+`GetRecentLogs`, `GetServiceDependencies`, and `GetResources` only for a service listing with no `name`), and the arm's two
+workhorses — `metric` and `fleet` — are evidence for **nothing** in their vocabulary, because no tool of the twelve returns a
+time series. Recording an argument would let a scorer compare an argument; it would not let the arm make the call. The price of
+this axis is a **tool family**, not a column, and a column that can change no score is the one kind of branch this register has
+refused five times.
+
+**Two of twelve tools are never cached, and that is their defect, not ours.** `GetSourceCode` (98 uses) and `GetRecentLogs`
+(72) appear in **no** case's `tool_cache.json`, and 47 `GetResources` calls are absent where a label demands them. A "reproducible"
+benchmark whose replay surface cannot serve 4.0 % of the evidence its own labels require is 96.0 % reproducible on its own axis,
+and the residual is named per tool rather than averaged.
+
+**The number this iteration actually buys: a fenced population of 166.** `metrics.csv` is in **170** cases, not the 76 that
+`cloud-opsbench-connection.md` has claimed since iteration 310 — `boutique/codedefect` carries series too (98 cases), beside
+`boutique/performance` (72 of 76) and `trainticket/performance` (47 of 47). Of those 170, **4 are `node/worker-02` truths**
+(`boutique/performance/{22,25,27,29}`), i.e. outside this engine's answer alphabet by construction, which leaves **166** cases
+whose truth their own series can express. Their published best is `CA` 0.88 on Online Boutique and 0.70 on Train Ticket, so the
+comparable cell is a real one and it is the next iteration's work rather than this one's claim.
+
+**What this entry does NOT claim.** It does not score this engine on their corpus: no case has been run, the 166 need a
+`BenchmarkCase` built from `metrics.csv` and an injection time from `alert.json`, and quoting anything before that run would be a
+fraction of a denominator nothing has measured. It does not claim their labels are wrong — it claims 4.0 % of them are
+unverifiable BY THEIR OWN ARTEFACT, which is a different statement and a checkable one.

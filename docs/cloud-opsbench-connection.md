@@ -34,7 +34,7 @@ Two facts in that tree decide the connection:
 
 1. **`raw_data/metrics.csv` is not in every case.** The README states it plainly: faults that occur before the
    pod reaches its running stage produce no runtime performance metrics at all. So a metric-reading engine has no
-   input on the admission / scheduling / startup families.
+   input on the admission / scheduling / startup families. **Counted in §7: 170 of 754 cases carry the file.**
 2. **`metadata.json` carries the ground truth and a difficulty tier**, so a cell can be reported per category the
    way this repository reports RCAEval's nine.
 
@@ -51,10 +51,11 @@ Two facts in that tree decide the connection:
 | Admission Control | 58 | Medium | **no** — API-server rejection |
 | Infrastructure | 40 | Medium | partly: `ContainerdUnavailable` / `KubeletUnavailable` surface as node-level signals |
 
-The comparable population is therefore the **76 performance cases** (`PodCPUOverload`, `PodNetworkDelay`,
-`NodeNetworkDelay`, `NodeNetworkPacketLoss`) plus whatever subset of Runtime and Infrastructure carries a
-`metrics.csv`. It is not 754 and it is not 0 — and stating the number is the whole point of this file: a
-"connection" that reported 754 cases would be reporting a denominator the engine cannot see.
+The table above is the PAPER's taxonomy and its guess about readability, and §7 replaced the guess with a count:
+`metrics.csv` is present in **170** cases — including all 98 `codedefect` cases, which this table had marked
+unreadable — and 166 of those name a service their own series carry. It is not 754 and it is not 0 — and stating the
+number is the whole point of this file: a "connection" that reported 754 cases would be reporting a denominator the
+engine cannot see.
 
 ## 4. The published numbers, so the cell has an anchor
 
@@ -116,4 +117,44 @@ readings rather than unknowns.
 It does not claim a measurement. Nothing here was run; there is no cell on this corpus in any table of this
 repository, and the four performance types are named in the taxonomy table above because the README names them,
 not because this engine has been scored on them. The one number this file adds to the record is a **denominator**:
-76 metric-bearing cases, not 754.
+**170 metric-bearing cases, 166 service-scoped**, not 754 — corrected in §7, which replaced this file's own
+iteration-310 estimate of 76 with a count.
+
+## 7. Measured, iteration 361: 170 readable, 166 comparable, and the closure axis priced by reach
+
+§3's readability column was the paper's own account and this file's estimate; §5 called the loader "a small
+fraction of a 3.9 GB checkout" without ever listing it. Both are now counts, produced by
+`benchmarks/src/run-cloudopsbench-census.ts` against a full checkout, at ¥0 and with no model call:
+
+```
+cases (directories)            754      read 754 · refused 0 · labels 754 · tool_cache 754
+metrics.csv                    170  (22.5 %)   alert window 164 · truth in own series 166 (97.6 %)
+rows / services per case       46–53 / 15–51
+category                     cases  metrics      admission 58/0 · codedefect 98/98 · infrastructure 40/0
+                                                 performance 76/72 · runtime 141/0 · scheduling 164/0
+                                                 service 91/0 · startup 86/0
+```
+
+**Two corrections follow.** `boutique/codedefect` carries time series in all 98 of its cases — the table in §3 marked
+it unreadable — so the readable population is **170**, not 76, and the error was in the direction that understates
+what is comparable. Four of the 170 are `node/worker-02` truths (`boutique/performance/{22,25,27,29}`), outside this
+engine's answer alphabet by construction, so the **comparable** population is **166** — the same fence this record
+applies to RCAEval's node- and namespace-scoped labels.
+
+**And the closure axis is not one field away.** §5's third bullet priced `ECR` as a metric "a non-agentic engine can
+only report as 0", and register §360 priced the axis at one recorded field for 678 cases. The reach census says
+otherwise: of 2 478 milestones, **472 (19.0 %) have an admissible use this arm's metric/log/edge surface can emit,
+and 0 of 754 cases have every milestone inside it** — 363 have some, 391 have none. The corpus's twelve tools read
+Kubernetes objects; four are producible here, and the arm's own strongest channels (`metric`, `fleet`) are evidence
+for none of them, because no tool of the twelve returns a series. The price of that axis is a **tool family**.
+
+**The corpus is 96.0 % checkable against its own replay surface.** `tool_cache.json` doubles as an oracle, and
+auditing the labels against it gives 6 437 of 6 654 admissible uses (96.7 %) and **2 379 of 2 478 milestones
+(96.0 %)**, with 655 of 754 cases fully checkable. The 4.0 % residual is named: `GetSourceCode` (98 uses) and
+`GetRecentLogs` (72) appear in **no** case's cache, and 47 `GetResources` calls are absent where a label demands
+them. Two of twelve tools never cached, 170 admissible uses no replay can serve.
+
+**What the 166 buy.** Their published best component accuracy is `CA` 0.88 on Online Boutique and 0.70 on Train
+Ticket, with `ECR` 0.15–0.46 — a leaderboard this engine has never been scored on. Building a `BenchmarkCase` from
+`metrics.csv` with `alert.json`'s window as the injection time is the next iteration's work; no cell is claimed
+here, and the numbers above are a denominator and an audit, not a score.

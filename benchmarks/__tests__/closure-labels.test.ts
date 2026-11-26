@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   labelScope,
+  matchesUse,
   nameLevelClosure,
   nameLevelScorable,
   parseClosureLabel,
@@ -24,14 +25,21 @@ import {
 const callOnly = (id: string, tool: string): ClosureMilestone => ({
   id,
   role: `${id}_role`,
-  uses: [{ tool, argumentKeys: [], evidencePatterns: [] }],
+  uses: [{ tool, argumentKeys: [], arguments: {}, evidencePatterns: [] }],
 });
 
 /** A milestone that needs an argument, so a name-only artifact cannot decide it. */
 const withArgument = (id: string, tool: string): ClosureMilestone => ({
   id,
   role: `${id}_role`,
-  uses: [{ tool, argumentKeys: ['namespace'], evidencePatterns: [] }],
+  uses: [
+    {
+      tool,
+      argumentKeys: ['namespace'],
+      arguments: { namespace: ['boutique'] },
+      evidencePatterns: [],
+    },
+  ],
 });
 
 /** A label builder, so a test names only what it is about. */
@@ -73,7 +81,14 @@ describe('what a name-only artifact can decide', () => {
       nameLevelScorable({
         id: 'M1',
         role: 'r',
-        uses: [{ tool: 'GetErrorLogs', argumentKeys: [], evidencePatterns: ['OOMKilled'] }],
+        uses: [
+          {
+            tool: 'GetErrorLogs',
+            argumentKeys: [],
+            arguments: {},
+            evidencePatterns: ['OOMKilled'],
+          },
+        ],
       }),
     ).toBe(false);
   });
@@ -83,8 +98,13 @@ describe('what a name-only artifact can decide', () => {
       id: 'M2',
       role: 'r',
       uses: [
-        { tool: 'DescribeResource', argumentKeys: ['name'], evidencePatterns: [] },
-        { tool: 'GetAlerts', argumentKeys: [], evidencePatterns: [] },
+        {
+          tool: 'DescribeResource',
+          argumentKeys: ['name'],
+          arguments: { name: ['viewer'] },
+          evidencePatterns: [],
+        },
+        { tool: 'GetAlerts', argumentKeys: [], arguments: {}, evidencePatterns: [] },
       ],
     };
     expect(nameLevelScorable(mixed)).toBe(true);
@@ -184,6 +204,7 @@ describe('reading one milestone.json', () => {
     expect(parsed.label.milestones[0]!.uses[0]).toEqual({
       tool: 'GetAlerts',
       argumentKeys: [],
+      arguments: {},
       evidencePatterns: [],
     });
   });
@@ -210,6 +231,7 @@ describe('reading one milestone.json', () => {
     expect(parsed.label.milestones[0]!.uses[0]).toEqual({
       tool: '',
       argumentKeys: [],
+      arguments: {},
       evidencePatterns: ['OOMKilled', '7'],
     });
     expect(nameLevelScorable(parsed.label.milestones[0]!)).toBe(false);
@@ -281,7 +303,14 @@ describe('the census over a corpus', () => {
         {
           id: 'M1',
           role: 'r',
-          uses: [{ tool: 'GetErrorLogs', argumentKeys: [], evidencePatterns: ['OOMKilled'] }],
+          uses: [
+            {
+              tool: 'GetErrorLogs',
+              argumentKeys: [],
+              arguments: {},
+              evidencePatterns: ['OOMKilled'],
+            },
+          ],
         },
       ]),
     ]);
@@ -308,5 +337,127 @@ describe('the census over a corpus', () => {
     expect(census.cases).toBe(0);
     expect(census.tools).toEqual([]);
     expect(census.byScope).toEqual({ service: 0, node: 0, namespace: 0, other: 0 });
+  });
+});
+
+describe('whether one call satisfies one admissible use', () => {
+  /** A use with a synonym list, which is how the corpus writes `resource_type`. */
+  const pods = {
+    tool: 'GetResources',
+    argumentKeys: ['namespace', 'resource_type'],
+    arguments: { namespace: ['boutique'], resource_type: ['pods', 'pod'] },
+    evidencePatterns: [],
+  };
+
+  it('requires the tool, and every argument the use names', () => {
+    expect(
+      matchesUse(
+        { tool: 'GetResources', arguments: { namespace: 'boutique', resource_type: 'pods' } },
+        pods,
+      ),
+    ).toBe(true);
+    expect(
+      matchesUse(
+        { tool: 'DescribeResource', arguments: { namespace: 'boutique', resource_type: 'pods' } },
+        pods,
+      ),
+    ).toBe(false);
+    expect(matchesUse({ tool: 'GetResources', arguments: { resource_type: 'pods' } }, pods)).toBe(
+      false,
+    );
+    expect(matchesUse({ tool: 'GetResources', arguments: { namespace: 'boutique' } }, pods)).toBe(
+      false,
+    );
+  });
+
+  it('accepts a synonym and refuses a different value, case-insensitively', () => {
+    expect(
+      matchesUse(
+        { tool: 'GetResources', arguments: { namespace: 'Boutique', resource_type: 'pod' } },
+        pods,
+      ),
+    ).toBe(true);
+    expect(
+      matchesUse(
+        {
+          tool: 'GetResources',
+          arguments: { namespace: 'boutique', resource_type: 'deployments' },
+        },
+        pods,
+      ),
+    ).toBe(false);
+  });
+
+  it('is a SUBSET test, so a formatting flag does not decide whether a read happened', () => {
+    // `output_wide` and `show_labels` are renderings of the same read; requiring equality would make a flag decide
+    // whether a pod listing counts as evidence about pods, and the corpus itself treats all three as one call.
+    expect(
+      matchesUse(
+        {
+          tool: 'GetResources',
+          arguments: { namespace: 'boutique', resource_type: 'pods', output_wide: true },
+        },
+        pods,
+      ),
+    ).toBe(true);
+  });
+
+  it('matches a list argument element-wise, because the cache writes both shapes', () => {
+    expect(
+      matchesUse(
+        { tool: 'GetResources', arguments: { namespace: 'boutique', resource_type: ['pod'] } },
+        pods,
+      ),
+    ).toBe(true);
+    expect(
+      matchesUse(
+        { tool: 'GetResources', arguments: { namespace: 'boutique', resource_type: ['deploy'] } },
+        pods,
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts any call of the tool when the use names no argument', () => {
+    const alerts = { tool: 'GetAlerts', argumentKeys: [], arguments: {}, evidencePatterns: [] };
+    expect(matchesUse({ tool: 'GetAlerts', arguments: {} }, alerts)).toBe(true);
+    expect(matchesUse({ tool: 'GetAlerts', arguments: { since: '1h' } }, alerts)).toBe(true);
+  });
+
+  it('keeps the values it parsed, so a scorer is not reading keys it cannot compare', () => {
+    const parsed = parseClosureLabel(
+      JSON.stringify({
+        result: { fault_taxonomy: 'T', fault_object: 'app/a', root_cause: 'c' },
+        milestones: [
+          {
+            id: 'M0',
+            role: 'r',
+            admissible_tool_uses: [
+              {
+                tool_name: 'GetResources',
+                arguments: { resource_type: ['Pods', 'pod'], namespace: 'boutique', port: 9555 },
+                evidence_patterns: [],
+              },
+            ],
+          },
+        ],
+      }),
+      'case-1',
+    );
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(parsed.label.milestones[0]!.uses[0]!.arguments).toEqual({
+      namespace: ['boutique'],
+      port: ['9555'],
+      resource_type: ['pods', 'pod'],
+    });
+    // A number in the label is compared as its text, because a JSON scalar and an MCP argument are both untyped.
+    expect(
+      matchesUse(
+        {
+          tool: 'GetResources',
+          arguments: { namespace: 'boutique', resource_type: 'pod', port: 9555 },
+        },
+        parsed.label.milestones[0]!.uses[0]!,
+      ),
+    ).toBe(true);
   });
 });
