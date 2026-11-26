@@ -292,6 +292,8 @@ jobs:
           if [ -n "${{ inputs.onset_shape }}" ]; then
             ONSET_SHAPE_ARG=(--onset-shape "${{ inputs.onset_shape }}")
           fi
+          # AT A PLATFORM LIMIT: a step's script is validated against 21 000 characters, and iteration 369's
+          # one-knob addition tripped it at 21 566. A new name must TRIM here rather than append: ~700 left.
           # The eight knobs, through ONE input. The allow-list BELOW is the point rather than the parsing:
           # every flag is spelled here in code, so the dispatch-surface census still reads a reach rather than
           # a promise, and an unrecognised NAME exits non-zero instead of being dropped - a silently ignored
@@ -422,17 +424,13 @@ jobs:
                 dual_family_weight)
                   KNOB_ARGS+=(--dual-family-weight "$value")
                   ;;
-                # The LABEL prior's price, and until iteration 368 this half had no history to price it against —
-                # which is why the census carried `fse26: null` beside both names and why the arm was half
-                # unmeasurable. The history is now derived from this corpus (`fse26-label-history.ts`), so the arm
-                # is dispatchable here exactly as it is on the golden half, and the value is a weight like every
-                # other on the term (`0` is the ablation).
+                # The LABEL prior's price. Until iteration 368 this half built no history, so the arm was half
+                # unmeasurable (`fse26: null` in the census); `fse26-label-history.ts` derives it from this corpus.
                 label_prior_weight)
                   KNOB_ARGS+=(--label-prior-weight "$value")
                   ;;
-                # …and the GATE, refused on a negative value at the dispatch edge rather than clamped: the domain
-                # is a non-negative score gap, so a negative threshold would admit the prior precisely where the
-                # head is undecided — the one state the term exists to refuse.
+                # …and the GATE, refused on a negative value: the domain is a score gap, and a negative threshold
+                # would admit the prior exactly where the head is undecided.
                 label_prior_margin_gate)
                   case "$value" in
                     ''|-*|*[!0-9.]*|.*|*.|*..*)
@@ -440,20 +438,15 @@ jobs:
                     *) KNOB_ARGS+=(--label-prior-margin-gate "$value") ;;
                   esac
                   ;;
-                # …and WHERE the price may be spent: `everywhere` sums the term with the rest, `tail` clamps the
-                # head of the order the engine would report without it. A vocabulary rather than a number, refused
-                # by NAME at the dispatch edge so a misspelling cannot become a configuration the corpus has never
-                # been measured in — and stated as its own knob because the arm that survives on this panel is the
-                # structural one, and a control that cannot be dispatched is not a control.
+                # …and WHERE it may be spent (`everywhere|tail`), refused by name: the pinned arm is the one the
+                # panel does not refuse, and a control that cannot be dispatched is not a control.
                 label_prior_jurisdiction)
                   case "$value" in
                     everywhere|tail) KNOB_ARGS+=(--label-prior-jurisdiction "$value") ;;
                     *) echo "::error::ranking_knobs: label_prior_jurisdiction takes everywhere or tail, got '$value'"; exit 1 ;;
                   esac
                   ;;
-                # The pod-state term: a pod's lifecycle transition across the injection boundary. It ships at
-                # 0 and is the one reading the level guards cannot take, so the arm is stated here rather than
-                # left to the default.
+                # The pod-state term: a lifecycle transition across the boundary, which no level guard can read.
                 pod_state_weight)
                   KNOB_ARGS+=(--pod-state-weight "$value")
                   ;;
@@ -547,18 +540,11 @@ jobs:
                     exit 1
                   fi
                   ;;
-                # The guard's QUESTION. Its reach into this half was recorded as IMPOSSIBLE by the
-                # dispatch-surface census - "that corpus carries no injection boundary" - and that sentence
-                # was never measured: the loader rebuilds every series' timestamps and forwards the case's
-                # own `injectTimeMs`, which are the statistic's two inputs. Routed here so the claim is
-                # settled by a run.
-                #
-                # FORWARDED, not resolved. This branch used to carry its own copy of the vocabulary and the
-                # copy was one member behind the engine's table: the conjunction landed in
-                # `TRANSIENT_GUARD_TESTS` and this half refused it with a list that did not contain it, so the
-                # nine-cell/FSE'26 read the arm owed could not be dispatched. A value the engine does not know
-                # is refused by the CLI, against that table, with that table's own words — one owner, and the
-                # owner is the union.
+                # The guard's QUESTION, routed here so that a run settles it: the census recorded its reach into
+                # this half as IMPOSSIBLE ("no injection boundary"), but the loader rebuilds each series'
+                # timestamps and forwards the case's own `injectTimeMs` - the statistic's two inputs.
+                # FORWARDED, not resolved: a local copy of this vocabulary was once one member behind the
+                # engine's table and refused a conjunction that had landed. An unknown value is refused there.
                 log_normalisation)
                   # The log signal's SCALE, the one axis of that term a dispatch could not state: `max` divides by
                   # the case's largest admitted count (the shipped rule), `saturating` by a fixed volume, `share`
@@ -580,14 +566,12 @@ jobs:
               esac
             done
           fi
-          # The failure-flow REACH is STATED here rather than defaulted, and it is stated on this dispatch only.
-          # `docs/failure-containment-reach.md` §6 is the read: `global-measured` takes this corpus from 1 156 to
-          # **1 186 `Top@1`** (30 gained, none lost, eight fault types up and none down), and it is outcome-identical
-          # on all 735 RCAEval cases across six protocols — so the arm is worth stating and costs nothing on the
-          # other half. It is NOT the engine's default (`DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent`, and an
-          # option has one owner), and it is not an input either: `ranking_knobs` is at its budget, so an ablation
-          # pole is dispatched by running the runner with `--failure-containment-scope adjacent` locally. Because
-          # the flag is passed, the artifact's configuration line PRINTS it — the arm cannot travel unlabelled.
+          # The failure-flow REACH is STATED here rather than defaulted. `docs/failure-containment-reach.md` §6 is
+          # the read: `global-measured` takes this corpus from 1 156 to **1 186 `Top@1`** (30 gained, none lost,
+          # eight fault types up), outcome-identical on all 735 RCAEval cases across six protocols. It is NOT the
+          # engine's default (`adjacent`, one owner) and not an input either: `ranking_knobs` is at budget, so the
+          # ablation pole runs locally with `--failure-containment-scope adjacent`. Being passed, the artifact's
+          # configuration line prints it - the arm cannot travel unlabelled.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
