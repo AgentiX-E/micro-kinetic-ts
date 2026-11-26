@@ -11257,3 +11257,279 @@ cell is also the one with no healthy baseline in 87 of its 88 captures (§362), 
 
 **State.** 4 650 benchmark tests, 9 267 root tests, aggregate coverage 99.62 / 98.98 / 99.30 / 99.69, oxlint 0
 warnings, prettier clean, `nx typecheck` 15 projects green.
+
+### 365 The flag's membership, not its price: it never once found the truth alone (iteration 365)
+
+§364 closed with a sentence it could not act on — *the 15 `dualFamily` misses are mis-FIRED, so the next axis is their
+membership rule, not their weight*. This iteration prices both halves of that sentence. The weight is refused in both
+signs, and the membership turns out to be wrong in a way no threshold can express: **on 76 misses the truth is paid
+without the winner exactly zero times**.
+
+**The measurement the weight could not supply.** A swap (+0.6 pp overall, TrainTicket −3) has two possible causes and
+they need different work: a MISPRICED term has one value that pays everywhere, a MIS-FIRED one selects the wrong
+components at every price. Telling them apart needs the joint membership of the two candidates a miss is about, read
+off the ranking's own `dualFamily` row — the same array the correctness checks are counted from, never a second
+implementation of `min(Sⁱ, S⁵) ≥ gate × max`:
+
+| cell | cases | misses | both paid | winner only | **truth only** | neither | truth absent |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `boutique/codedefect` | 88 | 56 | 0 | **9** | **0** | 47 | 0 |
+| `boutique/performance` | 21 | 4 | 0 | **2** | **0** | 2 | 0 |
+| `trainticket/performance` | 47 | 16 | 1 | **4** | **0** | 11 | 0 |
+| **all** | **156** | **76** | **1** | **15** | **0** | **60** | **0** |
+
+**The column of zeros is the finding.** `winnerOnly` is the cell where membership can cause a loss, and it holds
+exactly §364's 15. `truthOnly` — the cell the term exists for, where the flag paid the truth and not the symptom — is
+**empty in every cell of the corpus**. So the flag has only ever been in two states on this population: it paid both
+candidates (1 miss, where it is FLAT and its price is irrelevant) or it paid the symptom and excluded the truth (15).
+Sixteen of 76 misses are therefore cases where the term participated, and **in 15 of those it participated as a
+pointer to the wrong service**. The remaining 60 are cases it never touched.
+
+Three properties of that population make the reading sharp rather than anecdotal:
+
+- **The family is usually empty.** 103 of 156 cases (66.0 %) have no member at all, and the median family size over the
+  other 53 is **1**. On two thirds of the corpus this term literally cannot move anything.
+- **When it does fire on a winner, it is right 64.3 % of the time** — that is the share of paid winners whose truth is
+  also paid, i.e. the cases where the flag is flat. The 35.7 % is the harmful cell.
+- **It never fires on the truth alone.** A one-member family whose single member is the answer would be `truthOnly` on
+  a miss; no case in the corpus produces one.
+
+**The weight, priced in both signs on that membership.** The engine's parameter is non-negative by contract, so the
+mirror arm is a reading rather than a configuration — and it is stated as such:
+
+| weight | all | gained | lost | exact McNemar p |
+| ---: | ---: | ---: | ---: | ---: |
+| **0.25 (shipped)** | **0.5128** | — | — | — |
+| 1 | 0.5000 | 0 | 2 | 0.5000 |
+| 0.5 | 0.5000 | 0 | 2 | 0.5000 |
+| 0 | 0.5192 | **5** | **4** | 1.0000 |
+| −0.25 | 0.4744 | 7 | **13** | 0.2632 |
+| −0.50 | 0.4231 | 7 | **21** | **0.0125** |
+
+Every direction is refused, and the two ends fail for different reasons. **Upwards** the term only breaks cases (0
+gained, 2 lost at both 0.5 and 1.0): on a corpus where a member is usually a lone candidate, paying it more can only
+displace a truth it is not competing with. **Downwards** the term is a coin: switching it off repairs 5 and breaks 4
+(p = 1.0000), and discounting a member is significantly worse than shipping it (−0.5: 7 gained against **21** lost,
+p = 0.0125). The reason a reversal cannot work is the 64.3 %: 9 of the 14 paid winners ARE the truth, so any penalty
+on membership charges the answer three times for every symptom it discounts.
+
+**Why 9 of 15 repairable cases yield only 5 repairs.** The budget for the harmful cell — the total weight on this same
+membership that would put the truth first — is
+
+> `0.010 0.016 0.178 0.181 0.188 0.220 0.230 0.237 0.241 | 0.291 0.365 0.368 0.374 0.428 0.440`
+
+so **9 of the 15 are inside the shipped 0.25** and 6 are beyond any weight a rounding error could reach. Yet weight 0
+flips 5. The four missing repairs are the methodological point of this iteration: **a pairwise gap is necessary and not
+sufficient**, because removing the winner's bonus does not hand the case to the truth — it hands it to whichever
+candidate was third. A probe that reported "9 repairable" from the budget alone would have promised four repairs the
+axis cannot deliver, which is exactly the error §364's caveat about `decompose` naming the largest single contribution
+was written to prevent, one level down.
+
+**The membership threshold, which IS the live axis.** `dualFamilyGate` says who is a member, and it has never been
+swept on this corpus. Both modes, thirteen shares, same 156 cases, CNY 0.00:
+
+| gate | `codedefect` | `boutique/performance` | `trainticket/performance` | all | `Top@3` | `Top@5` | gained | lost |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.02 | 0.3636 | 0.8571 | 0.5532 | 0.4872 | 0.7179 | 0.8846 | 6 | 10 |
+| 0.05 | 0.3750 | 0.8571 | 0.6383 | 0.5192 | 0.7436 | 0.8654 | 8 | 7 |
+| **0.08** | **0.3750** | **0.8571** | **0.7447** | **0.5513** | **0.7564** | **0.8590** | **8** | **2** |
+| 0.10 | 0.3636 | 0.8571 | 0.7447 | 0.5449 | 0.7500 | 0.8462 | 7 | 2 |
+| 0.12 | 0.3523 | 0.8571 | 0.7447 | 0.5385 | 0.7372 | 0.8333 | 5 | 1 |
+| **0.15** | 0.3636 | **0.8571** | 0.7021 | 0.5321 | 0.7244 | 0.8205 | **3** | **0** |
+| 0.20 | 0.3636 | 0.8571 | 0.6809 | 0.5256 | 0.7179 | 0.8333 | **2** | **0** |
+| **0.25 (shipped)** | **0.3636** | **0.8095** | **0.6596** | **0.5128** | **0.7051** | **0.8269** | — | — |
+| 0.30 | 0.3750 | 0.8095 | 0.6383 | 0.5128 | 0.7179 | 0.8269 | 1 | 1 |
+| 0.40 | 0.3977 | 0.8095 | 0.5957 | 0.5128 | 0.7051 | 0.8141 | 3 | 3 |
+| 0.50 | 0.3977 | 0.8095 | 0.6170 | 0.5192 | 0.7051 | 0.8141 | 3 | 2 |
+| 0.75 | 0.4091 | 0.8095 | 0.6170 | 0.5256 | 0.7051 | 0.8141 | 5 | 3 |
+| 1.00 | 0.3977 | 0.8095 | 0.6170 | 0.5192 | 0.7051 | 0.8141 | 5 | 4 |
+
+**The gate trades populations, and `0.08` is the point where the trade goes one way.** Read the table as three
+quantities rather than one. `0.08` is the maximum of `CA@1` (+3.85 pp) and of `Top@3` (+5.1 pp), and it is the only arm
+whose `CA@1` is at or above the shipped value in **every** cell (0.3750 / 0.8571 / 0.7447 against 0.3636 / 0.8095 /
+0.6596). Every other arm pays for what it buys: `0.40` and `0.75` lift `codedefect` to 0.3977 and **0.4091** — the best
+the cell ever reads — while dropping `trainticket` to 0.5957 and 0.6170, and `0.02` does the reverse. So the axis is
+monotone in neither direction, and 0.08 is not the middle of a plateau: it is where a lower threshold has finished
+adding families and has not yet begun charging `trainticket` for `codedefect`.
+
+**`Top@5` moves the OPPOSITE way to `CA@1` on this axis, and that is worth stating rather than smoothing.** `Top@5`
+peaks at gate **0.02** (0.8846, +5.8 pp) exactly where `CA@1` **collapses** to 0.4872 — the widest family puts the truth
+inside the first five more often than any other arm and puts it first less often than the shipped one. A wider family
+pays many candidates the same bonus, so it flattens the head of the ranking: the truth climbs into view and stops
+short of the top. The gate is therefore not a knob that buys accuracy in general; it moves a fixed budget of order
+between ranks, and which rank a programme cares about decides which gate it should ship. The region 0.08–0.20 is at or
+above 0.5128 on all three rates except `0.15`'s `Top@5` (0.8205 against 0.8269), and two points in it never lose a
+case (`0.15`: 3 gained / 0 lost; `0.20`: 2 gained / 0 lost).
+
+**The half-split, because "the peak is broad" is an argument and not a test.** The 156 cases split by sorted position
+into two disjoint halves; the shipped engine reads **0.4872 / 0.5385** on them:
+
+| gate | half A | half B | A gained / lost | B gained / lost |
+| ---: | ---: | ---: | ---: | ---: |
+| **0.25 (shipped)** | **0.4872** | **0.5385** | — | — |
+| 0.08 | **0.5128** | **0.5897** | 4 / 2 | 4 / 0 |
+| 0.10 | 0.4872 | 0.6026 | 2 / 2 | 5 / 0 |
+| 0.15 | **0.5128** | **0.5513** | 2 / 0 | 1 / 0 |
+
+**Both halves improve at 0.08 and at 0.15**, and neither half loses a single case at 0.15. `0.10` is the one point that
+fails this test — it moves everything into half B and leaves half A untouched — which is why the peak's neighbours are
+reported rather than only the peak: a point that wins on one half and ties on the other is a point whose gain is a
+property of the split.
+
+**The mechanism, measured rather than argued.** Re-running the census at gate 0.08 separates the two ways a lower
+threshold could help:
+
+| reading | gate 0.25 (shipped) | gate 0.08 |
+| --- | ---: | ---: |
+| empty families | 103 / 156 | **46 / 156** |
+| misses | 76 | **70** |
+| `bothIn` on misses | 1 | **6** |
+| `winnerOnly` on misses | 15 | **24** |
+| precision | 64.3 % | 69.6 % |
+| weight 0 arm | 5 gained / 4 lost | **7 gained / 12 lost** |
+
+Lowering the gate adds 57 non-empty families, and the misses fall by 6 **while the harmful cell grows by 9**. That
+combination has one explanation, and it is not "fewer symptoms paid": twenty cases leave `neither`, of which **nine
+join the harmful cell and five join the flat one**, and the remaining **six become hits outright**. So the gain comes
+from the truth being paid at all — five cases where the flag goes flat and the rest of the score, which favours the
+truth, is allowed to decide, and six where both candidates are paid and the truth wins. The last row is the same fact
+from the other side: at gate 0.08, switching the term OFF is **far worse** than it was at 0.25 (7 gained against 12
+lost, up from 5/4), because the term is now carrying a correction that a larger family made possible. A gate change
+that raised the score by disabling the term could not survive that test.
+
+**What is NOT done, and why the default did not move.** Shipping gate 0.08 would move `benchmark-rcaeval.yml`'s nine
+cells and the FSE'26 panel as well, and this iteration measured neither. The shipped 0.25 is an enrolment from
+iteration 146 — `channel` bought RE1 +4, RE2 +9, RE3 +6 and FSE'26 +4.1 pp there — so a corpus-local preference is not
+evidence against it, and changing a global default on a single corpus's preference is the exact failure this programme
+rejects on principle. **`0.08` and `0.15` are recorded as documented arms of the Cloud-OpsBench runner**
+(`--dual-family-gate`, `--dual-family-gate-mode`), the census and both grids are reproducible at CNY 0.00, and the
+nine-cell A/B is the next iteration's first task rather than this one's claim.
+
+**The dual-family gate and the kinetic source, in the theory's own terms.** The term is PRISM's shape test, not one of
+Deng Yu's tools, and this iteration shows where the transliteration of the collision source is wrong. In the momentum
+picture a collision source is an **internal** energy injection at `t₀` that then propagates through interfaces; the
+signature of a source is therefore internal-dominant, and a component whose boundary moves while its internal state
+does not is a victim. `dualFamily` asks for BOTH families to be moving, which is a weaker statement — and on a corpus
+where 87 of 88 `codedefect` captures begin INSIDE the incident (§362), every candidate's internal channel is already
+moving, so the predicate degenerates into "whoever is loudest" and the loudest is the symptom. **That is a prediction
+the next iteration can test**: replacing `both` with internal-dominance should move `truthOnly` off zero. It is
+registered here as an untested hypothesis, not as a result.
+
+**State.** New modules `benchmarks/src/dual-family-membership.ts` (100 / 100 / 100 / 100 statements, branches,
+functions, lines) and `benchmarks/src/run-dual-membership.ts`; `benchmarks/src/cloudopsbench-cli.ts` at
+100 / 100 / 100 after the two new flags; 4 683 benchmark tests and 9 316 root tests green; aggregate coverage
+99.62 / 98.99 / 99.31 / 99.69; oxlint 0 warnings; prettier clean; `nx typecheck` 15 projects green.
+
+### 366 The gate is the engine's own margin: +7.05 pp on Cloud-OpsBench, every cell held, p = 0.0010 (iteration 366)
+
+§365 closed the flag's weight and its family at the low end, and left a larger question standing: **five arms have now
+been refused on this corpus for the same shape** — neighbour propagation (§363), the alert window (§362), the gate's
+high end and the raw label prior all lift one cell and charge another. This iteration stops treating that as five
+unrelated reversals and prices the property they share.
+
+**The shared property is measurable, and it is not the cell's identity.** The gap between the engine's first and
+second candidate, on the 156 cases:
+
+| cell | median `top1 − top2` | spread | cases with a gap below 0.05 |
+| --- | ---: | ---: | ---: |
+| `boutique/performance` | **0.5294** | 1.362 | 4.8 % |
+| `boutique/codedefect` | 0.1376 | 1.044 | 29.5 % |
+| `trainticket/performance` | **0.0102** | 0.644 | **74.5 %** |
+
+`trainticket`'s 0.6596 is held by a head separated by **one hundredth of a point**, and three quarters of its cases
+are separated by less than 0.05. Any external term — a neighbour's mean (§363), an onset shift (§362), a membership
+threshold (§365), a label prior (below) — is larger than that margin, which is why that cell is the payer in every
+table this register has printed. The cells that accept an external term are the cells whose ranking is separated by
+ten or fifty times as much. **A deployment knows this number and does not know its cell**, so it is the gate.
+
+**The prior, and the baseline it must be read against.** A prior-only ranker — order each case's candidates by how
+often each was the labelled root cause elsewhere in the same system, leave-one-out, reading no telemetry at all —
+scores
+
+| population | prior-only `CA@1` | prior-only `Top@3` | prior-only `Top@5` | engine `CA@1` | engine `Top@5` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `boutique/codedefect` | 0.3068 | 0.8409 | **1.0000** | 0.3636 | 0.8068 |
+| `boutique/performance` | 0.0000 | 0.0000 | 0.0000 | 0.8095 | 0.9524 |
+| `trainticket/performance` | 0.0000 | 0.0000 | 0.0000 | 0.6596 | 0.8085 |
+| **all** | **0.1731** | 0.4744 | 0.5641 | **0.5128** | 0.8269 |
+
+against a uniform-random floor of 0.0525 on pools averaging 25.8 candidates. Two readings, and only one is
+comfortable. **The engine's 0.5128 is 33.9 pp above the prior**, so the two `performance` cells — whose labelled
+answers are spread over 11 and 18 services with modal shares of 0.095 and 0.064 — are pure telemetry: a prior scores
+**zero** there. But on `codedefect`, whose labels cover only four services, a ranker reading no telemetry reaches
+**`Top@5` 1.0000 while the engine reaches 0.8068** — the engine is worse than a lookup table at the one rank where
+four candidates fit into five slots. That is arXiv:2609.27069's methodological point (a telemetry-free ranker scores
+`Avg@5` 0.488 on RCAEval's held-out incidents, 99.7 % of truths inside its top five) applied to this corpus, and it
+found a real weakness rather than a rhetorical one.
+
+**Ungated, the prior is the sixth cell swap.** `score′ = score + β · log p`:
+
+| `β` | `codedefect` | `boutique/performance` | `trainticket/performance` | all | gained | lost |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.3636 | 0.8095 | 0.6596 | 0.5128 | — | — |
+| 0.05 | 0.5227 | 0.7619 | **0.2766** | 0.4808 | 15 | 20 |
+| 0.10 | **0.5682** | 0.7143 | **0.2340** | 0.4872 | 18 | 22 |
+| 0.20 | **0.5795** | 0.5238 | **0.1915** | 0.4551 | 19 | 28 |
+
+**+21.6 pp on the cell it helps, −46.8 pp on the cell it breaks, at the same weight** — the largest single-cell gain
+and the largest single-cell loss this campaign has measured, in one arm. The mechanism is the margin table: β = 0.05
+moves a score by up to 0.1, which is ten margins on `trainticket` and a fifth of one on `boutique/performance`.
+
+**Gated by the engine's own margin, and the swaps stop.**
+
+| `β` | `τ` | scope | all | half A | half B | gained | lost | exact p | `codedefect` | `OB perf` | `TT perf` |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **no prior (shipped engine)** | — | — | 0.5128 | 0.4872 | 0.5385 | — | — | — | 0.3636 | 0.8095 | 0.6596 |
+| 0.1 | 0.02 | system | **0.5769** | **0.5256** | **0.6282** | **11** | **1** | **0.0063** | 0.4886 | 0.7619 | **0.6596** |
+| 0.1 | 0.05 | system | 0.5641 | 0.5128 | 0.6154 | 9 | 1 | 0.0215 | 0.4659 | 0.7619 | **0.6596** |
+| 0.05 | 0.02 | system | 0.5577 | 0.5128 | 0.6026 | 7 | **0** | 0.0156 | 0.4432 | **0.8095** | **0.6596** |
+| 0.1 | 0.02 | cell | **0.5833** | 0.5256 | **0.6410** | 11 | **0** | **0.0010** | 0.4886 | **0.8095** | **0.6596** |
+| 0.1 | 0.05 | cell | 0.5705 | 0.5128 | 0.6282 | 9 | **0** | 0.0039 | 0.4659 | **0.8095** | **0.6596** |
+| 0.2 | 0.05 | cell | 0.5769 | 0.5128 | 0.6410 | 10 | **0** | 0.0020 | 0.4773 | **0.8095** | **0.6596** |
+
+Four results, in order of how much they are worth:
+
+- **The `system` scope is deployable and it is significant.** `β = 0.1, τ = 0.02`: **0.5769 (+6.4 pp), 11 gained
+  against 1 lost, exact McNemar p = 0.0063**, both disjoint halves up (0.5256 / 0.6282), `trainticket` **exactly
+  unchanged** and `codedefect` up 12.5 pp. The single loss is one `boutique/performance` case. This is the first arm
+  in this register whose gain survives a paired test.
+- **The `cell` scope is the ceiling, and it is 0.6 pp higher.** 0.5833 with **zero** losses at p = 0.0010 — but a cell
+  is `<system>/<category>` and the category is the label being predicted, so this arm is a bound rather than a
+  configuration. Its value is that it says how much the deployable version leaves on the table: 0.6 pp, not 6.
+- **The gate is what makes both work, and it is not fitted per cell.** One `(β, τ)` pair is applied to all 156 cases;
+  the cell table is a reading, never a switch. `τ` depends only on the engine's own output.
+- **`trainticket` is untouched at every gated arm**, which is the prediction the margin table made before the arms
+  were run.
+
+**Why a prior that is 33.9 pp worse than the engine can improve it.** The two are wrong in uncorrelated ways: the
+prior knows *which services this system fails at* and nothing about *this incident*, and the engine knows the incident
+and nothing about the system's history. On the four-service `codedefect` answer set the prior's error is spread over
+the other 11–47 candidates while the engine's is concentrated at rank 2, which is why the pair is worth more than
+either. On `trainticket` the prior's modal share is 0.064 over 18 labelled services, so it carries almost no
+information — and there the margin gate keeps it silent. **The gate is therefore doing two jobs at once**, and only
+the first was designed: it protects a fragile ranking, and it silences a prior that has nothing to say.
+
+**What this does NOT establish, stated so the number cannot be read as more than it is.**
+
+- **The prior is estimated from the same corpus's labels, leave-one-out.** That is the deployable analogue of "this
+  system's past incidents" only if the past incidents are drawn from the same fault catalogue — true for a production
+  deployment, and *not* evidence that the gain transfers to a corpus with a different label distribution.
+  `boutique/codedefect` has four labelled services out of 11–51 candidates, which is what makes a lookup table worth
+  1.0000 at `Top@5`; a corpus with 18 labels has no such concentration.
+- **No default moved, again.** The arm is a bench-side reading (`benchmarks/src/run-margin-prior.ts`); wiring it into
+  the engine needs a new term, a CLI flag, and the 25-input dispatch budget, and it must clear the nine RCAEval cells
+  and the FSE'26 panel before it ships. That A/B is the next iteration's first task, exactly as the gate's was.
+- **`Top@5` was never priced.** The prior-only ranker beats the engine there on `codedefect` (1.0000 against 0.8068),
+  which says the engine's failure on that cell is at ranks 2–5 and not at rank 1. Every arm in this register has been
+  scored on `CA@1`; the next one should be scored on both.
+
+**The gate, in the theory's terms, is a certainty measure.** A collision source at `t₀` propagates over `τ`, and the
+engine's own margin is the one place it states how much of the ordering is decision and how much is coincidence. Two
+candidates separated by 0.01 are not ranked; they are tied with a rounding convention. Gating an external prior on
+that margin is the first use in this programme of the theory's own vocabulary as a *measurable* quantity rather than
+as a motivation: the source is a prior over components, the propagation is the telemetry, and which of the two should
+decide is a function of how sharply the propagation has separated the field.
+
+**State.** New modules `benchmarks/src/margin-gated-prior.ts` (100 / 100 / 100 / 100) and
+`benchmarks/src/run-margin-prior.ts`; 4 700 benchmark tests, 9 316 root tests, aggregate coverage
+99.62 / 98.99 / 99.31 / 99.69, oxlint 0 warnings, prettier clean, `nx typecheck` 15 projects green.

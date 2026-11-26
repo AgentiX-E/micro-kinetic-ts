@@ -27,6 +27,8 @@ describe('the Cloud-OpsBench runner’s command line', () => {
       useInjectTime: true,
       topology: 'registry',
       dualFamilyWeight: undefined,
+      dualFamilyGate: undefined,
+      dualFamilyGateMode: undefined,
     });
   });
 
@@ -57,6 +59,49 @@ describe('the Cloud-OpsBench runner’s command line', () => {
     expect(() =>
       parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-weight', '-1']),
     ).toThrow(/non-negative number/);
+  });
+
+  it('reads the membership gate as the SHARE it is, and refuses a number that is not one', () => {
+    // The gate is a share of the fleet's strongest dual signal, so the interval is [0, 1] and not "non-negative": a
+    // gate above 1 asks for a member stronger than the maximum, which no component can be and which would empty every
+    // family silently instead of failing.
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate', '0']).dualFamilyGate,
+    ).toBe(0);
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate', '0.08']).dualFamilyGate,
+    ).toBe(0.08);
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate', '1']).dualFamilyGate,
+    ).toBe(1);
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob']).dualFamilyGate).toBeUndefined();
+    for (const value of ['x', '-0.1', '1.5']) {
+      expect(() =>
+        parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate', value]),
+      ).toThrow(/share in \[0, 1\]/);
+    }
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate'])).toThrow(
+      /needs a value/,
+    );
+  });
+
+  it('reads the gate mode off the engine’s own union, and refuses an inherited property', () => {
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate-mode', 'min'])
+        .dualFamilyGateMode,
+    ).toBe('min');
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate-mode', 'channel'])
+        .dualFamilyGateMode,
+    ).toBe('channel');
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob']).dualFamilyGateMode).toBeUndefined();
+    // `toString` is the string a dispatch really sends by accident, and `in` would accept it while `hasOwnProperty`
+    // does not — the rule `isPrismPooling` records one module over.
+    for (const value of ['average', 'toString', '__proto__']) {
+      expect(() =>
+        parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-gate-mode', value]),
+      ).toThrow(/channel or min/);
+    }
   });
 
   it('turns the injection time off only when asked, and off is not the default', () => {

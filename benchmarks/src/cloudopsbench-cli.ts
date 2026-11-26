@@ -8,6 +8,8 @@
  * @module benchmarks/src/cloudopsbench-cli
  */
 
+import type { DualFamilyGateMode } from '../../packages/tree/src/index.js';
+
 /** Parsed command line. */
 export interface CloudOpsArgs {
   /** The checkout root — the directory holding `benchmark/` and `process-label/`. */
@@ -34,16 +36,50 @@ export interface CloudOpsArgs {
   /**
    * The dual-family presence bonus, or `undefined` for the shipped 0.25.
    *
-   * The only engine weight this runner can move. `dualFamily` is a BINARY eligibility flag — `1` when a candidate has
-   * a moving channel in both families — so a miss it decides costs exactly its weight, and iteration 363 measured 15
-   * of the Hard bucket's 76 misses decided by it at a median δ of 0.2500, i.e. all of them. Pricing it needs one
-   * number, not a sweep.
+   * `dualFamily` is a BINARY eligibility flag — `1` when a candidate has a moving channel in both families — so the
+   * term is `weight × membership` and the weight is the price of one membership change. Iteration 364 measured 15 of
+   * the Hard bucket's 76 misses decided by it, every one of them at δ = 0.2500 exactly, which is why the weight
+   * alone was priced first and why it came back refused (+0.6 pp overall for TrainTicket −3).
    */
   readonly dualFamilyWeight: number | undefined;
+  /**
+   * The share of the fleet's strongest dual signal a component must reach to be a MEMBER, or `undefined` for the
+   * shipped 0.25.
+   *
+   * This is the axis iteration 364 left open: the weight says what membership is worth, the gate says WHO has it,
+   * and the census found the defect in the second (`benchmarks/src/dual-family-census.ts`). 103 of 156 cases have an
+   * EMPTY family and no case has the truth in the family while the winner is out, so the membership can only be
+   * repaired by widening or narrowing it — never by repricing it.
+   */
+  readonly dualFamilyGate: number | undefined;
+  /**
+   * WHICH fleet-relative comparison the gate applies, or `undefined` for the shipped `channel`.
+   *
+   * `channel` gives each family its own champion; `min` compares the joint minimum against the fleet's best joint
+   * minimum. Both are the identity at gate 0, so an arm that moves nothing at gate 0 and something at 0.25 is a
+   * reading of the comparison rather than of the membership.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode | undefined;
 }
 
 /** The two graph arms, as the command line spells them. */
 export type TopologyArm = 'registry' | 'ring';
+
+/** The two membership comparisons, as the command line spells them. */
+const GATE_MODES: Readonly<Record<DualFamilyGateMode, true>> = { channel: true, min: true };
+
+/**
+ * Whether a string names a gate mode.
+ *
+ * `hasOwnProperty.call` rather than `in`, the rule `isPrismPooling` records: a `Record` inherits from `Object`, so
+ * `in` would accept `toString` and `constructor`, and both are strings a dispatch can really send.
+ *
+ * @param value - The raw argument.
+ * @returns Whether it names a mode.
+ */
+function isGateMode(value: string): value is DualFamilyGateMode {
+  return Object.prototype.hasOwnProperty.call(GATE_MODES, value);
+}
 
 /**
  * Parse this runner's arguments.
@@ -58,6 +94,8 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let useInjectTime = true;
   let topology: TopologyArm = 'registry';
   let dualFamilyWeight: number | undefined;
+  let dualFamilyGate: number | undefined;
+  let dualFamilyGateMode: DualFamilyGateMode | undefined;
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -91,6 +129,23 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       }
       dualFamilyWeight = parsed;
       index += 1;
+    } else if (one === '--dual-family-gate') {
+      const value = valueOf(index, '--dual-family-gate');
+      const parsed = Number(value);
+      // A SHARE, so the interval is [0, 1] and not "non-negative": a gate above 1 asks for a member stronger than
+      // the fleet maximum, which no component can satisfy, and would silently empty every family rather than fail.
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+        throw new Error(`--dual-family-gate must be a share in [0, 1], got "${value}"`);
+      }
+      dualFamilyGate = parsed;
+      index += 1;
+    } else if (one === '--dual-family-gate-mode') {
+      const value = valueOf(index, '--dual-family-gate-mode');
+      if (!isGateMode(value)) {
+        throw new Error(`--dual-family-gate-mode is channel or min, got "${value}"`);
+      }
+      dualFamilyGateMode = value;
+      index += 1;
     } else if (one === '--topology') {
       const value = valueOf(index, '--topology');
       if (value !== 'registry' && value !== 'ring') {
@@ -108,5 +163,14 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       '--data-dir is required: this runner reads a Cloud-OpsBench checkout and nothing else',
     );
   }
-  return { dataDir, output, maxCases, useInjectTime, topology, dualFamilyWeight };
+  return {
+    dataDir,
+    output,
+    maxCases,
+    useInjectTime,
+    topology,
+    dualFamilyWeight,
+    dualFamilyGate,
+    dualFamilyGateMode,
+  };
 }

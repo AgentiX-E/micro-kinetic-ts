@@ -659,6 +659,20 @@ export default defineConfig({
         // share the reader cannot re-derive. Every one of those is asserted by name in `miss-term-census.test.ts`,
         // along with the two orderings that keep two runs printing the same table.
         'src/miss-term-census.ts',
+        // Added with the membership grid: the four cells, the weight that would flip a case, the budget split and the
+        // offline repricing. Included because every one of its numbers can lie silently — an unranked truth filed as a
+        // measured exclusion, a median taken over cases with no family, a precision of `0` where the population is
+        // empty, a reprice that breaks a tie by service id, and a McNemar p over two different case sets. Each is
+        // asserted by name in `dual-family-membership.test.ts`, including the corruption check that a single-label hit
+        // can never land in either asymmetric cell.
+        'src/dual-family-membership.ts',
+        // Added with the margin-gated prior — the first arm on this corpus that lifts one cell without charging
+        // another. Included because each of its readings has a way of being silently wrong that no cell table would
+        // show: a prior that includes the case it scores, a floor smoothed by a constant instead of `1/V`, a gate read
+        // off the gated score, a margin taken from the wrong pair, and an unlabelled neighbour counted as a zero.
+        // `margin-gated-prior.test.ts` asserts every one of those by name, plus the two properties of the registered
+        // grid (the null arm first, and at least one gated arm per scope).
+        'src/margin-gated-prior.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -52,7 +52,7 @@ import {
   type CaseTopology,
   type ScorableSelection,
 } from './cloudopsbench-suite.js';
-import { parseRCAEvalArgs } from './rcaeval-cli.js';
+import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from './rcaeval-engine-options.js';
 import { initRCAEvalTopology } from './rcaeval-topology.js';
 
@@ -93,17 +93,31 @@ export function loadSelection(
   };
 }
 
+/**
+ * The engine options an ablation arm may move, as a subset of the RCAEval parser's own object.
+ *
+ * A named object rather than positional parameters: three arms arrived in three iterations (`--topology`,
+ * `--dual-family-weight`, `--dual-family-gate`), and a fourth positional argument is the shape where a caller passes
+ * `undefined` in the wrong slot and gets the shipped engine while believing it moved something. Every field is
+ * optional and an absent field leaves the parser's value untouched, so the shipped arm stays byte-identical to the
+ * anchor fingerprint's by construction.
+ */
+export type EngineOverrides = Partial<
+  Pick<CliOptions, 'dualFamilyWeight' | 'dualFamilyGate' | 'dualFamilyGateMode'>
+>;
+
 /** DI assembly, sharing every option with the RCAEval cells. */
 export function createContainer(
   useInjectTime: boolean,
-  dualFamilyWeight?: number,
+  overrides: EngineOverrides = {},
 ): BenchmarkRunner {
   const parsed = parseRCAEvalArgs([]);
-  // The ablation arm overrides ONE weight and nothing else, so a difference between two runs is that term. With the
-  // argument absent the options are byte-identical to the anchor fingerprint's, which is the property the score
-  // depends on: the shipped arm must be the one the other corpora are measured with.
+  // Drop the absent keys rather than spreading an object whose fields may be `undefined`: `{...parsed, x: undefined}`
+  // would overwrite a shipped value with `undefined`, which the engine reads as an invalid number and defaults — a
+  // different object from the one the anchor fingerprint hashes.
+  const named = Object.entries(overrides).filter(([, value]) => value !== undefined);
   const engine = buildRCAEvalEngineOptions(
-    dualFamilyWeight === undefined ? parsed : { ...parsed, dualFamilyWeight },
+    named.length === 0 ? parsed : { ...parsed, ...Object.fromEntries(named) },
   );
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -147,7 +161,11 @@ async function main(): Promise<void> {
     throw new Error(`${dataDir}: no scorable case, so there is nothing to score`);
   }
 
-  const runner = createContainer(args.useInjectTime, args.dualFamilyWeight);
+  const runner = createContainer(args.useInjectTime, {
+    dualFamilyWeight: args.dualFamilyWeight,
+    dualFamilyGate: args.dualFamilyGate,
+    dualFamilyGateMode: args.dualFamilyGateMode,
+  });
   const result = await runner.runSuite(selection.suite);
 
   const scores: readonly CellScore[] = scoreByCell(result.casePredictions, selection.cells);
@@ -162,6 +180,9 @@ async function main(): Promise<void> {
   );
   process.stdout.write(
     `dual-family weight          ${args.dualFamilyWeight === undefined ? 'shipped default (0.25)' : `${args.dualFamilyWeight} (ablation)`}\n`,
+  );
+  process.stdout.write(
+    `dual-family gate            ${args.dualFamilyGate === undefined ? 'shipped default (0.25)' : `${args.dualFamilyGate} (ablation)`} / ${args.dualFamilyGateMode ?? 'channel'}\n`,
   );
   process.stdout.write(`cases scored                ${result.totalCases}\n\n`);
   process.stdout.write(formatCellTable(scores));
@@ -179,6 +200,8 @@ async function main(): Promise<void> {
           useInjectTime: args.useInjectTime,
           topology: args.topology,
           dualFamilyWeight: args.dualFamilyWeight ?? null,
+          dualFamilyGate: args.dualFamilyGate ?? null,
+          dualFamilyGateMode: args.dualFamilyGateMode ?? null,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(
