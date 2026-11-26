@@ -233,6 +233,61 @@ Until (4) is read, **no default moves**: `DEFAULT_LABEL_PRIOR_WEIGHT` stays `0` 
 `DEFAULT_LABEL_PRIOR_JURISDICTION` stays `everywhere`. The panel half now passes a criterion it previously failed at
 the head; the AND is not satisfied, and the reason is a missing run rather than a disagreement about the corpus.
 
+#### 4.2.1 What the golden instrument can actually answer — written before the arm is read
+
+Conjunct (4) says "the nine golden cells must satisfy (1)–(3) on their own 735 cases". Read literally that asks for a
+`Top@3` and a `Top@5` per cell, and **the golden battery does not print either**. It prints four rows per cell —
+`AC@1`, `Avg@5`, `LA`, `TA` — and a loss-decomposition table with one row per (suite, system) whose `correct` column
+is the cell's `AC@1` count. So (4) has to be stated in the metrics the half emits, and stated *now*, because the
+dispatch is already queued; a criterion rewritten after the numbers arrive is not a criterion.
+
+| golden instrument | column / row | what it answers for conjunct (4) |
+| --- | --- | --- |
+| loss-decomposition table | `correct` per (suite, system) | the nine `AC@1` COUNTS, i.e. (1) and the cell-level half of (2) |
+| the same table's fault-type columns | `CPU … LOSS` | fault-type `AC@1`, i.e. the fault-type half of (2) |
+| the four-row table | `Avg@5` per cell | the depth half of (3) — `(1/5)·Σ_{k≤5} Acc@k`, the published convention |
+| the four-row table | `AC@1` per cell | a cross-check on the counts, because the row is a fault-type MEAN and the count is case-level |
+
+The reference is arm A measured at `7b1d3e4f` (battery
+[`45859012900`](https://github.com/AgentiX-E/micro-kinetic-ts/actions/runs/45859012900), revision `7b1d3e4f`,
+configuration `c0b34f8091f2`). `AC@1` counts are the committed baseline; `Avg@5` had never been recorded, so it is
+recorded here for the first time, from the three suite logs of that run:
+
+| cell | cases | `AC@1` correct | `Avg@5` | `LA` |
+| --- | ---: | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 125 | 113 | 96.2 % | 90.4 % |
+| RE1:SockShop | 125 | 119 | 97.4 % | 95.2 % |
+| RE1:TrainTicket | 125 | 113 | 95.7 % | 90.4 % |
+| RE2:OnlineBoutique | 90 | 84 | 94.9 % | 93.3 % |
+| RE2:SockShop | 90 | 89 | 98.9 % | 98.9 % |
+| RE2:TrainTicket | 90 | 76 | 88.0 % | 84.4 % |
+| RE3:OnlineBoutique | 30 | 26 | 91.1 % | 91.1 % |
+| RE3:SockShop | 30 | 24 | 88.8 % | 79.6 % |
+| RE3:TrainTicket | 30 | 22 | 81.2 % | 74.5 % |
+| **total** | **735** | **666** | **92.47 %** (mean over the nine cells) | **90.61 %** |
+
+That run is also the first reading of the jurisdiction field in a battery, and it is the fingerprint roll's
+prediction confirmed: `labelPriorWeight=0 … labelPriorJurisdiction=everywhere` on the printed line, and the nine
+cells byte-identical to the committed baseline (`666`, cell for cell). A field that is inert at weight 0 costs the
+battery nothing.
+
+**The four sub-conjuncts the golden arm must satisfy, in the instrument's own units.** "Not below" uses the panel's
+own tolerance rather than an invented one: on 1 422 cases the pin moved `Top@1` by exactly one case in each
+direction, so the golden analogue is one case per cell.
+
+1. **4a** — no cell's `AC@1` count below its baseline value, and the total not below `666`;
+2. **4b** — no fault type's `AC@1` loses more than **two** cases (the panel's own bound), read off the fault-type
+   columns of the decomposition table;
+3. **4c** — the mean of the nine cells' `Avg@5` **strictly above 92.47 %**, which is (3)'s depth claim in the only
+   depth metric this half prints. A tie is not a gain and does not enrol the arm;
+4. **4d** — and, because (4c) is a MEAN, no single cell's `Avg@5` below its reference value by more than one case's
+   worth for that cell (`0.2 / cases`, i.e. `0.16 pp`, `0.22 pp` and `0.67 pp` for 125, 90 and 30), so a mean gain
+   cannot be bought with one cell's collapse.
+
+If 4a–4d hold the arm enrols at `β = 0.1, τ = 0, jurisdiction = tail`; if any fails the arm is refused and the
+register entry says which one, with the numbers. Nothing here is retro-fitted: this subsection and the reference
+table above are committed before the dispatched run is read.
+
 ### 4.3 What this iteration changed in the engine, on top of §3
 
 Three things, and the first is the only one that touches the ranking:
