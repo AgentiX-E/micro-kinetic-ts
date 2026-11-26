@@ -42,6 +42,7 @@ import {
   type FaultCategory,
   type FaultEdgeLatency,
   type FaultPropagationGraph,
+  type LabelPriorProfile,
   type MetricMap,
   type PrismPooling,
   type PrunedEdgeRecord,
@@ -107,6 +108,12 @@ import {
   type FaultFreeSelection,
 } from './fault-free-profile.js';
 import { channelSurprise } from './fault-free-surprise.js';
+import {
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
+  computeLabelPriorValues,
+  topTwoGap,
+} from './label-prior.js';
 import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
@@ -1154,6 +1161,32 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * choose between them.
    */
   readonly faultFreeSelection?: FaultFreeSelection | undefined;
+  /**
+   * Weight on the LABEL prior: how much a service being the deployment's past answer is worth.
+   *
+   *   finalScore(v) += labelPriorWeight × log p(v)   (see `pruning/label-prior.ts`)
+   *
+   * The only term in the sum that is true before any telemetry is read: `p` is estimated from incidents that
+   * were already diagnosed, and the case in hand contributes nothing to it. The profile travels on the GRAPH
+   * (`FaultPropagationGraph.labelPrior`) rather than here, because it is per case — a run-level field could
+   * only carry the population's counts, and removing the current case from them needs the label the engine
+   * must never see.
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0, the ablation: at 0 the profile is neither read nor
+   * required, and the ranking is bit-identical to the engine that had no such term.
+   */
+  readonly labelPriorWeight: number;
+  /**
+   * The smallest top-1 margin at which the label prior may speak — the gate, as a number the ranking produces.
+   *
+   * The term does not apply everywhere: it was refused ungated because it lifts a cell whose ranking is
+   * separated by half a unit and collapses one whose head is separated by a hundredth. A deployment does not
+   * know which cell it is in, but it always knows this number, which is why the threshold is read off the
+   * engine's own `top1 − top2` BEFORE the term is added.
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0.02, the pair's measured threshold. Inert at weight 0.
+   */
+  readonly labelPriorMarginGate: number;
   /**
    * Whether a caller may be ranked above a callee whose OWN latency excursion is larger.
    *
@@ -2640,6 +2673,8 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
   podStateWeight: DEFAULT_POD_STATE_WEIGHT,
   faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+  labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
+  labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   containmentOrder: DEFAULT_CONTAINMENT_ORDER,
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
@@ -3188,6 +3223,11 @@ export class TreePruner {
       failedInterfaces,
       failedEdgeBoundary:
         failureRows.length === 0 ? undefined : failedEdgeBoundary(failureRows, topologyGraph.edges),
+      // The one field on this object the builder did not MEASURE: the caller's incident history travels through
+      // untouched. Forwarded rather than rebuilt because the builder sees one case, and a frequency over root
+      // causes is a statement about the population — see `types/label-prior.ts`. Absent stays absent (the
+      // ablation), which is why the field is spread conditionally rather than written as `undefined`.
+      ...(options?.labelPrior === undefined ? {} : { labelPrior: options.labelPrior }),
     };
   }
 
@@ -3275,6 +3315,7 @@ export class TreePruner {
       graph.channelSymmetry,
       graph.dualFamilyServices,
       graph.podStateScores,
+      graph.labelPrior,
       deduction.audit,
     );
 
@@ -3362,6 +3403,7 @@ export class TreePruner {
           graph.channelSymmetry,
           graph.dualFamilyServices,
           graph.podStateScores,
+          graph.labelPrior,
           deduction.audit,
         ),
       ),
@@ -3810,6 +3852,7 @@ function performTreeRCA(
   channelSymmetry?: ReadonlyMap<ServiceId, number>,
   dualFamilyServices?: ReadonlySet<ServiceId>,
   podStateScores?: ReadonlyMap<ServiceId, number>,
+  labelPrior?: LabelPriorProfile,
   topoAudit?: TopoDeductionAudit,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
@@ -4171,6 +4214,10 @@ function performTreeRCA(
   // `RankingWeights` is the OPTIMIZER's search space where absent means 0, while this option is the engine's
   // and always carries a number; reading the engine's own field keeps the two defaults from drifting apart.
   const faultFreeWeight = options.faultFreeWeight;
+  // The label prior's price and its gate. Read together because they are ONE configuration: the weight says what a
+  // unit of `log p` is worth, the gate says in which rankings it may be spent at all.
+  const labelPriorWeight = options.labelPriorWeight;
+  const labelPriorMarginGate = options.labelPriorMarginGate;
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -4196,7 +4243,7 @@ function performTreeRCA(
   }
 
   const termCache = new Map<ServiceId, readonly ScoreTerm[]>();
-  const termsOf = (id: ServiceId): readonly ScoreTerm[] => {
+  const baseTermsOf = (id: ServiceId): readonly ScoreTerm[] => {
     let t = termCache.get(id);
     if (t === undefined) {
       // Every OPTIONAL source is read ONCE per candidate, so the value the contribution uses and the presence
@@ -4388,6 +4435,61 @@ function performTreeRCA(
         }),
       ];
       termCache.set(id, t);
+    }
+    return t;
+  };
+  // ── The LABEL prior, and the margin that decides whether it may speak ──────────────────────────────────
+  // The only term whose input is TRUE BEFORE THIS CASE IS READ: `p` is estimated from incidents the deployment
+  // already diagnosed, and the case in hand contributes nothing to it (see `label-prior.ts`). It is also the only
+  // term admitted WHERE THE RANKING HAS ROOM instead of everywhere, and the reason is measured: ungated it lifts a
+  // cell whose head is separated by half a unit and collapses one whose head is separated by a hundredth.
+  //
+  // The margin is read from the BASE totals — every term except this one — because a gate computed from the gated
+  // score would be the term's own output deciding whether the term runs. `scoredNodes` is the set the ranking can
+  // choose between, so the gap is between the two candidates the engine would report first and second.
+  //
+  // A history that holds no labelled incident is not a prior of zero strength, it is the absence of one: `labelled`
+  // is the denominator, and a denominator of zero would make the term a constant spread the ranking cannot use.
+  const priorValues =
+    labelPrior === undefined || labelPrior.labelled === 0
+      ? undefined
+      : computeLabelPriorValues(
+          labelPrior,
+          scoredNodes.map((node) => node.serviceId),
+        );
+  const priorSpeaks =
+    priorValues !== undefined &&
+    labelPriorWeight !== 0 &&
+    topTwoGap(scoredNodes.map((node) => sumScoreTerms(baseTermsOf(node.serviceId)))) >=
+      labelPriorMarginGate;
+  // The full arrays: the base terms plus the prior's row. A SECOND cache rather than a mutation of the first,
+  // because the base totals above are what the gate reads and a cache rewritten in place would make the two
+  // statements about one array — the defect `sumScoreTerms` exists to prevent at the level of the total.
+  const gatedCache = new Map<ServiceId, readonly ScoreTerm[]>();
+  const termsOf = (id: ServiceId): readonly ScoreTerm[] => {
+    let t = gatedCache.get(id);
+    if (t === undefined) {
+      // The value is the GATED one, so the row a reader sees is the row the total was summed from: zero with
+      // `masked` when the gate withheld it, the log-probability when it spoke, zero-with-a-cause when the run
+      // supplied no history at all. The `?? 0` cannot be reached — `priorValues` carries an entry for every scored
+      // node — and is written as `!` below rather than as a fallback that would score a candidate at the floor of a
+      // distribution it is not in.
+      const value = priorSpeaks ? priorValues!.get(id)! : 0;
+      t = [
+        ...baseTermsOf(id),
+        buildTerm('labelPrior', labelPriorWeight, value, {
+          presence:
+            labelPrior === undefined
+              ? 'MAP_ABSENT'
+              : priorValues === undefined
+                ? 'MAP_EMPTY'
+                : 'PRESENT',
+          source: 'labelPrior',
+          masked: !priorSpeaks && priorValues !== undefined && labelPriorWeight !== 0,
+          mask: 'labelPriorMarginGate',
+        }),
+      ];
+      gatedCache.set(id, t);
     }
     return t;
   };

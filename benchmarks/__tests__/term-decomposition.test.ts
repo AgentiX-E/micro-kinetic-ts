@@ -124,7 +124,10 @@ describe('the constants the pre-registration fixes', () => {
     const built = [...source.matchAll(/buildTerm\(\s*'([^']+)'/g)].map((match) => match[1]);
     expect(built).toEqual([...DECLARED_TERMS]);
     expect(BONFERRONI_ALPHA).toBeCloseTo(0.05 / DECLARED_TERMS.length, 12);
-    expect(DECLARED_TERMS).toHaveLength(19);
+    // Twenty since iteration 367 enrolled the label prior. The assertion is written as a literal rather than as
+    // `DECLARED_TERMS.length` on purpose: the count is what the Bonferroni level divides by, so a term added to the
+    // list without a reader noticing that the bar moved is exactly the defect this line makes impossible.
+    expect(DECLARED_TERMS).toHaveLength(20);
     expect(MIN_FAMILY_CASES).toBe(20);
   });
 });
@@ -456,7 +459,12 @@ describe('the report', () => {
     const lines = text.split('\n');
     expect(lines[0]).toBe('Term decomposition of the re-rankable misses');
     expect(text).toContain('population: 24 misses at depth 1..20 of 24 cases');
-    expect(text).toContain('alpha = 0.002632 over 19 terms, n >= 20');
+    // `0.0025` is `0.05 / 20` since iteration 367, and the number MOVED for the right reason: the label prior
+    // joined `DECLARED_TERMS`, so every other term's bar tightened by 5%. A term enrolled as a split of the same
+    // family-wise budget that left every sibling's level untouched would not be a Bonferroni correction at all, so
+    // this literal is the one assertion that can tell "a term was added" from "a term was added and the level
+    // followed it".
+    expect(text).toContain('alpha = 0.002500 over 20 terms, n >= 20');
     expect(text).toContain('Kill (n=24, in=12, out=12)');
     const row = lines.find((line) => line.trimStart().startsWith('log '));
     expect(row).toBeDefined();

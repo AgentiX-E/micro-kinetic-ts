@@ -11,6 +11,7 @@
  */
 
 import type { FailedEdgeEvidence } from '../interfaces/rca-engine.js';
+import type { LabelPriorProfile } from './label-prior.js';
 
 /** Unique identifier for a service node. */
 export type ServiceId = string;
@@ -285,6 +286,21 @@ export interface FaultPropagationGraph {
    * `0` or `undefined` means "unknown" — the temporal signal must be disabled.
    */
   readonly injectTimeMs?: number;
+  /**
+   * The deployment's own incident history, as a count over root causes — what the label-prior term reads.
+   *
+   * The only field on this graph that is not measured on THIS case: every other map above is derived from the
+   * case's own telemetry, and this one is derived from cases that were diagnosed before it. That is why it is
+   * an input the caller assembles (see `types/label-prior.ts`) rather than something the builder computes:
+   * the builder sees one case and a frequency over root causes is a statement about the population.
+   *
+   * The case being scored must not contribute to it. A caller that counts the history inclusive of this case
+   * is measuring hindsight, and the term will reward the answer it is being asked for.
+   *
+   * Optional, and its absence is the ABLATION rather than an error: a deployment with no incident history has
+   * no prior, and the term then has nothing to read whatever its weight says.
+   */
+  readonly labelPrior?: LabelPriorProfile;
   /**
    * Per-node onset DELAY in milliseconds — how long after `injectTimeMs` the
    * service's dominant metric first deviated from its PRE-INJECT baseline.

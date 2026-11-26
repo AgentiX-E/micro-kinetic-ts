@@ -15,6 +15,7 @@
 
 import type { MetricMap, RootCauseResult } from '../types/faults.js';
 import type { FaultPropagationGraph, ServiceCallGraph, ServiceId } from '../types/graph.js';
+import type { LabelPriorProfile } from '../types/label-prior.js';
 
 /**
  * Core RCA engine interface.
@@ -278,6 +279,19 @@ export interface BuildFaultGraphOptions {
    * signal, so a trace-only service cannot enter its normalisation either.
    */
   readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency>;
+  /**
+   * The deployment's labelled-incident history, which the label-prior term reads (see
+   * {@link FaultPropagationGraph.labelPrior}).
+   *
+   * Passed through the case-level options rather than through the engine's own options because it is not one
+   * setting for a run: the same deployment history gives every case a DIFFERENT distribution, since a case is
+   * scored on its own candidate set and the case in hand is excluded from its own prior. A run-level field
+   * could only carry the population's counts, and a term that had to remove the current case from them would
+   * need the label the engine must never see.
+   *
+   * Absent is the ablation: a run with no history scores the label term at nothing.
+   */
+  readonly labelPrior?: LabelPriorProfile;
 }
 
 export interface IRCAEngine {

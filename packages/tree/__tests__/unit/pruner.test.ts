@@ -3137,6 +3137,11 @@ describe('the score breakdown — the total IS its terms', () => {
       'victim',
       'dualFamily',
       'podState',
+      // Iteration 367: appended rather than inserted, because the term is appended in `performTreeRCA` — it is
+      // built from a SECOND cache (`gatedCache`) that wraps the first, so the prior is the last row of every
+      // breakdown. It appears at the shipped weight of 0 on the rule every zero-weight term here follows: an
+      // absent row would make `classifyTermZero` report an ENTRY absence for a term the formula holds.
+      'labelPrior',
     ]);
   });
 });

@@ -280,6 +280,13 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'faultFreeProfile',
       'faultFreeSelection',
       'faultFreeWeight',
+      // Iteration 367: the label prior's price and its margin, held rather than searched. The price is held
+      // because the term's input is a per-CASE history — a weight is only meaningful against the profile it
+      // prices, and this search space carries no profile at all. The gate is held for the reason every gate above
+      // is: it picks WHERE the term is spent, which is a population of rankings rather than a coefficient.
+      // `docs/label-prior.md` is the owner of both.
+      'labelPriorMarginGate',
+      'labelPriorWeight',
       'latMinRise',
       'latWeight',
       // Iteration 249: the SCALE the log signal is measured on. Held for the mutual rule's reason, one step

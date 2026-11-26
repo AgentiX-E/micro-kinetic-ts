@@ -644,6 +644,14 @@ describe('the RCAEval configuration line carries the configuration that produced
         'selfTimeWeight=0 selfTimeScope=absolute stabilityScope=rank victimWeight=0 dualFamilyWeight=0.25 ' +
         'dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
+        // Iteration 367 appended the label prior's PAIR — the price and the margin that decides where it may be
+        // spent. Printed at its shipped `0`, which is the case the rule above exists for: at weight 0 the term is
+        // inert, so a line that omitted defaulted fields would render the measured arm and the shipped run
+        // byte-identically. The gate ships at a NON-zero 0.02, so the pair cannot even be inferred from "everything
+        // defaulted". Printed with the other term weights rather than past `containmentExcursions`, because the
+        // line's groups are the engine's term families and a prior parked behind the containment pass would read as
+        // a property of that pass.
+        'labelPriorWeight=0 labelPriorMarginGate=0.02 ' +
         // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
         // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that

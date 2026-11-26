@@ -47,5 +47,9 @@ export function toFaultGraphOptions(
     failedTraceEdges: benchCase.failedTraceEdges,
     failedEdgeCalls: benchCase.failedEdgeCalls,
     edgeLatency: benchCase.edgeLatency,
+    // The one field that is not the case's own evidence: a frequency over root causes, assembled over the corpus
+    // and excluding this case (see `BenchmarkCase.labelPrior`). Forwarded like every other field, because a case
+    // input that reaches the RCAEval path and not the FSE'26 one reports "no change" — which reads as a result.
+    labelPrior: benchCase.labelPrior,
   };
 }

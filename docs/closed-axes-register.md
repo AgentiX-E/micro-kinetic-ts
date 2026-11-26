@@ -11533,3 +11533,72 @@ decide is a function of how sharply the propagation has separated the field.
 **State.** New modules `benchmarks/src/margin-gated-prior.ts` (100 / 100 / 100 / 100) and
 `benchmarks/src/run-margin-prior.ts`; 4 700 benchmark tests, 9 316 root tests, aggregate coverage
 99.62 / 98.99 / 99.31 / 99.69, oxlint 0 warnings, prettier clean, `nx typecheck` 15 projects green.
+
+### 367 The term that is true before the case is read: +6.41 pp gated, and the ungated arm that proves the gate (iteration 367)
+
+Every term in `finalScore` up to this iteration reads evidence the case SUPPLIED. The twentieth reads the
+deployment's own past: `p(v)` is how often `v` was the labelled root cause of the system's other incidents,
+estimated LEAVE-ONE-OUT over the case's candidate set, and priced as `w · log p(v)` with the floor `1/V`.
+
+```
+finalScore(v) += w · log p(v),      p(v) = (count(v) + 1/V) / (labelled + 1)
+```
+
+`1/V` rather than a constant, because `p` is a distribution over the case's OWN candidates: a service that has never
+been the answer must cost the same whether the case has fifteen candidates or fifty, and a constant floor would make
+the term's strength a function of the system's size — a property of the deployment, not of the evidence.
+
+**The arm was refused once and then priced.** Three readings on the 156-case Hard bucket, all `CNY 0.00`, the last two
+on the ENGINE through `--label-prior-weight` / `--label-prior-margin-gate` rather than on a bench-side re-sort:
+
+| cell | cases | shipped (w = 0) | w = 0.1, τ = 0 | w = 0.1, τ = 0.02 | w = 0.05, τ = 0.02 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `boutique` / `codedefect` | 88 | 0.3636 | **0.5682** | 0.4886 | 0.4432 |
+| `boutique` / `performance` | 21 | 0.8095 | 0.7143 | 0.7619 | **0.8095** |
+| `trainticket` / `performance` | 47 | 0.6596 | **0.2340** | **0.6596** | **0.6596** |
+| **all** | **156** | **0.5128** | 0.4872 | **0.5769** | 0.5577 |
+| `Top@3` | | 0.7051 | 0.7500 | **0.7949** | 0.7628 |
+| `Top@5` | | 0.8269 | **0.8910** | 0.8846 | 0.8462 |
+| gained / lost | | — | 18 / 22 | **11 / 1** | **7 / 0** |
+| exact McNemar p | | — | 0.6358 | **0.0063** | **0.0156** |
+
+Ungated, the term gains 18 and loses 22 and `trainticket` collapses 42.6 pp. **That collapse is the gate's proof, not
+its motivation**: the two cells that move in opposite directions differ in nothing a deployment can observe except one
+number, the engine's own `top1 − top2`, whose median is 0.5294 in `boutique/performance` and **0.0102** in
+`trainticket` (share below 0.05: 4.8 % / 29.5 % / **74.5 %** across the three cells). A ranking whose head is separated
+by a hundredth has no room for an external term. At τ = 0.02 the term therefore says nothing at all on `trainticket` —
+**zero of 47 cases move and the cell reads 0.6596, bit-identical to the shipped run** — while `codedefect` keeps
++12.50 pp.
+
+**The price axis has its own zero-loss point**, exactly as the gate axis did one iteration earlier: `β = 0.05` never
+loses a case and never lowers a cell (one cell +7.96 pp, two bit-identical), while `β = 0.1` buys a further 1.92 pp of
+`CA@1` and pays one case for it. Both are recorded as arms; neither ships.
+
+**What is deliberately not the gate.** A per-CELL scope reads 0.5833 with zero losses (p = 0.0010) and is undeployable:
+the cell IS the label being predicted, so a per-cell prior is a per-answer prior. It is registered as the ceiling the
+deployable arm is measured against. A per-SYSTEM scope is deployable — a deployment knows which fleet it is — and is
+the 0.5769 reading above.
+
+**The τ sweep, read honestly.** Four points at `β = 0.1`: 0 → 0.4872, 0.02 → **0.5769**, 0.05 → 0.5641, 0.1 → 0.5449.
+The curve rises from the refused reading and falls monotonically after 0.02, so 0.02 is the best of the points TAKEN,
+not a located optimum — **the interval between 0 and 0.02 was not swept**, and that is the open work rather than a
+claim.
+
+**Four fences moved, each for a reason that is the point.** `DECLARED_TERMS` reached twenty, so the Bonferroni level
+tightened from `0.05/19 = 0.002632` to `0.05/20 = 0.002500` — a term enrolled as a split of the same family-wise budget
+that left every sibling's bar untouched would not be a correction at all. The declared configuration line gained
+`labelPriorWeight=0 labelPriorMarginGate=0.02`, so the standing anchor moved `7438373f894f → 8a7eb902ec8e` and the
+committed nine-cell baseline was re-anchored in the same commit. And the flag is `--label-prior-margin-gate`, not
+`--label-prior-gate`: its domain is a non-negative score GAP rather than the unit interval, so the longer name is the
+one its derivation rule can read (`--label-prior-gate` → `labelPriorGate` ≠ `labelPriorMarginGate`, i.e. a third
+member of `NON_DERIVABLE_OPTIONS` for no reason).
+
+**Not yet cleared.** The weight ships at 0, so no default moved and the shipped ranking is bit-identical to an engine
+without the term (verified: 0.5128 with all three cells reproduced to four decimals). Enrolling it needs the nine
+RCAEval cells and the FSE'26 panel, and the second half is currently UNMEASURABLE — `run-fse26.ts` builds no profile,
+which is why the census records `fse26: null` for both fields. `docs/label-prior.md` is the owner of this term: its
+definition, both refusals, the margin table, the ceiling, and the two open tasks.
+
+**State.** New modules `packages/tree/src/pruning/label-prior.ts`, `packages/core/src/types/label-prior.ts`,
+`benchmarks/src/label-prior-profiles.ts`, 4 724 benchmark tests, 9 344 root tests, oxlint 0 warnings, prettier clean,
+`nx typecheck` 15 projects green.

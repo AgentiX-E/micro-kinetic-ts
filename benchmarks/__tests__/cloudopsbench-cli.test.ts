@@ -134,6 +134,60 @@ describe('the Cloud-OpsBench runner’s command line', () => {
     }
   });
 
+  it('leaves the label prior unarmed unless a weight is given', () => {
+    // The arm has to be OFF by default in the strongest sense: not "armed at zero", but absent from the parsed
+    // options entirely, so `createContainer` hands the engine the shipped configuration object.
+    const base = parseCloudOpsArgs(['--data-dir', '/tmp/cob']);
+    expect(base.labelPriorWeight).toBeUndefined();
+    expect(base.labelPriorMarginGate).toBeUndefined();
+  });
+
+  it('reads the label prior price and gate, together or apart', () => {
+    const both = parseCloudOpsArgs([
+      '--data-dir',
+      '/tmp/cob',
+      '--label-prior-weight',
+      '0.1',
+      '--label-prior-margin-gate',
+      '0.02',
+    ]);
+    expect(both.labelPriorWeight).toBe(0.1);
+    expect(both.labelPriorMarginGate).toBe(0.02);
+    // The gate alone is a legal arm — it changes nothing without a weight, and refusing it would make a dispatch that
+    // sets only the pair's second half fail with a message about the first.
+    const gateOnly = parseCloudOpsArgs([
+      '--data-dir',
+      '/tmp/cob',
+      '--label-prior-margin-gate',
+      '0.05',
+    ]);
+    expect(gateOnly.labelPriorWeight).toBeUndefined();
+    expect(gateOnly.labelPriorMarginGate).toBe(0.05);
+    // 0 is a value, not an absence: it is the ungated arm, which the register refused after measuring it.
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-margin-gate', '0'])
+        .labelPriorMarginGate,
+    ).toBe(0);
+  });
+
+  it('refuses a negative label-prior weight, which would reward the services the history never saw', () => {
+    // At `p < 1` the term is a penalty, so a negative weight inverts its meaning while still moving the ranking —
+    // the shape of an arm that looks like it works.
+    // `Number('')` is 0, so an empty value reads as the shipped weight rather than as a rejection — the rule two
+    // numeric options above already follow, and the reason the list below names the two shapes that ARE invalid.
+    for (const value of ['-0.1', 'x']) {
+      expect(() =>
+        parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-weight', value]),
+      ).toThrow(/--label-prior-weight must be a non-negative number/);
+    }
+  });
+
+  it('refuses a negative label-prior gate, which would admit the prior where the head is undecided', () => {
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--label-prior-margin-gate', '-0.01']),
+    ).toThrow(/--label-prior-margin-gate must be a non-negative margin/);
+  });
+
   it('refuses a flag it does not own instead of ignoring it', () => {
     // A silently ignored flag is how a run gets reported under a configuration it did not use.
     expect(() =>

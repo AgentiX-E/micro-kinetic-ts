@@ -59,6 +59,12 @@ import type {
   CasePrediction,
   RunResult,
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import {
+  buildSystemHistories,
+  priorExcludingTruth,
+  withLabelPrior,
+  type LabelledCase,
+} from './label-prior-profiles.js';
 // The suite-number fold. This file used to own it inline; it is now owned once, for both this path and
 // the study's, because the two of them had implemented it with DIFFERENT conventions and the difference
 // was recorded as an input defect for three runs (see the module's own header).
@@ -1453,6 +1459,38 @@ async function main(): Promise<void> {
     return total;
   }
 
+  // ── The label prior's HISTORY, read once, before any case is scored ────────────────────────────────
+  //
+  // A prior is a statement about a DEPLOYMENT, so it is pooled over every discovered case of the same system —
+  // across suites and across fault types — and not over the cell being scored. The pool is `allCases`, the
+  // discovery list BEFORE `--suite` narrows it: a dispatch that scores one suite must still read the history the
+  // deployment had, or the arm would be measured against a history that shrinks whenever the corpus is sliced.
+  //
+  // Built from `getGroundTruth`, which reads a tiny JSON (or the directory name) and no telemetry: the labels are
+  // needed before the first case is loaded, and a pre-pass through the loader would parse the whole corpus twice.
+  // It is also the SAME source the scored cases' ground truth comes from, so the names the history counts and the
+  // name removed from it per case are spelled by one function rather than two.
+  const priorArmed = opts.labelPriorWeight !== 0;
+  const truthOnly = new RCAEvalLoader();
+  const priorHistories = priorArmed
+    ? buildSystemHistories(
+        allCases.map((one): LabelledCase => ({
+          caseId: one.dirPath,
+          system: one.system,
+          accepted: acceptedTruthServiceIds(truthOnly.getGroundTruth(one.dirPath)),
+        })),
+      )
+    : undefined;
+  if (priorArmed) {
+    const sizes = [...priorHistories!.entries()].map(
+      ([system, one]) => `${system} ${one.labelled}`,
+    );
+    console.log(
+      `Label prior: armed at ${opts.labelPriorWeight} / gate ${opts.labelPriorMarginGate}`,
+    );
+    console.log(`Label prior histories: ${sizes.join(', ')}`);
+  }
+
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     // Built per CELL, and this is a memory decision rather than a semantic one: these three objects are the only
@@ -1582,9 +1620,25 @@ async function main(): Promise<void> {
 
       for (const [ft, ftCases] of byFaultType) {
         if (ftCases.length === 0) continue;
+        // The prior each case is scored under: its system's history minus its OWN incident. Attached here, per
+        // fault-type suite, because this is where the cases the runner will score exist — and left absent entirely
+        // when the arm is not armed, so the shipped run scores the exact objects the loader built.
+        const priorByCaseId =
+          priorHistories === undefined
+            ? undefined
+            : new Map(
+                ftCases.map((one) => [
+                  one.id,
+                  priorExcludingTruth(
+                    priorHistories,
+                    systemName,
+                    acceptedTruthServiceIds(one.groundTruth)[0],
+                  ),
+                ]),
+              );
         const suite: BenchmarkSuite = {
           name: `${systemName}-${suiteName}-${ft}`,
-          cases: ftCases,
+          cases: priorByCaseId === undefined ? ftCases : withLabelPrior(ftCases, priorByCaseId),
           totalCases: ftCases.length,
         };
         const one = await runner.runSuite(suite, (record) => {

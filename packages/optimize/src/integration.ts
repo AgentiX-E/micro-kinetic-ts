@@ -69,6 +69,15 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the dual-family membership\u2019s population, shipped at 0.25: it does not scale any term but selects WHO is paid the 0/1 bonus, so a search over weights could only move it by accident \u2014 a discrete population belongs to a dispatch, where its effect is one number per arm',
   dualFamilyGateMode:
     'the dual-family gate\u2019s comparison (min | channel), shipped at channel: it changes WHICH bar the gate sets rather than any term\u2019s magnitude, so it is a discrete population choice a dispatch states and a weight search cannot move',
+  labelPriorWeight:
+    'the label prior, shipped OFF and measured outside this search space: its input is a per-CASE history of ' +
+    'labelled incidents rather than anything a tuning corpus carries, so a weight this search moved would be ' +
+    'priced against a profile the search cannot build — the pair and the margin that gates it live in ' +
+    'docs/label-prior.md',
+  labelPriorMarginGate:
+    'the margin at which that prior may speak, shipped at 0.02: it selects WHERE the term is spent rather than how ' +
+    'much it is worth, so it is a discrete population of rankings a dispatch states — a search over weights could ' +
+    'only move it by accident, the same reason dualFamilyGate is held',
   victimWeight:
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:

@@ -82,6 +82,12 @@ export const DECLARED_TERMS = [
   'victim',
   'dualFamily',
   'podState',
+  // The twentieth term, and the only one whose input is not this case's telemetry: a frequency over root causes
+  // that excludes the case being scored (see `packages/tree/src/pruning/label-prior.ts`). Registered here so the
+  // Bonferroni level moves with it — a term that spends part of the same family-wise budget without shrinking
+  // every other term's bar is a term the pre-registration does not cover, and the decomposition would then report
+  // its contributions against an alpha no term was tested at.
+  'labelPrior',
 ] as const;
 
 /** The family-wise level the pre-registration fixes. */

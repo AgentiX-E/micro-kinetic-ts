@@ -60,6 +60,22 @@ export interface CloudOpsArgs {
    * reading of the comparison rather than of the membership.
    */
   readonly dualFamilyGateMode: DualFamilyGateMode | undefined;
+  /**
+   * The label prior's price, or `undefined` for the shipped 0.
+   *
+   * The one term whose input is not this case's telemetry: how often each service is the deployment's answer,
+   * counted over the corpus and excluding the case being scored. It was refused ungated — it lifts a cell whose
+   * heads are half a unit apart and collapses one whose heads are a hundredth apart — so the price travels with
+   * the gate below rather than alone, and the pair is what the arm measured.
+   */
+  readonly labelPriorWeight: number | undefined;
+  /**
+   * The smallest top-1 margin at which the label prior may speak, or `undefined` for the shipped 0.02.
+   *
+   * A gate on the ENGINE's own `top1 − top2`, read before the prior is added: the deployment does not know which
+   * cell it is in, and always knows this number.
+   */
+  readonly labelPriorMarginGate: number | undefined;
 }
 
 /** The two graph arms, as the command line spells them. */
@@ -96,6 +112,8 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let dualFamilyWeight: number | undefined;
   let dualFamilyGate: number | undefined;
   let dualFamilyGateMode: DualFamilyGateMode | undefined;
+  let labelPriorWeight: number | undefined;
+  let labelPriorMarginGate: number | undefined;
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -146,6 +164,28 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       }
       dualFamilyGateMode = value;
       index += 1;
+    } else if (one === '--label-prior-weight') {
+      const value = valueOf(index, '--label-prior-weight');
+      const parsed = Number(value);
+      // NEGATIVE is refused rather than "non-negative is accepted": at `p < 1` the term is a penalty, so a negative
+      // weight would REWARD the services the history has never seen — the opposite of the statement, and one that
+      // would look like a working arm because it still moves the ranking.
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`--label-prior-weight must be a non-negative number, got "${value}"`);
+      }
+      labelPriorWeight = parsed;
+      index += 1;
+    } else if (one === '--label-prior-margin-gate') {
+      const value = valueOf(index, '--label-prior-margin-gate');
+      const parsed = Number(value);
+      // A MARGIN, so the domain is "non-negative" and not [0, 1]: scores are not bounded above across terms. A
+      // negative gate would admit the prior precisely where the head is UNDECIDED, which is the arm this gate exists
+      // to refuse.
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`--label-prior-margin-gate must be a non-negative margin, got "${value}"`);
+      }
+      labelPriorMarginGate = parsed;
+      index += 1;
     } else if (one === '--topology') {
       const value = valueOf(index, '--topology');
       if (value !== 'registry' && value !== 'ring') {
@@ -172,5 +212,7 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
     dualFamilyWeight,
     dualFamilyGate,
     dualFamilyGateMode,
+    labelPriorWeight,
+    labelPriorMarginGate,
   };
 }

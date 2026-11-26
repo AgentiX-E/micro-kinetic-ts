@@ -301,6 +301,10 @@ export type {
 // interface the channel's counts are declared beside; re-exported here because the gate that reads it lives in
 // this package and a consumer holding a gate should not need a second import path to name its subject.
 export type { FailedEdgeEvidence } from '@agentix-e/micro-kinetic-core';
+// The label prior's shape is the graph's input — a corpus artifact, declared beside the graph in core — and it is
+// re-exported here for the same reason `FailedEdgeEvidence` is: a caller of this package should not need a second
+// import path to name a field this package's options read.
+export type { LabelPriorProfile } from '@agentix-e/micro-kinetic-core';
 export type {
   FailedEdgeCredit,
   FailedEdgeLedger,
@@ -417,6 +421,16 @@ export type {
 // against the rate its channels fire at when nothing is wrong. See `pruning/fault-free-surprise.ts`.
 export { channelSurprise, smoothedFiringRate } from './pruning/fault-free-surprise.js';
 export type { ChannelSurpriseInput } from './pruning/fault-free-surprise.js';
+
+// The LABEL prior — the deployment's own incident history as a score term, and the margin gate that decides when
+// a ranking has room for it. The only input to the ranking that is true before the case is read, and the only term
+// admitted per ranking rather than per configuration. See `pruning/label-prior.ts`.
+export {
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
+  computeLabelPriorValues,
+  topTwoGap,
+} from './pruning/label-prior.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

@@ -125,6 +125,17 @@ export interface RCAEvalSignalOptions {
   /** The dual-family presence bonus — see `CliOptions.dualFamilyWeight`. */
   readonly dualFamilyWeight: number;
   /**
+   * The label prior's price — see `CliOptions.labelPriorWeight`.
+   *
+   * The PROFILE it prices is not on this object: it is per case, because a case is scored on its own candidate set
+   * and the case in hand is excluded from its own history. It travels on the graph
+   * (`BenchmarkCase.labelPrior` → `BuildFaultGraphOptions.labelPrior`), which is why this projection carries the
+   * weight and the gate and nothing else.
+   */
+  readonly labelPriorWeight: number;
+  /** The margin gate that decides when that weight may be spent — see `CliOptions.labelPriorMarginGate`. */
+  readonly labelPriorMarginGate: number;
+  /**
    * The dual-family membership's POPULATION — see `CliOptions.dualFamilyGate`.
    *
    * Required rather than optional for the reason every weight here is: the engine's default is 0, so a
@@ -344,6 +355,8 @@ export function buildRCAEvalEngineOptions(
       dualFamilyWeight: opts.dualFamilyWeight,
       dualFamilyGate: opts.dualFamilyGate,
       dualFamilyGateMode: opts.dualFamilyGateMode,
+      labelPriorWeight: opts.labelPriorWeight,
+      labelPriorMarginGate: opts.labelPriorMarginGate,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -481,6 +494,12 @@ export function formatSignalLine(opts: CliOptions): string {
     // Unconditional on the self-time rule: it ships at 0, so an omitted-when-default field would render the
     // gated arm and the shipped run identically on the artifact that is supposed to attribute the difference.
     `dualFamilyGate=${opts.dualFamilyGate} dualFamilyGateMode=${opts.dualFamilyGateMode} ` +
+    // The label prior's PAIR, printed unconditionally on the self-time rule: both ship at a value (0 and 0.02), so an
+    // omitted-when-default field would render the arm and the shipped run identically on the artifact whose whole job
+    // is to attribute the difference. It is NOT in `REPORTED_CONFIG_FIELDS` yet, and the reason is that list's own
+    // contract — both halves obey it, and the FSE'26 runner does not forward a profile yet, so registering the field
+    // here would require the twin's artifact to name a term its own runner cannot supply.
+    `labelPriorWeight=${opts.labelPriorWeight} labelPriorMarginGate=${opts.labelPriorMarginGate} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape} ` +
     // APPENDED, not inserted: every byte before this one is what the artifacts already carry, and the field is
     // unconditional on the failed-edge rule because 1 is a value a dispatch can ablate.

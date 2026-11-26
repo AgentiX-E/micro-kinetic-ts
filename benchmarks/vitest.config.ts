@@ -673,6 +673,13 @@ export default defineConfig({
         // `margin-gated-prior.test.ts` asserts every one of those by name, plus the two properties of the registered
         // grid (the null arm first, and at least one gated arm per scope).
         'src/margin-gated-prior.ts',
+        // Added with the ENGINE's wiring of that prior. Included because the construction is where the arm can be
+        // silently dishonest in three ways no cell table shows: a pool that includes the case it scores (hindsight
+        // dressed as history), a multi-label case counted once per accepted answer (a history larger than the number
+        // of incidents), and a case with no accepted answer counted as a zero (every probability shrunk toward a
+        // uniform nobody measured). `label-prior-profiles.test.ts` asserts each by name, and the fourth assertion is
+        // the one the engine depends on: the per-case map must key EVERY case it was handed.
+        'src/label-prior-profiles.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -501,6 +501,13 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // guard consumes the injection boundary this half's cases carry and FSE'26's do not, so the knob has no
     // meaningful FSE'26 state to expose.
     '--transient-guard-test',
+    // Iteration 367: the label prior's PAIR — its price and the margin at which it may speak. Packed on the rule
+    // every post-ceiling knob here follows (25/25), and the pair travels together for a reason the block has not
+    // carried before: the weight alone is the arm that was REFUSED. A dispatch that could state one and not the
+    // other would publish the ungated reading under the gated one's name, which is the exact defect this census's
+    // `SHARED_INPUTS` comment calls "an arm with an undecidable other side".
+    '--label-prior-weight',
+    '--label-prior-margin-gate',
   ],
 };
 
@@ -793,6 +800,26 @@ const KNOBS: Readonly<
     owner: 'pod-state-term.md',
     fse26: 'ranking_knobs',
     rcaeval: null,
+  },
+  labelPriorWeight: {
+    // The only term whose input is not the case's telemetry: a frequency over the deployment's LABELLED past
+    // incidents, estimated leave-one-out over the case's own candidate set. RCAEval-only, and `fse26: null` says
+    // why — `run-fse26.ts` builds no profile at all, so a row claiming that half would describe a knob the FSE'26
+    // runner has nothing to pass it to. Building that profile is the open work `docs/label-prior.md` §6 names
+    // second, and closing it is what would let this row carry `ranking_knobs`.
+    flag: '--label-prior-weight',
+    owner: 'label-prior.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
+  },
+  labelPriorMarginGate: {
+    // The term's second axis: the engine's own `top1 − top2`, read BEFORE the term is added. A margin rather than a
+    // share, because a score gap is not bounded above across terms — so the flag's domain is "non-negative" and not
+    // [0, 1], and a negative gate would admit the prior precisely where the head is undecided.
+    flag: '--label-prior-margin-gate',
+    owner: 'label-prior.md',
+    fse26: null,
+    rcaeval: 'anomaly_knobs',
   },
   victimWeight: {
     flag: '--victim-weight',

@@ -37,6 +37,7 @@ export type * from './types/benchmark.js';
 export type * from './types/coupling.js';
 export type * from './types/faults.js';
 export type * from './types/graph.js';
+export type * from './types/label-prior.js';
 export type * from './types/probability.js';
 export type * from './types/ranking-weights.js';
 export type * from './types/time-series.js';

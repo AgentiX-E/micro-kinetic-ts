@@ -43,6 +43,10 @@ import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 
+// Imported from the module that DEFINES it rather than from the benchmarks index: `benchmarks/index.ts` re-exports
+// this function inside an `export type { … }` block, where a value is erased — so the name is unusable there and a
+// reader who took the index's word for it would import `undefined` in a JavaScript build.
+import { acceptedTruthServiceIds } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { listCaseIds, readCloudOpsCase, type CloudOpsCase } from './cloudopsbench-case.js';
 import { parseCloudOpsArgs } from './cloudopsbench-cli.js';
 import { formatCellTable, formatRate, scoreByCell, type CellScore } from './cloudopsbench-score.js';
@@ -52,6 +56,11 @@ import {
   type CaseTopology,
   type ScorableSelection,
 } from './cloudopsbench-suite.js';
+import {
+  buildSystemLabelPrior,
+  withLabelPrior,
+  type LabelledCase,
+} from './label-prior-profiles.js';
 import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from './rcaeval-engine-options.js';
 import { initRCAEvalTopology } from './rcaeval-topology.js';
@@ -103,7 +112,14 @@ export function loadSelection(
  * anchor fingerprint's by construction.
  */
 export type EngineOverrides = Partial<
-  Pick<CliOptions, 'dualFamilyWeight' | 'dualFamilyGate' | 'dualFamilyGateMode'>
+  Pick<
+    CliOptions,
+    | 'dualFamilyWeight'
+    | 'dualFamilyGate'
+    | 'dualFamilyGateMode'
+    | 'labelPriorWeight'
+    | 'labelPriorMarginGate'
+  >
 >;
 
 /** DI assembly, sharing every option with the RCAEval cells. */
@@ -165,8 +181,29 @@ async function main(): Promise<void> {
     dualFamilyWeight: args.dualFamilyWeight,
     dualFamilyGate: args.dualFamilyGate,
     dualFamilyGateMode: args.dualFamilyGateMode,
+    labelPriorWeight: args.labelPriorWeight,
+    labelPriorMarginGate: args.labelPriorMarginGate,
   });
-  const result = await runner.runSuite(selection.suite);
+  // ── The label prior, attached to the cases it is estimated FROM ────────────────────────────────────
+  //
+  // Built here rather than in the engine because it reads the corpus's LABELS: the engine may not see the answer to
+  // the case it is scoring, and this construction removes that case from its own history before anything is scored
+  // (see `label-prior-profiles.ts`). Attached only when the arm is armed, so a run at the shipped weight scores the
+  // exact objects the loader built and the anchor stays byte-identical.
+  const priorArmed = (args.labelPriorWeight ?? 0) !== 0;
+  const labelled: readonly LabelledCase[] = selection.suite.cases.map((one) => ({
+    caseId: one.id,
+    // The corpus cell's system, not the case's own `datasetName`: the pool a deployment's history covers is the
+    // DEPLOYMENT, and a prior pooled per cell would make its denominator a function of the label it predicts.
+    system: selection.cells.get(one.id)?.system ?? 'corpus',
+    accepted: acceptedTruthServiceIds(one.groundTruth),
+  }));
+  const priors = priorArmed ? buildSystemLabelPrior(labelled) : undefined;
+  const suite =
+    priors === undefined
+      ? selection.suite
+      : { ...selection.suite, cases: withLabelPrior(selection.suite.cases, priors) };
+  const result = await runner.runSuite(suite);
 
   const scores: readonly CellScore[] = scoreByCell(result.casePredictions, selection.cells);
   const overall = scores[scores.length - 1]!;
@@ -184,6 +221,19 @@ async function main(): Promise<void> {
   process.stdout.write(
     `dual-family gate            ${args.dualFamilyGate === undefined ? 'shipped default (0.25)' : `${args.dualFamilyGate} (ablation)`} / ${args.dualFamilyGateMode ?? 'channel'}\n`,
   );
+  process.stdout.write(
+    `label prior                 ${args.labelPriorWeight === undefined ? 'shipped default (0, the ablation)' : `${args.labelPriorWeight} (arm)`} / gate ${args.labelPriorMarginGate ?? 0.02}\n`,
+  );
+  // The prior's own census, printed beside its price: a term whose input is a history has to say how big that
+  // history was and how many candidates it could speak about, or a reader cannot tell "the arm did nothing" from
+  // "the arm had no history to read".
+  if (priors !== undefined) {
+    const sizes = [...priors.values()].map((one) => one.labelled);
+    const covered = [...priors.values()].filter((one) => one.counts.size > 0).length;
+    process.stdout.write(
+      `label prior history         ${covered}/${sizes.length} cases carry a non-empty history, median ${sizes.slice().sort((a, b) => a - b)[Math.floor((sizes.length - 1) / 2)] ?? 0} labelled incidents\n`,
+    );
+  }
   process.stdout.write(`cases scored                ${result.totalCases}\n\n`);
   process.stdout.write(formatCellTable(scores));
   process.stdout.write(
@@ -202,6 +252,8 @@ async function main(): Promise<void> {
           dualFamilyWeight: args.dualFamilyWeight ?? null,
           dualFamilyGate: args.dualFamilyGate ?? null,
           dualFamilyGateMode: args.dualFamilyGateMode ?? null,
+          labelPriorWeight: args.labelPriorWeight ?? null,
+          labelPriorMarginGate: args.labelPriorMarginGate ?? null,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(

@@ -129,6 +129,8 @@ import {
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
   DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_PRISM_POOLING,
@@ -451,6 +453,24 @@ export interface CliOptions {
    * normalisation. Travels in the packed `anomaly_knobs` block as `dualfamgatemode=<min|channel>`; ships at `channel`.
    */
   dualFamilyGateMode: DualFamilyGateMode;
+  /**
+   * Weight on the LABEL prior — the only term whose input is not this case's telemetry
+   * (see `TreePrunerOptions.labelPriorWeight`).
+   *
+   * `p` is estimated from incidents the deployment already diagnosed, over the case's own candidate set and
+   * EXCLUDING the case being scored, so the term is available at inference time rather than only in hindsight.
+   * Travels in the packed `anomaly_knobs` block as `labelprior=<weight>` because the golden half's 25-input
+   * budget is full — the same seam `dualfamgate` uses, and for the same reason.
+   */
+  labelPriorWeight: number;
+  /**
+   * The smallest top-1 margin at which the label prior may speak
+   * (see `TreePrunerOptions.labelPriorMarginGate`).
+   *
+   * Shipped as the PAIR's measured threshold rather than as 0, because 0 is "speak everywhere" — the ungated arm
+   * that was refused. Travels as `labelpriorgate=<margin>`; one configuration with the weight above.
+   */
+  labelPriorMarginGate: number;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -924,6 +944,11 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
     dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
     dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+    // The label prior's pair, from the engine's own constants. Both are inert at the shipped weight of 0, and named
+    // anyway: the line that describes the run must describe the arm, and an arm at weight 0 that prints no gate is
+    // a run whose gate nobody can read.
+    labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
+    labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -1099,6 +1124,13 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       const mode = args[++i]!;
       opts.dualFamilyGateMode = isDualFamilyGateMode(mode) ? mode : DEFAULT_DUAL_FAMILY_GATE_MODE;
     }
+    // `parseWeight` for the price (non-negative, and a negative one would REWARD the services the history has never
+    // seen, which is the opposite of the statement) and the same parser for the gate, whose domain is a margin
+    // rather than a share: a score gap is not bounded above across terms.
+    else if (args[i] === '--label-prior-weight' && hasValue(args, i + 1))
+      opts.labelPriorWeight = parseWeight(args[++i]!, DEFAULT_LABEL_PRIOR_WEIGHT);
+    else if (args[i] === '--label-prior-margin-gate' && hasValue(args, i + 1))
+      opts.labelPriorMarginGate = parseWeight(args[++i]!, DEFAULT_LABEL_PRIOR_MARGIN_GATE);
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

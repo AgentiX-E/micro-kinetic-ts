@@ -10,6 +10,7 @@
 import type {
   FaultEdgeLatency,
   FaultFailedEdge,
+  LabelPriorProfile,
   MetricMap,
   ServiceCallGraph,
   TraceActivityCounts,
@@ -176,6 +177,18 @@ export interface BenchmarkCase {
    * only when at least one edge has a measurement on both sides.
    */
   readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency>;
+  /**
+   * The deployment's labelled-incident history, computed OVER THE CORPUS rather than read off this case.
+   *
+   * The only field on a case that a loader cannot produce: a case's own telemetry says nothing about how often
+   * each service is the answer, and the corpus's labels do. So it is attached after the suite is assembled (see
+   * `benchmarks/src/label-prior-profiles.ts`), and it excludes this case from its own counts — a prior that
+   * included the case being scored would be measuring hindsight and would reward the answer it is asked for.
+   *
+   * Absent is the shipped state and the ablation: a corpus with no attached history scores the label term at
+   * nothing, whatever the engine's weight says.
+   */
+  readonly labelPrior?: LabelPriorProfile;
   /** Optional structured event records (RCA100). */
   readonly events?: ReadonlyArray<BenchmarkEvent>;
   /** Optional alert data (RCA100). */

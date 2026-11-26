@@ -210,7 +210,7 @@ is a reading two tables can go on printing.
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 7438373f894f -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 8a7eb902ec8e -->
 
 ```text
 RE1:OnlineBoutique 113 125
