@@ -724,6 +724,37 @@ So the strongest published agent reverses the caller/callee direction in **86 %*
 checks whether its cause precedes its symptom. **Neither of those is a model capability; both are procedure**, which
 is why they are imposed by the harness here.
 
+### 11.1b The three published depth numbers, and the population each one measures
+
+`88.3 % AC@5` is quoted across this repository as the bar for a depth reading. Checked against the paper's own
+reported table, it is a number about **Online Boutique**, not about the RCABench panel:
+
+| source | corpus | `AC@1` | `AC@5` | `Avg@5` | faults |
+| --- | --- | ---: | ---: | ---: | ---: |
+| LagRCA, D1 (bank production) | Alibaba cluster, 46 instances | 0.667 | 0.858 | 0.763 | 146 |
+| LagRCA, D2 | Online Boutique, 41 instances | **0.519** | **0.883** | **0.681** | 161 |
+| PSC-GRCA (`arXiv`, controlled study on RCAEval) | RCAEval | — | — | **0.915** | — |
+| the same study's flat baseline | RCAEval | — | — | 0.864 | — |
+| **this project, nine golden cells** | RCAEval, 735 cases | **0.906** (case-level) | — | **0.9247** | 735 |
+
+Two things follow, and both are corrections rather than claims. First, **our 88.3 % Top-5 comparison was across
+populations**: the FSE'26 panel is 1 422 RCABench cases while LagRCA's 88.3 is 161 Online Boutique faults, so the two
+numbers do not rank us against them and the documents that said "above LagRCA" were reading a coincidence of scale.
+The nearest **same-corpus** depth number is PSC-GRCA's `Avg@5` **0.915** on RCAEval, and the nine-cell mean recorded in
+`label-prior-fse26.md` §4.2.1 is **0.9247** — a margin of 0.0097 on the statistic both sides compute.
+
+Second, that study is a **threat** to one of this project's own premises and is recorded as one: across three learning
+arms with identical features, optimiser, splits and scoring head, it finds **no reliable graph-specific effect**
+(`Δ Avg@5 = 0.003`, `p = 0.844`, six disjoint folds), and it attributes most of its own model's gain to a **prior**
+term rather than to the graph residual. Its honest no-telemetry floor is `Avg@5 = 0.488` (99.7 % of truths inside the
+top five at `S = 5`) — which is what this project's `prior-floor` census independently prints as `Top@5 100.0 %`
+saturation. A prior helping and a graph not helping are both consistent with what iteration 369 measured on the
+FSE'26 panel: the label prior loses the head and wins the depth on 1 422 cases, and the graph terms are gated rather
+than weighted.
+
+The rule this subsection exists for: **a depth number is meaningless without its corpus and its fault count**, and the
+next comparison in these documents names both before it names a winner.
+
 ### 11.2 What a gate can demand that a model cannot fake
 
 `contrast` = `cone` ∧ (E1 ∨ E2), both read off the **case**, not the transcript:
