@@ -91,16 +91,24 @@ deployable arm is measured against, never as an arm.
 A per-**system** scope is deployable (a deployment knows which fleet it is) and reads 0.5769, which is the shipped
 reading.
 
-## 5. Why the weight ships at 0 and the gate at 0.02
+## 5. Why the weight ships at 0.1, the gate at 0, and the jurisdiction at `tail`
 
-`DEFAULT_LABEL_PRIOR_WEIGHT = 0` is the ablation. The term is in the formula and spends nothing, so the shipped ranking
-is bit-identical to an engine that had no such term — verified on the 156 cases: 0.5128 with every cell reproduced to
-four decimals.
+It shipped at `0` — the ablation — for four iterations, and the reason was never that `0` was good: it was the only
+honest value while the arm was unmeasured on the second half of the criterion. Iteration 369 read that half and the
+three constants moved together:
 
-`DEFAULT_LABEL_PRIOR_MARGIN_GATE = 0.02` ships at a **non-zero** value while its weight is zero, and that asymmetry is
-deliberate. Weight and gate are one configuration; a default of 0 for the gate would make the obvious arm
-(`--label-prior-weight 0.1`, gate omitted) the **ungated** reading that was refused above. A pair whose default gate is
-"speak everywhere" is a trap, not a default.
+| constant | value | why that value |
+| --- | ---: | --- |
+| `DEFAULT_LABEL_PRIOR_WEIGHT` | **0.1** | the arm both halves were measured at: panel `Top@1` 1 186 (1/1, p = 1.000), `Top@3` +24, `Top@5` +27 (p < 0.001); golden `AC@1` 666 of 666 and nine-cell `Avg@5` 92.47 → **94.48 %** |
+| `DEFAULT_LABEL_PRIOR_MARGIN_GATE` | **0** | under the pin the gate protects nothing and costs depth: `τ = 0.02` reads `+16 / +19` instead of `+24 / +27`, withholding 89 cases |
+| `DEFAULT_LABEL_PRIOR_JURISDICTION` | **`tail`** | the only arm whose head cost is zero *by construction*; `everywhere` is the arm that moved `Top@1` by −2 and lost more than it gained (20/22, p = 0.878) |
+
+The three are one configuration, and the coupling is the point rather than an implementation detail: **`0` with
+`everywhere` is the refused ungated arm, `0.02` with `tail` is the shallower arm, and only `0` with `tail` is the arm
+that was read.** A test asserts the triple exactly, so a partial edit cannot ship a configuration nobody measured.
+
+The ablation is still reachable and still the control every dispatch can name: `--label-prior-weight 0` restores the
+bit-identical shipped ranking, because at weight 0 the profile is neither read nor logged.
 
 ## 6. Acceptance, and what is still open
 
@@ -183,8 +191,9 @@ more at the fifth position. So the prediction written above held, with one quali
 containment pass runs AFTER the pin and can still move position 1, which is where the 1/1 residue comes from. The
 gate turns out to be a SUBSTITUTE for the pin rather than a complement — at `τ = 0.02` the pinned arm reads `+16 / +19`
 instead of `+24 / +27` at the same head — and the restated criterion (four conjuncts, the fourth being the golden
-half) is in `docs/label-prior-fse26.md` §4.2. No default moved: the golden nine cells at
-`labelpriorjurisdiction=tail` are dispatchable and not yet read.
+half) is in `docs/label-prior-fse26.md` §4.2. **The golden half has since been read and the default moved**: run
+`45859433294` reads `AC@1` 666 of 666 cell for cell and a nine-cell `Avg@5` mean of 92.47 → 94.48 %, so the triple
+enrols at `β = 0.1, τ = 0, tail` (§5, and §4.5 of the FSE'26 document for the table).
 
 ## 7. Two admission mechanisms, and the condition that chooses between them
 

@@ -210,7 +210,7 @@ is a reading two tables can go on printing.
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config c0b34f8091f2 -->
+<!-- standing-anchor: battery 45859433294 on 7b1d3e4f, read 2026-11-27, config 2a8f8b335d45 -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -610,6 +610,36 @@ measured these nine cells" and that reading is the same one. Only `configuration
 code render for the shipped configuration", which is the only thing this change touches. The nine cells themselves
 are re-read by the battery on this commit rather than argued here, and `benchmarks/baselines/rcaeval-nine-cells.json`
 carries the same digest so the dashboard gate cannot go inert between the two.
+
+### 0p-xi. The twelfth correction — an ENROLMENT, and the first one a proof predicted
+
+The digest moves **`c0b34f8091f2 → 2a8f8b335d45`**, and this time the ranking does change: the label prior is armed.
+
+**What moved, and why all three at once.** `DEFAULT_LABEL_PRIOR_WEIGHT` `0 → 0.1`, `DEFAULT_LABEL_PRIOR_MARGIN_GATE`
+`0.02 → 0`, `DEFAULT_LABEL_PRIOR_JURISDICTION` `everywhere → tail`. The kill criterion was an AND over two halves and
+both were read: on the FSE'26 panel the pinned arm holds `Top@1` at `1 186` (1 gained, 1 lost, `p = 1.000`) while
+reading `+24` at `Top@3` and `+27` at `Top@5` (both `p < 0.001`); on the nine RCAEval cells, run `45859433294` reads
+`AC@1` **666 of 666 cell for cell** and a nine-cell `Avg@5` mean of **92.47 → 94.48 %**. The gate moves with the
+jurisdiction because under the pin it is a substitute rather than a complement — at `τ = 0.02` the same arm reads
+`+16 / +19`, withholding 89 cases to protect a position the pin has already made untouchable.
+
+**Why the head claim was not a hope.** §4 of `docs/label-prior.md` proves the pin's invariance from the construction:
+the order is computed with the term read as zero, the prior reorders 2..n, and the head is pinned to the silent
+order's head. So the prediction could be — and was — written before the run: **no cell moves.** The golden half
+returned `666` in every cell, which is the first reading in this programme that needed no tolerance at the metric
+both boards score. The one case the panel moves in each direction is attributed, case by case, to the containment
+pass that runs *after* the pin.
+
+**What this anchor now names.** `battery` and `revision` DO move this time, on §0p-vii's rule read the other way
+round: they answer "which run measured these nine cells", and the run that measured them under the enrolled
+configuration is `45859433294` at `7b1d3e4f` — the same run that shows they did not move. Keeping the old battery
+would have named a run whose configuration string no longer exists in the code.
+
+**What the published boards do.** Nothing at `AC@1`: `666/735` on the golden half and `1 186/1 422` on the panel,
+before and after. What changes is depth and only depth — the panel's `Top@3` `1 260` and `Top@5` `1 282` are now the
+SHIPPED reading rather than an arm's, and the golden half's `Avg@5` rises 2.01 pp. The three static-rank arms this
+enrolment retires (`0.1/0.02/everywhere`, `0.1/0/everywhere`, `0.05/0.02/everywhere`) remain dispatchable and remain
+in `docs/label-prior-fse26.md` §4.1.
 
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 

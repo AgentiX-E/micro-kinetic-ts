@@ -645,19 +645,17 @@ describe('the RCAEval configuration line carries the configuration that produced
         'dualFamilyGate=0.25 ' +
         'dualFamilyGateMode=channel ' +
         // Iteration 367 appended the label prior's PAIR — the price and the margin that decides where it may be
-        // spent. Printed at its shipped `0`, which is the case the rule above exists for: at weight 0 the term is
-        // inert, so a line that omitted defaulted fields would render the measured arm and the shipped run
-        // byte-identically. The gate ships at a NON-zero 0.02, so the pair cannot even be inferred from "everything
-        // defaulted". Printed with the other term weights rather than past `containmentExcursions`, because the
-        // line's groups are the engine's term families and a prior parked behind the containment pass would read as
-        // a property of that pass.
-        'labelPriorWeight=0 labelPriorMarginGate=0.02 ' +
-        // Iteration 369 appended the JURISDICTION beside the pair it belongs to. Printed at its shipped
-        // `everywhere` on the same rule: the arm it has to be distinguishable from is `tail`, which is the one
-        // configuration on this axis that keeps `Top@1`, and a line that omitted the field would render a pinned
-        // golden run byte-identically to the shipped one. This token is also what moved the standing anchor's
-        // configuration digest — `docs/sota-comparison.md` §0p records the roll and why no cell can move with it.
-        'labelPriorJurisdiction=everywhere ' +
+        // spent — and iteration 369 changed both values when the arm was enrolled: `0.1` and `0`. The pair is
+        // printed here rather than past `containmentExcursions` because the line's groups are the engine's term
+        // families and a prior parked behind the containment pass would read as a property of that pass. It is a
+        // TRIPLE with the token below, and the three move together or not at all.
+        'labelPriorWeight=0.1 labelPriorMarginGate=0 ' +
+        // Iteration 369 appended the JURISDICTION beside the pair it belongs to, shipped at `tail` since the same
+        // iteration enrolled the arm. Printed on the same rule as its neighbours — the arm it has to be
+        // distinguishable from is `everywhere`, the refused ungated reading — and it is the token that moved the
+        // standing anchor's digest twice: once when the field appeared and once when its default became the
+        // enrolled one.
+        'labelPriorJurisdiction=tail ' +
         // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
         // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that

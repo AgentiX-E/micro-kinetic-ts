@@ -34,22 +34,36 @@
 import type { LabelPriorProfile, ServiceId } from '@agentix-e/micro-kinetic-core';
 
 /**
- * The shipped weight of the label-prior term — **0**, i.e. the term is in the formula and spends nothing.
+ * The shipped weight of the label-prior term — **0.1**, the arm that cleared both halves of the kill criterion.
  *
- * Not a placeholder: 0 is the ABLATION, and it is the only honest default until the arm has cleared both halves
- * of the kill criterion (the nine RCAEval cells and the FSE'26 panel). At 0 the profile is not read, so the
- * shipped ranking is bit-identical to the engine that had no such term — the rule every weight here follows.
+ * It shipped at 0 (the ablation) until iteration 369, because that was the only honest default while the arm was
+ * unmeasured on the second half. What changed is not the size of the arm but the number of readings:
+ *
+ * | half | reading at this weight |
+ * | --- | --- |
+ * | FSE'26 panel, 1 422 cases | `Top@1` 1 186 (83.40 %) — arm A to the case, 1 gained / 1 lost, p = 1.000; `Top@3` +24 and `Top@5` +27, both p < 0.001 |
+ * | nine RCAEval cells, 735 cases | `AC@1` 666 of 666, cell for cell, no fault type down; nine-cell `Avg@5` mean 92.47 % → **94.48 %** |
+ *
+ * Both are pinned readings, so the head claim is a construction rather than a hope: see
+ * {@link DEFAULT_LABEL_PRIOR_JURISDICTION}. 0 remains reachable as the ablation, which is what every dispatch that
+ * names `label_prior_weight=0` measures.
  */
-export const DEFAULT_LABEL_PRIOR_WEIGHT = 0;
+export const DEFAULT_LABEL_PRIOR_WEIGHT = 0.1;
 
 /**
- * The smallest margin at which the label prior is allowed to speak, shipped at the value that was MEASURED.
+ * The smallest margin at which the label prior is allowed to speak — shipped at **0**, and that is only safe
+ * because the jurisdiction pins the head.
  *
- * Inert while {@link DEFAULT_LABEL_PRIOR_WEIGHT} is 0, and it is stated as the measured pair anyway because a
- * weight and its gate are one configuration: `0.02` is the threshold the arm was priced at (`β = 0.1`), and a
- * default of 0 would describe an arm nobody ran — "speak everywhere" is the ungated reading that was refused.
+ * The three constants are ONE configuration. Under `tail` the gate protects nothing — the head is not the term's
+ * to move — and it costs depth: at `τ = 0.02` under the pin the panel reads `+16 / +19` instead of `+24 / +27`,
+ * with 89 cases withheld and 8–11 cases of depth paid for a head that could not have moved anyway. So the gate is
+ * a SUBSTITUTE for the pin, not a complement, and shipping both would ship the shallower arm.
+ *
+ * The asymmetry is what makes the pair defensible rather than merely convenient: `0` with `everywhere` is the
+ * refused ungated arm, `0.02` with `tail` is a weaker enrolled arm, and only `0` with `tail` is the arm that was
+ * measured. A change to one of the three without the others is a configuration nobody ran.
  */
-export const DEFAULT_LABEL_PRIOR_MARGIN_GATE = 0.02;
+export const DEFAULT_LABEL_PRIOR_MARGIN_GATE = 0;
 
 /**
  * Turn a deployment's history into this case's log-probabilities.
@@ -142,13 +156,19 @@ export function isLabelPriorJurisdiction(value: string): value is LabelPriorJuri
 }
 
 /**
- * The shipped jurisdiction: the term summed with the rest, which is the arm every published cell was taken with.
+ * The shipped jurisdiction: the head of the order computed with the term SILENT is clamped at position 1, and the
+ * term reorders 2..n. This is the enrolled arm, and the reason it is the default is narrower than "it scored
+ * better": it is the only arm whose head cost is **zero by construction**, for every weight and every corpus.
  *
- * Not `'tail'`, even though `'tail'` is the arm that survives on FSE'26: the shipped weight is 0, so this field
- * decides nothing today, and its default has to describe the configuration the existing numbers were measured in.
- * A default that quietly changed the meaning of a weight nobody has priced would make the ablation unreadable.
+ * `'everywhere'` is still reachable and still measured — it is the configuration every pre-369 published number was
+ * taken with — but its record is a head that moves: `−2` cases on the panel, 20 gained against 22 lost, p = 0.878.
+ * Shipping it would ship the arm the criterion refused.
+ *
+ * What the pin does NOT do, stated because a reader will otherwise assume it does: position 1 can still be moved by
+ * a pass that runs AFTER the ranking. The containment pass moves it in 43 of 1 422 panel cases and is the whole of
+ * this arm's `1/1` head residue — which is why the residue is attributed to that module and not to the term.
  */
-export const DEFAULT_LABEL_PRIOR_JURISDICTION: LabelPriorJurisdiction = 'everywhere';
+export const DEFAULT_LABEL_PRIOR_JURISDICTION: LabelPriorJurisdiction = 'tail';
 
 /**
  * Move one candidate to the front of an order, leaving every other position in its own relative order.

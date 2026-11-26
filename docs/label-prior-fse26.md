@@ -178,6 +178,10 @@ same flags as the four arms above.
 | **E — pinned** | **0.1** | **0** | **tail** | **1 186 (83.40 %)** | **1 260 (88.61 %)** | **1 282 (90.15 %)** | **1 / 1** | **1.000** |
 | F — pinned, gated | 0.1 | 0.02 | tail | **1 186 (83.40 %)** | 1 252 (88.05 %) | 1 274 (89.59 %) | 1 / 1 | 1.000 |
 
+Arm A is labelled "shipped" because that is what it was when this table was read. Since §4.5 the shipped configuration is
+E's triple (`0.1 / 0 / tail`), so E is now the row the engine runs and A is an ablation arm; both remain dispatchable and
+both remain in the table because the comparison is what the enrolment rests on.
+
 ### 4.1 The three readings
 
 **1. The head is preserved, and the residue is not the prior's.** Both pinned arms read `1 186` — arm A's number to
@@ -320,3 +324,54 @@ dataset download and a different day. Recomputing the three depths from the run'
 That is the third reading this iteration adds and the cheapest one: **the arm is a dispatch, not a local result.** The
 first reading was the six-arm table, the second the golden pre-registration, and this one is the one that makes the
 other two checkable by anyone with a PAT and 40 minutes of runner time.
+
+### 4.5 The fourth conjunct, read — and the arm is enrolled
+
+Run [`45859433294`](https://github.com/AgentiX-E/micro-kinetic-ts/actions/runs/45859433294) is the golden half at the
+pre-registered triple (`labelprior=0.1, labelpriorgate=0, labelpriorjurisdiction=tail`), read against the arm-A
+reference recorded in §4.2.1. The configuration line confirms all three tokens reached the runner, and the history
+it built is the corpus's own: `Label prior histories: OnlineBoutique 245, SockShop 245, TrainTicket 245`.
+
+| cell | cases | `AC@1` A → arm | `Avg@5` A → arm | Δ `Avg@5` |
+| --- | ---: | ---: | ---: | ---: |
+| RE1:OnlineBoutique | 125 | 113 → 113 | 96.2 → 96.2 | 0.00 |
+| RE1:SockShop | 125 | 119 → 119 | 97.4 → 97.4 | 0.00 |
+| RE1:TrainTicket | 125 | 113 → 113 | 95.7 → 97.4 | **+1.70** |
+| RE2:OnlineBoutique | 90 | 84 → 84 | 94.9 → 95.1 | +0.20 |
+| RE2:SockShop | 90 | 89 → 89 | 98.9 → 98.9 | 0.00 |
+| RE2:TrainTicket | 90 | 76 → 76 | 88.0 → 92.4 | **+4.40** |
+| RE3:OnlineBoutique | 30 | 26 → 26 | 91.1 → 91.6 | +0.50 |
+| RE3:SockShop | 30 | 24 → 24 | 88.8 → 92.4 | **+3.60** |
+| RE3:TrainTicket | 30 | 22 → 22 | 81.2 → 88.9 | **+7.70** |
+| **total** | **735** | **666 → 666** | **92.47 → 94.48** | **+2.01** |
+
+The four sub-conjuncts of §4.2.1, read mechanically from the three suites' censuses and their results texts:
+
+| conjunct | threshold | reading | verdict |
+| --- | --- | --- | --- |
+| 4a | no cell below its baseline; total ≥ 666 | 666 → 666, cell for cell | **pass** |
+| 4b | no fault type loses more than two cases | zero losses at every fault type in every cell | **pass** |
+| 4c | nine-cell `Avg@5` mean **strictly** above 92.47 % | 94.48 % (+2.01 pp) | **pass** |
+| 4d | no cell below its reference by more than one case's worth | no cell below at all | **pass** |
+
+**The head cost is zero and it is structural, not statistical.** `AC@1` is 666 of 666 in every cell — not "within
+one case" of the baseline, identical to it — which is the pin doing what §4 of `label-prior.md` proves it does. This
+is the first arm in this programme whose golden-half reading required no tolerance at all at the metric both boards
+score.
+
+**Where the depth came from, stated as a pattern rather than as a story.** Six of nine cells rise and three are
+unchanged; nothing falls. The three that do not move are the three with the least room — `RE1:OnlineBoutique` 96.2,
+`RE1:SockShop` 97.4, `RE2:SockShop` 98.9 — and the largest gains are in the cell with the most headroom
+(`RE3:TrainTicket`, 81.2 → 88.9). That is consistent with a term that promotes the truth within the top five where
+the engine's own order left it behind, and has nothing to promote where the order was already near-perfect. It is
+*not* evidence of a per-cell mechanism, and the per-cell pattern is not claimed as one.
+
+**Enrolment.** The criterion is an AND over both halves, both halves now hold, so the shipped triple becomes
+`β = 0.1, τ = 0, jurisdiction = tail` (`DEFAULT_LABEL_PRIOR_WEIGHT`, `DEFAULT_LABEL_PRIOR_MARGIN_GATE`,
+`DEFAULT_LABEL_PRIOR_JURISDICTION`). The gate moves to 0 at the same time as the jurisdiction becomes `tail`, because
+under the pin it is a substitute that costs depth: `τ = 0.02` under the pin reads `+16 / +19` on the panel instead of
+`+24 / +27`, withholding 89 cases to protect a position that can no longer move.
+
+The configuration digest rolls **`c0b34f8091f2 → 2a8f8b335d45`** and the standing anchor is re-anchored against this
+run in the same commit. What no cell does is move: the golden half reads `666` before and after, and the panel reads
+`1 186` at position 1. **The enrolment changes what the engine does, and changes no published `AC@1`.**

@@ -155,7 +155,13 @@ describe('the label-prior term in the ranking', () => {
   it('reverses the order when the history says the runner-up is the answer', () => {
     // The gap the prior has to close is `log1p(100) − log1p(30)` in the base term plus whatever the other terms add,
     // so the weight here is deliberately larger than any shipped one: this is a wiring test, not a price.
-    const ordered = rank({ weight: 1, prior: priorOf({ b: 400 }, 401) });
+    // `everywhere` is stated rather than defaulted: the shipped jurisdiction is `tail`, where the head is not this
+    // term's to move, so a test of the term's ability to move it has to name the jurisdiction that allows it.
+    const ordered = rank({
+      weight: 1,
+      jurisdiction: 'everywhere',
+      prior: priorOf({ b: 400 }, 401),
+    });
     expect(ordered[0]).toBe('b');
     expect(ordered).toContain('a');
   });
@@ -196,10 +202,17 @@ describe('the label-prior term in the ranking', () => {
     expect(result.finalScore).toBeCloseTo(total, 12);
   });
 
-  it('reads a gate of 0 as "speak everywhere", which is the arm that was refused', () => {
-    // The shipped gate is a value, not a toggle: 0 is a legal arm and it is the ungated one. Pinned because the
-    // difference between the two is 8.97 pp on the corpus and nothing in the type system separates them.
-    expect(rank({ weight: 1, gate: 0, prior: priorOf({ b: 400 }, 401) })[0]).toBe('b');
+  it('reads a gate of 0 as "no threshold", which only the pinned jurisdiction may pair with', () => {
+    // The gate is a value, not a toggle: 0 is a legal arm and it is the one the enrolled configuration uses. Under
+    // `everywhere` that combination is the ungated arm the register refused at the head, so this test states both
+    // halves of the pairing — the arm speaks with no threshold, AND the shipped jurisdiction is the one that keeps
+    // a zero gate safe.
+    expect(
+      rank({ weight: 1, gate: 0, jurisdiction: 'tail', prior: priorOf({ b: 400 }, 401) })[0],
+    ).toBe('a');
+    expect(
+      rank({ weight: 1, gate: 0, jurisdiction: 'everywhere', prior: priorOf({ b: 400 }, 401) })[0],
+    ).toBe('b');
   });
 });
 

@@ -22,18 +22,34 @@ import {
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
-// ── The two shipped constants ─────────────────────────────
+// ── The three shipped constants ───────────────────────────
 
-describe('the shipped pair', () => {
-  it('ships the weight at 0, which is the ablation', () => {
-    expect(DEFAULT_LABEL_PRIOR_WEIGHT).toBe(0);
+describe('the enrolled arm', () => {
+  it('ships the weight at the value the criterion was satisfied at, not at the ablation', () => {
+    // Iteration 369 read the fourth conjunct — the nine golden cells at this triple — and it held: `AC@1` 666 of 666
+    // cell for cell, no fault type down, and the nine-cell `Avg@5` mean 92.47 % -> 94.48 % (run 45859433294). The
+    // panel half had already passed at the head (1 186, 1/1, p = 1.000) and at depth (+24 / +27, p < 0.001).
+    expect(DEFAULT_LABEL_PRIOR_WEIGHT).toBe(0.1);
   });
 
-  it('ships the gate at the measured threshold, not at "speak everywhere"', () => {
-    // 0 would be the ungated arm, which this register refused: the pair is one configuration and the gate's default
-    // has to be the value the arm was priced at.
-    expect(DEFAULT_LABEL_PRIOR_MARGIN_GATE).toBe(0.02);
-    expect(DEFAULT_LABEL_PRIOR_MARGIN_GATE).toBeGreaterThan(0);
+  it('ships the gate at 0, which is only safe because the jurisdiction pins the head', () => {
+    // These two are ONE configuration, and this test exists so that editing either alone fails.
+    //
+    // At `everywhere` the ungated arm loses the head on this corpus (`−2` on the panel, `20/22` flips, p = 0.878),
+    // which is why the gate once shipped non-zero. Under the pin the head is not the term's to touch, so the gate
+    // protects nothing and COSTS depth — measured at `τ = 0.02` under the pin: `+16 / +19` instead of `+24 / +27`,
+    // 89 cases withheld, 8–11 cases of depth paid. A gate of 0 with `everywhere` would be the refused arm; a gate
+    // of 0.02 with `tail` would be a shallower enrolled arm. Neither may be reached by editing one constant.
+    expect(DEFAULT_LABEL_PRIOR_MARGIN_GATE).toBe(0);
+    expect(DEFAULT_LABEL_PRIOR_JURISDICTION).toBe('tail');
+  });
+
+  it('is stated as one triple, so a partial edit cannot ship an arm nobody measured', () => {
+    expect([
+      DEFAULT_LABEL_PRIOR_WEIGHT,
+      DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+      DEFAULT_LABEL_PRIOR_JURISDICTION,
+    ]).toEqual([0.1, 0, 'tail']);
   });
 });
 
@@ -142,11 +158,11 @@ describe('topTwoGap', () => {
 // ── The jurisdiction vocabulary ───────────────────────────
 
 describe('the label prior jurisdiction', () => {
-  it('ships `everywhere`, the arm both corpora were measured with', () => {
-    // Not `tail` even though `tail` is the arm that survives on FSE'26: the shipped weight is 0, so the field
-    // decides nothing today, and its default has to be the configuration the published numbers were taken with
-    // rather than the arm a reader might prefer.
-    expect(DEFAULT_LABEL_PRIOR_JURISDICTION).toBe('everywhere');
+  it('ships `tail`, because the head is not this term to move', () => {
+    // The enrolled arm. `everywhere` remains reachable and remains measured — it is the arm every pre-369
+    // published cell was taken with — but it is not what a bare dispatch runs, and shipping it would ship a
+    // configuration whose only measured outcome is a head that moves for no gain.
+    expect(DEFAULT_LABEL_PRIOR_JURISDICTION).toBe('tail');
   });
 
   it('accepts exactly the two words it names', () => {

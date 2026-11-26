@@ -11734,3 +11734,80 @@ approximation of it, and it is built twice only when a `tail` arm is armed and s
 benchmark runners, printed unconditionally on both configuration lines, and carried in `ranking_knobs` /
 `anomaly_knobs`; 8 new `label-prior`/`pinHeadFirst` unit tests (13 → 21) plus 5 end-to-end ones (11 → 16), 9 437 root tests green, oxlint 0
 warnings, prettier clean, `nx typecheck` 15 projects green.
+
+## §370 Iteration 369 — the enrolment: the fourth conjunct read, and three constants that moved together
+
+§369 wrote the criterion's restatement down before the golden half was measured and left the default at `0` because
+the AND was unsatisfied "for want of a run rather than a disagreement about the corpus". The run exists now
+(`45859433294`), and it holds.
+
+| sub-conjunct | threshold | reading | verdict |
+| --- | --- | --- | --- |
+| 4a | no cell below baseline; total ≥ 666 | 666 → 666, cell for cell | pass |
+| 4b | no fault type down more than two | zero losses anywhere | pass |
+| 4c | nine-cell `Avg@5` mean strictly above 92.47 % | **94.48 %** (+2.01 pp) | pass |
+| 4d | no cell past its one-case floor | no cell below at all | pass |
+
+Per cell: `RE1:TT` 95.7 → 97.4, `RE2:OB` 94.9 → 95.1, `RE2:TT` 88.0 → 92.4, `RE3:OB` 91.1 → 91.6, `RE3:SS` 88.8 →
+92.4, `RE3:TT` 81.2 → 88.9; `RE1:OB`, `RE1:SS`, `RE2:SS` unchanged. Six up, three flat, none down, and `AC@1` **666 of
+666 in every cell**.
+
+**The head result needed no tolerance, and that is the point of the arm.** Every previous golden reading in this
+register was a count that moved by a case or two and was argued about. This one is identical at the metric both
+boards score, because the pin makes it identical by construction: the order is computed with the term read as zero
+and the head is clamped to that order's head. The panel's `1/1` residue is the containment pass running after the
+pin, named case by case in §369, not this term.
+
+**Where the depth came from.** The three cells that do not move are the three with the least room (`96.2`, `97.4`,
+`98.9`), and the largest gain is the cell with the most (`81.2 → 88.9`). That is consistent with a term that promotes
+the truth inside the top five where the engine's order left it behind. It is **not** offered as a per-cell mechanism;
+the per-cell pattern is unexplained and is listed as open work.
+
+**Enrolment: three constants, one configuration.**
+`DEFAULT_LABEL_PRIOR_WEIGHT` `0 → 0.1`, `DEFAULT_LABEL_PRIOR_MARGIN_GATE` `0.02 → 0`,
+`DEFAULT_LABEL_PRIOR_JURISDICTION` `everywhere → tail`. The gate moves because under the pin it is a SUBSTITUTE that
+costs depth (`τ = 0.02` reads `+16 / +19` against `+24 / +27`, withholding 89 cases to protect a position that cannot
+move). The coupling is asserted rather than described: a unit test compares the triple exactly, so a partial edit
+cannot ship `0` with `everywhere` — the refused ungated arm — or `0.02` with `tail` — the shallower one.
+
+**What does not move.** No published `AC@1`: the golden half stays `666/735` and the panel `1 186/1 422`. What
+changes is which readings are the SHIPPED ones: the panel's `Top@3` `1 260` and `Top@5` `1 282` stop being an arm's
+numbers, and the golden half's `Avg@5` mean becomes `94.48 %`. The digest rolls `c0b34f8091f2 → 2a8f8b335d45` and the
+standing anchor is re-anchored to this run in the same commit (`docs/sota-comparison.md` §0p-xi). The three static
+arms (`0.1/0.02/everywhere`, `0.1/0/everywhere`, `0.05/0.02/everywhere`) remain dispatchable and remain in
+`docs/label-prior-fse26.md` §4.1.
+
+**Two readings that exist because the arm had become checkable, and three defects the checking found.**
+
+1. **A partial replication at the pushed tree**: 700-case prefix, both arms, same machine, minutes apart. A
+   `611/634/641`, E `610/642/655`; paired `Top@1` **0 gained / 1 lost** (`p = 1.000`), `Top@3` 11/3 (`p = 0.0574`),
+   `Top@5` 15/1 (`p = 0.0005`). The head moves zero cases in the GAINING direction, and the single lost case is the
+   one the containment decomposition had already named.
+2. **The panel arm reproduced through CI**: run `45866784993` with the three knobs through `ranking_knobs` reads
+   `1 186 / 1 260 / 1 282` of 1 422 — the local table to the case — and the three counts recompute from the run's own
+   per-case dump, so the artifact stands alone.
+3. **A platform budget nothing counted**: adding the jurisdiction branch to `fse26-benchmark.yml` pushed the step
+   script to 21 566 characters against GitHub's 21 000 limit, and the platform refused the FILE. Three guards read
+   that workflow and all three passed — the dispatch-surface census counts inputs, the CLI tests drive flags,
+   `actionlint` reads syntax, and none of them counts characters. Fixed by trimming three comment blocks to prose
+   that keeps every measured number (20 294 characters, 706 spare) and guarded by the census, which now owns the
+   second budget as it owns the first: `runScripts()` decodes every `run` value as YAML decodes it and asserts
+   21 000. Falsified rather than assumed — 1 002 characters of padding injected reads `21 296` and fails, and the
+   decoder agrees with `yaml.safe_load` byte for byte on both files.
+4. **A comparison across populations, corrected**: the `88.3 %` this document compared our `Top@5` to is LagRCA's
+   `AC@5` on its own D2 (Online Boutique, 161 faults), not on the 1 422-case panel. The nearest same-corpus number is
+   PSC-GRCA's `Avg@5 0.915` on RCAEval against our `0.9247` — and the study that publishes it also reports **no
+   reliable graph-specific effect** (`Δ Avg@5 0.003`, `p = 0.844`, six disjoint folds), which is recorded in
+   `docs/free-investigation.md` §11.1b as a threat to one of this project's premises rather than only as a citation.
+
+**Open work, in order.** (a) the per-cell pattern of the depth gain is unexplained and a mechanism claim is owed;
+(b) `Cloud-OpsBench` was NOT re-measured at the enrolled triple — its published metric is `CA@1`, which the pin
+cannot move, but the depth there is unmeasured and that is a dispatch, not an argument; (c) the margin theorem
+(§7 of `docs/label-prior.md` is the statement; the derivation of when a statistic is informative is still prose).
+
+**State.** `packages/tree/src/pruning/label-prior.ts` (three constants + their comment), the triple test in
+`packages/tree/__tests__/unit/label-prior.test.ts`, the paired-arm test in `label-prior-term.test.ts`, the printed
+line in `benchmarks/__tests__/rcaeval-reported-config.test.ts`, `benchmarks/baselines/rcaeval-nine-cells.json`
+(re-anchored), `docs/sota-comparison.md` (§0p-xi + marker), `docs/label-prior.md` §5/§6,
+`docs/label-prior-fse26.md` §4.2.1/§4.5. 9 417 tests green in 381 files, oxlint 0 warnings over 781 files, prettier
+clean, `nx typecheck` 15 projects green, `packages/tree` coverage 99.6 / 98.1 / 99.4 / 99.9.
