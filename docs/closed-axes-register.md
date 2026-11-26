@@ -11604,6 +11604,31 @@ RCAEval cells and the FSE'26 panel, and the second half is currently UNMEASURABL
 which is why the census records `fse26: null` for both fields. `docs/label-prior.md` is the owner of this term: its
 definition, both refusals, the margin table, the ceiling, and the two open tasks.
 
+**What the 2026-11-26 sweep found, and the one gap it names.** Two searches, both kept because both change what the
+next step is rather than confirming what this one did.
+
+*On the term itself:* **nothing published does this.** The two closest 2026 references both call their input a
+"prior" and both mean a **structural** one — `BRCD` (ICML'26) learns a CPDAG before the fault and does Bayesian
+inference over interventional Markov equivalence classes, reporting MRR 0.57 on Petshop; `PRIM`
+(`arXiv:2605.08786`) meta-learns a prior over causal *models* and scores `Top@3` 0.79 on PetShop. Neither uses the
+deployment's own **label frequency**, which is what this term is. That is a real distinction rather than a
+marketing one: a structural prior needs a graph and pre-fault data, a label prior needs neither, and the two answer
+different questions ("what could cause this" against "what has been the answer here").
+
+*On the gate — and this is the one that bites:* margin-gated external terms are an established pattern, and its
+strongest statement is **`p* = p_j + C_e / C_r`** (the veto frontier: escalate to an expensive judge only when the
+top-1 margin implies an error probability above that break-even). The same literature states the condition this
+repository has not met: **a raw margin is an ordinal, not a probability**, and a threshold placed on an uncalibrated
+margin is "a cost calculation whose terms are unknown". A second reference makes the same point at a smaller scale —
+a tie threshold set to `0.04` because that is *just under the ranker's own score-grid step*, i.e. the threshold is
+read off the instrument's resolution rather than fitted.
+
+So the honest statement of this iteration's gate is narrower than "the gate works": **the gate works at 0.02 on
+this instrument, and 0.02 sits just above `trainticket`'s median margin (0.0102) rather than at a calibrated
+break-even.** Calibrating the margin — mapping it to the probability that the head is wrong — and then placing τ at
+the `p*` the cost asymmetry implies, is the next step (P2), and it is a *theorem to instantiate* rather than a
+number to tune. That is a stronger position than the one this entry opened with.
+
 **State.** New modules `packages/tree/src/pruning/label-prior.ts`, `packages/core/src/types/label-prior.ts`,
 `benchmarks/src/label-prior-profiles.ts`, 4 724 benchmark tests, 9 344 root tests, oxlint 0 warnings, prettier clean,
 `nx typecheck` 15 projects green.
