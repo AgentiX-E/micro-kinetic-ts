@@ -98,3 +98,76 @@ export function topTwoGap(scores: Iterable<number>): number {
   }
   return second === Number.NEGATIVE_INFINITY ? Number.POSITIVE_INFINITY : best - second;
 }
+
+/**
+ * Where in a ranking the label prior is allowed to act.
+ *
+ * `'everywhere'` is the term as a score: it is summed with the rest and the sort decides. `'tail'` clamps the head
+ * of the ranking the engine produces WITHOUT it and lets the prior reorder positions 2..n, so position 1 is not
+ * this term's to move.
+ *
+ * ## Why this is a field rather than a weight
+ *
+ * The two corpora disagree about the head and agree about the depth, and no single weight reproduces both. On the
+ * 156-case Cloud-OpsBench panel the term **wins** at the head — +6.41 pp on `CA@1`, 11 cases gained against 1 lost
+ * — because that corpus's median `top1 − top2` is 0.0102 and a frequency is better than a coin flip there. On the
+ * 1 422-case FSE'26 panel the same term loses the head at every price and gate (−2 ungated, −10 at the plateau)
+ * while gaining **24 cases at `Top@3` and 24 at `Top@5` in every armed arm**. The difference is not the corpus's
+ * labels, it is which position the term is asked about.
+ *
+ * A weight small enough to protect the head is also too small to move the tail — measured, not argued: at
+ * `β = 0.05` the FSE'26 depth gain falls from +24 to +12 — so the choice is structural. `'tail'` makes the head
+ * invariant BY CONSTRUCTION at any weight, which turns "the prior is safe at the head" from a tuning claim into a
+ * property of the order.
+ */
+export type LabelPriorJurisdiction = 'everywhere' | 'tail';
+
+/**
+ * The jurisdiction vocabulary, spelled once so a parser, an artifact field and a dispatch key cannot disagree about
+ * which words the engine accepts.
+ */
+export const LABEL_PRIOR_JURISDICTIONS: Readonly<Record<LabelPriorJurisdiction, true>> = {
+  everywhere: true,
+  tail: true,
+};
+
+/**
+ * Whether a string names a jurisdiction the engine accepts.
+ *
+ * @param value - The candidate word, typically straight off a command line.
+ * @returns `true` when it is a member of {@link LABEL_PRIOR_JURISDICTIONS}.
+ */
+export function isLabelPriorJurisdiction(value: string): value is LabelPriorJurisdiction {
+  return Object.hasOwn(LABEL_PRIOR_JURISDICTIONS, value);
+}
+
+/**
+ * The shipped jurisdiction: the term summed with the rest, which is the arm every published cell was taken with.
+ *
+ * Not `'tail'`, even though `'tail'` is the arm that survives on FSE'26: the shipped weight is 0, so this field
+ * decides nothing today, and its default has to describe the configuration the existing numbers were measured in.
+ * A default that quietly changed the meaning of a weight nobody has priced would make the ablation unreadable.
+ */
+export const DEFAULT_LABEL_PRIOR_JURISDICTION: LabelPriorJurisdiction = 'everywhere';
+
+/**
+ * Move one candidate to the front of an order, leaving every other position in its own relative order.
+ *
+ * The whole of `'tail'`'s mechanism: the pruner computes the order it would report with the term SILENT, passes
+ * that order's head here, and the prior's own ordering survives everywhere below it. Because the pinned id is read
+ * from the silent order rather than guessed from the scores, `Top@1` is invariant to the last comparison — not
+ * approximately, and not only for small weights.
+ *
+ * @param order - The order the scores produced, best first.
+ * @param head - The candidate to clamp first, normally the head of the order computed with the term silent.
+ * @returns A new array with `head` first. A `head` the order does not contain is the identity: a pin is a
+ *   preference about ORDER, not an assertion about membership, so a caller whose pool narrowed must not crash here.
+ */
+export function pinHeadFirst<T extends { readonly serviceId: ServiceId }>(
+  order: readonly T[],
+  head: ServiceId,
+): T[] {
+  const at = order.findIndex((row) => row.serviceId === head);
+  if (at <= 0) return [...order];
+  return [order[at]!, ...order.slice(0, at), ...order.slice(at + 1)];
+}

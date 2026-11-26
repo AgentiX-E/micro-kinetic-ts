@@ -13,8 +13,11 @@
 
 import {
   computeLabelPriorValues,
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
+  isLabelPriorJurisdiction,
+  pinHeadFirst,
   topTwoGap,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
@@ -133,5 +136,75 @@ describe('topTwoGap', () => {
     // because the branch is what makes the tie above a zero instead of an Infinity.
     expect(topTwoGap([0.5, 0.5])).toBe(0);
     expect(topTwoGap([0.4, 0.6, 0.6])).toBe(0);
+  });
+});
+
+// ── The jurisdiction vocabulary ───────────────────────────
+
+describe('the label prior jurisdiction', () => {
+  it('ships `everywhere`, the arm both corpora were measured with', () => {
+    // Not `tail` even though `tail` is the arm that survives on FSE'26: the shipped weight is 0, so the field
+    // decides nothing today, and its default has to be the configuration the published numbers were taken with
+    // rather than the arm a reader might prefer.
+    expect(DEFAULT_LABEL_PRIOR_JURISDICTION).toBe('everywhere');
+  });
+
+  it('accepts exactly the two words it names', () => {
+    expect(isLabelPriorJurisdiction('everywhere')).toBe(true);
+    expect(isLabelPriorJurisdiction('tail')).toBe(true);
+    for (const word of ['', 'head', 'Everywhere', 'tail-only', '2..n', 'all'])
+      expect(isLabelPriorJurisdiction(word)).toBe(false);
+  });
+
+  it('does not accept inherited object properties as vocabulary', () => {
+    // `Object.hasOwn` rather than `in`: `toString` is not a jurisdiction, and a parser reading the prototype
+    // chain would turn a misspelling into a configuration the engine has never been measured in.
+    expect(isLabelPriorJurisdiction('toString')).toBe(false);
+    expect(isLabelPriorJurisdiction('constructor')).toBe(false);
+  });
+});
+
+// ── pinHeadFirst ──────────────────────────────────────────
+
+describe('pinHeadFirst', () => {
+  const row = (serviceId: string): { serviceId: string; at: number } => ({ serviceId, at: 0 });
+  const ids = (rows: readonly { serviceId: string }[]): string[] =>
+    rows.map((one) => one.serviceId);
+
+  it('moves the named head to the front and leaves the rest in their own relative order', () => {
+    // The mechanism, stated as an order rather than as a score: the prior may reorder 2..n, and the pin is what
+    // makes position 1 not its to move.
+    expect(ids(pinHeadFirst([row('a'), row('b'), row('c')], 'c'))).toEqual(['c', 'a', 'b']);
+    expect(ids(pinHeadFirst([row('a'), row('b'), row('c'), row('d')], 'c'))).toEqual([
+      'c',
+      'a',
+      'b',
+      'd',
+    ]);
+  });
+
+  it('is the identity when the named head already leads', () => {
+    expect(ids(pinHeadFirst([row('a'), row('b')], 'a'))).toEqual(['a', 'b']);
+  });
+
+  it('carries the rows themselves rather than rebuilding them', () => {
+    // The rows are the ranking's own objects, and a copy of a row would be a second place where a score lives.
+    const rows = [row('a'), row('b')];
+    const pinned = pinHeadFirst(rows, 'b');
+    expect(pinned[0]).toBe(rows[1]);
+    expect(pinned[1]).toBe(rows[0]);
+  });
+
+  it('returns a NEW array in every case, so a caller cannot mutate the ranking by accident', () => {
+    const rows = [row('a'), row('b')];
+    expect(pinHeadFirst(rows, 'a')).not.toBe(rows);
+    expect(pinHeadFirst([], 'a')).toEqual([]);
+  });
+
+  it('names a head the order does not contain as the identity rather than throwing', () => {
+    // A pin is a preference about ORDER, not an assertion about membership: the pinned id is a member by
+    // construction in the pruner, and a utility that threw would turn a future caller's narrowed pool into a
+    // crash on the ranking path rather than into the order it already had.
+    expect(ids(pinHeadFirst([row('a'), row('b')], 'z'))).toEqual(['a', 'b']);
   });
 });

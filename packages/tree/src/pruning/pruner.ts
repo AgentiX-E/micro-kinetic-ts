@@ -108,10 +108,13 @@ import {
   type FaultFreeSelection,
 } from './fault-free-profile.js';
 import { channelSurprise } from './fault-free-surprise.js';
+import type { LabelPriorJurisdiction } from './label-prior.js';
 import {
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
   computeLabelPriorValues,
+  pinHeadFirst,
   topTwoGap,
 } from './label-prior.js';
 import {
@@ -1187,6 +1190,19 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Ships at {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0.02, the pair's measured threshold. Inert at weight 0.
    */
   readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking the label prior may act: summed with the rest (`everywhere`) or confined to positions 2..n
+   * of the order the engine would report without it (`tail`).
+   *
+   * The two corpora disagree about the head and agree about the depth — +6.41 pp on Cloud-OpsBench's `CA@1`,
+   * −0.14 to −0.70 pp on FSE'26's `Top@1` while gaining 24 cases at each of `Top@3` and `Top@5` — so the surviving
+   * arm is structural rather than priced: `tail` makes `Top@1` invariant by construction at any weight. See
+   * `pruning/label-prior.ts` and `docs/label-prior-fse26.md` §2.4.
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `everywhere`, the arm every published cell was taken with.
+   * Inert at weight 0.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * Whether a caller may be ranked above a callee whose OWN latency excursion is larger.
    *
@@ -2675,6 +2691,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
   labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
   labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  labelPriorJurisdiction: DEFAULT_LABEL_PRIOR_JURISDICTION,
   containmentOrder: DEFAULT_CONTAINMENT_ORDER,
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
@@ -4457,11 +4474,23 @@ function performTreeRCA(
           labelPrior,
           scoredNodes.map((node) => node.serviceId),
         );
+  // The total WITHOUT this term, memoised because two readers now ask for it: the gate reads every candidate's to
+  // find the head-to-head gap, and a `tail` run reads them all again to build the order the term would have
+  // produced had it stayed silent. Summed from the same assembly the breakdown uses, so the number the gate judged
+  // cannot be a second arithmetic.
+  const baseTotalCache = new Map<ServiceId, number>();
+  const baseTotalOf = (id: ServiceId): number => {
+    let total = baseTotalCache.get(id);
+    if (total === undefined) {
+      total = sumScoreTerms(baseTermsOf(id));
+      baseTotalCache.set(id, total);
+    }
+    return total;
+  };
   const priorSpeaks =
     priorValues !== undefined &&
     labelPriorWeight !== 0 &&
-    topTwoGap(scoredNodes.map((node) => sumScoreTerms(baseTermsOf(node.serviceId)))) >=
-      labelPriorMarginGate;
+    topTwoGap(scoredNodes.map((node) => baseTotalOf(node.serviceId))) >= labelPriorMarginGate;
   // The full arrays: the base terms plus the prior's row. A SECOND cache rather than a mutation of the first,
   // because the base totals above are what the gate reads and a cache rewritten in place would make the two
   // statements about one array — the defect `sumScoreTerms` exists to prevent at the level of the total.
@@ -4503,60 +4532,89 @@ function performTreeRCA(
     return s;
   };
 
-  const byFinalScore = (a: { serviceId: ServiceId }, b: { serviceId: ServiceId }): number => {
-    const d = finalScoreOf(b.serviceId) - finalScoreOf(a.serviceId);
-    if (d !== 0) return d;
-    return a.serviceId < b.serviceId ? -1 : 1;
+  const byScore =
+    (scoreOf: (id: ServiceId) => number) =>
+    (a: { serviceId: ServiceId }, b: { serviceId: ServiceId }): number => {
+      const d = scoreOf(b.serviceId) - scoreOf(a.serviceId);
+      if (d !== 0) return d;
+      return a.serviceId < b.serviceId ? -1 : 1;
+    };
+
+  // ── The order, as a function of WHICH SCORE decides it ────────────────────────────────────────────────
+  // Factored because the label prior's `tail` jurisdiction needs the order the engine would have produced with
+  // that term SILENT — and "the silent order" is not a second approximation of this pipeline, it is this pipeline
+  // with the prior's contribution read as zero. Calling it twice keeps the pin exact: the candidate clamped to
+  // position 1 is the one the arm WITHOUT the prior would have reported first, which is the only definition under
+  // which `Top@1` invariance is a construction rather than a hope. It runs twice only when a `tail` arm is armed
+  // and speaking, so the shipped path sorts exactly as often as it did before.
+  const orderNodes = (
+    scoreOf: (id: ServiceId) => number,
+  ): ReadonlyArray<{ serviceId: ServiceId; score: number; depth: number }> => {
+    // The emission term's JURISDICTION. `emissionScores` is a SPARSE map — a node is in it only when the case can
+    // answer for that node at all (both channels, aligned samples, a non-zero denominator, a rise) — so a missing
+    // entry is an ABSENCE and never a measured zero. An additive term cannot tell the two apart: a lookup that
+    // misses yields the neutral 0, and a share of 0 loses to every node the term could measure. The corpus says
+    // what that costs (`docs/emission-jurisdiction.md`): in all seven cases the arm moved the wrong way, the node
+    // it overturned carried NO emission reading. So the term reorders the stratum it MEASURED and leaves every
+    // other position where the base ranking put it. With `emissionScores` undefined — the shipped configuration —
+    // this is the plain score sort, unchanged to the last comparison.
+    const baseRankedNodes =
+      emissionScores === undefined
+        ? [...scoredNodes].sort(byScore(scoreOf))
+        : orderWithEmissionJurisdiction(
+            scoredNodes.map((node) => {
+              const score = scoreOf(node.serviceId);
+              // Read back the contribution the term ALREADY recorded rather than recomputing `weight × share`: the
+              // breakdown is the owner of that product, and a second expression here could disagree with it. The
+              // term is built unconditionally in the array above, so the lookup cannot miss — an optional chain
+              // here would be a branch no configuration can reach, which is dead code wearing a defensive costume.
+              const contribution = termsOf(node.serviceId).find(
+                (term) => term.name === 'emission',
+              )!.contribution;
+              return {
+                node,
+                serviceId: node.serviceId,
+                score,
+                baseScore: score - contribution,
+                measured: emissionScores.has(node.serviceId),
+              };
+            }),
+          ).map((row) => row.node);
+
+    // The failed-edge ledger's JURISDICTION, applied to the order the terms produced. The partition is coarser
+    // than any weight and is therefore applied LAST: a candidate an inbound call FAILED against precedes one it
+    // did not, and inside each half the score order above survives untouched. With the switch off — the shipped
+    // configuration — the array is the one the line above built, unchanged to the last comparison.
+    //
+    // The map is read here rather than through the term's own lookup because the two answer different questions:
+    // the term asks "how much credit", this asks "credited at all", and the first is gated by a weight the second
+    // must not inherit.
+    return !options.failedEdgeFirst
+      ? baseRankedNodes
+      : options.failedEdgeFirstScope === 'unexplained'
+        ? // The residual reading: a candidate leads when the failures reported at it are not the failures it
+          // reported. `flowLeads` is ABSENT when the run did not ask for this reading, and an absent set is
+          // "nothing leads" rather than "everyone does" — the partition is then the identity, which is the same
+          // statement an absent map makes for the credit reading.
+          partitionFirst(baseRankedNodes, (id) => flowLeads?.has(id) === true)
+        : orderFailedEdgeFirst(baseRankedNodes, failedEdgeScores);
   };
 
-  // The emission term's JURISDICTION. `emissionScores` is a SPARSE map — a node is in it only when the case can
-  // answer for that node at all (both channels, aligned samples, a non-zero denominator, a rise) — so a missing
-  // entry is an ABSENCE and never a measured zero. An additive term cannot tell the two apart: a lookup that
-  // misses yields the neutral 0, and a share of 0 loses to every node the term could measure. The corpus says
-  // what that costs (`docs/emission-jurisdiction.md`): in all seven cases the arm moved the wrong way, the node
-  // it overturned carried NO emission reading. So the term reorders the stratum it MEASURED and leaves every
-  // other position where the base ranking put it. With `emissionScores` undefined — the shipped configuration —
-  // this is the plain score sort, unchanged to the last comparison.
-  const baseRankedNodes =
-    emissionScores === undefined
-      ? [...scoredNodes].sort(byFinalScore)
-      : orderWithEmissionJurisdiction(
-          scoredNodes.map((node) => {
-            const score = finalScoreOf(node.serviceId);
-            // Read back the contribution the term ALREADY recorded rather than recomputing `weight × share`: the
-            // breakdown is the owner of that product, and a second expression here could disagree with it. The
-            // term is built unconditionally in the array above, so the lookup cannot miss — an optional chain here
-            // would be a branch no configuration can reach, which is dead code wearing a defensive costume.
-            const contribution = termsOf(node.serviceId).find(
-              (term) => term.name === 'emission',
-            )!.contribution;
-            return {
-              node,
-              serviceId: node.serviceId,
-              score,
-              baseScore: score - contribution,
-              measured: emissionScores.has(node.serviceId),
-            };
-          }),
-        ).map((row) => row.node);
-
-  // The failed-edge ledger's JURISDICTION, applied to the order the terms produced. The partition is coarser than
-  // any weight and is therefore applied LAST: a candidate an inbound call FAILED against precedes one it did not,
-  // and inside each half the score order above survives untouched. With the switch off — the shipped
-  // configuration — the array is the one the line above built, unchanged to the last comparison.
-  //
-  // The map is read here rather than through the term's own lookup because the two answer different questions:
-  // the term asks "how much credit", this asks "credited at all", and the first is gated by a weight the second
-  // must not inherit.
-  const rankedNodes = !options.failedEdgeFirst
-    ? baseRankedNodes
-    : options.failedEdgeFirstScope === 'unexplained'
-      ? // The residual reading: a candidate leads when the failures reported at it are not the failures it
-        // reported. `flowLeads` is ABSENT when the run did not ask for this reading, and an absent set is
-        // "nothing leads" rather than "everyone does" — the partition is then the identity, which is the same
-        // statement an absent map makes for the credit reading.
-        partitionFirst(baseRankedNodes, (id) => flowLeads?.has(id) === true)
-      : orderFailedEdgeFirst(baseRankedNodes, failedEdgeScores);
+  // ── The label prior's own JURISDICTION, which is the last thing that may touch the ORDER ───────────────
+  // `everywhere`: nothing more to do — the term is in the totals and the sort above already obeyed it.
+  // `tail`: the head of the SILENT order is clamped first, and the prior keeps every position below it. Applied
+  // after the failed-edge partition rather than before it, because the claim being made is about the REPORTED
+  // order: a partition that could move position 1 would otherwise be the one transform the invariance did not
+  // cover, and the arm's whole value is that the claim has no exceptions.
+  const liveOrder = orderNodes(finalScoreOf);
+  // The silent order is built only when a `tail` arm is armed AND speaking, and an empty one is not a pin: a case
+  // whose pool admitted nothing has no head to clamp, and the loop below emits nothing either way.
+  const silentOrder =
+    options.labelPriorJurisdiction === 'tail' && priorSpeaks ? orderNodes(baseTotalOf) : undefined;
+  const rankedNodes =
+    silentOrder === undefined || silentOrder.length === 0
+      ? liveOrder
+      : pinHeadFirst(liveOrder, silentOrder[0]!.serviceId);
 
   // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];

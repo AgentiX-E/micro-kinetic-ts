@@ -174,7 +174,14 @@ the term REPAIRS it rather than thinning it (`Top@5` 0.8068 shipped, 0.8523 at `
 τ = 0.02`, **0.9432** at `β = 0.1 / τ = 0.015`), so the remaining gap to the prior-alone reading of 1.0000 is 5.68 pp of
 cases where the history knows the answer and the engine's other nineteen terms outvote it — a head-versus-tail
 diagnostic, not a price question; (c) **done** — the FSE'26 history is derived on that path, both fields dispatch
-through `ranking_knobs`, and half 2 of the criterion is measurable; (d) **new, and the only arm on this axis that is
-still alive**: a HEAD-PINNED order — the base rank-1 is clamped first and the prior reorders positions 2..n, so `Top@1`
-is unchanged by construction and the **+1.69 pp at `Top@3` and `Top@5`** measured above are kept. Its prediction is
-written here before it runs, and it is worth stating what it is not: a depth improvement on boards scored at `Top@1`.
+through `ranking_knobs`, and half 2 of the criterion is measurable; (d) **done, and it is the arm that survives** — the
+HEAD-PINNED order (`labelPriorJurisdiction = 'tail'`: the head of the order the engine would report WITHOUT the prior
+is clamped at position 1 and the prior reorders 2..n). Measured on the panel at `β = 0.1 / τ = 0`: `Top@1`
+**1 186 (83.40 %) = arm A to the case** — 1 gained, 1 lost, `p = 1.000` — with `Top@3` **+24** (28/4, `p < 0.001`) and
+`Top@5` **+27** (30/3, `p < 0.001`), i.e. the whole depth gain the summed arm paid for at the head, and three cases
+more at the fifth position. So the prediction written above held, with one qualifier that was not in it: the
+containment pass runs AFTER the pin and can still move position 1, which is where the 1/1 residue comes from. The
+gate turns out to be a SUBSTITUTE for the pin rather than a complement — at `τ = 0.02` the pinned arm reads `+16 / +19`
+instead of `+24 / +27` at the same head — and the restated criterion (four conjuncts, the fourth being the golden
+half) is in `docs/label-prior-fse26.md` §4.2. No default moved: the golden nine cells at
+`labelpriorjurisdiction=tail` are dispatchable and not yet read.

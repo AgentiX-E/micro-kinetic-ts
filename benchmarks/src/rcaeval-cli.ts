@@ -108,6 +108,7 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fs
 import type {
   BaselineAnchor,
   DropDeviationMode,
+  LabelPriorJurisdiction,
   LogNormalisation,
   LogSignalMode,
   PoolAdmission,
@@ -129,6 +130,7 @@ import {
   DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
   DEFAULT_METRIC_RISE_CEILING,
@@ -146,6 +148,7 @@ import {
   DEFAULT_TRANSIENT_GUARD_TEST,
   isBaselineAnchor,
   isDropDeviationMode,
+  isLabelPriorJurisdiction,
   isLogNormalisation,
   isLogSignalMode,
   isPoolAdmission,
@@ -471,6 +474,15 @@ export interface CliOptions {
    * that was refused. Travels as `labelpriorgate=<margin>`; one configuration with the weight above.
    */
   labelPriorMarginGate: number;
+  /**
+   * Where in the ranking the label prior may act (`TreePrunerOptions.labelPriorJurisdiction`).
+   *
+   * `everywhere` sums it with the rest; `tail` clamps the base head and lets it reorder 2..n, which makes `Top@1`
+   * invariant at any weight. Travels as `labelpriorjurisdiction=<word>`; the golden half carries the field so the
+   * arm is dispatchable on BOTH halves of a kill criterion that is an AND, and so the artifact of a pinned run
+   * cannot be mistaken for the shipped configuration.
+   */
+  labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
    *
@@ -949,6 +961,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // a run whose gate nobody can read.
     labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
     labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+    labelPriorJurisdiction: DEFAULT_LABEL_PRIOR_JURISDICTION,
     // The three terms the golden half used to inherit without naming. They are read from the
     // engine's own constants, so this runner cannot describe a configuration the engine does not
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
@@ -1131,6 +1144,15 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.labelPriorWeight = parseWeight(args[++i]!, DEFAULT_LABEL_PRIOR_WEIGHT);
     else if (args[i] === '--label-prior-margin-gate' && hasValue(args, i + 1))
       opts.labelPriorMarginGate = parseWeight(args[++i]!, DEFAULT_LABEL_PRIOR_MARGIN_GATE);
+    // A vocabulary rather than a number, so an unusable word falls back to the SHIPPED jurisdiction on the rule
+    // `--dual-family-gate-mode` records: a typo must reproduce a published configuration rather than invent one,
+    // and the two words differ by exactly the cases the head decides.
+    else if (args[i] === '--label-prior-jurisdiction' && hasValue(args, i + 1)) {
+      const word = args[++i]!;
+      opts.labelPriorJurisdiction = isLabelPriorJurisdiction(word)
+        ? word
+        : DEFAULT_LABEL_PRIOR_JURISDICTION;
+    }
     // ── The three the artifact NAMED before any command line could set them ──
     //
     // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the

@@ -210,7 +210,7 @@ is a reading two tables can go on printing.
 > with **no dispatch input at all**, reproduced per case by `42340115598` at `0976a143`. §0p-ii is the repair and
 > the fence that would have caught it.
 
-<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config 8a7eb902ec8e -->
+<!-- standing-anchor: battery 42636825031 on 1f1b9d14, read 2026-11-09, config c0b34f8091f2 -->
 
 ```text
 RE1:OnlineBoutique 113 125
@@ -584,6 +584,33 @@ eleven, `8.7 pp` behind `Sonnet · ThinkDepth.ai`'s `90.0%` on that paper's 500-
 entry: the FSE'26 surface's profile is derived inside its own job from its own corpus and never reaches the RCAEval
 workflow. §0p-viii's sentence that "every cell in this document was produced with the containment pass inert" is
 therefore **true of the nine cells and false of this one from this entry forward**, and it is corrected there.
+### 0p-x. The eleventh correction — one word, no behaviour, and the arm that has to be nameable
+
+The digest moves **`8a7eb902ec8e → c0b34f8091f2`**, and again **nothing the ranking does has changed**. The line
+gained one field: `labelPriorJurisdiction=everywhere`.
+
+**Why it has to be printed.** The label prior ships at weight `0`, and iteration 369 gave it a second way to spend a
+non-zero weight: `everywhere` sums it with the rest of the ranking, `tail` clamps the head of the order the engine
+would report without it and lets the prior reorder positions 2..n. The two words are the difference between the
+**refused** arm and the **one that survives** on the FSE'26 panel — `Top@1` `1 186 → 1 184 / 1 176 / 1 182` in the
+three summed arms against invariance by construction in the pinned one, with `+24` cases at each of `Top@3` and
+`Top@5` in every armed arm (`docs/label-prior-fse26.md` §2.4). A golden-half artifact that recorded the weight and
+the gate but not the jurisdiction could not tell a pinned run from the shipped one, which is the state §0p-viii
+records for `containmentExcursions` — a configuration the artifact could not state.
+
+**The prediction, stated before the run rather than after it.** At the shipped weight the term is not read at all:
+`priorSpeaks` short-circuits on `labelPriorWeight !== 0`, so the order is built once, exactly as it was, and the
+nine cells must be unmoved — `TOTAL 666/735`, cell for cell, on the push-triggered RCAEval battery that carries
+this commit. The invariance is also asserted without a run, twice: `packages/tree/__tests__/unit/label-prior-term.test.ts`
+pins that a `tail` arm keeps the head at every weight from `0.01` to `100`, and the shipped-word arm is the
+`everywhere` one every published cell already ran.
+
+**What did NOT move, and why.** `battery` and `revision` are unchanged, on §0p-vii's rule: they answer "which run
+measured these nine cells" and that reading is the same one. Only `configuration` answers "what string does this
+code render for the shipped configuration", which is the only thing this change touches. The nine cells themselves
+are re-read by the battery on this commit rather than argued here, and `benchmarks/baselines/rcaeval-nine-cells.json`
+carries the same digest so the dashboard gate cannot go inert between the two.
+
 ### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these

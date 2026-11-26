@@ -169,6 +169,10 @@ export function buildFse26RunConfig(
     // field follows them.
     labelPriorWeight: opts.labelPriorWeight,
     labelPriorMarginGate: opts.labelPriorMarginGate,
+    // Stated unconditionally on the same rule as the pair above, and for a sharper reason: `tail` is the only arm
+    // on this axis that can keep `Top@1`, so an artifact that recorded the weight and the gate but not the
+    // jurisdiction could not tell the surviving arm from the refused one.
+    labelPriorJurisdiction: opts.labelPriorJurisdiction,
     containmentExcursions:
       // The ENGINE's default, not `!== false`: the pass ships ON, so reading `undefined` as "off" would
       // report `absent` for a run that asked for nothing and got the shipped behaviour.

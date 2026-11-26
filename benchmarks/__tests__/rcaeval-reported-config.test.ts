@@ -652,6 +652,12 @@ describe('the RCAEval configuration line carries the configuration that produced
         // line's groups are the engine's term families and a prior parked behind the containment pass would read as
         // a property of that pass.
         'labelPriorWeight=0 labelPriorMarginGate=0.02 ' +
+        // Iteration 369 appended the JURISDICTION beside the pair it belongs to. Printed at its shipped
+        // `everywhere` on the same rule: the arm it has to be distinguishable from is `tail`, which is the one
+        // configuration on this axis that keeps `Top@1`, and a line that omitted the field would render a pinned
+        // golden run byte-identically to the shipped one. This token is also what moved the standing anchor's
+        // configuration digest — `docs/sota-comparison.md` §0p records the roll and why no cell can move with it.
+        'labelPriorJurisdiction=everywhere ' +
         // APPENDED, not inserted: every byte before this one is what the published artifacts carry, so the
         // golden string is an extension of the shipped line rather than a replacement for it. Unconditional
         // on the rule `topoDiscountScope` follows one field above — the gate ships at 0, and a line that

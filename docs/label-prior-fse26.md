@@ -161,3 +161,87 @@ One dispatch field pair, and no default moved:
   second pass over 38 GB of series;
 * `label_prior_weight` / `label_prior_margin_gate` in the workflow's packed `ranking_knobs` block, so the arm is
   dispatchable on both halves of the kill criterion.
+
+## 4. The pinned head (iteration 369) — the one arm the panel does not refuse
+
+§2.4 left exactly one arm alive, and stated it as a structural rule rather than a price: **clamp the head of the
+order the engine would report without the prior, and let the prior reorder positions 2..n.** It was registered with
+its prediction written before it ran. It has now run, twice, on the same corpus snapshot, the same profile and the
+same flags as the four arms above.
+
+| arm | `β` | `τ` | jurisdiction | `Top@1` | `Top@3` | `Top@5` | gained / lost vs A | exact `p` |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| A — shipped | 0 | 0.02 | everywhere | **1 186 (83.40 %)** | 1 236 (86.92 %) | 1 255 (88.26 %) | — | — |
+| B — ungated | 0.1 | 0 | everywhere | 1 184 (83.26 %) | 1 260 (88.61 %) | 1 279 (89.94 %) | 20 / 22 | 0.878 |
+| C — gated | 0.1 | 0.02 | everywhere | 1 176 (82.70 %) | 1 253 (88.12 %) | 1 273 (89.52 %) | 8 / 18 | 0.076 |
+| D — price | 0.05 | 0.02 | everywhere | 1 182 (83.12 %) | 1 242 (87.34 %) | 1 267 (89.10 %) | 3 / 7 | 0.344 |
+| **E — pinned** | **0.1** | **0** | **tail** | **1 186 (83.40 %)** | **1 260 (88.61 %)** | **1 282 (90.15 %)** | **1 / 1** | **1.000** |
+| F — pinned, gated | 0.1 | 0.02 | tail | **1 186 (83.40 %)** | 1 252 (88.05 %) | 1 274 (89.59 %) | 1 / 1 | 1.000 |
+
+### 4.1 The three readings
+
+**1. The head is preserved, and the residue is not the prior's.** Both pinned arms read `1 186` — arm A's number to
+the case, `1 186` of `1 422` — with **one case gained and one lost**, `p = 1.000`. So the criterion's first two
+conjuncts now hold: `Top@1` is not below A, and no fault type is down by more than two (`HTTPRequestDelay` **+1**,
+`HTTPRequestReplaceMethod` **−1**, every other type identical).
+
+**The two cases that move are the containment pass's, and that is measured rather than argued.** The pin makes the
+ranking the prior acts on agree with the silent one at position 1 *by construction*; the containment order runs
+AFTER it, on that ranking, and it inverts an adjacent caller/callee pair when the callee's own latency excursion is
+larger. A rerun of arm E with `--containment-out` records both orders per case, and the two moved cases read:
+
+| case | fusion order's head (what the pin produced) | published head (after the pass) | truth |
+| --- | --- | --- | --- |
+| `ts0-ts-preserve-service-request-replace-method-48zkx2` | `ts-preserve-service` | `ts-seat-service` | `ts-preserve-service` → **lost** |
+| `ts4-ts-basic-service-request-delay-slc8g7` | `ts-travel-service` | `ts-basic-service` | `ts-basic-service` → **gained** |
+
+Both fusion heads are the head arm A **publishes** for that case, which is the invariant stated at its own resolution;
+the pass then moves position 1 in **43 of 1 422 cases**
+under this arm, and in these two it moves it onto a wrong answer once and a right one once, which is why the residue
+is `1/1` rather than `0/2` or `2/0`. The structural claim therefore has exactly one qualifier, and it belongs to a
+different module: **the pin is exact for the ranking the prior acts on; a pass applied after it can still move
+position 1.**
+
+**2. The pin keeps the whole depth gain, and takes three more cases at `Top@5`.** `Top@3` is `+24` (28 gained, 4
+lost, `p < 0.001`), identical to the ungated summed arm; `Top@5` is **`+27`** (30 gained, 3 lost, `p < 0.001`)
+against that arm's `+24`. The mechanism is arithmetic rather than lucky: hoisting a head that the silent order
+already had at position 1 or 2 can only push a competitor DOWN the list, so a k-window that gains the head loses
+nothing it had, and where the head was at position ≥ k the window swaps in a candidate the prior ranks higher.
+
+**3. Under `tail`, the gate is a substitute for the pin rather than a complement.** F withholds the term in 89 of
+1 422 cases (`τ = 0.02`, the reach census of §2.2) and reads `+16 / +19` at depth against E's `+24 / +27`, at the
+same `Top@1`. The gate was introduced to protect the head from a term that could displace it; the pin removes that
+failure mode structurally, at any weight, so every case the gate silences under `tail` is depth the arm paid for and
+did not take. **The two knobs are alternatives, and the cheaper one is the pin.**
+
+### 4.2 The criterion, restated for a depth arm — before the golden half is read
+
+The four conjuncts of §1 were written for a term that could move `Top@1`, and their third conjunct (`p < 0.05` on the
+head) is unsatisfiable by construction for an arm whose whole claim is that the head does not move. It is therefore
+restated here, in the same place and with the same discipline as the original, **before the nine golden cells are
+measured**:
+
+1. `Top@1` on the 1 422 cases is **not below** arm A — measured, `+0` at `1/1`, `p = 1.000` (E and F);
+2. **no fault type's `Top@1` loses more than two cases** against arm A — measured, worst is `−1` (E and F);
+3. **`Top@3` and `Top@5` are both strictly better**, with the exact McNemar `p < 0.05` at each depth — measured,
+   `+24` / `+27` at `p < 0.001` (E); the gated variant is `+16` / `+19` and is not the arm to enrol;
+4. **the golden half holds** — the nine RCAEval cells at `labelprior=0.1 labelpriorgate=0 labelpriorjurisdiction=tail`
+   must satisfy (1)–(3) on their own 735 cases. **This is the conjunct that is not measured**, and it is a separate
+   dispatch: `benchmark-rcaeval.yml`'s `anomaly_knobs` carries all three names as of this iteration.
+
+Until (4) is read, **no default moves**: `DEFAULT_LABEL_PRIOR_WEIGHT` stays `0` and
+`DEFAULT_LABEL_PRIOR_JURISDICTION` stays `everywhere`. The panel half now passes a criterion it previously failed at
+the head; the AND is not satisfied, and the reason is a missing run rather than a disagreement about the corpus.
+
+### 4.3 What this iteration changed in the engine, on top of §3
+
+Three things, and the first is the only one that touches the ranking:
+
+* `LabelPriorJurisdiction = 'everywhere' | 'tail'` with `isLabelPriorJurisdiction`, `DEFAULT_LABEL_PRIOR_JURISDICTION`
+  and `pinHeadFirst` in `pruning/label-prior.ts` — the reorder helper is the whole mechanism, and it is a helper
+  rather than a branch inside the sort so the invariant is testable without a corpus;
+* `TreePrunerOptions.labelPriorJurisdiction`, forwarded by both benchmark runners, printed unconditionally on both
+  configuration lines, and carried in the packed `ranking_knobs` / `anomaly_knobs` blocks;
+* the order is now built by ONE closure over "which score decides" (`orderNodes`), so the silent order is the same
+  pipeline with the prior's contribution read as zero rather than a second approximation of it. It is called twice
+  only when a `tail` arm is armed and speaking; the shipped path sorts exactly as often as it did.

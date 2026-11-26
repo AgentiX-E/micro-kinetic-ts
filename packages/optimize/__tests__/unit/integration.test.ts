@@ -285,6 +285,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       // prices, and this search space carries no profile at all. The gate is held for the reason every gate above
       // is: it picks WHERE the term is spent, which is a population of rankings rather than a coefficient.
       // `docs/label-prior.md` is the owner of both.
+      // Iteration 369 added the third name: the JURISDICTION, which picks a POSITION in the reported order rather
+      // than a magnitude. Held for the gate's reason one step stronger — a search interpolating between
+      // `everywhere` and `tail` would be averaging two orders rather than two coefficients.
+      'labelPriorJurisdiction',
       'labelPriorMarginGate',
       'labelPriorWeight',
       'latMinRise',

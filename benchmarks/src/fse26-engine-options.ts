@@ -28,6 +28,7 @@ import type {
   FailureContainmentScope,
   FaultFreeProfile,
   FaultFreeSelection,
+  LabelPriorJurisdiction,
   LogNormalisation,
   LogSignalMode,
   OnsetShape,
@@ -113,6 +114,11 @@ export interface Fse26SignalOptions {
    * a threshold nobody chose.
    */
   readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking that prior may act. Required for the same reason as the pair above: an arm that asked for
+   * the pinned head and silently ran the shipped term would report a depth gain under a word nobody dispatched.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * The corpus profile, when this run has one.
    *
@@ -315,6 +321,7 @@ export function buildFse26EngineOptions(
       faultFreeSelection: opts.faultFreeSelection,
       labelPriorWeight: opts.labelPriorWeight,
       labelPriorMarginGate: opts.labelPriorMarginGate,
+      labelPriorJurisdiction: opts.labelPriorJurisdiction,
       // Handed in rather than loaded here: reading a file is IO and this module is the pure projection a test
       // checks against the parsed options. The key is built CONDITIONALLY rather than assigned `undefined`,
       // and the reason is a census rather than taste: `forwarded ∪ nonEngine = parsed` is asserted over the

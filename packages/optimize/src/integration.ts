@@ -78,6 +78,10 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the margin at which that prior may speak, shipped at 0.02: it selects WHERE the term is spent rather than how ' +
     'much it is worth, so it is a discrete population of rankings a dispatch states — a search over weights could ' +
     'only move it by accident, the same reason dualFamilyGate is held',
+  labelPriorJurisdiction:
+    'WHERE that prior may act (everywhere | tail), the third name of the same configuration: it selects a position ' +
+    'in the reported order rather than a magnitude, so a continuous search could only interpolate between two ' +
+    'orders — a discrete population a dispatch states, the same reason labelPriorMarginGate is held',
   victimWeight:
     'the internal/external symmetry mask, shipped OFF and measured outside this search space: it is the PRISM axiom expressed as a discount on a candidate own evidence, a dispatch question rather than a fusion coefficient while its weight is 0',
   selfTimeWeight:

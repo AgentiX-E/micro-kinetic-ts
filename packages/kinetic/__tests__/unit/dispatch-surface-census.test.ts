@@ -442,6 +442,11 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // the omission is closed rather than merely documented.
     '--label-prior-weight',
     '--label-prior-margin-gate',
+    // Iteration 369: the third name of that configuration. It joins THIS block rather than a new one because the
+    // three are one arm — a price, the margin at which it may be spent, and the position it may spend it in — and
+    // because the arm this flag exists to state is on this half: `tail` is the only word on the axis that keeps
+    // `Top@1` by construction.
+    '--label-prior-jurisdiction',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -516,6 +521,9 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // `SHARED_INPUTS` comment calls "an arm with an undecidable other side".
     '--label-prior-weight',
     '--label-prior-margin-gate',
+    // Iteration 369: the same third name on the golden half. The block is at the 25-INPUT ceiling, which is the
+    // rule every post-ceiling knob here follows — it is packed, and it is packed beside the pair it belongs to.
+    '--label-prior-jurisdiction',
   ],
 };
 
@@ -825,6 +833,16 @@ const KNOBS: Readonly<
     // share, because a score gap is not bounded above across terms — so the flag's domain is "non-negative" and not
     // [0, 1], and a negative gate would admit the prior precisely where the head is undecided.
     flag: '--label-prior-margin-gate',
+    owner: 'label-prior.md',
+    fse26: 'ranking_knobs',
+    rcaeval: 'anomaly_knobs',
+  },
+  labelPriorJurisdiction: {
+    // The term's THIRD axis, and the first on this surface whose values differ by POSITION rather than by price:
+    // `everywhere` sums the prior with the rest of the ranking, `tail` clamps the head of the order the engine would
+    // report without it. Both halves, because the arm it exists to state is the one that survives the kill
+    // criterion's FSE'26 half (`Top@1` invariant by construction) and the golden half is the AND's other side.
+    flag: '--label-prior-jurisdiction',
     owner: 'label-prior.md',
     fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
@@ -1260,6 +1278,7 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   // that half at all. With the history derived from the corpus the arm has both halves, which is what an
   // enrolment needs: the golden half's nine cells and the FSE'26 panel are the AND, and a term that could only be
   // asked on one of them was the reason the weight stayed 0.
+  'labelPriorJurisdiction',
   'labelPriorMarginGate',
   'labelPriorWeight',
   'latMinRise',

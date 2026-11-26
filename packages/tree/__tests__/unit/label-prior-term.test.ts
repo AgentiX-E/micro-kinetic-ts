@@ -22,6 +22,7 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import type { LabelPriorJurisdiction } from '@agentix-e/micro-kinetic-tree';
 import { TreePruner } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -82,13 +83,22 @@ interface Arm {
   readonly weight: number;
   readonly gate?: number;
   readonly prior?: LabelPriorProfile;
+  readonly jurisdiction?: LabelPriorJurisdiction;
 }
 
 function analyze(arm: Arm): RootCauseResult[] {
-  const { callGraph, metrics, injectTimeMs } = corpus();
+  return analyzeOn(corpus(), arm);
+}
+
+function analyzeOn(
+  scored: { callGraph: ServiceCallGraph; metrics: MetricMap; injectTimeMs: number },
+  arm: Arm,
+): RootCauseResult[] {
+  const { callGraph, metrics, injectTimeMs } = scored;
   const pruner = new TreePruner({
     labelPriorWeight: arm.weight,
     ...(arm.gate === undefined ? {} : { labelPriorMarginGate: arm.gate }),
+    ...(arm.jurisdiction === undefined ? {} : { labelPriorJurisdiction: arm.jurisdiction }),
   });
   const graph = pruner.buildFaultGraph(callGraph, metrics, {
     injectTimeMs,
@@ -190,5 +200,124 @@ describe('the label-prior term in the ranking', () => {
     // The shipped gate is a value, not a toggle: 0 is a legal arm and it is the ungated one. Pinned because the
     // difference between the two is 8.97 pp on the corpus and nothing in the type system separates them.
     expect(rank({ weight: 1, gate: 0, prior: priorOf({ b: 400 }, 401) })[0]).toBe('b');
+  });
+});
+
+// ── The jurisdiction: the head is not this term's to move ──
+//
+// The two arms this section separates are the two readings the FSE'26 panel produced: the same weight, the same
+// gate, and opposite verdicts at `Top@1` (1186 → 1168 with a gate that withheld 6 % of the corpus) against
+// `Top@3`/`Top@5` (+24 cases at each depth, in every armed arm). The difference is WHERE the term may act, and the
+// claim `tail` makes is structural rather than statistical: the base head is clamped and the prior reorders 2..n.
+
+/**
+ * A three-service chain whose evidence orders `a` above `b` above `c`.
+ *
+ * Three rather than two, because a two-candidate case cannot show the property the arm is for: with one rival the
+ * pinned order and the silent order are the same array. Here the prior lifts `c` over both rivals, so `everywhere`
+ * puts it first, and `tail` has to keep `a` first while still lifting `c` past `b`.
+ */
+function corpus3(): { callGraph: ServiceCallGraph; metrics: MetricMap; injectTimeMs: number } {
+  const callGraph = graphOf(
+    ['a', 'b', 'c'],
+    [
+      ['a', 'b'],
+      ['b', 'c'],
+    ],
+  );
+  const metrics = new Map<string, readonly TimeSeries[]>([
+    ['a', [series('cpu', [10, 10, 10, 10, 10, 100, 100, 100, 100, 100])]],
+    ['b', [series('cpu', [10, 10, 10, 10, 10, 30, 30, 30, 30, 30])]],
+    ['c', [series('cpu', [10, 10, 10, 10, 10, 12, 12, 12, 12, 12])]],
+  ]);
+  return { callGraph, metrics, injectTimeMs: 8 };
+}
+
+/** A history that names `c` almost always and neither of its rivals — the shape FSE'26's long tail produces. */
+const tailFavouringC = priorOf({ c: 4_000 }, 4_001);
+
+describe("the label prior's jurisdiction", () => {
+  it('orders the case by its own evidence at the shipped jurisdiction', () => {
+    // The control: `everywhere` is the shipped word, and on this fixture it does nothing the evidence did not
+    // already do when the history agrees with it.
+    expect(analyzeOn(corpus3(), { weight: 0 })[0]!.serviceId).toBe('a');
+    expect(rank({ weight: 0 })).toEqual(['a', 'b']);
+  });
+
+  it('lets the prior take the head when its jurisdiction is everywhere', () => {
+    // The arm the two corpora priced: `c` is the deployment's usual answer, the weight is large enough to close the
+    // evidence gap, and the order starts with `c`.
+    const everywhere = analyzeOn(corpus3(), {
+      weight: 3,
+      gate: 0,
+      prior: tailFavouringC,
+      jurisdiction: 'everywhere',
+    }).map((one) => one.serviceId);
+    expect(everywhere[0]).toBe('c');
+  });
+
+  it('keeps the evidence leader first and reorders only the tail when its jurisdiction is tail', () => {
+    // The one surviving arm, asserted as the two statements it makes: position 1 is the silent order's position 1,
+    // and the prior still moves something — `c` overtakes `b`, which is where the +24 cases at each depth came from.
+    const pinned = analyzeOn(corpus3(), {
+      weight: 3,
+      gate: 0,
+      prior: tailFavouringC,
+      jurisdiction: 'tail',
+    }).map((one) => one.serviceId);
+    expect(pinned[0]).toBe('a');
+    expect(pinned.indexOf('c')).toBeLessThan(pinned.indexOf('b'));
+  });
+
+  it('holds Top@1 for ANY weight, which is what makes it a structural arm rather than a price', () => {
+    // The invariance is by construction, so it must not depend on the weight being small: at four weights spanning
+    // three orders of magnitude the head is the same service, while the everywhere arm changes its head at the
+    // first of them. A weight tuned to keep the head would be the price arm this one exists to replace.
+    for (const weight of [0.01, 0.1, 1, 100]) {
+      const pinned = analyzeOn(corpus3(), {
+        weight,
+        gate: 0,
+        prior: tailFavouringC,
+        jurisdiction: 'tail',
+      });
+      expect(pinned[0]!.serviceId).toBe('a');
+    }
+    expect(
+      analyzeOn(corpus3(), {
+        weight: 3,
+        gate: 0,
+        prior: tailFavouringC,
+        jurisdiction: 'everywhere',
+      })[0]!.serviceId,
+    ).toBe('c');
+  });
+
+  it('is the silent order to the last comparison when the gate withholds the term', () => {
+    // A jurisdiction is not a licence to reorder: with the term masked, the pinned order and the weight-0 order are
+    // the same array. If they differed, the pin would be a second decision about order taken outside the gate.
+    const quiet = { weight: 3, gate: 1_000, prior: tailFavouringC, jurisdiction: 'tail' } as const;
+    expect(analyzeOn(corpus3(), quiet).map((one) => one.serviceId)).toEqual(
+      analyzeOn(corpus3(), { weight: 0 }).map((one) => one.serviceId),
+    );
+  });
+
+  it('records the pinned head as the term NOT having spoken for it', () => {
+    // The breakdown is the only place a reader can see why position 1 did not move: the row is present with the
+    // gate's own name and a zero contribution on the head, while the tail candidates carry the log-probability.
+    const rows = analyzeOn(corpus3(), {
+      weight: 3,
+      gate: 0,
+      prior: tailFavouringC,
+      jurisdiction: 'tail',
+    });
+    const headTerm = rows[0]!.terms?.find((one) => one.name === 'labelPrior');
+    expect(headTerm).toBeDefined();
+    // The head still carries a non-zero contribution — it is the PRIOR's value, not the position — because
+    // suppressing the value would break `finalScore = Σ terms`. What the pin changes is the order, not the sum.
+    expect(headTerm!.contribution).not.toBe(0);
+    expect(rows[0]!.finalScore).toBeCloseTo(
+      (rows[0]!.terms ?? []).reduce((sum, one) => sum + one.contribution, 0),
+      12,
+    );
   });
 });

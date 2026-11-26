@@ -33,6 +33,7 @@ import type {
   FailureAttribution,
   FailureContainmentScope,
   FaultFreeSelection,
+  LabelPriorJurisdiction,
   OnsetShape,
   PoolAdmission,
   PrismPooling,
@@ -195,6 +196,13 @@ export interface FSE26RunConfig {
    * weight must still be able to tell which gate the next arm was paired with.
    */
   readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking that prior may act, `everywhere` or `tail`.
+   *
+   * Printed beside the pair for the reason the gate is: on this half the two words are the difference between the
+   * refused arm and the one that survives, and `everywhere` is the shipped default rather than a mode to infer.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * Content digest of the fault-free profile the run supplied, or `null` when it supplied none.
    *
@@ -686,6 +694,7 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // derived from the corpus: at weight 0 these two fields are the only thing on the artifact that distinguishes
   // a measured arm from the shipped run.
   line += ` labelPriorWeight=${config.labelPriorWeight} labelPriorMarginGate=${config.labelPriorMarginGate}`;
+  line += ` labelPriorJurisdiction=${config.labelPriorJurisdiction}`;
   // Unconditional, and the one field on this line whose omission was measured. The profile feeds the
   // containment order's excursions as well as the weight above, so a run with the shipped weight of 0 and no
   // profile was byte-identical on this line to the shipped run while reading 1 141 instead of 1 156 Top@1.

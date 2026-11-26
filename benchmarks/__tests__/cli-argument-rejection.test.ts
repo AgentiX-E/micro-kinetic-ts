@@ -59,6 +59,7 @@ import {
   FAILED_EDGE_MUTUAL_RULES,
   FAILED_EDGE_OVERRIDE_RULES,
   FAULT_FREE_SELECTIONS,
+  LABEL_PRIOR_JURISDICTIONS,
   LOG_NORMALISATIONS,
   LOG_SIGNAL_MODES,
   ONSET_SHAPES,
@@ -172,6 +173,10 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // probe names `fleet` rather than `fleet_unbinned` because the binned residual is the arm the flag exists to
   // reach and the unbinned one is its control.
   '--stability-scope': 'fleet',
+  // Iteration 369: WHERE the label prior may act. A word union of two, and the FSE'26 parser REFUSES a word it
+  // cannot name, so `1` would test the refusal rather than the arity. `tail` is the arm the flag exists to name:
+  // `everywhere` is the shipped default and the arm two corpora refused at the head.
+  '--label-prior-jurisdiction': 'tail',
   // Iteration 265: which of a candidate's channels the fault-free prior reads. A word union of two, so `1` is
   // refused; `dominant` is the arm this flag exists to be able to name, since `rarest` is the shipped default.
   '--fault-free-selection': 'dominant',
@@ -556,6 +561,12 @@ describe('every option the golden runner forwards can be set from the command li
       // it runs. Probed from the union for the reason every other entry is, and it needs `level-window`: the
       // field already holds `endpoint`, so only the other member can move it.
       ...Object.keys(TRANSIENT_GUARD_TESTS),
+      // Iteration 369: WHERE the label prior may act — the twelfth word-vocabulary, and the first whose members
+      // differ by POSITION rather than by value: the same term, the same weight, and two different candidates at
+      // the head. Probed from the union for the reason every other entry is, and it needs `tail`: the field already
+      // holds `everywhere`, so a set with only the shipped member would pass over a flag that never reaches the
+      // order.
+      ...Object.keys(LABEL_PRIOR_JURISDICTIONS),
     ];
     const moved = new Set<string>();
     for (const branch of branches) {

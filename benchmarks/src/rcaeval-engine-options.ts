@@ -43,6 +43,7 @@ import type {
   FailedEdgeOverrideRule,
   FaultFreeProfile,
   FaultFreeSelection,
+  LabelPriorJurisdiction,
   LogNormalisation,
   LogSignalMode,
   OnsetShape,
@@ -135,6 +136,14 @@ export interface RCAEvalSignalOptions {
   readonly labelPriorWeight: number;
   /** The margin gate that decides when that weight may be spent — see `CliOptions.labelPriorMarginGate`. */
   readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking that price may be spent — see `CliOptions.labelPriorJurisdiction`.
+   *
+   * On the projection rather than left to the engine's default because the two words are the difference between
+   * the refused arm and the one that survives on the panel this half is the control for, and a dropped key would
+   * report the depth of the pinned arm under the shipped configuration's name.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * The dual-family membership's POPULATION — see `CliOptions.dualFamilyGate`.
    *
@@ -357,6 +366,7 @@ export function buildRCAEvalEngineOptions(
       dualFamilyGateMode: opts.dualFamilyGateMode,
       labelPriorWeight: opts.labelPriorWeight,
       labelPriorMarginGate: opts.labelPriorMarginGate,
+      labelPriorJurisdiction: opts.labelPriorJurisdiction,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       failedEdgeWeight: opts.failedEdgeWeight,
@@ -496,10 +506,16 @@ export function formatSignalLine(opts: CliOptions): string {
     `dualFamilyGate=${opts.dualFamilyGate} dualFamilyGateMode=${opts.dualFamilyGateMode} ` +
     // The label prior's PAIR, printed unconditionally on the self-time rule: both ship at a value (0 and 0.02), so an
     // omitted-when-default field would render the arm and the shipped run identically on the artifact whose whole job
-    // is to attribute the difference. It is NOT in `REPORTED_CONFIG_FIELDS` yet, and the reason is that list's own
-    // contract — both halves obey it, and the FSE'26 runner does not forward a profile yet, so registering the field
-    // here would require the twin's artifact to name a term its own runner cannot supply.
+    // is to attribute the difference. The pair is NOT in `REPORTED_CONFIG_FIELDS`, and the reason is that list's own
+    // contract: it is obeyed by every runner that builds a configuration record, and the ablation surface carries no
+    // prior at all — so registering the pair here would require that line to name a term its own runner cannot
+    // supply. The field is stated on BOTH measurement lines instead, which is the pair of artifacts the reading is
+    // compared across.
     `labelPriorWeight=${opts.labelPriorWeight} labelPriorMarginGate=${opts.labelPriorMarginGate} ` +
+    // APPENDED on the same rule, and unconditional because the SHIPPED word is a value rather than an absence: an
+    // arm that pins the head differs from the shipped run only by this token, so the artifact that omits it cannot
+    // attribute the difference it exists to record.
+    `labelPriorJurisdiction=${opts.labelPriorJurisdiction} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape} ` +
     // APPENDED, not inserted: every byte before this one is what the artifacts already carry, and the field is
     // unconditional on the failed-edge rule because 1 is a value a dispatch can ablate.

@@ -426,11 +426,16 @@ export type { ChannelSurpriseInput } from './pruning/fault-free-surprise.js';
 // a ranking has room for it. The only input to the ranking that is true before the case is read, and the only term
 // admitted per ranking rather than per configuration. See `pruning/label-prior.ts`.
 export {
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
+  LABEL_PRIOR_JURISDICTIONS,
   computeLabelPriorValues,
+  isLabelPriorJurisdiction,
+  pinHeadFirst,
   topTwoGap,
 } from './pruning/label-prior.js';
+export type { LabelPriorJurisdiction } from './pruning/label-prior.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

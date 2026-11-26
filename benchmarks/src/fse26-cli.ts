@@ -40,6 +40,7 @@ import type {
   FailedEdgeMode,
   FailureContainmentScope,
   FaultFreeSelection,
+  LabelPriorJurisdiction,
   LogNormalisation,
   LogSignalMode,
   PoolAdmission,
@@ -77,6 +78,7 @@ import {
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_FAULT_FREE_WEIGHT,
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
@@ -121,6 +123,7 @@ import {
   isFailureAttribution,
   isFailureContainmentScope,
   isFaultFreeSelection,
+  isLabelPriorJurisdiction,
   isLogNormalisation,
   isLogSignalMode,
   isOnsetShape,
@@ -131,6 +134,7 @@ import {
   isTopoClosure,
   isTopoDiscountScope,
   isTransientGuardTest,
+  LABEL_PRIOR_JURISDICTIONS,
   parseTopoEdgeRise,
   SELF_TIME_SCOPES,
   STABILITY_SCOPES,
@@ -554,6 +558,16 @@ export interface Fse26CliOptions {
    * than an inference.
    */
   readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking the label prior may act: `everywhere` (summed with the rest) or `tail` (the base head is
+   * clamped and the prior reorders 2..n).
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `everywhere`, the arm every published cell was taken with;
+   * inert at weight 0. The `tail` arm exists because this half's measurement separated the two positions: the term
+   * loses `Top@1` here at every price and gate while gaining 24 cases at each of `Top@3` and `Top@5`, so the only
+   * arm that can survive is the one that makes position 1 not its to move.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
    * Weight on the SELF-TIME prior, SHIPPED OFF at {@link DEFAULT_SELF_TIME_WEIGHT} = 0.
    *
@@ -1006,6 +1020,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     faultFreeSelection: 'rarest' as FaultFreeSelection,
     labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
     labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+    labelPriorJurisdiction: DEFAULT_LABEL_PRIOR_JURISDICTION,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
@@ -1203,6 +1218,17 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // gap rather than a share, so `1` is not the largest legal gate and clamping at it would silently refuse
       // an arm that withholds the term everywhere — the strongest control on this axis.
       opts.labelPriorMarginGate = parseWeight(argv[++i]!, DEFAULT_LABEL_PRIOR_MARGIN_GATE);
+    } else if (arg === '--label-prior-jurisdiction' && hasValue(argv, i + 1)) {
+      // An unrecognised word FAILS rather than falling back, on the rule `--stability-scope` records: a run that
+      // asked for `tail` and silently read `everywhere` would publish the arm's depth as the shipped term's, and
+      // the two differ by exactly the cases the head decides.
+      const value = argv[++i]!;
+      if (!isLabelPriorJurisdiction(value)) {
+        throw new Error(
+          `--label-prior-jurisdiction must be one of ${Object.keys(LABEL_PRIOR_JURISDICTIONS).join(', ')}, got ${value}`,
+        );
+      }
+      opts.labelPriorJurisdiction = value;
     } else if (arg === '--fault-free-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` on the same rule as every other weight: an empty value falls back to the
       // SHIPPED weight rather than selecting a configuration nobody asked for.

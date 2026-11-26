@@ -11677,3 +11677,60 @@ table) and `docs/label-prior.md` §6.
 **State.** New modules `benchmarks/src/fse26-label-history.ts` (26 tests, both the prefix fast path and the full-parse
 fallback on one file), `benchmarks/src/label-prior-reach.ts` (+ `report-prior-reach.ts`), two dispatch fields on the
 FSE'26 half, two `ranking_knobs` names, oxlint 0 warnings, prettier clean, `nx typecheck` 15 projects green.
+
+### §369 — the head-pinned arm: `Top@1` preserved to the case, +27 at `Top@5`, and a gate that turns out to be a substitute
+
+**Axis.** The one §368 left alive, run as pre-registered: the label prior's JURISDICTION. `everywhere` sums the term
+with the rest of the ranking (the arm every published cell ran); `tail` clamps the head of the order the engine would
+report WITHOUT the prior and lets the prior reorder positions 2..n, so position 1 is not this term's to move.
+
+**Measured, six arms, one commit, one profile** (all at `--failure-containment-scope global-measured`; A-D are §368's
+readings, E-F are new):
+
+| arm | `β` | `τ` | jurisdiction | `Top@1` | `Top@3` | `Top@5` | gained / lost | exact p |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| A — shipped | 0 | 0.02 | everywhere | **1 186 (83.40 %)** | 1 236 (86.92 %) | 1 255 (88.26 %) | — | — |
+| B — ungated | 0.1 | 0 | everywhere | 1 184 (83.26 %) | 1 260 (88.61 %) | 1 279 (89.94 %) | 20 / 22 | 0.878 |
+| C — gated | 0.1 | 0.02 | everywhere | 1 176 (82.70 %) | 1 253 (88.12 %) | 1 273 (89.52 %) | 8 / 18 | 0.076 |
+| D — price | 0.05 | 0.02 | everywhere | 1 182 (83.12 %) | 1 242 (87.34 %) | 1 267 (89.10 %) | 3 / 7 | 0.344 |
+| **E — pinned** | **0.1** | **0** | **tail** | **1 186 (83.40 %)** | **1 260 (88.61 %)** | **1 282 (90.15 %)** | **1 / 1** | **1.000** |
+| F — pinned, gated | 0.1 | 0.02 | tail | **1 186 (83.40 %)** | 1 252 (88.05 %) | 1 274 (89.59 %) | 1 / 1 | 1.000 |
+
+**The head is preserved and the depth gain is kept, at a criterion the summed arms failed.** E reads arm A's `Top@1`
+number to the case — `1 186`, `1/1`, `p = 1.000` — with `Top@3` **+24** (28/4, `p < 0.001`) and `Top@5` **+27** (30/3,
+`p < 0.001`, three more than the ungated summed arm). No fault type loses more than one `Top@1` case
+(`HTTPRequestDelay` +1, `HTTPRequestReplaceMethod` −1, the other 22 identical).
+
+**The residue is the containment pass's, measured with `--containment-out` rather than argued.** The pin is exact for
+the ranking the prior acts on; the containment order runs after it and moves position 1 in **43 of 1 422 cases** under
+this arm. In the two that move the published head, the fusion head is the head arm A publishes and the pass then
+swaps it — onto a wrong answer once (`ts0-…48zkx2`, lost) and a right one once (`ts4-…slc8g7`, gained), which is why
+the residue is `1/1` and not `0/2`. **The structural claim has exactly one qualifier and it belongs to another
+module.**
+
+**The finding: the gate is a SUBSTITUTE for the pin, not a complement.** At `τ = 0.02` the pinned arm withholds the
+term in 89 cases (the reach census, §368) and reads `+16 / +19` at depth against `+24 / +27` at `τ = 0`, with the same
+head. The gate existed to protect position 1 from a term that could displace it; the pin removes that failure mode at
+ANY weight, so every case the gate silences under `tail` is depth the arm paid for and did not take. The two knobs
+are alternatives and the cheaper one is the structural one.
+
+**The criterion, restated before the second half is read.** §368's four conjuncts were written for a term that could
+move `Top@1`, and their `p < 0.05`-on-the-head conjunct is unsatisfiable by construction for a depth arm. The
+restatement is pre-registered in `docs/label-prior-fse26.md` §4.2: (1) `Top@1` not below A — measured; (2) no fault
+type down by more than two — measured; (3) `Top@3` **and** `Top@5` strictly better with `p < 0.05` at each depth —
+measured for E; (4) **the golden nine cells**, which is the conjunct that is NOT measured and is a separate dispatch.
+
+**No default moved.** `DEFAULT_LABEL_PRIOR_WEIGHT` stays `0` and `DEFAULT_LABEL_PRIOR_JURISDICTION` stays
+`everywhere`: the AND is unsatisfied, and the reason is a missing run rather than a disagreement about the corpus.
+
+**Owner documents.** `docs/label-prior-fse26.md` §4 (the six arms, the containment decomposition, the restated
+criterion), `docs/label-prior.md` §6(d), `docs/sota-comparison.md` §0p-x (the configuration digest roll this
+iteration forced).
+
+**State.** `LabelPriorJurisdiction` + `isLabelPriorJurisdiction` + `DEFAULT_LABEL_PRIOR_JURISDICTION` + `pinHeadFirst`
+in `packages/tree/src/pruning/label-prior.ts`; the order factored into one closure over "which score decides"
+(`orderNodes`), so the silent order is the same pipeline with the prior read as zero rather than a second
+approximation of it, and it is built twice only when a `tail` arm is armed and speaking; the field forwarded by both
+benchmark runners, printed unconditionally on both configuration lines, and carried in `ranking_knobs` /
+`anomaly_knobs`; 8 new `label-prior`/`pinHeadFirst` unit tests (13 → 21) plus 5 end-to-end ones (11 → 16), 9 437 root tests green, oxlint 0
+warnings, prettier clean, `nx typecheck` 15 projects green.
