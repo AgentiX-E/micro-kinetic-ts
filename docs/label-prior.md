@@ -70,8 +70,13 @@ prior is added):
 
 A ranking whose head is separated by a hundredth has no room for an external term; one separated by half a unit has
 plenty. So τ = 0.02 does exactly one thing on `trainticket`: **it says nothing — zero of its 47 cases move, and the cell
-reads 0.6596, bit-identical to the shipped run.** That is why the traversal is not a hyperparameter search: 0.02 is not
-the middle of a plateau, it is above a margin distribution that sits almost entirely below it.
+reads 0.6596, bit-identical to the shipped run.**
+
+**And the sweep below corrects a sentence that used to stand here.** It said 0.02 was "not the middle of a plateau".
+It is: τ = 0.015 and τ = 0.02 produce the same `CA@1` at both prices, so the curve is FLAT across that interval and
+falls on either side of it. What makes 0.02 the shipped value is not that it is a maximum but that it is the only
+threshold at which **no cell is below its shipped reading** — the same criterion the dual-family gate's 0.08 was chosen
+on one iteration earlier. A maximum and a safe boundary are different claims, and only the second one is true.
 
 The gate is read from the **base** totals (every term except this one), because a gate computed from the gated score
 would be the term's own output deciding whether the term runs. It is also the reason the deployment can use it: a cell
@@ -103,10 +108,33 @@ Cleared: the Cloud-OpsBench Hard bucket — `β = 0.05, τ = 0.02` at **0.5577 w
 7.96 pp, two bit-identical), `β = 0.1, τ = 0.02` at **0.5769 with 11 gained and 1 lost** (p = 0.0063, two disjoint
 halves both up).
 
-**The τ sweep, read honestly.** Only four points were measured, at `β = 0.1`: τ = 0 → 0.4872, τ = 0.02 → **0.5769**,
-τ = 0.05 → 0.5641, τ = 0.1 → 0.5449. So the curve rises from the refused reading to 0.02 and falls monotonically
-after it, and **the interval between 0 and 0.02 was not swept** — 0.02 is the best of the points taken, not a located
-optimum. The open work is therefore _below_ the shipped threshold, not above it.
+**The τ sweep, read honestly — eight points, not four.** Two prices, four thresholds each, all on the engine:
+
+| β | τ | `CA@1` | `Top@3` | `Top@5` | `codedefect` | `boutique/performance` | `trainticket` |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.05 | 0.005 | 0.4679 | 0.7692 | 0.8590 | — | — | — |
+| 0.05 | 0.010 | 0.5192 | 0.7756 | 0.8590 | — | — | — |
+| 0.05 | 0.015 | 0.5577 | 0.7756 | 0.8590 | 0.4545 | 0.7619 | 0.6596 |
+| **0.05** | **0.020** | **0.5577** | 0.7628 | 0.8462 | 0.4432 | **0.8095** | **0.6596** |
+| 0.10 | 0.005 | 0.4744 | 0.7500 | 0.8910 | — | — | — |
+| 0.10 | 0.010 | 0.5321 | 0.7885 | 0.9038 | — | — | — |
+| 0.10 | 0.015 | **0.5769** | **0.8077** | **0.8974** | **0.5000** | 0.7143 | **0.6596** |
+| **0.10** | **0.020** | **0.5769** | 0.7949 | 0.8846 | 0.4886 | 0.7619 | **0.6596** |
+
+**τ ∈ [0.015, 0.02] is a plateau and τ < 0.015 is a cliff.** `CA@1` is identical at the two top thresholds for both
+prices (0.5577 and 0.5769) and falls by 4.0 and 4.5 pp at 0.010. `trainticket` reads 0.6596 at every τ ≥ 0.015 — the
+term is silent there across the whole plateau, which is the gate working rather than the threshold being lucky.
+
+**And 0.02 is the only point in the plateau where no cell is below its shipped reading.** At β = 0.05, τ = 0.015 lifts
+`codedefect` 1.13 pp further but charges `boutique/performance` 4.76 pp; τ = 0.02 lifts `codedefect` 7.96 pp and leaves
+the other two cells **bit-identical**. At β = 0.1 neither plateau point is cell-safe (`performance` falls 4.76 pp at
+both), which is why the zero-loss arm is a *price* choice rather than a threshold one — the two axes are separate, and
+the sweep is what separates them.
+
+**So the reason to keep 0.02 is safety, not maximum.** A reader who wanted the highest `Top@3` on this one slice would
+choose (0.1, 0.015); a reader who wanted to be unable to damage a cell would choose (0.05, 0.02). Both are recorded.
+The default stays at 0.02 because the second criterion is the one this project applies to every enrolment, and because
+`Top@3` is not a board we are measured on.
 
 **Not yet cleared.** The term ships at weight 0, so no default moved and no ranking changed. Enrolling it at 0.1 needs
 both halves of the kill criterion this project applies to every term:
@@ -115,8 +143,10 @@ both halves of the kill criterion this project applies to every term:
 2. **the FSE'26 panel** — and this runner does not yet build a profile at all, which is why the census records
    `fse26: null` for both fields. That is the gap to close before the weight can move.
 
-Open work, in the order the register records it: (a) sweep τ between 0 and 0.02 to locate the optimum the four points
-only bracket; (b) `codedefect`'s tail — the term REPAIRS it rather than thinning it (`Top@5` 0.8068 shipped, 0.8523 at
-`β = 0.05`, **0.9205** at `β = 0.1`), so the remaining gap to the prior-alone reading of 1.0000 is 7.95 pp of cases
-where the history knows the answer and the engine's other nineteen terms outvote it — a head-versus-tail diagnostic,
-not a price question; (c) build the profile on the FSE'26 path so half 2 of the criterion is measurable at all.
+Open work, in the order the register records it: (a) **done in this iteration** — the eight-point sweep below closes
+the bracket, and it also retired this note's first guess (the table above: the optimum is a plateau, not a point);
+(b) `codedefect`'s tail — the term REPAIRS it rather than thinning it (`Top@5` 0.8068 shipped, 0.8523 at `β = 0.05`,
+**0.9205** at `β = 0.1 / τ = 0.02`, **0.9432** at `β = 0.1 / τ = 0.015`), so the remaining gap to the prior-alone
+reading of 1.0000 is 5.68 pp of cases where the history knows the answer and the engine's other nineteen terms outvote
+it — a head-versus-tail diagnostic, not a price question; (c) build the profile on the FSE'26 path so half 2 of the
+criterion is measurable at all.

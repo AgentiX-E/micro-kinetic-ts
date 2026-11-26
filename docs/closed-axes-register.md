@@ -11579,10 +11579,15 @@ the cell IS the label being predicted, so a per-cell prior is a per-answer prior
 deployable arm is measured against. A per-SYSTEM scope is deployable — a deployment knows which fleet it is — and is
 the 0.5769 reading above.
 
-**The τ sweep, read honestly.** Four points at `β = 0.1`: 0 → 0.4872, 0.02 → **0.5769**, 0.05 → 0.5641, 0.1 → 0.5449.
-The curve rises from the refused reading and falls monotonically after 0.02, so 0.02 is the best of the points TAKEN,
-not a located optimum — **the interval between 0 and 0.02 was not swept**, and that is the open work rather than a
-claim.
+**The τ sweep, read honestly — eight points, and it corrects the sentence above.** Two prices, four thresholds each,
+all on the engine: at `β = 0.1`, τ = 0 / 0.005 / 0.010 / 0.015 / 0.020 read 0.4872 / 0.4744 / 0.5321 / **0.5769** /
+**0.5769**; at `β = 0.05` they read 0.4808 / 0.4679 / 0.5192 / 0.5577 / 0.5577. So **τ ∈ [0.015, 0.02] is a plateau and
+τ < 0.015 is a cliff** — `CA@1` is identical at the two top thresholds and falls 4.0–4.5 pp at 0.010. An earlier
+draft of this entry said 0.02 was "not the middle of a plateau"; it is one. What makes 0.02 the shipped value is the
+criterion the dual-family gate's 0.08 was chosen on one iteration earlier: **it is the only plateau point at which no
+cell is below its shipped reading** (β = 0.05: `codedefect` +7.96 pp, the other two bit-identical). The maximum of
+`Top@3` sits at (0.1, 0.015) with 0.8077, and that arm charges `boutique/performance` 4.76 pp — recorded, not shipped,
+because `Top@3` is not a board we are measured on.
 
 **Four fences moved, each for a reason that is the point.** `DECLARED_TERMS` reached twenty, so the Bonferroni level
 tightened from `0.05/19 = 0.002632` to `0.05/20 = 0.002500` — a term enrolled as a split of the same family-wise budget
