@@ -434,6 +434,14 @@ const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
     // and the per-edge latency rise is the one measurement that encodes the same physical fact. The arm was
     // measured on THIS corpus (`docs/topo-edge-explained.md` §4) and refused (§5).
     '--edge-explained',
+    // Iteration 368: the label prior's PAIR, on THIS side. The same two flags also close the golden half's
+    // `anomaly_knobs` block, and the pair appears in both for the reason the whole table exists: each list is the
+    // dispatch surface of ONE workflow, and `declared()` reads them separately. Before this entry existed the
+    // census recorded `fse26: null` beside both rows — the arm was unmeasurable on one half of a kill criterion
+    // that is an AND over two benchmarks — and `run-fse26.ts` derives the history from the corpus it scores, so
+    // the omission is closed rather than merely documented.
+    '--label-prior-weight',
+    '--label-prior-margin-gate',
   ],
   // The anomaly composition. One input for three knobs because the RCAEval workflow is AT the 25-input
   // budget and these three are one object — `deviation + w·trend + w·deviation·burst + w·cv`. The list is
@@ -803,13 +811,13 @@ const KNOBS: Readonly<
   },
   labelPriorWeight: {
     // The only term whose input is not the case's telemetry: a frequency over the deployment's LABELLED past
-    // incidents, estimated leave-one-out over the case's own candidate set. RCAEval-only, and `fse26: null` says
-    // why — `run-fse26.ts` builds no profile at all, so a row claiming that half would describe a knob the FSE'26
-    // runner has nothing to pass it to. Building that profile is the open work `docs/label-prior.md` §6 names
-    // second, and closing it is what would let this row carry `ranking_knobs`.
+    // incidents, estimated leave-one-out over the case's own candidate set. BOTH halves, since iteration 368:
+    // `run-fse26.ts` derives the history from the corpus it scores (`fse26-label-history.ts`), so the row carries
+    // `ranking_knobs` rather than the `fse26: null` that recorded the gap and was the second of the two items
+    // `docs/label-prior.md` §6 left open.
     flag: '--label-prior-weight',
     owner: 'label-prior.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   labelPriorMarginGate: {
@@ -818,7 +826,7 @@ const KNOBS: Readonly<
     // [0, 1], and a negative gate would admit the prior precisely where the head is undecided.
     flag: '--label-prior-margin-gate',
     owner: 'label-prior.md',
-    fse26: null,
+    fse26: 'ranking_knobs',
     rcaeval: 'anomaly_knobs',
   },
   victimWeight: {
@@ -1247,6 +1255,13 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   // side it could not be asked on, which is why the flip was undecidable rather than refused.
   'failedEdgeGateMode',
   'failedEdgeWeight',
+  // Iteration 368: the label prior's PAIR, and the first entry in this list whose FSE'26 reach was itself the
+  // open work rather than a workflow edit — `run-fse26.ts` built no history, so the term could not be priced on
+  // that half at all. With the history derived from the corpus the arm has both halves, which is what an
+  // enrolment needs: the golden half's nine cells and the FSE'26 panel are the AND, and a term that could only be
+  // asked on one of them was the reason the weight stayed 0.
+  'labelPriorMarginGate',
+  'labelPriorWeight',
   'latMinRise',
   'latWeight',
   'logSignalMode',

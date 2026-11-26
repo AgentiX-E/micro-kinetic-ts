@@ -163,6 +163,12 @@ export function buildFse26RunConfig(
     faultFreeWeight: opts.faultFreeWeight,
     faultFreeSelection: opts.faultFreeSelection,
     faultFreeProfileDigest: profile.digest,
+    // The label prior's pair. Stated unconditionally on the record for the reason the closure is: the term ships
+    // OFF, so these two fields are the only thing that can tell a measured arm from the shipped run on an
+    // artifact — and the history behind them is DERIVED from the corpus (never a path), which is why no third
+    // field follows them.
+    labelPriorWeight: opts.labelPriorWeight,
+    labelPriorMarginGate: opts.labelPriorMarginGate,
     containmentExcursions:
       // The ENGINE's default, not `!== false`: the pass ships ON, so reading `undefined` as "off" would
       // report `absent` for a run that asked for nothing and got the shipped behaviour.

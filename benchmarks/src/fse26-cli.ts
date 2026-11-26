@@ -77,6 +77,8 @@ import {
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_FAULT_FREE_WEIGHT,
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_NORMALISATION,
@@ -527,6 +529,32 @@ export interface Fse26CliOptions {
    */
   readonly faultFreeSelection: FaultFreeSelection;
   /**
+   * Weight on the LABEL prior — how much a service being this deployment's past answer is worth.
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0, which is the ablation: at 0 the term is not priced and the
+   * history is not even read, so the shipped ranking is bit-identical to the engine that had no such term.
+   *
+   * ## Why this half needed a profile built for it
+   *
+   * The RCAEval half has carried this pair since iteration 367 and the census recorded the FSE'26 half as
+   * `fse26: null` beside both fields, because this runner built no history at all — so the arm was
+   * unstateable on one half of a kill criterion that is an AND over the two. The history is now DERIVED from the
+   * corpus this run scores (see `fse26-label-history.ts`) rather than read from a file: a frequency over one
+   * corpus's labels is true of that corpus alone, so a path would be a second place where "which history" can be
+   * wrong, and the derivation costs one prefix scan per datapack.
+   */
+  readonly labelPriorWeight: number;
+  /**
+   * The smallest top-1 margin at which the label prior may speak — the gate, as a number the ranking produces.
+   *
+   * Read off the engine's own `top1 − top2` BEFORE the term is added, because a gate computed from the gated
+   * score would be the term's own output deciding whether the term runs. Ships at
+   * {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE}, the plateau boundary the Cloud-OpsBench sweep measured; inert at
+   * weight 0. `label-prior-reach.ts` measures what it saw on THIS corpus, so a silent arm is a median rather
+   * than an inference.
+   */
+  readonly labelPriorMarginGate: number;
+  /**
    * Weight on the SELF-TIME prior, SHIPPED OFF at {@link DEFAULT_SELF_TIME_WEIGHT} = 0.
    *
    * The term rewards the share of a service's own latency rise that no CALLEE can explain — a
@@ -976,6 +1004,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
     faultFreeProfilePath: undefined as string | undefined,
     faultFreeSelection: 'rarest' as FaultFreeSelection,
+    labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
+    labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
     selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
     selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
     selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
@@ -1164,6 +1194,15 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
         );
       }
       opts.stabilityScope = value;
+    } else if (arg === '--label-prior-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, so a blank value falls back to the SHIPPED weight rather than selecting the
+      // ablation — the rule every weight on this parser follows.
+      opts.labelPriorWeight = parseWeight(argv[++i]!, DEFAULT_LABEL_PRIOR_WEIGHT);
+    } else if (arg === '--label-prior-margin-gate' && hasValue(argv, i + 1)) {
+      // The golden half's `parseWeight` rule and NOT `parseUnitInterval`: the domain is a non-negative score
+      // gap rather than a share, so `1` is not the largest legal gate and clamping at it would silently refuse
+      // an arm that withholds the term everywhere — the strongest control on this axis.
+      opts.labelPriorMarginGate = parseWeight(argv[++i]!, DEFAULT_LABEL_PRIOR_MARGIN_GATE);
     } else if (arg === '--fault-free-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` on the same rule as every other weight: an empty value falls back to the
       // SHIPPED weight rather than selecting a configuration nobody asked for.

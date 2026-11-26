@@ -11632,3 +11632,48 @@ number to tune. That is a stronger position than the one this entry opened with.
 **State.** New modules `packages/tree/src/pruning/label-prior.ts`, `packages/core/src/types/label-prior.ts`,
 `benchmarks/src/label-prior-profiles.ts`, 4 724 benchmark tests, 9 344 root tests, oxlint 0 warnings, prettier clean,
 `nx typecheck` 15 projects green.
+
+### §368 — the other half of the label prior's criterion, and the margin that turned out not to be a sufficient statistic
+
+**Axis.** The same one, measured where it had never been measurable: the FSE'26 panel. `run-fse26.ts` built no history,
+so the census recorded `fse26: null` beside both dispatch fields and half of an AND was unaskable. The history is now
+DERIVED from the corpus the run scores — `benchmarks/src/fse26-label-history.ts`, a prefix scan of each `case.json`
+rather than a second 38 GB pass — and both flags travel in `packed ranking_knobs` on that half.
+
+**Measured, four arms, one commit, one profile, one flag apart** (all at `--failure-containment-scope global-measured`,
+which reads 1 186 where the engine's default scope reads the standing table's 1 156):
+
+| arm | `Top@1` | `Top@3` | `Top@5` | gained / lost | exact p |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shipped (β = 0) | **1 186 (83.40 %)** | 1 236 | 1 255 | — | — |
+| β = 0.1, τ = 0 | 1 184 | **1 260** | **1 279** | 20 / 22 | 0.878 |
+| β = 0.1, τ = 0.02 | 1 176 | 1 253 | 1 273 | 8 / 18 | 0.076 |
+| β = 0.05, τ = 0.02 | 1 182 | 1 242 | 1 267 | 3 / 7 | 0.344 |
+
+**REFUSED on that half**: the pre-registered criterion is conjunctive and `Top@1` falls in all three armed arms. Both
+pre-registered predictions were falsified — the ungated arm does NOT collapse here (it loses 2 of 1 422, p = 0.878),
+and the gated arm is *worse* than it (−10, p = 0.076 in the wrong direction).
+
+**Why, and it is the finding.** The new census (`benchmarks/src/label-prior-reach.ts`, over the run's own term dump,
+reading the base `top1 − top2` the gate compares): the median margin on FSE'26 is **0.6277** against **0.0102** in the
+Cloud-OpsBench `trainticket` cell, so τ = 0.02 withholds **6.3 %** of cases instead of 100 % — the threshold that is a
+gate on one corpus is a no-op on the other. And it could not have helped: the 42 cases the prior flips have the same
+margin distribution on both sides (gained median 0.0142 / p90 0.0960; lost median 0.0531 / p90 0.1432), so every
+threshold shrinks the flip set proportionally rather than separating it (τ = 0.02 → 8 admitted / 18 lost; 0.20 → 2/1 on
+three cases). **`top1 − top2` measures how DECIDED the head is, not how CORRECT it is**, and this term's errors are
+about *which* label: it wins where the engine's head is a bystander (`ts-consign-service`, `loadgenerator`,
+`ts-price-service`) and loses where the engine correctly named a rare one (`mysql`, `ts-config-service`,
+`ts-station-service`, `ts-route-service`, `ts-travel2-service`), most of the loss in one block — **`NetworkDelay` −7 of
+21** at both prices and both gates.
+
+**What survives.** The term is worth **+1.69 pp at `Top@3` and `Top@5`** in every armed arm and costs `Top@1`. The axis
+is therefore not dead, it is mis-scoped: the only live arm is structural — pin the base rank-1 and let the prior reorder
+2..n, which makes `Top@1` unchanged by construction and keeps the depth gain. Registered with its prediction in
+`docs/label-prior.md` §6(d), and it is explicitly not a `Top@1` improvement on any board this project competes on.
+
+**Owner documents.** `docs/label-prior-fse26.md` (pre-registration, the four arms, the reach census, the flip-margin
+table) and `docs/label-prior.md` §6.
+
+**State.** New modules `benchmarks/src/fse26-label-history.ts` (26 tests, both the prefix fast path and the full-parse
+fallback on one file), `benchmarks/src/label-prior-reach.ts` (+ `report-prior-reach.ts`), two dispatch fields on the
+FSE'26 half, two `ranking_knobs` names, oxlint 0 warnings, prettier clean, `nx typecheck` 15 projects green.

@@ -11,7 +11,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FAULT_FREE_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_FAULT_FREE_WEIGHT,
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
+} from '../../packages/tree/src/index.js';
 
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
@@ -81,6 +85,10 @@ describe('buildFse26EngineOptions', () => {
       // dropped forwarding would also produce. That is why it is asserted here rather than trusted.
       faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
       faultFreeSelection: 'rarest',
+      // The label prior's pair, at their shipped values — OFF and the gate that pairs it. Asserted for the reason
+      // the fault-free weight is: 0 is both the ablation and the value a dropped forwarding produces.
+      labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
+      labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
       // `undefined` when the run has no profile, and the assertion is that the KEY is present: the engine's option
       // is optional, so an absent key and an explicitly-undefined one look the same to the pruner and different to
       // a reader of this object.

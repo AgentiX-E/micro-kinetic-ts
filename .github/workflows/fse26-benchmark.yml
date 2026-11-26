@@ -52,7 +52,7 @@ on:
         required: false
         default: ''
       ranking_knobs:
-        description: "Comma-separated name=value pairs for the eight ranking knobs that a dispatch could not state until iteration 96. They are ONE input rather than eight because of a HARD GITHUB LIMIT, not a preference: a workflow_dispatch accepts at most 25 inputs, naming them one per input took this workflow to 30, and the workflow file was therefore INVALID - the push-triggered validation run failed and the dispatch was refused with HTTP 422. Accepted names: trace_weight, topo_weight, collision_weight, prism_weight, prism_pooling, collapse_discount, suppress_idle_transients, suppress_near_zero_baseline_rise, anomaly_trend_weight, anomaly_burst_weight, anomaly_cv_weight, anomaly_breadth_weight, anomaly_breadth_gate, self_time_weight, self_time_scope, stability_scope, victim_weight, self_anomaly_weight, dual_family_weight, dual_family_gate, dual_family_gate_mode, pod_state_weight, trace_skips_leader, failure_containment, failure_attribution, drop_deviation, zero_baseline_latency, cap_trend_bonus, rise_ceiling, baseline_anchor, topo_discount, topo_scope, topo_discount_gate, topo_closure, edge_explained, log_normalisation, transient_guard_test. The topological deduction is TWO names because they answer two questions - how much of an explained anomaly is deducted, and which channels a callee is allowed to explain (`all` is the ablation arm of the shipped `external`, `caller` restricts only the caller-side channel) - and its weight ships at 0, so a bare dispatch is unchanged by construction. The two suppression switches take 1 to switch ON and 0 to switch OFF (emitting the runner's own negated pole); every other name takes its value verbatim, and a malformed VALUE falls back to the runner's shipped value on the CLI's own rule rather than inventing a configuration. Example: suppress_idle_transients=1,trace_weight=1. An unrecognised NAME fails the step rather than being dropped, because a silently ignored knob is a run that reports a configuration nobody asked for"
+        description: "Comma-separated name=value pairs for the eight ranking knobs that a dispatch could not state until iteration 96. They are ONE input rather than eight because of a HARD GITHUB LIMIT, not a preference: a workflow_dispatch accepts at most 25 inputs, naming them one per input took this workflow to 30, and the workflow file was therefore INVALID - the push-triggered validation run failed and the dispatch was refused with HTTP 422. Accepted names: trace_weight, topo_weight, collision_weight, prism_weight, prism_pooling, collapse_discount, suppress_idle_transients, suppress_near_zero_baseline_rise, anomaly_trend_weight, anomaly_burst_weight, anomaly_cv_weight, anomaly_breadth_weight, anomaly_breadth_gate, self_time_weight, self_time_scope, stability_scope, victim_weight, self_anomaly_weight, dual_family_weight, dual_family_gate, dual_family_gate_mode, pod_state_weight, trace_skips_leader, failure_containment, failure_attribution, drop_deviation, zero_baseline_latency, cap_trend_bonus, rise_ceiling, baseline_anchor, topo_discount, topo_scope, topo_discount_gate, topo_closure, edge_explained, log_normalisation, transient_guard_test, label_prior_weight, label_prior_margin_gate. The topological deduction is TWO names because they answer two questions - how much of an explained anomaly is deducted, and which channels a callee is allowed to explain (`all` is the ablation arm of the shipped `external`, `caller` restricts only the caller-side channel) - and its weight ships at 0, so a bare dispatch is unchanged by construction. The two suppression switches take 1 to switch ON and 0 to switch OFF (emitting the runner's own negated pole); every other name takes its value verbatim, and a malformed VALUE falls back to the runner's shipped value on the CLI's own rule rather than inventing a configuration. Example: suppress_idle_transients=1,trace_weight=1. An unrecognised NAME fails the step rather than being dropped, because a silently ignored knob is a run that reports a configuration nobody asked for"
         required: false
         default: ''
       drop_metrics:
@@ -421,6 +421,24 @@ jobs:
                   ;;
                 dual_family_weight)
                   KNOB_ARGS+=(--dual-family-weight "$value")
+                  ;;
+                # The LABEL prior's price, and until iteration 368 this half had no history to price it against —
+                # which is why the census carried `fse26: null` beside both names and why the arm was half
+                # unmeasurable. The history is now derived from this corpus (`fse26-label-history.ts`), so the arm
+                # is dispatchable here exactly as it is on the golden half, and the value is a weight like every
+                # other on the term (`0` is the ablation).
+                label_prior_weight)
+                  KNOB_ARGS+=(--label-prior-weight "$value")
+                  ;;
+                # …and the GATE, refused on a negative value at the dispatch edge rather than clamped: the domain
+                # is a non-negative score gap, so a negative threshold would admit the prior precisely where the
+                # head is undecided — the one state the term exists to refuse.
+                label_prior_margin_gate)
+                  case "$value" in
+                    ''|-*|*[!0-9.]*|.*|*.|*..*)
+                      echo "::error::ranking_knobs: label_prior_margin_gate takes a non-negative margin, got '$value'"; exit 1 ;;
+                    *) KNOB_ARGS+=(--label-prior-margin-gate "$value") ;;
+                  esac
                   ;;
                 # The pod-state term: a pod's lifecycle transition across the injection boundary. It ships at
                 # 0 and is the one reading the level guards cannot take, so the arm is stated here rather than

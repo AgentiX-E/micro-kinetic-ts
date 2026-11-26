@@ -86,6 +86,11 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     stabilityScope: 'rank',
     faultFreeWeight: 0,
     faultFreeSelection: 'rarest',
+    // The label prior's pair, at the shipped values: OFF, with the gate that pairs it. Carried rather than
+    // omitted for the reason the fixture states every shipped field — a fixture that left it out would print
+    // `undefined` on the line and describe a configuration the engine cannot build.
+    labelPriorWeight: 0,
+    labelPriorMarginGate: 0.02,
     faultFreeProfileDigest: null,
     containmentExcursions: 'absent',
     selfTimeWeight: 0,
@@ -312,7 +317,8 @@ describe('FSE26 report — the two renderings agree', () => {
         // The profile's identity, and whether the containment pass could read it. Both are on the line
         // because the pass reads the profile too, and a run without one was byte-identical to the
         // shipped run while reading 15 cases lower.
-        'faultFreeWeight=0 faultFreeSelection=rarest faultFreeProfileDigest=none ' +
+        'faultFreeWeight=0 faultFreeSelection=rarest labelPriorWeight=0 labelPriorMarginGate=0.02 ' +
+        'faultFreeProfileDigest=none ' +
         'selfTimeWeight=0 victimWeight=0 ' +
         'dualFamilyWeight=0 podStateWeight=0 ' +
         `dualFamilyGate=${DEFAULT_DUAL_FAMILY_GATE} ` +

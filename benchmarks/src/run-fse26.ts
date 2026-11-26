@@ -66,6 +66,7 @@ import { ContainmentRowDump } from './containment-rows.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
 import { fingerprintSourceOrder } from './fingerprint-width.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
+import { buildCorpusLabelHistory, priorForCase } from './fse26-label-history.js';
 import { buildFse26RunConfig } from './fse26-run-config.js';
 import { DepthDump, formatDepthLadder, readDepthDump } from './ranking-depth.js';
 import { formatSelfTimeCensus } from './self-time-census-report.js';
@@ -207,6 +208,33 @@ async function main(): Promise<void> {
   const dirs = discoverCaseDirs(opts.dataDir);
   const selected = opts.maxCases > 0 ? dirs.slice(0, opts.maxCases) : dirs;
   console.log(`Cases discovered: ${dirs.length}; evaluated: ${selected.length}`);
+  // ── The label history, derived ONCE over the WHOLE corpus ────────────────────────────────────────────
+  //
+  // The population is `dirs` and not `selected`, because `p` is a frequency over the DEPLOYMENT's diagnosed
+  // incidents: a case this run does not score is still an incident that deployment diagnosed, so excluding it
+  // would make the prior a function of `--max-cases`. The case being scored is removed per case instead
+  // (`priorForCase`), which is the leave-one-out rule, and that is a property of one case rather than of the
+  // population.
+  //
+  // Built only when the weight asks for it: at the shipped `0` the term is not priced, so a run that read the
+  // corpus twice would pay for a history no ranking could use. The reader is a prefix scan (see
+  // `fse26-label-history.ts`), so even an armed run costs seconds rather than a second corpus pass.
+  const labelHistory = opts.labelPriorWeight === 0 ? undefined : buildCorpusLabelHistory(dirs);
+  if (labelHistory !== undefined) {
+    console.log(
+      `Label prior: armed at ${opts.labelPriorWeight} / gate ${opts.labelPriorMarginGate}; history ` +
+        `${labelHistory.history.labelled} labelled incidents over ` +
+        `${labelHistory.history.counts.size} services`,
+    );
+    if (labelHistory.unreadable > 0) {
+      // Named rather than folded into the total: a history fitted on 1 421 of 1 422 cases has a different
+      // denominator from one fitted on all of them, and the difference is invisible in every downstream number.
+      console.log(
+        `Warning: ${labelHistory.unreadable} of ${dirs.length} cases could not be read for the history, so the ` +
+          'prior was fitted on the remainder.',
+      );
+    }
+  }
   console.log('═'.repeat(65));
 
   // ── Per-case accumulation (small; the loaded cases are released per case) ──
@@ -312,6 +340,14 @@ async function main(): Promise<void> {
         ? [...raw.groundTruthServices]
         : [benchCase.groundTruth.serviceId];
     const faultType = benchCase.groundTruth.faultType ?? 'unknown';
+    // The case the engine scores, which carries the prior when the run is armed. It must be attached HERE and
+    // not after the ranking: `toFaultGraphOptions` is the one owner of the case -> graph mapping and forwards
+    // `labelPrior`, so a prior attached to a copy the graph never saw is a term that is silently absent —
+    // `MAP_ABSENT` on every candidate, which reads as "this deployment has no history" rather than as a defect.
+    const scoredCase =
+      labelHistory === undefined
+        ? benchCase
+        : { ...benchCase, labelPrior: priorForCase(labelHistory, accepted) };
 
     let ranking: RootCauseResult[] = [];
     let faultGraph: FaultPropagationGraph | undefined;
@@ -328,7 +364,7 @@ async function main(): Promise<void> {
         faultGraph = pruner.buildFaultGraph(
           benchCase.callGraph,
           benchCase.metrics,
-          toFaultGraphOptions(benchCase, benchCase.injectTime),
+          toFaultGraphOptions(scoredCase, scoredCase.injectTime),
         );
         // ── The order at the POOL's width, not the reporting width ────────────────────────────────
         //

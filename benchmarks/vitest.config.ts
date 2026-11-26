@@ -680,6 +680,17 @@ export default defineConfig({
         // uniform nobody measured). `label-prior-profiles.test.ts` asserts each by name, and the fourth assertion is
         // the one the engine depends on: the per-case map must key EVERY case it was handed.
         'src/label-prior-profiles.ts',
+        // Added with the FSE'26 half's history. Included because the reader is where this half can be wrong in a
+        // way no cell table shows: a prefix scan that silently missed the label would read as "this deployment
+        // diagnosed nothing here", and a fallback that did not agree with the loader would score the corpus
+        // against a history the corpus does not have. `fse26-label-history.test.ts` asserts the fast path, the
+        // fallback on a file padded past the window, the bracket inside a service name, the pooling rule and the
+        // unreadable count by name.
+        'src/fse26-label-history.ts',
+        // Added with the gate's census: the reach is what separates a term the gate withheld everywhere from a
+        // term that spoke and agreed, so the two are counted apart — and a run that never armed the term is a
+        // third state rather than a zero.
+        'src/label-prior-reach.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

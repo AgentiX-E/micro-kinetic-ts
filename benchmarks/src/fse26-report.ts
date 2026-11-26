@@ -180,6 +180,22 @@ export interface FSE26RunConfig {
    */
   readonly faultFreeSelection: FaultFreeSelection;
   /**
+   * Weight on the LABEL prior; the shipped value is the engine's 0, i.e. OFF.
+   *
+   * Printed unconditionally for the reason the fault-free weight above is: `0` is the ablation, so an
+   * omitted-when-default rule would render a measured arm and the shipped run byte-identically — and on this
+   * half the arm is the one the census could not state until the history was derived from the corpus.
+   */
+  readonly labelPriorWeight: number;
+  /**
+   * The margin at which that prior may speak, on the engine's own `top1 − top2` before the term is added.
+   *
+   * Printed beside the weight because the two are one configuration and neither alone identifies the arm. The
+   * gate is INERT at weight 0, so its shipped value goes on the line anyway — a reader who sees `0` for the
+   * weight must still be able to tell which gate the next arm was paired with.
+   */
+  readonly labelPriorMarginGate: number;
+  /**
    * Content digest of the fault-free profile the run supplied, or `null` when it supplied none.
    *
    * Recorded because the profile is an input to **two** consumers and only one of them is a reported field.
@@ -666,6 +682,10 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // Unconditional on the same rule. The weight ships at 0, so this pair IS the only thing on the artifact that
   // can distinguish a measured arm from the shipped run.
   line += ` faultFreeWeight=${config.faultFreeWeight} faultFreeSelection=${config.faultFreeSelection}`;
+  // Unconditional on the same rule, and the pair the FSE 26 half could not state at all until the history was
+  // derived from the corpus: at weight 0 these two fields are the only thing on the artifact that distinguishes
+  // a measured arm from the shipped run.
+  line += ` labelPriorWeight=${config.labelPriorWeight} labelPriorMarginGate=${config.labelPriorMarginGate}`;
   // Unconditional, and the one field on this line whose omission was measured. The profile feeds the
   // containment order's excursions as well as the weight above, so a run with the shipped weight of 0 and no
   // profile was byte-identical on this line to the shipped run while reading 1 141 instead of 1 156 Top@1.

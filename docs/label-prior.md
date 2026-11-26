@@ -136,17 +136,45 @@ choose (0.1, 0.015); a reader who wanted to be unable to damage a cell would cho
 The default stays at 0.02 because the second criterion is the one this project applies to every enrolment, and because
 `Top@3` is not a board we are measured on.
 
-**Not yet cleared.** The term ships at weight 0, so no default moved and no ranking changed. Enrolling it at 0.1 needs
-both halves of the kill criterion this project applies to every term:
+**Not yet cleared — and iteration 368 cleared half 2 the hard way: by refusing it.** The term ships at weight 0, so no
+default moved and no ranking changed. Enrolling it needs both halves of the kill criterion this project applies to every
+term:
 
 1. **the nine RCAEval cells** — a dispatch with `labelprior=0.1 labelpriorgate=0.02` must hold every cell;
-2. **the FSE'26 panel** — and this runner does not yet build a profile at all, which is why the census records
-   `fse26: null` for both fields. That is the gap to close before the weight can move.
+2. **the FSE'26 panel** — **now measurable, and measured: refused.** The runner derives the history from the corpus it
+   scores (`fse26-label-history.ts`), so both fields are dispatchable on that half and the census rows carry
+   `ranking_knobs`. Four arms on the 1,422 cases, one commit, one profile, one flag apart — the head of the ranking is
+   separated by a **median 0.6277**, sixty times this document's `trainticket` cell, and the term therefore loses
+   `Top@1` at every price while gaining at depth:
 
-Open work, in the order the register records it: (a) **done in this iteration** — the eight-point sweep below closes
-the bracket, and it also retired this note's first guess (the table above: the optimum is a plateau, not a point);
-(b) `codedefect`'s tail — the term REPAIRS it rather than thinning it (`Top@5` 0.8068 shipped, 0.8523 at `β = 0.05`,
-**0.9205** at `β = 0.1 / τ = 0.02`, **0.9432** at `β = 0.1 / τ = 0.015`), so the remaining gap to the prior-alone
-reading of 1.0000 is 5.68 pp of cases where the history knows the answer and the engine's other nineteen terms outvote
-it — a head-versus-tail diagnostic, not a price question; (c) build the profile on the FSE'26 path so half 2 of the
-criterion is measurable at all.
+| arm | `Top@1` | `Top@3` | `Top@5` | gained / lost | exact p |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shipped (β = 0) | **1 186 (83.40 %)** | 1 236 | 1 255 | — | — |
+| β = 0.1, τ = 0 | 1 184 (83.26 %) | **1 260** | **1 279** | 20 / 22 | 0.878 |
+| β = 0.1, τ = 0.02 | 1 176 (82.70 %) | 1 253 | 1 273 | 8 / 18 | 0.076 |
+| β = 0.05, τ = 0.02 | 1 182 (83.12 %) | 1 242 | 1 267 | 3 / 7 | 0.344 |
+
+All four were dispatched on the configuration the FSE'26 workflow dispatches — `--fault-free-profile` plus
+`--failure-containment-scope global-measured` — which reads **1 186** where the engine's default scope reads the
+standing table's **1 156**, so the deltas below are against the control that shares every flag and differs by exactly
+the two numbers under test.
+
+**And the reason is not the gate.** `label-prior-reach.ts` measures the gate's own input off the run's term dump: the
+median base `top1 − top2` on this corpus is **0.6277**, so τ = 0.02 admits **93.7 %** of cases (withholds 89 of 1 422).
+The threshold that is a gate on Cloud-OpsBench is a no-op here. Worse, it is *not merely inert but uninformative*: the
+42 cases the prior flips have base margins with the same distribution on both sides — gained, median **0.0142** (p90
+0.0960); lost, median **0.0531** (p90 0.1432) — so no threshold separates the flips it wins from the flips it loses, and
+raising τ from 0.02 to 0.2 shrinks the flip set to three cases rather than improving it. **The margin is a measure of how
+DECIDED the head is, not of how CORRECT it is**, and this term's errors are about *which* label, not *whether* one is
+confident. The full reading is `docs/label-prior-fse26.md`.
+
+Open work, in the order the register records it: (a) **done** — the eight-point sweep below closes the bracket, and it
+also retired this note's first guess (the table above: the optimum is a plateau, not a point); (b) `codedefect`'s tail —
+the term REPAIRS it rather than thinning it (`Top@5` 0.8068 shipped, 0.8523 at `β = 0.05`, **0.9205** at `β = 0.1 /
+τ = 0.02`, **0.9432** at `β = 0.1 / τ = 0.015`), so the remaining gap to the prior-alone reading of 1.0000 is 5.68 pp of
+cases where the history knows the answer and the engine's other nineteen terms outvote it — a head-versus-tail
+diagnostic, not a price question; (c) **done** — the FSE'26 history is derived on that path, both fields dispatch
+through `ranking_knobs`, and half 2 of the criterion is measurable; (d) **new, and the only arm on this axis that is
+still alive**: a HEAD-PINNED order — the base rank-1 is clamped first and the prior reorders positions 2..n, so `Top@1`
+is unchanged by construction and the **+1.69 pp at `Top@3` and `Top@5`** measured above are kept. Its prediction is
+written here before it runs, and it is worth stating what it is not: a depth improvement on boards scored at `Top@1`.

@@ -102,6 +102,18 @@ export interface Fse26SignalOptions {
    */
   readonly faultFreeSelection: FaultFreeSelection;
   /**
+   * Weight on the LABEL prior. Required for the reason every weight here is: its shipped value is 0, which is
+   * exactly what a silently dropped option produces — and on this half that would run the ablation under an arm's
+   * name on the benchmark whose panel is the control for every agentic ablation.
+   */
+  readonly labelPriorWeight: number;
+  /**
+   * The margin at which that prior may speak. Required for the same reason as the weight: the pair is the
+   * configuration, and a run whose gate fell back to the engine's default while its weight did not would report
+   * a threshold nobody chose.
+   */
+  readonly labelPriorMarginGate: number;
+  /**
    * The corpus profile, when this run has one.
    *
    * DECLARED here but never WRITTEN by {@link buildFse26EngineOptions}: the profile is data rather than
@@ -301,6 +313,8 @@ export function buildFse26EngineOptions(
       stabilityWeight: opts.stabilityWeight,
       faultFreeWeight: opts.faultFreeWeight,
       faultFreeSelection: opts.faultFreeSelection,
+      labelPriorWeight: opts.labelPriorWeight,
+      labelPriorMarginGate: opts.labelPriorMarginGate,
       // Handed in rather than loaded here: reading a file is IO and this module is the pure projection a test
       // checks against the parsed options. The key is built CONDITIONALLY rather than assigned `undefined`,
       // and the reason is a census rather than taste: `forwarded ∪ nonEngine = parsed` is asserted over the
