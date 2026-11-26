@@ -185,3 +185,55 @@ gate turns out to be a SUBSTITUTE for the pin rather than a complement — at `�
 instead of `+24 / +27` at the same head — and the restated criterion (four conjuncts, the fourth being the golden
 half) is in `docs/label-prior-fse26.md` §4.2. No default moved: the golden nine cells at
 `labelpriorjurisdiction=tail` are dispatchable and not yet read.
+
+## 7. Two admission mechanisms, and the condition that chooses between them
+
+The engine now has two ways to restrain a term, and until this section nothing said which applies when. Both are
+written here as claims with their falsification conditions, because a mechanism chosen by taste is a mechanism that
+cannot be wrong.
+
+**Setting.** A term `t` adds `δ_t(v)` to every candidate `v`'s total. Let `A` be the shipped order and `a₁` its head.
+Two mechanisms:
+
+* a **gate** with threshold `τ` on a decision statistic `s(x)` — here the base margin `A₁ − A₂` — which withholds `t`
+  when `s(x) < τ`;
+* a **jurisdiction** `J ⊆ {1..n}` — here `tail = {2..n}` — which lets `t` reorder only the positions in `J`.
+
+**Claim 1 — a gate is sound only if the term's errors are correlated with `s`.** Write `ε` for "the term's preferred
+head is not the truth". Gating helps iff `P(ε | s < τ) > P(ε | s ≥ τ)`; it is worthless iff the two are equal; it is
+*negative* if the inequality reverses, because then it withholds the term exactly where the term was right. Nothing
+about the value of `τ` can repair an equality — the search over `τ` is a search inside a null.
+
+**Falsified on FSE'26, and this is the measurement that motivates the jurisdiction.** The median base margin there is
+**0.6277** against Cloud-OpsBench's **0.0102** — the same statistic, 61× apart — so `τ = 0.02` withholds 89 of 1 422
+cases: a no-op. And the flips the term actually makes have the same margin distribution on both sides: gained median
+**0.0142** (p90 0.0960), lost median **0.0531** (p90 0.1432). `P(ε | s < τ) = P(ε | s ≥ τ)` up to noise, which is the
+middle case of the three. **A margin measures how decided the head is, not how correct it is.**
+
+**Claim 2 — the head-pinned jurisdiction holds by construction, at any weight.** The order is computed from the base
+scores, the term reorders the tail, and the head is then pinned to the base order's head. So `ΔTop@1 = 0` identically,
+for every `β` and every corpus, and that is a property of the construction rather than a measurement — which is why the
+arm was written down before it was run. **Falsifier:** any case where position 1 differs from the base order's head.
+There is exactly one, and it is not this term's: the containment pass runs *after* the pin, moves position 1 in 43 of
+1 422 cases, and produces the arm's 1/1 residue.
+
+**Claim 3 — a prior over labels cannot be gated at all, only scoped.** A frequency prior's error is **label
+substitution**: it prefers whichever label the deployment has seen most, and that preference is independent of how
+decided the case is. So no statistic of the *case* separates its successes from its failures — which is Claim 1's
+equality, arriving from the structure of the term rather than from the corpus. Its damage is bounded instead by where
+it is allowed to act, and the bound is worth having because the metrics are monotone in rank: a substitution at
+position 1 costs a `Top@1` case, the same substitution at position 2 costs nothing at `Top@1` and is *earned back* at
+`Top@5` when it is right. Measured: `+0` at the head, `+24` / `+27` at depth.
+
+**Claim 4 — the two mechanisms do not compose, and the gate is a substitute.** A gate on the pinned arm can only
+withhold the term inside the tail, where its worst outcome is a lost depth case and its best is a gained one. Measured
+at `τ = 0.02` under the pin: `+16 / +19` instead of `+24 / +27`, head unchanged — 89 cases withheld, 8–11 cases of
+depth paid, nothing bought. **Falsifier:** a cell where the gated-pinned arm beats the ungated-pinned arm at depth.
+None in six arms across three depths.
+
+**The rule, and the reason it is a rule rather than a preference.** Ask **what the term's information is about**. If it
+is about the *case* — a measurement of this incident — its errors track some decision statistic and a gate is the right
+instrument. If it is about the *deployment* — a prior over which labels occur — its errors are substitutions that no
+statistic of the case can predict, and only the positions it may touch can bound them. The gate is the older
+instrument and stays the default for measurement terms; the jurisdiction is the one this document adds, and it is the
+only one of the two whose head cost is **provably** zero.
