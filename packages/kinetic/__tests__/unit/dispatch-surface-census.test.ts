@@ -117,6 +117,53 @@ function flagOfInput(name: string): string {
 }
 
 /**
+ * Every `run:` script in a workflow, decoded the way YAML decodes it.
+ *
+ * This exists because a step's script is a BUDGET, not just code. GitHub validates each `run` value
+ * against **21 000 characters** and refuses the whole FILE past it, so the failure mode is not a red
+ * step: it is a workflow that will not load, which un-dispatches every input on it at once. Iteration
+ * 369 added one allow-list branch and reached 21 566 (commit `7b1d3e4f`); the census, the CLI tests
+ * and `actionlint` all passed over the file, because none of them counts characters.
+ *
+ * Inline `run:` values are measured too — they are short by convention and a convention is not a
+ * limit. Block scalars are dedented by their least-indented non-empty line, which is the indent YAML
+ * auto-detects; the chomping indicator moves the length by at most one and the budget has hundreds
+ * to spare on the margin that matters.
+ */
+function runScripts(yml: string): string[] {
+  const lines = yml.split('\n');
+  const scripts: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const header = /^(\s*)(?:-\s+)?run:[ \t]*(.*)$/.exec(lines[i]!);
+    if (header === null) continue;
+    const inline = header[2]!.trim();
+    if (!/^[|>][-+]?$/.test(inline)) {
+      if (inline !== '') scripts.push(inline);
+      continue;
+    }
+    const baseIndent = header[1]!.length;
+    const body: string[] = [];
+    let cursor = i + 1;
+    for (; cursor < lines.length; cursor++) {
+      const line = lines[cursor]!;
+      if (line.trim() === '') {
+        body.push('');
+        continue;
+      }
+      if (line.length - line.trimStart().length <= baseIndent) break;
+      body.push(line);
+    }
+    const indents = body
+      .filter((line) => line.trim() !== '')
+      .map((line) => line.length - line.trimStart().length);
+    const cut = indents.length === 0 ? 0 : Math.min(...indents);
+    scripts.push(body.map((line) => (line.trim() === '' ? '' : line.slice(cut))).join('\n'));
+    i = cursor - 1;
+  }
+  return scripts;
+}
+
+/**
  * Whether a workflow's text can reach a flag — in CODE, not in prose.
  *
  * Two rules, both measured rather than assumed:
@@ -2494,6 +2541,46 @@ describe('the dispatch surface has one owner per knob', () => {
           `${name} declares ${count} inputs; GitHub allows ${GITHUB_DISPATCH_INPUT_LIMIT}`,
         ).toBeLessThanOrEqual(GITHUB_DISPATCH_INPUT_LIMIT);
       }
+    });
+
+    /**
+     * The second budget on the same surface, and the one nothing counted.
+     *
+     * The 25-input limit above is a budget on how many NAMES a dispatch may declare. This is a budget on
+     * how much TEXT one step may carry, and it fails differently: 25 inputs is refused at dispatch time
+     * with a 422 that names the count, while 21 000 characters is refused at PUSH time by the validator,
+     * which reports the file as invalid and never runs it. Iteration 369's one-branch addition to the
+     * allow-list reached 21 566 and took the FSE'26 half's dispatch surface offline without a single red
+     * test — the census parsed the file happily, because a parser does not have a size opinion.
+     *
+     * The budget is asserted over every workflow for the reason the input limit is: it is a property of
+     * the event, and the file most likely to grow is not the file that just grew.
+     */
+    const GITHUB_STEP_SCRIPT_LIMIT = 21_000;
+
+    it('keeps every step script inside the 21 000-character limit the platform validates', () => {
+      let largest = 0;
+      let carrier = '';
+      for (const name of workflows) {
+        for (const script of runScripts(readFileSync(resolve(WORKFLOW_DIR, name), 'utf8'))) {
+          if (script.length > largest) {
+            largest = script.length;
+            carrier = name;
+          }
+          expect(
+            script.length,
+            `${name}: a step script is ${script.length} characters; GitHub validates each run value against ${GITHUB_STEP_SCRIPT_LIMIT} and refuses the FILE past it, so this step must be trimmed rather than extended`,
+          ).toBeLessThanOrEqual(GITHUB_STEP_SCRIPT_LIMIT);
+        }
+      }
+      // Non-vacuity, because a decoder that finds nothing would satisfy the loop above trivially. The
+      // FSE'26 allow-list is the largest script in the repository by an order of magnitude, so finding
+      // it is the proof that block scalars are being read rather than skipped.
+      expect(
+        largest,
+        'no large step script was decoded; the extractor is not reading block scalars',
+      ).toBeGreaterThan(15_000);
+      expect(carrier).toBe('fse26-benchmark.yml');
     });
 
     it('has the two benchmark workflows sized so the budget is visible, not merely satisfied', () => {
