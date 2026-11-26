@@ -11878,3 +11878,40 @@ print, dump, re-exports), `benchmarks/src/cloudopsbench-cli.ts` (`--label-prior-
 `benchmarks/__tests__/cloudopsbench-cli.test.ts` (2 new, 1 rewritten), doc-block corrections in
 `packages/optimize/src/integration.ts`, `packages/tree/src/pruning/pruner.ts`, `benchmarks/src/fse26-cli.ts`,
 `benchmarks/src/rcaeval-cli.ts`, `docs/label-prior.md` §6 and `docs/sota-comparison.md` §0p-x.
+
+## §372 The audit after the fix — two more restated defaults, one of them in a NUMBER (iteration 370)
+
+Fixing a defect of class "a constant restated instead of read" is only half a fix; the other half is asking where else.
+The audit was mechanical — every `?? <literal>` that could be an engine default, and every printed line that names one —
+and it found two more, of which the second is worse than the one §371 opened with.
+
+**1. `run-dual-membership.ts` computed a BUDGET at a restated weight.**
+`const budget = flipBudget(cases, args.dualFamilyWeight ?? 0.25)` — so the flip budget, which is a published number
+rather than a label, was computed at `0.25` when the flag was absent, whatever the engine's default was. The same file
+printed `shipped default (0.25)` twice and `args.dualFamilyGateMode ?? 'channel'`. Nothing is wrong with today's
+numbers (`0.25` and `channel` are still the shipped values), and that is precisely the reason this class survives: the
+defect is dormant until a default moves, and then it is silent. Fixed by resolving once through the projection and
+reading the budget and both lines off `engineOptions.signals`.
+
+**2. The acceptance probe had been ERODED by the enrolment, which no test could notice.** The census in
+`cli-argument-rejection.test.ts` drives every accepted flag through the parser and asserts it is accepted; the value it
+passes is the "arm that flag exists to name". For `--label-prior-jurisdiction` that value was `'tail'` — which became
+the SHIPPED word in iteration 369. The loop still passed, and it would have gone on passing if the flag had stopped
+moving anything at all: a parser that hard-coded its default would accept `tail` for the wrong reason. The probe now
+names `everywhere`, the word the shipped configuration does not use. This is the failure mode this register keeps
+naming in other words — **a guard that compares nothing passes for free** — reached through a default change rather
+than through a refactor, which is the route nobody watches.
+
+**3. A doc block that named the wrong default in prose.** `benchmarks/src/fse26-report.ts` said "`everywhere` is the
+shipped default rather than a mode to infer", which the enrolment inverted. Corrected, with the reason the field is
+printed at all: a line that does not state the word cannot say which of the two a run measured.
+
+**The guard added rather than the lesson written down.** `cloudopsbench-prior-arming.test.ts` now pins the dual-family
+triple (`weight / gate / gateMode`) to its three defaults as well, because two scripts restate it — so a default that
+moves fails in one place instead of leaving a report asserting the old value. The durable rule the three findings share
+is one sentence: **a runner resolves its options once and reads everything — decisions, budgets, printed lines, dumps —
+off that object.** A paragraph of prose cannot enforce that; the projection plus one test per consumer can.
+
+**State.** `benchmarks/src/run-dual-membership.ts` (budget + two printed lines + the resolution),
+`benchmarks/__tests__/cli-argument-rejection.test.ts` (probe and its comment), `benchmarks/src/fse26-report.ts` (doc
+block), `benchmarks/__tests__/cloudopsbench-prior-arming.test.ts` (a sixth test pinning the dual-family triple).

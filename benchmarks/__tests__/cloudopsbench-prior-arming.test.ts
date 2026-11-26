@@ -20,6 +20,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
   DEFAULT_LABEL_PRIOR_JURISDICTION,
   DEFAULT_LABEL_PRIOR_MARGIN_GATE,
   DEFAULT_LABEL_PRIOR_WEIGHT,
@@ -47,6 +50,16 @@ describe('whether a Cloud-OpsBench run prices the label prior', () => {
 
   it('still prices nothing at explicit weight 0, which is the ablation', () => {
     expect(pricesLabelPrior(resolveEngineOptions({ labelPriorWeight: 0 }))).toBe(false);
+  });
+
+  it('resolves the dual-family triple to the shipped defaults too, because two scripts restate it', () => {
+    // `run-dual-membership.ts` computes its flip BUDGET at the weight and prints all three, and both used to restate
+    // the literals (`?? 0.25`, `?? 'channel'`). The projection is now the single source, so a default that moves fails
+    // here instead of leaving two scripts asserting the old value in a report.
+    const engine = resolveEngineOptions();
+    expect(engine.signals.dualFamilyWeight).toBe(DEFAULT_DUAL_FAMILY_WEIGHT);
+    expect(engine.signals.dualFamilyGate).toBe(DEFAULT_DUAL_FAMILY_GATE);
+    expect(engine.signals.dualFamilyGateMode).toBe(DEFAULT_DUAL_FAMILY_GATE_MODE);
   });
 
   it('lets an absent flag leave the shipped value untouched instead of overwriting it with undefined', () => {

@@ -30,6 +30,7 @@ import { resolve } from 'node:path';
 
 import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import { parseCloudOpsArgs } from './cloudopsbench-cli.js';
+import { resolveEngineOptions, type EngineOverrides } from './cloudopsbench-engine-options.js';
 import {
   flipBudget,
   isHit,
@@ -170,11 +171,16 @@ async function main(): Promise<void> {
   await initRCAEvalTopology();
   const { selection, directories } = loadSelection(dataDir, args.maxCases, args.topology);
 
-  const runner = createContainer(args.useInjectTime, {
+  const overrides: EngineOverrides = {
     dualFamilyWeight: args.dualFamilyWeight,
     dualFamilyGate: args.dualFamilyGate,
     dualFamilyGateMode: args.dualFamilyGateMode,
-  });
+  };
+  // Resolved ONCE, for the reason `run-cloudopsbench.ts` records: the budget below is computed at a WEIGHT, and a
+  // weight restated here (`args.dualFamilyWeight ?? 0.25`) would agree with the engine only until the engine's default
+  // moved — which is exactly what happened to the label prior in iteration 369.
+  const engineOptions = resolveEngineOptions(overrides);
+  const runner = createContainer(args.useInjectTime, overrides);
   const cases: FlagCase[] = [];
   const result = await runner.runSuite(selection.suite, (record) => {
     const truth = selection.cells.get(record.case.id);
@@ -197,18 +203,22 @@ async function main(): Promise<void> {
     rowOf(ALL, cases),
   ];
   const total = readMembership(cases);
-  const budget = flipBudget(cases, args.dualFamilyWeight ?? 0.25);
+  const budget = flipBudget(cases, engineOptions.signals.dualFamilyWeight);
 
   process.stdout.write(`case directories            ${directories}\n`);
   process.stdout.write(`cases read                  ${cases.length}\n`);
   process.stdout.write(
     `inject time                 ${args.useInjectTime ? 'forwarded (corpus alert window)' : 'NOT forwarded (ablation)'}\n`,
   );
+  // Read off the resolved options, not restated: a printed configuration that does not consult the configuration is
+  // how a report goes on naming a value it is no longer running.
+  const shown = (passed: boolean, value: number | string): string =>
+    passed ? `${value} (arm)` : `shipped default (${value})`;
   process.stdout.write(
-    `dual-family gate            ${args.dualFamilyGate === undefined ? 'shipped default (0.25)' : `${args.dualFamilyGate} (ablation)`} / ${args.dualFamilyGateMode ?? 'channel'}\n`,
+    `dual-family gate            ${shown(args.dualFamilyGate !== undefined, engineOptions.signals.dualFamilyGate)} / ${engineOptions.signals.dualFamilyGateMode}\n`,
   );
   process.stdout.write(
-    `dual-family weight          ${args.dualFamilyWeight === undefined ? 'shipped default (0.25)' : `${args.dualFamilyWeight} (ablation)`}\n\n`,
+    `dual-family weight          ${shown(args.dualFamilyWeight !== undefined, engineOptions.signals.dualFamilyWeight)}\n\n`,
   );
   process.stdout.write(
     `the membership, by cell — MISSES only, since a hit's winner is the truth\n`,

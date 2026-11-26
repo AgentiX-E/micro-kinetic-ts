@@ -174,9 +174,11 @@ const MODE_VALUES: Readonly<Record<string, string>> = {
   // reach and the unbinned one is its control.
   '--stability-scope': 'fleet',
   // Iteration 369: WHERE the label prior may act. A word union of two, and the FSE'26 parser REFUSES a word it
-  // cannot name, so `1` would test the refusal rather than the arity. `tail` is the arm the flag exists to name:
-  // `everywhere` is the shipped default and the arm two corpora refused at the head.
-  '--label-prior-jurisdiction': 'tail',
+  // cannot name, so `1` would test the refusal rather than the arity. The probe names `everywhere` — the word the
+  // shipped configuration does NOT use since the enrolment, and the arm two corpora refused at the head. Naming the
+  // NON-shipped word is the point: a parser that hard-coded its default would still accept `tail`, and the
+  // acceptance loop would go on passing while the flag stopped moving anything.
+  '--label-prior-jurisdiction': 'everywhere',
   // Iteration 265: which of a candidate's channels the fault-free prior reads. A word union of two, so `1` is
   // refused; `dominant` is the arm this flag exists to be able to name, since `rarest` is the shipped default.
   '--fault-free-selection': 'dominant',

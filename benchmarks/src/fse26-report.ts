@@ -200,7 +200,9 @@ export interface FSE26RunConfig {
    * Where in the ranking that prior may act, `everywhere` or `tail`.
    *
    * Printed beside the pair for the reason the gate is: on this half the two words are the difference between the
-   * refused arm and the one that survives, and `everywhere` is the shipped default rather than a mode to infer.
+   * refused arm and the one that survives, and `tail` is the shipped default since the enrolment rather than a mode
+   * to infer — `everywhere` is where every pre-369 cell in this corpus was taken, so a line that does not state the
+   * word cannot say which of the two a run measured.
    */
   readonly labelPriorJurisdiction: LabelPriorJurisdiction;
   /**
