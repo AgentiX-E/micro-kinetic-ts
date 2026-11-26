@@ -629,6 +629,22 @@ export default defineConfig({
         // unknown tool to reachable would over-report the one quantity the axis turns on. The synonym list, the
         // second key convention, the argument-free bare key and the unnamed counter are all asserted by name.
         'src/cloudopsbench-census.ts',
+        // Added with the Cloud-OpsBench adapter: the four refusals that decide the denominator, in an order that
+        // makes them sum to the corpus instead of overlapping it. Included because a denominator is the one number
+        // a cell cannot be checked against afterwards — a case quietly kept despite having no injection time raises
+        // the score, and nothing downstream can see that it happened. The absent-vs-empty distinction for
+        // `logs`/`traces`/`failedTraceEdges` is asserted too: `[]` claims an artefact existed and held nothing.
+        'src/cloudopsbench-suite.ts',
+        // Added with the Cloud-OpsBench runner's flags. Included because a silently ignored flag is how a run gets
+        // reported under a configuration it did not use, and because `--max-cases` caps the number of DIRECTORIES
+        // READ rather than the number of cases kept: a cap applied after selection changes what the denominator
+        // means while leaving the printed rate looking ordinary.
+        'src/cloudopsbench-cli.ts',
+        // Added with the Cloud-OpsBench cell table. Included because counting is where a benchmark reading goes
+        // wrong invisibly: the verdict is read from the runner rather than recomputed from top-1, an unranked
+        // truth stays out of every Top@k numerator instead of being credited as rank 0, and a case id the cell map
+        // does not know THROWS rather than being skipped into a smaller denominator.
+        'src/cloudopsbench-score.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

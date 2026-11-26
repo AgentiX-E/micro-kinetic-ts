@@ -154,6 +154,11 @@ describe('every place that builds the engine, classified', () => {
       // taken from, so the census has to be able to attribute it.
       'benchmarks/src/containment-pruner.ts',
       'benchmarks/src/run-ablation.ts',
+      // Iteration 362: the Cloud-OpsBench cell. `derived` for the reason the others are, and for one more that
+      // matters to a reader comparing two corpora: its options come from `buildRCAEvalEngineOptions(
+      // parseRCAEvalArgs([]))`, i.e. the same call the anchor fingerprint hashes, so a difference between a cell
+      // here and a RCAEval cell is telemetry and not configuration.
+      'benchmarks/src/run-cloudopsbench.ts',
       'benchmarks/src/run-fse26.ts',
       'benchmarks/src/run-rcaeval.ts',
       // Iteration 356: the trace-channel census. It is `derived` for the same reason the three above are —

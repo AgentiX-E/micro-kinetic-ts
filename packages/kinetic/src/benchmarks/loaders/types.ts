@@ -108,9 +108,23 @@ export interface RCA100GroundTruthLayers {
 export interface BenchmarkCase {
   /** Unique case identifier within the dataset. */
   readonly id: string;
-  /** Which benchmark dataset this belongs to. */
+  /**
+   * Which benchmark dataset this belongs to.
+   *
+   * `cloudopsbench` is the fourth vendor format this repository reads (after RCAEval, AIOps2025, RCA100 and
+   * FSE'26) and the only one whose cases carry no trace, no log and no declared call graph: a case is a
+   * `<service>-<metric>` CSV, an anomaly window, and a labelled entity. It is listed here rather than left as a
+   * free string because five of the six members are scored by the same runner and a typo would silently produce a
+   * suite nobody scores.
+   */
   readonly datasetName:
-    'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100' | 'fse26';
+    | 'rcaeval-re1'
+    | 'rcaeval-re2'
+    | 'rcaeval-re3'
+    | 'aiops2025'
+    | 'rca100'
+    | 'fse26'
+    | 'cloudopsbench';
   /** The service call graph for this case. */
   readonly callGraph: ServiceCallGraph;
   /** Time-series metrics, keyed by service ID. */

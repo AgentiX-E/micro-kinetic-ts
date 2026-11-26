@@ -158,3 +158,43 @@ them. Two of twelve tools never cached, 170 admissible uses no replay can serve.
 Ticket, with `ECR` 0.15–0.46 — a leaderboard this engine has never been scored on. Building a `BenchmarkCase` from
 `metrics.csv` with `alert.json`'s window as the injection time is the next iteration's work; no cell is claimed
 here, and the numbers above are a denominator and an audit, not a score.
+
+## 8. Scored, iteration 362: 156 cases, `CA@1` 0.5128, and the denominator is the Hard bucket
+
+§7 fenced 166 cases and said the next iteration's work was a `BenchmarkCase` built from `metrics.csv` with
+`alert.json`'s window as the injection time. That is now done, and the number exists:
+
+```
+case directories  754   scorable 156   refused: no-series 584 · no-alert-window 10
+                                         truth-outside-alphabet 4 · truth-absent-from-series 0
+
+cell                      cases    CA@1   Top@3   Top@5  ranked
+boutique/performance         21  0.8095  0.9048  0.9524  1.0000
+trainticket/performance      47  0.6596  0.7447  0.8085  1.0000
+boutique/codedefect          88  0.3636  0.6364  0.8068  1.0000
+all                         156  0.5128  0.7051  0.8269  1.0000
+```
+
+**`ranked` 1.0000 everywhere.** The truth is in every ranking, so the entire 34.9 pp of headroom is ORDER, not
+recall. Any claim that this engine "cannot see" a cause on this corpus is now falsifiable against a pool of 15–51
+services per case.
+
+**The ablation.** `--no-inject-time` over the same 156 cases: 0.2885 overall (−22.4 pp), with
+`boutique/performance` at 0.2857 (−52.4 pp) and `trainticket/performance` at 0.1915 (−46.8 pp) but
+`boutique/codedefect` at 0.3409 (−2.3 pp). The alert window is the largest single contributor measured on this
+corpus, and its contribution is concentrated exactly where the corpus's capture contains a healthy baseline.
+
+**Why `codedefect` is a different quantity.** In **87 of its 88 cases** the fleet's mean `success_rate` bottoms out
+BEFORE the alert window opens (median −105 s on a 230–265 s series): the capture starts inside the incident. A
+`CA` computed against a baseline that is itself degraded is not the same measurement as one computed against a
+clean baseline, and this file will not put them in one column without saying which is which.
+
+**Two numbers this file must not let a reader conflate.** The corpus's `CA` is over all 550 Online Boutique and 204
+Train Ticket cases — Table 5 best 0.88 / 0.70, Table 7 best 0.95 / 0.80 — and this engine's 156 cases are exactly
+the Hard bucket (174, of which 18 carry no series, no window, or a `node/` truth). **0.5128 over 89.7 % of Hard**
+is the honest statement; "0.5128 versus 0.88" is a denominator difference dressed as a capability one.
+
+**And one hypothesis was tested and refused.** Replacing the window with a parameter-free data-defined t₀ (first
+sample of the fleet mean `success_rate` below `median − 3 × 1.4826 × MAD`) moved 24 cases and produced +3.4 pp on
+`codedefect`, −4.8 pp on `boutique/performance`, −2.1 pp on `trainticket/performance`, +0.6 pp overall. A transfer
+that helps its own cell and costs three times as much elsewhere is a coincidence; the window stays.

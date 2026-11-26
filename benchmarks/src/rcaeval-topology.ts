@@ -293,14 +293,36 @@ export function buildRCAEvalCallGraph(
   serviceIds: readonly string[],
 ): ServiceCallGraph {
   const system = identifyBenchmarkSystem(caseId);
+  // A case id that names no system has no topology to consult, and `buildRingConnectOnly` is the only remaining
+  // option — the same statement the three-line body made before this refactor, kept as one branch because the
+  // alternative was two call sites reading the same registry flag.
+  if (system === null) return buildRingConnectOnly('rca-eval', caseId, serviceIds);
+  return buildSystemCallGraph(system, caseId, serviceIds);
+}
 
-  // Try YAML-driven topology if registry is initialized
-  if (_registry.initialized && system) {
-    return buildFromRegistry(system, caseId, serviceIds);
-  }
-
-  // Fallback: pure ring-connect (registry not initialized)
-  return buildRingConnectOnly(system ?? 'rca-eval', caseId, serviceIds);
+/**
+ * Build the call graph for a case whose SYSTEM is already known.
+ *
+ * {@link buildRCAEvalCallGraph} derives the system from a case id, which is the only thing a RCAEval path carries.
+ * A corpus that states its system as a field — Cloud-OpsBench's `benchmark/boutique/…` and
+ * `benchmark/trainticket/…` — would otherwise have to invent a case id shaped like `re2ob_…` to reach the same
+ * topology, i.e. fabricate a label to express a fact it already holds. This entry point takes the fact.
+ *
+ * Falls back to ring-connect when the registry was never initialized, so a caller that skipped
+ * {@link initRCAEvalTopology} still gets a connected graph rather than an empty one.
+ *
+ * @param system - The benchmark system, as the registry keys it.
+ * @param caseId - The case identifier, used only to label the graph's diagnostic annotations.
+ * @param serviceIds - The services this case's own telemetry names.
+ * @returns A call graph over exactly `serviceIds`.
+ */
+export function buildSystemCallGraph(
+  system: 'OnlineBoutique' | 'SockShop' | 'TrainTicket',
+  caseId: string,
+  serviceIds: readonly string[],
+): ServiceCallGraph {
+  if (_registry.initialized) return buildFromRegistry(system, caseId, serviceIds);
+  return buildRingConnectOnly(system, caseId, serviceIds);
 }
 
 /**

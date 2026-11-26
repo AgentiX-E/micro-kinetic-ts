@@ -4108,7 +4108,16 @@ it would be dishonest to place it as one:
   real size, and the one this engine can be scored on next. The same census REFUSED the evidence-closure axis at
   case level: **0 of 754 cases** have every milestone inside a metric/log/edge surface, because the corpus's twelve
   tools read Kubernetes objects and no tool of the twelve returns a series — so `ECR` needs a tool family, not a
-  recorded argument (`docs/closed-axes-register.md` §361).
+  recorded argument (`docs/closed-axes-register.md` §361). **Scored in iteration 362**: 156 of those 166 cases are
+  scorable (10 state no anomaly window) and the engine's `CA@1` on them is **0.5128** — 0.4495 on Online Boutique
+  (109 cases) and 0.6596 on Train Ticket (47). **That is not a row on their leaderboard and must not be read as
+  one.** Their `CA` is over all 550 OB and 204 TT cases — Table 5's best is 0.88/0.70 (GLM-5.1 / GPT-5 under a
+  ReAct scaffold) and Table 7's best is 0.95/0.80 (Codex harness on GLM-5.1) — while this engine's 156 cases are
+  exactly the **Hard bucket** (`Performance` + `Application Code Defect` = 174 cases, of which 18 carry no series,
+  no window, or a `node/` truth). Easy and Medium are the buckets a metric-only engine cannot see at all, and they
+  are where most of their `CA` comes from. The comparable statement is therefore "0.5128 over 89.7 % of the Hard
+  bucket, at CNY 0.00 and with no model call", and the gap to their numbers is a denominator question before it is
+  a capability question (`docs/closed-axes-register.md` §362).
 - RCAtlas-Core's 90 cases span pod and node faults, which this corpus does not.
 
 What IS comparable is the cost axis, and it is the axis on which this programme is not close to anyone:

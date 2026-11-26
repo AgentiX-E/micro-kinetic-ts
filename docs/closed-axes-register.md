@@ -10999,3 +10999,81 @@ comparable cell is a real one and it is the next iteration's work rather than th
 `BenchmarkCase` built from `metrics.csv` and an injection time from `alert.json`, and quoting anything before that run would be a
 fraction of a denominator nothing has measured. It does not claim their labels are wrong — it claims 4.0 % of them are
 unverifiable BY THEIR OWN ARTEFACT, which is a different statement and a checkable one.
+
+### 362 The Hard bucket is the only comparable population, and its first score is 0.5128 over 156 of 174 cases (iteration 362)
+
+§361 fenced a population and stopped before scoring it. This entry scores it. **The number is 0.5128 `CA@1`,
+at CNY 0.00, with no model call and no agent**, and the more important result is that the number is NOT comparable
+to the corpus's own leaderboard — a distinction that a reader of "0.5128 versus 0.88" would otherwise get wrong in
+this programme's favour.
+
+**The denominator, reconciled to the case.** 754 directories → 584 state no `metrics.csv` → 170 readable → 4 name a
+`node/` truth, outside a service alphabet → **166** whose labelled entity their own series carry (§361) → 10 state
+no anomaly window → **156 scored**. The four refusals are ordered and each case is charged to the FIRST it meets,
+so the counts sum to the corpus instead of overlapping it; `selectScorable` is the single owner of that order.
+
+| cell | cases | `CA@1` | `Top@3` | `Top@5` | `ranked` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `boutique/performance` | 21 | **0.8095** | 0.9048 | 0.9524 | 1.0000 |
+| `trainticket/performance` | 47 | **0.6596** | 0.7447 | 0.8085 | 1.0000 |
+| `boutique/codedefect` | 88 | **0.3636** | 0.6364 | 0.8068 | 1.0000 |
+| all | 156 | **0.5128** | 0.7051 | 0.8269 | 1.0000 |
+
+**`ranked` is 1.0000 in every cell, and that is the finding.** The labelled service appears somewhere in every one
+of the 156 rankings. This is not a retrieval problem: the candidate set is right and the ORDER is wrong, so the
+headroom on this axis is 34.9 pp of reranking and 0 pp of recall. A corpus whose truth is always ranked makes the
+`Top@k` ladder a direct measure of ordering quality, and it makes any future "we cannot see the cause" claim
+falsifiable against the pool sizes (15–51 services per case).
+
+**The ablation prices the alert window, and it is the largest single contributor measured on this corpus.** The same
+156 cases, with `--no-inject-time` so the engine receives no injection time at all:
+
+| cell | window forwarded | none | Δ |
+| --- | ---: | ---: | ---: |
+| `boutique/performance` | 0.8095 | 0.2857 | **−52.4 pp** |
+| `trainticket/performance` | 0.6596 | 0.1915 | **−46.8 pp** |
+| `boutique/codedefect` | 0.3636 | 0.3409 | −2.3 pp |
+| all | 0.5128 | 0.2885 | **−22.4 pp** |
+
+`boutique/codedefect` barely moves, and the reason is measured rather than supposed: in **87 of its 88 cases** the
+fleet's mean `success_rate` reaches its minimum BEFORE the alert window opens (median −105 s, on a series that spans
+230–265 s), i.e. the capture begins inside the incident and carries no healthy baseline. The other two cells reach
+their minimum after the window in 12 of 68 cases and near it in 2. A `CA` on a series with no baseline is a
+different quantity from a `CA` on one with a baseline, and this register will not average them into one column
+without saying so.
+
+**A replacement hypothesis, tested and refused.** If the window were wrong, a data-defined t₀ should beat it. One
+estimator was registered with no free parameter — the first sample of the fleet mean `success_rate` below
+`median − 3 × 1.4826 × MAD` — and it moved **24 of 156** cases:
+
+| cell | alert window | MAD onset | Δ |
+| --- | ---: | ---: | ---: |
+| `boutique/codedefect` | 0.3636 | 0.3977 | +3.4 pp |
+| `boutique/performance` | 0.8095 | 0.7619 | **−4.8 pp** |
+| `trainticket/performance` | 0.6596 | 0.6383 | −2.1 pp |
+| all | 0.5128 | 0.5192 | +0.6 pp |
+
+A transfer that helps the cell it was invented for and costs three times as much in the cell it was not is a
+coincidence, not a mechanism. **Refused**, and the window stays the injection time. The refusal is recorded because
+"+0.6 pp overall" is exactly the size of number that gets adopted when nobody writes down which cell paid for it.
+
+**What the misses look like, so the next iteration has a target rather than a hope.** 76 misses: **50.0 %**
+(38/76) have a top-1 that is a graph neighbour of the truth, **27.6 %** (21/76) put the truth at rank 2, and 64.4 %
+(49/76) place it inside the top five. By truth service, the four that dominate are `checkoutservice` (0.483 over
+29 cases), `frontend` (0.393 over 28), `productcatalogservice` (0.304 over 23) and `shippingservice` (0.375 over
+16) — the fan-in aggregator, the fan-out entry point, and two leaves. In-degree does not separate them
+(`≥ 3`: 0.571 over 21 cases; `< 3`: 0.504 over 135), so "aggregators lose" is not the mechanism either.
+
+**The comparison this does NOT license.** The corpus's own `CA` is over **all** 550 Online Boutique and 204 Train
+Ticket cases: Table 5's best is **0.88 / 0.70** (GLM-5.1 / GPT-5, ReAct scaffold) and Table 7's best is
+**0.95 / 0.80** (Codex harness on GLM-5.1). This engine's 156 cases are exactly the **Hard bucket**
+(`Performance` + `Application Code Defect` = 127 OB + 47 TT = 174), of which 18 are unscorable — so the widest
+honest statement is **0.5128 over 89.7 % of the Hard bucket**. Easy (391 cases) and Medium (189) are buckets whose
+faults precede the metrics, so a metric-reading engine cannot be scored on them at all, and they are where most of
+a published `CA` comes from. Anyone reading 0.5128 beside 0.88 as two values of one quantity would be reading a
+denominator difference as a capability difference.
+
+**Cost.** CNY 0.00. No model call, no embedding, no agent turn: the arm is the shipped engine, assembled from
+`buildRCAEvalEngineOptions(parseRCAEvalArgs([]))` — the same call the anchor fingerprint hashes — and one suite run
+over 156 cases finished in seconds. That is the axis on which this cell is not close to any agentic baseline, and
+it is the only axis on which the comparison is exact.
