@@ -23,7 +23,18 @@ export interface CloudOpsArgs {
   readonly maxCases: number | undefined;
   /** Whether the corpus's alert window is forwarded to the engine as the injection time. */
   readonly useInjectTime: boolean;
+  /**
+   * Which call graph every case is built on.
+   *
+   * `registry` is the deployment and the only arm a published number may come from; `ring` is the ablation that
+   * reproduces the graph an earlier version of this runner built by accident, so the topology channel can be priced
+   * case by case rather than argued about.
+   */
+  readonly topology: TopologyArm;
 }
+
+/** The two graph arms, as the command line spells them. */
+export type TopologyArm = 'registry' | 'ring';
 
 /**
  * Parse this runner's arguments.
@@ -36,6 +47,7 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let output: string | undefined;
   let maxCases: number | undefined;
   let useInjectTime = true;
+  let topology: TopologyArm = 'registry';
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -61,6 +73,13 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       index += 1;
     } else if (one === '--no-inject-time') {
       useInjectTime = false;
+    } else if (one === '--topology') {
+      const value = valueOf(index, '--topology');
+      if (value !== 'registry' && value !== 'ring') {
+        throw new Error(`--topology is registry or ring, got "${value}"`);
+      }
+      topology = value;
+      index += 1;
     } else {
       throw new Error(`unknown argument "${one}"`);
     }
@@ -71,5 +90,5 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       '--data-dir is required: this runner reads a Cloud-OpsBench checkout and nothing else',
     );
   }
-  return { dataDir, output, maxCases, useInjectTime };
+  return { dataDir, output, maxCases, useInjectTime, topology };
 }

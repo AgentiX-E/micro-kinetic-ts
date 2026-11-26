@@ -198,3 +198,62 @@ is the honest statement; "0.5128 versus 0.88" is a denominator difference dresse
 sample of the fleet mean `success_rate` below `median − 3 × 1.4826 × MAD`) moved 24 cases and produced +3.4 pp on
 `codedefect`, −4.8 pp on `boutique/performance`, −2.1 pp on `trainticket/performance`, +0.6 pp overall. A transfer
 that helps its own cell and costs three times as much elsewhere is a coincidence; the window stays.
+
+## 9. Iteration 363: the graph arm, the neighbour arm, and the name
+
+### 9.1 The graph this corpus was scored on was a ring, and the fix is a guard
+
+`selectScorable` builds every case's `BenchmarkCase`, and that includes its call graph through `callGraphOf` →
+`buildSystemCallGraph`, which falls back to a RING when the topology registry is not initialised. The runner
+initialised the registry after the selection, so all 156 cases of §8 were scored on a ring while this file's §6 and the
+module's docblock both claimed the graph builder was shared with the RCAEval cells.
+
+Two things changed. The order is fixed (`initRCAEvalTopology()` runs before `loadSelection`), and `callGraphOf` now
+**throws** when a registered system's graph would be the ring fallback — a precondition that can be checked rather
+than a comment that can be missed. `benchmarks/__tests__/cloudopsbench-topology-guard.test.ts` asserts the refusal,
+in a file with no initialisation, because module state is per file.
+
+### 9.2 What it cost: nothing, and that is the finding
+
+`--topology ring` is now an arm of the runner, so the two graphs can be compared on the population rather than
+argued about:
+
+| arm | cases | top-1 moved | truth rank moved | `CA@1` |
+| --- | ---: | ---: | ---: | ---: |
+| `registry` (the deployment) | 156 | — | — | 0.5128 |
+| `ring` (the ablation) | 156 | **0** | **0** | 0.5128 |
+
+**Not one of 156 cases moves.** Every cell is identical to four decimal places. The defect was real, the docblock was
+false, and the number it produced was correct — because the ordering on this corpus does not depend on the graph at
+all. With `topoWeight = 0` by default and `topoDiscount` deducting only what a callee explains, a metric-only corpus
+whose candidates all deviate is decided by the per-service anomaly term alone.
+
+### 9.3 The neighbour arm: refused at both ends of the sign
+
+§8's characterisation — half the misses lead with a neighbour — was priced as a reranker over the engine's own
+published scores, `xᵢ′ = (1 − α)·xᵢ + α·mean_{N(i)} xⱼ`, with the within-case min–max scale making `α = 0` the engine
+bit for bit and `α = 1` the neighbour-only baseline. The full tables, the Poisson-binomial null (38 observed against
+22.21 expected, p = 0.0001), the symmetric 19 downstream / 19 upstream split, and both refusals are in
+`closed-axes-register.md` §363. The two numbers worth carrying here:
+
+- **neighbour-only scores 0.0577**, against 0.5 if the ordering were propagation and a 5.5 % floor for a random order
+  of the same pools;
+- **anti-propagation is the mirror and it crosses**: +6.8 pp on `boutique/codedefect`, −21.3 pp on
+  `trainticket/performance`, +0.6 pp overall at p = 1.0000.
+
+### 9.4 The name collides with a different benchmark, and this file must say so
+
+"CloudOpsBench" is also the name of a 45-task **AWS DevOps agent** benchmark (University of Michigan, v1.0, Apache
+2.0) whose published leaderboard is `claude-fable-5-1` 60.6 %, `gpt-6-astra` 58.9 %, and so on, and whose metric is
+the fraction of infrastructure tasks an agent completes. That benchmark shares a name with this corpus and nothing
+else: it publishes no component accuracy, no joint score and no case directory with a `metrics.csv`. A reader who
+puts this engine's **0.5128** beside that **60.6 %** would be comparing a location rate with a task-completion rate
+on two different populations. This file's §4 anchor — `CA` 0.88 / 0.70 and `JRA` — belongs to the corpus this
+repository reads, not to that one.
+
+### 9.5 What is left on this corpus, and where it is
+
+Not the topology (§9.2), not the propagation (§9.3), not the alert window (§8), and not the closure axis (§361's
+reach: 0 of 754 cases). What is left is the anomaly measurement itself — which metric, over which window, against
+which baseline — and the tool that answers it term by term already exists (`benchmarks/src/miss-anatomy.ts`), has
+never been run on this corpus, and costs CNY 0.00.

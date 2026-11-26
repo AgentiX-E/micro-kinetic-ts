@@ -20,7 +20,26 @@ describe('the Cloud-OpsBench runner’s command line', () => {
         '--max-cases',
         '20',
       ]),
-    ).toEqual({ dataDir: '/tmp/cob', output: '/tmp/out.json', maxCases: 20, useInjectTime: true });
+    ).toEqual({
+      dataDir: '/tmp/cob',
+      output: '/tmp/out.json',
+      maxCases: 20,
+      useInjectTime: true,
+      topology: 'registry',
+    });
+  });
+
+  it('builds the registry graph unless the ring ablation is asked for by name', () => {
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob']).topology).toBe('registry');
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--topology', 'ring']).topology).toBe(
+      'ring',
+    );
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--topology', 'mesh'])).toThrow(
+      /registry or ring/,
+    );
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--topology'])).toThrow(
+      /needs a value/,
+    );
   });
 
   it('turns the injection time off only when asked, and off is not the default', () => {

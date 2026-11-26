@@ -645,6 +645,13 @@ export default defineConfig({
         // truth stays out of every Top@k numerator instead of being credited as rank 0, and a case id the cell map
         // does not know THROWS rather than being skipped into a smaller denominator.
         'src/cloudopsbench-score.ts',
+        // Added with the neighbour rerank probe: the module that turns §362's "50 % of misses lead with a neighbour"
+        // into a priced arm and then refuses it in both signs. Included because every one of its claims is arithmetic
+        // a reader cannot check by eye — a within-case normalisation that must not change the engine's order at
+        // `α = 0`, a mean over partners that must not pay for degree, a Poisson-binomial null in place of the
+        // binomial one a heterogeneous degree invalidates, and a decision rule whose four clauses are the only thing
+        // standing between a sweep of seven arms and a number adopted because it was the largest of seven.
+        'src/neighbour-rerank.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

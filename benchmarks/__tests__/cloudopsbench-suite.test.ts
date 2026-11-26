@@ -1,7 +1,7 @@
 /**
  * The Cloud-OpsBench adapter: what it keeps, what it refuses, and why the refusal order is a contract.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { CaseSeries, CloudOpsCase } from '../src/cloudopsbench-case.js';
 import { readCloudOpsCase } from '../src/cloudopsbench-case.js';
@@ -16,8 +16,17 @@ import {
   truthServiceOf,
   unitOfMetric,
 } from '../src/cloudopsbench-suite.js';
+import { initRCAEvalTopology } from '../src/rcaeval-topology.js';
 
 const T0 = 1_700_000_000_000;
+
+// Every case in this file names a REGISTERED system, so the registry has to exist before a case can become a
+// benchmark case at all — that is the contract `callGraphOf` enforces, and the guard's own refusal is asserted in
+// `cloudopsbench-topology-guard.test.ts`, a file with no initialisation, because module state is per FILE and a
+// test that wanted the uninitialised world here would have to depend on running before everything else.
+beforeAll(async () => {
+  await initRCAEvalTopology();
+});
 
 /** One series with a 5 s cadence, which is the corpus's own. */
 function series(service: string, metric: string, values: readonly number[]): CaseSeries {
@@ -117,17 +126,28 @@ describe('grouping series for the engine', () => {
 });
 
 describe('the call graph over a case’s own services', () => {
-  it('ring-connects an uninitialised registry, because an isolated node scores everything as itself', () => {
-    const graph = callGraphOf(scorableCase({ services: ['adservice', 'cartservice', 'frontend'] }));
-    expect([...graph.nodes.keys()].sort()).toEqual(['adservice', 'cartservice', 'frontend']);
-    expect(graph.edges).toHaveLength(3);
+  it('builds the registry deployment, and the ring only when it is the arm that was asked for', () => {
+    const caseUnderTest = scorableCase({ services: ['adservice', 'cartservice', 'frontend'] });
+    const ring = callGraphOf(caseUnderTest, 'ring');
+    expect([...ring.nodes.keys()].sort()).toEqual(['adservice', 'cartservice', 'frontend']);
+    expect(ring.edges).toHaveLength(3);
     // A directed ring: the last service calls the first, so the collision tree has no sink and no source.
-    expect(graph.edges.map((one) => `${one.from}>${one.to}`)).toEqual([
+    expect(ring.edges.map((one) => `${one.from}>${one.to}`)).toEqual([
       'adservice>cartservice',
       'cartservice>frontend',
       'frontend>adservice',
     ]);
-    expect(graph.systemLoad).toBe(0.5);
+    expect(ring.systemLoad).toBe(0.5);
+    // The registry arm is a DIFFERENT graph over the same three nodes: the deployment between these three has two
+    // edges where the ring has three, which is the cheapest statement that the deployment was read rather than
+    // synthesised. (For a service triple the registry does not carry the two arms coincide, which is why this
+    // assertion is made on a triple it does.)
+    const deployment = callGraphOf(caseUnderTest);
+    expect([...deployment.nodes.keys()].sort()).toEqual(['adservice', 'cartservice', 'frontend']);
+    const pairs = (graph: readonly { from: string; to: string }[]): string[] =>
+      graph.map((one) => `${one.from}>${one.to}`).sort();
+    expect(pairs(deployment.edges)).not.toEqual(pairs(ring.edges));
+    expect(deployment.edges).toHaveLength(2);
   });
 
   it('builds the ring itself for a system the registry does not carry', () => {

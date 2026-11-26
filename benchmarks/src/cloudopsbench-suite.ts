@@ -54,7 +54,7 @@ import type {
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 
 import type { CaseSeries, CloudOpsCase } from './cloudopsbench-case.js';
-import { buildSystemCallGraph } from './rcaeval-topology.js';
+import { buildSystemCallGraph, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
 
 /** The suite name every case of this corpus is filed under. */
 export const CLOUDOPSBENCH_SUITE = 'cloudopsbench';
@@ -157,14 +157,51 @@ export function groupSeriesByService(
 }
 
 /**
+ * Which graph a case is scored on.
+ *
+ * `registry` is the deployment the registry carries and is the only arm a published number may come from. `ring`
+ * is the ABLATION: it connects the case's services in a cycle regardless of what the registry knows, which is
+ * exactly the graph this repository shipped by accident before the ordering defect in `callGraphOf` was found. It
+ * is kept as an arm rather than deleted because "the totals did not move" and "no case moved" are different claims
+ * and only the second prices the topology channel.
+ */
+export type CaseTopology = 'registry' | 'ring';
+
+/**
  * Build a call graph over exactly the case's own services.
  *
+ * ## The precondition, which is checked rather than documented
+ *
+ * `buildSystemCallGraph` falls back to a RING when the topology registry has not been initialised, and that
+ * fallback is correct for a system the registry does not carry — but for `boutique` or `trainticket` it is a graph
+ * of a different deployment. This repository shipped that defect once: `loadSelection` builds the suite, the suite
+ * builds every case's graph, and the Cloud-OpsBench runner initialised the registry AFTER the selection, so an
+ * entire corpus was scored on a ring while every docblock claimed the graph builder was shared with the RCAEval
+ * cells. The reading it produced was not wrong arithmetic; it was arithmetic about a topology the corpus does not
+ * have, which no reader of the table could have detected.
+ *
+ * The fix is not the call order alone — a caller can get an order wrong again — so the mismatch THROWS here, in
+ * the one place that decides a case's graph, and names the bug it is preventing.
+ *
  * @param one - The case.
+ * @param topology - `registry` for the deployment, `ring` for the ablation arm.
  * @returns A graph whose node set is the case's service list.
+ * @throws When the case names a registered system, the registry arm is asked for, and the registry is not
+ *   initialised — because the fallback graph would be a ring rather than the deployment.
  */
-export function callGraphOf(one: CloudOpsCase): ServiceCallGraph {
+export function callGraphOf(
+  one: CloudOpsCase,
+  topology: CaseTopology = 'registry',
+): ServiceCallGraph {
   const system = SYSTEM_TOPOLOGY.get(one.system);
-  if (system !== undefined) return buildSystemCallGraph(system, one.id, one.services);
+  if (system !== undefined && topology === 'registry') {
+    if (!isRCAEvalTopologyInitialized()) {
+      throw new Error(
+        `${one.id}: ${one.system} names a registered system but the topology registry is not initialised, so the fallback graph would be a ring instead of ${system} — call initRCAEvalTopology() before selecting cases`,
+      );
+    }
+    return buildSystemCallGraph(system, one.id, one.services);
+  }
   // A system the registry does not carry still needs a connected graph, and this is the same ring-connect the
   // RCAEval path falls back to: an isolated node would make the collision tree a single-element set and score
   // every case as "the only service I was shown".
@@ -199,9 +236,13 @@ export function benchmarkCaseId(one: CloudOpsCase): string {
  * a denominator and a score come to disagree.
  *
  * @param one - A case {@link selectScorable} kept.
+ * @param topology - The graph arm; `registry` is the only arm a published number may come from.
  * @returns The `BenchmarkCase` the runner consumes.
  */
-export function toBenchmarkCase(one: CloudOpsCase): BenchmarkCase {
+export function toBenchmarkCase(
+  one: CloudOpsCase,
+  topology: CaseTopology = 'registry',
+): BenchmarkCase {
   const truth = truthServiceOf(one.faultObject);
   if (truth === null) {
     throw new Error(
@@ -218,7 +259,7 @@ export function toBenchmarkCase(one: CloudOpsCase): BenchmarkCase {
   return {
     id: benchmarkCaseId(one),
     datasetName: CLOUDOPSBENCH_SUITE,
-    callGraph: callGraphOf(one),
+    callGraph: callGraphOf(one, topology),
     metrics: groupSeriesByService(one.series),
     injectTime: one.alert.startMs,
     groundTruth,
@@ -255,9 +296,13 @@ export interface ScorableSelection {
  * Split a corpus into the cases this engine can be scored on and the reason each of the others cannot be.
  *
  * @param cases - Every case a {@link readCloudOpsCase} pass returned.
+ * @param topology - The graph arm every kept case is built on.
  * @returns The suite, the kept ids, and the refusals by reason.
  */
-export function selectScorable(cases: readonly CloudOpsCase[]): ScorableSelection {
+export function selectScorable(
+  cases: readonly CloudOpsCase[],
+  topology: CaseTopology = 'registry',
+): ScorableSelection {
   const kept: CloudOpsCase[] = [];
   const refused = new Map<ScorableRefusal, string[]>();
   const charge = (reason: ScorableRefusal, id: string): void => {
@@ -292,7 +337,11 @@ export function selectScorable(cases: readonly CloudOpsCase[]): ScorableSelectio
     cells.set(benchmarkCaseId(one), { system: one.system, category: one.category });
 
   return {
-    suite: { name: CLOUDOPSBENCH_SUITE, cases: kept.map(toBenchmarkCase), totalCases: kept.length },
+    suite: {
+      name: CLOUDOPSBENCH_SUITE,
+      cases: kept.map((one) => toBenchmarkCase(one, topology)),
+      totalCases: kept.length,
+    },
     kept: kept.map((one) => one.id),
     refused,
     cells,

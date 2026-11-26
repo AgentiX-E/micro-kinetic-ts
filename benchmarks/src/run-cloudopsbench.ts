@@ -46,7 +46,12 @@ import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { listCaseIds, readCloudOpsCase, type CloudOpsCase } from './cloudopsbench-case.js';
 import { parseCloudOpsArgs } from './cloudopsbench-cli.js';
 import { formatCellTable, formatRate, scoreByCell, type CellScore } from './cloudopsbench-score.js';
-import { REFUSAL_ORDER, selectScorable, type ScorableSelection } from './cloudopsbench-suite.js';
+import {
+  REFUSAL_ORDER,
+  selectScorable,
+  type CaseTopology,
+  type ScorableSelection,
+} from './cloudopsbench-suite.js';
 import { parseRCAEvalArgs } from './rcaeval-cli.js';
 import { buildRCAEvalEngineOptions } from './rcaeval-engine-options.js';
 import { initRCAEvalTopology } from './rcaeval-topology.js';
@@ -60,11 +65,13 @@ import { initRCAEvalTopology } from './rcaeval-topology.js';
  *
  * @param dataDir - The checkout root.
  * @param maxCases - Optional cap, for a smoke run.
+ * @param topology - The graph arm; `registry` for every published number.
  * @returns The selection, how many directories were entered, and every directory a reader refused.
  */
 export function loadSelection(
   dataDir: string,
   maxCases: number | undefined,
+  topology: CaseTopology = 'registry',
 ): {
   readonly selection: ScorableSelection;
   readonly directories: number;
@@ -79,11 +86,15 @@ export function loadSelection(
     if (read.ok) cases.push(read.value);
     else refusedReads.push(read.reason);
   }
-  return { selection: selectScorable(cases), directories: considered.length, refusedReads };
+  return {
+    selection: selectScorable(cases, topology),
+    directories: considered.length,
+    refusedReads,
+  };
 }
 
 /** DI assembly, sharing every option with the RCAEval cells. */
-function createContainer(useInjectTime: boolean): BenchmarkRunner {
+export function createContainer(useInjectTime: boolean): BenchmarkRunner {
   const engine = buildRCAEvalEngineOptions(parseRCAEvalArgs([]));
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -107,7 +118,16 @@ function formatRefusals(selection: ScorableSelection, directories: number): stri
 async function main(): Promise<void> {
   const args = parseCloudOpsArgs(process.argv.slice(2));
   const dataDir = resolve(args.dataDir);
-  const { selection, directories, refusedReads } = loadSelection(dataDir, args.maxCases);
+  // BEFORE the selection, and this line's position is a defect that was measured rather than tidied: `loadSelection`
+  // builds every case's call graph, `buildSystemCallGraph` falls back to a RING when the registry is not yet
+  // initialised, and an earlier version of this runner initialised it afterwards — so a whole corpus was scored on a
+  // ring graph. `callGraphOf` now throws on that mismatch, and this ordering is what satisfies it.
+  await initRCAEvalTopology();
+  const { selection, directories, refusedReads } = loadSelection(
+    dataDir,
+    args.maxCases,
+    args.topology,
+  );
 
   if (refusedReads.length > 0) {
     throw new Error(
@@ -118,7 +138,6 @@ async function main(): Promise<void> {
     throw new Error(`${dataDir}: no scorable case, so there is nothing to score`);
   }
 
-  await initRCAEvalTopology();
   const runner = createContainer(args.useInjectTime);
   const result = await runner.runSuite(selection.suite);
 
@@ -128,6 +147,9 @@ async function main(): Promise<void> {
   process.stdout.write(`${formatRefusals(selection, directories)}\n`);
   process.stdout.write(
     `inject time                 ${args.useInjectTime ? 'forwarded (corpus alert window)' : 'NOT forwarded (ablation)'}\n`,
+  );
+  process.stdout.write(
+    `call graph                  ${args.topology === 'registry' ? 'registry (the deployment)' : 'RING (ablation: not the deployment)'}\n`,
   );
   process.stdout.write(`cases scored                ${result.totalCases}\n\n`);
   process.stdout.write(formatCellTable(scores));
@@ -143,6 +165,7 @@ async function main(): Promise<void> {
           generatedAt: new Date().toISOString(),
           dataDir,
           useInjectTime: args.useInjectTime,
+          topology: args.topology,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(

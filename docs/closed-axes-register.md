@@ -11077,3 +11077,121 @@ denominator difference as a capability difference.
 `buildRCAEvalEngineOptions(parseRCAEvalArgs([]))` — the same call the anchor fingerprint hashes — and one suite run
 over 156 cases finished in seconds. That is the axis on which this cell is not close to any agentic baseline, and
 it is the only axis on which the comparison is exact.
+
+### 363 The neighbour channel is refused in BOTH signs, and a graph defect that cost exactly nothing (iteration 363)
+
+§362 ended on a characterisation it could not act on: **50.0 % of the 76 misses lead with a graph neighbour of the
+truth**, in-degree does not separate them, and "aggregators lose" is therefore not the mechanism. This iteration
+prices that sentence as an arm, and the answer is a refusal at both ends of the sign — plus a defect in the runner
+that had been scoring the corpus on the wrong graph.
+
+**The operator, with its three load-bearing choices stated.** For a case whose engine ranking is `r₁ … rₙ` with
+scores `sᵢ`, let `xᵢ` be the within-case min–max image of `sᵢ` in `[0, 1]` and `N(i)` the case's call-graph
+neighbours:
+
+> `xᵢ′ = (1 − α)·xᵢ + α·mean_{j ∈ N(i)} xⱼ`
+
+- **`mean`, not `sum`.** The kinetic collision term is a sum over partners, and the transliteration is wrong here:
+  a sum pays a node for its DEGREE, and §362 already measured that in-degree does not separate the misses
+  (`≥ 3`: 0.571, `< 3`: 0.504). `mean` is the expected value over partners — one collision, not degree many.
+- **Undirected.** §362's 50.0 % was measured on undirected adjacency, so the arm has to test THAT sentence.
+- **A partner the ranking does not contain contributes nothing.** Zero is a measurement; absence is not, and a mean
+  of one measurement and two absences is not a third of a measurement.
+
+`α = 0` is the engine bit for bit and `α = 1` is the **neighbour-only baseline**, so both ends of the axis are arms
+rather than annotations. The runner asserts the identity before printing a table: every case's `α = 0` ordering
+equals the engine's, its record equals the runner's `correct`/`truthRank` field for field, and the `α = 0` row
+equals the published cells. A probe that disagreed there could not report a gain anywhere else.
+
+**The share is above the null — which makes the refusal sharper, not weaker.** A neighbour-led miss is a
+Poisson-binomial variate, not a binomial one, because each miss carries its own probability: the truth's share of its
+own graph. On the 76 misses:
+
+| reading | count | rate |
+| --- | ---: | ---: |
+| observed neighbour-led misses | **38** | 0.5000 |
+| null: a uniformly random wrong winner over the same graphs | **22.21** | 0.2923 |
+| exact two-sided Poisson-binomial p | | **0.0001** |
+
+So the engine's errors are shifted toward the truth's adjacency by 1.7× the graph's own base rate. **The signal is
+real and it is still not exploitable by this operator**, and the reason is the next table.
+
+**The misses are symmetric in direction, so no single sign can serve them.** Of the 76: **19 downstream** (top-1 is
+a callee of the truth — the engine blamed a symptom), **19 upstream** (top-1 calls the truth — it blamed a consumer),
+**0 reciprocal**, **38 unrelated**. The two directional populations have opposite repairs and are the same size, so
+a signed rule has to be right per case; a global sign is guaranteed to be wrong on half of them.
+
+**The pre-registered sweep, on the same 156 cases at CNY 0.00:**
+
+| `α` | `boutique/codedefect` | `boutique/performance` | `trainticket/performance` | all | gained | lost | p |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **0** | **0.3636** | **0.8095** | **0.6596** | **0.5128** | — | — | — |
+| 0.05 | 0.3636 | 0.8095 | 0.5319 | 0.4744 | 0 | 6 | 0.0313 |
+| 0.10 | 0.3636 | 0.7619 | 0.4255 | 0.4359 | 0 | 12 | 0.0005 |
+| 0.20 | 0.3636 | 0.7619 | 0.3830 | 0.4231 | 0 | 14 | 0.0001 |
+| 0.30 | 0.3864 | 0.8095 | 0.3404 | 0.4295 | 4 | 17 | 0.0072 |
+| 0.50 | 0.1932 | 0.7143 | 0.1915 | 0.2628 | 3 | 42 | 0.0000 |
+| 1.00 | 0.0455 | 0.1905 | 0.0213 | **0.0577** | 5 | 76 | 0.0000 |
+
+The neighbour-only baseline is **0.0577**, i.e. a hair above the 5.5 % a random order would score on these pools
+(§362's 15–51 candidates). So the strongest possible reading of "the ordering is propagation" is worth less than the
+engine's own score, and the axis is refused at its first arm, never mind its seventh.
+
+**The mirror arm — registered post-hoc, because its sign came from the table above.** If the misses lean neighbour,
+the opposite operator is the one to price: a candidate whose partners are loud is a symptom, not a source. Same
+operator, negative `α`:
+
+| `α` | `boutique/codedefect` | `boutique/performance` | `trainticket/performance` | all | gained | lost | p |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **0** | **0.3636** | **0.8095** | **0.6596** | **0.5128** | — | — | — |
+| −0.05 | 0.3750 | 0.8095 | 0.6170 | 0.5064 | 1 | 2 | 1.0000 |
+| −0.10 | 0.4091 | 0.8095 | 0.5957 | **0.5192** | 6 | 5 | 1.0000 |
+| −0.15 | 0.4205 | 0.8095 | 0.4681 | 0.4872 | 7 | 11 | 0.4807 |
+| −0.20 | **0.4318** | 0.8095 | 0.4468 | 0.4872 | 8 | 12 | 0.5034 |
+| −0.30 | 0.4318 | 0.8095 | 0.4043 | 0.4744 | 8 | 14 | 0.2863 |
+| −0.50 | 0.4318 | 0.7619 | 0.3617 | 0.4551 | 9 | 18 | 0.1221 |
+
+**A clean crossing, and it is the finding.** `boutique/codedefect` gains monotonically to **+6.8 pp** (32 → 38 of 88)
+while `boutique/performance` never moves and `trainticket/performance` loses **21.3 pp** (31 → 21 of 47) by the same
+weight. The best overall is `α = −0.10` at **+0.6 pp** with 6 gained and 5 lost, p = 1.0000 — a total that is
+indistinguishable from noise — and the rule refuses it on the TrainTicket cell, which is the same shape as §362's
+MAD onset refusal (+0.6 pp overall, one cell paying) and as the `topoWeight` refusal before that. **The neighbour
+channel is now priced in both directions on one population, and every weight that helps one cell charges another.**
+
+The mechanism is consistent with §362's baseline finding: `boutique/codedefect` is the cell where the capture begins
+INSIDE the incident (87 of 88 cases reach their fleet-mean `success_rate` minimum before the window opens), so its
+only reference is other services — and the operator that exploits a neighbour is the one that hurts. The two
+`performance` cells have a healthy baseline, so their own series already carry the answer and any neighbour term is
+noise. A per-case selector would therefore have to be built on that predicate, and it was checked before it was
+built: the predicate fires on **141 of 156** cases — 87/88 codedefect, 13/21 and 41/47 of the others — so it does not
+separate the cells that pay. The conditional rule is refused before it becomes an arm, which is cheaper than
+refusing it after.
+
+**The defect: the whole corpus had been scored on the wrong graph.** `loadSelection` builds every case's call graph
+through `callGraphOf` → `buildSystemCallGraph`, and that function falls back to a RING when the topology registry is
+not initialised. The Cloud-OpsBench runner initialised the registry **after** the selection, so all 156 cases were
+scored on a ring while the module's own docblock claimed "the graph builder and the engine are the same, and only
+the telemetry differs". Found by reading the discrepancy between two runs of the same probe (9/76 neighbour-led
+misses against 38/76), not by reading the code. The fix is the call order AND a guard: `callGraphOf` now THROWS when
+a registered system's graph would be the ring fallback, and `cloudopsbench-topology-guard.test.ts` asserts the
+refusal in a file that never initialises, because module state is per file and an order can be got wrong again.
+
+**What the defect cost, measured rather than assumed.** `--topology ring` is now an arm, so the two graphs can be
+compared case by case. On the 156 scorable cases, changing the call graph from the deployment to a ring moves
+**0 top-1 predictions and 0 truth ranks**: not one case. Every published cell is byte-identical. So the defect was
+real, the docblock was false, and the number it produced was right — because **the ordering on this corpus is not
+structural at all**. With `topoWeight = 0` by default and `topoDiscount` deducting only what a callee explains, a
+metric-only corpus whose candidates all deviate is decided by the per-service anomaly term, and the graph is a prior
+that never binds.
+
+**That is the routing fact for the next iteration, and it is stronger than a hypothesis.** The 34.9 pp of ordering
+headroom §362 measured is inside the ANOMALY MEASUREMENT — which metric, over which window, against which
+baseline — and not inside the graph, the propagation, or the topology. `benchmarks/src/miss-anatomy.ts` already
+decomposes a miss into the ranking formula's own terms and names the decisive one; it has never been run on this
+corpus. That is the next axis, and it is priced at CNY 0.00.
+
+**The state this leaves.** New modules `benchmarks/src/neighbour-rerank.ts` (100 / 100 / 100 / 100 lines, branches,
+functions, statements) and `benchmarks/src/run-neighbour-rerank.ts`; 4 632 benchmark tests and 9 267 root tests
+green; aggregate coverage 99.62 / 98.97 / 99.30 / 99.69. The two grids, the null, the direction split and the four
+clauses of the decision rule are all unit-tested by name, because each of them is a way this iteration could have
+reported an arm it had not earned.
