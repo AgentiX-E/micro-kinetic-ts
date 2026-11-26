@@ -26,6 +26,7 @@ describe('the Cloud-OpsBench runner’s command line', () => {
       maxCases: 20,
       useInjectTime: true,
       topology: 'registry',
+      dualFamilyWeight: undefined,
     });
   });
 
@@ -40,6 +41,22 @@ describe('the Cloud-OpsBench runner’s command line', () => {
     expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--topology'])).toThrow(
       /needs a value/,
     );
+  });
+
+  it('reads the one engine weight it can move, and refuses a value that is not a weight', () => {
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-weight', '0']).dualFamilyWeight,
+    ).toBe(0);
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-weight', '0.5']).dualFamilyWeight,
+    ).toBe(0.5);
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob']).dualFamilyWeight).toBeUndefined();
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-weight', 'x']),
+    ).toThrow(/non-negative number/);
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--dual-family-weight', '-1']),
+    ).toThrow(/non-negative number/);
   });
 
   it('turns the injection time off only when asked, and off is not the default', () => {

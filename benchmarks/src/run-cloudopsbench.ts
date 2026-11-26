@@ -94,8 +94,17 @@ export function loadSelection(
 }
 
 /** DI assembly, sharing every option with the RCAEval cells. */
-export function createContainer(useInjectTime: boolean): BenchmarkRunner {
-  const engine = buildRCAEvalEngineOptions(parseRCAEvalArgs([]));
+export function createContainer(
+  useInjectTime: boolean,
+  dualFamilyWeight?: number,
+): BenchmarkRunner {
+  const parsed = parseRCAEvalArgs([]);
+  // The ablation arm overrides ONE weight and nothing else, so a difference between two runs is that term. With the
+  // argument absent the options are byte-identical to the anchor fingerprint's, which is the property the score
+  // depends on: the shipped arm must be the one the other corpora are measured with.
+  const engine = buildRCAEvalEngineOptions(
+    dualFamilyWeight === undefined ? parsed : { ...parsed, dualFamilyWeight },
+  );
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(engine.signals, engine.topology));
@@ -138,7 +147,7 @@ async function main(): Promise<void> {
     throw new Error(`${dataDir}: no scorable case, so there is nothing to score`);
   }
 
-  const runner = createContainer(args.useInjectTime);
+  const runner = createContainer(args.useInjectTime, args.dualFamilyWeight);
   const result = await runner.runSuite(selection.suite);
 
   const scores: readonly CellScore[] = scoreByCell(result.casePredictions, selection.cells);
@@ -150,6 +159,9 @@ async function main(): Promise<void> {
   );
   process.stdout.write(
     `call graph                  ${args.topology === 'registry' ? 'registry (the deployment)' : 'RING (ablation: not the deployment)'}\n`,
+  );
+  process.stdout.write(
+    `dual-family weight          ${args.dualFamilyWeight === undefined ? 'shipped default (0.25)' : `${args.dualFamilyWeight} (ablation)`}\n`,
   );
   process.stdout.write(`cases scored                ${result.totalCases}\n\n`);
   process.stdout.write(formatCellTable(scores));
@@ -166,6 +178,7 @@ async function main(): Promise<void> {
           dataDir,
           useInjectTime: args.useInjectTime,
           topology: args.topology,
+          dualFamilyWeight: args.dualFamilyWeight ?? null,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(

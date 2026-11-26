@@ -31,6 +31,15 @@ export interface CloudOpsArgs {
    * case by case rather than argued about.
    */
   readonly topology: TopologyArm;
+  /**
+   * The dual-family presence bonus, or `undefined` for the shipped 0.25.
+   *
+   * The only engine weight this runner can move. `dualFamily` is a BINARY eligibility flag — `1` when a candidate has
+   * a moving channel in both families — so a miss it decides costs exactly its weight, and iteration 363 measured 15
+   * of the Hard bucket's 76 misses decided by it at a median δ of 0.2500, i.e. all of them. Pricing it needs one
+   * number, not a sweep.
+   */
+  readonly dualFamilyWeight: number | undefined;
 }
 
 /** The two graph arms, as the command line spells them. */
@@ -48,6 +57,7 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let maxCases: number | undefined;
   let useInjectTime = true;
   let topology: TopologyArm = 'registry';
+  let dualFamilyWeight: number | undefined;
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -73,6 +83,14 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       index += 1;
     } else if (one === '--no-inject-time') {
       useInjectTime = false;
+    } else if (one === '--dual-family-weight') {
+      const value = valueOf(index, '--dual-family-weight');
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`--dual-family-weight must be a non-negative number, got "${value}"`);
+      }
+      dualFamilyWeight = parsed;
+      index += 1;
     } else if (one === '--topology') {
       const value = valueOf(index, '--topology');
       if (value !== 'registry' && value !== 'ring') {
@@ -90,5 +108,5 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       '--data-dir is required: this runner reads a Cloud-OpsBench checkout and nothing else',
     );
   }
-  return { dataDir, output, maxCases, useInjectTime, topology };
+  return { dataDir, output, maxCases, useInjectTime, topology, dualFamilyWeight };
 }

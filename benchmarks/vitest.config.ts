@@ -652,6 +652,13 @@ export default defineConfig({
         // binomial one a heterogeneous degree invalidates, and a decision rule whose four clauses are the only thing
         // standing between a sweep of seven arms and a number adopted because it was the largest of seven.
         'src/neighbour-rerank.ts',
+        // Added with the miss-term census: the count that names the Hard bucket's remaining 34.9 pp instead of
+        // describing it. Included because the three ways it could lie are all silent — a hit filed under a term
+        // inflates every count by the population the engine already gets right, an unranked truth decomposed as a
+        // difference of zeros reads as a decided miss, and a case whose cell is missing shrinks the denominator of a
+        // share the reader cannot re-derive. Every one of those is asserted by name in `miss-term-census.test.ts`,
+        // along with the two orderings that keep two runs printing the same table.
+        'src/miss-term-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

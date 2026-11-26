@@ -11195,3 +11195,65 @@ functions, statements) and `benchmarks/src/run-neighbour-rerank.ts`; 4 632 bench
 green; aggregate coverage 99.62 / 98.97 / 99.30 / 99.69. The two grids, the null, the direction split and the four
 clauses of the decision rule are all unit-tested by name, because each of them is a way this iteration could have
 reported an arm it had not earned.
+
+### 364 The remaining 34.9 pp is inside the anomaly term: 80.3 % of the misses are decided by `selfAnomalyLog1p` (iteration 364)
+
+§363 closed the two structural explanations of the Hard bucket's ordering headroom — the call graph (worth **0 of
+156** cases) and neighbour propagation (refused at both signs) — and left one sentence: *the ordering is not
+structural, so it is inside the score*. This entry replaces that sentence with a count. The engine publishes a
+`terms` breakdown per candidate whose rows sum exactly to its `finalScore`, so a miss decomposes into the differences
+between the winner's rows and the truth's, and the largest single contribution is a **named** cause.
+
+**The count, on the same 156 cases, at CNY 0.00:**
+
+| cell | cases | misses | decisive term | count | share | median δ |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `boutique/codedefect` | 88 | 56 | `selfAnomalyLog1p` | 47 | 0.8393 | 0.2235 |
+| `boutique/codedefect` | 88 | 56 | `dualFamily` | 9 | 0.1607 | 0.2500 |
+| `boutique/performance` | 21 | 4 | `dualFamily` | 2 | 0.5000 | 0.2500 |
+| `boutique/performance` | 21 | 4 | `selfAnomalyLog1p` | 2 | 0.5000 | 0.3130 |
+| `trainticket/performance` | 47 | 16 | `selfAnomalyLog1p` | 12 | 0.7500 | 0.0566 |
+| `trainticket/performance` | 47 | 16 | `dualFamily` | 4 | 0.2500 | 0.2500 |
+| **all** | **156** | **76** | `selfAnomalyLog1p` | **61** | **0.8026** | 0.1551 |
+| **all** | **156** | **76** | `dualFamily` | **15** | **0.1974** | 0.2500 |
+
+Two terms and no third. **80.3 % of the misses are decided by the engine's own anomaly measurement**, and every other
+term in the formula — `source`, `temporal`, `collision`, `topo`, `log`, `rise`, `trace`, `prism`, `failedEdge`,
+`lat`, `pool`, `stability`, `faultFree`, `selfTime`, `emission`, `podState` — decided none of them. **No weight on
+any of those can reach the 61**, which is what "the headroom is inside the anomaly" means when it is a count rather
+than an argument.
+
+**The remaining 15 are one binary flag, and its median δ is exactly its weight.** `dualFamily` is
+`dualFamilyWeight × 1[v has a moving channel in BOTH families]`, so a case it decides has a gap of exactly
+`DEFAULT_DUAL_FAMILY_WEIGHT = 0.25` — and every one of the 15 has δ = 0.2500 to four places. That makes it the only
+term here whose price can be moved with one number instead of a sweep, so it was moved:
+
+| `dualFamilyWeight` | `codedefect` | `boutique/performance` | `trainticket/performance` | all | gained | lost |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | **0.3977** | 0.8095 | 0.6170 | **0.5192** | **5** | 4 |
+| 0.1 | 0.3750 | 0.8095 | 0.6383 | 0.5128 | 1 | 1 |
+| **0.25 (shipped)** | 0.3636 | 0.8095 | **0.6596** | 0.5128 | — | — |
+| 0.5 | 0.3523 | 0.7619 | 0.6596 | 0.5000 | 0 | 2 |
+
+**Refused, and the refusal is more informative than the gain.** Turning the term off repairs **5** cases (4
+`codedefect`, 1 TrainTicket) and breaks **4** (3 TrainTicket, 1 `codedefect`): +0.6 pp overall, **−3 cases on
+TrainTicket**, and `Top@5` falls from 0.8269 to 0.8141. The optimum is cell-dependent in both directions, so this is
+not a mispriced term — a mispriced term has one value that pays everywhere. **It is a mis-FIRED term**: the flag
+selects the wrong services on both sides of the ledger, and the next axis is therefore its *membership* rule, not its
+weight. `dualFamilyGate` and `dualFamilyGateMode` already exist in the option surface for exactly that question and
+have never been priced on this corpus.
+
+**One caveat that keeps the 15 from being a promise.** `decompose` names the LARGEST SINGLE contribution, not the
+whole gap: a case where three terms each favour the winner by 0.2 has one decisive term and a gap of 0.6, and
+removing the named term flips nothing. The ablation confirms it — of the 15 `dualFamily` misses only 5 flip at
+weight 0. So 61 is a **ceiling** no weight can pass, 15 is a **floor** of what the flag touches, and 5 is what one
+weight change actually buys.
+
+**What this leaves, priced.** The next axis is not a channel and not a weight: it is the per-service anomaly itself —
+which metric, over which window, against which baseline — on 61 cases of which 47 are `boutique/codedefect`. That
+cell is also the one with no healthy baseline in 87 of its 88 captures (§362), so the two facts point the same way.
+`benchmarks/src/miss-term-census.ts` (100 / 100 / 100 / 100) and `run-miss-terms.ts` make the count reproducible;
+`--dual-family-weight` and `--topology` are permanent ablation arms on the score runner.
+
+**State.** 4 650 benchmark tests, 9 267 root tests, aggregate coverage 99.62 / 98.98 / 99.30 / 99.69, oxlint 0
+warnings, prettier clean, `nx typecheck` 15 projects green.
