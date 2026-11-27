@@ -587,6 +587,11 @@ export default defineConfig({
         // reason missing from the census line would read as a reason nobody looked for.
         'src/containment-surprise-study.ts',
         'src/containment-surprise-report.ts',
+        // Added with the corrected CIE probe: the disjoint internal/external channel split that replaces the
+        // contaminated all-channel "internal" axis of §1.28.4. The family classification, the absent-vs-zero
+        // distinction, and the side-by-side count of the two axes are the three claims under test; leaving the
+        // module out of the denominator would let a probe whose two axes share a channel report a signal.
+        'src/cie-split-study.ts',
         // Added with H8: the interface record read at CASE scope, and the family's ceiling counted off the
         // artifact. The study is included for the reason the other two are — three arms over one chain, where an
         // unmeasurable row counted as a lost case would turn a smaller population into a worse arm — and the
