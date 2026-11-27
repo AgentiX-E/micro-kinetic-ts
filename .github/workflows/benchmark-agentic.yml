@@ -1102,9 +1102,21 @@ jobs:
             exit 0
           fi
           set -euo pipefail
+          #   The baseline is the engine's verdict file from the same job, and it is passed only when the two files
+          #   cover the same cases. A dispatch may sample (`query_agent_sample`), and the paired test REFUSES two
+          #   populations — a rate difference across two denominators is not a delta — so a sampled arm prints its own
+          #   six columns and no pair, with the reason named rather than the step failing.
+          BASELINE=()
+          ARM_CASES=$(wc -l < artifacts/agentic/arm-per-case.ndjson)
+          ENGINE_CASES=$(wc -l < artifacts/agentic/per-case.ndjson)
+          if [ "$ARM_CASES" = "$ENGINE_CASES" ]; then
+            BASELINE=(--baseline artifacts/agentic/per-case.ndjson)
+          else
+            echo "::warning::the arm covered $ARM_CASES of $ENGINE_CASES cases, so no paired test is printed"
+          fi
           pnpm exec tsx benchmarks/src/fse26-board-report.ts \
             --per-case artifacts/agentic/arm-per-case.ndjson \
-            --baseline artifacts/agentic/per-case.ndjson \
+            "${BASELINE[@]}" \
             --label "this engine + the arm" \
             --out artifacts/agentic/arm-board.json 2>&1 | tee artifacts/agentic/arm-board.txt
 
