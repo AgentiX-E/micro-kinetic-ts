@@ -439,15 +439,35 @@ describe('readGate', () => {
     });
     expect(readGate(unstated, accepted).depths).toEqual({ absent: 12 });
   });
+
+  it('census a pool-wide dump as ONE population, not one per graph shape', () => {
+    // The defect this closes: `--containment-depth 0` resolves to the case's candidate count, so a pool-wide file
+    // written as numbers states 49 here and 12 there. The census read that as a configuration per graph and the
+    // verdict refused a file that had one rule -- measured on the 1 422-case corpus (`docs/gate-replay.md` §11).
+    const { rows, accepted } = corpusOf(6, () => CO_MOVING);
+    const pooled = rows.map((one) => ({ ...one, depth: 'pool' as const }));
+    expect(readGate(pooled, accepted).depths).toEqual({ pool: 12 });
+    expect(gateVerdict(readGate(pooled, accepted)).reason ?? '').not.toMatch(/populations/);
+  });
 });
 
 describe('gateVerdict', () => {
-  it('refuses a dump that states two sweep widths, naming both', () => {
+  it('refuses a dump that states two sweep populations, naming both', () => {
     const { rows, accepted } = corpusOf(6, () => CO_MOVING);
     const mixed = rows.map((one, index) => (index < 6 ? { ...one, depth: 9 } : one));
     const verdict = gateVerdict(readGate(mixed, accepted));
     expect(verdict.verdict).toBe('unmeasured');
-    expect(verdict.reason).toMatch(/states 2 sweep widths \(5, 9\)/);
+    expect(verdict.reason).toMatch(/states 2 sweep populations \(5, 9\)/);
+  });
+
+  it('refuses a file that mixes a width with the pool rule', () => {
+    // The case the union exists for: `5` and `pool` are two names for two populations, and a file carrying both fits
+    // ρ over a five-wide half and applies it to a pool-wide one.
+    const { rows, accepted } = corpusOf(6, () => CO_MOVING);
+    const mixed = rows.map((one, index) => (index < 6 ? { ...one, depth: 'pool' as const } : one));
+    const verdict = gateVerdict(readGate(mixed, accepted));
+    expect(verdict.verdict).toBe('unmeasured');
+    expect(verdict.reason).toMatch(/states 2 sweep populations \((pool, 5|5, pool)\)/);
   });
 
   it('passes an arm that clears both numbers', () => {

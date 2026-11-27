@@ -145,6 +145,24 @@ export interface ContainmentChain {
   readonly scope?: FailureContainmentScope | undefined;
 }
 
+/**
+ * How much of a case's candidate list the pair rows describe: a number of candidates, or `'pool'` for every
+ * candidate the case had.
+ *
+ * A union rather than a number because the two are different KINDS of statement, and writing both as numbers is the
+ * defect this type closes. `--containment-depth 5` is a WIDTH: one number over the corpus, and two of them in one
+ * file are two populations. `--containment-depth 0` — "every candidate", the setting a reader reaches for when ρ's
+ * per-edge population is too thin — is a RULE, and the number it resolves to varies with the graph: 49 on a
+ * TrainTicket case, 12 on an OnlineBoutique one. Written as a number, a pool-wide dump states 1 422 widths and its
+ * reader cannot tell one rule from 1 422 configurations, which is exactly the refusal
+ * `docs/gate-replay.md` §11 records: the census said `6 sweep populations` about a file that had one.
+ *
+ * The number a pool-wide row resolved to is not lost by writing the rule: it is the length of the `chain.order` the
+ * same row carries, and the sweep's window is `min(depth, order.length)`. Writing the number AGAIN would be two
+ * copies of one fact, and two copies can disagree.
+ */
+export type ContainmentDepth = number | 'pool';
+
 /** One case's sweep rows. */
 export interface ContainmentCaseRow {
   /** The case directory's name — the key the per-case verdict file joins on. */
@@ -155,7 +173,7 @@ export interface ContainmentCaseRow {
   /** The margin the run applied, in band widths. `0` is the shipped strict comparison. */
   readonly margin: number;
   /**
-   * How many candidates of `chain.order` the pair rows describe, counting from the head.
+   * The recording width the pair rows describe, or `'pool'` for every candidate the case had.
    *
    * The sweep's population, and the second CONFIGURATION this file has to write down rather than leave its reader
    * to infer: ρ is fitted per edge over the pairs a corpus examined, so the width decides the statistic. It used to
@@ -163,10 +181,11 @@ export interface ContainmentCaseRow {
    * window and said nothing about the fact, which is why a `global-measured` replay could not reach a head from
    * position six (`docs/gate-replay.md` §9.6).
    *
-   * Optional on the same ground as {@link ContainmentChain.scope}: a dump written before the field existed must be
-   * readable, and a reader has to be able to tell "this artifact predates it" from "this artifact says five".
+   * `'pool'` rather than the length it resolves to: see {@link ContainmentDepth}. Optional on the same ground as
+   * {@link ContainmentChain.scope}: a dump written before the field existed must be readable, and a reader has to be
+   * able to tell "this artifact predates it" from "this artifact says five".
    */
-  readonly depth?: number | undefined;
+  readonly depth?: ContainmentDepth | undefined;
   /** The first candidate of the fusion order the sweep was given, or `null` when the case had none. */
   readonly fusionTop1: string | null;
   /** The first candidate after the shipped sweep, before the failure-flow pass. */
@@ -259,7 +278,8 @@ export function formatContainmentRow(record: ContainmentCaseRow): string {
     sigma: record.sigma,
     margin: record.margin,
     // Written only when stated, for the rule the scope already follows: `"depth": 5` is a claim about the run, and
-    // a writer that filled the default in would be inventing one.
+    // a writer that filled the default in would be inventing one. `"depth": "pool"` is the other claim — the whole
+    // candidate list — and JSON keeps the two apart for free because one is a number and the other a string.
     ...(record.depth === undefined ? {} : { depth: record.depth }),
     fusionTop1: record.fusionTop1,
     gatedTop1: record.gatedTop1,
@@ -535,14 +555,25 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
       throw new Error(`ungatedPairs on line ${lineNumber} is not an array`);
     }
     // The window, when the dump states one. A non-positive or fractional width is refused rather than coerced:
-    // the field decides a population, and `2.5` names no population at all.
-    let depth: number | undefined;
+    // the field decides a population, and `2.5` names no population at all. `pool` is the other accepted spelling
+    // and it is a RULE, so a near-miss (`POOL`, `all`, `wide`) is refused rather than folded onto it: a reader that
+    // guessed would be writing a configuration the producer did not, which is how a five-wide half and a pool-wide
+    // half end up in one file that passes its own census.
+    let depth: ContainmentDepth | undefined;
     if (record.depth !== undefined) {
-      const stated = finiteAt(record.depth, 'depth', lineNumber);
-      if (!Number.isInteger(stated) || stated < 1) {
-        throw new Error(`depth on line ${lineNumber} is not a positive integer: ${stated}`);
+      if (record.depth === 'pool') {
+        depth = 'pool';
+      } else if (typeof record.depth === 'string') {
+        throw new Error(
+          `depth on line ${lineNumber} is not a width or the word pool: ${JSON.stringify(record.depth)}`,
+        );
+      } else {
+        const stated = finiteAt(record.depth, 'depth', lineNumber);
+        if (!Number.isInteger(stated) || stated < 1) {
+          throw new Error(`depth on line ${lineNumber} is not a positive integer: ${stated}`);
+        }
+        depth = stated;
       }
-      depth = stated;
     }
     const parsed: ContainmentCaseRow = {
       datapack: record.datapack,

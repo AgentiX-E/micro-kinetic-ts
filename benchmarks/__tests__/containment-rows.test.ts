@@ -524,6 +524,25 @@ describe('the sweep width', () => {
     expect(parseContainmentRows(formatContainmentRow(withoutDepth))[0]).not.toHaveProperty('depth');
   });
 
+  it('round-trips the word `pool`, which is a rule rather than a width', () => {
+    // Every candidate the case had. It is written as a word because the number it resolves to follows the graph,
+    // and a pool-wide dump written as numbers states one "width" per graph shape -- which its own census then reads
+    // as many populations and refuses (`docs/gate-replay.md` §11).
+    const pooled: ContainmentCaseRow = { ...row(), depth: 'pool' };
+    expect(JSON.parse(formatContainmentRow(pooled))).toHaveProperty('depth', 'pool');
+    expect(parseContainmentRows(formatContainmentRow(pooled))[0]!.depth).toBe('pool');
+  });
+
+  it('refuses a word that is not `pool`, rather than folding it onto it', () => {
+    // A reader that guessed `all` or `POOL` meant the same rule would be writing a configuration the producer did
+    // not, which is how a five-wide half and a pool-wide half end up in one file that passes its own census.
+    for (const value of ['POOL', 'all', 'wide', 'Pool']) {
+      expect(() =>
+        parseContainmentRows(formatContainmentRow({ ...row(), depth: value as never })),
+      ).toThrow(/depth on line 1 is not a width or the word pool/);
+    }
+  });
+
   it('refuses a width that names no population', () => {
     // A population is an integer count of candidates, so zero, a negative and a fraction each name no population
     // at all -- and a parser that coerced them would fit ρ over a window the run never stated.

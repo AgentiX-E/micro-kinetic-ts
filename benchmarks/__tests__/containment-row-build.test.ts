@@ -372,4 +372,21 @@ describe('the scope the flow pass ran at', () => {
       buildContainmentRow({ ...liftedFromOutsideTheWindow(true), scope: 'adjacent' }).replay,
     ).toBe('differs');
   });
+
+  it('records every pair under the pool rule, and states the rule rather than the count it resolved to', () => {
+    const row = buildContainmentRow({ ...liftedFromOutsideTheWindow(false), depth: 'pool' });
+    // The word, not `8`: the number follows the graph, and a corpus that wrote it per case would state as many
+    // populations as it has shapes (`docs/gate-replay.md` §11).
+    expect(row.depth).toBe('pool');
+    // Seven adjacencies over eight candidates, against the four a five-wide window states. The window is the sample
+    // ρ is fitted over, so this is a different population and the row is required to say so.
+    expect(row.pairs).toHaveLength(7);
+    expect(row.ungatedPairs).toHaveLength(7);
+    // The same walk, though: the window narrows the RECORD, so no decision moves and the replay still reproduces
+    // the head the flow pass lifted from position eight.
+    expect(row.gatedTop1).toBe('a');
+    expect(row.shippedTop1).toBe('edge');
+    expect(row.replay).toBe('identical');
+    expect(row.chain!.order).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'edge']);
+  });
 });

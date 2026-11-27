@@ -116,6 +116,17 @@ describe('formatGateReading', () => {
     expect(mixed[0]).toContain('scopes: absent=1 global-measured=2 depths: 5=2 9=1');
   });
 
+  it('prints a population named by the pool rule beside one named by a width', () => {
+    // The token is printed as it was read. A census that folded `pool` onto a number would print a width the file
+    // never stated, and the refusal it feeds names its populations, so the spelling has to survive both.
+    expect(formatGateReading({ ...READING, depths: { pool: 1_422 } })[0]).toContain(
+      'depths: pool=1422',
+    );
+    expect(formatGateReading({ ...READING, depths: { pool: 400, '5': 1_022 } })[0]).toContain(
+      'depths: 5=1022 pool=400',
+    );
+  });
+
   it('prints one line per prior, with the half it came from and the half it may speak about', () => {
     expect(lines[1]).toMatch(/prior fitted-on=b applies-to=a score=rho/);
     expect(lines[2]).toMatch(/prior fitted-on=a applies-to=b score=rho/);

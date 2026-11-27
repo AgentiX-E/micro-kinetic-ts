@@ -48,6 +48,7 @@ import {
 
 import type {
   ContainmentCaseRow,
+  ContainmentDepth,
   ContainmentPairRow,
   ContainmentReplay,
 } from './containment-rows.js';
@@ -62,14 +63,18 @@ export interface BuildContainmentRowInput {
   /** The margin the run applied, in band widths. */
   readonly margin: number;
   /**
-   * How many candidates of the fusion order the PAIR ROWS describe, counting from the head.
+   * Which candidates of the fusion order the PAIR ROWS describe: a width, or `'pool'` for all of them.
    *
    * The sweep's population, and a configuration of the run like the margin: ρ is fitted per edge over the pairs a
-   * corpus examined, so the number is written rather than implied by the rows' length — a longer case and a wider
-   * window produce the same census, and a reader who inferred the width from `pairs.length` would infer a
-   * different population for every graph shape.
+   * corpus examined, so the statement is written rather than implied by the rows' length — a longer case and a wider
+   * window produce the same census, and a reader who inferred the width from `pairs.length` would infer a different
+   * population for every graph shape.
+   *
+   * `'pool'` is passed through to the row unchanged and resolved to a window HERE, because the two are different
+   * statements: the row says which rule was applied, the sweep needs a number. Keeping the resolution in one place
+   * is what stops the written rule and the walked window from being two opinions.
    */
-  readonly depth: number;
+  readonly depth: ContainmentDepth;
   /** The case's directed call edges. */
   readonly edges: readonly ContainmentEdge[];
   /** The per-service excursions, ABSENT when the run had no profile or the case no latency channel. */
@@ -157,20 +162,25 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
   // Both arms sweep the WHOLE order and record the head of it: the pass the run publishes is defined over the list
   // it was handed, and a window over the DECISIONS would be a different pass. `recordWindow` narrows the record
   // alone, so `gated.order` below is the engine's containment stage and not a five-wide imitation of it.
+  //
+  // `'pool'` is resolved HERE and once: it is every candidate the fusion published, so the window is the length of
+  // the list both arms were handed. Two resolutions of one rule would be two windows in one row, which is the defect
+  // the row's own `depth` field exists to make visible.
+  const recordWindow = input.depth === 'pool' ? ranking.length : input.depth;
   const gated = inspectContainmentOrder({
     ranking,
     edges: input.edges,
     excursions,
     margin: input.margin,
     failingEdges: input.failedInterfaces ?? new Map<string, number>(),
-    recordWindow: input.depth,
+    recordWindow,
   });
   const ungated = inspectContainmentOrder({
     ranking,
     edges: input.edges,
     excursions,
     margin: input.margin,
-    recordWindow: input.depth,
+    recordWindow,
   });
   // The replay walks the SAME scope the run applied: `identical` is a statement about one configuration, and a
   // verdict produced at another one is a disagreement about the reader, not about the artifact.

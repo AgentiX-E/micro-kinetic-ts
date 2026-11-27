@@ -477,10 +477,12 @@ async function main(): Promise<void> {
       // handed its passes and the window limits what the file says about it, so `gatedTop1` and the replay are the
       // engine's own. The width is written to every row, because the population a ρ is fitted over is a
       // configuration and a reader may not have to infer it from a row count.
-      const depth =
-        opts.containmentDepth === 0
-          ? Math.max(2, benchCase.callGraph.nodes.size)
-          : opts.containmentDepth;
+      //
+      // `0` is written as the word `pool`, not as the node count it resolves to. Every candidate is a RULE whose
+      // resolved width follows the graph, and a dump that wrote 49 here and 12 there would state as many widths as
+      // it has graphs — a census that cannot tell one rule from a corpus of configurations, and refuses both
+      // (`docs/gate-replay.md` §11). The number is not lost: it is the length of the order the same row carries.
+      const depth = opts.containmentDepth === 0 ? ('pool' as const) : opts.containmentDepth;
       containmentDump.record(
         buildContainmentRow({
           datapack: basename(dir),

@@ -84,8 +84,9 @@ export function formatGateReading(
     .sort(([left], [right]) => compareEdgeKeys(left, right))
     .map(([scope, count]) => `${scope}=${count}`)
     .join(' ');
-  // The WIDTH census goes on the same line as the scope's, because it is the same kind of statement: a pair
-  // population is what ρ is fitted over, and a file that states two of them is two populations rather than one.
+  // The POPULATION census goes on the same line as the scope's, because it is the same kind of statement: a pair
+  // population is what ρ is fitted over, and a file that states two of them is two populations rather than one. A
+  // row names its population by a width (`5`) or by the rule `pool`, so the token is printed as it was read.
   const widths = Object.entries(reading.depths)
     .sort(([left], [right]) => compareEdgeKeys(left, right))
     .map(([depth, count]) => `${depth}=${count}`)

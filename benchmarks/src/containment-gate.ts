@@ -212,11 +212,17 @@ export interface GateReading {
    */
   readonly scopes: Readonly<Record<string, number>>;
   /**
-   * Which sweep WIDTH the walkable rows state, and how many state each — `'absent'` for a row that predates the
-   * field.
+   * Which sweep POPULATION the walkable rows state, and how many state each — `'absent'` for a row that predates
+   * the field.
    *
-   * The second configuration this reading has to census, and for the same reason: ρ is fitted per edge over the
-   * pairs a run examined, so two widths in one file are two populations and the halves are not halves of anything.
+   * A population is named by a width (`5`) or by a rule (`pool`, every candidate the case had), and the census is
+   * keyed by the name rather than by the number a rule resolves to: a pool-wide dump states the SAME population on
+   * every row and used to look like one population per graph shape, which the refusal below then rejected as many
+   * configurations (`docs/gate-replay.md` §11).
+   *
+   * The second configuration this reading has to census, and for the same reason as {@link scopes}: ρ is fitted per
+   * edge over the pairs a run examined, so two populations in one file are two populations, and the halves are not
+   * halves of anything.
    */
   readonly depths: Readonly<Record<string, number>>;
   /** The two halves' priors, keyed by the half each applies to. */
@@ -403,14 +409,17 @@ export function gateVerdict(
       reason: `the dump states ${stated.length} flow-pass scopes (${stated.join(', ')}), so its rows are not one configuration`,
     };
   }
-  // The same rule for the sweep WIDTH, and it is a rule rather than a nicety: the prior is fitted on one half and
-  // applied to the other, and ρ is a ratio over the pairs the run examined — a file that mixed a five-wide half
+  // The same rule for the sweep POPULATION, and it is a rule rather than a nicety: the prior is fitted on one half
+  // and applied to the other, and ρ is a ratio over the pairs the run examined — a file that mixed a five-wide half
   // with a pool-wide half would fit an edge statistic over two populations.
+  //
+  // "Population" rather than "width" because a row names its population either by a number or by the word `pool`, and
+  // the refusal has to name what it read: a reader told "two widths (5, pool)" would go looking for two numbers.
   const widths = Object.keys(reading.depths).filter((depth) => depth !== ABSENT_SCOPE);
   if (widths.length > 1) {
     return {
       verdict: 'unmeasured',
-      reason: `the dump states ${widths.length} sweep widths (${widths.join(', ')}), so its pairs are not one population`,
+      reason: `the dump states ${widths.length} sweep populations (${widths.join(', ')}), so its pairs are not one population`,
     };
   }
   if (reading.disagreements > 0) {
