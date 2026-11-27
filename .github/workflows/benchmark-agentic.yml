@@ -330,23 +330,29 @@ jobs:
           #   PRESENTED list can move. A gate dispatched without this file is refused by the parser rather than
           #   scored against the fingerprint's own width, which is the defect `agentic-promotion-gate.md` §3
           #   records having made three times.
-          #   THE SCOPE IS STATED, and it is the one the standing document publishes.
           #
-          #   `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent`, and this step used to inherit it while
-          #   `fse26-benchmark.yml` states `global-measured` on the invocation it runs. That made this workflow's
-          #   engine a DIFFERENT configuration from the published cell -- `1 157` against `1 186` `Top@1` on the same
-          #   1 422 -- and the arm's board row is composed over THIS order (`arm-order.ts`: the settled name first,
-          #   the engine's order behind it). So the arm was priced against a base the board does not quote: run
-          #   `44909105091`'s transcripts at `--gate lag` settle `1 181`, which is `+24` over `1 157` and `-5` under
-          #   `1 186`, and only the second of those is the published product. A scope left to a default is a scope
-          #   nobody stated, which is the class of defect §377 was about one layer up.
+          #   THE SCOPE IS NOT STATED HERE, and the reason is measured rather than preferred.
           #
-          #   Stating it costs nothing else: the profile above is passed at weight 0 and changes no ranking term, and
-          #   the two wide states were measured byte-identical over 1 422 cases, so this flag cannot move a number
-          #   except through the pass it names.
+          #   `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` while `fse26-benchmark.yml` states `global-measured`,
+          #   so this workflow's engine reads `1 157` where the published cell reads `1 186` on the same 1 422 — and
+          #   because the arm's row is composed over THIS order (`arm-order.ts`), the arm is then priced against a base
+          #   the board does not quote. Stating the flag here was the obvious fix, it was dispatched as run
+          #   `45953662488`, and it MEASURED the thing it was meant to measure: the engine read `1 186`, and the arm at
+          #   `--gate lag` settled `1 179` — `-7` net, `9` repairs against `16` breaks. That is the arm's real standing
+          #   at the published base, and it is worse than the `+24` the adjacent base showed.
+          #
+          #   It also broke an INSTRUMENT, which is why it is not in the file: `run-containment-gate.ts` exits 3 unless
+          #   its replay of the containment pass reproduces the run's own recorded top-1, and with the scope stated 33
+          #   of 1 422 cases did not reproduce (`containment-gate.txt`, run `45953662488` step 10). The dump and the
+          #   verdict file are written by one invocation, and the pass the dump encodes is the shipped one, so the dump
+          #   has to carry the configuration before the replay can be scope-aware. A scope threaded through the engine
+          #   and not through the dump's replay is a configuration stated in one place and assumed in another — the
+          #   class of defect §370 named.
+          #
+          #   So the flag waits for `containment.ndjson` to carry its scope, and until then this workflow's arm row is
+          #   quoted against `1 157` WITH that stated, never against `1 186`.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
-            --failure-containment-scope global-measured \
             --fault-free-profile "$HOME/fault-free-profile.json" \
             --fingerprint-out artifacts/agentic/fingerprints.ndjson \
             --per-case-out artifacts/agentic/per-case.ndjson \

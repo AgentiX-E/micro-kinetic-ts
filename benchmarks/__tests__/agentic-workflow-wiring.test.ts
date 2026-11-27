@@ -128,26 +128,29 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(WORKFLOW_CODE).not.toMatch(/--fault-free-weight/);
   });
 
-  it('states the containment scope, because the runner’s default is a different configuration', () => {
+  it('states the containment scope in the benchmark workflow and records why this one does not', () => {
     // `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` and its owner says so by design: the wide state was measured
-    // on this corpus and not on the other one, so the arm ships as a STATED flag. This workflow used to inherit the
-    // default while `fse26-benchmark.yml` states `global-measured`, which made its engine `1 157` where the published
-    // cell is `1 186` on the same 1 422 — and the arm's board row is composed over THIS order
-    // (`arm-order.ts`: the settled name first, the engine's order behind it). Run `44909105091`'s transcripts at
-    // `--gate lag` settle `1 181`: `+24` over `1 157`, `-5` under `1 186`, and only the second is the product.
+    // on this corpus and not on the other one, so it ships as a STATED flag. `fse26-benchmark.yml` states
+    // `global-measured`, and this workflow used to inherit the default, which made its engine `1 157` where the
+    // published cell is `1 186` on the same 1 422 -- and the arm's row is composed over THIS order.
     expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
-    for (const [name, code] of [
-      ['benchmark-agentic.yml', WORKFLOW_CODE],
-      ['fse26-benchmark.yml', codeLines(FSE26)],
-    ] as const) {
-      const stated = code
-        .split('\n')
-        .filter((line) => line.includes('--failure-containment-scope'));
-      // Once, and to the published state: two statements of one axis is a file where one of them wins silently, and
-      // any other value is a second configuration wearing the published cell's name.
-      expect(stated, name).toHaveLength(1);
-      expect(stated[0], name).toContain('--failure-containment-scope global-measured');
-    }
+    const published = codeLines(FSE26)
+      .split('\n')
+      .filter((line) => line.includes('--failure-containment-scope'));
+    // Once, and to the published state: two statements of one axis is a file where one of them wins silently.
+    expect(published).toHaveLength(1);
+    expect(published[0]).toContain('--failure-containment-scope global-measured');
+    // This workflow does NOT state it, and the omission is measured rather than preferred: run `45953662488` stated
+    // it, the engine read `1 186` and the arm at `--gate lag` settled `1 179` (`-7` net), and the H2 instrument
+    // refused the run with 33 of 1 422 cases not reproducing. The dump has to carry its configuration first.
+    const stated = WORKFLOW_CODE.split('\n').filter((line) =>
+      line.includes('--failure-containment-scope'),
+    );
+    expect(stated).toEqual([]);
+    // Non-vacuity: the absence is explained where the flag would have been, with the run and the count in the reason.
+    expect(WORKFLOW).toContain('45953662488');
+    expect(WORKFLOW).toContain('33');
+    expect(WORKFLOW).toContain('containment.ndjson` to carry its scope');
   });
 
   it('forwards an empty input to nothing, so the runner owns its own defaults', () => {
