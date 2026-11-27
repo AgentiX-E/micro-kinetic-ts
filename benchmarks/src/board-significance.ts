@@ -389,10 +389,18 @@ export function requiredExtraHits(
   return null;
 }
 
-/** Render a p-value: three decimals for a value a reader can compare, scientific notation for one they cannot. */
+/**
+ * Render a p-value: three decimals for a value a reader can compare, scientific notation for one they cannot.
+ *
+ * The scientific branch is `toExponential(1)` and nothing else. It used to end in `.replace('e', 'e')`, a
+ * no-op replacement that CodeQL reports as an identity rewrite and that a reader cannot tell from an intended
+ * normalisation — two spellings of one exponent, `e-71` and `e-071`, would have been the reason for such a call
+ * and neither of this engine's formatters produces the second. Removed rather than explained: an expression that
+ * computes nothing is a place a future reader will assume something was meant.
+ */
 function formatPValue(p: number): string {
   if (p >= 0.001) return p.toFixed(3);
-  return p.toExponential(1).replace('e', 'e');
+  return p.toExponential(1);
 }
 
 /**
