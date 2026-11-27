@@ -7,6 +7,7 @@ import {
   computeBoardMetrics,
   formatBoardMetrics,
   formatBoardTable,
+  formatFieldDelta,
   formatPairedAtDepth,
   pairedTopAt,
   RCABENCH_LEADERBOARD,
@@ -565,5 +566,133 @@ describe('formatBoardTable column width', () => {
       '\n',
     );
     expect(header!.indexOf('scope')).toBe(ours!.indexOf('all (1 422)'));
+  });
+});
+
+describe('the claim every delta carries', () => {
+  /**
+   * The published cell's own rank distribution, rebuilt from counts: `1 186` at rank 1, `74` at rank 3, `22` at rank
+   * 5 and `140` beyond the presentation — `1 186 / 1 260 / 1 282` of `1 422`, which are the three numbers
+   * `sota-comparison.md` §0c-viii publishes. The fixture is built from counts rather than sampled so the claims
+   * asserted below are the claims the published cell makes.
+   */
+  const published = (): PerCaseVerdict[] => [
+    ...many(1186, 1),
+    ...many(74, 3),
+    ...many(22, 5),
+    ...many(140, 50),
+  ];
+  const whole = RCABENCH_LEADERBOARD.benchmarks[0]!.entries.filter(
+    (entry) => entry.cases === 1422 && entry.scope === 'all',
+  );
+
+  it('reproduces the published counts before asserting anything about them', () => {
+    const metrics = computeBoardMetrics(published(), 5);
+    expect(topAt(metrics, 1)).toBe(1186);
+    expect(topAt(metrics, 3)).toBe(1260);
+    expect(topAt(metrics, 5)).toBe(1282);
+  });
+
+  it('marks five of the six margins defensible and the ten-case one not', () => {
+    const verdicts = compareToBoardBest(computeBoardMetrics(published(), 5), whole);
+    const byMetric = new Map(verdicts.map((delta) => [delta.metric, delta]));
+    expect(byMetric.get('Top@1')!.claim.defensible).toBe(true);
+    expect(byMetric.get('Top@3')!.claim.defensible).toBe(true);
+    expect(byMetric.get('Top@5')!.claim.defensible).toBe(false);
+    expect(byMetric.get('MRR')!.claim.defensible).toBe(true);
+    expect(byMetric.get('Avg@3')!.claim.defensible).toBe(true);
+    expect(byMetric.get('Avg@5')!.claim.defensible).toBe(true);
+  });
+
+  it('uses the exact test where a count exists and the distribution-free bound where it does not', () => {
+    const verdicts = compareToBoardBest(computeBoardMetrics(published(), 5), whole);
+    const kinds = new Map(verdicts.map((delta) => [delta.metric, delta.claim.kind]));
+    expect(kinds.get('Top@1')).toBe('fisher-exact');
+    expect(kinds.get('Top@5')).toBe('fisher-exact');
+    expect(kinds.get('MRR')).toBe('hoeffding-bounded');
+    expect(kinds.get('Avg@5')).toBe('hoeffding-bounded');
+  });
+
+  it('names the rival count it recovered from the published rate', () => {
+    const metrics = computeBoardMetrics(published(), 5);
+    const simplify = whole.find((entry) => entry.displayName === 'SimpleRCA')!;
+    const top5 = compareToBoard(metrics, simplify).find((delta) => delta.metric === 'Top@5')!;
+    expect(top5.boardCount).toBe(1272);
+    expect(top5.claim.delta).toBeCloseTo(10 / 1422, 12);
+  });
+});
+
+describe('formatFieldDelta', () => {
+  /** The published cell's population, as the previous block builds it. */
+  const published = (): PerCaseVerdict[] => [
+    ...many(1186, 1),
+    ...many(74, 3),
+    ...many(22, 5),
+    ...many(140, 50),
+  ];
+  const whole = RCABENCH_LEADERBOARD.benchmarks[0]!.entries.filter(
+    (entry) => entry.cases === 1422 && entry.scope === 'all',
+  );
+  const deltas = () => compareToBoardBest(computeBoardMetrics(published(), 5), whole);
+
+  it('prints the p-value and the effective-sample floor for a margin that survives', () => {
+    const head = deltas().find((delta) => delta.metric === 'Top@1')!;
+    const lines = formatFieldDelta(head, 1422).split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('+30.80pp');
+    expect(lines[0]).toContain('(1 186 cases)');
+    expect(lines[1]).toContain('defensible');
+    expect(lines[2]).toContain('as few as 16 independent case(s)');
+  });
+
+  it('says a margin has no effective-sample floor rather than staying silent about it', () => {
+    const top5 = deltas().find((delta) => delta.metric === 'Top@5')!;
+    const lines = formatFieldDelta(top5, 1422).split('\n');
+    expect(lines).toHaveLength(4);
+    expect(lines[1]).toContain('NOT distinguishable');
+    expect(lines[2]).toContain(
+      'no effective sample size holds it: the design effect is at or below one',
+    );
+    expect(lines[3]).toContain('22 more case(s) at this rung would make it defensible');
+  });
+
+  it('prints no floor for a mean, because a floor is a property of two counts', () => {
+    const mrr = deltas().find((delta) => delta.metric === 'MRR')!;
+    const lines = formatFieldDelta(mrr, 1422).split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines.join('\n')).not.toContain('independent case');
+  });
+
+  it('says so when no count can clear the level, rather than printing a target of zero', () => {
+    // Both sides at the ceiling: every case inside the rung, so the difference is zero, the exact test returns 1 and
+    // there is no count left to buy. The honest line is that there is no headroom, not a target the corpus cannot
+    // reach. (A rival ALONE at the ceiling is a different case and is not this branch: we are then significantly
+    // behind, `defensible` is true, and no target is printed because a target would read as a plan to widen a gap
+    // that is already established.)
+    const ceiling = { ...whole[0]!, algorithm: 'ceiling', displayName: 'Ceiling', top5: 1 };
+    const metrics = computeBoardMetrics(many(1422, 1), 5);
+    const top5 = compareToBoardBest(metrics, [...whole, ceiling]).find(
+      (delta) => delta.metric === 'Top@5',
+    )!;
+    expect(top5.claim.delta).toBe(0);
+    expect(formatFieldDelta(top5, 1422)).toContain('the rival row is at the ceiling');
+  });
+
+  it('prints a deficit with its own sign, so a row cannot read as a lead', () => {
+    // A rival at the ceiling on Top@5: 1 282 of 1 422 is 90.15 %, so the delta is -9.85 pp and the report must
+    // print the minus. A formatter that added a plus to every delta would turn the one row where we are behind into
+    // a row that looks like the others.
+    const ceiling = { ...whole[0]!, algorithm: 'ceiling', displayName: 'Ceiling', top5: 1 };
+    const top5 = compareToBoardBest(computeBoardMetrics(published(), 5), [...whole, ceiling]).find(
+      (delta) => delta.metric === 'Top@5',
+    )!;
+    const head = formatFieldDelta(top5, 1422).split('\n')[0]!;
+    expect(head).toContain('delta -9.85pp');
+    expect(head).not.toContain('+-');
+  });
+
+  it('prints a mean without a case count, because a mean has no count behind it', () => {
+    const mrr = deltas().find((delta) => delta.metric === 'MRR')!;
+    expect(formatFieldDelta(mrr, 1422).split('\n')[0]).not.toContain('cases)');
   });
 });

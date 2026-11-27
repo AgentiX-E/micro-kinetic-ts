@@ -720,6 +720,13 @@ export default defineConfig({
         // file from being a different population: an answer to an unscored case, two answers for one case, a dump
         // truncated below its own candidate count, an empty name.
         'src/arm-order.ts',
+        // Added with the module, and it is the layer that decides whether a published margin is a margin: the exact
+        // conditional (Fisher) test for the three count metrics, Hoeffding's distribution-free bound for the three
+        // means whose per-case distribution a rival does not publish, the two score intervals they are reported
+        // with, and the inversion that turns "we cannot show a ten-case lead" into "twenty-two more cases would".
+        // Every reference value is asserted against an independent implementation, so a disagreement is a
+        // disagreement between two implementations and not a change in this one.
+        'src/board-significance.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

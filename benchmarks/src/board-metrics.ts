@@ -47,6 +47,14 @@
 
 import type { PairedCounts } from './arm-comparison.js';
 import { formatP, pairedComparisonOf } from './arm-comparison.js';
+import type { MetricClaim } from './board-significance.js';
+import {
+  boundedMeanClaim,
+  formatClaim,
+  minimumIndependentCases,
+  proportionClaim,
+  requiredExtraHits,
+} from './board-significance.js';
 import type { PerCaseVerdict } from './fse26-per-case.js';
 
 /** One leaderboard's own metadata: what it scored, on which revision. */
@@ -573,6 +581,16 @@ export interface MetricDelta {
   readonly oursCount?: number;
   /** The board row's numerator on the same rule. */
   readonly boardCount?: number;
+  /**
+   * Whether the difference is larger than sampling error resolves.
+   *
+   * Required, not optional, and that is the whole point of the field: a delta is a difference of two point
+   * estimates, and on this corpus one of the six published margins is ten cases out of 1 422 — a number that is
+   * indistinguishable from zero (`p = 0.577`). Before iteration 375 the table printed the delta and the documents
+   * called it dominance; a reader could not tell which margins were findings and which were noise. A delta that
+   * cannot be constructed without its p-value cannot be printed without one either.
+   */
+  readonly claim: MetricClaim;
 }
 
 /** Format a count the way every document in this repository spells one. */
@@ -761,6 +779,10 @@ export function compareToBoard(metrics: BoardMetrics, entry: BoardEntry): readon
     deltaPp: (ours - board) * 100,
     ...(oursCount === undefined ? {} : { oursCount }),
     ...(boardCount === undefined ? {} : { boardCount }),
+    claim:
+      oursCount === undefined || boardCount === undefined
+        ? boundedMeanClaim(ours, board, metrics.cases)
+        : proportionClaim(oursCount, boardCount, metrics.cases),
   }));
 }
 
@@ -809,22 +831,31 @@ export function compareToBoardBest(
       );
     }
   }
-  const asked: Array<[string, number, (entry: BoardEntry) => number]> = [
-    ['Top@1', topRate(metrics, 1), (entry) => entry.top1],
-    ['Top@3', topRate(metrics, 3), (entry) => entry.top3],
-    ['Top@5', topRate(metrics, 5), (entry) => entry.top5],
-    ['MRR', metrics.mrr, (entry) => entry.mrr],
-    ['Avg@3', avgAtK(metrics, 3), (entry) => entry.avg3],
-    ['Avg@5', avgAtK(metrics, 5), (entry) => entry.avg5],
+  // The fourth element is our own numerator, and it is present only for the three count metrics: it says both that
+  // a count exists and how the rival's count is recovered (`value × cases`, both published).
+  const asked: Array<[string, number, (entry: BoardEntry) => number, number | undefined]> = [
+    ['Top@1', topRate(metrics, 1), (entry) => entry.top1, topAt(metrics, 1)],
+    ['Top@3', topRate(metrics, 3), (entry) => entry.top3, topAt(metrics, 3)],
+    ['Top@5', topRate(metrics, 5), (entry) => entry.top5, topAt(metrics, 5)],
+    ['MRR', metrics.mrr, (entry) => entry.mrr, undefined],
+    ['Avg@3', avgAtK(metrics, 3), (entry) => entry.avg3, undefined],
+    ['Avg@5', avgAtK(metrics, 5), (entry) => entry.avg5, undefined],
   ];
-  return asked.map(([metric, ours, read]) => {
+  return asked.map(([metric, ours, read, oursCount]) => {
     const best = entries.reduce((leader, entry) => (read(entry) > read(leader) ? entry : leader));
+    const board = read(best);
+    const boardCount = oursCount === undefined ? undefined : Math.round(board * best.cases);
     return {
       metric,
       ours,
-      board: read(best),
-      deltaPp: (ours - read(best)) * 100,
+      board,
+      deltaPp: (ours - board) * 100,
       holder: best.displayName,
+      ...(oursCount === undefined ? {} : { oursCount, boardCount }),
+      claim:
+        oursCount === undefined || boardCount === undefined
+          ? boundedMeanClaim(ours, board, metrics.cases)
+          : proportionClaim(oursCount, boardCount, metrics.cases),
     };
   });
 }
@@ -1001,4 +1032,50 @@ export function formatPairedAtDepth(
     `  +${String(counts.secondOnly)} / -${String(counts.firstOnly)}` +
     `  p exact ${formatP(counts.pExact)}`
   );
+}
+
+/**
+ * One field delta as a reader sees it: the two values, the margin, the evidence, and — when the evidence does not
+ * support the margin — the number of cases that would.
+ *
+ * The last line is the reason this function exists rather than a `console.log` in the entry point. A report that
+ * prints "not distinguishable" and stops leaves a reader with a problem; a report that prints "22 more cases at this
+ * rung would make it defensible" leaves them with a target, and the target is computed from the same two counts the
+ * margin is computed from. It is also the only honest form of "we are nearly there": the alternative is to widen
+ * the level until the margin clears it, which is how a threshold becomes a result.
+ *
+ * @param delta - The delta, with its claim.
+ * @param cases - The population both sides were scored on.
+ * @returns Two or three lines, indented as the report prints them.
+ * @throws Error when the delta's claim is absent from a count metric, or when the population is not positive.
+ */
+export function formatFieldDelta(delta: FieldDelta, cases: number): string {
+  const signed = (value: number): string => `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+  const count = delta.oursCount === undefined ? '' : ` (${grouped(delta.oursCount)} cases)`;
+  const lines = [
+    `  ${delta.metric.padEnd(6)} ours ${pct(delta.ours)}  ${delta.holder.padEnd(10)} ${pct(delta.board)}  ` +
+      `delta ${signed(delta.deltaPp)}pp${count}`,
+    `      ${formatClaim(delta.claim)}`,
+  ];
+  if (delta.oursCount !== undefined && delta.boardCount !== undefined) {
+    // The effective-sample floor is printed for EVERY count metric, not only the ones that survive: a margin whose
+    // design effect is at or below one has no floor at all, and saying that beside the margin is more useful than
+    // saying nothing. It is also the reason this is a plain conditional rather than a guard inside the verdict — the
+    // "no floor" arm is a case that occurs on this board, not one that cannot.
+    const floor = minimumIndependentCases(delta.oursCount, delta.boardCount, cases);
+    lines.push(
+      floor === null
+        ? '      no effective sample size holds it: the design effect is at or below one'
+        : `      holds if the corpus is worth as few as ${grouped(floor)} independent case(s)`,
+    );
+  }
+  if (!delta.claim.defensible && delta.oursCount !== undefined && delta.boardCount !== undefined) {
+    const extra = requiredExtraHits(delta.oursCount, delta.boardCount, cases);
+    lines.push(
+      extra === null
+        ? '      no count on this corpus clears the level: the rival row is at the ceiling'
+        : `      ${String(extra)} more case(s) at this rung would make it defensible`,
+    );
+  }
+  return lines.join('\n');
 }

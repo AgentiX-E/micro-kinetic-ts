@@ -24,6 +24,7 @@ import {
   computeBoardMetrics,
   formatBoardMetrics,
   formatBoardTable,
+  formatFieldDelta,
   formatPairedAtDepth,
   pairedTopAt,
   RCABENCH_LEADERBOARD,
@@ -115,13 +116,11 @@ if (onSamePopulation.length === 0) {
   console.log(
     `Deltas against the field's best on each metric (${onSamePopulation.length} whole-corpus rows):`,
   );
+  // Each delta carries its own p-value and, when the margin is smaller than sampling error resolves, the number of
+  // cases that would settle it. The report cannot print a margin without them, because `MetricDelta.claim` is not
+  // optional: that is iteration 375's fix for a table that called ten cases out of 1 422 "dominance".
   for (const delta of compareToBoardBest(metrics, onSamePopulation)) {
-    const count = delta.oursCount === undefined ? '' : ` (${delta.oursCount} cases)`;
-    console.log(
-      `  ${delta.metric.padEnd(6)} ours ${(delta.ours * 100).toFixed(2)}%  ${delta.holder.padEnd(10)} ` +
-        `${(delta.board * 100).toFixed(2)}%  delta ${delta.deltaPp >= 0 ? '+' : ''}${delta.deltaPp.toFixed(2)}pp` +
-        count,
-    );
+    console.log(formatFieldDelta(delta, metrics.cases));
   }
 }
 
