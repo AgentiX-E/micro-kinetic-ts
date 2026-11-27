@@ -729,6 +729,14 @@ the whole order either way (a decision that depended on how much of itself was w
 decide the answer it reports), and the row states the width rather than leaving its reader to infer it from a
 length. 5 remains the default because that is the population every number in §4 and §12 was measured at.
 
+`--containment-depth 0` — "every candidate", the setting a reader reaches for when ρ's per-edge population is too thin
+— is written as the word **`pool`** and not as the number it resolves to. The number follows the graph (50 on a
+TrainTicket case, 12 on an OnlineBoutique one), so a dump written that way states as many populations as it has graph
+shapes and the gate's census refuses it as a mixed file (`docs/gate-replay.md` §11, `micro-kinetic-ts-docs`). The
+number is not lost: the window is `min(depth, order.length)`, so a pool-wide row's width **is** the length of the
+`chain.order` the same row carries. A file that names `5` beside `pool` is still two populations and is still refused
+— what changed is that one rule is now one census entry.
+
 ### 14.2 Two arms are two walks, not two columns
 
 The shipped arm requires the pair's own interface to have carried a failed call; the refused arm (§12) reads the
