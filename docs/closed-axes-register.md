@@ -11994,6 +11994,15 @@ hierarchy by a later "cleanup".
 **156 of 754 (20.7 %)**, and 403 of the corpus's 472 reachable evidence uses are log evidence (`GetErrorLogs` 331,
 `GetRecentLogs` 72) that a metric-only engine cannot read.
 
+**And `JRA` is not a wiring job, which a check before scheduling the work established.** All 754 directories carry
+`result.fault_taxonomy` / `fault_object` / `root_cause`, and the eight taxonomies are exactly the eight category
+directories — so the labels are complete. But `DEFAULT_CLASSIFICATION_RULES` emits **six** categories (`CPU`, `MEM`,
+`DISK`, `DELAY`, `LOSS`, `SOCKET`) matched against **metric names**, and its own doc block says they "cover the six
+standard fault categories recognized by the AIOps2025 and RCAEval benchmarks". No regex over a series name produces
+`Scheduling_Fault` or `Admission_Fault`, because those describe the mechanism and not which series moved. `JRA`
+therefore needs a second head in the corpus's own label space, and the open question is whether that space is reachable
+from telemetry at all — a question worth answering negatively rather than assuming positively.
+
 **Open work, in order.** (a) the log path on this corpus — the largest single accuracy opportunity in the programme,
 and the only one that changes the 20.7 %; (b) a CI job that fetches the 362 MB tarball and runs all four arms against
 the baseline, so the gate fires without an operator (the fetch recipe is now known to be one request); (c) the margin
