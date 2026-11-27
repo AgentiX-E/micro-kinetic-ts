@@ -211,6 +211,14 @@ export interface GateReading {
    * that took the first row's scope would silently re-walk half the corpus at the other half's configuration.
    */
   readonly scopes: Readonly<Record<string, number>>;
+  /**
+   * Which sweep WIDTH the walkable rows state, and how many state each — `'absent'` for a row that predates the
+   * field.
+   *
+   * The second configuration this reading has to census, and for the same reason: ρ is fitted per edge over the
+   * pairs a run examined, so two widths in one file are two populations and the halves are not halves of anything.
+   */
+  readonly depths: Readonly<Record<string, number>>;
   /** The two halves' priors, keyed by the half each applies to. */
   readonly priors: readonly FittedPrior[];
   /** The no-pass baseline, the shipped arm, and the residual-gated arm. */
@@ -265,6 +273,7 @@ export function readGate(
   let scored = 0;
   let disagreements = 0;
   const scopes: Record<string, number> = {};
+  const depths: Record<string, number> = {};
 
   for (const row of rows) {
     const answers = accepted.get(row.datapack);
@@ -278,6 +287,8 @@ export function readGate(
       replayable += 1;
       const scope = row.chain?.scope ?? ABSENT_SCOPE;
       scopes[scope] = (scopes[scope] ?? 0) + 1;
+      const depth = row.depth === undefined ? ABSENT_SCOPE : String(row.depth);
+      depths[depth] = (depths[depth] ?? 0) + 1;
     }
     // The census is over every row that could be walked, including rows with no accepted answer: it describes
     // the gate's behaviour, which is a property of the sweep, not of the labels.
@@ -308,6 +319,7 @@ export function readGate(
     scored,
     disagreements,
     scopes,
+    depths,
     priors: [priors.get('a')!, priors.get('b')!],
     arms: {
       fusion: { top1: tally.fusion, gains: 0, losses: 0 },
@@ -389,6 +401,16 @@ export function gateVerdict(
     return {
       verdict: 'unmeasured',
       reason: `the dump states ${stated.length} flow-pass scopes (${stated.join(', ')}), so its rows are not one configuration`,
+    };
+  }
+  // The same rule for the sweep WIDTH, and it is a rule rather than a nicety: the prior is fitted on one half and
+  // applied to the other, and ρ is a ratio over the pairs the run examined — a file that mixed a five-wide half
+  // with a pool-wide half would fit an edge statistic over two populations.
+  const widths = Object.keys(reading.depths).filter((depth) => depth !== ABSENT_SCOPE);
+  if (widths.length > 1) {
+    return {
+      verdict: 'unmeasured',
+      reason: `the dump states ${widths.length} sweep widths (${widths.join(', ')}), so its pairs are not one population`,
     };
   }
   if (reading.disagreements > 0) {

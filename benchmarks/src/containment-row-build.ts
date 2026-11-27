@@ -1,18 +1,28 @@
 /**
- * Build one case's containment-sweep row from the graph the engine built and the order the fusion published.
+ * Build one case's containment-sweep row from the graph the engine built and the order its passes were given.
  *
- * ## Why the fusion order has to be re-derived
+ * ## Why the order has to come from the engine's own call
  *
- * The sweep's input is the order the FUSION published, and the runner no longer has it: `analyze` runs two
- * relational passes over that order before it returns, so the ranking a run publishes is the output of the
- * containment pass and not its input. Observing the sweep from the published ranking would therefore observe a
- * different population — and on a case the failure-flow pass reordered, a different set of adjacencies
- * altogether.
+ * The sweep's input is the order the FUSION published, and the published ranking is two permutations past it:
+ * `analyze` runs the containment pass and then the failure-flow pass over the list the fusion produced. Observing
+ * the sweep from the published ranking would observe a different population — and on a case the failure-flow pass
+ * reordered, a different set of adjacencies altogether.
  *
- * The runner re-derives it with a second pruner that has both passes switched off, and this module takes that
- * order as an argument rather than computing it: a builder that owned the engine call could not be unit-tested
- * without a corpus, and the arithmetic here (two sweeps, one replay, one comparison) is exactly the part that has
- * to be checkable on fixtures.
+ * This module used to take that order from a SECOND engine with both passes switched off, which is the defect
+ * `docs/gate-replay.md` §9.6 records: two computations of one thing, and on the five cases where the difference
+ * reached the head the artifact recorded an order the passes never saw. It is not a difference at all now —
+ * `TreePruner.analyzeWithFusion` REPORTS the list its passes were given, and this builder takes that list.
+ *
+ * ## Two widths, one sweep
+ *
+ * The chain records the order at the WIDTH THE PASSES RAN AT, because that is what a replay needs: the wide
+ * traversal lifts a callee to just above its caller to a fixed point, so the published head can come from any
+ * depth. The pair rows are the head of the same sweep, `depth` positions wide, because ρ is fitted per edge over
+ * the pairs a corpus examined and that population was measured at five.
+ *
+ * `recordWindow` is what keeps those two statements from becoming two walks: the sweep decides over the whole list
+ * and the window limits only the RECORD, so the order that reaches the flow pass is the engine's own and the rows
+ * are a stated prefix of its verdicts.
  *
  * ## Why the replay is recorded rather than asserted
  *
@@ -47,10 +57,19 @@ export interface BuildContainmentRowInput {
   /** The case directory's name. */
   readonly datapack: string;
   readonly faultType: string;
-  /** Band half-width in robust standard deviations the run measured against. */
+  /** The band half-width the run measured against, in robust standard deviations. */
   readonly sigma: number;
   /** The margin the run applied, in band widths. */
   readonly margin: number;
+  /**
+   * How many candidates of the fusion order the PAIR ROWS describe, counting from the head.
+   *
+   * The sweep's population, and a configuration of the run like the margin: ρ is fitted per edge over the pairs a
+   * corpus examined, so the number is written rather than implied by the rows' length — a longer case and a wider
+   * window produce the same census, and a reader who inferred the width from `pairs.length` would infer a
+   * different population for every graph shape.
+   */
+  readonly depth: number;
   /** The case's directed call edges. */
   readonly edges: readonly ContainmentEdge[];
   /** The per-service excursions, ABSENT when the run had no profile or the case no latency channel. */
@@ -91,7 +110,7 @@ export interface BuildContainmentRowInput {
    * against `1 186`).
    */
   readonly scope: FailureContainmentScope;
-  /** The order the FUSION published, best first. */
+  /** The order the FUSION published, best first — the list the passes were GIVEN, at the width they ran at. */
   readonly fusionOrder: readonly ServiceId[];
   /** The order the engine actually published, for the replay check. */
   readonly publishedOrder: readonly ServiceId[];
@@ -134,18 +153,24 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
   // An EMPTY record rather than `undefined` for a case with no failed-call channel: `undefined` is the refused
   // arm (no requirement at all), while a case that measured "nothing failed" still requires the pair's interface
   // to be among the ones that did. See `docs/containment-order.md` §12.2.
+  //
+  // Both arms sweep the WHOLE order and record the head of it: the pass the run publishes is defined over the list
+  // it was handed, and a window over the DECISIONS would be a different pass. `recordWindow` narrows the record
+  // alone, so `gated.order` below is the engine's containment stage and not a five-wide imitation of it.
   const gated = inspectContainmentOrder({
     ranking,
     edges: input.edges,
     excursions,
     margin: input.margin,
     failingEdges: input.failedInterfaces ?? new Map<string, number>(),
+    recordWindow: input.depth,
   });
   const ungated = inspectContainmentOrder({
     ranking,
     edges: input.edges,
     excursions,
     margin: input.margin,
+    recordWindow: input.depth,
   });
   // The replay walks the SAME scope the run applied: `identical` is a statement about one configuration, and a
   // verdict produced at another one is a disagreement about the reader, not about the artifact.
@@ -170,6 +195,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     faultType: input.faultType,
     sigma: input.sigma,
     margin: input.margin,
+    depth: input.depth,
     fusionTop1: head(input.fusionOrder),
     gatedTop1: head(gated.order.map((entry) => entry.service)),
     ungatedTop1: head(ungated.order.map((entry) => entry.service)),

@@ -1173,3 +1173,101 @@ describe('recordScope', () => {
     expect(sweep.verdicts.map((verdict) => verdict.decision)).toEqual(['inverted']);
   });
 });
+
+describe('recordWindow', () => {
+  /** Four services in a line, each callee further outside its band than its caller. */
+  const LINE = {
+    ranking: rows('a', 'b', 'c', 'd'),
+    edges: [
+      { from: 'a', to: 'b', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'b', to: 'c', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'c', to: 'd', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+    ],
+    excursions: new Map([
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+      ['d', 3],
+    ]),
+  } as const;
+
+  it('limits the RECORD and not the decision', () => {
+    // The property the field exists for, and the one a windowed SWEEP would violate: `order` is the same array the
+    // pass would return without the field, because the pass decides over the whole list either way. A fixture where
+    // the window could change the order is what would let the artifact decide the answer it reports.
+    const wide = inspectContainmentOrder(LINE);
+    const narrow = inspectContainmentOrder({ ...LINE, recordWindow: 2 });
+    expect(servicesOf(narrow.order)).toEqual(servicesOf(wide.order));
+    expect(servicesOf(narrow.order)).toEqual(['b', 'a', 'd', 'c']);
+    // One row: the window is stated in POSITIONS, so `2` records the single pair at positions 1-2.
+    // Two rows and not three: the pair at positions 2-3 is `a` against `c`, which carries no call edge and is
+    // therefore not an adjacency the pass records at all.
+    expect(wide.verdicts).toHaveLength(2);
+    expect(narrow.verdicts).toHaveLength(1);
+    expect(narrow.verdicts[0]).toEqual(wide.verdicts[0]);
+  });
+
+  it('records the same prefix a sweep of that width would, so a dump is not a different walk', () => {
+    // The reason the field replaced a truncated input rather than being added beside it: the verdicts inside the
+    // window are identical to the ones a shorter sweep produces, because the pass is a single forward scan and a
+    // swap at `i` cannot reach a pair at `j > i`. That equality is what lets a reader compare this corpus to the
+    // five-wide one without a second dispatch.
+    const narrow = inspectContainmentOrder({ ...LINE, recordWindow: 3 });
+    const shorter = inspectContainmentOrder({ ...LINE, ranking: rows('a', 'b', 'c') });
+    expect(narrow.verdicts).toEqual(shorter.verdicts.slice(0, 2));
+  });
+
+  it('records nothing at a window of one, and still performs the sweep', () => {
+    const sweep = inspectContainmentOrder({ ...LINE, recordWindow: 1 });
+    expect(sweep.verdicts).toEqual([]);
+    expect(servicesOf(sweep.order)).toEqual(['b', 'a', 'd', 'c']);
+  });
+
+  it('clamps a window wider than the order instead of padding the record', () => {
+    const sweep = inspectContainmentOrder({ ...LINE, recordWindow: 99 });
+    expect(sweep.verdicts).toEqual(inspectContainmentOrder(LINE).verdicts);
+  });
+});
+
+describe('recordWindow and the prior', () => {
+  /** The same four-service line, with the residual's two refusals available to it. */
+  const LINE = {
+    ranking: rows('a', 'b', 'c', 'd'),
+    edges: [
+      { from: 'a', to: 'b', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'b', to: 'c', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+      { from: 'c', to: 'd', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
+    ],
+    excursions: new Map([
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+      ['d', 3],
+    ]),
+  } as const;
+
+  /** No residual on the first pair, and an exactly-zero one on the third: the two refusals in one walk. */
+  const BOTH_REFUSALS: ContainmentPrior = {
+    residuals: new Map([[failureEdgeKey('c', 'd'), 0]]),
+    threshold: 0,
+  };
+
+  it('suppresses a prior refusal outside the window without changing what it decided', () => {
+    // The two `prior-*` verdicts sit BELOW the window's edge in the code, one branch deeper than the four
+    // refusals above them, so a window that only guarded the early ones would record a refusal the run's stated
+    // population does not contain — and the census of blocked inversions is read off exactly those rows.
+    const wide = inspectContainmentOrder({ ...LINE, prior: BOTH_REFUSALS });
+    const narrow = inspectContainmentOrder({ ...LINE, prior: BOTH_REFUSALS, recordWindow: 2 });
+    // Nothing inverts, so the walk examines all three adjacencies: absent, absent, and the exactly-zero residual.
+    expect(wide.verdicts.map((verdict) => verdict.decision)).toEqual([
+      'prior-absent',
+      'prior-absent',
+      'prior-below',
+    ]);
+    expect(narrow.verdicts.map((verdict) => verdict.decision)).toEqual(['prior-absent']);
+    // The ORDER is the prior's, not the window's: both walks refuse the same two pairs, so both keep the fusion's
+    // order. A window that reached the decisions would let a narrower dump report a different engine.
+    expect(servicesOf(narrow.order)).toEqual(servicesOf(wide.order));
+    expect(servicesOf(wide.order)).toEqual(['a', 'b', 'c', 'd']);
+  });
+});

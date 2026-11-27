@@ -716,10 +716,18 @@ by the time a case is scored the fusion order is two transformations behind it. 
 ranking would therefore describe a population with the wrong adjacencies — and on a case the flow pass reordered,
 a different set of pairs altogether.
 
-`TreePruner` is constructed a second time in the runner with both passes off (`containmentOrder: false`,
-`failureContainment: false`). That pruner publishes the fusion order, and the runner sweeps it with the same
-`inspectContainmentOrder` the engine calls. Costs one ranking pass per case and no graph build; the depth is
-`--containment-depth`, defaulting to **5** because that is the depth every number in §4 and §12 was measured at.
+**The order comes from the engine's own call.** `TreePruner.analyzeWithFusion` returns the answer it publishes and
+the list its two relational passes were given, so the runner sweeps exactly the order the engine's containment stage
+ran over — at the width it ran over it, i.e. `max(PUBLISHED_TOP_K, nodes)`. This replaced a second pruner with both
+passes off, which recomputed the list and disagreed with the first call on the cases where the disagreement reached
+the head: at `global-measured` the flow pass lifts a callee to just above its caller **to a fixed point**, so the
+published head can come from any depth and a five-wide reconstruction cannot contain it (`docs/gate-replay.md` §10,
+`micro-kinetic-ts-docs`). One call, one order, no second ranking pass per case.
+
+`--containment-depth`, defaulting to **5**, is now the **recording** width and not the sweep's: the pass decides over
+the whole order either way (a decision that depended on how much of itself was written down would let the artifact
+decide the answer it reports), and the row states the width rather than leaving its reader to infer it from a
+length. 5 remains the default because that is the population every number in §4 and §12 was measured at.
 
 ### 14.2 Two arms are two walks, not two columns
 

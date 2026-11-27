@@ -84,9 +84,16 @@ export function formatGateReading(
     .sort(([left], [right]) => compareEdgeKeys(left, right))
     .map(([scope, count]) => `${scope}=${count}`)
     .join(' ');
+  // The WIDTH census goes on the same line as the scope's, because it is the same kind of statement: a pair
+  // population is what ρ is fitted over, and a file that states two of them is two populations rather than one.
+  const widths = Object.entries(reading.depths)
+    .sort(([left], [right]) => compareEdgeKeys(left, right))
+    .map(([depth, count]) => `${depth}=${count}`)
+    .join(' ');
   const lines = [
     `  rows=${reading.cases} replayable=${reading.replayable} scored=${reading.scored} ` +
-      `disagreements=${reading.disagreements} scopes: ${census === '' ? 'none' : census}`,
+      `disagreements=${reading.disagreements} scopes: ${census === '' ? 'none' : census} ` +
+      `depths: ${widths === '' ? 'none' : widths}`,
   ];
   for (const prior of reading.priors) {
     lines.push(

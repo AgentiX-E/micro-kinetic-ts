@@ -148,11 +148,6 @@ describe('every place that builds the engine, classified', () => {
     // other five are needed to say what the engine is built from anywhere. Asserted by name rather than
     // by count, so a site that MOVES between kinds is as visible as one that appears.
     expect(sitesOfKind('derived')).toEqual([
-      // Iteration 295: the QUIET engine. It exists because the sweep's input is the FUSION order and the published
-      // ranking no longer contains it, so the runner builds a second pruner with both relational passes off. It is
-      // `derived` rather than a literal for the reason this file's docblock gives: it is an engine a measurement is
-      // taken from, so the census has to be able to attribute it.
-      'benchmarks/src/containment-pruner.ts',
       'benchmarks/src/run-ablation.ts',
       // Iteration 362: the Cloud-OpsBench cell. `derived` for the reason the others are, and for one more that
       // matters to a reader comparing two corpora: its options come from `buildRCAEvalEngineOptions(

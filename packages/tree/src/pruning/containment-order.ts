@@ -243,6 +243,24 @@ export interface ContainmentOrderInput<T> {
    * number was measured in.
    */
   readonly prior?: ContainmentPrior | undefined;
+  /**
+   * How many candidates of the order the sweep RECORDS decisions for, counting from the head.
+   *
+   * A recording window, not a smaller sweep. The pass still walks the whole list and still inverts every pair it
+   * qualifies — `order` is the same array the caller would get without this field, because a decision that
+   * depended on how much of itself the caller wanted written down would make the artifact decide the answer it
+   * reports. This field only stops the verdict list at pair `window - 1`, which is a statement about what the
+   * caller is measuring.
+   *
+   * It exists because the sweep's population is a POPULATION: ρ is fitted per edge over the pairs a corpus
+   * examined, so widening the window changes the statistic and not the sample size. A run that recorded its pairs
+   * at a width it never wrote down left its reader to infer the width from a length — the same defect class
+   * `ContainmentChain.scope` closed for the flow pass (`docs/gate-replay.md` §9.1).
+   *
+   * The window is exact in POSITIONS and the recorded prefix is not: a pair with no call edge contributes no row,
+   * so `verdicts.length <= window - 1`. Absent means every pair, which is the whole list.
+   */
+  readonly recordWindow?: number | undefined;
 }
 
 /** The minimum of a candidate and its rank, as the pass reads them. */
@@ -322,6 +340,10 @@ export interface ContainmentSweep<T> {
  * The rows are in sweep order, which is not the same as the order of the final ranking: once a pair is inverted
  * the next row describes the NEW adjacency, which is what makes the record reproducible from the same input.
  *
+ * {@link ContainmentOrderInput.recordWindow} limits how much of that record is RETURNED and nothing else: the pass
+ * decides and inverts over the whole list either way, so the order this function returns does not depend on the
+ * window, and a run that records five candidates is still walking the pool it was given.
+ *
  * @param input - The published ranking, the topology, the excursions, the margin, and the failed interfaces.
  * @returns The reordered candidates and one verdict per adjacent pair that carried an edge.
  */
@@ -334,6 +356,10 @@ export function inspectContainmentOrder<T extends RankedService>(
     return { order, verdicts };
   const margin = input.margin ?? 0;
   const failingEdges = input.failingEdges;
+  // The recording window is read once, as a position bound, and clamped to the list: a window wider than the order
+  // states nothing, and one narrower than two records nothing — which is the honest reading of "measure the head
+  // alone" rather than a special case that would silently record the first pair anyway.
+  const window = Math.min(input.recordWindow ?? order.length, order.length);
 
   const calls = new Set<string>();
   for (const edge of input.edges) calls.add(`${edge.from}\u0000${edge.to}`);
@@ -341,6 +367,10 @@ export function inspectContainmentOrder<T extends RankedService>(
   for (let i = 0; i + 1 < order.length; i++) {
     const upper = order[i]!;
     const lower = order[i + 1]!;
+    // Outside the window the pair is still DECIDED and the order still changes; only the record stops. Placed
+    // before the decision so that the two cannot drift: a pair refused for one of the six reasons below and a pair
+    // inverted both contribute exactly one row when they are inside the window.
+    const recording = i + 1 < window;
     const key = `${upper.service}\u0000${lower.service}`;
     if (!calls.has(key)) continue;
     const upperExcursion = input.excursions.get(upper.service);
@@ -364,16 +394,16 @@ export function inspectContainmentOrder<T extends RankedService>(
     if (failingEdges !== undefined) {
       if (failingEdges.has(key)) licensed = true;
       else if (input.recordScope !== 'case' || failingEdges.size > 0) {
-        verdicts.push({ ...pair, decision: 'no-failed-interface' });
+        if (recording) verdicts.push({ ...pair, decision: 'no-failed-interface' });
         continue;
       } else silentRecord = true;
     }
     if (upperExcursion === undefined || lowerExcursion === undefined) {
-      verdicts.push({ ...pair, decision: 'unmeasured' });
+      if (recording) verdicts.push({ ...pair, decision: 'unmeasured' });
       continue;
     }
     if (!(lowerExcursion > upperExcursion + margin)) {
-      verdicts.push({ ...pair, decision: 'not-larger' });
+      if (recording) verdicts.push({ ...pair, decision: 'not-larger' });
       continue;
     }
     // Last, and deliberately: everything above this line already refused the pair on its own measurements, so a
@@ -389,17 +419,18 @@ export function inspectContainmentOrder<T extends RankedService>(
     if (prior !== undefined && !licensed) {
       const fitted = prior.residuals.get(key);
       if (fitted === undefined) {
-        verdicts.push({ ...pair, decision: 'prior-absent' });
+        if (recording) verdicts.push({ ...pair, decision: 'prior-absent' });
         continue;
       }
       if (!(fitted > prior.threshold)) {
-        verdicts.push({ ...pair, decision: 'prior-below' });
+        if (recording) verdicts.push({ ...pair, decision: 'prior-below' });
         continue;
       }
     }
     order[i] = lower;
     order[i + 1] = upper;
-    verdicts.push({ ...pair, decision: silentRecord ? 'record-silent' : 'inverted' });
+    if (recording)
+      verdicts.push({ ...pair, decision: silentRecord ? 'record-silent' : 'inverted' });
   }
   return { order, verdicts };
 }

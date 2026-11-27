@@ -69,6 +69,7 @@ function rowFor(name: string, spec: CaseSpec): ContainmentCaseRow {
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
       ['a', spec.a],
@@ -138,6 +139,7 @@ function readingOf(overrides: Partial<GateReading['arms']['prior']> = {}): GateR
     scored: 100,
     disagreements: 0,
     scopes: { adjacent: 100 },
+    depths: { '5': 100 },
     priors: [],
     arms: {
       fusion: { top1: 90, gains: 0, losses: 0 },
@@ -419,7 +421,35 @@ function fusionCorrect(pattern: readonly CaseSpec[]): number {
 
 // ── gateVerdict ───────────────────────────────────────────
 
+describe('readGate', () => {
+  it('censuses the sweep width beside the scope, because a population is a configuration too', () => {
+    // ρ is fitted per edge over the pairs a corpus examined, so a file whose halves were written at two widths is
+    // not one population — the same statement the scope census makes about the traversal, one field over.
+    const { rows, accepted } = corpusOf(6, () => CO_MOVING);
+    const reading = readGate(rows, accepted);
+    expect(reading.depths).toEqual({ '5': 12 });
+  });
+
+  it('calls a width of `absent` what it is: a dump from before the field existed', () => {
+    const { rows, accepted } = corpusOf(6, () => CO_MOVING);
+    const unstated = rows.map((one) => {
+      const { depth, ...rest } = one;
+      expect(depth).toBe(5);
+      return rest;
+    });
+    expect(readGate(unstated, accepted).depths).toEqual({ absent: 12 });
+  });
+});
+
 describe('gateVerdict', () => {
+  it('refuses a dump that states two sweep widths, naming both', () => {
+    const { rows, accepted } = corpusOf(6, () => CO_MOVING);
+    const mixed = rows.map((one, index) => (index < 6 ? { ...one, depth: 9 } : one));
+    const verdict = gateVerdict(readGate(mixed, accepted));
+    expect(verdict.verdict).toBe('unmeasured');
+    expect(verdict.reason).toMatch(/states 2 sweep widths \(5, 9\)/);
+  });
+
   it('passes an arm that clears both numbers', () => {
     expect(gateVerdict(readingOf()).verdict).toBe('pass');
   });

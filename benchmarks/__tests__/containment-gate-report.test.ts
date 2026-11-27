@@ -15,6 +15,9 @@ const READING: GateReading = {
   scored: 1_400,
   disagreements: 0,
   scopes: { 'global-measured': 1_422 },
+  // The sweep's width, and the reading censuses it for the reason it censuses the scope: two populations in
+  // one file are not one corpus.
+  depths: { '5': 1_422 },
   priors: [
     {
       fittedOn: 'b',
@@ -91,8 +94,26 @@ describe('formatGateReading', () => {
 
   it('starts with the instrument s own census, before any arm', () => {
     expect(lines[0]).toBe(
-      '  rows=1422 replayable=1422 scored=1400 disagreements=0 scopes: global-measured=1422',
+      '  rows=1422 replayable=1422 scored=1400 disagreements=0 scopes: global-measured=1422 depths: 5=1422',
     );
+  });
+
+  it('says `none` rather than printing an empty census, which would read as a scope named nothing', () => {
+    // An empty join is a blank between two fields, and a blank is what a reader cannot tell from a truncated line.
+    const empty = formatGateReading({ ...READING, scopes: {}, depths: {} });
+    expect(empty[0]).toContain('scopes: none depths: none');
+  });
+
+  it('orders both censuses by code unit, so two runs of one corpus diff cleanly', () => {
+    // The comparators are what a one-entry census never calls, and a census is exactly the field a reader DIFFS
+    // between two runs: an order inherited from insertion would reorder itself whenever the file did. Two keys
+    // each, so the comparator is reached and its answer is held.
+    const mixed = formatGateReading({
+      ...READING,
+      scopes: { 'global-measured': 2, absent: 1 },
+      depths: { '9': 1, '5': 2 },
+    });
+    expect(mixed[0]).toContain('scopes: absent=1 global-measured=2 depths: 5=2 9=1');
   });
 
   it('prints one line per prior, with the half it came from and the half it may speak about', () => {

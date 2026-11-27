@@ -37,7 +37,11 @@
 import { writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
+import type {
+  FaultPropagationGraph,
+  RootCauseResult,
+  ServiceId,
+} from '../../packages/core/src/index.js';
 
 import { TopologyUnion } from '../../packages/ai/src/agent/index.js';
 import type { BenchmarkCase, FSE26RawCase } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -60,7 +64,6 @@ import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { FingerprintDump } from './agentic-fingerprint-file.js';
 import { buildCandidateFingerprints } from './agentic-fingerprint.js';
 import { discoverCaseDirs } from './case-discovery.js';
-import { buildContainmentPruner, quietEngineOptions } from './containment-pruner.js';
 import { buildContainmentRow } from './containment-row-build.js';
 import { ContainmentRowDump } from './containment-rows.js';
 import { readFaultFreeProfileFile } from './fault-free-profile-file.js';
@@ -296,13 +299,12 @@ async function main(): Promise<void> {
   // The containment rows, on the same truncate-once rule and for the same reason: they describe a POPULATION.
   const containmentDump =
     opts.containmentOut === '' ? undefined : new ContainmentRowDump(opts.containmentOut);
-  // The QUIET pruner: the same engine with both relational passes switched off, so the order it publishes is the
-  // order the FUSION produced — which is the sweep's INPUT. The published ranking is not: two passes have run over
-  // it by the time a run reports, and a row derived from it would describe a population the sweep never saw.
-  const quietPruner =
-    containmentDump === undefined
-      ? undefined
-      : buildContainmentPruner(quietEngineOptions(engineOptions));
+  // There is no second engine here any more. A "quiet" pruner with both relational passes switched off used to
+  // recover the sweep's input, and it was a SECOND computation of a list the one `analyze` call already holds: two
+  // computations of one thing differ exactly where the difference is hardest to see, and on this corpus the
+  // difference reached the published head on five cases (`docs/gate-replay.md` §9.6). `analyzeWithFusion` reports
+  // the list its passes were given, so the row is an observation of the call rather than a reconstruction beside
+  // it — and one construction site fewer for the census to attribute.
 
   for (const dir of selected) {
     let raw: FSE26RawCase;
@@ -350,6 +352,14 @@ async function main(): Promise<void> {
         : { ...benchCase, labelPrior: priorForCase(labelHistory, accepted) };
 
     let ranking: RootCauseResult[] = [];
+    // The list the engine's relational passes were given, at the pool's width. Reports the call's own input, and
+    // stays EMPTY when the case produced no graph — a case the engine could not score has no order to describe.
+    let fusionOrder: readonly ServiceId[] = [];
+    // `PUBLISHED_TOP_K` is a reporting width and the artifacts at the pool's width still need the whole order: the
+    // one question a depth row has to answer about the operator is whether the truth was ranked low or was never in
+    // the pool at all, and a five-wide order answers `absent` for both. Declared here rather than inside the
+    // graph branch because the dump blocks below reuse it to decide whether their narrower order is a second call.
+    const orderWidth = Math.max(PUBLISHED_TOP_K, benchCase.callGraph.nodes.size);
     let faultGraph: FaultPropagationGraph | undefined;
     try {
       if (benchCase.callGraph.edges.length === 0) {
@@ -368,12 +378,14 @@ async function main(): Promise<void> {
         );
         // ── The order at the POOL's width, not the reporting width ────────────────────────────────
         //
-        // `PUBLISHED_TOP_K` is a reporting width and the verdict line still truncates at it. The ORDER is taken
-        // whole, because the one question this row has to answer about the operator is whether the truth was
-        // ranked low or was never in the pool at all — and a five-wide order answers `absent` for both. The cost
-        // is one sort of at most a hundred entries: the graph is built once either way and `analyze` reuses it.
-        const orderWidth = Math.max(PUBLISHED_TOP_K, benchCase.callGraph.nodes.size);
-        ranking = pruner.analyze(faultGraph, orderWidth);
+        // The cost is one sort of at most a hundred entries: the graph is built once either way and `analyze`
+        // reuses it.
+        // One call, and it reports the list its two relational passes were given. That list is the containment
+        // dump's sweep input; taking it from here rather than recomputing it is what makes the row an observation
+        // of this call. The published prefix every other artifact reads is still `ranking.slice(0, 5)` below.
+        const analysis = pruner.analyzeWithFusion(faultGraph, orderWidth);
+        ranking = analysis.results;
+        fusionOrder = analysis.passInput;
         // The term's own census, taken from the SAME inputs the scorer reads and only when the weight asks for it.
         // A term that ships at 0 has never been exercised on this corpus, and "the arm moved nothing" has two
         // very different causes a ranking cannot separate: the normalisation is silent, or the map was never
@@ -433,10 +445,18 @@ async function main(): Promise<void> {
     // that happened to work — a table whose rungs are shares of a population the run never declared, and one
     // that reads BETTER the more cases the loader failed on.
     if (termDump !== undefined || depthDump !== undefined) {
+      // The order at the POOL's width, which the scoring call above has ALREADY computed whenever the pool is at
+      // least as wide as the reporting width — the usual case, and the only one where the two widths coincide.
+      // Re-ranking here would be a second computation of one thing (the failure mode `docs/gate-replay.md` §9.6
+      // records), and it costs a full pass per case on every corpus. Below five candidates the two widths differ
+      // and the narrower order is genuinely a different call.
+      const poolWidth = Math.max(1, benchCase.callGraph.nodes.size);
       const full =
         faultGraph === undefined
           ? []
-          : pruner.analyze(faultGraph, Math.max(1, benchCase.callGraph.nodes.size));
+          : orderWidth === poolWidth
+            ? ranking
+            : pruner.analyze(faultGraph, poolWidth);
       if (faultGraph !== undefined) {
         termDump?.record({ datapack: basename(dir), faultType, accepted, ranking: full });
       }
@@ -452,20 +472,22 @@ async function main(): Promise<void> {
       // `0` is every candidate — the setting a reader reaches for when ρ's per-edge population is too thin. The
       // shipped depth is the default, because every containment number in `docs/containment-order.md` was measured
       // on the five the engine publishes and a dump at another depth would describe a different population.
+      //
+      // It is a RECORDING width and no longer a sweep width: the sweep decides over the whole order the engine
+      // handed its passes and the window limits what the file says about it, so `gatedTop1` and the replay are the
+      // engine's own. The width is written to every row, because the population a ρ is fitted over is a
+      // configuration and a reader may not have to infer it from a row count.
       const depth =
         opts.containmentDepth === 0
           ? Math.max(2, benchCase.callGraph.nodes.size)
           : opts.containmentDepth;
-      const fusionOrder =
-        faultGraph === undefined
-          ? []
-          : quietPruner!.analyze(faultGraph, depth).map((result) => result.serviceId);
       containmentDump.record(
         buildContainmentRow({
           datapack: basename(dir),
           faultType,
           sigma: DEFAULT_FAULT_FREE_SIGMA,
           margin: engineOptions.signals.containmentMargin,
+          depth,
           edges: faultGraph?.callGraph.edges ?? [],
           excursions: faultGraph?.containmentExcursions,
           surprises: faultGraph?.containmentSurprises,

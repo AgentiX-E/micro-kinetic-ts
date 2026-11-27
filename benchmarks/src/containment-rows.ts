@@ -154,6 +154,19 @@ export interface ContainmentCaseRow {
   readonly sigma: number;
   /** The margin the run applied, in band widths. `0` is the shipped strict comparison. */
   readonly margin: number;
+  /**
+   * How many candidates of `chain.order` the pair rows describe, counting from the head.
+   *
+   * The sweep's population, and the second CONFIGURATION this file has to write down rather than leave its reader
+   * to infer: ρ is fitted per edge over the pairs a corpus examined, so the width decides the statistic. It used to
+   * be implicit in the length of `chain.order`, which was itself the truncated list — the dump recorded a five-wide
+   * window and said nothing about the fact, which is why a `global-measured` replay could not reach a head from
+   * position six (`docs/gate-replay.md` §9.6).
+   *
+   * Optional on the same ground as {@link ContainmentChain.scope}: a dump written before the field existed must be
+   * readable, and a reader has to be able to tell "this artifact predates it" from "this artifact says five".
+   */
+  readonly depth?: number | undefined;
   /** The first candidate of the fusion order the sweep was given, or `null` when the case had none. */
   readonly fusionTop1: string | null;
   /** The first candidate after the shipped sweep, before the failure-flow pass. */
@@ -245,6 +258,9 @@ export function formatContainmentRow(record: ContainmentCaseRow): string {
     faultType: record.faultType,
     sigma: record.sigma,
     margin: record.margin,
+    // Written only when stated, for the rule the scope already follows: `"depth": 5` is a claim about the run, and
+    // a writer that filled the default in would be inventing one.
+    ...(record.depth === undefined ? {} : { depth: record.depth }),
     fusionTop1: record.fusionTop1,
     gatedTop1: record.gatedTop1,
     ungatedTop1: record.ungatedTop1,
@@ -518,11 +534,22 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
     if (!Array.isArray(record.ungatedPairs)) {
       throw new Error(`ungatedPairs on line ${lineNumber} is not an array`);
     }
+    // The window, when the dump states one. A non-positive or fractional width is refused rather than coerced:
+    // the field decides a population, and `2.5` names no population at all.
+    let depth: number | undefined;
+    if (record.depth !== undefined) {
+      const stated = finiteAt(record.depth, 'depth', lineNumber);
+      if (!Number.isInteger(stated) || stated < 1) {
+        throw new Error(`depth on line ${lineNumber} is not a positive integer: ${stated}`);
+      }
+      depth = stated;
+    }
     const parsed: ContainmentCaseRow = {
       datapack: record.datapack,
       faultType: record.faultType,
       sigma,
       margin: finiteAt(record.margin, 'margin', lineNumber),
+      ...(depth === undefined ? {} : { depth }),
       fusionTop1: serviceAt(record.fusionTop1, 'fusionTop1', lineNumber),
       gatedTop1: serviceAt(record.gatedTop1, 'gatedTop1', lineNumber),
       ungatedTop1: serviceAt(record.ungatedTop1, 'ungatedTop1', lineNumber),

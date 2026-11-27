@@ -292,6 +292,7 @@ export type {
   FailedEdgeBoundary,
   FailedEdgeGate,
   FailedEdgeGateMode,
+  FusionAnalysis,
   OnsetShape,
   SelfTimeScope,
   StabilityScope,

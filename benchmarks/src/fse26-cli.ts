@@ -193,12 +193,18 @@ export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
 }
 
 /**
- * How many candidates the containment sweep's input order carries unless asked otherwise.
+ * How many candidates of the fusion order the containment dump's PAIR ROWS describe unless asked otherwise.
  *
  * `5` is not a convenient number, it is the DEPTH every containment measurement in
- * `docs/containment-order.md` was taken at: the sweep's input is the fusion order the engine publishes, and the
- * published order is `k = 5`. A dump taken at another depth describes a sweep with another population, so the
- * default has to be the measured one or the artifact would explain an arm nobody ran.
+ * `docs/containment-order.md` was taken at, and a dump taken at another depth describes a sweep with another
+ * population — ρ is fitted per edge over the pairs a run examined, so the width is a configuration and the row
+ * states it rather than leaving its reader to infer it from a length.
+ *
+ * It is a RECORDING width. The sweep decides over the whole order the engine handed its relational passes (see
+ * `TreePruner.analyzeWithFusion`), because that is the order the engine's own containment stage ran over, and a
+ * window applied to the decisions would make the artifact report an answer the run never published. The two were
+ * one number until `docs/gate-replay.md` §9.6: the dump stored a five-wide window of a pool-wide traversal and
+ * could not replay a head the wide flow pass had lifted into it from position six.
  */
 export const DEFAULT_CONTAINMENT_DEPTH = 5;
 
@@ -1124,9 +1130,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--containment-out' && hasValue(argv, i + 1)) opts.containmentOut = argv[++i]!;
     else if (arg === '--containment-depth' && hasValue(argv, i + 1)) {
       // Refused rather than clamped, for the reason `--rise-ceiling` records one branch below: a depth of one
-      // carries no adjacent pair at all, so it would publish a dump whose every case has an empty `pairs` array —
+      // records no adjacent pair at all, so it would publish a dump whose every case has an empty `pairs` array —
       // a zero that reads as "the sweep examined nothing" when the truth is that the flag asked for nothing to be
-      // examined. `0` is the explicit "every candidate" setting and is legal.
+      // WRITTEN. `0` is the explicit "every candidate" setting and is legal.
       const depth = Number(argv[++i]!);
       if (!Number.isInteger(depth) || depth < 0 || depth === 1) {
         throw new Error(

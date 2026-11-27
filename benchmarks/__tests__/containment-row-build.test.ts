@@ -20,6 +20,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    depth: 5,
     edges: [{ from: 'frontend', to: 'cart' }],
     excursions: new Map([
       ['frontend', 0],
@@ -293,5 +294,82 @@ describe('the scope the flow pass ran at', () => {
     });
     expect(wide.replay).toBe('differs');
     expect(wide.shippedTop1).toBe('db');
+  });
+
+  // ── The head that lives outside a five-wide window ─────────
+  //
+  // The five cases run `45968593004` left (`docs/gate-replay.md` §9.6) are one mechanism, and this fixture is it
+  // in eight services: the fusion ranks `edge` last, the flow pass at `global-measured` lifts it to just above the
+  // caller it failed against — the head — and a dump that stored only the five-wide window could not contain it at
+  // ANY scope. The published head is not a permutation of a truncated list; it is a candidate from position eight.
+  function liftedFromOutsideTheWindow(windowed: boolean): BuildContainmentRowInput {
+    const order = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'edge'];
+    return input({
+      depth: 5,
+      // No inversion available to the containment pass: every excursion is in band, so the only movement in the
+      // chain is the flow pass's lift and the two arms' `not-larger` rows are the record of that.
+      excursions: new Map(order.map((service) => [service, 0])),
+      edges: [
+        ['a', 'b'],
+        ['b', 'c'],
+        ['c', 'd'],
+        ['d', 'e'],
+        ['e', 'f'],
+        ['f', 'g'],
+        ['g', 'edge'],
+      ].map(([from, to]) => ({ from: from!, to: to! })),
+      failedInterfaces: new Map(),
+      failureFlows: new Map([
+        ['a', { knownIn: 0, knownOut: 0, novelIn: 0, novelOut: 0 }],
+        ['edge', { knownIn: 500, knownOut: 0, novelIn: 0, novelOut: 0 }],
+      ]),
+      // One failed interface, from the head to the tail: the lift the wide traversal performs is exactly the one
+      // `liftCallers` exists for, and the 500 against a rise of 100 is what stops it being a degenerate relay.
+      failingEdges: new Map([[failureEdgeKey('a', 'edge'), { rise: 100, novel: 0 }]]),
+      // The list the passes were GIVEN, or the five-wide window a reader used to be handed instead.
+      fusionOrder: windowed ? order.slice(0, 5) : order,
+      publishedOrder: ['edge', 'a', 'b', 'c', 'd', 'e', 'f', 'g'],
+      scope: 'global-measured',
+    });
+  }
+
+  it('replays a head the wide traversal lifted from OUTSIDE the recorded window', () => {
+    const row = buildContainmentRow(liftedFromOutsideTheWindow(false));
+    expect(row.replay).toBe('identical');
+    expect(row.fusionTop1).toBe('a');
+    // The containment stage's head is unchanged — the movement in this fixture is the FLOW pass's, and `gatedTop1`
+    // is the order before it — while the published head is the lifted candidate.
+    expect(row.gatedTop1).toBe('a');
+    expect(row.shippedTop1).toBe('edge');
+    // The population is still the measured five: the sweep decides over the whole order and the window decides
+    // what the file says about it, so a wide traversal cannot silently widen ρ's sample.
+    expect(row.depth).toBe(5);
+    expect(row.pairs).toHaveLength(4);
+    // Four rows, not seven: the window is what the file says about a sweep that decided over eight. The shipped
+    // arm refuses every one of them on the interface record (`{}` is a MEASURED "nothing failed"), which is the
+    // rule and not the fixture — the control arm inverts them, since it reads the excursions alone.
+    expect(row.pairs.map((pair) => pair.decision)).toEqual([
+      'no-failed-interface',
+      'no-failed-interface',
+      'no-failed-interface',
+      'no-failed-interface',
+    ]);
+    expect(row.ungatedPairs).toHaveLength(4);
+    expect(row.ungatedPairs.every((pair) => pair.decision === 'not-larger')).toBe(true);
+    // The chain carries the order the passes were given, at the width they ran at -- which is what makes the
+    // replay above possible at all.
+    expect(row.chain!.order).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'edge']);
+  });
+
+  it('cannot replay that head from the window alone, at either scope', () => {
+    // The falsifier, kept as a test: this is the exact shape of the five breaks, and no choice of traversal
+    // repairs it. A pass that only permutes cannot put a candidate into a list it is absent from.
+    const truncated = buildContainmentRow(liftedFromOutsideTheWindow(true));
+    expect(truncated.shippedTop1).toBe('edge');
+    expect(truncated.gatedTop1).toBe('a');
+    expect(truncated.replay).toBe('differs');
+    expect(
+      buildContainmentRow({ ...liftedFromOutsideTheWindow(true), scope: 'adjacent' }).replay,
+    ).toBe('differs');
   });
 });

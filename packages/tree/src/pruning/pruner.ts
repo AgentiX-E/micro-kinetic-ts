@@ -2707,6 +2707,27 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
 };
 
 /**
+ * One analysis: the answer the engine publishes, and the order its two relational passes were given.
+ *
+ * Two fields because they answer two different questions about the same computation. `results` is the published
+ * ranking — what every score in this repository is read from. `passInput` is the fusion's order AT THE WIDTH THE
+ * CALL ASKED FOR, i.e. the list the containment pass and the flow pass consumed, and it is the only thing from
+ * which a replay can be checked: the passes permute what they are handed, and the wide traversal lifts a callee
+ * to just above its caller to a fixed point, so a published head can be a candidate that a five-wide window does
+ * not contain at all (`docs/gate-replay.md` §9.6).
+ *
+ * The two are NOT two computations. `passInput` is the baseline array the passes are about to be applied to, so a
+ * consumer that carries it into an artifact is recording an observation of this call rather than reconstructing
+ * one beside it.
+ */
+export interface FusionAnalysis {
+  /** The ranking the engine publishes at the requested width. */
+  readonly results: RootCauseResult[];
+  /** The order the relational passes were given — `results` before either pass ran. */
+  readonly passInput: readonly ServiceId[];
+}
+
+/**
  * TreePruner — implements IRCAEngine for collision tree RCA.
  *
  * This is the primary engine for root cause analysis using
@@ -3283,6 +3304,34 @@ export class TreePruner {
    * @returns Ranked root cause results
    */
   analyze(graph: FaultPropagationGraph, topK?: number): RootCauseResult[] {
+    return this.analyzeWithFusion(graph, topK).results;
+  }
+
+  /**
+   * The same analysis, reporting the order the two RELATIONAL passes were given.
+   *
+   * ## Why the input has to come from this call
+   *
+   * {@link analyze} runs the containment order and then the failure flow over the list the fusion produced, so the
+   * answer it returns is two permutations past that list. A consumer that needs to know what the passes were
+   * handed — an artifact that records the sweep's population, a replay that has to reproduce the published head —
+   * cannot recover it from the answer: `applyFailureContainment` at `global-measured` lifts a callee to just above
+   * its caller **to a fixed point**, so the head of the published order can be a candidate from any depth. Only a
+   * list at least as long as the pool contains it.
+   *
+   * Recomputing the list beside this call is the mistake this method exists to remove: a second `analyze` is a
+   * second computation, and two computations of one thing differ exactly where the difference is invisible — on
+   * the cases where it moves the head. Records of a `1 181`-against-`1 186` gap traced back to one such second
+   * call (`docs/gate-replay.md` §9.6); the fix is not a wider `topK`, it is to REPORT the list.
+   *
+   * `results` is identical to {@link analyze}'s return at the same `topK`, by construction: this method is the
+   * implementation and `analyze` is its projection.
+   *
+   * @param graph - Fault propagation graph
+   * @param topK - Number of top results to return (default from options)
+   * @returns The published answer, and the order the relational passes were given.
+   */
+  analyzeWithFusion(graph: FaultPropagationGraph, topK?: number): FusionAnalysis {
     const k = topK ?? this.options.defaultTopK;
     invariantPositiveInt(k, 'topK');
 
@@ -3341,6 +3390,16 @@ export class TreePruner {
       deduction.audit,
     );
 
+    // ── The order the two relational passes are given ────────────────────────
+    //
+    // Taken HERE, from the ranking the passes are about to receive, and returned beside the answer: the passes
+    // permute the list they are handed, so the published head can be a candidate from any depth once the flow pass
+    // runs `global-measured`, and the answer alone cannot say what that list was. One `withFaultHypotheses` call
+    // shared by every branch below, because the hypothesis only rewrites a category and hoisting it changes no
+    // order — the three early returns used to call it separately, which is one computation per branch of a pure
+    // function.
+    let passInput = withFaultHypotheses(graph, baseline);
+
     // ── The failed-edge direction term's GATE ────────────────────────────────
     // The term is not a reweighting that can be applied unconditionally: ungated it regresses two
     // fault types on FSE'26, so the engine's acceptance condition refuses it. What licenses it is a
@@ -3352,9 +3411,9 @@ export class TreePruner {
     // would decide about a service the engine does not answer with. The cost is a second ranking
     // ONLY on the cases the gate admits; a refused case returns the baseline it already has.
     const directionWeight = this.options.failedEdgeWeight;
-    if (directionWeight === 0) return this.contained(graph, withFaultHypotheses(graph, baseline));
-    const rankOne = baseline[0];
-    if (rankOne === undefined) return this.contained(graph, withFaultHypotheses(graph, baseline));
+    // The champion is read only when the term is on: at weight 0 there is no gate to judge, so `baseline[0]` is not
+    // this branch's subject and reading it would be a quantity the shipped path never compares against.
+    const rankOne = directionWeight === 0 ? undefined : baseline[0];
     // The champion is read ONLY when the fleet bar is in force, so the shipped path does not compute a
     // quantity it would never compare against — the same rule the self-time, symmetry and dual-family
     // maps follow. It is the max over the map the decision already reads, so the number the gate judges
@@ -3383,19 +3442,22 @@ export class TreePruner {
       // containment-excursion comment records, where a graph built by one pruner decided what a second one measured.
       boundary: gateMode === 'boundary' ? graph.failedEdgeBoundary : undefined,
     };
-    if (
-      !admitsFailedEdgeTerm(
+    // A refused case keeps the baseline it already has, and an arm with no term has nothing to admit: `admitted`
+    // therefore answers "the direction term ranked this case", which is exactly what decides WHICH list the two
+    // relational passes are about to be given.
+    const admitted =
+      rankOne !== undefined &&
+      admitsFailedEdgeTerm(
         graph.dominantMetrics?.get(rankOne.serviceId)?.label,
         graph.edgeLatencyByCallee?.get(rankOne.serviceId)?.rise,
         failedEdgeGate,
-      )
-    ) {
-      return this.contained(graph, withFaultHypotheses(graph, baseline));
-    }
+      );
 
-    return this.contained(
-      graph,
-      withFaultHypotheses(
+    if (admitted) {
+      // The branch that RAN. The two calls differ only in `failedEdgeWeight`, so the passes below permute THIS
+      // order and not the baseline — reporting the baseline would hand a reader an order the passes never saw,
+      // which is the same class of defect as recording a five-wide window of a pool-wide traversal.
+      passInput = withFaultHypotheses(
         graph,
         performTreeRCA(
           prunedTree,
@@ -3428,8 +3490,13 @@ export class TreePruner {
           graph.labelPrior,
           deduction.audit,
         ),
-      ),
-    );
+      );
+    }
+
+    return {
+      results: this.contained(graph, passInput),
+      passInput: passInput.map((result) => result.serviceId),
+    };
   }
 
   /**

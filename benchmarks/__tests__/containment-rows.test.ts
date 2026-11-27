@@ -40,6 +40,7 @@ function row(overrides: Partial<ContainmentCaseRow> = {}): ContainmentCaseRow {
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    depth: 5,
     fusionTop1: 'frontend',
     gatedTop1: 'cart',
     ungatedTop1: 'cart',
@@ -502,5 +503,34 @@ describe('parseContainmentRows', () => {
     const path = join(scratch(), 'containment.ndjson');
     new ContainmentRowDump(path).record(row());
     expect(readContainmentRows(path)).toHaveLength(1);
+  });
+});
+
+describe('the sweep width', () => {
+  it('is written when stated and omitted when not, so a reader can tell the two apart', () => {
+    // The same rule the scope follows: `"depth": 5` is a claim about the run, and a writer that filled the default
+    // in would be inventing one -- while a dump from before the field must still be readable.
+    expect(JSON.parse(formatContainmentRow(row()))).toHaveProperty('depth', 5);
+    const { depth, ...withoutDepth } = row();
+    expect(depth).toBe(5);
+    expect(JSON.parse(formatContainmentRow(withoutDepth))).not.toHaveProperty('depth');
+  });
+
+  it('round-trips through the parser', () => {
+    const parsed = parseContainmentRows(formatContainmentRow(row()));
+    expect(parsed[0]!.depth).toBe(5);
+    const { depth, ...withoutDepth } = row();
+    expect(depth).toBe(5);
+    expect(parseContainmentRows(formatContainmentRow(withoutDepth))[0]).not.toHaveProperty('depth');
+  });
+
+  it('refuses a width that names no population', () => {
+    // A population is an integer count of candidates, so zero, a negative and a fraction each name no population
+    // at all -- and a parser that coerced them would fit ρ over a window the run never stated.
+    for (const value of [0, -5, 2.5, '5']) {
+      expect(() =>
+        parseContainmentRows(formatContainmentRow({ ...row(), depth: value as never })),
+      ).toThrow(/depth on line 1/);
+    }
   });
 });

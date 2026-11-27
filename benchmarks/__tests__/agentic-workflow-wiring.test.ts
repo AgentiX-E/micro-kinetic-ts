@@ -131,32 +131,39 @@ describe('the agentic line runs where the corpus and the keys are', () => {
   it('states the containment scope in BOTH workflows, and the dump carries the one it ran under', () => {
     // `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` and its owner says so by design: the wide state was measured
     // on this corpus and not on the other one, so it ships as a STATED flag. `fse26-benchmark.yml` states
-    // `global-measured`, and this workflow used to inherit the default, which made its engine `1 157` where the
-    // published cell is `1 186` on the same 1 422 -- and the arm's row is composed over THIS order.
+    // `global-measured`, and until the artifact could carry the sweep's input this workflow had to inherit the
+    // default, which made its engine `1 157` where the published cell is `1 186` on the same 1 422 -- and the arm's
+    // row is composed over THIS order.
     expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
-    const published = codeLines(FSE26)
-      .split('\n')
-      .filter((line) => line.includes('--failure-containment-scope'));
-    // Once, and to the published state: two statements of one axis is a file where one of them wins silently.
-    expect(published).toHaveLength(1);
-    expect(published[0]).toContain('--failure-containment-scope global-measured');
-    // This workflow does NOT state it, and the omission is now a COUNT rather than a preference: two dispatches
-    // measured the flag and both were withdrawn, the first on 33 breaks (the dump carried no scope at all) and the
-    // second on 5 (`scopes: global-measured=1422`, so the scope was read and the artifact is what is incomplete).
-    const stated = WORKFLOW_CODE.split('\n').filter((line) =>
-      line.includes('--failure-containment-scope'),
-    );
-    expect(stated).toEqual([]);
-    // Non-vacuity: the omission cites both runs, the count it fell to, and the mechanism -- not merely its own
-    // absence. A guard that can only be satisfied by a green job and a broken instrument is not a guard.
+    for (const [name, file] of [
+      ['fse26-benchmark.yml', FSE26],
+      ['benchmark-agentic.yml', WORKFLOW],
+    ] as const) {
+      const published = codeLines(file)
+        .split('\n')
+        .filter((line) => line.includes('--failure-containment-scope'));
+      // Once per workflow, and to the published state: two statements of one axis is a file where one wins silently.
+      expect(published, name).toHaveLength(1);
+      expect(published[0], name).toContain('--failure-containment-scope global-measured');
+    }
+    // Non-vacuity: the agentic line records the three dispatches behind the statement and the mechanism the last
+    // two of them found. A guard that could only be satisfied by a green job and a broken instrument is not a guard.
     expect(WORKFLOW).toContain('45953662488');
     expect(WORKFLOW).toContain('45968593004');
-    expect(WORKFLOW).toContain('the breaks fell to **5**');
+    expect(WORKFLOW).toContain('the breaks fell to');
     expect(WORKFLOW).toContain('quietPruner!.analyze');
-    // The third link stays guarded even with the flag withdrawn: the dump must carry the scope of WHATEVER
-    // configuration the run has, which is what makes the next dispatch's artifact readable without this change.
+    expect(WORKFLOW).toContain('analyzeWithFusion');
+    // The third link stays guarded: the dump must carry the scope of WHATEVER configuration the run has, which is
+    // what makes a future dispatch's artifact readable without a change to the runner.
     const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-fse26.ts'), 'utf8');
     expect(runner).toContain('scope: engineOptions.signals.failureContainmentScope');
+    // And the fourth: the sweep's input comes from the ONE call, not from a second engine built beside it. This is
+    // the wiring half of the defect `docs/gate-replay.md` §9.6 records; the behavioural half is the dump fixture in
+    // `containment-row-build.test.ts`.
+    expect(runner).toContain('fusionOrder = analysis.passInput');
+    // The workflow NAMES the retired engine in prose (that is the positive assertion above); the runner must not.
+    expect(runner).not.toContain('quietPruner');
+    expect(runner).not.toContain('containment-pruner');
   });
 
   it('forwards an empty input to nothing, so the runner owns its own defaults', () => {

@@ -34,10 +34,9 @@ import { dirname, resolve } from 'node:path';
 
 import type { FSE26RawCase } from '../packages/kinetic/src/benchmarks/index.js';
 import { FSE26Loader, toFaultGraphOptions } from '../packages/kinetic/src/benchmarks/index.js';
-import type { TreePruner } from '../packages/tree/src/pruning/pruner.js';
+import { TreePruner } from '../packages/tree/src/pruning/pruner.js';
 
 import { discoverCaseDirs } from '../benchmarks/src/case-discovery.js';
-import { buildContainmentPruner } from '../benchmarks/src/containment-pruner.js';
 import { readFaultFreeProfileFile } from '../benchmarks/src/fault-free-profile-file.js';
 import { parseFSE26Args } from '../benchmarks/src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../benchmarks/src/fse26-engine-options.js';
@@ -187,7 +186,10 @@ function main(options: AnatomyOptions): void {
       ? undefined
       : readFaultFreeProfileFile(parsed.faultFreeProfilePath);
   const engineOptions = buildFse26EngineOptions(parsed, profileRead?.profile);
-  const pruner = buildContainmentPruner(engineOptions);
+  // The run's own configuration, built the way the runner builds it. It was a helper module until the second
+  // engine it also produced was retired; a site in `scripts/` is outside the construction census's roots, so this
+  // literal is attributable by being the same two arguments the runner passes.
+  const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
   const loader = new FSE26Loader();
   const misses = readMisses(options.perCase);
   const dirs = discoverCaseDirs(options.dataDir);

@@ -33,6 +33,7 @@ function spec(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainme
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
       ['a', 0],

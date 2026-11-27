@@ -4502,3 +4502,88 @@ describe('the pod-state term — the lifecycle evidence a level statistic cannot
     }
   });
 });
+
+describe('analyzeWithFusion', () => {
+  /**
+   * Five services in a line, plus the head's own call to the tail, and one failed interface from the head to the
+   * tail. The fusion ranks `a` first (it is the largest anomaly) and `e` last; the flow pass at `global-measured`
+   * lifts `e` to just above its caller, i.e. to the head. That is the shape of every one of the five breaks in run
+   * `45968593004`, and it is a movement no five-wide window can contain.
+   */
+  function liftedCase(
+    options: {
+      readonly failureContainment?: boolean;
+      readonly containmentOrder?: boolean;
+    } = {},
+  ): {
+    readonly pruner: TreePruner;
+    readonly graph: ReturnType<TreePruner['buildFaultGraph']>;
+  } {
+    const callGraph = makeCallGraph(
+      ['a', 'b', 'c', 'd', 'e'],
+      [
+        ['a', 'b'],
+        ['b', 'c'],
+        ['c', 'd'],
+        ['d', 'e'],
+        ['a', 'e'],
+      ],
+    );
+    const metrics = makeMetrics({
+      a: [10, 10, 10, 10, 10, 90, 90, 90, 90, 90],
+      b: [10, 10, 10, 10, 10, 12, 12, 12, 12, 12],
+      c: [10, 10, 10, 10, 10, 11, 11, 11, 11, 11],
+      d: [10, 10, 10, 10, 10, 10.5, 10.5, 10.5, 10.5, 10.5],
+      e: [10, 10, 10, 10, 10, 10.2, 10.2, 10.2, 10.2, 10.2],
+    });
+    const pruner = new TreePruner({
+      containmentOrder: options.containmentOrder ?? false,
+      failureContainment: options.failureContainment ?? true,
+      failureContainmentScope: 'global-measured',
+    });
+    const graph = pruner.buildFaultGraph(callGraph, metrics, {
+      injectTimeMs: 300_000,
+      failedTraceEdges: [{ caller: 'a', callee: 'e', failed: 100, baseline: 0 }],
+    });
+    return { pruner, graph };
+  }
+
+  it('is the implementation and `analyze` is its projection', () => {
+    // Not "equals in this fixture": the two are one computation by construction, and a refactor that made
+    // `analyze` a second call would show up here as a difference on any case the passes move.
+    const { pruner, graph } = liftedCase();
+    expect(pruner.analyzeWithFusion(graph, 5).results).toEqual(pruner.analyze(graph, 5));
+  });
+
+  it('reports the order the passes were given, which is not the order they published', () => {
+    const { pruner, graph } = liftedCase();
+    const { results, passInput } = pruner.analyzeWithFusion(graph, 5);
+    expect(passInput[0]).toBe('a');
+    expect(results[0]!.serviceId).toBe('e');
+    // The same five candidates in both, which is the invariant a window violates: a pass can only permute.
+    expect(new Set(passInput)).toEqual(new Set(results.map((result) => result.serviceId)));
+    expect(passInput).toHaveLength(5);
+  });
+
+  it('reports the same order when the flow pass is off, so the report is the passes and nothing else', () => {
+    const { pruner, graph } = liftedCase({ failureContainment: false });
+    const { results, passInput } = pruner.analyzeWithFusion(graph, 5);
+    expect(passInput).toEqual(results.map((result) => result.serviceId));
+    expect(passInput[0]).toBe('a');
+  });
+
+  it('truncates the report at the width it was asked for, exactly as it truncates the answer', () => {
+    // A report wider than the answer would let a consumer record an order the passes never saw — and a report
+    // NARROWER is the defect itself, so both directions are held here.
+    const { pruner, graph } = liftedCase();
+    const wide = pruner.analyzeWithFusion(graph, 5);
+    const narrow = pruner.analyzeWithFusion(graph, 2);
+    expect(narrow.passInput).toHaveLength(2);
+    expect(narrow.results).toHaveLength(2);
+    expect(wide.passInput).toHaveLength(5);
+    // A prefix of one total order, so the two-wide report is a subset of the five-wide one and the narrow answer's
+    // head is whatever the passes could lift WITHIN two candidates — not the `e` the wide call publishes.
+    for (const service of narrow.passInput) expect(wide.passInput).toContain(service);
+    expect(narrow.results[0]!.serviceId).toBe('a');
+  });
+});

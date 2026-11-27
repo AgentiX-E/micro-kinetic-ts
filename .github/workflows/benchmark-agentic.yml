@@ -331,29 +331,28 @@ jobs:
           #   scored against the fingerprint's own width, which is the defect `agentic-promotion-gate.md` §3
           #   records having made three times.
           #
-          #   THE SCOPE IS NOT STATED HERE YET, and the reason is now a count rather than an opinion.
-          #
-          #   `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` while `fse26-benchmark.yml` states `global-measured`,
-          #   so this workflow's engine reads `1 157` where the published cell reads `1 186` on the same 1 422 — and
-          #   because the arm's row is composed over THIS order (`arm-order.ts`), the arm is priced against a base the
-          #   board does not quote. Two dispatches have stated the flag and both measured something worth keeping:
+          #   THE SCOPE IS STATED ONCE, TO THE PUBLISHED STATE, and the three dispatches behind this line are:
           #
           #   - `45953662488`: the engine read `1 186` and the arm at `--gate lag` settled `1 179` (`-7` net, 9
-          #     repairs against 16 breaks). That is the arm's real standing at the published base. It broke the H2
-          #     instrument on 33 of 1 422 cases, because `containment.ndjson` did not carry the scope.
-          #   - `45968593004`: the dump now carries it (`scopes: global-measured=1422`) and the breaks fell to **5**.
-          #     The remaining five are a DIFFERENT defect and a sharper one: on each of them the engine's published
-          #     top-1 is a candidate the recorded fusion order does not contain at all (e.g.
+          #     repairs against 16 breaks) — the arm's real standing at the published base. It broke the H2
+          #     instrument on 33 of 1 422 cases, because `containment.ndjson` did not carry the scope, so the reader
+          #     walked the dump at `adjacent` (`1 157`) and the counter said the chain was broken.
+          #   - `45968593004`: the dump carried the scope (`scopes: global-measured=1422`) and the breaks fell to
+          #     **5**. The five were a DIFFERENT defect, and a sharper one: the engine's published top-1 was a
+          #     candidate the recorded fusion order did not contain at all (e.g.
           #     `ts1-ts-ui-dashboard-response-replace-code-b2g9ss`: order `loadgenerator>ts-basic-service>…`, published
-          #     `ts-ui-dashboard`, whose failing edge `loadgenerator→ts-ui-dashboard` cannot lift it into a list it is
-          #     absent from). A pass that only permutes cannot do that, so the recorded order is not the list the
-          #     engine's passes actually ran over: `quietPruner!.analyze` is a SECOND `analyze` call over a graph the
-          #     first one has already touched, which is the second-implementation error this repository keeps paying
-          #     for. The fix is to capture the pass's input from the ONE `analyze` call rather than re-deriving it.
+          #     `ts-ui-dashboard`, lifted over a failing edge from a position outside the five-wide window the dump
+          #     stored). `applyFailureContainment` only permutes, so the recorded order was not the list the passes
+          #     ran over: `quietPruner!.analyze` was a SECOND computation of a list the one `analyze` call already
+          #     held — the second-implementation error this repository keeps paying for.
+          #   - The fix was not a wider depth and not another flag. `TreePruner.analyzeWithFusion` REPORTS the list
+          #     its two relational passes were given, the dump records that list at the width the passes ran at, and
+          #     the sweep's five-wide population became a stated `depth` field rather than a truncation of the input.
+          #     So the instrument can now read a wide run, and this line is what makes the arm's row comparable to
+          #     the published cell instead of to `1 157`.
           #
-          #   Until then this workflow's arm row is quoted against `1 157` WITH that stated, never against `1 186`, and
-          #   the gate's wide-scope ladder is quoted from the artifact of run `45968593004`: fusion `1 166`, shipped
-          #   walk `1 181`, prior gate `1 177` against the engine's `1 186`.
+          #   If a future dispatch breaks this again, the ladder to read is the artifact of run `45968593004`:
+          #   fusion `1 166`, shipped walk `1 181`, prior gate `1 177` against the engine's `1 186`.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
@@ -362,6 +361,7 @@ jobs:
             --depth-out artifacts/agentic/depth.ndjson \
             --terms-dump artifacts/agentic/terms.ndjson \
             --containment-out artifacts/agentic/containment.ndjson \
+            --failure-containment-scope global-measured \
             --output artifacts/agentic/results.json \
             "${CONTAINMENT_ARG[@]}" \
             "${FINGERPRINT_WIDTH_ARG[@]}" \

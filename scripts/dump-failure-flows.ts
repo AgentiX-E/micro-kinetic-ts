@@ -47,10 +47,6 @@ import { applyFailureContainment, unexplainedFailures } from '../packages/tree/s
 import { TreePruner } from '../packages/tree/src/pruning/pruner.js';
 
 import { discoverCaseDirs } from '../benchmarks/src/case-discovery.js';
-import {
-  buildContainmentPruner,
-  quietEngineOptions,
-} from '../benchmarks/src/containment-pruner.js';
 import { readFaultFreeProfileFile } from '../benchmarks/src/fault-free-profile-file.js';
 import { parseFSE26Args } from '../benchmarks/src/fse26-cli.js';
 import { buildFse26EngineOptions } from '../benchmarks/src/fse26-engine-options.js';
@@ -138,7 +134,8 @@ interface CaseRow {
    * The truth's rank after the containment rule at each reach, applied to the FUSION order.
    *
    * Offline, from the engine's own `applyFailureContainment` on the case's own flows and edges: the fusion order
-   * is what the quiet engine publishes, and the three readings are the same function the run would call. Nothing
+   * is the list the engine's passes were given — reported by the one `analyze` call, not recomputed beside it — and
+   * the three readings are the same function the run would call. Nothing
    * is reimplemented here, so a reading that says "the wide reach moves this case" is the reading the arm would
    * take — which is what makes this a measurement rather than a forecast.
    *
@@ -199,7 +196,6 @@ function flowRow(serviceId: string, flow: FailureFlow | undefined, rank: number)
  * @param loader - The corpus loader.
  * @param raw - The loaded datapack.
  * @param pruner - The engine, built under the caller's configuration.
- * @param quiet - The same engine with both relational passes off, so its order is the fusion's.
  * @param attribution - Which reading of the flow decides a pair, as the run would use it.
  * @param write - Sink for the rendered row.
  */
@@ -207,7 +203,6 @@ function probeCase(
   loader: FSE26Loader,
   raw: FSE26RawCase,
   pruner: TreePruner,
-  quiet: TreePruner,
   attribution: FailureAttribution,
   write: (row: CaseRow) => void,
 ): void {
@@ -219,8 +214,13 @@ function probeCase(
     toFaultGraphOptions(benchCase, benchCase.injectTime),
   );
   const width = Math.max(PROBE_WIDTH, benchCase.callGraph.nodes.size);
-  const published = pruner.analyze(graph, width).map((row) => row.serviceId);
-  const fusion = quiet.analyze(graph, width).map((row) => row.serviceId);
+  // ONE call, and it reports the list its two relational passes were given -- the order the reach readings below
+  // are applied to. Recovering it from a second engine with the passes switched off was a second computation of
+  // one thing, and it disagreed with the first on exactly the cases where the disagreement moved the head
+  // (`docs/gate-replay.md` §9.6).
+  const analysis = pruner.analyzeWithFusion(graph, width);
+  const published = analysis.results.map((row) => row.serviceId);
+  const fusion = analysis.passInput;
   const truth =
     raw.groundTruthServices.length > 0
       ? raw.groundTruthServices
@@ -266,7 +266,6 @@ async function main(): Promise<void> {
   const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
   // The FUSION order, from the same configuration with both relational passes off: the reach readings below are
   // applied to it rather than to the published order, because the published order is already one pass past it.
-  const quiet = buildContainmentPruner(quietEngineOptions(engineOptions));
   const loader = new FSE26Loader();
   const wanted = new Set(opts.types);
   const taken = new Map<string, number>();
@@ -295,7 +294,7 @@ async function main(): Promise<void> {
     if (already >= opts.perType) continue;
     taken.set(raw.faultType, already + 1);
     const rows: CaseRow[] = [];
-    probeCase(loader, raw, pruner, quiet, runArgs.failureAttribution, (row) => rows.push(row));
+    probeCase(loader, raw, pruner, runArgs.failureAttribution, (row) => rows.push(row));
     for (const row of rows) sink?.write(`${JSON.stringify(row)}\n`);
     probed += rows.length;
   }
