@@ -32,6 +32,7 @@ function reading(overrides: Partial<SurpriseReading> = {}): SurpriseReading {
       'record-silent': 0,
       'no-failed-interface': 3,
       unmeasured: 4,
+      'callee-in-band': 0,
       'not-larger': 5,
       'prior-absent': 0,
       'prior-below': 0,
@@ -41,6 +42,7 @@ function reading(overrides: Partial<SurpriseReading> = {}): SurpriseReading {
       'record-silent': 0,
       'no-failed-interface': 0,
       unmeasured: 6,
+      'callee-in-band': 0,
       'not-larger': 2,
       'prior-absent': 0,
       'prior-below': 0,
@@ -106,7 +108,7 @@ describe('formatSurpriseReading', () => {
     // A reason that vanished from the line would be indistinguishable from a reason nobody looked for.
     const lines = formatSurpriseReading(reading());
     expect(lines[5]).toBe(
-      '  decisions inverted=12 no-failed-interface=3 unmeasured=4 not-larger=5 prior-absent=0 prior-below=0',
+      '  decisions inverted=12 no-failed-interface=3 unmeasured=4 callee-in-band=0 not-larger=5 prior-absent=0 prior-below=0',
     );
     expect(lines[6]).toContain('opened    inverted=1');
     expect(lines[6]).toContain('unmeasured=6');

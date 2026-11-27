@@ -69,6 +69,7 @@ function rowFor(name: string, spec: CaseSpec): ContainmentCaseRow {
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    minCalleeExcursion: 0.1,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
@@ -151,6 +152,7 @@ function readingOf(overrides: Partial<GateReading['arms']['prior']> = {}): GateR
       'record-silent': 0,
       'no-failed-interface': 0,
       unmeasured: 0,
+      'callee-in-band': 0,
       'not-larger': 0,
       'prior-absent': 0,
       'prior-below': 0,

@@ -52,6 +52,7 @@ const READING: GateReading = {
     'record-silent': 0,
     'no-failed-interface': 0,
     unmeasured: 100,
+    'callee-in-band': 0,
     'not-larger': 300,
     'prior-absent': 5,
     'prior-below': 7,
@@ -152,7 +153,7 @@ describe('formatGateReading', () => {
 
   it('prints the gated walks own census, including both refusal reasons', () => {
     expect(lines[6]).toBe(
-      '  gate decisions: inverted=20 prior-absent=5 prior-below=7 not-larger=300 unmeasured=100',
+      '  gate decisions: inverted=20 prior-absent=5 prior-below=7 callee-in-band=0 not-larger=300 unmeasured=100',
     );
   });
 

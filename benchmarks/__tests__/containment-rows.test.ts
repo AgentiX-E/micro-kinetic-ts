@@ -105,6 +105,31 @@ describe('formatContainmentRow', () => {
     expect(parsed[0]).toEqual(original);
   });
 
+  it('writes the noise floor beside the margin, so a reader replays the rule that produced the row', () => {
+    // Iteration 382: the floor decides whether a boundary excursion is an excursion at all. A dump that did not
+    // carry it would replay a pre-fix row under the fixed default and invent a disagreement.
+    const original = row({ minCalleeExcursion: 0.1 });
+    const parsed = parseContainmentRows(formatContainmentRow(original));
+    expect(parsed[0]!.minCalleeExcursion).toBe(0.1);
+    expect(JSON.parse(formatContainmentRow(original)) as Record<string, unknown>).toHaveProperty(
+      'minCalleeExcursion',
+      0.1,
+    );
+  });
+
+  it('omits the floor when the row predates it, so an old dump reads as old rather than as floor zero', () => {
+    const text = formatContainmentRow(row());
+    expect(JSON.parse(text) as Record<string, unknown>).not.toHaveProperty('minCalleeExcursion');
+    expect(parseContainmentRows(text)[0]!.minCalleeExcursion).toBeUndefined();
+  });
+
+  it('refuses a negative floor rather than replaying a rule nobody wrote', () => {
+    const parsed = JSON.parse(formatContainmentRow(row())) as Record<string, unknown>;
+    expect(() =>
+      parseContainmentRows(JSON.stringify({ ...parsed, minCalleeExcursion: -0.1 })),
+    ).toThrow(/minCalleeExcursion.*negative/);
+  });
+
   it('writes the sweep s input beside its decisions, so the walk can be repeated', () => {
     const parsed = JSON.parse(formatContainmentRow(row())) as { chain: Record<string, unknown> };
     expect(parsed.chain.order).toEqual(['frontend', 'cart']);

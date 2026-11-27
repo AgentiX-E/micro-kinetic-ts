@@ -20,6 +20,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    minCalleeExcursion: 0.1,
     depth: 5,
     edges: [{ from: 'frontend', to: 'cart' }],
     excursions: new Map([
@@ -307,7 +308,8 @@ describe('the scope the flow pass ran at', () => {
     return input({
       depth: 5,
       // No inversion available to the containment pass: every excursion is in band, so the only movement in the
-      // chain is the flow pass's lift and the two arms' `not-larger` rows are the record of that.
+      // chain is the flow pass's lift and the two arms' `callee-in-band` rows are the record of that. At the
+      // shipped floor of 0.1 a candidate with no excursion is named by the band it never left, not by a margin.
       excursions: new Map(order.map((service) => [service, 0])),
       edges: [
         ['a', 'b'],
@@ -355,7 +357,7 @@ describe('the scope the flow pass ran at', () => {
       'no-failed-interface',
     ]);
     expect(row.ungatedPairs).toHaveLength(4);
-    expect(row.ungatedPairs.every((pair) => pair.decision === 'not-larger')).toBe(true);
+    expect(row.ungatedPairs.every((pair) => pair.decision === 'callee-in-band')).toBe(true);
     // The chain carries the order the passes were given, at the width they ran at -- which is what makes the
     // replay above possible at all.
     expect(row.chain!.order).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'edge']);

@@ -117,6 +117,7 @@ export function formatGateReading(
   lines.push(
     `  gate decisions: inverted=${reading.decisions.inverted} ` +
       `prior-absent=${reading.decisions['prior-absent']} prior-below=${reading.decisions['prior-below']} ` +
+      `callee-in-band=${reading.decisions['callee-in-band']} ` +
       `not-larger=${reading.decisions['not-larger']} unmeasured=${reading.decisions.unmeasured}`,
   );
   // The criterion is printed before the verdict is, so a reader never has to hold the numbers against a bar

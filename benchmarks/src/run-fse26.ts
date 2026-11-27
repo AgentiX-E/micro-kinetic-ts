@@ -55,6 +55,7 @@ import {
 import {
   computeSelfTimeDetail,
   DEFAULT_FAULT_FREE_SIGMA,
+  DEFAULT_MIN_CALLEE_EXCURSION,
   EMPTY_SELF_TIME_CENSUS,
   mergeSelfTimeCensus,
   type SelfTimeCensus,
@@ -489,6 +490,9 @@ async function main(): Promise<void> {
           faultType,
           sigma: DEFAULT_FAULT_FREE_SIGMA,
           margin: engineOptions.signals.containmentMargin,
+          // The engine's shipped noise floor, recorded so a reader replays the configuration that produced the
+          // verdict. It is the fix, not a search axis -- the margin beside it is the ablation dimension.
+          minCalleeExcursion: DEFAULT_MIN_CALLEE_EXCURSION,
           depth,
           edges: faultGraph?.callGraph.edges ?? [],
           excursions: faultGraph?.containmentExcursions,

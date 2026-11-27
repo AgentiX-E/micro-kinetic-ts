@@ -173,6 +173,14 @@ export interface ContainmentCaseRow {
   /** The margin the run applied, in band widths. `0` is the shipped strict comparison. */
   readonly margin: number;
   /**
+   * The callee noise floor the run applied, in band widths. Optional for the same reason {@link depth} is: a dump
+   * written before this field existed must stay readable, and its reader must be able to tell "predates it" from
+   * "states zero". A row that predates it is replayed with floor 0, the behavior that row was written under; a row
+   * that states it is replayed with the stated floor. Omitting the floor would replay a pre-fix dump under the
+   * fixed default and turn its own `replay: identical` into a spurious disagreement.
+   */
+  readonly minCalleeExcursion?: number | undefined;
+  /**
    * The recording width the pair rows describe, or `'pool'` for every candidate the case had.
    *
    * The sweep's population, and the second CONFIGURATION this file has to write down rather than leave its reader
@@ -236,6 +244,8 @@ export interface ContainmentRowsSummary {
   readonly recordSilent: number;
   readonly noFailedInterface: number;
   readonly unmeasured: number;
+  /** Callees refused by the shipped 0.1-band noise floor: a median too near its band edge to be an excursion. */
+  readonly calleeInBand: number;
   readonly notLarger: number;
   readonly priorAbsent: number;
   readonly priorBelow: number;
@@ -277,6 +287,9 @@ export function formatContainmentRow(record: ContainmentCaseRow): string {
     faultType: record.faultType,
     sigma: record.sigma,
     margin: record.margin,
+    ...(record.minCalleeExcursion === undefined
+      ? {}
+      : { minCalleeExcursion: record.minCalleeExcursion }),
     // Written only when stated, for the rule the scope already follows: `"depth": 5` is a claim about the run, and
     // a writer that filled the default in would be inventing one. `"depth": "pool"` is the other claim — the whole
     // candidate list — and JSON keeps the two apart for free because one is a number and the other a string.
@@ -338,6 +351,7 @@ const SUMMARY_FIELDS = [
   'recordSilent',
   'noFailedInterface',
   'unmeasured',
+  'calleeInBand',
   'notLarger',
   'priorAbsent',
   'priorBelow',
@@ -359,6 +373,7 @@ const DECISION_FIELD: Record<
   | 'recordSilent'
   | 'noFailedInterface'
   | 'unmeasured'
+  | 'calleeInBand'
   | 'notLarger'
   | 'priorAbsent'
   | 'priorBelow'
@@ -367,6 +382,7 @@ const DECISION_FIELD: Record<
   'record-silent': 'recordSilent',
   'no-failed-interface': 'noFailedInterface',
   unmeasured: 'unmeasured',
+  'callee-in-band': 'calleeInBand',
   'not-larger': 'notLarger',
   'prior-absent': 'priorAbsent',
   'prior-below': 'priorBelow',
@@ -390,6 +406,7 @@ export class ContainmentRowDump {
     recordSilent: 0,
     noFailedInterface: 0,
     unmeasured: 0,
+    calleeInBand: 0,
     notLarger: 0,
     priorAbsent: 0,
     priorBelow: 0,
@@ -454,6 +471,7 @@ function decisionAt(value: unknown, field: string, line: number): ContainmentDec
     value === 'record-silent' ||
     value === 'no-failed-interface' ||
     value === 'unmeasured' ||
+    value === 'callee-in-band' ||
     value === 'not-larger' ||
     value === 'prior-absent' ||
     value === 'prior-below'
@@ -554,6 +572,17 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
     if (!Array.isArray(record.ungatedPairs)) {
       throw new Error(`ungatedPairs on line ${lineNumber} is not an array`);
     }
+    // The noise floor, when the dump states one. Optional so a pre-fix dump stays readable, and validated when
+    // present so a negative or non-finite floor is a broken artifact rather than a silent widening of the rule.
+    let minCalleeExcursion: number | undefined;
+    if (record.minCalleeExcursion !== undefined) {
+      minCalleeExcursion = finiteAt(record.minCalleeExcursion, 'minCalleeExcursion', lineNumber);
+      if (minCalleeExcursion < 0) {
+        throw new Error(
+          `minCalleeExcursion on line ${lineNumber} is negative: ${minCalleeExcursion}`,
+        );
+      }
+    }
     // The window, when the dump states one. A non-positive or fractional width is refused rather than coerced:
     // the field decides a population, and `2.5` names no population at all. `pool` is the other accepted spelling
     // and it is a RULE, so a near-miss (`POOL`, `all`, `wide`) is refused rather than folded onto it: a reader that
@@ -580,6 +609,7 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
       faultType: record.faultType,
       sigma,
       margin: finiteAt(record.margin, 'margin', lineNumber),
+      ...(minCalleeExcursion === undefined ? {} : { minCalleeExcursion }),
       ...(depth === undefined ? {} : { depth }),
       fusionTop1: serviceAt(record.fusionTop1, 'fusionTop1', lineNumber),
       gatedTop1: serviceAt(record.gatedTop1, 'gatedTop1', lineNumber),

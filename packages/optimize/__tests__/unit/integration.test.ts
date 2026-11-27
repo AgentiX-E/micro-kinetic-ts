@@ -300,6 +300,9 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'logSignalMode',
       'maxCycles',
       'maxPropagationDepth',
+      // Iteration 382: the callee's absolute noise floor on leaving its band. A dispatch constant on the same
+      // structural rule as the containment pass, not a fusion coefficient, so the search cannot move it.
+      'minCalleeExcursion',
       'onsetShape',
       // Iteration 246: the pod-state corroboration term. Held at the engine default for the reason every
       // dispatch axis here is held — the term reads a 0/1 STATE transition and pays the share of channels that

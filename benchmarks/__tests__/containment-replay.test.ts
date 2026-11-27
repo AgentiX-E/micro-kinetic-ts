@@ -28,6 +28,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    minCalleeExcursion: 0.1,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
@@ -425,5 +426,41 @@ describe('the scope the flow pass ran at', () => {
     const { scope: _dropped, ...chainless } = wide.chain!;
     const bare: ContainmentCaseRow = { ...wide, chain: chainless as typeof wide.chain };
     expect(replayAgrees(bare, replayCase(bare, { kind: 'off' }))).toBe(false);
+  });
+
+  it('replays a boundary pair under the floor the row STATES, not today’s default', () => {
+    // A caller inside its band and a callee 0.088 band widths past the edge. Under floor 0.1 the pair is refused;
+    // under floor 0 it inverts. The row carries its own floor so a reader never has to guess which walk it was.
+    const kept = buildContainmentRow(
+      input({
+        excursions: new Map([
+          ['a', 0],
+          ['b', 0.088],
+        ]),
+        minCalleeExcursion: 0.1,
+        publishedOrder: ['a', 'b'],
+      }),
+    );
+    expect(kept.minCalleeExcursion).toBe(0.1);
+    expect(kept.replay).toBe('identical');
+    expect(replayCase(kept, { kind: 'shipped' })!.verdicts[0]!.decision).toBe('callee-in-band');
+  });
+
+  it('reads a row that predates the floor at floor zero, so its own verdicts still replay', () => {
+    // A pre-fix dump was produced under the strict comparison. Dropping the field must not silently promote it to
+    // the fixed default, which would turn a healthy `replay: identical` into a spurious disagreement.
+    const built = buildContainmentRow(
+      input({
+        excursions: new Map([
+          ['a', 0],
+          ['b', 0.088],
+        ]),
+        minCalleeExcursion: 0,
+        publishedOrder: ['b', 'a'],
+      }),
+    );
+    const { minCalleeExcursion: _dropped, ...old } = built;
+    expect(replayAgrees(old, replayCase(old, { kind: 'shipped' }))).toBe(true);
+    expect(replayCase(old, { kind: 'shipped' })!.verdicts[0]!.decision).toBe('inverted');
   });
 });

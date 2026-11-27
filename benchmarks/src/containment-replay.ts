@@ -144,6 +144,11 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
           edges: chain.edges.map(([from, to]) => ({ from, to })),
           excursions: measured,
           margin: row.margin,
+          // The noise floor the RUN applied, read from the row and not from today's engine default: a dump written
+          // before the field existed was produced under floor 0, and replaying it under 0.1 would turn its own
+          // `replay: identical` into a spurious disagreement on the boundary cases. A row that states the floor
+          // is replayed under exactly that floor.
+          minCalleeExcursion: row.minCalleeExcursion ?? 0,
           // The interface record is what the SHIPPED rule requires, and the `surprise` arm varies the measurement
           // rather than the requirement — so it carries the record, and dropping it would price a different rule.
           // `veto` carries it too and reads it at CASE scope: the same map, one word of interpretation.

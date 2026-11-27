@@ -193,6 +193,7 @@ export { orderFailedEdgeFirst, partitionFirst } from './pruning/failed-edge-orde
 export type { FailedEdgeFirstScope } from './pruning/pruner.js';
 
 export {
+  DEFAULT_MIN_CALLEE_EXCURSION,
   applyContainmentOrder,
   inspectContainmentOrder,
   isLatencyChannel,

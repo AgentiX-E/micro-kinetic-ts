@@ -21,6 +21,7 @@ import type { ContainmentPrior, FaultFreeProfile } from '@agentix-e/micro-kineti
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_MIN_CALLEE_EXCURSION,
   TreePruner,
   applyContainmentOrder,
   failureEdgeKey,
@@ -236,6 +237,117 @@ const servicesOf = (list: readonly Row[]): string[] => list.map((one) => one.ser
 const CALLS_AB: readonly CallEdge[] = [
   { from: 'a', to: 'b', type: 'REST', callRate: 100, p99Latency: 10, errorRate: 0.01 },
 ];
+
+describe('minCalleeExcursion (the noise floor)', () => {
+  // Iteration 382. Three full-corpus cases carried a caller INSIDE its band (excursion 0) and a callee only
+  // 0.03-0.096 band widths past its band edge -- measurement noise at the boundary, not a latency that "left
+  // its band" in the sense the pass documents. A strict comparison (margin 0) still inverted them and moved a
+  // correct root cause (ts-preserve-service) below its own callee. The floor demands that the callee be a
+  // resolvable distance outside its band before the pair may be inverted.
+
+  const CALL = CALLS_AB;
+
+  it('refuses a callee only noise-width outside its band, when the caller is inside', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.088],
+      ]),
+      minCalleeExcursion: 0.1,
+    });
+    expect(servicesOf(swept.order)).toEqual(['a', 'b']);
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['callee-in-band']);
+  });
+
+  it('inverts a callee that is genuinely outside its band', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 1],
+      ]),
+      minCalleeExcursion: 0.1,
+    });
+    expect(servicesOf(swept.order)).toEqual(['b', 'a']);
+    expect(swept.verdicts.map((one) => one.decision)).toEqual(['inverted']);
+  });
+
+  it('compares strictly against the floor: a callee exactly at it is refused', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.1],
+      ]),
+      minCalleeExcursion: 0.1,
+    });
+    expect(servicesOf(swept.order)).toEqual(['a', 'b']);
+    expect(swept.verdicts[0]!.decision).toBe('callee-in-band');
+  });
+
+  it('is disabled by an explicit zero, so the pre-fix strict comparison can still be replayed', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.088],
+      ]),
+      minCalleeExcursion: 0,
+    });
+    expect(servicesOf(swept.order)).toEqual(['b', 'a']);
+    expect(swept.verdicts[0]!.decision).toBe('inverted');
+  });
+
+  it('applies at its shipped default without the caller naming it', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.088],
+      ]),
+    });
+    expect(servicesOf(swept.order)).toEqual(['a', 'b']);
+    expect(swept.verdicts[0]!.decision).toBe('callee-in-band');
+  });
+
+  it('is checked after the interface record, so a pair that never carried a failed call keeps that reason', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.088],
+      ]),
+      failingEdges: new Map(),
+      minCalleeExcursion: 0.1,
+    });
+    expect(swept.verdicts[0]!.decision).toBe('no-failed-interface');
+  });
+
+  it('is checked before the margin, so a noise-width pair is named by the floor and not by a larger bar', () => {
+    const swept = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALL,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.088],
+      ]),
+      minCalleeExcursion: 0.1,
+      margin: 1,
+    });
+    expect(swept.verdicts[0]!.decision).toBe('callee-in-band');
+  });
+
+  it('ships at 0.1 in the engine, not zero', () => {
+    expect(DEFAULT_MIN_CALLEE_EXCURSION).toBe(0.1);
+  });
+});
 
 describe('applyContainmentOrder', () => {
   it('inverts a caller whose callee is further outside its band', () => {
@@ -922,9 +1034,12 @@ describe('inspectContainmentOrder', () => {
       ]),
     });
     expect(servicesOf(order)).toEqual(['b', 'a', 'c', 'd']);
+    // `c>d` used to read `not-larger` at the old default of zero: both sat at 0, so the strict comparison refused.
+    // At the shipped floor of 0.1 a callee with NO excursion is named by what actually refused it -- it never left
+    // its band -- rather than by the margin that would also have refused it. The order is unchanged either way.
     expect(verdicts.map((one) => `${one.upper}>${one.lower}:${one.decision}`)).toEqual([
       'a>b:inverted',
-      'c>d:not-larger',
+      'c>d:callee-in-band',
     ]);
   });
 });

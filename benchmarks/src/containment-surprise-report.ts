@@ -24,6 +24,7 @@ const REASONS: readonly ContainmentDecision[] = [
   'inverted',
   'no-failed-interface',
   'unmeasured',
+  'callee-in-band',
   'not-larger',
   'prior-absent',
   'prior-below',

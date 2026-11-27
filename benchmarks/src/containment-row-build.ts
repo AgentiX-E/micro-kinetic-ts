@@ -63,6 +63,12 @@ export interface BuildContainmentRowInput {
   /** The margin the run applied, in band widths. */
   readonly margin: number;
   /**
+   * The callee noise floor the run applied, in band widths. Required so a builder cannot silently switch the
+   * rule: `0` replays the pre-fix strict comparison, `0.1` is the shipped fix. Written to the row so a reader
+   * replays the configuration that produced it rather than today's default.
+   */
+  readonly minCalleeExcursion: number;
+  /**
    * Which candidates of the fusion order the PAIR ROWS describe: a width, or `'pool'` for all of them.
    *
    * The sweep's population, and a configuration of the run like the margin: ρ is fitted per edge over the pairs a
@@ -172,6 +178,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     edges: input.edges,
     excursions,
     margin: input.margin,
+    minCalleeExcursion: input.minCalleeExcursion,
     failingEdges: input.failedInterfaces ?? new Map<string, number>(),
     recordWindow,
   });
@@ -180,6 +187,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     edges: input.edges,
     excursions,
     margin: input.margin,
+    minCalleeExcursion: input.minCalleeExcursion,
     recordWindow,
   });
   // The replay walks the SAME scope the run applied: `identical` is a statement about one configuration, and a
@@ -205,6 +213,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     faultType: input.faultType,
     sigma: input.sigma,
     margin: input.margin,
+    minCalleeExcursion: input.minCalleeExcursion,
     depth: input.depth,
     fusionTop1: head(input.fusionOrder),
     gatedTop1: head(gated.order.map((entry) => entry.service)),

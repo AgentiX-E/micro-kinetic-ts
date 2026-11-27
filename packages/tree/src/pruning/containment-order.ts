@@ -43,6 +43,19 @@ import { injectionSplitIndex, medianOfRange } from '../causal/topology-fault-gra
 import { DEFAULT_FAULT_FREE_SIGMA, type FaultFreeProfile } from './fault-free-profile.js';
 
 /**
+ * The smallest callee excursion the containment pass will call a latency that LEFT its band, in band widths.
+ *
+ * Ships at 0.1. An excursion is a median's distance past a band edge measured in band widths, so 0.03-0.096 is
+ * a median sitting 3-10 % outside a boundary — indistinguishable from noise at the edge. Iteration 382 measured
+ * three full-corpus cases where the strict comparison (margin 0) inverted such a pair against a caller that was
+ * itself INSIDE its band, moving a correct root cause below its own callee; the floor refuses exactly those three
+ * and keeps every gain. This is an ABSOLUTE floor on the callee, not a relative margin: it does not move the
+ * strict comparison {@link ContainmentOrderInput.margin} documents, it refuses to call a boundary measurement an
+ * excursion at all.
+ */
+export const DEFAULT_MIN_CALLEE_EXCURSION = 0.1;
+
+/**
  * Channel labels that measure how long a service took to answer, or how long its calls took to be answered.
  *
  * Two families, and they are two instruments rather than two spellings: `http.server.request.duration` is the
@@ -199,6 +212,22 @@ export interface ContainmentOrderInput<T> {
    */
   readonly margin?: number | undefined;
   /**
+   * How far outside its band a callee must be before the pair may be inverted, in band widths.
+   *
+   * {@link DEFAULT_MIN_CALLEE_EXCURSION} = 0.1 ships. Unlike {@link margin} — a RELATIVE gap between two
+   * measurements on the same case — this is an ABSOLUTE resolvability floor on the callee alone: an excursion of
+   * 0.03-0.096 band widths is a median sitting 3-10 % past a band edge, which is measurement noise at the
+   * boundary, not a latency that "left its band" in the sense this pass documents. Iteration 382 measured three
+   * full-corpus cases where a caller inside its band (excursion 0) and such a noise-width callee were inverted by
+   * the strict comparison, moving a correct root cause below its own callee; the floor removes exactly those three
+   * and no gain. The strict comparison is preserved — this field does not change the margin, it refuses to call
+   * a boundary measurement an excursion.
+   *
+   * Consulted after the interface record and the measured-side check, but before the margin and the residual, so
+   * a noise pair is named `callee-in-band` rather than disguised as `not-larger` or `prior-below`.
+   */
+  readonly minCalleeExcursion?: number | undefined;
+  /**
    * The interfaces that carried failed calls on this case, keyed by {@link failureEdgeKey}.
    *
    * When this is present the pass only inverts a pair whose **own interface failed**. When it is absent the
@@ -294,6 +323,7 @@ export type ContainmentDecision =
   | 'record-silent'
   | 'no-failed-interface'
   | 'unmeasured'
+  | 'callee-in-band'
   | 'not-larger'
   | 'prior-absent'
   | 'prior-below';
@@ -400,6 +430,15 @@ export function inspectContainmentOrder<T extends RankedService>(
     }
     if (upperExcursion === undefined || lowerExcursion === undefined) {
       if (recording) verdicts.push({ ...pair, decision: 'unmeasured' });
+      continue;
+    }
+    // The callee must be a RESOLVABLE distance outside its own band. A median only 3-10 % past the band edge is
+    // noise at the boundary; calling it an excursion and inverting on it moved three correct roots below their
+    // callees on the full corpus (iteration 382). Placed before the margin so the pair is named by what refused it
+    // -- a noise-height pair is `callee-in-band`, not a disguised `not-larger` under an unrelated margin.
+    const floor = input.minCalleeExcursion ?? DEFAULT_MIN_CALLEE_EXCURSION;
+    if (!(lowerExcursion > floor)) {
+      if (recording) verdicts.push({ ...pair, decision: 'callee-in-band' });
       continue;
     }
     if (!(lowerExcursion > upperExcursion + margin)) {

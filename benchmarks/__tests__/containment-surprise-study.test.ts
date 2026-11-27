@@ -27,6 +27,7 @@ function silentLatency(
     faultType: 'NetworkDelay',
     sigma: 3,
     margin: 0,
+    minCalleeExcursion: 0.1,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
@@ -94,9 +95,10 @@ describe('readSurprise', () => {
 
   it('separates the pairs the swap opened from the ones it simply walked, by the shipped reason', () => {
     const reading = readSurprise([rowOf({ datapack: 'one' })], accepted(['one', ['b']]));
-    // The shipped walk examined the pair and refused it because the callee was not further out on latency;
-    // that is the silence the second measurement breaks, and it is the census the report exists for.
-    expect(reading.opened['not-larger']).toBe(1);
+    // The shipped walk examined the pair and refused it because the callee never left its band on latency;
+    // that is the silence the second measurement breaks, and it is the census the report exists for. At the
+    // shipped 0.1 floor a zero-excursion callee is named `callee-in-band`, not `not-larger`.
+    expect(reading.opened['callee-in-band']).toBe(1);
     expect(reading.opened.unmeasured).toBe(0);
     expect(reading.decisions.inverted).toBe(1);
   });
@@ -145,7 +147,7 @@ describe('readSurprise', () => {
       ],
       accepted(['one', ['c']]),
     );
-    expect(reading.opened['not-larger']).toBe(1);
+    expect(reading.opened['callee-in-band']).toBe(1);
     expect(reading.opened.inverted).toBe(1);
   });
 
@@ -206,7 +208,7 @@ describe('readSurprise', () => {
       ],
       accepted(['one', ['a']]),
     );
-    expect(reading.decisions['not-larger']).toBe(1);
+    expect(reading.decisions['callee-in-band']).toBe(1);
     expect(reading.decisions.inverted).toBe(0);
     expect(reading.opened.inverted).toBe(0);
     expect(reading.moved).toBe(0);

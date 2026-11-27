@@ -59,6 +59,7 @@ function reading(overrides: Partial<VetoReading> = {}): VetoReading {
       'record-silent': 37,
       'no-failed-interface': 515,
       unmeasured: 52,
+      'callee-in-band': 0,
       'not-larger': 561,
       'prior-absent': 0,
       'prior-below': 0,
@@ -68,6 +69,7 @@ function reading(overrides: Partial<VetoReading> = {}): VetoReading {
       'record-silent': 0,
       'no-failed-interface': 458,
       unmeasured: 12,
+      'callee-in-band': 0,
       'not-larger': 238,
       'prior-absent': 0,
       'prior-below': 0,
@@ -123,10 +125,10 @@ describe('formatVetoReading', () => {
     expect(lines[4]).toBe('  arm=shipped   top1=1156 +15/-0');
     expect(lines[5]).toBe('  arm=veto      top1=1170 +29/-0');
     expect(lines[6]).toBe(
-      '  decisions inverted=242 record-silent=37 no-failed-interface=515 unmeasured=52 not-larger=561 prior-absent=0 prior-below=0',
+      '  decisions inverted=242 record-silent=37 no-failed-interface=515 unmeasured=52 callee-in-band=0 not-larger=561 prior-absent=0 prior-below=0',
     );
     expect(lines[7]).toBe(
-      '  control   inverted=117 record-silent=0 no-failed-interface=458 unmeasured=12 not-larger=238 prior-absent=0 prior-below=0',
+      '  control   inverted=117 record-silent=0 no-failed-interface=458 unmeasured=12 callee-in-band=0 not-larger=238 prior-absent=0 prior-below=0',
     );
     expect(lines[8]).toBe('  ceiling at-second=36 reachable=31 unreachable=5 shipped=15 veto=29');
     expect(lines[9]).toBe('  criterion: gains>=15 losses<=0 top1>1156');

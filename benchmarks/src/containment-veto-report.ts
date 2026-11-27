@@ -32,6 +32,7 @@ const REASONS: readonly ContainmentDecision[] = [
   'record-silent',
   'no-failed-interface',
   'unmeasured',
+  'callee-in-band',
   'not-larger',
   'prior-absent',
   'prior-below',
