@@ -331,24 +331,29 @@ jobs:
           #   scored against the fingerprint's own width, which is the defect `agentic-promotion-gate.md` §3
           #   records having made three times.
           #
-          #   THE SCOPE IS STATED HERE, and it took two dispatches to be able to.
+          #   THE SCOPE IS NOT STATED HERE YET, and the reason is now a count rather than an opinion.
           #
           #   `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` while `fse26-benchmark.yml` states `global-measured`,
-          #   so this workflow's engine read `1 157` where the published cell reads `1 186` on the same 1 422 — and
-          #   because the arm's row is composed over THIS order (`arm-order.ts`), the arm was priced against a base
-          #   the board does not quote. Run `45953662488` stated the flag and measured the thing it was meant to
-          #   measure: the engine read `1 186` and the arm at `--gate lag` settled `1 179` — `-7` net, `9` repairs
-          #   against `16` breaks. That is the arm's real standing at the published base, and it is worse than the
-          #   `+24` the adjacent base showed.
+          #   so this workflow's engine reads `1 157` where the published cell reads `1 186` on the same 1 422 — and
+          #   because the arm's row is composed over THIS order (`arm-order.ts`), the arm is priced against a base the
+          #   board does not quote. Two dispatches have stated the flag and both measured something worth keeping:
           #
-          #   The same run broke an INSTRUMENT: `run-containment-gate.ts` exits 3 unless its replay reproduces the
-          #   run's own recorded top-1, and with the scope stated 33 of 1 422 cases did not reproduce. The replay
-          #   walked `applyFailureContainment` at its DEFAULT because `containment.ndjson` did not carry the scope,
-          #   which is a configuration stated in the engine and assumed in the artifact that reads it (§370's class
-          #   of defect). `ContainmentChain.scope` is that word: the dump now writes the scope the engine ran
-          #   under, `publishThroughFlows` walks it, and `ReplayedCase.scope` reports which one was used so a
-          #   fallback can never be read as a measurement. The flag is therefore stated BELOW, once, and the guard
-          #   in `agentic-workflow-wiring` requires it to be stated and to equal `fse26-benchmark.yml`'s value.
+          #   - `45953662488`: the engine read `1 186` and the arm at `--gate lag` settled `1 179` (`-7` net, 9
+          #     repairs against 16 breaks). That is the arm's real standing at the published base. It broke the H2
+          #     instrument on 33 of 1 422 cases, because `containment.ndjson` did not carry the scope.
+          #   - `45968593004`: the dump now carries it (`scopes: global-measured=1422`) and the breaks fell to **5**.
+          #     The remaining five are a DIFFERENT defect and a sharper one: on each of them the engine's published
+          #     top-1 is a candidate the recorded fusion order does not contain at all (e.g.
+          #     `ts1-ts-ui-dashboard-response-replace-code-b2g9ss`: order `loadgenerator>ts-basic-service>…`, published
+          #     `ts-ui-dashboard`, whose failing edge `loadgenerator→ts-ui-dashboard` cannot lift it into a list it is
+          #     absent from). A pass that only permutes cannot do that, so the recorded order is not the list the
+          #     engine's passes actually ran over: `quietPruner!.analyze` is a SECOND `analyze` call over a graph the
+          #     first one has already touched, which is the second-implementation error this repository keeps paying
+          #     for. The fix is to capture the pass's input from the ONE `analyze` call rather than re-deriving it.
+          #
+          #   Until then this workflow's arm row is quoted against `1 157` WITH that stated, never against `1 186`, and
+          #   the gate's wide-scope ladder is quoted from the artifact of run `45968593004`: fusion `1 166`, shipped
+          #   walk `1 181`, prior gate `1 177` against the engine's `1 186`.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --fault-free-profile "$HOME/fault-free-profile.json" \
@@ -357,7 +362,6 @@ jobs:
             --depth-out artifacts/agentic/depth.ndjson \
             --terms-dump artifacts/agentic/terms.ndjson \
             --containment-out artifacts/agentic/containment.ndjson \
-            --failure-containment-scope global-measured \
             --output artifacts/agentic/results.json \
             "${CONTAINMENT_ARG[@]}" \
             "${FINGERPRINT_WIDTH_ARG[@]}" \

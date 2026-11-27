@@ -140,22 +140,21 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     // Once, and to the published state: two statements of one axis is a file where one of them wins silently.
     expect(published).toHaveLength(1);
     expect(published[0]).toContain('--failure-containment-scope global-measured');
-    // This workflow STATES it too, once, and to the same value. Run `45953662488` was the first dispatch to state
-    // it: the engine read `1 186` and the arm settled `1 179` (`-7` net) -- the arm's real standing at the
-    // published base -- but the H2 instrument refused the run, 33 of 1 422 cases not reproducing, because
-    // `containment.ndjson` did not carry the scope its replay needed.
+    // This workflow does NOT state it, and the omission is now a COUNT rather than a preference: two dispatches
+    // measured the flag and both were withdrawn, the first on 33 breaks (the dump carried no scope at all) and the
+    // second on 5 (`scopes: global-measured=1422`, so the scope was read and the artifact is what is incomplete).
     const stated = WORKFLOW_CODE.split('\n').filter((line) =>
       line.includes('--failure-containment-scope'),
     );
-    expect(stated).toHaveLength(1);
-    expect(stated[0]).toContain('--failure-containment-scope global-measured');
-    // Non-vacuity: the two dispatches and the instrument break are the reason the flag is stated here, and the
-    // reason it waited is named where the flag sits.
+    expect(stated).toEqual([]);
+    // Non-vacuity: the omission cites both runs, the count it fell to, and the mechanism -- not merely its own
+    // absence. A guard that can only be satisfied by a green job and a broken instrument is not a guard.
     expect(WORKFLOW).toContain('45953662488');
-    expect(WORKFLOW).toContain('33 of 1 422');
-    expect(WORKFLOW).toContain('ContainmentChain.scope');
-    // The third link: the RUNNER has to hand the engine's own scope to the dump. A guard on the workflow alone
-    // would let the flag be stated and dropped between the call site and the record (§370's class of defect).
+    expect(WORKFLOW).toContain('45968593004');
+    expect(WORKFLOW).toContain('the breaks fell to **5**');
+    expect(WORKFLOW).toContain('quietPruner!.analyze');
+    // The third link stays guarded even with the flag withdrawn: the dump must carry the scope of WHATEVER
+    // configuration the run has, which is what makes the next dispatch's artifact readable without this change.
     const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-fse26.ts'), 'utf8');
     expect(runner).toContain('scope: engineOptions.signals.failureContainmentScope');
   });
