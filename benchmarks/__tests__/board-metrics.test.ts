@@ -403,6 +403,18 @@ describe('formatBoardMetrics / formatBoardTable', () => {
     expect(text).toMatch(/MRR\s+0\.\d+\s+\(1\/rank over all 5 cases, a miss scoring 0\)/);
   });
 
+  it('writes no seconds per case for our row, because the verdict file carries none', () => {
+    // The board's column is the algorithm's own `average_algorithm_seconds`. Ours is not in the verdict file, and a
+    // `0.0` in that cell would be an absence printed as a measurement — one that reads as infinitely fast.
+    const table = formatBoardTable(
+      computeBoardMetrics(many(1422, 1), 5),
+      RCABENCH_LEADERBOARD.benchmarks[0]!,
+    );
+    const ours = table.split('\n')[1]!;
+    expect(ours.trim().endsWith('\u2014')).toBe(true);
+    expect(ours).not.toMatch(/0\.0$/);
+  });
+
   it('lays the board out one row per algorithm with ours first', () => {
     const mine = computeBoardMetrics(many(1422, 1), 5);
     const table = formatBoardTable(mine, RCABENCH_LEADERBOARD.benchmarks[0]!);

@@ -793,8 +793,7 @@ export function compareToBoardBest(
       'board comparison: no rows were supplied, so there is no field to compare against',
     );
   }
-  const field = entries;
-  for (const entry of field) {
+  for (const entry of entries) {
     if (entry.scope !== 'all') {
       throw new Error(
         `board comparison: ${entry.displayName} is scoped to \`${entry.scope}\` (${grouped(entry.cases)} cases), ` +
@@ -817,7 +816,7 @@ export function compareToBoardBest(
     ['Avg@5', avgAtK(metrics, 5), (entry) => entry.avg5],
   ];
   return asked.map(([metric, ours, read]) => {
-    const best = field.reduce((leader, entry) => (read(entry) > read(leader) ? entry : leader));
+    const best = entries.reduce((leader, entry) => (read(entry) > read(leader) ? entry : leader));
     return {
       metric,
       ours,
@@ -894,7 +893,10 @@ export function formatBoardTable(
       metrics.mrr.toFixed(4),
       pct(avgAtK(metrics, 3)),
       pct(avgAtK(metrics, 5)),
-      '0.0',
+      // NOT a zero: this row's seconds per case are not in the verdict file, and the board's column is the
+      // algorithm's own `average_algorithm_seconds`. A `0.0` here would be an absence reported as a measurement —
+      // and a flattering one, since it would read as infinitely fast.
+      '\u2014',
     ]),
     ...board.entries.map((entry) =>
       line([

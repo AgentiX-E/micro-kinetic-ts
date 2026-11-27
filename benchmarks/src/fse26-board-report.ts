@@ -74,7 +74,10 @@ if (args.perCase === '') {
 
 const depths = parseDepths(args.depths);
 const verdicts = readPerCaseVerdicts(args.perCase);
-const widest = Math.max(...depths);
+// The table always prints `Top@5`, `Avg@5` and the deltas, so the ladder is computed to at least five rungs even
+// when `--depths` asks for fewer: a flag that can crash the report it configures is a flag whose refusal has to be
+// at the boundary, and `--depths 3` is a legitimate request for a short ladder.
+const widest = Math.max(5, ...depths);
 const metrics = computeBoardMetrics(verdicts, widest);
 const fse = RCABENCH_LEADERBOARD.benchmarks[0]!;
 
