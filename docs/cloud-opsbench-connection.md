@@ -374,3 +374,93 @@ The prior is estimated from the same corpus's labels, leave-one-out — the depl
 incidents", and **not** evidence that it transfers to a corpus with a different label distribution. No default moved:
 the arm lives in `benchmarks/src/run-margin-prior.ts` and shipping it needs a new engine term, a CLI flag, the 25-input
 dispatch budget, and a green nine-cell A/B. That A/B is the next iteration's first task, as the gate's was.
+
+## 12. Iteration 371: the enrolled triple runs here, and the corpus finally has a gate
+
+§11.4 ended with a sentence that had to wait five iterations: *"shipping it needs a new engine term, a CLI flag, the
+25-input dispatch budget, and a green nine-cell A/B."* All of that happened, and the verdict was the opposite of the
+one §11 hoped for: the summed arms lost `Top@1` on the FSE'26 panel at every price, so iteration 369-370 enrolled the
+term at `0.1 / 0 / tail` — a **pinned** jurisdiction, where the head of the engine's own order is clamped and only
+positions 2..n are the prior's to move. This section is that arm measured **here**, against the same 156 cases, with
+the two §11 arms re-run for comparison, and it is the first time the four arms have been read on one instrument.
+
+### 12.1 Four arms, one population, four runs
+
+`156` scorable of `754` directories, unchanged (`no-series 584`, `no-alert-window 10`, `truth-outside-service-alphabet 4`).
+Every arm below ran the shipped engine with one triple moved, and each pair is compared **case by case** with an exact
+McNemar test, because a rate difference on 156 cases is not a result until the discordant pairs are counted.
+
+| arm | `β` | `τ` | jurisdiction | `CA@1` | `Top@3` | `Top@5` |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| shipped before the enrolment | 0 | 0 | `tail` (inert) | 0.5128 | 0.7051 | 0.8269 |
+| **enrolled** | **0.1** | **0** | **`tail`** | **0.5128** | **0.7949** | **0.9038** |
+| §11 maximum-`CA@1` arm | 0.1 | 0.02 | `everywhere` | **0.5769** | 0.7949 | 0.8846 |
+| §11 zero-loss arm | 0.05 | 0.02 | `everywhere` | 0.5577 | 0.7628 | 0.8462 |
+
+| pair | metric | gained / lost | exact `p` |
+| --- | --- | ---: | ---: |
+| enrolled vs shipped | `CA@1` | **+0 / −0** | **1.0000** |
+| enrolled vs shipped | `Top@3` | **+18 / −4** | **0.0043** |
+| enrolled vs shipped | `Top@5` | **+14 / −2** | **0.0042** |
+| enrolled vs §11 max-`CA@1` | `CA@1` | +1 / −11 | 0.0063 |
+| enrolled vs §11 max-`CA@1` | `Top@3` | +3 / −3 | 1.0000 |
+| enrolled vs §11 max-`CA@1` | `Top@5` | +4 / −1 | 0.3750 |
+| enrolled vs §11 zero-loss | `CA@1` | +0 / −7 | 0.0156 |
+| enrolled vs §11 zero-loss | `Top@5` | +10 / −1 | 0.0117 |
+
+### 12.2 Three things this table settles
+
+**1. The pin's contract holds here exactly, and that is a property rather than a coincidence.** `CA@1` is
+`+0 / −0` — not "roughly equal", but *zero cases changed hands*. `tail` clamps position 1 to the engine's own first
+candidate, so no weight can move it; what the row establishes is that the clamping is implemented as stated, on a third
+corpus with 15–51 candidates per case, after the containment pass that §371 recorded as still able to move position 1
+on the FSE'26 panel (43 of 1 422). Here it moves none.
+
+**2. The depth gain is significant and it costs nothing at the head.** `+18 / −4` at `Top@3` and `+14 / −2` at `Top@5`,
+both `p ≈ 0.004`, against an identical `CA@1`. **The enrolled arm strictly dominates the arm it replaced on this
+corpus** — equal on the head, better on both depths. That is a stronger statement than the nine RCAEval cells could
+make (they read inv*ariance*, 666 → 666), because there the instrument has no `Top@3`/`Top@5` row at all.
+
+**3. The corpus conflict is real, significant, and not resolved by tuning.** The arm §11 called deployable reads
+`0.5769` here — **`+11 / −1`, `p = 0.0063`** — and it is the best `CA@1` this corpus has seen. It is the same arm that
+lost `Top@1` on the FSE'26 panel at every price (`1 186 → 1 184 / 1 176 / 1 182`) and was refused for it. So the
+programme's published configuration is **not** the best on this board, and this file says so in one line: *the head
+movement that buys 6.4 pp here costs the head on two other corpora, and a single global configuration cannot have
+both.* What it can have is the pinned arm, which is never worse than the ablation and significantly better at depth on
+all three.
+
+### 12.3 The gate this corpus did not have
+
+`docs/closed-axes-register.md` §371 found that an arm of this corpus had **rotted silently** — the runner printed a
+configuration it was not running — and identified the durable fix as a recorded reading rather than prose. Until this
+iteration this corpus had none: the nine RCAEval cells had `benchmarks/baselines/rcaeval-nine-cells.json` and a job
+that fails on any cell that moved, and Cloud-OpsBench had a table in a document.
+
+It now has both halves:
+
+- `benchmarks/baselines/cloudopsbench-arms.json` — the four arms above, on one population, at corpus revision
+  `ec1d4f38`.
+- `benchmarks/src/cloudopsbench-arm-baseline.ts` — `ranksToReading`, `parseArmBaseline`, `compareArms`,
+  `strictDominance`, `renderArmComparison`; no I/O, no engine, so the decision is testable and the entry point stays a
+  rendering.
+- `run-cloudopsbench.ts --arm-baseline <file> --arm-name <arm>` — the run compares its own three counts against the
+  recorded reading and leaves **exit code 1** on a movement. A population change is not a movement: it **throws**,
+  because `80 → 74` over two denominators is the conflation §8 exists to prevent.
+
+The two refusals in `parseArmBaseline` are the ones that matter, and both were written as failing tests first: a
+reading whose thresholds are not nested (`at1 ≤ at3 ≤ at5` — no ranking can produce otherwise, so every dominance
+claim above would be arithmetic on a fiction) and an arm named twice (the comparison is keyed on the name). Four
+deliberate mutations of the module — the nesting rule, the population rule, the `null`-rank rule and the
+"somewhere better" half of dominance — each turned the suite red, and each was reverted.
+
+### 12.4 What this does NOT claim
+
+No default moved, and no number outside this section moved: the nine RCAEval cells are still `666 / 735` at digest
+`2a8f8b335d45`, and this iteration's contribution to them is zero by construction. **The 156 cases are still 89.7 % of
+the Hard bucket and 20.7 % of the corpus.** The 584 unreachable directories are unchanged, and the lever they represent
+is quantified elsewhere: 403 of the corpus's 472 reachable evidence uses are log evidence (`GetErrorLogs` 331,
+`GetRecentLogs` 72), while this engine reads `metrics.csv` and nothing else. Building the log path is the largest single
+accuracy opportunity in this programme, and it is not in this iteration.
+
+The §11 `cell` scope (`0.5833`, zero losses) is still the ceiling and still not a configuration: the category is the
+label being predicted, so a prior scoped to it is the answer wearing a prior's clothes.

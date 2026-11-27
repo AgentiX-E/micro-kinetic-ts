@@ -93,6 +93,23 @@ export interface CloudOpsArgs {
    * inferred because a default that silently reinterprets a published command line is the defect.
    */
   readonly labelPriorJurisdiction: LabelPriorJurisdiction | undefined;
+  /**
+   * Where the recorded reading of the arms lives, when this run is to be held to one.
+   *
+   * The nine RCAEval cells have `benchmarks/baselines/rcaeval-nine-cells.json` and a job that fails on any cell that
+   * moved; this corpus has prose, and iteration 370 found what prose is worth. This flag is the same mechanism: the
+   * run compares its own three counts against the recorded reading and leaves a non-zero exit code on a movement, so
+   * an arm that changes silently becomes a red job rather than a stale table.
+   */
+  readonly armBaseline: string | undefined;
+  /**
+   * Which recorded arm this run IS, matched by name against the baseline above.
+   *
+   * Required with `--arm-baseline` and refused without it: a comparison that guessed the arm from the flag values
+   * would silently compare the shipped configuration against an arm whenever a default moved — which is exactly the
+   * defect `--label-prior-jurisdiction` was added to end.
+   */
+  readonly armName: string | undefined;
 }
 
 /** The two graph arms, as the command line spells them. */
@@ -132,6 +149,8 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let labelPriorWeight: number | undefined;
   let labelPriorMarginGate: number | undefined;
   let labelPriorJurisdiction: LabelPriorJurisdiction | undefined;
+  let armBaseline: string | undefined;
+  let armName: string | undefined;
 
   const valueOf = (index: number, flag: string): string => {
     const value = args[index + 1];
@@ -215,6 +234,12 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       }
       labelPriorJurisdiction = value;
       index += 1;
+    } else if (one === '--arm-baseline') {
+      armBaseline = valueOf(index, '--arm-baseline');
+      index += 1;
+    } else if (one === '--arm-name') {
+      armName = valueOf(index, '--arm-name');
+      index += 1;
     } else if (one === '--topology') {
       const value = valueOf(index, '--topology');
       if (value !== 'registry' && value !== 'ring') {
@@ -232,6 +257,12 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       '--data-dir is required: this runner reads a Cloud-OpsBench checkout and nothing else',
     );
   }
+  // The pair travels together or not at all. Half of it is two different mistakes — a baseline with no arm to look
+  // up, and an arm name with nothing to compare it to — and both would otherwise run to completion and print a
+  // number under a claim nobody made.
+  if ((armBaseline === undefined) !== (armName === undefined)) {
+    throw new Error('--arm-baseline and --arm-name travel together, or neither is given');
+  }
   return {
     dataDir,
     output,
@@ -244,5 +275,7 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
     labelPriorWeight,
     labelPriorMarginGate,
     labelPriorJurisdiction,
+    armBaseline,
+    armName,
   };
 }

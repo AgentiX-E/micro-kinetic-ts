@@ -696,6 +696,7 @@ export default defineConfig({
         // weight was `0`. The projection answers it from the resolved options, and what is measured here is the pair
         // of facts that keeps the two from drifting again — the resolved weight IS the shipped default when no flag
         // is passed, and an absent flag does not overwrite that default with `undefined`.
+        'src/cloudopsbench-arm-baseline.ts',
         'src/cloudopsbench-engine-options.ts',
       ],
       exclude: ['__tests__/integration/**'],

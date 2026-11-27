@@ -35,7 +35,7 @@
  * @module benchmarks/run-cloudopsbench
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -53,6 +53,12 @@ import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 // this function inside an `export type { … }` block, where a value is erased — so the name is unusable there and a
 // reader who took the index's word for it would import `undefined` in a JavaScript build.
 import { acceptedTruthServiceIds } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import {
+  compareArms,
+  parseArmBaseline,
+  ranksToReading,
+  renderArmComparison,
+} from './cloudopsbench-arm-baseline.js';
 import { listCaseIds, readCloudOpsCase, type CloudOpsCase } from './cloudopsbench-case.js';
 import { parseCloudOpsArgs } from './cloudopsbench-cli.js';
 import {
@@ -258,6 +264,34 @@ async function main(): Promise<void> {
   process.stdout.write(
     `\nCA@1 over all ${overall.cases} cases: ${formatRate(overall.top1, overall.cases)}\n`,
   );
+
+  // ── The recorded reading, when this run is one of the arms it names ────────────────────────────────
+  //
+  // The three counts come from the same `casePredictions` the table above was rendered from, so the gate and the
+  // number a reader sees cannot disagree. A movement leaves `process.exitCode = 1` rather than throwing: the run
+  // finished and its numbers are worth reading, and a job that dies before writing its artifact is a job that hides
+  // the very movement it was meant to report.
+  if (args.armBaseline !== undefined && args.armName !== undefined) {
+    const baseline = parseArmBaseline(readFileSync(resolve(args.armBaseline), 'utf8'));
+    const measured = ranksToReading(
+      args.armName,
+      {
+        weight: engineOptions.signals.labelPriorWeight,
+        gate: engineOptions.signals.labelPriorMarginGate,
+        jurisdiction: engineOptions.signals.labelPriorJurisdiction,
+      },
+      result.casePredictions.map((one) => one.truthRank ?? null),
+    );
+    const comparison = compareArms(baseline, [measured]);
+    process.stdout.write(
+      `\narm                         ${measured.arm} against ${baseline.corpus}@${baseline.revision}\n`,
+    );
+    process.stdout.write(
+      `arm reading                 CA@1 ${String(measured.at1)} / Top@3 ${String(measured.at3)} / Top@5 ${String(measured.at5)} of ${String(measured.cases)}\n`,
+    );
+    process.stdout.write(renderArmComparison(comparison));
+    if (comparison.movements.length > 0) process.exitCode = 1;
+  }
 
   if (args.output !== undefined) {
     writeFileSync(

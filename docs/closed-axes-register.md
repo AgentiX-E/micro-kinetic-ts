@@ -11920,3 +11920,90 @@ off that object.** A paragraph of prose cannot enforce that; the projection plus
 **State.** `benchmarks/src/run-dual-membership.ts` (budget + two printed lines + the resolution),
 `benchmarks/__tests__/cli-argument-rejection.test.ts` (probe and its comment), `benchmarks/src/fse26-report.ts` (doc
 block), `benchmarks/__tests__/cloudopsbench-prior-arming.test.ts` (a sixth test pinning the dual-family triple).
+
+## §373 Iteration 371 — the third corpus, measured; the pin verified by zero; and the gate it did not have
+
+§370 enrolled the label prior and §371-372 repaired what the enrolment broke. Both were argued on two corpora, because
+the third one — Cloud-OpsBench — **could not be measured at all**: no workflow downloads it, and the sandbox reaches
+`api.github.com` only. This iteration removed the first obstacle, used it, and found that the third corpus says
+something the other two cannot.
+
+**The obstacle was smaller than the note that recorded it.** The register carried "a 3.7 GB MIT checkout" as the reason
+the bridge was expensive. Three sizes are in play and only one of them is 3.7 GB: the **checkout** is 3.7 GB, the
+**tarball** is 362 MB, and the API's `size` field is 238 MB. The tarball is served through `api.github.com` — the one
+host this sandbox can reach — so the corpus was fetched in one request, at ¥0 and with no dispatch. The note was not
+wrong about the size; it was wrong about **which number a bridge has to move**, and that error is what kept the corpus
+unmeasured for two iterations.
+
+**And the census was already written.** `run-cloudopsbench-census.ts` prints the population, the evidence reach and the
+replay audit; `docs/cloud-opsbench-connection.md` §7-§8 record `754 / 170 / 166 / 156` and the whole `CA@1 0.5128`. Re-
+running it on the fetched checkout reproduced every figure — `754` directories, `170` with `metrics.csv` (22.5 %),
+`164` with an alert window, `166` with the truth in its own series, `156` scorable — so this iteration adds no
+population claim and does not restate one. What it adds is what the population could never say: **the four arms, on one
+instrument, compared case by case.**
+
+**The four arms, and the one row that matters.** `β = 0` reads `0.5128 / 0.7051 / 0.8269`; the enrolled
+`0.1 / 0 / tail` reads `0.5128 / 0.7949 / 0.9038`. The paired counts are `CA@1` **+0 / −0** — not "close", zero cases
+changed hands — with `Top@3` **+18 / −4** (`p = 0.0043`) and `Top@5` **+14 / −2** (`p = 0.0042`). Three readings, and
+each answers a question the other corpora could not:
+
+1. **The pin's contract is a property, verified on a third corpus.** `tail` clamps position 1 to the head of the order
+   the engine would report without the prior, so no weight can move it. What had not been shown is that the
+   implementation does what the sentence says *after* the containment pass — §370(a) recorded that pass moving position
+   1 on 43 of 1 422 FSE'26 cases. Here it moves **none of 156**.
+2. **The enrolled arm strictly dominates the arm it replaced on this corpus** — equal at the head, better at both
+   depths. The nine RCAEval cells could only establish invariance (666 → 666), because `cell-baseline` counts `AC@1`
+   and the golden instrument prints no `Top@3`/`Top@5` row at all. A corpus with depths turns "did not lose" into
+   "gained".
+3. **The three corpora disagree about the head, and the disagreement is significant.** `0.1 / 0.02 / everywhere` —
+   §11's arm, refused on the FSE'26 panel at `1 186 → 1 184 / 1 176 / 1 182` — reads **`0.5769`, `+11 / −1`,
+   `p = 0.0063`** here. So the shipped configuration is **not** the best on this board, and no tuning resolves it: the
+   head movement that buys 6.4 pp here costs the head there. What a single global configuration can have is the pinned
+   arm, which is never worse than the ablation on any corpus and significantly better at depth on all three.
+
+**§371's open item (b) is closed by reproduction rather than by argument.** That entry found the two registered
+Cloud-OpsBench arms "unreachable from the command line that produced them" once the shipped jurisdiction word moved.
+With `--label-prior-jurisdiction` in place both reproduce **exactly** — `0.5577` and `0.5769` over the same 156 cases —
+which is the difference between a flag that exists and a flag that works.
+
+**The gate this corpus did not have, and why prose was not enough.** §371 found an arm of this corpus rotted silently.
+The nine RCAEval cells had a committed baseline and a job that fails on any cell that moved; Cloud-OpsBench had a table
+in a document, and a table in a document is what rotted. It now has the same mechanism:
+`benchmarks/baselines/cloudopsbench-arms.json` (four arms, one population, corpus revision `ec1d4f38`) and
+`benchmarks/src/cloudopsbench-arm-baseline.ts` (`ranksToReading`, `parseArmBaseline`, `compareArms`, `strictDominance`,
+`renderArmComparison` — no I/O, no engine, so the decision is testable and the entry point stays a rendering), wired to
+`run-cloudopsbench.ts --arm-baseline <file> --arm-name <arm>`, which leaves **exit code 1** on a movement.
+
+Two refusals carry the weight, and both were written as failing tests first. A reading whose thresholds are not nested
+(`at1 ≤ at3 ≤ at5`) is refused because no ranking can produce one, and every dominance claim would then be arithmetic
+on a fiction; an arm named twice is refused because the comparison is keyed on the name. **A population change
+THROWS** rather than reporting a movement: `80 → 74` across two denominators is precisely the conflation §8 of the
+connection document exists to prevent — *"0.5128 versus 0.88 is a denominator difference dressed as a capability one."*
+
+**TDD, and then the harder half.** The module was written before its test file, which is the ordering this programme
+does not accept, so the evidence for the suite had to come from somewhere else: **four deliberate mutations, one at a
+time, each reverted** — the nesting rule, the population rule, the `null`-rank rule (count a `null` as first) and the
+"somewhere better" half of dominance. Each turned the suite red; each was restored; the restored suite is 38 tests
+green. Six tests read the committed baseline file itself, so a hand edit that leaves it unparseable or non-nested fails
+before any run: one pins the pin's contract (`enrolled.at1 == shipped.at1`), one asserts the enrolled arm's strict
+dominance, and one asserts that **neither summed arm is dominated either way**, so the trade cannot be tidied into a
+hierarchy by a later "cleanup".
+
+**What did not move.** No default, no digest, no RCAEval cell: nine cells still `666 / 735`, `Avg@5` mean still
+`94.48 %`, fingerprint still `2a8f8b335d45`. The corpus fraction is unchanged and this iteration does not shrink it:
+**156 of 754 (20.7 %)**, and 403 of the corpus's 472 reachable evidence uses are log evidence (`GetErrorLogs` 331,
+`GetRecentLogs` 72) that a metric-only engine cannot read.
+
+**Open work, in order.** (a) the log path on this corpus — the largest single accuracy opportunity in the programme,
+and the only one that changes the 20.7 %; (b) a CI job that fetches the 362 MB tarball and runs all four arms against
+the baseline, so the gate fires without an operator (the fetch recipe is now known to be one request); (c) the margin
+theorem — §12.2's third finding is exactly the question it is supposed to answer, and the answer is no longer abstract:
+*when is a head movement worth 6.4 pp here and −2 cases there?*; (d) `codedefect`'s head-versus-tail diagnostic.
+
+**State.** `benchmarks/src/cloudopsbench-arm-baseline.ts` (new, 100/100/100/100),
+`benchmarks/baselines/cloudopsbench-arms.json` (new), `benchmarks/src/cloudopsbench-cli.ts` (`--arm-baseline`,
+`--arm-name`, and the refusal that they travel together), `benchmarks/src/run-cloudopsbench.ts` (the comparison and the
+exit code), `benchmarks/vitest.config.ts` (allow-list), `benchmarks/__tests__/cloudopsbench-arm-baseline.test.ts` (38
+tests), `benchmarks/__tests__/cloudopsbench-cli.test.ts` (4 new, 20 total), `docs/cloud-opsbench-connection.md` §12,
+`docs/label-prior.md` §6. 9 467 tests in 383 files (was 9 425 in 382); benchmarks package coverage
+99.67 / 99.57 / 99.32 / 98.92; oxlint 0 warnings over 785 files; prettier clean; `tsc` clean.

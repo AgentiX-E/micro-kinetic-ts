@@ -196,6 +196,27 @@ half) is in `docs/label-prior-fse26.md` §4.2. **The golden half has since been 
 `45859433294` reads `AC@1` 666 of 666 cell for cell and a nine-cell `Avg@5` mean of 92.47 → 94.48 %, so the triple
 enrols at `β = 0.1, τ = 0, tail` (§5, and §4.5 of the FSE'26 document for the table).
 
+**And the third corpus, once it could be stated again.** §371 of the register found that the enrolment had made the two
+arms above *unstatable* on Cloud-OpsBench: the shipped jurisdiction word moved `everywhere → tail` while that parser had
+no flag to name it, so the command line that produced `0.5577` and `0.5769` no longer reproduced them. With
+`--label-prior-jurisdiction` in place, both arms reproduce **exactly** (`0.5577` and `0.5769` over the same 156 cases),
+which converts that entry's open item (b) from a claim into a reading. The same instrument then priced the enrolled
+triple, and the result is the cleanest one this term has produced anywhere:
+
+| arm | `CA@1` | `Top@3` | `Top@5` | vs the ablation |
+| --- | ---: | ---: | ---: | --- |
+| `β = 0` (the ablation) | 0.5128 | 0.7051 | 0.8269 | — |
+| **`0.1 / 0 / tail` (shipped)** | **0.5128** | **0.7949** | **0.9038** | `CA@1` +0/−0, `Top@3` **+18/−4** (`p = 0.0043`), `Top@5` **+14/−2** (`p = 0.0042`) |
+| `0.1 / 0.02 / everywhere` (§11's arm) | **0.5769** | 0.7949 | 0.8846 | `CA@1` +1/−11 (`p = 0.0063` against it) |
+
+So on this corpus the shipped triple is a **strict dominance** over the arm it replaced — the head does not move by one
+case (which is the pin's construction, verified rather than assumed) and both depths rise significantly. And the arm
+this document refused still reads the highest `CA@1` here, by 6.4 pp with `p = 0.0063`: **the three corpora disagree
+about the head, and the disagreement is measured rather than argued.** The reading is held to
+`benchmarks/baselines/cloudopsbench-arms.json`, which is the gate this corpus lacked until iteration 371; the full
+account is `docs/cloud-opsbench-connection.md` §12.
+
+
 ## 7. Two admission mechanisms, and the condition that chooses between them
 
 The engine now has two ways to restrain a term, and until this section nothing said which applies when. Both are

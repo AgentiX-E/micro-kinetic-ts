@@ -231,3 +231,36 @@ describe('the Cloud-OpsBench runner’s command line', () => {
     ).toThrow(/unknown argument "--self-anomaly-weight"/);
   });
 });
+
+describe('the arm baseline pair', () => {
+  it('parses together', () => {
+    const parsed = parseCloudOpsArgs([
+      '--data-dir',
+      '/tmp/cob',
+      '--arm-baseline',
+      'benchmarks/baselines/cloudopsbench-arms.json',
+      '--arm-name',
+      'enrolled',
+    ]);
+    expect(parsed.armBaseline).toBe('benchmarks/baselines/cloudopsbench-arms.json');
+    expect(parsed.armName).toBe('enrolled');
+  });
+
+  it('leaves both absent by default, so a bare run is held to nothing', () => {
+    const parsed = parseCloudOpsArgs(['--data-dir', '/tmp/cob']);
+    expect(parsed.armBaseline).toBeUndefined();
+    expect(parsed.armName).toBeUndefined();
+  });
+
+  it('refuses a baseline with no arm to look up', () => {
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--arm-baseline', 'x.json'])).toThrow(
+      /travel together/,
+    );
+  });
+
+  it('refuses an arm name with nothing to compare it against', () => {
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--arm-name', 'enrolled'])).toThrow(
+      /travel together/,
+    );
+  });
+});
