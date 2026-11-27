@@ -617,6 +617,25 @@ jobs:
           pnpm exec tsx benchmarks/src/run-term-decomposition.ts \
             --terms fse26-terms.ndjson 2>&1 | tee fse26-terms-report.txt
 
+      # The board's six-metric contract, over the verdict file the run just wrote.
+      #
+      # `docs/sota-comparison.md` §0c-vii could compare two of the board's six published metrics (`Top@1` and, by
+      # hand, nothing else) because two were the ones that had been typed into a document. `MRR`, `Top@3`, `Top@5`,
+      # `Avg@3` and `Avg@5` are all functions of one column the verdict file already carries — `truthRank`, the
+      # accepted answer's position over the WHOLE order — so the remaining four cells are now a command rather than
+      # a named next step. The step reads and prints, so it cannot move a score; what it decides is whether the
+      # comparison is complete on the metrics the board actually publishes.
+      #
+      # It fails the step on a verdict file the module refuses (a row from before the rank columns existed, a
+      # difference across two populations), because a report that quietly ran over a different population is the
+      # denominator error the section exists to prevent.
+      - name: The board's six metrics
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/fse26-board-report.ts \
+            --per-case fse26-per-case.ndjson \
+            --out fse26-board.json 2>&1 | tee fse26-board.txt
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -626,6 +645,8 @@ jobs:
             fse26-results.txt
             fse26-results.json
             fse26-per-case.ndjson
+            fse26-board.txt
+            fse26-board.json
             fse26-terms.ndjson
             fse26-terms-report.txt
             manifest.json

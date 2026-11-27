@@ -595,6 +595,31 @@ jobs:
             --label-out artifacts/agentic/channel-labels.json \
             "${ARTIFACT_ARG[@]}" 2>&1 | tee artifacts/agentic/channel-split.txt
 
+      # ── The board's six metrics, for THIS arm ───────────────────────────────────────────────────────────────
+      #
+      #   `docs/sota-comparison.md` §0c-vii compares this engine against RCABench's official leaderboard and had two
+      #   of the board's six published metrics to do it with, because two were the ones that had been typed. The
+      #   other four are functions of one column this arm's verdict file already carries — `truthRank`, the accepted
+      #   answer's position over the whole order — so they cost nothing to read and the arm's own reading of them is
+      #   a command rather than a dispatch.
+      #
+      #   It runs HERE rather than in `fse26-benchmark.yml` alone because the two arms are different configurations
+      #   on the same population, and a comparison table that carried a model's `Top@1` beside the engine's `MRR`
+      #   would be two reports rather than one. The step reads and prints: it cannot move a score, and it fails the
+      #   job only on a verdict file the module REFUSES (a row from before the rank columns, a difference across two
+      #   populations), which is an instrument failure rather than a measurement.
+      - name: The board's six metrics
+        if: always()
+        run: |
+          if [ ! -f artifacts/agentic/per-case.ndjson ]; then
+            echo "::warning::no verdict file was written, so the board contract was NOT measured"
+            exit 0
+          fi
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/fse26-board-report.ts \
+            --per-case artifacts/agentic/per-case.ndjson \
+            --out artifacts/agentic/board.json 2>&1 | tee artifacts/agentic/board.txt
+
       - name: Upload the measurement
         if: always()
         uses: actions/upload-artifact@v4
@@ -604,6 +629,8 @@ jobs:
             artifacts/agentic/fingerprints.ndjson
             artifacts/agentic/presentation.ndjson
             artifacts/agentic/per-case.ndjson
+            artifacts/agentic/board.txt
+            artifacts/agentic/board.json
             artifacts/agentic/depth.ndjson
             artifacts/agentic/terms.ndjson
             artifacts/agentic/containment.ndjson

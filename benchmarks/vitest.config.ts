@@ -705,6 +705,12 @@ export default defineConfig({
         // single line, and the census that keeps "not asked", "absent", "empty" and "read" apart — because a bridge
         // whose coverage is a zero reads identically to a bridge that was never run.
         'src/cloudopsbench-logs.ts',
+        // Added with the module, and for the reason the module exists: two of the board's six metrics were in the
+        // comparison because two were cheap to transcribe. What is measured here is the arithmetic that turns a
+        // verdict file into all six — the cumulative ladder, the MRR convention that charges a miss zero, the
+        // `Avg@k` definition recovered from the board's own published rows, and the two refusals (a row from before
+        // the rank columns, a difference across two populations) that keep a comparison from being made anyway.
+        'src/board-metrics.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
