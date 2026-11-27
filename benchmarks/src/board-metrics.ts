@@ -45,6 +45,8 @@
  * @module benchmarks/board-metrics
  */
 
+import type { PairedCounts } from './arm-comparison.js';
+import { formatP, pairedComparisonOf } from './arm-comparison.js';
 import type { PerCaseVerdict } from './fse26-per-case.js';
 
 /** One leaderboard's own metadata: what it scored, on which revision. */
@@ -861,15 +863,24 @@ export function formatBoardMetrics(metrics: BoardMetrics, depths: readonly numbe
  *
  * @param metrics - Ours.
  * @param board - The board to lay out.
+ * @param label - The name OURS is printed under. It is a parameter because the same reader scores two arms: the
+ *   engine's verdict file and an arm's composed one are both read here, and a table whose first row said
+ *   `this engine` over an arm's numbers would be a label naming one thing while the file is another — the defect
+ *   class `closed-axes-register.md` §370 records.
  * @returns A fixed-width table, one line per algorithm.
  */
 export function formatBoardTable(
   metrics: BoardMetrics,
   board: BoardArtifact['benchmarks'][number],
+  label = 'this engine',
 ): string {
+  // The name column widens with the longest name rather than clipping it: a label longer than the column would push
+  // every cell after it by its excess, which is how a percentage ends up under the wrong heading — the failure the
+  // one-renderer rule below claims to prevent, and it only prevents it if the width is derived too.
+  const nameWidth = Math.max('algorithm'.length, label.length);
   const line = (cells: readonly string[]): string =>
     [
-      cells[0]!.padEnd(14),
+      cells[0]!.padEnd(nameWidth),
       cells[1]!.padEnd(11),
       cells[2]!.padStart(8),
       cells[3]!.padStart(8),
@@ -885,7 +896,7 @@ export function formatBoardTable(
     // label changes width — which is how a percentage ends up under the wrong heading.
     line(['algorithm', 'scope', 'Top@1', 'Top@3', 'Top@5', 'MRR', 'Avg@3', 'Avg@5', 's/case']),
     line([
-      'this engine',
+      label,
       population('all', metrics.cases),
       pct(topRate(metrics, 1)),
       pct(topRate(metrics, 3)),
@@ -913,4 +924,81 @@ export function formatBoardTable(
     ),
   ];
   return `${rows.join('\n')}\n`;
+}
+
+/**
+ * The paired test at one rung: two verdict files over the same cases, `correct` = `truthRank <= k`.
+ *
+ * ## Why a rung and not a rate
+ *
+ * Two rate differences cannot be tested against each other without the cases behind them, and the board publishes
+ * neither. What a reader wants from an arm comparison is the *discordant* pair — the cases the arm repaired and the
+ * cases it broke — and that pair is a function of one rung at a time. At rank 1 the two counts are the head's
+ * repairs and breaks; at rank 5 they are the same two counts widened to "inside the presentation", which is a
+ * different set and can even have a different sign. `board-metrics.md` §5.4 reports both reaches at both rungs for
+ * exactly this reason, and until now the four numbers were typed.
+ *
+ * The statistics are `arm-comparison.ts`'s, and the exact conditional binomial is the one it leads with: the
+ * discordant counts here are small (8, 13, 36) and the asymptotic correction is the larger error at that size.
+ *
+ * @param baseline - The control's verdict rows.
+ * @param arm - The arm's verdict rows.
+ * @param k - The rung, a positive integer.
+ * @returns The 2 × 2, the delta and both p-values.
+ * @throws Error when either file has a row from before the rank columns existed, or when the two files do not
+ *   cover the same cases — a paired test across two populations is not a test.
+ */
+export function pairedTopAt(
+  baseline: readonly PerCaseVerdict[],
+  arm: readonly PerCaseVerdict[],
+  k: number,
+): PairedCounts {
+  const depth = depthOf(k, 'paired Top@k depth');
+  const correctAt = (verdicts: readonly PerCaseVerdict[], label: string): ArmPairRow[] =>
+    verdicts.map((verdict, index) => {
+      if (verdict.truthRank === undefined) {
+        throw new Error(
+          `${label} row ${String(index + 1)} (${verdict.datapack}) carries no truthRank, so its rank is only ` +
+            'known to a depth of five and a paired test at rank ' +
+            String(depth) +
+            ' would be reading a prefix',
+        );
+      }
+      return {
+        datapack: verdict.datapack,
+        correct: verdict.truthRank >= 1 && verdict.truthRank <= depth,
+      };
+    });
+  return pairedComparisonOf(correctAt(baseline, 'control'), correctAt(arm, 'arm'));
+}
+
+/** The pair `pairedComparisonOf` reads: one case, and whether it was answered inside the rung. */
+interface ArmPairRow {
+  readonly datapack: string;
+  readonly correct: boolean;
+}
+
+/**
+ * One rung of a paired comparison as a reader sees it: both counts, both rates, the discordant pair and the p-value.
+ *
+ * @param counts - The 2 × 2.
+ * @param k - The rung the counts were taken at.
+ * @param control - The label the control is printed under.
+ * @param arm - The label the arm is printed under.
+ * @returns One line.
+ */
+export function formatPairedAtDepth(
+  counts: PairedCounts,
+  k: number,
+  control: string,
+  arm: string,
+): string {
+  const baselineHits = counts.bothRight + counts.firstOnly;
+  const armHits = counts.bothRight + counts.secondOnly;
+  return (
+    `Top@${String(k).padEnd(2)} ${control} ${grouped(baselineHits)} (${pct(baselineHits / counts.shared)})` +
+    `  -> ${arm} ${grouped(armHits)} (${pct(armHits / counts.shared)})` +
+    `  +${String(counts.secondOnly)} / -${String(counts.firstOnly)}` +
+    `  p exact ${formatP(counts.pExact)}`
+  );
 }

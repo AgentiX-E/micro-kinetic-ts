@@ -595,20 +595,25 @@ jobs:
             --label-out artifacts/agentic/channel-labels.json \
             "${ARTIFACT_ARG[@]}" 2>&1 | tee artifacts/agentic/channel-split.txt
 
-      # ── The board's six metrics, for THIS arm ───────────────────────────────────────────────────────────────
+      # ── The board's six metrics, for the ENGINE on this run ─────────────────────────────────────────────────
       #
       #   `docs/sota-comparison.md` §0c-vii compares this engine against RCABench's official leaderboard and had two
       #   of the board's six published metrics to do it with, because two were the ones that had been typed. The
-      #   other four are functions of one column this arm's verdict file already carries — `truthRank`, the accepted
-      #   answer's position over the whole order — so they cost nothing to read and the arm's own reading of them is
-      #   a command rather than a dispatch.
+      #   other four are functions of one column this verdict file already carries — `truthRank`, the accepted
+      #   answer's position over the whole order — so they cost nothing to read.
       #
-      #   It runs HERE rather than in `fse26-benchmark.yml` alone because the two arms are different configurations
-      #   on the same population, and a comparison table that carried a model's `Top@1` beside the engine's `MRR`
-      #   would be two reports rather than one. The step reads and prints: it cannot move a score, and it fails the
-      #   job only on a verdict file the module REFUSES (a row from before the rank columns, a difference across two
-      #   populations), which is an instrument failure rather than a measurement.
-      - name: The board's six metrics
+      #   Whose row this is, is the whole point of the name: `per-case.ndjson` is the ENGINE's verdict file, the one
+      #   `run-fse26.ts --per-case-out` writes before any model is asked anything. The ARM's row is composed from
+      #   `query-agent.ndjson` in the study job below, because an arm artifact records one settled NAME per case and
+      #   four of the six metrics are functions of a position in an ORDER. An earlier version of this step was named
+      #   `The board's six metrics` and the documents beside it said it printed the arm's row; it printed the
+      #   engine's, which is the defect class `closed-axes-register.md` §370 records — a claim about an artifact
+      #   inferred from a neighbouring one.
+      #
+      #   The step reads and prints: it cannot move a score, and it fails the job only on a verdict file the module
+      #   REFUSES (a row from before the rank columns, a difference across two populations), which is an instrument
+      #   failure rather than a measurement.
+      - name: The engine's six board metrics
         if: always()
         run: |
           if [ ! -f artifacts/agentic/per-case.ndjson ]; then
@@ -1056,12 +1061,63 @@ jobs:
             --claims artifacts/agentic/claims.ndjson \
             --depth artifacts/agentic/depth.ndjson 2>&1 | tee artifacts/agentic/ceiling.txt
 
+      # ── The ARM's row on the same six metrics ───────────────────────────────────────────────────────────────
+      #
+      #   `docs/sota-comparison.md` §0c-vii carries this arm at `1 327 = 93.32 %` and refuses the other five columns,
+      #   on the ground that the arm's artifact records one NAME per case while four of the six are functions of a
+      #   position in an ORDER. The refusal was right about the artifact and wrong about the run: `depth.ndjson`,
+      #   which the measure job already wrote, carries the engine's FULL order for every case, and the arm's name
+      #   over that order is an order — the name first, the order behind it without it. That is also the arm's own
+      #   rule rather than a convenience (`--fallback engine`: a refused override falls back to the prior), so the
+      #   composed file is the shipped product's order at every setting of the gate.
+      #
+      #   Two steps, one job each, because a composer that also computed `Top@k` would be a second definition of the
+      #   metric: this writes a verdict file of the same shape a run writes, and the reader above scores it.
+      #
+      #   Both are gated on their input, and a missing one is a WARNING rather than a failure: a dispatch that asks
+      #   no investigation question never writes `query-agent.ndjson`, and that is a configuration rather than an
+      #   instrument failure. What is not tolerated is a silent skip — the warning names the file and the reason.
+      - name: Compose the arm's published order
+        if: always()
+        run: |
+          if [ ! -f artifacts/agentic/query-agent.ndjson ] || [ ! -f artifacts/agentic/depth.ndjson ]; then
+            echo "::warning::no arm answers or no depth dump arrived from this dispatch, so the arm's row was NOT composed"
+            exit 0
+          fi
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/arm-order-report.ts \
+            --engine artifacts/agentic/depth.ndjson \
+            --arm artifacts/agentic/query-agent.ndjson \
+            --out artifacts/agentic/arm-per-case.ndjson 2>&1 | tee artifacts/agentic/arm-order.txt
+
+      #   The baseline is the ENGINE's verdict file from the same job, which is the only control that isolates the
+      #   arm: same population, same revision, same corpus digest. The paired test refuses two files that do not cover
+      #   the same cases, so a sampled arm dispatch prints the arm's own six columns and no pair — a rate difference
+      #   across two populations is the denominator error `board-metrics.ts` refuses.
+      - name: The arm's six board metrics
+        if: always()
+        run: |
+          if [ ! -f artifacts/agentic/arm-per-case.ndjson ]; then
+            echo "::warning::the arm's order was not composed, so the board contract was NOT measured for the arm"
+            exit 0
+          fi
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/fse26-board-report.ts \
+            --per-case artifacts/agentic/arm-per-case.ndjson \
+            --baseline artifacts/agentic/per-case.ndjson \
+            --label "this engine + the arm" \
+            --out artifacts/agentic/arm-board.json 2>&1 | tee artifacts/agentic/arm-board.txt
+
       - name: Upload the study
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: agentic-headroom
           path: |
+            artifacts/agentic/arm-order.txt
+            artifacts/agentic/arm-per-case.ndjson
+            artifacts/agentic/arm-board.txt
+            artifacts/agentic/arm-board.json
             artifacts/agentic/headroom.txt
             artifacts/agentic/depth.txt
             artifacts/agentic/eliminator.txt

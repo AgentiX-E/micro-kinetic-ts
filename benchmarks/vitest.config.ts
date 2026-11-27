@@ -711,6 +711,15 @@ export default defineConfig({
         // `Avg@k` definition recovered from the board's own published rows, and the two refusals (a row from before
         // the rank columns, a difference across two populations) that keep a comparison from being made anyway.
         'src/board-metrics.ts',
+        // Added with the module, and it is the one that turns a one-name arm into a row the metric layer can read:
+        // `sota-comparison.md` refused five of the board's six columns for the LLM arm because the arm publishes a
+        // NAME and four of the six are functions of a position in an ORDER. What is measured here is the promotion
+        // rule (the settled name first, the order behind it), the depth consequence of it (everything above the
+        // promoted name is demoted by one, so an arm can repair the head and cost a rank in the same case), the pool
+        // arithmetic when the arm names a service the pool did not carry, and every refusal that keeps a composed
+        // file from being a different population: an answer to an unscored case, two answers for one case, a dump
+        // truncated below its own candidate count, an empty name.
+        'src/arm-order.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

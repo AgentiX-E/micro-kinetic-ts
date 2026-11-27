@@ -24,6 +24,8 @@ import {
   computeBoardMetrics,
   formatBoardMetrics,
   formatBoardTable,
+  formatPairedAtDepth,
+  pairedTopAt,
   RCABENCH_LEADERBOARD,
   topAt,
   topRate,
@@ -45,10 +47,12 @@ function parseDepths(text: string): number[] {
 }
 
 const argv = process.argv.slice(2);
-const args: { perCase: string; depths: string; out: string } = {
+const args: { perCase: string; depths: string; out: string; baseline: string; label: string } = {
   perCase: '',
   depths: DEFAULT_DEPTHS,
   out: '',
+  baseline: '',
+  label: 'this engine',
 };
 for (let index = 0; index < argv.length; index++) {
   const arg = argv[index]!;
@@ -61,6 +65,12 @@ for (let index = 0; index < argv.length; index++) {
     index++;
   } else if (arg === '--out' && next !== undefined) {
     args.out = next;
+    index++;
+  } else if (arg === '--baseline' && next !== undefined) {
+    args.baseline = next;
+    index++;
+  } else if (arg === '--label' && next !== undefined) {
+    args.label = next;
     index++;
   } else {
     // Refused rather than ignored: a report that silently ran without the flag a caller typed is a report whose
@@ -89,7 +99,7 @@ console.log(`Board generated_at: ${RCABENCH_LEADERBOARD.generatedAt}`);
 console.log('═'.repeat(80));
 console.log(formatBoardMetrics(metrics, depths));
 console.log('═'.repeat(80));
-console.log(formatBoardTable(metrics, fse));
+console.log(formatBoardTable(metrics, fse, args.label));
 console.log('═'.repeat(80));
 
 // The comparison is taken against the best published value of EACH metric, and the refusal is reported rather than
@@ -115,9 +125,28 @@ if (onSamePopulation.length === 0) {
   }
 }
 
+// The paired test, per rung, when a control file is named. Printed above the JSON so the numbers a reader checks
+// and the numbers an artifact carries are one computation: `Top@k` at rung k is `truthRank <= k` in each file, and
+// the discordant pair is the cases one file answered inside the rung and the other did not.
+const paired =
+  args.baseline === ''
+    ? []
+    : depths.map((depth) => ({
+        depth,
+        counts: pairedTopAt(readPerCaseVerdicts(args.baseline), verdicts, depth),
+      }));
+if (paired.length > 0) {
+  console.log('═'.repeat(80));
+  console.log(`Paired against ${args.baseline}, exact two-sided McNemar, at every tabulated rung:`);
+  for (const { depth, counts } of paired) {
+    console.log(`  ${formatPairedAtDepth(counts, depth, 'control', 'arm')}`);
+  }
+}
+
 if (args.out !== '') {
   const report = {
     verdictFile: args.perCase,
+    label: args.label,
     board: {
       id: fse.benchmark.id,
       generatedAt: RCABENCH_LEADERBOARD.generatedAt,
@@ -135,6 +164,12 @@ if (args.out !== '') {
       avgAtK: avgAtK(metrics, depth),
     })),
     deltas: onSamePopulation.length === 0 ? [] : compareToBoardBest(metrics, onSamePopulation),
+    ...(paired.length === 0
+      ? {}
+      : {
+          baselineFile: args.baseline,
+          paired: paired.map(({ depth, counts }) => ({ depth, ...counts })),
+        }),
   };
   writeFileSync(args.out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\nBoard report written to ${args.out}`);

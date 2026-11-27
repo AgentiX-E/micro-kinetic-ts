@@ -7,6 +7,8 @@ import {
   computeBoardMetrics,
   formatBoardMetrics,
   formatBoardTable,
+  formatPairedAtDepth,
+  pairedTopAt,
   RCABENCH_LEADERBOARD,
   topAt,
   topRate,
@@ -428,5 +430,140 @@ describe('formatBoardMetrics / formatBoardTable', () => {
     // The population travels with the scope, so the three held-out rows cannot be read as whole-corpus ones.
     expect(table).toContain('test (296)');
     expect(table).toContain('all (1 422)');
+  });
+});
+
+describe('pairedTopAt', () => {
+  /** Four cases, each with a hand-picked pair of ranks, so every cell of the 2 × 2 is reachable by hand. */
+  const pair = (): { control: PerCaseVerdict[]; arm: PerCaseVerdict[] } => ({
+    control: [row(1, 50), row(3, 50), row(1, 50), row(3, 50)],
+    arm: [row(1, 50), row(1, 50), row(2, 50), row(5, 50)],
+  });
+
+  /** The same four cases with their datapacks named, so a refusal can name one. */
+  const named = (ranks: readonly number[]): PerCaseVerdict[] =>
+    ranks.map((rank, index) => ({
+      datapack: ['a', 'b', 'c', 'd'][index]!,
+      faultType: 'X',
+      accepted: ['a'],
+      ranked: ['a', 'b', 'c', 'd', 'e'],
+      truthRank: rank,
+      pool: 50,
+    }));
+
+  it('counts a repair, a break and an unchanged case at rank one', () => {
+    const { control, arm } = pair();
+    const counts = pairedTopAt(
+      named(control.map((r) => r.truthRank!)),
+      named(arm.map((r) => r.truthRank!)),
+      1,
+    );
+    expect(counts.shared).toBe(4);
+    expect(counts.bothRight).toBe(1);
+    expect(counts.secondOnly).toBe(1);
+    expect(counts.firstOnly).toBe(1);
+    expect(counts.delta).toBe(0);
+  });
+
+  it('reads a different 2 × 2 at a different rung of the same two files', () => {
+    const control = [1, 3, 1, 3];
+    const arm = [1, 1, 2, 5];
+    const counts = pairedTopAt(named(control), named(arm), 3);
+    expect(counts.bothRight).toBe(3);
+    expect(counts.firstOnly).toBe(1);
+    expect(counts.secondOnly).toBe(0);
+    expect(counts.delta).toBe(-1);
+  });
+
+  it('refuses a rung that is not a positive integer', () => {
+    expect(() => pairedTopAt(named([1]), named([1]), 0)).toThrow(/paired Top@k depth/);
+  });
+
+  it('refuses a control row from before the rank columns, naming it', () => {
+    const control: PerCaseVerdict[] = [
+      { datapack: 'a', faultType: 'X', accepted: ['a'], ranked: ['a', 'b', 'c', 'd', 'e'] },
+    ];
+    expect(() => pairedTopAt(control, named([1]), 1)).toThrow(
+      /control row 1 \(a\) carries no truthRank/,
+    );
+  });
+
+  it('refuses an arm row from before the rank columns, naming it', () => {
+    const arm: PerCaseVerdict[] = [
+      { datapack: 'a', faultType: 'X', accepted: ['a'], ranked: ['a', 'b', 'c', 'd', 'e'] },
+    ];
+    expect(() => pairedTopAt(named([1]), arm, 1)).toThrow(/arm row 1 \(a\) carries no truthRank/);
+  });
+
+  it('refuses two files that do not cover the same cases', () => {
+    expect(() => pairedTopAt(named([1, 1]), named([1]), 1)).toThrow(/do not cover the same cases/);
+  });
+});
+
+describe('formatPairedAtDepth', () => {
+  /** The LLM arm's own 2 × 2 at rank 1, as the artifact reports it. */
+  const head = {
+    shared: 1422,
+    onlyFirst: 0,
+    onlySecond: 0,
+    bothRight: 1148,
+    firstOnly: 8,
+    secondOnly: 179,
+    delta: 171,
+    pExact: 1e-40,
+    pAsymptotic: 1e-40,
+  };
+
+  it('prints both counts, both rates, the discordant pair and the exact p', () => {
+    expect(formatPairedAtDepth(head, 1, 'control', 'arm')).toBe(
+      'Top@1  control 1 156 (81.29%)  -> arm 1 327 (93.32%)  +179 / -8  p exact < 0.001',
+    );
+  });
+
+  it('prints a rung whose discordant pair is empty as two zeroes rather than dropping the row', () => {
+    const still = { ...head, firstOnly: 0, secondOnly: 0, delta: 0, pExact: 1 };
+    expect(formatPairedAtDepth(still, 5, 'control', 'arm')).toContain('+0 / -0');
+  });
+
+  it('pads a two-digit rung so the columns stay aligned', () => {
+    expect(formatPairedAtDepth(head, 10, 'control', 'arm').startsWith('Top@10 control')).toBe(true);
+  });
+});
+
+describe('formatBoardTable label', () => {
+  /** One row of our own, on the board's own population. */
+  const metrics = computeBoardMetrics(many(1422, 1), 5);
+  const fse = RCABENCH_LEADERBOARD.benchmarks[0]!;
+
+  it('prints the engine by default, which is the name every published table used', () => {
+    expect(formatBoardTable(metrics, fse).split('\n')[1]!.startsWith('this engine ')).toBe(true);
+  });
+
+  it('prints the row under the name it is given, so an arm is not laid out as the engine', () => {
+    const first = formatBoardTable(metrics, fse, 'this engine + the arm').split('\n')[1]!;
+    expect(first.startsWith('this engine + the arm')).toBe(true);
+    expect(first).toContain('all (1 422)');
+  });
+});
+
+describe('formatBoardTable column width', () => {
+  it('widens the name column to the longest name, so no cell after it moves', () => {
+    const metrics = computeBoardMetrics(many(1422, 1), 5);
+    const table = formatBoardTable(
+      metrics,
+      RCABENCH_LEADERBOARD.benchmarks[0]!,
+      'this engine + the arm',
+    );
+    const [header, ours] = table.split('\n');
+    expect(header!.indexOf('scope')).toBe(ours!.indexOf('all (1 422)'));
+    expect(ours!.startsWith('this engine + the arm all (1 422)')).toBe(true);
+  });
+
+  it('keeps the published width when the name is short enough to fit it', () => {
+    const metrics = computeBoardMetrics(many(1422, 1), 5);
+    const [header, ours] = formatBoardTable(metrics, RCABENCH_LEADERBOARD.benchmarks[0]!).split(
+      '\n',
+    );
+    expect(header!.indexOf('scope')).toBe(ours!.indexOf('all (1 422)'));
   });
 });
