@@ -158,6 +158,31 @@ describe('parseArmBaseline', () => {
     expect(() => parseArmBaseline(json([reading({ at3: 1.5 })]))).toThrow(/not a count within 156/);
   });
 
+  it('reads the log channel an arm ran with, and leaves it absent when the arm read no log', () => {
+    // The corpus states `raw_data/logs.json` in all 754 directories — the suite's own comment said it stated none
+    // until iteration 372 — so an arm's identity is (label prior, log channel). `null` and absence both mean "no
+    // artefact was read"; a `{ weight, mode }` means one was, and at which price and mode.
+    const withLogs = parseArmBaseline(
+      json([reading({ logs: { weight: 1, mode: 'count' } }), reading({ arm: 'bare' })]),
+    );
+    expect(withLogs.arms[0]!.logs).toEqual({ weight: 1, mode: 'count' });
+    expect(withLogs.arms[1]!.logs).toBeUndefined();
+  });
+
+  it('refuses a log channel whose price is not a price', () => {
+    for (const weight of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(() => parseArmBaseline(json([reading({ logs: { weight, mode: 'count' } })]))).toThrow(
+        /log weight/,
+      );
+    }
+  });
+
+  it('refuses a log channel with no mode, because the six modes are not interchangeable', () => {
+    expect(() => parseArmBaseline(json([reading({ logs: { weight: 1, mode: '' } })]))).toThrow(
+      /log mode/,
+    );
+  });
+
   it('refuses a reading whose thresholds are not nested, which no ranking can produce', () => {
     expect(() => parseArmBaseline(json([reading({ at1: 100, at3: 99 })]))).toThrow(
       /which is not nested/,
@@ -166,6 +191,37 @@ describe('parseArmBaseline', () => {
 });
 
 describe('compareArms', () => {
+  it('refuses the same arm name on two different configurations', () => {
+    // The gate compared COUNTS ONLY until iteration 372, so an arm whose label prior or log channel moved while its
+    // three counts happened to land on the same values passed silently — and the reading would keep the OLD
+    // configuration's name. A recorded arm is a configuration, not a row of numbers.
+    const baseline = parseArmBaseline(json([reading({ weight: 0.1 })]));
+    expect(() => compareArms(baseline, [reading({ weight: 0.5 })])).toThrow(
+      /`shipped` recorded weight 0.1 and this run scored 0.5/,
+    );
+    expect(() => compareArms(baseline, [reading({ weight: 0.1, gate: 0.02 })])).toThrow(
+      /recorded gate 0 and this run scored 0.02/,
+    );
+    expect(() =>
+      compareArms(baseline, [reading({ weight: 0.1, jurisdiction: 'everywhere' })]),
+    ).toThrow(/recorded jurisdiction tail and this run scored everywhere/);
+    expect(() =>
+      compareArms(baseline, [reading({ weight: 0.1, logs: { weight: 1, mode: 'count' } })]),
+    ).toThrow(/recorded log channel null and this run scored/);
+    expect(() =>
+      compareArms(parseArmBaseline(json([reading({ logs: { weight: 1, mode: 'count' } })])), [
+        reading({ logs: { weight: 1, mode: 'all' } }),
+      ]),
+    ).toThrow(/log channel/);
+  });
+
+  it('compares counts when the configuration is the same', () => {
+    const baseline = parseArmBaseline(json([reading()]));
+    expect(compareArms(baseline, [reading({ at1: 90 })]).movements).toEqual([
+      { arm: 'shipped', metric: 'at1', baseline: 80, actual: 90 },
+    ]);
+  });
+
   it('reports nothing when every recorded arm reads the same', () => {
     const comparison = compareArms(baselineOf([reading()]), [reading()]);
     expect(comparison.movements).toEqual([]);
@@ -264,7 +320,38 @@ describe('the committed reading of the third corpus', () => {
     const parsed = recorded();
     expect(parsed.corpus).toBe('LLM4Ops/Cloud-OpsBench');
     expect(parsed.revision).toMatch(/^[0-9a-f]{8}$/);
-    expect(parsed.arms).toHaveLength(4);
+    expect(parsed.arms).toHaveLength(6);
+  });
+
+  it('records the log arms with the channel they ran, and the metric-only arms without one', () => {
+    // The corpus states `raw_data/logs.json` in 754 of 754 directories. `logs-side-channel` attaches the artefact and
+    // prices the term at nothing, which is a DIFFERENT configuration from `enrolled`: the entries flip
+    // `sideChannelObserved` inside `buildFaultGraph`, so the engine's transient guard reads a different case. The
+    // baseline is where that distinction lives, and it is the difference the two readings show — 81 versus 80 at
+    // `at1` and 144 versus 141 at `at5`.
+    expect(arm('logs-side-channel').logs).toEqual({ weight: 0, mode: 'count' });
+    expect(arm('logs-count').logs).toEqual({ weight: 1, mode: 'count' });
+    for (const name of [
+      'enrolled',
+      'shipped-before-enrolment',
+      'gate-0.02-everywhere-0.1',
+      'gate-0.02-everywhere-0.05',
+    ])
+      expect(arm(name).logs).toBeUndefined();
+  });
+
+  it('records the log channel as buying depth and NOT the head, which is why it is not shipped', () => {
+    // `logs-count` vs `enrolled`: the head is identical to the digit and the fifth place gains three cases. The exact
+    // paired counts are +3/-0 at `at5` (p = 0.25, not significant) and +2/-2 at `at1`; a gate that read this as a
+    // win would be reading a coin flip. `logs-side-channel` is the one arm whose head gains a case, and its `at1`
+    // is +3/-2 (p = 1.00) — also not a result. Both are recorded so the NEXT attempt starts from the mechanism
+    // (the log term displaces one correct head and the side-channel observation repairs one elsewhere) rather than
+    // from a claim that the channel works.
+    expect(arm('logs-count').at1).toBe(arm('enrolled').at1);
+    expect(arm('logs-count').at5).toBe(144);
+    expect(arm('logs-side-channel').at1).toBe(81);
+    expect(strictDominance(arm('logs-count'), arm('enrolled'))).toBe(true);
+    expect(strictDominance(arm('logs-side-channel'), arm('enrolled'))).toBe(true);
   });
 
   it('holds the pin to its contract: enrolling the prior moves the head by exactly zero', () => {

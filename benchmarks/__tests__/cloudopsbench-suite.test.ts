@@ -187,7 +187,7 @@ describe('one case, converted', () => {
     expect(one.groundTruth.serviceId).toBe('adservice');
     expect(one.groundTruth.faultType).toBe('pod_cpu_overload');
     expect([...one.metrics.keys()]).toEqual(['adservice', 'frontend']);
-    // Absent, not empty: this corpus publishes no log, trace or edge artefact, and `[]` would claim the file
+    // Absent, not empty: the metric-only arm carries no log, trace or edge artefact, and `[]` would claim the file
     // existed and held nothing — a different statement the engine's channels key off.
     expect(one.logs).toBeUndefined();
     expect(one.traces).toBeUndefined();
@@ -195,6 +195,37 @@ describe('one case, converted', () => {
     expect(one.traceActivity).toBeUndefined();
     expect(one.edgeLatency).toBeUndefined();
     expect(one.logsReadRows).toBeUndefined();
+  });
+
+  it('forwards the log bridge to the engine when the case carries one', () => {
+    // The corpus states `raw_data/logs.json` in all 754 directories; iteration 372 counted it, and this is the
+    // wiring that lets the log channel read it. `logsReadRows` travels with the entries because `logs: []` reads the
+    // same for "the file held nothing" and "none of the rows survived the bridge".
+    const one = toBenchmarkCase(
+      scorableCase({
+        logs: {
+          entries: [
+            { timestamp: T0 + 6_000, service: 'adservice', message: 'boom', level: 'ERROR' },
+          ],
+          rows: 3,
+          undated: 2,
+          atOrAfterInjection: 1,
+        },
+      }),
+    );
+    expect(one.logs).toHaveLength(1);
+    expect(one.logs![0]!.service).toBe('adservice');
+    expect(one.logsReadRows).toBe(3);
+  });
+
+  it('keeps an EMPTY log list distinct from an absent one', () => {
+    // `logs: []` is a file that held nothing. It must reach the engine as `[]` and not be collapsed to `undefined`,
+    // because the log channel keys off exactly that difference.
+    const one = toBenchmarkCase(
+      scorableCase({ logs: { entries: [], rows: 0, undated: 0, atOrAfterInjection: 0 } }),
+    );
+    expect(one.logs).toEqual([]);
+    expect(one.logsReadRows).toBe(0);
   });
 
   it('falls back to the taxonomy when the case states no root cause', () => {

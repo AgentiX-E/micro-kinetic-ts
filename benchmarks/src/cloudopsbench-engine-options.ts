@@ -43,6 +43,11 @@ export type EngineOverrides = Partial<
     | 'labelPriorWeight'
     | 'labelPriorMarginGate'
     | 'labelPriorJurisdiction'
+    // The log channel's two knobs, added in iteration 372 with the bridge. They are forwarded and not interpreted:
+    // the six modes are defined beside the union in `packages/tree`, and a runner that knew what `logicHttp` meant
+    // would be a second definition of it.
+    | 'logSignalMode'
+    | 'logWeight'
   >
 >;
 

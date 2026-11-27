@@ -222,6 +222,44 @@ describe('the case tree', () => {
     });
   });
 
+  it('does not read the log artefact unless asked, so the metric-only arm stays byte-identical', () => {
+    // The corpus carries `raw_data/logs.json` in all 754 directories, and this reader used to declare it carried
+    // none. Reading it by default would move every published Cloud-OpsBench number in the same commit that adds the
+    // ability, which is how a measurement becomes an accident. The flag is the arm.
+    const read = readCloudOpsCase(fixture, 'boutique/performance/1');
+    if (!read.ok) throw new Error(read.reason);
+    expect(read.value.logs).toBeUndefined();
+    expect('logs' in read.value).toBe(false);
+  });
+
+  it('attaches the log bridge when asked, on the wall clock the alert window states', () => {
+    const read = readCloudOpsCase(fixture, 'boutique/performance/1', { withLogs: true });
+    if (!read.ok) throw new Error(read.reason);
+    const logs = read.value.logs!;
+    // Five lines: three on `adservice` (the third inherits the second's stamp) and two on `redis-cart`, whose
+    // newline-joined string is split. `ts-basic-service` writes `""`, which is no lines rather than a service with
+    // an empty message.
+    expect(logs.entries).toHaveLength(5);
+    expect(logs.rows).toBe(5);
+    expect(logs.undated).toBe(0);
+    // The alert window opens at 21:55:52 wall clock; the two `adservice` lines after it are the post-injection
+    // evidence, and the assertion is on the OPERATOR the engine filters with (`timestamp >= injectTimeMs`), not on
+    // a count a reader would have to trust.
+    const injectTimeMs = read.value.alert!.startMs;
+    const after = logs.entries.filter((one) => one.timestamp >= injectTimeMs);
+    expect(logs.atOrAfterInjection).toBe(after.length);
+    expect(after.map((one) => one.service)).toContain('adservice');
+    // The logic exception is flagged by the shared classifier, and the Kubernetes error line is an ERROR level.
+    expect(logs.entries.some((one) => one.isLogicException === true)).toBe(true);
+    expect(logs.entries.some((one) => one.level === 'ERROR')).toBe(true);
+  });
+
+  it('reports an absent log artefact as absent, and an empty one as empty', () => {
+    const scheduling = readCloudOpsCase(fixture, 'boutique/scheduling/1', { withLogs: true });
+    if (!scheduling.ok) throw new Error(scheduling.reason);
+    expect(scheduling.value.logs).toBeNull();
+  });
+
   it('reads the label from its own root', () => {
     const label = readCaseLabel(fixture, 'boutique/performance/1');
     if (!label.ok) throw new Error(label.reason);

@@ -263,8 +263,20 @@ export function toBenchmarkCase(
     metrics: groupSeriesByService(one.series),
     injectTime: one.alert.startMs,
     groundTruth,
-    // `logs`, `traces`, `failedTraceEdges`, `traceActivity`, `edgeLatency` and `alerts` are ABSENT, not empty: this
-    // corpus publishes a metric table and an anomaly window, and an empty array would claim the artefacts existed.
+    // ── The log artefact: present in 754 of 754 case directories and read on the arm that asks for it ──────────
+    //
+    // The three states are kept distinct all the way to the engine — absent (this arm did not read it), `[]` (read,
+    // and the file held nothing) and entries — because the log channel keys off the difference and a bridge that
+    // flattened them would make "no post-onset evidence" and "no bridge" the same reading.
+    //
+    // `logsReadRows` carries the rows the bridge READ rather than the entries it kept, so a case whose every line
+    // was undatable says so instead of reporting an empty file.
+    ...(one.logs === undefined || one.logs === null
+      ? {}
+      : { logs: one.logs.entries, logsReadRows: one.logs.rows }),
+    // `traces`, `failedTraceEdges`, `traceActivity`, `edgeLatency` and `alerts` are ABSENT, not empty: this corpus
+    // publishes a metric table, a log table and an anomaly window, and an empty array would claim the artefacts
+    // existed.
   };
 }
 

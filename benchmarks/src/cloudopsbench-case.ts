@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 
 import { parseClosureLabel, type ClosureParse } from './closure-labels.js';
+import { readCaseLogs, type CaseLogs } from './cloudopsbench-logs.js';
 
 /** One series, as the CSV states it: a service, one metric of that service, and its samples. */
 export interface CaseSeries {
@@ -235,6 +236,17 @@ export interface CloudOpsCase {
   /** Whether `tool_cache.json` exists — the competitor's replay surface, which doubles as a closure oracle. */
   readonly hasToolCache: boolean;
   readonly metricsRows: number;
+  /**
+   * The case's log bridge, when the reader was asked for one.
+   *
+   * Three states, and they are three different statements:
+   * - **absent** — the reader was not asked (`withLogs` off), which is the metric-only arm every published number
+   *   was measured on;
+   * - **`null`** — asked, and `raw_data/logs.json` does not exist. The corpus carries it in all 754 directories, so
+   *   this is a corpus that moved rather than a case that differs;
+   * - **a `CaseLogs`** — asked and read, including the case where the file held nothing (`entries: []`).
+   */
+  readonly logs?: CaseLogs | null;
 }
 
 /** A read outcome: the case, or the field that refused it. */
@@ -274,6 +286,17 @@ export function listCaseIds(root: string): string[] {
   return ids.sort(compareCasePaths);
 }
 
+/** How a case is read. */
+export interface CaseReadOptions {
+  /**
+   * Whether to read `raw_data/logs.json` and attach it as {@link CloudOpsCase.logs}.
+   *
+   * Default OFF: the metric-only reading is what every published Cloud-OpsBench number was measured on, and a
+   * reader that changed it by default would move the arm and the claim in one commit.
+   */
+  readonly withLogs?: boolean;
+}
+
 /**
  * Read one case off the published tree.
  *
@@ -284,9 +307,15 @@ export function listCaseIds(root: string): string[] {
  *
  * @param root - The checkout's root.
  * @param id - The case id, `<system>/<category>/<case>`.
+ * @param options - Whether to read the log artefact beside the metric table.
  * @returns The case, or the field that refused it.
+ * @throws When the log artefact exists and cannot be read as the corpus writes it.
  */
-export function readCloudOpsCase(root: string, id: string): CaseRead {
+export function readCloudOpsCase(
+  root: string,
+  id: string,
+  options: CaseReadOptions = {},
+): CaseRead {
   const dir = join(root, 'benchmark', id);
   const metadataPath = join(dir, 'metadata.json');
   if (!existsSync(metadataPath)) return { ok: false, reason: `${id}: no metadata.json` };
@@ -339,6 +368,12 @@ export function readCloudOpsCase(root: string, id: string): CaseRead {
       alert,
       hasToolCache: existsSync(join(dir, 'tool_cache.json')),
       metricsRows,
+      // Read AFTER the alert window, because the bridge needs it: the census it returns counts the lines that fall
+      // at or after the injection, and that count is the difference between "this case's logs carry no post-onset
+      // evidence" and "the bridge did not read them".
+      ...(options.withLogs === true
+        ? { logs: readCaseLogs(join(dir, 'raw_data', 'logs.json'), alert?.startMs ?? 0) }
+        : {}),
     },
   };
 }

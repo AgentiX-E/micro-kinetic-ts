@@ -30,6 +30,40 @@ import {
 
 import { pricesLabelPrior, resolveEngineOptions } from '../src/cloudopsbench-engine-options.js';
 
+describe('the log channel, resolved rather than restated', () => {
+  it('leaves the shipped log mode and weight alone when no flag is given', () => {
+    // The metric-only arm is the default at the ENGINE level too, and this file is where the two defaults are held
+    // to each other: a run whose `--logs` was absent must reach the engine with the same log configuration the anchor
+    // fingerprint hashes, whatever that configuration is.
+    const shipped = resolveEngineOptions();
+    expect(resolveEngineOptions({ logSignalMode: undefined }).signals.logSignalMode).toBe(
+      shipped.signals.logSignalMode,
+    );
+    expect(resolveEngineOptions({ logWeight: undefined }).signals.logWeight).toBe(
+      shipped.signals.logWeight,
+    );
+  });
+
+  it('forwards a mode and a weight into the object the engine receives', () => {
+    // Forwarded, not interpreted: the runner does not know what `logicHttp` means, and a second place that did would
+    // be a second definition of the six modes.
+    expect(resolveEngineOptions({ logSignalMode: 'logicHttp' }).signals.logSignalMode).toBe(
+      'logicHttp',
+    );
+    expect(resolveEngineOptions({ logSignalMode: 'all' }).signals.logSignalMode).toBe('all');
+    expect(resolveEngineOptions({ logWeight: 0 }).signals.logWeight).toBe(0);
+    expect(resolveEngineOptions({ logWeight: 2.5 }).signals.logWeight).toBe(2.5);
+  });
+
+  it('keeps the log weight independent of the label prior, so one arm can price the other at nothing', () => {
+    // The invariance arm this iteration runs is `--logs --log-weight 0` with the label prior still enrolled: if the
+    // two shared a field, that run would silently be a different prior arm as well.
+    const both = resolveEngineOptions({ logWeight: 0, labelPriorWeight: 0.1 });
+    expect(both.signals.logWeight).toBe(0);
+    expect(both.signals.labelPriorWeight).toBe(0.1);
+  });
+});
+
 describe('whether a Cloud-OpsBench run prices the label prior', () => {
   it('prices it on a bare command line, because that is what the engine does', () => {
     // The enrolled arm is the DEFAULT now, so a run that attached no history would be a measurement of the

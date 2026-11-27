@@ -10,8 +10,10 @@
 
 import {
   isLabelPriorJurisdiction,
+  isLogSignalMode,
   type DualFamilyGateMode,
   type LabelPriorJurisdiction,
+  type LogSignalMode,
 } from '../../packages/tree/src/index.js';
 
 /** Parsed command line. */
@@ -29,6 +31,36 @@ export interface CloudOpsArgs {
   readonly maxCases: number | undefined;
   /** Whether the corpus's alert window is forwarded to the engine as the injection time. */
   readonly useInjectTime: boolean;
+  /**
+   * Whether to read `raw_data/logs.json` and hand it to the engine's log channel.
+   *
+   * `false` is the metric-only reading every published Cloud-OpsBench number was measured on, and it is the default
+   * so that the bridge cannot move a number by existing. `true` attaches the 754-of-754 log artefact — the only
+   * evidence the 584 cases without `metrics.csv` have — and is the arm that prices it.
+   */
+  readonly withLogs: boolean;
+  /**
+   * Which of the engine's six log-signal modes the attached artefact is read with, or `undefined` for the shipped
+   * `count`.
+   *
+   * The mode is the arm, not a detail. `count` reads SELF-CAUSED logic exceptions, which is the RCAEval RE3
+   * signature; this corpus's logs are RPC/HTTP business lines (`request started`, `serving product page`), where the
+   * fault shows up as a status code or a latency rather than an exception class name. Iteration 372 measured the
+   * shipped mode on all 156 scorable cases and found 1 967 logic-exception lines in 4.6 million — 0.042 % — so the
+   * mode is what decides whether the channel says anything at all here.
+   *
+   * Refused without {@link withLogs}: a mode with no artefact to read configures nothing and would still be printed
+   * as a configuration.
+   */
+  readonly logSignalMode: LogSignalMode | undefined;
+  /**
+   * The price of the log channel, or `undefined` for the shipped 1.0.
+   *
+   * `0` is the invariance arm: with the artefact attached and the term priced at nothing, the score must be
+   * byte-identical to the metric-only run — which is what distinguishes "the bridge changed nothing but the input"
+   * from "the bridge changed something else".
+   */
+  readonly logWeight: number | undefined;
   /**
    * Which call graph every case is built on.
    *
@@ -142,6 +174,9 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   let output: string | undefined;
   let maxCases: number | undefined;
   let useInjectTime = true;
+  let withLogs = false;
+  let logSignalMode: LogSignalMode | undefined;
+  let logWeight: number | undefined;
   let topology: TopologyArm = 'registry';
   let dualFamilyWeight: number | undefined;
   let dualFamilyGate: number | undefined;
@@ -176,6 +211,30 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
       index += 1;
     } else if (one === '--no-inject-time') {
       useInjectTime = false;
+    } else if (one === '--logs') {
+      withLogs = true;
+    } else if (one === '--log-signal-mode') {
+      const value = valueOf(index, '--log-signal-mode');
+      // A VOCABULARY, refused rather than defaulted: `isLogSignalMode` is the guard beside the union, so a new mode
+      // is a compile error there until it is named here too. The RCAEval parser falls back to `count` on an unknown
+      // token and that is recorded as a defect at its own call site; this one does not repeat it.
+      if (!isLogSignalMode(value)) {
+        throw new Error(
+          `--log-signal-mode is count, novelty, logicHttp, logicHttpJoint, logicHttpDominant or all, got "${value}"`,
+        );
+      }
+      logSignalMode = value;
+      index += 1;
+    } else if (one === '--log-weight') {
+      const value = valueOf(index, '--log-weight');
+      const parsed = Number(value);
+      // A PRICE, so the domain is non-negative. A negative weight would turn the term into a penalty on the
+      // services whose own logs carry the fault — the opposite of the statement, and one that still moves a ranking.
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`--log-weight must be a non-negative number, got "${value}"`);
+      }
+      logWeight = parsed;
+      index += 1;
     } else if (one === '--dual-family-weight') {
       const value = valueOf(index, '--dual-family-weight');
       const parsed = Number(value);
@@ -263,11 +322,27 @@ export function parseCloudOpsArgs(args: readonly string[]): CloudOpsArgs {
   if ((armBaseline === undefined) !== (armName === undefined)) {
     throw new Error('--arm-baseline and --arm-name travel together, or neither is given');
   }
+  // The mode and the price are properties of the log channel, and the channel exists only when the artefact is
+  // attached. Accepting either without `--logs` would run the metric-only arm and print the log configuration beside
+  // it — the shape iteration 370 found in the runner, where a claim was restated rather than read.
+  if (!withLogs && logSignalMode !== undefined) {
+    throw new Error(
+      '--log-signal-mode needs --logs: without the artefact there is no channel to configure',
+    );
+  }
+  if (!withLogs && logWeight !== undefined) {
+    throw new Error(
+      '--log-weight needs --logs: without the artefact there is no channel to configure',
+    );
+  }
   return {
     dataDir,
     output,
     maxCases,
     useInjectTime,
+    withLogs,
+    logSignalMode,
+    logWeight,
     topology,
     dualFamilyWeight,
     dualFamilyGate,

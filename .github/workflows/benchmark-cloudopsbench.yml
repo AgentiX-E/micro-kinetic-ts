@@ -1,0 +1,227 @@
+name: Benchmark — Cloud-OpsBench arms
+
+# ── Why this workflow exists ────────────────────────────────────────────────────────────────────────────
+#
+# Iteration 371 gave Cloud-OpsBench the thing every other corpus in this repository already had: a recorded
+# reading (`benchmarks/baselines/cloudopsbench-arms.json`) and a runner flag that compares a run against it
+# (`--arm-baseline` / `--arm-name`, exit code 1 on a movement). What it did NOT have was a way to fire: the
+# comparison was reachable only from a shell with a 3.6 GB checkout of the corpus on it, so the gate existed and
+# nothing walked through it. A gate no workflow triggers is a gate whose first regression is found by a human
+# reading a table.
+#
+# The corpus is fetched as the 362 MB tarball rather than as a checkout: `git clone` produces the same bytes after
+# a 3.7 GB working-tree expansion, and nothing here reads `.git`.
+#
+# ── The cache key is READ off the baseline, not restated beside it ───────────────────────────────
+#
+# `cache-datasets.yml` records the lesson: its trigger named the bridge and its key named a hand-bumped constant, so
+# the trigger could never act. The revision below is read out of the baseline file with `node -e`, which means the
+# bytes a run measures and the revision its reading is filed under are ONE declaration — a baseline edited to a new
+# revision misses the cache by construction, and there is no second place to remember to bump.
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly. The corpus is not a service and its arms move only when this repository's engine moves, but a week is
+    # the shortest interval at which a silent upstream change would be found before it is cited.
+    - cron: '0 4 * * 1'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/benchmark-cloudopsbench.yml'
+      - 'benchmarks/baselines/cloudopsbench-arms.json'
+      - 'benchmarks/src/cloudopsbench-*.ts'
+      - 'benchmarks/src/run-cloudopsbench.ts'
+      - 'packages/tree/src/pruning/**'
+      - 'packages/tree/src/causal/**'
+      - 'packages/kinetic/src/benchmarks/runners/**'
+      - 'packages/kinetic/src/benchmarks/loaders/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-cloudopsbench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arms:
+    runs-on: ubuntu-latest
+    # The download is 362 MB, the extraction writes 3.6 GB, and five arms over 754 directories each build a call
+    # graph per case. Thirty minutes was the measured envelope on a cold cache; the ceiling is set above it rather
+    # than at it, because a job killed at its limit reports nothing at all.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ── The corpus, at the revision the baseline names ───────────────────────────────────────────────
+      #
+      # The two fields are checked rather than trusted: a baseline that names another corpus, or names none, would
+      # otherwise produce a green job whose numbers were measured on bytes the reading does not describe.
+      - name: Read the corpus identity the baseline states
+        id: corpus
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const base = JSON.parse(fs.readFileSync("benchmarks/baselines/cloudopsbench-arms.json", "utf8"));
+            if (base.corpus !== "LLM4Ops/Cloud-OpsBench") {
+              console.error(`::error::baseline names "${base.corpus}", this workflow fetches LLM4Ops/Cloud-OpsBench`);
+              process.exit(1);
+            }
+            if (typeof base.revision !== "string" || base.revision.length < 7) {
+              console.error("::error::baseline states no corpus revision, so the fetch has no anchor");
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `revision=${base.revision}\n`);
+            console.log(`corpus revision: ${base.revision}`);
+          '
+
+      - name: Restore the cached tarball
+        id: cacheTarball
+        uses: actions/cache@v4
+        with:
+          path: ~/cloudopsbench.tar.gz
+          key: cloudopsbench-tarball-${{ steps.corpus.outputs.revision }}
+
+      - name: Fetch the corpus tarball
+        if: steps.cacheTarball.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          URL="https://codeload.github.com/LLM4Ops/Cloud-OpsBench/tar.gz/${{ steps.corpus.outputs.revision }}"
+          echo "fetching $URL"
+          # `--retry` because the failure mode here is a 362 MB transfer over a shared runner network, and a
+          # half-written tarball would be extracted into a corpus that fails on ONE case rather than on all of them.
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o ~/cloudopsbench.tar.gz "$URL"
+          ls -l ~/cloudopsbench.tar.gz
+
+      - name: Extract
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/cloudopsbench"
+          tar -xzf "$HOME/cloudopsbench.tar.gz" -C "$HOME/cloudopsbench" --strip-components=1
+          # The census this workflow depends on, asserted before a single case is scored: every arm below is held to
+          # a reading over 754 directories, and a corpus that arrived truncated would otherwise be measured as an
+          # engine that got worse.
+          DIRS=$(find "$HOME/cloudopsbench/benchmark" -mindepth 3 -maxdepth 3 -type d | wc -l)
+          FILES=$(find "$HOME/cloudopsbench/benchmark" -name metrics.csv | wc -l)
+          LOGS=$(find "$HOME/cloudopsbench/benchmark" -name logs.json | wc -l)
+          echo "case directories: $DIRS"
+          echo "metrics.csv:      $FILES"
+          echo "logs.json:        $LOGS"
+          if [ "$DIRS" -ne 754 ]; then
+            echo "::error::expected 754 case directories, found $DIRS — the corpus moved under the reading"
+            exit 1
+          fi
+          if [ "$LOGS" -ne 754 ]; then
+            echo "::error::expected 754 logs.json, found $LOGS — the log bridge's population changed"
+            exit 1
+          fi
+          echo "COB_DATA=$HOME/cloudopsbench" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: pnpm build
+
+      # ── The arms ─────────────────────────────────────────────────────────────────────────────────────
+      #
+      # Each step names an arm RECORDED in the baseline and passes exactly the flags that arm was measured with.
+      # The runner compares its own three counts against that recording and leaves exit code 1 on a movement, which
+      # fails the step. It does not throw: the run has finished and its numbers are what a reader needs, so the job
+      # stays alive long enough to upload them.
+      #
+      # `--arm-name` is required beside `--arm-baseline` precisely so that an arm cannot be inferred from the flags:
+      # a default that moved would otherwise compare the shipped configuration against a named arm and call the
+      # difference a regression.
+      - name: Arm — shipped before the enrolment (weight 0, the ablation)
+        run: |
+          # `pipefail` is load-bearing: without it the step's status is `tee`'s, and the runner's exit code 1 on a
+          # movement — the whole point of the comparison — would be discarded by the pipe that shows the table.
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --label-prior-weight 0 \
+            --label-prior-jurisdiction tail \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name shipped-before-enrolment \
+            --output "$RUNNER_TEMP/arm-shipped-before-enrolment.json" | tee "$RUNNER_TEMP/arm-shipped.log"
+
+      - name: Arm — enrolled (weight 0.1, gate 0, jurisdiction tail)
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name enrolled \
+            --output "$RUNNER_TEMP/arm-enrolled.json" | tee "$RUNNER_TEMP/arm-enrolled.log"
+
+      - name: Arm — gate 0.02, everywhere, weight 0.1
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --label-prior-weight 0.1 \
+            --label-prior-margin-gate 0.02 \
+            --label-prior-jurisdiction everywhere \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name gate-0.02-everywhere-0.1 \
+            --output "$RUNNER_TEMP/arm-gate-0.02-everywhere-0.1.json" | tee "$RUNNER_TEMP/arm-gate-01.log"
+
+      - name: Arm — gate 0.02, everywhere, weight 0.05
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --label-prior-weight 0.05 \
+            --label-prior-margin-gate 0.02 \
+            --label-prior-jurisdiction everywhere \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name gate-0.02-everywhere-0.05 \
+            --output "$RUNNER_TEMP/arm-gate-0.02-everywhere-0.05.json" | tee "$RUNNER_TEMP/arm-gate-005.log"
+
+      # ── The log channel, which the corpus has and this repository declared it did not ─────────────
+      #
+      # `raw_data/logs.json` is present in all 754 case directories. Two arms are recorded: the artefact attached
+      # with the term priced at nothing (`logs-side-channel` — the entries alone flip `sideChannelObserved` inside
+      # the engine's fault-graph builder) and attached with the shipped `count` mode at the shipped weight. Neither
+      # is the shipped configuration: the head is unchanged to the digit on the second and +3/−2 on the first, and
+      # a fifth place that gains three cases is not a result at p = 0.25. They are RUN here so the bridge cannot rot
+      # the way §371's arm rotted — a reading that is never re-taken is a claim, not a measurement.
+      - name: Arm — log artefact attached, term priced at zero (the side-channel arm)
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --logs \
+            --log-weight 0 \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name logs-side-channel \
+            --output "$RUNNER_TEMP/arm-logs-side-channel.json" | tee "$RUNNER_TEMP/arm-logs-side-channel.log"
+
+      - name: Arm — log artefact attached at the shipped mode and weight
+        run: |
+          set -euo pipefail
+          pnpm exec tsx benchmarks/src/run-cloudopsbench.ts \
+            --data-dir "$COB_DATA" \
+            --logs \
+            --arm-baseline benchmarks/baselines/cloudopsbench-arms.json \
+            --arm-name logs-count \
+            --output "$RUNNER_TEMP/arm-logs-count.json" | tee "$RUNNER_TEMP/arm-logs-count.log"
+
+      - name: Publish the arm readings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudopsbench-arms
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/arm-*.json
+            ${{ runner.temp }}/arm-*.log

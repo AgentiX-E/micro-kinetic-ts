@@ -27,10 +27,63 @@ describe('the Cloud-OpsBench runner’s command line', () => {
       maxCases: 20,
       useInjectTime: true,
       topology: 'registry',
+      withLogs: false,
       dualFamilyWeight: undefined,
       dualFamilyGate: undefined,
       dualFamilyGateMode: undefined,
     });
+  });
+
+  it('reads the log artefact only when asked, because the metric-only arm is what was published', () => {
+    // The corpus states `raw_data/logs.json` in all 754 case directories; the reader used to declare it stated none.
+    // The flag is the arm, and off is the default so that adding the bridge cannot move a published number.
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob']).withLogs).toBe(false);
+    expect(parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs']).withLogs).toBe(true);
+  });
+
+  it('reads a log signal mode off the engine’s own union, and refuses a word it does not know', () => {
+    // The engine ships six modes and one of them is the arm this corpus may need: its logs are RPC/HTTP business
+    // lines rather than exception stacks, and `count` reads only self-caused logic exceptions. A parser that
+    // silently replaced an unknown token with `count` would publish a reading of the wrong arm under the name of
+    // the one that was asked for — the defect `rcaeval-cli.ts` records at its own `--log-signal-mode`.
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-signal-mode', 'logicHttp'])
+        .logSignalMode,
+    ).toBe('logicHttp');
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-signal-mode', 'all'])
+        .logSignalMode,
+    ).toBe('all');
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-signal-mode', 'countish']),
+    ).toThrow(/--log-signal-mode/);
+    // `toString` is inherited off `Object` and is exactly the kind of word a dispatch can really send.
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-signal-mode', 'toString']),
+    ).toThrow(/--log-signal-mode/);
+  });
+
+  it('refuses a log signal mode with no log artefact to read, because it would configure nothing', () => {
+    // The same class as `--arm-baseline` without `--arm-name`: a flag the run accepts and then does not act on
+    // produces a number under a claim nobody made. `--logs` is what makes the mode reachable.
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--log-signal-mode', 'novelty']),
+    ).toThrow(/--log-signal-mode needs --logs/);
+    expect(() => parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--log-weight', '0.5'])).toThrow(
+      /--log-weight needs --logs/,
+    );
+  });
+
+  it('reads the log weight as the non-negative price it is', () => {
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-weight', '0']).logWeight,
+    ).toBe(0);
+    expect(
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-weight', '2.5']).logWeight,
+    ).toBe(2.5);
+    expect(() =>
+      parseCloudOpsArgs(['--data-dir', '/tmp/cob', '--logs', '--log-weight', '-1']),
+    ).toThrow(/--log-weight must be a non-negative number/);
   });
 
   it('builds the registry graph unless the ring ablation is asked for by name', () => {

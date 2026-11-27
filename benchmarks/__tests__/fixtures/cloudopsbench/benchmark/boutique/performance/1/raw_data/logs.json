@@ -1,0 +1,9 @@
+{
+  "adservice": [
+    "2026-05-18T21:55:47.100000000+08:00 {\"instant\":{\"epochSecond\":1779112547,\"nanoOfSecond\":100000000},\"level\":\"INFO\",\"loggerName\":\"hipstershop.AdService\",\"message\":\"AdService starting.\"}",
+    "2026-05-18T21:55:53.250000000+08:00 {\"severity\":\"error\",\"message\":\"java.lang.NullPointerException: ad payload was null\"}",
+    "Error: Error from server (BadRequest): container \"server\" in pod \"adservice-7b5ff9bbd7-r2s5r\" is waiting to start: trying and failing to pull image"
+  ],
+  "redis-cart": "2026-05-18T21:55:49.000000000+08:00 info: Microsoft.Hosting.Lifetime[14]\n2026-05-18T21:55:55.000000000+08:00 warn: cache miss ratio above threshold",
+  "ts-basic-service": ""
+}

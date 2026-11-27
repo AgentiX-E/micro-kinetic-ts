@@ -698,6 +698,13 @@ export default defineConfig({
         // is passed, and an absent flag does not overwrite that default with `undefined`.
         'src/cloudopsbench-arm-baseline.ts',
         'src/cloudopsbench-engine-options.ts',
+        // Added with the module, and it is the one this corpus needed for three iterations without anyone asking:
+        // `raw_data/logs.json` is present in 754 of 754 case directories and `cloudopsbench-suite.ts` declared the
+        // corpus carried no log at all. The parts measured here are the four line shapes the file mixes, the
+        // eight-hour wall-clock offset that decides whether the engine's `timestamp >= injectTimeMs` filter admits a
+        // single line, and the census that keeps "not asked", "absent", "empty" and "read" apart — because a bridge
+        // whose coverage is a zero reads identically to a bridge that was never run.
+        'src/cloudopsbench-logs.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

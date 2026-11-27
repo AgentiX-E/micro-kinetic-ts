@@ -66,6 +66,7 @@ import {
   resolveEngineOptions,
   type EngineOverrides,
 } from './cloudopsbench-engine-options.js';
+import { censusCaseLogs, renderLogCensus, type LogCensus } from './cloudopsbench-logs.js';
 import { formatCellTable, formatRate, scoreByCell, type CellScore } from './cloudopsbench-score.js';
 import {
   REFUSAL_ORDER,
@@ -91,31 +92,34 @@ import { initRCAEvalTopology } from './rcaeval-topology.js';
  * @param dataDir - The checkout root.
  * @param maxCases - Optional cap, for a smoke run.
  * @param topology - The graph arm; `registry` for every published number.
- * @returns The selection, how many directories were entered, and every directory a reader refused.
+ * @param withLogs - Whether each case's `raw_data/logs.json` is read and attached to the engine's log channel.
+ * @returns The selection, how many directories were entered, every directory a reader refused, and the log census.
  */
 export function loadSelection(
   dataDir: string,
   maxCases: number | undefined,
   topology: CaseTopology = 'registry',
+  withLogs = false,
 ): {
   readonly selection: ScorableSelection;
   readonly directories: number;
   readonly refusedReads: readonly string[];
+  readonly logCensus: LogCensus;
 } {
   const ids = listCaseIds(dataDir);
   const considered = maxCases === undefined ? ids : ids.slice(0, maxCases);
   const cases: CloudOpsCase[] = [];
   const refusedReads: string[] = [];
   for (const id of considered) {
-    const read = readCloudOpsCase(dataDir, id);
+    const read = readCloudOpsCase(dataDir, id, { withLogs });
     if (read.ok) cases.push(read.value);
     else refusedReads.push(read.reason);
   }
-  return {
-    selection: selectScorable(cases, topology),
-    directories: considered.length,
-    refusedReads,
-  };
+  const selection = selectScorable(cases, topology);
+  // Read off the cases the reader actually returned, in the same order, so the census and the selection cannot
+  // disagree about which directories were entered.
+  const logCensus = censusCaseLogs(cases.map((one) => one.logs));
+  return { selection, directories: considered.length, refusedReads, logCensus };
 }
 
 /**
@@ -171,10 +175,11 @@ async function main(): Promise<void> {
   // initialised, and an earlier version of this runner initialised it afterwards — so a whole corpus was scored on a
   // ring graph. `callGraphOf` now throws on that mismatch, and this ordering is what satisfies it.
   await initRCAEvalTopology();
-  const { selection, directories, refusedReads } = loadSelection(
+  const { selection, directories, refusedReads, logCensus } = loadSelection(
     dataDir,
     args.maxCases,
     args.topology,
+    args.withLogs,
   );
 
   if (refusedReads.length > 0) {
@@ -193,6 +198,10 @@ async function main(): Promise<void> {
     labelPriorWeight: args.labelPriorWeight,
     labelPriorMarginGate: args.labelPriorMarginGate,
     labelPriorJurisdiction: args.labelPriorJurisdiction,
+    // The log channel's mode and price. The runner forwards both and does not act on them: the artefacts are
+    // attached by `loadSelection` (which read `--logs`), and the engine reads the rest off its own options.
+    logSignalMode: args.logSignalMode,
+    logWeight: args.logWeight,
   };
   // Resolved ONCE: the same object configures the engine and answers whether a history has to be built for it.
   const engineOptions = resolveEngineOptions(overrides);
@@ -234,6 +243,16 @@ async function main(): Promise<void> {
   process.stdout.write(
     `call graph                  ${args.topology === 'registry' ? 'registry (the deployment)' : 'RING (ablation: not the deployment)'}\n`,
   );
+  // The log bridge's own coverage, printed BEFORE the table: an arm whose entries all predate its injection window
+  // produces the same score as an arm whose bridge read nothing, and only this line separates them.
+  process.stdout.write(renderLogCensus(logCensus));
+  if (args.withLogs) {
+    // Printed from the RESOLVED options, for the reason the label prior's line is: a mode restated from the flag
+    // would name `count` on a run whose engine received `logicHttp` the moment a default moved.
+    process.stdout.write(
+      `log signal                  weight ${engineOptions.signals.logWeight} / ${engineOptions.signals.logSignalMode}\n`,
+    );
+  }
   // Every number below is READ OFF the options the engine got, and the flag only chooses which of the two labels to
   // print. The previous version restated the literal too (`shipped default (0, the ablation)`, `shipped default
   // (0.25)`), which is a claim about the configuration that no longer consults it — it is how a report of the
@@ -279,6 +298,18 @@ async function main(): Promise<void> {
         weight: engineOptions.signals.labelPriorWeight,
         gate: engineOptions.signals.labelPriorMarginGate,
         jurisdiction: engineOptions.signals.labelPriorJurisdiction,
+        // The log channel travels with the reading, because an arm is a configuration: `weight: 0` means the artefact
+        // was read and the term priced at nothing, which the engine does NOT treat as "no log" — the presence of the
+        // entries flips `sideChannelObserved` in `buildFaultGraph`. Naming one of those runs after the other would be
+        // the same defect as the shipped-weight restatement, one field over.
+        ...(args.withLogs
+          ? {
+              logs: {
+                weight: engineOptions.signals.logWeight,
+                mode: engineOptions.signals.logSignalMode,
+              },
+            }
+          : {}),
       },
       result.casePredictions.map((one) => one.truthRank ?? null),
     );
@@ -312,6 +343,10 @@ async function main(): Promise<void> {
           labelPriorMarginGate: engineOptions.signals.labelPriorMarginGate,
           labelPriorJurisdiction: engineOptions.signals.labelPriorJurisdiction,
           labelPriorHistoryBuilt: priorArmed,
+          withLogs: args.withLogs,
+          logSignalMode: engineOptions.signals.logSignalMode,
+          logWeight: engineOptions.signals.logWeight,
+          logCensus,
           directories,
           scorable: selection.kept.length,
           refused: Object.fromEntries(

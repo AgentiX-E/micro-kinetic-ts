@@ -29,6 +29,21 @@
  * @module benchmarks/src/cloudopsbench-arm-baseline
  */
 
+/**
+ * The log channel an arm ran with.
+ *
+ * Added in iteration 372, when the corpus turned out to state `raw_data/logs.json` in **754 of 754** directories
+ * while `cloudopsbench-suite.ts` declared it carried no log at all. Absent on an {@link ArmReading} means the arm read
+ * no artefact; `weight: 0` means it read one and priced the term at nothing — and those two are NOT the same
+ * configuration, which is why this is a structure rather than a boolean.
+ */
+export interface ArmLogs {
+  /** The log channel's price, as the engine received it. */
+  readonly weight: number;
+  /** The engine's log-signal mode, as the engine received it. */
+  readonly mode: string;
+}
+
 /** One arm's reading over one scorable population. */
 export interface ArmReading {
   /** The arm's name, which is how a baseline and a run are matched. */
@@ -39,6 +54,8 @@ export interface ArmReading {
   readonly gate: number;
   /** The jurisdiction word this arm ran at, `everywhere` or `tail`. */
   readonly jurisdiction: string;
+  /** The log channel this arm ran with, or absent when it read no log artefact. */
+  readonly logs?: ArmLogs;
   /** Scorable cases. Two readings of the same arm must share it, or they are different populations. */
   readonly cases: number;
   /** Cases whose truth ranked first. */
@@ -89,7 +106,12 @@ export const ARM_METRICS = ['at1', 'at3', 'at5'] as const;
  */
 export function ranksToReading(
   arm: string,
-  config: { readonly weight: number; readonly gate: number; readonly jurisdiction: string },
+  config: {
+    readonly weight: number;
+    readonly gate: number;
+    readonly jurisdiction: string;
+    readonly logs?: ArmLogs;
+  },
   ranks: readonly (number | null)[],
 ): ArmReading {
   const within = (cut: number): number =>
@@ -99,6 +121,9 @@ export function ranksToReading(
     weight: config.weight,
     gate: config.gate,
     jurisdiction: config.jurisdiction,
+    // Absent stays absent: `logs: undefined` would serialise out of a JSON baseline and back as a missing key, and a
+    // reader could not then tell "no artefact" from "a field that was dropped".
+    ...(config.logs === undefined ? {} : { logs: config.logs }),
     cases: ranks.length,
     at1: within(1),
     at3: within(3),
@@ -160,6 +185,25 @@ export function parseArmBaseline(text: string): ArmBaseline {
         `arm-baseline: \`${arm.arm}\` reads ${String(arm.at1)}/${String(arm.at3)}/${String(arm.at5)}, which is not nested`,
       );
     }
+    // The log channel, when the arm states one. A negative price would reward the services whose own logs are
+    // silent, and an empty mode names no arm at all — the six modes read different lines.
+    if (arm.logs !== undefined) {
+      if (arm.logs === null || typeof arm.logs !== 'object') {
+        throw new Error(`arm-baseline: \`${arm.arm}.logs\` is not an object`);
+      }
+      if (
+        typeof arm.logs.weight !== 'number' ||
+        !Number.isFinite(arm.logs.weight) ||
+        arm.logs.weight < 0
+      ) {
+        throw new Error(
+          `arm-baseline: \`${arm.arm}.logs\` states a log weight of ${String(arm.logs.weight)}, which is not a price`,
+        );
+      }
+      if (typeof arm.logs.mode !== 'string' || arm.logs.mode === '') {
+        throw new Error(`arm-baseline: \`${arm.arm}.logs\` states no log mode`);
+      }
+    }
   }
   return { corpus, revision, arms: arms as readonly ArmReading[] };
 }
@@ -182,6 +226,32 @@ export function compareArms(baseline: ArmBaseline, actual: readonly ArmReading[]
     if (seen.cases !== reading.cases) {
       throw new Error(
         `arm-baseline: \`${arm}\` recorded ${String(reading.cases)} cases and this run scored ${String(seen.cases)}; that is a different population, not a movement`,
+      );
+    }
+    // ── The configuration before the counts ────────────────────────────────────────────────────────────────
+    //
+    // A recorded arm is a CONFIGURATION with a reading, not a row of three numbers. Until iteration 372 this
+    // compared counts only, so an arm whose prior weight, gate, jurisdiction or log channel moved while its three
+    // counts happened to land on the recorded values passed in silence — and the report kept the old
+    // configuration's name. That is precisely the failure `cloudopsbench-engine-options.ts` was written to end, one
+    // level up: a claim about a configuration that does not consult the configuration.
+    const compared: readonly (readonly [string, unknown, unknown])[] = [
+      ['weight', reading.weight, seen.weight],
+      ['gate', reading.gate, seen.gate],
+      ['jurisdiction', reading.jurisdiction, seen.jurisdiction],
+    ];
+    for (const [field, recordedValue, actualValue] of compared) {
+      if (recordedValue !== actualValue) {
+        throw new Error(
+          `arm-baseline: \`${arm}\` recorded ${field} ${String(recordedValue)} and this run scored ${String(actualValue)}; that is a different arm under the same name`,
+        );
+      }
+    }
+    // The log channel compares as one value: `undefined` (no artefact) and `{weight: 0, …}` (read, priced at nothing)
+    // differ in a way the engine acts on (`sideChannelObserved`), so they may not be folded together.
+    if (JSON.stringify(reading.logs ?? null) !== JSON.stringify(seen.logs ?? null)) {
+      throw new Error(
+        `arm-baseline: \`${arm}\` recorded log channel ${JSON.stringify(reading.logs ?? null)} and this run scored ${JSON.stringify(seen.logs ?? null)}; that is a different arm under the same name`,
       );
     }
     for (const metric of ARM_METRICS) {
