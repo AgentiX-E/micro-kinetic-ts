@@ -14,11 +14,13 @@ import { describe, expect, it } from 'vitest';
 
 import { failureEdgeKey } from '../../packages/tree/src/index.js';
 import {
+  ABSENT_SCOPE,
   GATE_THRESHOLD,
   STANDING_CRITERION,
   compareEdgeKeys,
   fitPrior,
   foldOf,
+  gateBar,
   gateReadingToJson,
   gateVerdict,
   otherFold,
@@ -79,6 +81,7 @@ function rowFor(name: string, spec: CaseSpec): ContainmentCaseRow {
     failureFlows: undefined,
     failingEdges: undefined,
     attribution: 'shape',
+    scope: 'adjacent',
     fusionOrder: ['a', 'b'],
     publishedOrder: [],
   };
@@ -134,6 +137,7 @@ function readingOf(overrides: Partial<GateReading['arms']['prior']> = {}): GateR
     replayable: 100,
     scored: 100,
     disagreements: 0,
+    scopes: { adjacent: 100 },
     priors: [],
     arms: {
       fusion: { top1: 90, gains: 0, losses: 0 },
@@ -521,5 +525,61 @@ describe('compareEdgeKeys', () => {
     expect(compareEdgeKeys('a\u0000c', 'a\u0000b')).toBe(1);
     // And it must not answer from ICU: `localeCompare` would put these in a locale's order, not a code unit's.
     expect(compareEdgeKeys('Z', 'a')).toBe(-1);
+  });
+});
+
+describe('the scope census', () => {
+  /** A reading that is otherwise healthy: one scope, every row replayable, no disagreement. */
+  function healthy(): GateReading {
+    const { rows, accepted } = corpusOf(6, () => [{ a: 0, b: 3, accepted: ['b'] }]);
+    return readGate(rows, accepted);
+  }
+
+  it('counts the scope every row states', () => {
+    const reading = healthy();
+    expect(reading.scopes).toEqual({ adjacent: reading.cases });
+  });
+
+  it('refuses a dump that states two configurations, because a fold drawn from both is not a fold', () => {
+    const { rows, accepted } = corpusOf(6, () => [{ a: 0, b: 3, accepted: ['b'] }]);
+    const mixed = rows.map((row, index) =>
+      index === 0 ? { ...row, chain: { ...row.chain!, scope: 'global-measured' as const } } : row,
+    );
+    const { verdict, reason } = gateVerdict(readGate(mixed, accepted));
+    expect(verdict).toBe('unmeasured');
+    expect(reason).toContain('global-measured');
+    expect(reason).toContain('adjacent');
+  });
+
+  it('counts an ABSENT scope as its own token rather than as the default', () => {
+    const { rows, accepted } = corpusOf(6, () => [{ a: 0, b: 3, accepted: ['b'] }]);
+    // Walkable rows whose chain omits the field — what an artifact written before it existed looks like.
+    const bare = rows.map((row) => {
+      const { scope: _scope, ...chain } = row.chain!;
+      return { ...row, chain } as ContainmentCaseRow;
+    });
+    expect(readGate(bare, accepted).scopes).toEqual({ [ABSENT_SCOPE]: bare.length });
+  });
+
+  it('raises the bar to the corpus’s own shipped arm when that arm is above the recorded 1 156', () => {
+    // The criterion records 1 156, the shipped Top@1 on the archive the pre-registration was written against.
+    // Read on a corpus whose own shipped arm answers 1 186, a fixed floor of 1 156 would let an arm that LOSES
+    // sixteen cases pass the only clause that is about the level rather than the movement.
+    const reading = {
+      ...healthy(),
+      arms: { ...healthy().arms, shipped: { top1: 1_186, gains: 0, losses: 0 } },
+    };
+    expect(gateBar(reading, STANDING_CRITERION).shippedTop1).toBe(1_186);
+    const low = {
+      ...reading,
+      arms: { ...reading.arms, prior: { top1: 1_170, gains: 30, losses: 0 } },
+    };
+    expect(gateVerdict(low).verdict).toBe('fail');
+    expect(gateVerdict(low).reason).toContain('1170');
+  });
+
+  it('keeps the recorded bar when the corpus’s own arm is below it, so a weak artifact cannot lower the gate', () => {
+    const reading = healthy();
+    expect(gateBar(reading, STANDING_CRITERION).shippedTop1).toBe(STANDING_CRITERION.shippedTop1);
   });
 });

@@ -44,9 +44,10 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import type {
   ContainmentDecision,
   FailureAttribution,
+  FailureContainmentScope,
   FailureFlow,
 } from '../../packages/tree/src/index.js';
-import { isFailureAttribution } from '../../packages/tree/src/index.js';
+import { isFailureAttribution, isFailureContainmentScope } from '../../packages/tree/src/index.js';
 
 /** One adjacent pair that carried a call edge, and what the arm decided about it. */
 export interface ContainmentPairRow {
@@ -129,6 +130,19 @@ export interface ContainmentChain {
   >;
   /** Which reading of the flow decides a pair. */
   readonly attribution: FailureAttribution;
+  /**
+   * How far the flow pass looked for a pair, i.e. `FailureContainmentScope` of the run this chain is FROM.
+   *
+   * The sixth input, and the only one that is a CONFIGURATION rather than a measurement. `applyFailureContainment`
+   * defaults to `'adjacent'`, and a replay that let the default speak would walk a `global-measured` run's chains
+   * with the narrow traversal: on the 1 422-case archive that is **1 179 against 1 186**, and the nine cases read
+   * as a broken dump rather than as a missing word (run `45953662488`; `docs/gate-replay.md` §8).
+   *
+   * Optional on the same ground as {@link chain} itself — a reader must be able to tell "this artifact predates the
+   * field" from "this artifact says adjacent" — and the walk REPORTS the scope it used, so a fallback can never be
+   * mistaken for the run's own statement.
+   */
+  readonly scope?: FailureContainmentScope | undefined;
 }
 
 /** One case's sweep rows. */
@@ -272,6 +286,9 @@ function chainToJson(chain: ContainmentChain): Record<string, unknown> {
       ]),
     ),
     attribution: chain.attribution,
+    // Written only when stated, for the rule the surprise map already follows: `"scope": "adjacent"` is a claim
+    // about the run, and a writer that filled the engine's default in here would be inventing one.
+    ...(chain.scope === undefined ? {} : { scope: chain.scope }),
   };
 }
 
@@ -599,6 +616,13 @@ function parseChain(raw: unknown, line: number): ContainmentChain {
       `chain.attribution on line ${line} is not a flow reading: ${String(chain.attribution)}`,
     );
   }
+  // A misspelt scope is REFUSED rather than dropped: dropping it would replay the run at the engine's default and
+  // report the difference as a broken chain, which is the misdiagnosis `docs/gate-replay.md` §8 records.
+  if (chain.scope !== undefined && !isFailureContainmentScope(chain.scope)) {
+    throw new Error(
+      `chain.scope on line ${line} is not a containment scope: ${String(chain.scope)}`,
+    );
+  }
   return {
     order,
     edges,
@@ -608,6 +632,7 @@ function parseChain(raw: unknown, line: number): ContainmentChain {
     flows: parsedFlows,
     failingEdges: parsedFailing,
     attribution: chain.attribution,
+    ...(chain.scope === undefined ? {} : { scope: chain.scope }),
   };
 }
 

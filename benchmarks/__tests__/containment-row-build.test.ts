@@ -30,6 +30,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     failureFlows: undefined,
     failingEdges: undefined,
     attribution: 'shape',
+    scope: 'adjacent',
     fusionOrder: ['frontend', 'cart'],
     publishedOrder: ['cart', 'frontend'],
     ...overrides,
@@ -195,6 +196,7 @@ describe('buildContainmentRow', () => {
       flows: {},
       failingEdges: {},
       attribution: 'counts',
+      scope: 'adjacent',
     });
   });
 
@@ -238,5 +240,58 @@ describe('buildContainmentRow', () => {
     // the arm that reads this field refuses an absent one instead of walking an empty one as a no-op.
     const row = buildContainmentRow(input({ surprises: undefined }));
     expect(row.chain === undefined ? undefined : 'surprises' in row.chain).toBe(false);
+  });
+});
+
+describe('the scope the flow pass ran at', () => {
+  /**
+   * A case whose only failing edge relates two candidates the fusion did NOT place beside each other.
+   *
+   * The narrow traversal examines neighbours, so `frontend`→`db` is invisible to it however far out of order the
+   * two flows are; the wide one lifts `db` above `frontend`. That is the whole difference the scope makes, and a
+   * fixture that used an adjacent pair would record the scope without ever reading it.
+   */
+  function spanned(scope: 'adjacent' | 'global' | 'global-measured'): BuildContainmentRowInput {
+    return input({
+      edges: [{ from: 'frontend', to: 'db' }],
+      excursions: new Map([
+        ['frontend', 0],
+        ['cart', 0],
+        ['db', 0],
+      ]),
+      failedInterfaces: new Map(),
+      failureFlows: new Map([
+        ['frontend', { knownIn: 0, knownOut: 0, novelIn: 0, novelOut: 0 }],
+        ['db', { knownIn: 5, knownOut: 0, novelIn: 0, novelOut: 0 }],
+      ]),
+      failingEdges: new Map([[failureEdgeKey('frontend', 'db'), { rise: 5, novel: 0 }]]),
+      fusionOrder: ['frontend', 'cart', 'db'],
+      publishedOrder:
+        scope === 'adjacent' ? ['frontend', 'cart', 'db'] : ['db', 'frontend', 'cart'],
+      scope,
+    });
+  }
+
+  it('writes the scope it walked at, because a scope left to a default is a scope nobody stated', () => {
+    expect(buildContainmentRow(spanned('global-measured')).chain!.scope).toBe('global-measured');
+    expect(buildContainmentRow(spanned('adjacent')).chain!.scope).toBe('adjacent');
+  });
+
+  it('replays the flow pass at the scope the run applied, so the wide order reproduces', () => {
+    // The defect this field exists for: the same bytes, walked at the shipped traversal, reproduce 1 179 of the
+    // wide run's 1 186 and the mismatch reads as a broken dump rather than as a missing configuration.
+    expect(buildContainmentRow(spanned('global-measured')).replay).toBe('identical');
+    expect(buildContainmentRow(spanned('adjacent')).replay).toBe('identical');
+  });
+
+  it('records a DIFFERENCE when the published order came from the other traversal', () => {
+    const wide = buildContainmentRow({
+      ...spanned('global-measured'),
+      // The engine published the wide order while the dump claims the narrow one: an instrument that walked the
+      // narrow traversal would report a disagreement on a case nothing is wrong with.
+      scope: 'adjacent',
+    });
+    expect(wide.replay).toBe('differs');
+    expect(wide.shippedTop1).toBe('db');
   });
 });

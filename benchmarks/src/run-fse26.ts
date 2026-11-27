@@ -473,6 +473,10 @@ async function main(): Promise<void> {
           failureFlows: faultGraph?.failureFlows,
           failingEdges: faultGraph?.failingEdges,
           attribution: engineOptions.signals.failureAttribution,
+          // The scope the ENGINE applied, taken from the same object the pruner was built from rather than from
+          // the CLI options: one option has one owner, and a dump that read the flag twice could state a
+          // configuration the engine never ran under (`docs/gate-replay.md` §8).
+          scope: engineOptions.signals.failureContainmentScope,
           fusionOrder,
           publishedOrder: ranking.map((result) => result.serviceId),
         }),

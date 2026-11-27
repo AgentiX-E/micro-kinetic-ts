@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { failureEdgeKey } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  failureEdgeKey,
+} from '../../packages/tree/src/index.js';
 import { headOf, replayAgrees, replayCase } from '../src/containment-replay.js';
 import {
   buildContainmentRow,
@@ -35,6 +38,8 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     failureFlows: undefined,
     failingEdges: undefined,
     attribution: 'shape',
+    // Stated rather than defaulted: the builder requires it, which is the whole point of the field.
+    scope: 'adjacent',
     fusionOrder: ['a', 'b'],
     publishedOrder: ['b', 'a'],
     ...overrides,
@@ -353,5 +358,71 @@ describe('replayCase — the veto arm', () => {
     const refused = { residuals: new Map(), threshold: 0 };
     const replayed = replayCase(recordFree(), { kind: 'veto', prior: refused })!;
     expect(replayed.verdicts.map((verdict) => verdict.decision)).toEqual(['prior-absent']);
+  });
+});
+
+describe('the scope the flow pass ran at', () => {
+  /**
+   * A row whose only failing edge spans a candidate the fusion put two places lower.
+   *
+   * `buildContainmentRow` is the writer, so the fixture goes through it: the question is whether the scope the
+   * run applied reaches the walk from the FILE, and a hand-written chain would not test that.
+   */
+  function spanned(scope: 'adjacent' | 'global' | 'global-measured'): ContainmentCaseRow {
+    const built = buildContainmentRow(
+      input({
+        edges: [{ from: 'a', to: 'c' }],
+        excursions: new Map([
+          ['a', 0],
+          ['b', 0],
+          ['c', 0],
+        ]),
+        failedInterfaces: new Map(),
+        failureFlows: new Map([
+          ['a', { knownIn: 0, knownOut: 0, novelIn: 0, novelOut: 0 }],
+          ['c', { knownIn: 5, knownOut: 0, novelIn: 0, novelOut: 0 }],
+        ]),
+        failingEdges: new Map([[failureEdgeKey('a', 'c'), { rise: 5, novel: 0 }]]),
+        fusionOrder: ['a', 'b', 'c'],
+        publishedOrder: scope === 'adjacent' ? ['a', 'b', 'c'] : ['c', 'a', 'b'],
+        scope,
+      }),
+    );
+    return built;
+  }
+
+  it('lifts a spanned pair only when the chain states the wide scope', () => {
+    const wide = spanned('global-measured');
+    expect(replayCase(wide, { kind: 'off' })!.published).toEqual(['c', 'a', 'b']);
+    const narrow = { ...wide, chain: { ...wide.chain!, scope: 'adjacent' as const } };
+    expect(replayCase(narrow, { kind: 'off' })!.published).toEqual(['a', 'b', 'c']);
+  });
+
+  it('names the scope it walked at on every replayed case', () => {
+    expect(replayCase(spanned('global'), { kind: 'off' })!.scope).toBe('global');
+    expect(replayCase(spanned('adjacent'), { kind: 'off' })!.scope).toBe('adjacent');
+  });
+
+  it('replays a row that states no scope at the shipped default AND says that is what it did', () => {
+    // Absence is not a claim. A dump written before the field existed cannot be read at a scope its author never
+    // wrote, so the walk falls back to the one the engine ships and reports which one it used — a reader that
+    // mistook the fallback for a measurement would be reading a configuration nobody stated.
+    const built = spanned('adjacent');
+    const { scope: _dropped, ...chainless } = built.chain!;
+    const bare: ContainmentCaseRow = { ...built, chain: chainless as typeof built.chain };
+    expect(replayCase(bare, { kind: 'off' })!.scope).toBe(DEFAULT_FAILURE_CONTAINMENT_SCOPE);
+    expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
+  });
+
+  it('agrees with a wide run’s recorded top-1, which is the 33-case instrument break', () => {
+    const wide = spanned('global-measured');
+    expect(replayAgrees(wide, replayCase(wide, { kind: 'off' }))).toBe(true);
+  });
+
+  it('calls the same row a disagreement when the scope is not carried, which is honest and is why it is written', () => {
+    const wide = spanned('global-measured');
+    const { scope: _dropped, ...chainless } = wide.chain!;
+    const bare: ContainmentCaseRow = { ...wide, chain: chainless as typeof wide.chain };
+    expect(replayAgrees(bare, replayCase(bare, { kind: 'off' }))).toBe(false);
   });
 });

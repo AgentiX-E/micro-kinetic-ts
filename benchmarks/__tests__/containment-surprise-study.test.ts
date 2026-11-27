@@ -40,6 +40,7 @@ function silentLatency(
     failureFlows: undefined,
     failingEdges: undefined,
     attribution: 'shape',
+    scope: 'adjacent',
     fusionOrder: ['a', 'b'],
     publishedOrder: ['a', 'b'],
     ...overrides,

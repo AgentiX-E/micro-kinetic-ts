@@ -9,7 +9,13 @@
  * @module benchmarks/containment-gate-report
  */
 
-import { STANDING_CRITERION, type GateCriterion, type GateReading } from './containment-gate.js';
+import {
+  STANDING_CRITERION,
+  compareEdgeKeys,
+  gateBar,
+  type GateCriterion,
+  type GateReading,
+} from './containment-gate.js';
 import { MIN_POPULATION, type ResidualScore } from './containment-residual.js';
 
 /** The flags the gate report accepts. */
@@ -72,9 +78,15 @@ export function formatGateReading(
   reading: GateReading,
   criterion: GateCriterion = STANDING_CRITERION,
 ): string[] {
+  // The scope census is printed BESIDE the disagreement count, because the two answer one question: a mismatch
+  // on a dump that states no scope is a missing word, not a broken chain (`docs/gate-replay.md` §8).
+  const census = Object.entries(reading.scopes)
+    .sort(([left], [right]) => compareEdgeKeys(left, right))
+    .map(([scope, count]) => `${scope}=${count}`)
+    .join(' ');
   const lines = [
     `  rows=${reading.cases} replayable=${reading.replayable} scored=${reading.scored} ` +
-      `disagreements=${reading.disagreements}`,
+      `disagreements=${reading.disagreements} scopes: ${census === '' ? 'none' : census}`,
   ];
   for (const prior of reading.priors) {
     lines.push(
@@ -101,9 +113,12 @@ export function formatGateReading(
   );
   // The criterion is printed before the verdict is, so a reader never has to hold the numbers against a bar
   // quoted somewhere else — the same reason `formatDiscrimination` prints `bar=`.
+  const bar = gateBar(reading, criterion);
   lines.push(
-    `  criterion: gains>=${criterion.gains} losses<=${criterion.losses} ` +
-      `top1>${criterion.shippedTop1}`,
+    `  criterion: gains>=${bar.gains} losses<=${bar.losses} top1>${bar.shippedTop1}` +
+      (bar.shippedTop1 === criterion.shippedTop1
+        ? ` (recorded)`
+        : ` (raised from the recorded ${criterion.shippedTop1} to this corpus's own arm)`),
   );
   return lines;
 }

@@ -128,7 +128,7 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     expect(WORKFLOW_CODE).not.toMatch(/--fault-free-weight/);
   });
 
-  it('states the containment scope in the benchmark workflow and records why this one does not', () => {
+  it('states the containment scope in BOTH workflows, and the dump carries the one it ran under', () => {
     // `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` and its owner says so by design: the wide state was measured
     // on this corpus and not on the other one, so it ships as a STATED flag. `fse26-benchmark.yml` states
     // `global-measured`, and this workflow used to inherit the default, which made its engine `1 157` where the
@@ -140,17 +140,24 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     // Once, and to the published state: two statements of one axis is a file where one of them wins silently.
     expect(published).toHaveLength(1);
     expect(published[0]).toContain('--failure-containment-scope global-measured');
-    // This workflow does NOT state it, and the omission is measured rather than preferred: run `45953662488` stated
-    // it, the engine read `1 186` and the arm at `--gate lag` settled `1 179` (`-7` net), and the H2 instrument
-    // refused the run with 33 of 1 422 cases not reproducing. The dump has to carry its configuration first.
+    // This workflow STATES it too, once, and to the same value. Run `45953662488` was the first dispatch to state
+    // it: the engine read `1 186` and the arm settled `1 179` (`-7` net) -- the arm's real standing at the
+    // published base -- but the H2 instrument refused the run, 33 of 1 422 cases not reproducing, because
+    // `containment.ndjson` did not carry the scope its replay needed.
     const stated = WORKFLOW_CODE.split('\n').filter((line) =>
       line.includes('--failure-containment-scope'),
     );
-    expect(stated).toEqual([]);
-    // Non-vacuity: the absence is explained where the flag would have been, with the run and the count in the reason.
+    expect(stated).toHaveLength(1);
+    expect(stated[0]).toContain('--failure-containment-scope global-measured');
+    // Non-vacuity: the two dispatches and the instrument break are the reason the flag is stated here, and the
+    // reason it waited is named where the flag sits.
     expect(WORKFLOW).toContain('45953662488');
-    expect(WORKFLOW).toContain('33');
-    expect(WORKFLOW).toContain('containment.ndjson` to carry its scope');
+    expect(WORKFLOW).toContain('33 of 1 422');
+    expect(WORKFLOW).toContain('ContainmentChain.scope');
+    // The third link: the RUNNER has to hand the engine's own scope to the dump. A guard on the workflow alone
+    // would let the flag be stated and dropped between the call site and the record (§370's class of defect).
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-fse26.ts'), 'utf8');
+    expect(runner).toContain('scope: engineOptions.signals.failureContainmentScope');
   });
 
   it('forwards an empty input to nothing, so the runner owns its own defaults', () => {

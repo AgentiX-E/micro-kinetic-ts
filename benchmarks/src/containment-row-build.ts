@@ -33,6 +33,7 @@ import {
   type ContainmentEdge,
   type ContainmentSweep,
   type FailureAttribution,
+  type FailureContainmentScope,
 } from '../../packages/tree/src/index.js';
 
 import type {
@@ -81,6 +82,15 @@ export interface BuildContainmentRowInput {
     ReadonlyMap<string, { readonly rise: number; readonly novel: number }> | undefined;
   /** Which reading of the flow decides a pair. */
   readonly attribution: FailureAttribution;
+  /**
+   * How far the flow pass looked for a pair — the run's `failureContainmentScope`.
+   *
+   * REQUIRED, and required for the reason the engine's own options are: a builder that fell back to the engine's
+   * default would write a configuration the dispatch never stated, and the replay would reproduce the dump's own
+   * default rather than the run's answer. `docs/gate-replay.md` §8 is the measured cost of exactly that (`1 179`
+   * against `1 186`).
+   */
+  readonly scope: FailureContainmentScope;
   /** The order the FUSION published, best first. */
   readonly fusionOrder: readonly ServiceId[];
   /** The order the engine actually published, for the replay check. */
@@ -137,11 +147,14 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     excursions,
     margin: input.margin,
   });
+  // The replay walks the SAME scope the run applied: `identical` is a statement about one configuration, and a
+  // verdict produced at another one is a disagreement about the reader, not about the artifact.
   const replayed = applyFailureContainment({
     ranking: gated.order,
     flows: input.failureFlows,
     failingEdges: input.failingEdges,
     attribution: input.attribution,
+    scope: input.scope,
   }).map((entry) => entry.service);
 
   const replay: ContainmentReplay =
@@ -178,6 +191,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
       flows: Object.fromEntries(input.failureFlows ?? []),
       failingEdges: Object.fromEntries(input.failingEdges ?? []),
       attribution: input.attribution,
+      scope: input.scope,
     },
   };
 }

@@ -19,10 +19,12 @@
 
 import type { ServiceId } from '../../packages/core/src/index.js';
 import {
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   applyFailureContainment,
   inspectContainmentOrder,
   type ContainmentPrior,
   type ContainmentVerdict,
+  type FailureContainmentScope,
 } from '../../packages/tree/src/index.js';
 
 import type { ContainmentCaseRow } from './containment-rows.js';
@@ -84,6 +86,14 @@ export interface ReplayedCase {
   readonly published: readonly string[];
   /** What the sweep decided about each adjacent pair it examined, in sweep order. */
   readonly verdicts: readonly ContainmentVerdict[];
+  /**
+   * How far the flow pass looked for a pair on this walk.
+   *
+   * Reported rather than implied, because the pass HAS a default and a walk that used it is indistinguishable
+   * from one that read the run's own statement. `'adjacent'` here on a case the run published under
+   * `'global-measured'` is the reading that turns a missing word into a false disagreement.
+   */
+  readonly scope: FailureContainmentScope;
 }
 
 /** The first element of an order, or `null` when it is empty. */
@@ -165,7 +175,7 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
  * @param row - The case's dump row, for the margin.
  * @param containment - The containment stage's order.
  * @param verdicts - The pairs the sweep examined.
- * @returns The walked orders and the sweep's reasons.
+ * @returns The walked orders, the sweep's reasons, and the scope the flow pass ran at.
  */
 function publishThroughFlows(
   chain: NonNullable<ContainmentCaseRow['chain']>,
@@ -173,13 +183,18 @@ function publishThroughFlows(
   containment: readonly string[],
   verdicts: readonly ContainmentVerdict[],
 ): ReplayedCase {
+  // The scope comes from the CHAIN, not from a caller: it is part of what the run was, and a caller that passed
+  // its own would be able to re-walk a run at a configuration the run never had. A chain that states none is
+  // walked at the engine's default, and the fallback is REPORTED below rather than assumed silently.
+  const scope = chain.scope ?? DEFAULT_FAILURE_CONTAINMENT_SCOPE;
   const published = applyFailureContainment({
     ranking: containment.map((service) => ({ service })),
     flows: new Map(Object.entries(chain.flows)),
     failingEdges: new Map(Object.entries(chain.failingEdges)),
     attribution: chain.attribution,
+    scope,
   }).map((entry) => entry.service);
-  return { containment: [...containment], published, verdicts };
+  return { containment: [...containment], published, verdicts, scope };
 }
 
 /**

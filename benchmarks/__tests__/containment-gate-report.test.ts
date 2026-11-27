@@ -14,6 +14,7 @@ const READING: GateReading = {
   replayable: 1_422,
   scored: 1_400,
   disagreements: 0,
+  scopes: { 'global-measured': 1_422 },
   priors: [
     {
       fittedOn: 'b',
@@ -89,7 +90,9 @@ describe('formatGateReading', () => {
   const lines = formatGateReading(READING);
 
   it('starts with the instrument s own census, before any arm', () => {
-    expect(lines[0]).toBe('  rows=1422 replayable=1422 scored=1400 disagreements=0');
+    expect(lines[0]).toBe(
+      '  rows=1422 replayable=1422 scored=1400 disagreements=0 scopes: global-measured=1422',
+    );
   });
 
   it('prints one line per prior, with the half it came from and the half it may speak about', () => {
@@ -122,11 +125,17 @@ describe('formatGateReading', () => {
   });
 
   it('prints the criterion beside the numbers it judges', () => {
-    expect(lines[7]).toBe('  criterion: gains>=15 losses<=0 top1>1156');
+    // The suffix is the provenance of the bar: the recorded 1 156 is what the pre-registration fixed, and on
+    // this reading it stands because the corpus's own shipped arm (1 140) is below it.
+    expect(lines[7]).toBe('  criterion: gains>=15 losses<=0 top1>1156 (recorded)');
   });
 
   it('prints a different criterion when one is supplied', () => {
+    // A bar BELOW this corpus's own shipped arm is raised to it and the line says so: a floor of 900 would let an
+    // arm that loses two hundred and forty cases satisfy the clause that is about the level.
     const other = formatGateReading(READING, { gains: 3, losses: 1, shippedTop1: 900 });
-    expect(other.at(-1)).toBe('  criterion: gains>=3 losses<=1 top1>900');
+    expect(other.at(-1)).toBe(
+      "  criterion: gains>=3 losses<=1 top1>1140 (raised from the recorded 900 to this corpus's own arm)",
+    );
   });
 });

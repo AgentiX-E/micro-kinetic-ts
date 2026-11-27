@@ -199,6 +199,14 @@ export interface GateReading {
   readonly scored: number;
   /** Rows whose shipped replay did NOT reproduce the recorded top-1. Zero on a healthy artifact. */
   readonly disagreements: number;
+  /**
+   * Which flow-pass scope the walkable rows state, and how many state each — `'absent'` for a row that predates
+   * the field.
+   *
+   * A census rather than one value because a dump is a FILE and two runs can be concatenated into one: a reading
+   * that took the first row's scope would silently re-walk half the corpus at the other half's configuration.
+   */
+  readonly scopes: Readonly<Record<string, number>>;
   /** The two halves' priors, keyed by the half each applies to. */
   readonly priors: readonly FittedPrior[];
   /** The no-pass baseline, the shipped arm, and the residual-gated arm. */
@@ -252,6 +260,7 @@ export function readGate(
   let replayable = 0;
   let scored = 0;
   let disagreements = 0;
+  const scopes: Record<string, number> = {};
 
   for (const row of rows) {
     const answers = accepted.get(row.datapack);
@@ -261,7 +270,11 @@ export function readGate(
       kind: 'prior',
       prior: priors.get(foldOf(row.datapack))!.prior,
     });
-    if (base !== null) replayable += 1;
+    if (base !== null) {
+      replayable += 1;
+      const scope = row.chain?.scope ?? ABSENT_SCOPE;
+      scopes[scope] = (scopes[scope] ?? 0) + 1;
+    }
     // The census is over every row that could be walked, including rows with no accepted answer: it describes
     // the gate's behaviour, which is a property of the sweep, not of the labels.
     if (gated !== null) {
@@ -290,6 +303,7 @@ export function readGate(
     replayable,
     scored,
     disagreements,
+    scopes,
     priors: [priors.get('a')!, priors.get('b')!],
     arms: {
       fusion: { top1: tally.fusion, gains: 0, losses: 0 },
@@ -300,6 +314,9 @@ export function readGate(
     blocked: { absent: decisions['prior-absent'], below: decisions['prior-below'] },
   };
 }
+
+/** The census token for a row whose chain does not state the scope the flow pass ran at. */
+export const ABSENT_SCOPE = 'absent';
 
 /** The standing gate's two numbers, as values so the verdict is a function and not a sentence in a log. */
 export interface GateCriterion {
@@ -313,6 +330,30 @@ export interface GateCriterion {
 
 /** The pre-registered criterion, as written in `docs/containment-order.md` §12/§14. */
 export const STANDING_CRITERION: GateCriterion = { gains: 15, losses: 0, shippedTop1: 1_156 };
+
+/**
+ * The criterion as it applies to THIS corpus.
+ *
+ * `shippedTop1` records 1 156, the shipped arm's Top@1 on the archive the pre-registration was written against,
+ * and the clause it carries is "the arm must EXCEED the shipped arm". On a corpus whose own shipped arm answers
+ * 1 186 — the same archive under `--failure-containment-scope global-measured` — a floor pinned at 1 156 lets an
+ * arm that **loses sixteen cases** satisfy the only clause about the LEVEL rather than the movement.
+ *
+ * So the bar is the higher of the record and this corpus's own shipped arm: the record never lowers, and a corpus
+ * better than the record is judged against itself. The two are equal on every healthy artifact, because the
+ * disagreement check already guarantees the shipped arm reproduces the recorded number.
+ *
+ * @param reading - The gate's reading.
+ * @param criterion - The standing gate, or another one.
+ * @returns The criterion with the level clause bound to the corpus.
+ */
+export function gateBar(
+  reading: GateReading,
+  criterion: GateCriterion = STANDING_CRITERION,
+): GateCriterion {
+  const own = reading.arms.shipped.top1;
+  return own > criterion.shippedTop1 ? { ...criterion, shippedTop1: own } : criterion;
+}
 
 /**
  * The pre-registered verdict.
@@ -337,13 +378,23 @@ export function gateVerdict(
       reason: `${reading.cases - reading.replayable} of ${reading.cases} rows carry no sweep input, so the gate would be read over a population the run did not declare`,
     };
   }
-  if (reading.disagreements > 0) {
+  // Two configurations in one file is not a population: the prior is fitted on half the corpus and applied to the
+  // other, and a fold whose rows were walked at another scope is not the other half of anything.
+  const stated = Object.keys(reading.scopes).filter((scope) => scope !== ABSENT_SCOPE);
+  if (stated.length > 1) {
     return {
       verdict: 'unmeasured',
-      reason: `${reading.disagreements} case(s) did not reproduce the recorded top-1, so the chain is incomplete`,
+      reason: `the dump states ${stated.length} flow-pass scopes (${stated.join(', ')}), so its rows are not one configuration`,
     };
   }
-  return judgeArm(reading.arms.prior, criterion);
+  if (reading.disagreements > 0) {
+    const walked = stated[0] ?? `the shipped default (${ABSENT_SCOPE})`;
+    return {
+      verdict: 'unmeasured',
+      reason: `${reading.disagreements} case(s) did not reproduce the recorded top-1, so the chain is incomplete at scope ${walked}`,
+    };
+  }
+  return judgeArm(reading.arms.prior, gateBar(reading, criterion));
 }
 
 /**
