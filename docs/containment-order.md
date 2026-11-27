@@ -142,9 +142,12 @@ answer different halves of the same question and are not substitutes.
 
 ## 5. The margin, and why zero is not a tuning choice
 
-The margin is the only knob that can refuse a pair without changing what the rule is: a larger margin demands a
-larger excursion difference before a callee is promoted. Measured on the 711-case half whose 1 422-case results
-this document quotes (`waveB2`, with a profile built from that half), against the pass off:
+The margin is a knob that can refuse a pair without changing what the rule is: a larger margin demands a larger
+excursion difference before a callee is promoted. It is not the only one since iteration 382 — the callee's
+ABSOLUTE noise floor (`minCalleeExcursion`, §5.1) refuses a pair too — but the two are different statements: the
+margin is a RELATIVE gap between two measurements on one case, the floor is whether the callee left its band at all.
+Measured on the 711-case half whose 1 422-case results this document quotes (`waveB2`, with a profile built from
+that half), against the pass off:
 
 | margin (band widths) | Top@1 | gains | losses |
 | --- | ---: | ---: | ---: |
@@ -163,6 +166,27 @@ reproduces the two CI arms **per case, 711 of 711, with zero disagreements on ei
 verdict**. That is what licenses reading the four-arm and sweep tables above as measurements of the shipped path
 rather than of a re-implementation.
 
+### 5.1 The callee noise floor, and why margin 0 still stands
+
+Iteration 382 found that this half also contains none of the three losses the FULL corpus records at the strict
+comparison, and that this is why the margin sweep above reads `0.1` as a small loss here (517 vs 518) while the full
+corpus reads it as a gain: on the half, 0.1 refuses one ordinary propagation and touches no loss; on the full corpus
+the same bar refuses three boundary noises and touches no gain. The two readings are measurements of two populations,
+not a contradiction (see `docs/gate-replay.md` §12).
+
+The bug was that margin 0 alone could invert a pair where the caller sat INSIDE its band (excursion 0) and the callee
+sat only 0.03–0.096 band widths past its edge — boundary noise, not a latency that "left its band" as this pass
+documents. `DEFAULT_MIN_CALLEE_EXCURSION = 0.1` now requires the callee to be a resolvable distance outside its band
+before a pair is inverted, and names that refusal `callee-in-band`. It is an ABSOLUTE floor on one side, not a
+relative margin: the `0` above remains a real equality and keeps its derivation, and the table in §5 still measures
+what it claims. On the full corpus the floor moves Top@1 from 1 186 to **1 187** with **zero losses** — the first
+zero-loss reading in this series — and the residual licence (H2), with the noise gone, becomes two cases WORSE than
+shipped without it. The floor's 0.1 is a measured plateau [0.10, 0.15] confirmed on two folds, not a derived constant.
+
+A dump records the floor it ran under (`minCalleeExcursion`) beside its margin, and replay reads that value: a
+pre-fix dump is replayed under floor 0, the behavior it was written under, so its own verdicts still reproduce.
+EOF
+echo done
 ## 6. What the pass refuses to do
 
 - **No profile → no pass.** The excursion map is not built; `analyze` returns the fusion's own array by identity.
@@ -821,6 +845,11 @@ That is not a weak estimator. It is a CONSTANT one on that population, and the a
     ⇒ excursion(lower) > 0 in EVERY observation   ⇒  p_lower = 1
     ⇒ δupper ⇒ δlower, so P(both) = p_upper
     ⇒ ρ = p_upper − p_upper · 1 = 0.
+
+(Written against the pre-382 rule. Since iteration 382 an inversion also requires `excursion(lower) >
+DEFAULT_MIN_CALLEE_EXCURSION = 0.1`, an absolute floor that stops boundary noise from counting as an excursion;
+the argument above is unchanged for the pairs that still invert, since they satisfy both conditions and `p_lower =
+1` still follows. See §5.1.)
 
 The population used was "the pairs the arm inverted", and the pre-registration says "every adjacent pair the
 containment sweep considers". Restricting it to the acted-on pairs makes the statistic identically zero **by
