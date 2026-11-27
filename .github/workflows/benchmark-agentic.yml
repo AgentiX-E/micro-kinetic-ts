@@ -330,8 +330,23 @@ jobs:
           #   PRESENTED list can move. A gate dispatched without this file is refused by the parser rather than
           #   scored against the fingerprint's own width, which is the defect `agentic-promotion-gate.md` §3
           #   records having made three times.
+          #   THE SCOPE IS STATED, and it is the one the standing document publishes.
+          #
+          #   `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent`, and this step used to inherit it while
+          #   `fse26-benchmark.yml` states `global-measured` on the invocation it runs. That made this workflow's
+          #   engine a DIFFERENT configuration from the published cell -- `1 157` against `1 186` `Top@1` on the same
+          #   1 422 -- and the arm's board row is composed over THIS order (`arm-order.ts`: the settled name first,
+          #   the engine's order behind it). So the arm was priced against a base the board does not quote: run
+          #   `44909105091`'s transcripts at `--gate lag` settle `1 181`, which is `+24` over `1 157` and `-5` under
+          #   `1 186`, and only the second of those is the published product. A scope left to a default is a scope
+          #   nobody stated, which is the class of defect §377 was about one layer up.
+          #
+          #   Stating it costs nothing else: the profile above is passed at weight 0 and changes no ranking term, and
+          #   the two wide states were measured byte-identical over 1 422 cases, so this flag cannot move a number
+          #   except through the pass it names.
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
+            --failure-containment-scope global-measured \
             --fault-free-profile "$HOME/fault-free-profile.json" \
             --fingerprint-out artifacts/agentic/fingerprints.ndjson \
             --per-case-out artifacts/agentic/per-case.ndjson \

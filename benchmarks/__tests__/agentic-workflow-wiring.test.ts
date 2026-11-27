@@ -49,6 +49,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_FAILURE_CONTAINMENT_SCOPE } from '@agentix-e/micro-kinetic-tree';
+
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const WORKFLOW = readFileSync(resolve(repoRoot, '.github/workflows/benchmark-agentic.yml'), 'utf8');
 const FSE26 = readFileSync(resolve(repoRoot, '.github/workflows/fse26-benchmark.yml'), 'utf8');
@@ -124,6 +126,28 @@ describe('the agentic line runs where the corpus and the keys are', () => {
     // Checked against the code, not the prose: the block comment above the step NAMES the flag to explain
     // why it is absent, and a text scan over the whole file would call that explanation a violation.
     expect(WORKFLOW_CODE).not.toMatch(/--fault-free-weight/);
+  });
+
+  it('states the containment scope, because the runner’s default is a different configuration', () => {
+    // `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` and its owner says so by design: the wide state was measured
+    // on this corpus and not on the other one, so the arm ships as a STATED flag. This workflow used to inherit the
+    // default while `fse26-benchmark.yml` states `global-measured`, which made its engine `1 157` where the published
+    // cell is `1 186` on the same 1 422 — and the arm's board row is composed over THIS order
+    // (`arm-order.ts`: the settled name first, the engine's order behind it). Run `44909105091`'s transcripts at
+    // `--gate lag` settle `1 181`: `+24` over `1 157`, `-5` under `1 186`, and only the second is the product.
+    expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
+    for (const [name, code] of [
+      ['benchmark-agentic.yml', WORKFLOW_CODE],
+      ['fse26-benchmark.yml', codeLines(FSE26)],
+    ] as const) {
+      const stated = code
+        .split('\n')
+        .filter((line) => line.includes('--failure-containment-scope'));
+      // Once, and to the published state: two statements of one axis is a file where one of them wins silently, and
+      // any other value is a second configuration wearing the published cell's name.
+      expect(stated, name).toHaveLength(1);
+      expect(stated[0], name).toContain('--failure-containment-scope global-measured');
+    }
   });
 
   it('forwards an empty input to nothing, so the runner owns its own defaults', () => {

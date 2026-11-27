@@ -727,6 +727,15 @@ export default defineConfig({
         // Every reference value is asserted against an independent implementation, so a disagreement is a
         // disagreement between two implementations and not a change in this one.
         'src/board-significance.ts',
+        // Added with the module, and it is the one that settles the reading this programme kept having to explain: the
+        // arm's published Top@1 is the score of whichever gate the DISPATCH happened to state, so a dispatch that
+        // stated nothing measured the arm with the engine taken away from it (`732 = 51.48 %`) while the same
+        // transcripts under the shipped policy settle `1 181 = 83.05 %`. What is measured here is that the replay is
+        // the LOOP's rule and not a second one — every branch of `gateAdmits` is exercised through it, the two
+        // exemptions (a case the certainty floor settled before the model, an answer that IS the prior) are pinned in
+        // both directions, and the one column the replay must reproduce — the artifact's own `answer` — is asserted
+        // to be reproduced exactly, because a replay that disagreed with the loop would be a second definition.
+        'src/arm-gate-replay.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
