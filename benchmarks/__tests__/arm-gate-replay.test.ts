@@ -18,6 +18,7 @@ import type { GatePolicy } from '../src/query-agent.js';
 const row = (over: Partial<GateReplayRow> = {}): GateReplayRow => ({
   datapack: 'pack',
   stop: 'answered',
+  answeredBy: 'model',
   answer: null,
   rawAnswer: null,
   engineWinner: null,
@@ -61,6 +62,7 @@ describe('reading an arm artifact', () => {
       datapack: 'ts0-mysql-loss-67k278',
       stop: 'answered',
       truth: ['mysql', 'ts-train-service'],
+      answeredBy: 'model',
       answer: 'ts-train-service',
       rawAnswer: 'ts-train-service',
       engineWinner: 'ts-travel-plan-service',
@@ -78,6 +80,7 @@ describe('reading an arm artifact', () => {
     expect(parsed).toEqual({
       datapack: 'ts0-mysql-loss-67k278',
       stop: 'answered',
+      answeredBy: 'model',
       answer: 'ts-train-service',
       rawAnswer: 'ts-train-service',
       engineWinner: 'ts-travel-plan-service',
@@ -374,6 +377,7 @@ describe('replaying a whole artifact', () => {
       admitted: 3,
       refused: 0,
       unanswered: 1,
+      resolvedByRule: 0,
     });
   });
 
@@ -446,5 +450,61 @@ describe('the check that the replay is the loop', () => {
       row({ datapack: 'crashed', stop: 'error', answer: 'mysql' }),
     ];
     expect(replayDisagreements(recorded, [])).toEqual([]);
+  });
+});
+
+describe('the rows a resolver renamed are counted, not averaged in', () => {
+  it('reads `answeredBy`, and reads an absent one as no settlement', () => {
+    const [named] = parseGateReplayRows(
+      '{"datapack":"a","stop":"answered","inCone":false,"calls":[],"answeredBy":"interface"}',
+    );
+    expect(named!.answeredBy).toBe('interface');
+    const [silent] = parseGateReplayRows(
+      '{"datapack":"a","stop":"answered","inCone":false,"calls":[]}',
+    );
+    expect(silent!.answeredBy).toBeNull();
+    expect(() =>
+      parseGateReplayRows(
+        '{"datapack":"a","stop":"answered","inCone":false,"calls":[],"answeredBy":3}',
+      ),
+    ).toThrow(/`answeredBy` is neither null nor a name/);
+  });
+
+  it('counts the three resolver settlements and nothing else', () => {
+    const artifact: readonly GateReplayRow[] = [
+      row({ datapack: 'entry', answeredBy: 'entry' }),
+      row({ datapack: 'interface', answeredBy: 'interface' }),
+      row({ datapack: 'door', answeredBy: 'door' }),
+      row({ datapack: 'model', answeredBy: 'model' }),
+      row({ datapack: 'prior', answeredBy: 'prior', rawAnswer: null, engineWinner: 'mysql' }),
+      row({
+        datapack: 'certainty',
+        answeredBy: 'certainty',
+        rawAnswer: null,
+        engineWinner: 'mysql',
+      }),
+      row({ datapack: 'silent', answeredBy: null, rawAnswer: null, engineWinner: 'mysql' }),
+    ];
+    expect(replayGateAnswers(artifact, 'lag').census.resolvedByRule).toBe(3);
+  });
+
+  it('skips a resolver-renamed row in the agreement check, and says so by counting it', () => {
+    // The artifact of run 45695839124 carries 253 of these: `--resolve edge-novel` renamed the settled answer after
+    // the gate had settled it, so the recorded name is the resolver's and the replay's is the gate's. Reporting the
+    // two as a disagreement would be reporting that two rules are not one — which they are not, and were never
+    // meant to be. The check covers the gate's own rows and the census states the population.
+    const recorded: readonly GateReplayRow[] = [
+      row({
+        datapack: 'renamed',
+        answeredBy: 'interface',
+        rawAnswer: 'ts-verification-code-service',
+        engineWinner: 'ts-verification-code-service',
+        answer: 'ts-ui-dashboard',
+      }),
+      override('ts-a', 'ts-b', { datapack: 'gate', answer: 'ts-a' }),
+    ];
+    const { answers, census } = replayGateAnswers(recorded, 'lag');
+    expect(replayDisagreements(recorded, answers)).toEqual([]);
+    expect(census.resolvedByRule).toBe(1);
   });
 });

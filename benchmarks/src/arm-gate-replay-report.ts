@@ -69,6 +69,7 @@ const grouped = (value: number): string => String(value).replace(/\B(?=(\d{3})+(
 const rows = parseGateReplayRows(readFileSync(args.arm, 'utf8'));
 const replay = replayGateAnswers(rows, args.policy as GatePolicy);
 const { census } = replay;
+const resolved = census.resolvedByRule;
 
 console.log(`Arm artifact:  ${args.arm} (${grouped(census.cases)} cases)`);
 console.log(`Policy:        ${args.policy}`);
@@ -82,6 +83,16 @@ if (census.errored > 0) {
   console.log(
     `               the ${grouped(census.errored)} errored case(s) are NOT in the written file: an error is not a ` +
       'settlement, and a composed population that counted one would have a rank it never had',
+  );
+}
+if (resolved > 0) {
+  // The distinction a reader has to be able to make before quoting anything below: this replay prices the GATE, and a
+  // resolver (`--resolve`) is a second rule that renamed the settled answer AFTER the gate settled it. Those rows are
+  // in the written file at the gate's own settlement, which is what this command measures and not what the artifact
+  // published, and the agreement check below skips them rather than calling the difference a disagreement.
+  console.log(
+    `               ${grouped(resolved)} case(s) were renamed by a RESOLVER and are excluded from the agreement ` +
+      'check: this replay prices the gate, and a resolver is a second rule',
   );
 }
 if (args.dispatched !== '') {
@@ -101,9 +112,10 @@ if (args.dispatched !== '') {
         'would be two rules, so no policy can be priced from this artifact until they are one',
     );
   }
+  const checked = replay.answers.length - resolved;
   console.log(
     `Agreement:     \`${args.dispatched}\` reproduces the artifact's own \`answer\` column on all ` +
-      `${grouped(replay.answers.length)} settled case(s)`,
+      `${grouped(checked)} gate-settled case(s)`,
   );
 }
 if (args.out === '') {

@@ -62,6 +62,11 @@ export interface GateReplayRow {
   readonly datapack: string;
   /** How the investigation ended: `error` is the only value a replay drops. */
   readonly stop: string;
+  /**
+   * Who settled the case. `model`, `prior` and `certainty` are the GATE's own settlements; `entry`, `interface` and
+   * `door` are a RESOLVER's renames, which is a second rule and not a gate.
+   */
+  readonly answeredBy: string | null;
   /** The service the loop settled on under the policy it was dispatched with. */
   readonly answer: string | null;
   /** The model's own answer before the gate, or `null` when the loop settled without calling it. */
@@ -98,7 +103,15 @@ export interface ReplayCensus {
   readonly refused: number;
   /** Cases left with no name at all — a free arm whose model answered nothing. */
   readonly unanswered: number;
+  /**
+   * Cases a RESOLVER renamed after the gate settled them. The replay prices the gate, so these are the rows where the
+   * artifact's `answer` column is not the gate's column at all — counted rather than averaged in.
+   */
+  readonly resolvedByRule: number;
 }
+
+/** The `answeredBy` values a RESOLVER writes. Any other value is the gate's own settlement. */
+const RESOLVER_SETTLEMENTS: readonly string[] = ['entry', 'interface', 'door'];
 
 /** A replayed artifact: the settled names in the artifact's own order, and what the replay counted. */
 export interface ReplayOutcome {
@@ -236,6 +249,7 @@ export function parseGateReplayRows(text: string): GateReplayRow[] {
     rows.push({
       datapack,
       stop,
+      answeredBy: asName(record['answeredBy'], where, 'answeredBy'),
       answer: asName(record['answer'], where, 'answer'),
       rawAnswer: asName(record['rawAnswer'], where, 'rawAnswer'),
       engineWinner: asName(record['engineWinner'], where, 'engineWinner'),
@@ -306,11 +320,14 @@ export function replayGateAnswers(
   let admitted = 0;
   let refused = 0;
   let unanswered = 0;
+  let resolvedByRule = 0;
   for (const row of rows) {
     if (row.stop === 'error') {
       errored += 1;
       continue;
     }
+    if (row.answeredBy !== null && RESOLVER_SETTLEMENTS.includes(row.answeredBy))
+      resolvedByRule += 1;
     const settled = replayGateAnswer(row, policy);
     if (row.rawAnswer === null) {
       if (row.engineWinner === null) unanswered += 1;
@@ -332,6 +349,7 @@ export function replayGateAnswers(
       admitted,
       refused,
       unanswered,
+      resolvedByRule,
     },
   };
 }
@@ -341,6 +359,10 @@ export function replayGateAnswers(
  *
  * This is the check that makes every other number in this module a reading of the loop rather than of a copy of it:
  * replay the policy the run was DISPATCHED with and the settled names must be identical to the ones the loop wrote.
+ *
+ * A row a RESOLVER renamed is skipped: its recorded answer is the resolver's output, not the gate's settlement, and
+ * comparing the two would report a disagreement between two rules that were never meant to be one. The census counts
+ * those rows instead, so the check states its own population rather than quietly covering all of it.
  *
  * @param rows - The artifact's rows.
  * @param replay - The replayed answers, as `replayGateAnswers` returned them.
@@ -355,6 +377,7 @@ export function replayDisagreements(
   const disagreements: ReplayDisagreement[] = [];
   for (const row of rows) {
     if (row.stop === 'error') continue;
+    if (row.answeredBy !== null && RESOLVER_SETTLEMENTS.includes(row.answeredBy)) continue;
     const replayed = settled.get(row.datapack) ?? null;
     if (replayed !== row.answer) {
       disagreements.push({ datapack: row.datapack, recorded: row.answer, replayed });
