@@ -561,6 +561,22 @@ describe('the scope census', () => {
     expect(readGate(bare, accepted).scopes).toEqual({ [ABSENT_SCOPE]: bare.length });
   });
 
+  it('names the scope it ASSUMED when a dump states none and the walk disagrees', () => {
+    // A mismatch on a dump that states no scope is a missing word, not a broken chain. A refusal that said only
+    // "the chain is incomplete" would send a reader to the artifact's bytes instead of to its configuration.
+    const { rows, accepted } = corpusOf(6, () => [{ a: 0, b: 3, accepted: ['b'] }]);
+    const bare = rows.map((row, index) => {
+      // Every row keeps its chain and loses only the scope, so the reading is walkable and the ONE disagreement is
+      // the lie about row 0's recorded answer.
+      const { scope: _scope, ...chain } = row.chain!;
+      return index === 0 ? { ...row, chain, shippedTop1: 'a' } : { ...row, chain };
+    });
+    const { verdict, reason } = gateVerdict(readGate(bare, accepted));
+    expect(verdict).toBe('unmeasured');
+    expect(reason).toContain('ASSUMED');
+    expect(reason).toContain('adjacent');
+  });
+
   it('raises the bar to the corpus’s own shipped arm when that arm is above the recorded 1 156', () => {
     // The criterion records 1 156, the shipped Top@1 on the archive the pre-registration was written against.
     // Read on a corpus whose own shipped arm answers 1 186, a fixed floor of 1 156 would let an arm that LOSES

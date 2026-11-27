@@ -35,7 +35,11 @@
  * @module benchmarks/containment-gate
  */
 
-import type { ContainmentDecision, ContainmentPrior } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  type ContainmentDecision,
+  type ContainmentPrior,
+} from '../../packages/tree/src/index.js';
 
 import { headOf, replayAgrees, replayCase } from './containment-replay.js';
 import { edgeCounts, residuals, type ResidualScore } from './containment-residual.js';
@@ -388,10 +392,15 @@ export function gateVerdict(
     };
   }
   if (reading.disagreements > 0) {
-    const walked = stated[0] ?? `the shipped default (${ABSENT_SCOPE})`;
+    // The scope is named in the refusal because a mismatch on a dump that states NONE is a missing word rather
+    // than a broken chain, and a reader told only "the chain is incomplete" would go looking in the wrong file.
+    const walked =
+      stated[0] === undefined
+        ? `${DEFAULT_FAILURE_CONTAINMENT_SCOPE}, ASSUMED (the dump states no scope)`
+        : `stated ${stated[0]}`;
     return {
       verdict: 'unmeasured',
-      reason: `${reading.disagreements} case(s) did not reproduce the recorded top-1, so the chain is incomplete at scope ${walked}`,
+      reason: `${reading.disagreements} case(s) did not reproduce the recorded top-1, so the chain is incomplete at the scope ${walked}`,
     };
   }
   return judgeArm(reading.arms.prior, gateBar(reading, criterion));
