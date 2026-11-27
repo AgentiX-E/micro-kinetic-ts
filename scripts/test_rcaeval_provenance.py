@@ -105,6 +105,76 @@ IS_DIRECTORY = re.compile(r'\w+\.isDirectory\(\)')
 #: mutation pass demonstrated by surviving on the first version of this fence.
 ARTIFACT_PATH_LINE = re.compile(r'^\s*path:\s*~/RCAEval-json\s*$', re.M)
 
+#: One GitHub Actions expression that reads a step's output.
+OUTPUT_EXPRESSION = re.compile(r'\$\{\{\s*steps\.([A-Za-z0-9_-]+)\.outputs\.([A-Za-z0-9_-]+)\s*\}\}')
+
+#: Anything else that looks like an expression, which is what a key may NOT carry.
+ANY_EXPRESSION = re.compile(r'\$\{\{.*?\}\}')
+
+#: A step declaration's own line, which is where one step ends and the next begins.
+STEP_LINE = re.compile(r'^\s*-\s+(?:name|uses|id|run):')
+
+
+def step_ids_that_publish_outputs(path: pathlib.Path) -> set[str]:
+    """The ids of the steps in one file whose body writes `$GITHUB_OUTPUT`.
+
+    Derived from the file rather than declared, because the point of the rule below is that a key may
+    only be as derivable as the step it reads: a step that computes a value and never publishes it
+    cannot be the source of a cache key, and a key pointing at one would resolve to the empty string
+    and cache under `cloudopsbench-tarball-` for every revision at once.
+
+    @param path - A workflow or action file.
+    @returns The ids, empty when the file publishes nothing.
+    """
+    found: set[str] = set()
+    current: str | None = None
+    writes = False
+    for line in path.read_text('utf-8').split('\n'):
+        if STEP_LINE.match(line):
+            if current is not None and writes:
+                found.add(current)
+            current = None
+            writes = False
+        match = re.match(r'^\s*id:\s*([A-Za-z0-9_-]+)\s*$', line)
+        if match:
+            current = match.group(1)
+        if 'GITHUB_OUTPUT' in line:
+            writes = True
+    if current is not None and writes:
+        found.add(current)
+    return found
+
+
+def underived_reason(value: str, publishers: set[str]) -> str | None:
+    """Why a `key:` value is not derived, or `None` when it is.
+
+    A key is DERIVED when every expression in it reads a step output, and each of those steps publishes
+    one in the same file. A key carrying no expression is not derived by this rule — it is either the
+    action's own declaration (the empty value, or the action's output reference, which the caller
+    allows separately) or a hand-typed constant that has to be recorded on
+    `rcaeval_provenance.UPSTREAM_CONSTANT_KEYS` with its reason. The literal segments may not carry a
+    digit, because a hand-bumped suffix beside a derived value is the same defect in a smaller font:
+    `cloudopsbench-tarball-v2-${{ … }}` would still be a number nobody computed.
+
+    @param value - The `key:` value as written.
+    @param publishers - The step ids this file publishes outputs from.
+    @returns The reason, or `None`.
+    """
+    expressions = ANY_EXPRESSION.findall(value)
+    if not expressions:
+        return 'no expression: a key with no input is a constant written by hand'
+    literal = ANY_EXPRESSION.sub('', value)
+    if any(character.isdigit() for character in literal):
+        return f'the literal part {literal!r} carries a digit, which is a hand-bumped version'
+    for expression in expressions:
+        match = OUTPUT_EXPRESSION.fullmatch(expression)
+        if match is None:
+            return f'{expression!r} is not a single step output'
+        if match.group(1) not in publishers:
+            return f'{expression!r} names a step that publishes no output in this file'
+    return None
+
+
 
 def workflow_files() -> list[pathlib.Path]:
     """Every workflow, derived from the filesystem so a new one enters these rules by existing.
@@ -135,17 +205,21 @@ def action_sites() -> list[tuple[pathlib.Path, int, str]]:
     return sites
 
 
-def key_values() -> list[tuple[str, int, str]]:
-    """Every `key:` declaration under `.github/`, with its raw value.
+def key_values() -> list[tuple[pathlib.Path, int, str]]:
+    """Every `key:` declaration under `.github/`, with its raw value and the file that states it.
 
-    @returns One tuple per declaration: the file's name, its line, and the value as written.
+    The path travels with the value because "is this key derived" is a question about the file: the
+    steps a key may read are the ones declared beside it, and a caller that only received the value
+    could not ask.
+
+    @returns One tuple per declaration: the file, its line, and the value as written.
     """
-    found: list[tuple[str, int, str]] = []
+    found: list[tuple[pathlib.Path, int, str]] = []
     for path in sorted(list(WORKFLOWS.glob('*.yml')) + list(ACTIONS.rglob('*.yml'))):
         for index, line in enumerate(path.read_text('utf-8').split('\n'), 1):
             match = KEY_LINE.match(line)
             if match:
-                found.append((str(path.relative_to(REPO_ROOT)), index, match.group(2).strip()))
+                found.append((path, index, match.group(2).strip()))
     return found
 
 
@@ -412,11 +486,75 @@ class NoWorkflowTypesTheArtifactKey(unittest.TestCase):
         # Every `key:` in `.github/` therefore has to be one of exactly three shapes -- the derived
         # expression, a recorded upstream constant, or the outputs declaration's empty name.
         allowed = {'${{ steps.key.outputs.key }}', ''} | set(prov.UPSTREAM_CONSTANT_KEYS)
-        for where, line, value in key_values():
-            self.assertIn(value, allowed, f'{where}:{line} declares an underived key: {value!r}')
+        for path, line, value in key_values():
+            if value in allowed:
+                continue
+            where = str(path.relative_to(REPO_ROOT))
+            reason = underived_reason(value, step_ids_that_publish_outputs(path))
+            self.assertIsNone(reason, f'{where}:{line} declares an underived key: {value!r} ({reason})')
 
-    def test_every_RECORDED_upstream_constant_is_STILL_USED(self) -> None:
-        # The other direction. A recorded constant that no longer appears is a note about a key that
+    def test_a_key_derived_from_a_step_THAT_PUBLISHES_is_accepted(self) -> None:
+        # The third shape a key may have, added when the Cloud-OpsBench corpus arrived with its own fetch: an
+        # expression naming a step's output. It is accepted only because the step publishes one -- the rule below
+        # refuses the same expression against a step that does not, which is the difference between "derived" and
+        # "shaped like derived".
+        self.assertIsNone(
+            underived_reason('cloudopsbench-tarball-${{ steps.corpus.outputs.revision }}', {'corpus'})
+        )
+
+    def test_a_key_reading_a_step_that_publishes_NOTHING_is_refused(self) -> None:
+        # A step that computes a value and never writes `$GITHUB_OUTPUT` yields the empty string, so every revision
+        # would cache under `cloudopsbench-tarball-` and the first fetch would be served to every later one.
+        reason = underived_reason('x-${{ steps.corpus.outputs.revision }}', {'other'})
+        self.assertIsNotNone(reason)
+        self.assertIn('publishes no output', reason or '')
+
+    def test_a_key_with_a_HAND_BUMPED_digit_is_refused(self) -> None:
+        # `cloudopsbench-tarball-v2-${{ … }}` is a derived value with a number nobody computed beside it, which is
+        # the defect `RCAEval-datasets-v2-pq` records against itself.
+        reason = underived_reason('cloudopsbench-tarball-v2-${{ steps.corpus.outputs.revision }}', {'corpus'})
+        self.assertIsNotNone(reason)
+        self.assertIn('hand-bumped', reason or '')
+
+    def test_a_key_reading_a_SECRET_or_an_env_is_refused(self) -> None:
+        for value in ('x-${{ secrets.TOKEN }}', 'x-${{ github.sha }}', 'x-${{ env.REV }}'):
+            self.assertIsNotNone(underived_reason(value, {'corpus'}), value)
+
+    def test_a_key_with_NO_expression_is_a_constant_written_by_hand(self) -> None:
+        self.assertIsNotNone(underived_reason('RCAEval-datasets-v2-pq', {'corpus'}))
+
+    def test_the_Cloud_OpsBench_fetch_publishes_the_output_its_KEY_reads(self) -> None:
+        # The rule applied to the real file, in both directions: the step exists and publishes, and the key is the
+        # one that reads it. A future edit that renames the step id, or drops the `>> $GITHUB_OUTPUT` line, has to
+        # fail HERE rather than cache under an empty suffix in a job nobody watches.
+        path = WORKFLOWS / 'benchmark-cloudopsbench.yml'
+        publishers = step_ids_that_publish_outputs(path)
+        self.assertIn('corpus', publishers)
+        keys = [value for one, _line, value in key_values() if one == path]
+        self.assertTrue(keys, 'the workflow declares no key at all')
+        for value in keys:
+            self.assertIsNone(underived_reason(value, publishers), value)
+
+    def test_a_step_with_no_output_write_is_not_a_publisher(self) -> None:
+        # `step_ids_that_publish_outputs` is derived from the file, so it has to be checked against one: a step with
+        # an id and no write, a step with a write and no id, and two steps where only the second writes.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / 'w.yml'
+            path.write_text(
+                'steps:\n'
+                '  - name: reads only\n'
+                '    id: quiet\n'
+                '    run: echo hello\n'
+                '  - name: publishes\n'
+                '    id: loud\n'
+                '    run: echo "x=1" >> "$GITHUB_OUTPUT"\n'
+                '  - name: anonymous\n'
+                '    run: echo "y=2" >> "$GITHUB_OUTPUT"\n',
+                'utf-8',
+            )
+            self.assertEqual(step_ids_that_publish_outputs(path), {'loud'})
+
+    def test_every_RECORDED_upstream_constant_is_STILL_USED(self) -> None:        # The other direction. A recorded constant that no longer appears is a note about a key that
         # does not exist, and it would keep a real problem looking decided.
         used = {value for _, _, value in key_values()}
         for constant in prov.UPSTREAM_CONSTANT_KEYS:
