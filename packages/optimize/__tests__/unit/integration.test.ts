@@ -293,6 +293,10 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'labelPriorWeight',
       'latMinRise',
       'latWeight',
+      // Iteration 384: the excursion LICENCE, held on the containment order's structural rule — it decides
+      // whether a silent-interface pair may be inverted, not how much any term weighs, so there is nothing
+      // for a coefficient search to interpolate.
+      'licenseByExcursion',
       // Iteration 249: the SCALE the log signal is measured on. Held for the mutual rule's reason, one step
       // further out — it does not resize a term either, it decides how strong the evidence a weight multiplies
       // is, so tuning the two together would report a coefficient against a moving unit.

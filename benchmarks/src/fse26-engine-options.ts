@@ -190,6 +190,8 @@ export interface Fse26SignalOptions {
   readonly containmentOrder: boolean;
   /** Margin of the containment pass, in band widths. Required for the same reason as the switch. */
   readonly containmentMargin: number;
+  /** The excursion-licence switch, forwarded unconditionally so a partial cannot run the control silently. */
+  readonly licenseByExcursion: boolean;
   /** The SECOND relational pass: the failure-flow order. See `Fse26CliOptions.failureContainment`. */
   readonly failureContainment: boolean;
   /** Which reading that pass applies. See `Fse26CliOptions.failureAttribution`. */
@@ -348,6 +350,7 @@ export function buildFse26EngineOptions(
       traceSkipsLeader: opts.traceSkipsLeader,
       containmentOrder: opts.containmentOrder,
       containmentMargin: opts.containmentMargin,
+      licenseByExcursion: opts.licenseByExcursion,
       failureContainment: opts.failureContainment,
       failureAttribution: opts.failureAttribution,
       failureContainmentScope: opts.failureContainmentScope,

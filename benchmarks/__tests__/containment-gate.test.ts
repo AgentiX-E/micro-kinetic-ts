@@ -70,6 +70,7 @@ function rowFor(name: string, spec: CaseSpec): ContainmentCaseRow {
     sigma: 3,
     margin: 0,
     minCalleeExcursion: 0.1,
+    licenseByExcursion: false,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
@@ -154,6 +155,7 @@ function readingOf(overrides: Partial<GateReading['arms']['prior']> = {}): GateR
       unmeasured: 0,
       'callee-in-band': 0,
       'not-larger': 0,
+      'excursion-licensed': 0,
       'prior-absent': 0,
       'prior-below': 0,
     },

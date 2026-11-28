@@ -87,6 +87,7 @@ import {
 } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import {
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_MIN_CALLEE_EXCURSION,
   applyContainmentOrder,
   latencyExcursions,
@@ -1244,6 +1245,15 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * their own callees on the full corpus (iteration 382). Set it to 0 to replay the pre-fix strict comparison.
    */
   readonly minCalleeExcursion: number;
+  /**
+   * Let a resolvable callee excursion license an inversion whose own interface recorded no failed call.
+   *
+   * Ships at {@link DEFAULT_LICENSE_BY_EXCURSION} = false; the failed-interface record is the licence every
+   * published number was measured under. Opt-in so a dump records the run that produced it and an ablation can
+   * price the licence against the record. A completed call cannot veto a latency fault that propagated over a
+   * 200-OK, but that only becomes safe once the 0.1 floor refuses boundary noise first.
+   */
+  readonly licenseByExcursion: boolean;
   /**
    * Apply the FAILURE-FLOW order to the published ranking: a caller whose own interface failures are explained
    * by the calls it makes may not outrank the callee those failures were reported against.
@@ -2712,6 +2722,7 @@ export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   containmentOrder: DEFAULT_CONTAINMENT_ORDER,
   containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
   minCalleeExcursion: DEFAULT_MIN_CALLEE_EXCURSION,
+  licenseByExcursion: DEFAULT_LICENSE_BY_EXCURSION,
   failureContainment: DEFAULT_FAILURE_CONTAINMENT,
   failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
   failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
@@ -3634,6 +3645,7 @@ export class TreePruner {
       excursions,
       margin: this.options.containmentMargin,
       minCalleeExcursion: this.options.minCalleeExcursion,
+      licenseByExcursion: this.options.licenseByExcursion,
       // The interface record, and the reason the pass is allowed to speak at all: an excursion is measured per
       // SERVICE, so without the failed-call rows the rule compares two services that merely both moved. On the
       // full corpus every loss this pass took was a pair whose interface never failed (§4/§7 of

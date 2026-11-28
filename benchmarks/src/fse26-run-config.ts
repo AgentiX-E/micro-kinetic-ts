@@ -195,6 +195,9 @@ export function buildFse26RunConfig(
     traceWeight: opts.traceWeight,
     traceSkipsLeader: opts.traceSkipsLeader,
     containmentOrder: opts.containmentOrder,
+    // Stated unconditionally, like `containmentOrder`: the switch ships ON, so a run that turned it off must
+    // name itself on the artifact rather than render byte-identically to the shipped configuration.
+    licenseByExcursion: opts.licenseByExcursion,
     containmentMargin: opts.containmentMargin,
     failureContainment: opts.failureContainment,
     failureAttribution: opts.failureAttribution,

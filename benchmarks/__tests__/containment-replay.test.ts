@@ -29,6 +29,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     sigma: 3,
     margin: 0,
     minCalleeExcursion: 0.1,
+    licenseByExcursion: false,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([
@@ -438,6 +439,7 @@ describe('the scope the flow pass ran at', () => {
           ['b', 0.088],
         ]),
         minCalleeExcursion: 0.1,
+        licenseByExcursion: false,
         publishedOrder: ['a', 'b'],
       }),
     );
@@ -456,6 +458,7 @@ describe('the scope the flow pass ran at', () => {
           ['b', 0.088],
         ]),
         minCalleeExcursion: 0,
+        licenseByExcursion: false,
         publishedOrder: ['b', 'a'],
       }),
     );

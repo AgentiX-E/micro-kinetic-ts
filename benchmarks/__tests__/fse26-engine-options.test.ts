@@ -34,6 +34,7 @@ import {
   DEFAULT_FAILURE_CONTAINMENT_SCOPE,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POD_STATE_WEIGHT,
   DEFAULT_POOL_ADMISSION,
@@ -117,6 +118,9 @@ describe('buildFse26EngineOptions', () => {
       // that is the object the pruner reads it from.
       traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
       containmentOrder: DEFAULT_CONTAINMENT_ORDER,
+      // Ships ON. Asserted against the constant, not a literal, so a flip has one owner — and because a
+      // silently dropped forwarding would run the ablation while the artifact still claimed the shipped run.
+      licenseByExcursion: DEFAULT_LICENSE_BY_EXCURSION,
       containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
       // The SECOND relational pass, asserted the same way: a switch that lands in `topology` instead of
       // `signals` would be read by no pruner field at all.

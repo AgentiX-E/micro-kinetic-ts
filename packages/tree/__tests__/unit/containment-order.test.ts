@@ -21,6 +21,7 @@ import type { ContainmentPrior, FaultFreeProfile } from '@agentix-e/micro-kineti
 import {
   DEFAULT_CONTAINMENT_MARGIN,
   DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_MIN_CALLEE_EXCURSION,
   TreePruner,
   applyContainmentOrder,
@@ -876,6 +877,7 @@ function rankWith(options: {
   readonly containmentOrder?: boolean;
   readonly profile?: FaultFreeProfile;
   readonly withFailedInterface?: boolean;
+  readonly licenseByExcursion?: boolean;
 }): { readonly services: string[]; readonly ranks: number[] } {
   const { callGraph, metrics, injectTimeMs, failedTraceEdges } = propagationCase(
     options.withFailedInterface ?? true,
@@ -891,6 +893,9 @@ function rankWith(options: {
       ? {}
       : { containmentOrder: options.containmentOrder }),
     ...(options.profile === undefined ? {} : { faultFreeProfile: options.profile }),
+    ...(options.licenseByExcursion === undefined
+      ? {}
+      : { licenseByExcursion: options.licenseByExcursion }),
   });
   const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs, failedTraceEdges });
   const results = pruner.analyze(graph, 5);
@@ -1076,15 +1081,17 @@ describe('the containment order in the engine', () => {
     expect(rankWith({ containmentOrder: false, profile: profileForCase() }).services[0]).toBe('a');
   });
 
-  it('refuses the inversion when the case recorded no failed call on the pair', () => {
+  it('refuses the inversion on the record licence when the ablation selects it', () => {
     // The ruled-out arm, at the engine's own boundary: the same case, the same excursions, and only the
-    // interface record removed. Without it the pass promotes `b` past `a` on latency alone — the mechanism that
-    // cost five cases on the full corpus (docs/containment-order.md §4, §7).
+    // interface record removed. Under `licenseByExcursion: false` the pass refuses to promote `b` past `a` on
+    // latency alone — the mechanism that cost five cases at floor 0 (docs/containment-order.md §4, §7). The
+    // shipped default now licenses it, because iteration 382's floor removes those five's noise siblings first.
     expect(
       rankWith({
         containmentOrder: true,
         profile: profileForCase(),
         withFailedInterface: false,
+        licenseByExcursion: false,
       }).services[0],
     ).toBe('a');
   });
@@ -1384,5 +1391,138 @@ describe('recordWindow and the prior', () => {
     // order. A window that reached the decisions would let a narrower dump report a different engine.
     expect(servicesOf(narrow.order)).toEqual(servicesOf(wide.order));
     expect(servicesOf(wide.order)).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+// ── licenseByExcursion ────────────────────────────────────
+
+/**
+ * A completed call is evidence that a CONTENT fault did not travel — a 200-OK delivered the value. It is NOT
+ * evidence that a LATENCY fault did not travel: a call can complete and still be slow, and the train-ticket
+ * corpus is instrumented with Hystrix fallbacks that turn a downstream failure into a synthetic 200-OK
+ * (RESTberus, arXiv:2611.04769). Iteration 293 made the failed-interface record a licence because, at floor 0,
+ * dropping it cost five cases whose callee excursion was boundary noise. Iteration 382's 0.1 floor now refuses
+ * exactly those noise pairs, so the licence has become redundant for content faults and harmful for latency
+ * ones. `licenseByExcursion` reads the callee's OWN resolvable excursion as the licence a completed call cannot
+ * give, and names its inversions `excursion-licensed` so the census can count them.
+ */
+describe('licenseByExcursion', () => {
+  /** The pair, measured, with no failed call on its own edge — the shape iteration 293's licence vetoed. */
+  const silent = {
+    ranking: rows('a', 'b'),
+    edges: CALLS_AB,
+    excursions: new Map([
+      ['a', 0],
+      ['b', 3],
+    ]),
+    failingEdges: new Map(),
+  };
+
+  it('is absent as OFF at the sweep, so an artifact written before the option replays under the record licence', () => {
+    // The sweep reads absence as false: an old dump carries no field and must reproduce the record-only rule it
+    // was produced under. The ENGINE default is ON (asserted below); the two are deliberately different so a
+    // replay never re-walks an artifact at a configuration it did not have.
+    expect(servicesOf(applyContainmentOrder(silent))).toEqual(['a', 'b']);
+  });
+
+  it('licenses a resolvable callee excursion when the interface record is silent', () => {
+    const { order, verdicts } = inspectContainmentOrder({ ...silent, licenseByExcursion: true });
+    expect(servicesOf(order)).toEqual(['b', 'a']);
+    expect(verdicts[0]!.decision).toBe('excursion-licensed');
+  });
+
+  it('still refuses a callee inside its band, even with the licence on', () => {
+    // The floor is consulted BEFORE the licence: a 0.05 excursion is boundary noise, not a propagation. The
+    // three 382 losses are exactly this shape, and must stay refused whatever this option says.
+    const { order, verdicts } = inspectContainmentOrder({
+      ...silent,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 0.05],
+      ]),
+      licenseByExcursion: true,
+    });
+    expect(servicesOf(order)).toEqual(['a', 'b']);
+    expect(verdicts[0]!.decision).toBe('callee-in-band');
+  });
+
+  it('does not license a pair the margin rejects', () => {
+    const { order, verdicts } = inspectContainmentOrder({
+      ...silent,
+      excursions: new Map([
+        ['a', 4],
+        ['b', 3],
+      ]),
+      licenseByExcursion: true,
+    });
+    expect(servicesOf(order)).toEqual(['a', 'b']);
+    expect(verdicts[0]!.decision).toBe('not-larger');
+  });
+
+  it('does not license an unmeasured side', () => {
+    const { verdicts } = inspectContainmentOrder({
+      ...silent,
+      excursions: new Map([['b', 3]]),
+      licenseByExcursion: true,
+    });
+    expect(verdicts[0]!.decision).toBe('unmeasured');
+  });
+
+  it('does not license a pair with no call edge, because there is no propagation path', () => {
+    const { order } = inspectContainmentOrder({ ...silent, edges: [], licenseByExcursion: true });
+    expect(servicesOf(order)).toEqual(['a', 'b']);
+  });
+
+  it('keeps the failed-interface licence first when the record DID speak', () => {
+    // An edge that carried a failed call keeps the plain `inverted` decision: the record is still the primary
+    // evidence, and the excursion licence is only what a SILENT record cannot provide.
+    const { verdicts } = inspectContainmentOrder({
+      ...silent,
+      failingEdges: new Map([[failureEdgeKey('a', 'b'), { rise: 12, novel: 0 }]]),
+      licenseByExcursion: true,
+    });
+    expect(verdicts[0]!.decision).toBe('inverted');
+  });
+
+  it('is unreachable without a record at all, because there is then no completed call to contradict', () => {
+    // With no interface record the pass already reads excursions alone (the ruled-out arm). The licence cannot
+    // fire here: there is nothing for it to override, and naming it would make the census count a mechanism that
+    // did not decide the pair.
+    const { verdicts } = inspectContainmentOrder({
+      ranking: rows('a', 'b'),
+      edges: CALLS_AB,
+      excursions: new Map([
+        ['a', 0],
+        ['b', 3],
+      ]),
+      licenseByExcursion: true,
+    });
+    expect(verdicts[0]!.decision).toBe('inverted');
+  });
+
+  it('is not consulted on top of the case-scope silent record, which already falls through', () => {
+    const { verdicts } = inspectContainmentOrder({
+      ...silent,
+      recordScope: 'case',
+      licenseByExcursion: true,
+    });
+    expect(verdicts[0]!.decision).toBe('record-silent');
+  });
+
+  it('the pruner ships ON, and the ablation turns the record licence back on', () => {
+    expect(DEFAULT_LICENSE_BY_EXCURSION).toBe(true);
+    // The shipped default licenses the silent case on the callee's own excursion.
+    expect(rankWith({ profile: profileForCase(), withFailedInterface: false }).services[0]).toBe(
+      'b',
+    );
+    // The ablation restores the failed-interface licence — the configuration every pre-384 number was measured in.
+    expect(
+      rankWith({
+        containmentOrder: true,
+        profile: profileForCase(),
+        withFailedInterface: false,
+        licenseByExcursion: false,
+      }).services[0],
+    ).toBe('a');
   });
 });

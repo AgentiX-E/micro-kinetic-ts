@@ -53,6 +53,7 @@ import {
   DEFAULT_FAILURE_ATTRIBUTION,
   DEFAULT_FAILURE_CONTAINMENT,
   DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_SELF_TIME_SCOPE,
   DEFAULT_STABILITY_SCOPE,
@@ -280,6 +281,14 @@ export interface FSE26RunConfig {
    * switched the pass off would be byte-identical to the shipped run. Printed unconditionally.
    */
   readonly containmentOrder?: boolean;
+  /**
+   * Whether a silent-interface pair may be inverted when the callee's excursion resolves above the floor.
+   * Ships ON, so — like `containmentOrder` — this is stated unconditionally on the record: an omitted field
+   * would read as the ablation, and an `--no-license-by-excursion` run would otherwise be byte-identical to the
+   * shipped one on the artifact whose whole job is to attribute that difference. Optional on the READ-BACK
+   * type so an artifact written before the switch existed still parses; the builder writes it explicitly.
+   */
+  readonly licenseByExcursion?: boolean;
   /**
    * Margin of the containment pass, in band widths. Ships at 0, so the omission rule IS sound here — an
    * omitted field reads as a strict comparison both before and after any change to the constant.
@@ -747,6 +756,10 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // to the shipped run that left it off. Both passes ship off — this comment said "ships ON" until iteration 289,
   // when the constant was read and the comment was not.
   line += ` containmentOrder=${config.containmentOrder ?? DEFAULT_CONTAINMENT_ORDER}`;
+  // Unconditional, on `containmentOrder`'s rule: the switch ships ON, so an arm that ran with
+  // `--no-license-by-excursion` must name itself on the line instead of rendering byte-identically to the
+  // shipped run. The read-back is optional so a pre-switch artifact still parses; absent means shipped.
+  line += ` licenseByExcursion=${config.licenseByExcursion ?? DEFAULT_LICENSE_BY_EXCURSION}`;
   // Unconditional, and beside the boolean rather than folded into it: `containmentOrder=true` states that the
   // pass was ASKED for, not that it could speak. Without a profile `latencyExcursions` returns an empty map and
   // `inspectContainmentOrder` returns the ranking unchanged, so the pass is on and inert — the state this line

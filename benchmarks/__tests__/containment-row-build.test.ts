@@ -21,6 +21,7 @@ function input(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainm
     sigma: 3,
     margin: 0,
     minCalleeExcursion: 0.1,
+    licenseByExcursion: false,
     depth: 5,
     edges: [{ from: 'frontend', to: 'cart' }],
     excursions: new Map([

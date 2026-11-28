@@ -493,6 +493,9 @@ async function main(): Promise<void> {
           // The engine's shipped noise floor, recorded so a reader replays the configuration that produced the
           // verdict. It is the fix, not a search axis -- the margin beside it is the ablation dimension.
           minCalleeExcursion: DEFAULT_MIN_CALLEE_EXCURSION,
+          // The run's own excursion-licence switch, read from the SAME options the pruner ran under so the dump
+          // records what happened rather than today's default. An ablation dispatch that turns it off writes false.
+          licenseByExcursion: engineOptions.signals.licenseByExcursion,
           depth,
           edges: faultGraph?.callGraph.edges ?? [],
           excursions: faultGraph?.containmentExcursions,

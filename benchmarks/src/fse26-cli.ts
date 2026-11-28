@@ -83,6 +83,7 @@ import {
   DEFAULT_LABEL_PRIOR_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_LOG_NORMALISATION,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_METRIC_FLEET_BASELINE,
@@ -701,6 +702,11 @@ export interface Fse26CliOptions {
    */
   readonly containmentMargin: number;
   /**
+   * Whether a resolvable callee excursion licenses a silent-interface pair. Ships at
+   * `DEFAULT_LICENSE_BY_EXCURSION` = true; the direct flag makes the record-only ablation reproducible.
+   */
+  readonly licenseByExcursion: boolean;
+  /**
    * Apply the FAILURE-FLOW order: a caller whose own interface failures are explained by its own calls may not
    * outrank the callee those failures were reported against. Travels in the packed `ranking_knobs` block as
    * `failure_containment=1|0`.
@@ -1054,6 +1060,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
     containmentOrder: DEFAULT_CONTAINMENT_ORDER,
     containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
+    licenseByExcursion: DEFAULT_LICENSE_BY_EXCURSION,
     failureContainment: DEFAULT_FAILURE_CONTAINMENT,
     failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
     failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
@@ -1420,7 +1427,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // inventing a sixth reading.
       const value = argv[++i]!;
       opts.failedEdgeGateMode = isFailedEdgeGateMode(value) ? value : DEFAULT_FAILED_EDGE_GATE_MODE;
-    } else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
+    } else if (arg === '--license-by-excursion') opts.licenseByExcursion = true;
+    else if (arg === '--no-license-by-excursion') opts.licenseByExcursion = false;
+    else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
       // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
       // reproduces a published configuration rather than inventing one.
       const parsed = Number.parseFloat(argv[++i]!);

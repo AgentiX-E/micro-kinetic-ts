@@ -758,6 +758,16 @@ const KNOBS: Readonly<
     fse26: 'lat_min_rise',
     rcaeval: 'lat_min_rise',
   },
+  licenseByExcursion: {
+    // Iteration 384: the excursion LICENCE on the containment pass — a silent-interface pair may be inverted
+    // when the callee resolves above the noise floor. Like the pass itself it needs the fault-free band to
+    // speak, so no workflow input maps onto it and both dispatch fields are null: an arm that flips it is built
+    // on the elimination study, not published as a workflow cell. `docs/containment-order.md` owns the reading.
+    flag: '--license-by-excursion',
+    owner: 'containment-order.md',
+    fse26: null,
+    rcaeval: null,
+  },
   poolMetricPenaltyWeight: {
     flag: '--pool-penalty',
     owner: 'fse26-pool-penalty-verdict.md',

@@ -40,6 +40,9 @@ import { gradeByTerm, type TermTransfer } from './containment-term.js';
  * - `ungated` — the excursion rule and nothing else. The arm iteration 293 refused (`+33 / −5`), kept because it
  *   is the control the interface record is priced against.
  * - `shipped` — the excursion rule AND the failed-interface record.
+ * - `excursion-license` — the shipped rule with the interface veto replaced by a resolvable callee excursion: a
+ *   call that completed is not evidence a LATENCY fault failed to travel over it (Hystrix 200-OK, RESTberus).
+ *   The floor still refuses boundary noise first, so only genuine excursions license a pair.
  * - `prior` — the excursion rule AND a residual fitted outside this case.
  * - `graded` — no sweep: the fusion order re-sorted by `score + Σδ`, where δ is the residual spent as a bounded
  *   TERM (`containment-term.ts`). The transfers are passed in rather than computed here so that this module stays
@@ -66,6 +69,7 @@ export type ReplayArm =
   | { readonly kind: 'off' }
   | { readonly kind: 'ungated' }
   | { readonly kind: 'shipped' }
+  | { readonly kind: 'excursion-license' }
   | { readonly kind: 'prior'; readonly prior: ContainmentPrior }
   | {
       readonly kind: 'graded';
@@ -149,10 +153,18 @@ export function replayCase(row: ContainmentCaseRow, arm: ReplayArm): ReplayedCas
           // `replay: identical` into a spurious disagreement on the boundary cases. A row that states the floor
           // is replayed under exactly that floor.
           minCalleeExcursion: row.minCalleeExcursion ?? 0,
+          // The excursion-licence switch the RUN had, read from the row and not from today's engine default: a
+          // pre-384 dump was produced under the record-only licence and must replay under it. The arm named
+          // `excursion-license` overrides this to true to price the switch on the same bytes.
+          licenseByExcursion:
+            arm.kind === 'excursion-license' ? true : (row.licenseByExcursion ?? false),
           // The interface record is what the SHIPPED rule requires, and the `surprise` arm varies the measurement
           // rather than the requirement — so it carries the record, and dropping it would price a different rule.
           // `veto` carries it too and reads it at CASE scope: the same map, one word of interpretation.
-          ...(arm.kind === 'shipped' || arm.kind === 'surprise' || arm.kind === 'veto'
+          ...(arm.kind === 'shipped' ||
+          arm.kind === 'surprise' ||
+          arm.kind === 'veto' ||
+          arm.kind === 'excursion-license'
             ? { failingEdges: new Map(Object.entries(chain.failedInterfaces)) }
             : {}),
           ...(arm.kind === 'veto' ? { recordScope: 'case' as const } : {}),

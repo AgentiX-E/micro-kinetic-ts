@@ -26,6 +26,7 @@ const REASONS: readonly ContainmentDecision[] = [
   'unmeasured',
   'callee-in-band',
   'not-larger',
+  'excursion-licensed',
   'prior-absent',
   'prior-below',
 ];

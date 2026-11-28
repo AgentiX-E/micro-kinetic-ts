@@ -599,6 +599,11 @@ export default defineConfig({
         // nobody looked for.
         'src/containment-veto-study.ts',
         'src/containment-veto-report.ts',
+        // Added with the excursion licence: a dissociated internal/external channel falls through the interface
+        // veto only when the callee genuinely left its band. The study is in the denominator for the reason the
+        // other arms are — an unmeasurable row counted as a lost case would turn a smaller population into a
+        // worse arm — and its two censuses are the claim that the licence inverted only resolvable callees.
+        'src/containment-excursion-license-study.ts',
         // Added with the exact test: the p-value that replaces the population floor, and the multiplicity that
         // replacing it exposes. Both refusals are arguments that must not become `null`s — a table whose parts do
         // not fit its whole is a lost observation, not weak evidence — and the log-space sum is the only reason a

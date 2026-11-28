@@ -118,7 +118,8 @@ export function formatGateReading(
     `  gate decisions: inverted=${reading.decisions.inverted} ` +
       `prior-absent=${reading.decisions['prior-absent']} prior-below=${reading.decisions['prior-below']} ` +
       `callee-in-band=${reading.decisions['callee-in-band']} ` +
-      `not-larger=${reading.decisions['not-larger']} unmeasured=${reading.decisions.unmeasured}`,
+      `not-larger=${reading.decisions['not-larger']} ` +
+      `excursion-licensed=${reading.decisions['excursion-licensed']} unmeasured=${reading.decisions.unmeasured}`,
   );
   // The criterion is printed before the verdict is, so a reader never has to hold the numbers against a bar
   // quoted somewhere else — the same reason `formatDiscrimination` prints `bar=`.

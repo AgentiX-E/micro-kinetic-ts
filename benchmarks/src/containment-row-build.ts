@@ -69,6 +69,11 @@ export interface BuildContainmentRowInput {
    */
   readonly minCalleeExcursion: number;
   /**
+   * Whether this run licensed a silent-interface pair on a resolvable callee excursion. Written to the row so a
+   * replay walks the configuration the run had; `false` reproduces the pre-384 record-only licence.
+   */
+  readonly licenseByExcursion: boolean;
+  /**
    * Which candidates of the fusion order the PAIR ROWS describe: a width, or `'pool'` for all of them.
    *
    * The sweep's population, and a configuration of the run like the margin: ρ is fitted per edge over the pairs a
@@ -179,6 +184,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     excursions,
     margin: input.margin,
     minCalleeExcursion: input.minCalleeExcursion,
+    licenseByExcursion: input.licenseByExcursion,
     failingEdges: input.failedInterfaces ?? new Map<string, number>(),
     recordWindow,
   });
@@ -214,6 +220,7 @@ export function buildContainmentRow(input: BuildContainmentRowInput): Containmen
     sigma: input.sigma,
     margin: input.margin,
     minCalleeExcursion: input.minCalleeExcursion,
+    licenseByExcursion: input.licenseByExcursion,
     depth: input.depth,
     fusionTop1: head(input.fusionOrder),
     gatedTop1: head(gated.order.map((entry) => entry.service)),

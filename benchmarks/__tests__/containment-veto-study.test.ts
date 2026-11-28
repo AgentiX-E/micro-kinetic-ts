@@ -34,6 +34,7 @@ function spec(overrides: Partial<BuildContainmentRowInput> = {}): BuildContainme
     sigma: 3,
     margin: 0,
     minCalleeExcursion: 0.1,
+    licenseByExcursion: false,
     depth: 5,
     edges: [{ from: 'a', to: 'b' }],
     excursions: new Map([

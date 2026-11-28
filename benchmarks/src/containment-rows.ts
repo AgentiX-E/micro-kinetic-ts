@@ -181,6 +181,11 @@ export interface ContainmentCaseRow {
    */
   readonly minCalleeExcursion?: number | undefined;
   /**
+   * Whether the run licensed a silent-interface pair on a resolvable callee excursion. Optional so a pre-384 dump
+   * stays readable: absent means the record-only licence that dump was produced under, never today's default.
+   */
+  readonly licenseByExcursion?: boolean | undefined;
+  /**
    * The recording width the pair rows describe, or `'pool'` for every candidate the case had.
    *
    * The sweep's population, and the second CONFIGURATION this file has to write down rather than leave its reader
@@ -247,6 +252,8 @@ export interface ContainmentRowsSummary {
   /** Callees refused by the shipped 0.1-band noise floor: a median too near its band edge to be an excursion. */
   readonly calleeInBand: number;
   readonly notLarger: number;
+  /** Pairs inverted by a resolvable callee excursion over a call that carried no failed interface. */
+  readonly excursionLicensed: number;
   readonly priorAbsent: number;
   readonly priorBelow: number;
   readonly replayIdentical: number;
@@ -290,6 +297,9 @@ export function formatContainmentRow(record: ContainmentCaseRow): string {
     ...(record.minCalleeExcursion === undefined
       ? {}
       : { minCalleeExcursion: record.minCalleeExcursion }),
+    ...(record.licenseByExcursion === undefined
+      ? {}
+      : { licenseByExcursion: record.licenseByExcursion }),
     // Written only when stated, for the rule the scope already follows: `"depth": 5` is a claim about the run, and
     // a writer that filled the default in would be inventing one. `"depth": "pool"` is the other claim — the whole
     // candidate list — and JSON keeps the two apart for free because one is a number and the other a string.
@@ -353,6 +363,7 @@ const SUMMARY_FIELDS = [
   'unmeasured',
   'calleeInBand',
   'notLarger',
+  'excursionLicensed',
   'priorAbsent',
   'priorBelow',
   'replayIdentical',
@@ -375,6 +386,7 @@ const DECISION_FIELD: Record<
   | 'unmeasured'
   | 'calleeInBand'
   | 'notLarger'
+  | 'excursionLicensed'
   | 'priorAbsent'
   | 'priorBelow'
 > = {
@@ -384,6 +396,7 @@ const DECISION_FIELD: Record<
   unmeasured: 'unmeasured',
   'callee-in-band': 'calleeInBand',
   'not-larger': 'notLarger',
+  'excursion-licensed': 'excursionLicensed',
   'prior-absent': 'priorAbsent',
   'prior-below': 'priorBelow',
 };
@@ -408,6 +421,7 @@ export class ContainmentRowDump {
     unmeasured: 0,
     calleeInBand: 0,
     notLarger: 0,
+    excursionLicensed: 0,
     priorAbsent: 0,
     priorBelow: 0,
     replayIdentical: 0,
@@ -464,7 +478,7 @@ function finiteAt(value: unknown, field: string, line: number): number {
   return value;
 }
 
-/** Refuses a value that is not one of the six decisions. */
+/** Refuses a value that is not one of the nine decisions. */
 function decisionAt(value: unknown, field: string, line: number): ContainmentDecision {
   if (
     value === 'inverted' ||
@@ -473,6 +487,7 @@ function decisionAt(value: unknown, field: string, line: number): ContainmentDec
     value === 'unmeasured' ||
     value === 'callee-in-band' ||
     value === 'not-larger' ||
+    value === 'excursion-licensed' ||
     value === 'prior-absent' ||
     value === 'prior-below'
   ) {
@@ -574,6 +589,15 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
     }
     // The noise floor, when the dump states one. Optional so a pre-fix dump stays readable, and validated when
     // present so a negative or non-finite floor is a broken artifact rather than a silent widening of the rule.
+    let licenseByExcursion: boolean | undefined;
+    if (record.licenseByExcursion !== undefined) {
+      if (typeof record.licenseByExcursion !== 'boolean') {
+        throw new Error(
+          `licenseByExcursion on line ${lineNumber} is not a boolean: ${JSON.stringify(record.licenseByExcursion)}`,
+        );
+      }
+      licenseByExcursion = record.licenseByExcursion;
+    }
     let minCalleeExcursion: number | undefined;
     if (record.minCalleeExcursion !== undefined) {
       minCalleeExcursion = finiteAt(record.minCalleeExcursion, 'minCalleeExcursion', lineNumber);
@@ -610,6 +634,7 @@ export function parseContainmentRows(text: string): ContainmentCaseRow[] {
       sigma,
       margin: finiteAt(record.margin, 'margin', lineNumber),
       ...(minCalleeExcursion === undefined ? {} : { minCalleeExcursion }),
+      ...(licenseByExcursion === undefined ? {} : { licenseByExcursion }),
       ...(depth === undefined ? {} : { depth }),
       fusionTop1: serviceAt(record.fusionTop1, 'fusionTop1', lineNumber),
       gatedTop1: serviceAt(record.gatedTop1, 'gatedTop1', lineNumber),

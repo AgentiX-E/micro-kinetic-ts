@@ -56,6 +56,23 @@ import { DEFAULT_FAULT_FREE_SIGMA, type FaultFreeProfile } from './fault-free-pr
 export const DEFAULT_MIN_CALLEE_EXCURSION = 0.1;
 
 /**
+ * Whether a resolvable callee excursion may license an inversion whose own interface carried no failed call.
+ *
+ * `true` ships from iteration 384. At floor 0 the failed-interface record was the licence that every published
+ * number was measured under, because an unlicensed pair whose callee sat only 0.03-0.096 band widths past its
+ * edge was boundary noise promoted over a correct root (§4/§7 of `docs/containment-order.md`). Iteration 382's
+ * {@link DEFAULT_MIN_CALLEE_EXCURSION} now refuses exactly those noise pairs BEFORE this option is consulted, so
+ * the record's veto is redundant for content faults and harmful for latency faults: a call can complete with a
+ * 200-OK and still be slow, and train-ticket's Hystrix fallbacks turn downstream failures into synthetic 200s
+ * (RESTberus, arXiv:2611.04769). The full FSE'26 corpus prices the switch at `+21 / −0` against fusion
+ * (1 171 → 1 192, an extra five over the shipped 1 187), taking the whole reachable ceiling at zero losses.
+ *
+ * A run's switch, recorded in the dump and read back by replay, so an old artifact reproduces the configuration
+ * it was produced under and an ablation can set it to false to price the failed-interface licence again.
+ */
+export const DEFAULT_LICENSE_BY_EXCURSION = true;
+
+/**
  * Channel labels that measure how long a service took to answer, or how long its calls took to be answered.
  *
  * Two families, and they are two instruments rather than two spellings: `http.server.request.duration` is the
@@ -228,6 +245,21 @@ export interface ContainmentOrderInput<T> {
    */
   readonly minCalleeExcursion?: number | undefined;
   /**
+   * Whether a resolvable callee excursion licenses an inversion whose own interface recorded no failed call.
+   *
+   * A completed call is evidence that a CONTENT fault did not travel — a 200-OK delivered the value. It is not
+   * evidence that a LATENCY fault did not travel: a call can complete and still be slow, and the train-ticket
+   * corpus uses Hystrix fallbacks that turn a downstream failure into a synthetic 200-OK (RESTberus,
+   * arXiv:2611.04769). At floor 0 this option would invert boundary noise over a correct root; with
+   * {@link DEFAULT_MIN_CALLEE_EXCURSION} in force those pairs are refused as `callee-in-band` BEFORE this option is
+   * consulted, so the only pairs it licenses are callees that genuinely left their band.
+   *
+   * The sweep falls through past the interface veto when this is on: unmeasured, in-band and not-larger pairs keep
+   * their own reasons, and only an inversion licensed this way is named `excursion-licensed`. Absent means the
+   * shipped {@link DEFAULT_LICENSE_BY_EXCURSION}; a run's value is recorded in the dump and replayed from it.
+   */
+  readonly licenseByExcursion?: boolean | undefined;
+  /**
    * The interfaces that carried failed calls on this case, keyed by {@link failureEdgeKey}.
    *
    * When this is present the pass only inverts a pair whose **own interface failed**. When it is absent the
@@ -325,6 +357,7 @@ export type ContainmentDecision =
   | 'unmeasured'
   | 'callee-in-band'
   | 'not-larger'
+  | 'excursion-licensed'
   | 'prior-absent'
   | 'prior-below';
 
@@ -398,7 +431,7 @@ export function inspectContainmentOrder<T extends RankedService>(
     const upper = order[i]!;
     const lower = order[i + 1]!;
     // Outside the window the pair is still DECIDED and the order still changes; only the record stops. Placed
-    // before the decision so that the two cannot drift: a pair refused for one of the six reasons below and a pair
+    // before the decision so that the two cannot drift: a pair refused for one of the nine reasons below and a pair
     // inverted both contribute exactly one row when they are inside the window.
     const recording = i + 1 < window;
     const key = `${upper.service}\u0000${lower.service}`;
@@ -421,12 +454,18 @@ export function inspectContainmentOrder<T extends RankedService>(
     // Whether the RECORD licensed this pair — a different question from whether the pair ends up inverted, and the
     // one the prior is conditioned on below.
     let licensed = false;
+    // Whether the callee's own resolvable excursion licensed a pair the interface record was silent about. Kept
+    // distinct from `licensed` for the census, but treated the same by the prior below: both are a causal reason
+    // to invert, so neither is a pair a correlational residual should be asked to second-guess.
+    let licensedByExcursion = false;
     if (failingEdges !== undefined) {
       if (failingEdges.has(key)) licensed = true;
-      else if (input.recordScope !== 'case' || failingEdges.size > 0) {
+      else if (input.recordScope === 'case' && failingEdges.size === 0) silentRecord = true;
+      else if (input.licenseByExcursion === true) licensedByExcursion = true;
+      else {
         if (recording) verdicts.push({ ...pair, decision: 'no-failed-interface' });
         continue;
-      } else silentRecord = true;
+      }
     }
     if (upperExcursion === undefined || lowerExcursion === undefined) {
       if (recording) verdicts.push({ ...pair, decision: 'unmeasured' });
@@ -455,7 +494,7 @@ export function inspectContainmentOrder<T extends RankedService>(
     // and it is why the condition is `!licensed` rather than "the prior is present". A walk with no record at all
     // (the `prior` arm) leaves `licensed` false everywhere, so its behaviour is unchanged.
     const prior = input.prior;
-    if (prior !== undefined && !licensed) {
+    if (prior !== undefined && !licensed && !licensedByExcursion) {
       const fitted = prior.residuals.get(key);
       if (fitted === undefined) {
         if (recording) verdicts.push({ ...pair, decision: 'prior-absent' });
@@ -469,7 +508,14 @@ export function inspectContainmentOrder<T extends RankedService>(
     order[i] = lower;
     order[i + 1] = upper;
     if (recording)
-      verdicts.push({ ...pair, decision: silentRecord ? 'record-silent' : 'inverted' });
+      verdicts.push({
+        ...pair,
+        decision: silentRecord
+          ? 'record-silent'
+          : licensedByExcursion
+            ? 'excursion-licensed'
+            : 'inverted',
+      });
   }
   return { order, verdicts };
 }

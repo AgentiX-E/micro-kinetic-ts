@@ -181,6 +181,7 @@ function emptyCensus(): Record<ContainmentDecision, number> {
     unmeasured: 0,
     'callee-in-band': 0,
     'not-larger': 0,
+    'excursion-licensed': 0,
     'prior-absent': 0,
     'prior-below': 0,
   };

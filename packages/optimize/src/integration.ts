@@ -150,6 +150,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
     'the margin of that pass, in band widths, read only where the pass runs and shipped at 0: like the failed-edge bar it selects WHICH pairs qualify rather than how much any term weighs, so it is a dispatch axis on the same rule as the pass itself',
   minCalleeExcursion:
     "the callee's minimum resolvable excursion, shipped at 0.1 band widths: an ABSOLUTE noise floor on whether the callee left its band at all, not a coefficient on any ranking term, so a weight search moving it would be changing which pairs the axiom speaks about rather than how much a signal counts — a dispatch constant, like the margin beside it",
+  licenseByExcursion:
+    'the excursion LICENCE on the containment pass, shipped ON: it decides WHETHER a silent-interface pair may be inverted when the callee resolves above the floor — a discrete axiom on the same structural rule as the containment order, not a term magnitude, so a continuous search interpolating it would be averaging two populations of candidate pairs',
   failureContainment:
     'the SECOND relational pass, and the same kind of object as the containment order: it inverts an adjacent caller/callee pair when the callee own interface failures are not explained by its own calls while the caller own are, so what it changes is which of two candidates is above the other and never a term magnitude — a discrete axiom belongs to a dispatch, and a continuous search interpolating it would average two populations',
   failureAttribution:

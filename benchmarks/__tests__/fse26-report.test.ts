@@ -23,6 +23,7 @@ import {
   DEFAULT_DUAL_FAMILY_GATE,
   DEFAULT_DUAL_FAMILY_GATE_MODE,
   DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  DEFAULT_LICENSE_BY_EXCURSION,
   DEFAULT_POOL_ADMISSION,
   DEFAULT_TOPO_CLOSURE,
   DEFAULT_TOPO_DISCOUNT_GATE,
@@ -333,8 +334,27 @@ describe('FSE26 report — the two renderings agree', () => {
         // iteration 291 turned the flow ON) but because an omitted-when-default field would make an arm that
         // switched one OFF byte-identical to the shipped run, on the artifact that is supposed to attribute the
         // difference. Iteration 289 added the second switch here for that reason.
-        'containmentOrder=true containmentExcursions=absent failureContainment=true ' +
+        'containmentOrder=true' +
+        ' licenseByExcursion=true' +
+        ' containmentExcursions=absent failureContainment=true ' +
         `poolAdmission=${DEFAULT_POOL_ADMISSION}`,
+    );
+
+    // The excursion licence ships ON and comes with an explicit `--no-license-by-excursion` ablation, so it
+    // obeys `containmentOrder`'s unconditional rule rather than the omit-when-default one: a run that turned it
+    // off must name itself on the line or the artifact would attribute +5 cases to the shipped configuration.
+    expect(formatFSE26ConfigLine(makeConfig({ licenseByExcursion: true }))).toContain(
+      'licenseByExcursion=true',
+    );
+    const ablated = formatFSE26ConfigLine(makeConfig({ licenseByExcursion: false }));
+    expect(ablated).toContain('licenseByExcursion=false');
+    expect(ablated).not.toBe(formatFSE26ConfigLine(makeConfig()));
+    // A pre-switch artifact omits the optional field; the renderer must read it back at the ENGINE's default,
+    // not as `undefined`, exactly as the topo gate is read back at its owner's value.
+    const legacy: { licenseByExcursion?: boolean } = makeConfig();
+    delete legacy.licenseByExcursion;
+    expect(formatFSE26ConfigLine(legacy as Parameters<typeof formatFSE26ConfigLine>[0])).toContain(
+      `licenseByExcursion=${DEFAULT_LICENSE_BY_EXCURSION}`,
     );
     // The attribution is printed only when it is NOT the shipped reading: 'shape' is the default, so printing it
     // would add a token to every published line, while an arm that ran 'counts' must be visible or the artifact
