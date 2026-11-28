@@ -745,6 +745,13 @@ export default defineConfig({
         // both directions, and the one column the replay must reproduce — the artifact's own `answer` — is asserted
         // to be reproduced exactly, because a replay that disagreed with the loop would be a second definition.
         'src/arm-gate-replay.ts',
+        // Added with the module: the score-gap census makes `docs/rank-depth.md` §5's calibration curve
+        // re-scorable against whatever artifact a caller supplies, instead of a table with no owner. What is
+        // measured here is the signed relative gap (so a relational-pass permutation is a NEGATIVE gap, not a
+        // close call), the band edges with their boundary convention, the sub-0.02 stratum whose truth-rank
+        // histogram decides the twin direction, and the absence counters that keep an unranked truth out of
+        // the top-1 numerator. Deleting a dead label branch is what took it to 100/100/100/100.
+        'src/score-gap-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

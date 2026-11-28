@@ -144,3 +144,22 @@ this repository now do.
 The category sizes are the more useful reading: `Time` holds 2 cases and `DNS` holds 1. A per-family claim about
 either is a claim about two cases and one case, and the per-family tables elsewhere in this repository inherit
 that.
+
+## 8. §5 was re-scored against the shipped artifact and did not survive (iteration 389)
+
+§5 and §5.1 above were written on 2026-11-20 against an engine answering **1 141** of 1 422 cases at rank 1. They
+quote no artifact id. `benchmarks/src/score-gap-census.ts` now makes the curve re-scorable, and
+`benchmarks/src/run-score-gap-census.ts` re-scored it against the shipped FSE'26 artifact of run `46107777627`
+(1 422 rows, sha256 `f5e7bc54f35152c0…`, **1 192** rank-1 answers). Neither honest reading reproduces the table:
+
+- **score-sorted gap** (`s₁ ≥ s₂` by construction): sub-0.02 has 29 cases at 24 Top@1 (82.8 %), not 103 at 19.4 %.
+- **published-pair gap** (the artifact's own `top1Score`/`top2Score`): sub-0.02 has 14 cases at 11 Top@1
+  (78.6 %); truth ranks 1/2/3/4/5/deeper = 11/2/0/0/0/1. **217 rows run score-wise backwards** — the two
+  relational passes permuted the finished list, so a "small gap" over the published pair is partly a permutation
+  artifact, counted apart by the census.
+
+The "twin" premise is inverted on the shipped engine: rank 2 (2 cases) outnumbers rank 3 (0 cases) in the
+sub-0.02 stratum, the opposite of §5.1's rank-3-twice-as-often reading. `ENGINE_AXES_DESIGN_PLAN.md` item 3's
+rank-1 run-off therefore has no twin population to fire on and closes as **refuted-by-data**. This section is the
+artifact-backed correction; §5/§5.1 are retained as the record of what was claimed and when, not as a live premise.
+Full audit: `micro-kinetic-ts-docs/SCORE_GAP_REPRODUCIBILITY.md`.

@@ -4283,3 +4283,32 @@ This is an instrument-and-reproducibility fix, not a ranking claim. No paid arm 
 moved: the board (1 192, +31.22 pp, p = 1.8e-73), the gated arm (93.32 %, denominator caveat), RCAEval 735
 (90.61 %) and the cost position (¥0.0012/case engine) are all as §30 left them. One wiring test added; root suite
 9 871 tests / 392 files green. Full record: `docs-repository:PROGRESS_2026-11-28f.md`.
+
+## 2026-11-28 (32) — iteration 389: a stale calibration curve is re-scored; item 3 closes refuted
+
+`docs/rank-depth.md` §5 (2026-11-20) recorded a score-gap calibration curve — 103 cases below relative gap 0.02,
+19.4 % accurate, truth twice as often at rank 3 as at rank 2 — and `ENGINE_AXES_DESIGN_PLAN.md` item 3 built a
+fenced rank-1 run-off on that "twin" premise. The table carried no artifact id and was measured against an engine
+answering 1 141 of 1 422 cases at rank 1. This iteration makes the claim re-scorable
+(`benchmarks/src/score-gap-census.ts`, 21 tests at 100/100/100/100) and re-scores it against the shipped FSE'26
+artifact of run `46107777627` (sha256 `f5e7bc54f35152c0…`, 1 192 rank-1 answers).
+
+| reading of the gap | sub-0.02 cases | Top@1 | accuracy | twin direction |
+| --- | ---: | ---: | ---: | --- |
+| §5 as written (1 141 engine) | 103 | 20 | 19.4 % | rank 3 (18) > rank 2 (9) |
+| score-sorted, shipped artifact | 29 | 24 | 82.8 % | — |
+| published-pair, shipped artifact | 14 | 11 | 78.6 % | rank 2 (2) > rank 3 (0) |
+
+§5 does not reproduce; the twin direction inverts. 217 of 1 422 published pairs carry `top2Score > top1Score`
+(the relational passes permute a scored list), so reading a "small gap" off the published pair is partly a
+permutation artifact. Item 3 has no twin population on the product engine and closes **refuted-by-data**: the
+fenced acceptance it required cannot fire. No run-off is built and no number moves.
+
+| | §31 | now (this section) |
+| --- | --- | --- |
+| score-gap twin | open, fenced ceiling +1.83 pp | refuted-by-data, closed |
+| re-scorable gap instrument | none | `score-gap-census.ts` + runner |
+| published board / gated arm / RCAEval | 1 192 / 93.32 % / 90.61 % | unchanged |
+
+No paid dispatch, no API call, no ranking change. Full record: `micro-kinetic-ts-docs:SCORE_GAP_REPRODUCIBILITY.md`
+and `PROGRESS_2026-11-28h.md`.
