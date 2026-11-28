@@ -364,3 +364,31 @@ layer's own run-to-run variance is 15.1 points (§11).
 
 The next work goes to the ¥0 engine axes (retrieval at ranks 6–49, edge-level F1, STRIX-style signals) and to
 publishing the priced 1 192 board, not to rebuilding a layer its own control already refuted.
+
+---
+
+## 13. Iteration 386: the 90 % agent's source confirms the gated shape, and names one mechanism we lack
+
+Section 12 checked the reopening condition against the field and found it unmet. This section reads the actual
+source of the field's 90.0 % Acc@1 agent (`LGU-SE-Internal/ThinkDepthAI`, 38 files read via GitHub API) and states
+what it proves about our retired layer.
+
+The source builds a three-node LangGraph: `llm_call → tool_node → compress`. The decisive detail is in the prompts:
+`RCA_ANALYSIS_SP` instructs **INVESTIGATION ONLY — do not try to emit JSON or final answers here**, and a distinct
+`COMPRESS_FINDINGS_SP` turns the accumulated messages into one strict JSON checked by `output_validator.py`, whose
+errors are fed verbatim into a 3-attempt repair loop. A mandatory `think_tool` reflection follows every DuckDB
+query; the budget is ~50 soft / 100 hard calls. The agent is not given override authority over a ranking — it
+investigates, then a *separate* node produces a validated answer.
+
+This is the mechanism behind the standing counter-intuitive observation. Our measurements and the competitor's
+source now agree: a naked agent that re-decides in-loop scores 74.47 % (precision 0.216 ≈ chance) here, while a
+gated arm where the model proposes and a mechanical verifier decides scores 93.32 % here and the field's 90.0 %
+there. The layer was right to retire; the winning shape is the gated one we ship.
+
+**The one mechanism worth taking, and the decision.** `output_validator.py`'s structured synthesis-repair loop —
+a malformed answer is repaired up to 3 times with the exact error fed back, instead of being accepted or dropped —
+is provider-agnostic and can be expressed as a DeepSeek-backed (or offline) gated flag, making it both a production
+switch and an ablation arm. It is logged as item 12 in `PROGRESS_2026-11-28d.md` §5 and deliberately **not** built
+this iteration: the committed scope was the board publication (1 192, now done, `sota-comparison.md` §29) and this
+audit, and a half-built verifier on the answer path would be worse than none. Reopening the *naked* layer remains
+refused; taking this one validated-synthesis component behind a flag is the open, bounded next step.

@@ -4198,7 +4198,7 @@ would be a regression dressed as progress. It is not a new engine number; it is 
 
 | arm (1 422 cases unless noted) | Top@1 | vs engine control | source |
 | --- | ---: | ---: | --- |
-| engine, no model call | 75.5 % (iter285 frame) / published 83.47 % (current) | — | `agentic-layer-plan.md` §11 / `PROGRESS_2026-11-28b.md` §6 |
+| engine, no model call | 75.5 % (iter285 frame) / published 83.83 % (current, §29) | — | `agentic-layer-plan.md` §11 / §29 |
 | elimination, best (`rrf` w=0.3) | 73.6 % | −1.9 pp | `AGENTIC_SOTA_ROUTE_2026-11-14.md` |
 | nomination, best | 74.6 % | −0.9 pp | same |
 | free-investigation, ungated | 74.47 % | precision 0.216 ≈ chance | `free-investigation.md` §989 |
@@ -4214,3 +4214,28 @@ when override authority is given without a verifier; with one it is the leading 
 The 2026 field was re-verified from primary sources and does not change this: GALA+ 74.44/73.33 % on two 90-case
 panels (code not public), Continual Search +29 % on agent-failure traces (non-transferable), ThinkDepth.ai 90.0 %
 on a 500-case sample. Full reasoning `PROGRESS_2026-11-28c.md` §2-§3, `SOTA_LANDSCAPE_VERIFICATION.md` §1.31.
+
+---
+
+## 2026-11-28 (29) — the licence board is published at 1 192, and the 90 % agent's source confirms the gated shape
+
+Iteration 384 priced `licenseByExcursion` at 1 192 on a self-consistent rebuild. Bare dispatch `46107777627`
+(shipped default, licence ON, ref `master` HEAD `154789a`) completed `success`; artifact `fse26-results`
+(`15249707817`) was read directly. The published board moves 1 187 → **1 192 Top@1 (83.83 %)**, with
+Top@3 1 260 (88.61 %), Top@5 1 282 (90.15 %), MRR 0.8709. Against the field's best per metric: Top@1 +31.22 pp
+(p = 1.8e-73, defensible), Top@3 +13.71 pp (p = 1.9e-21), MRR +23.48 pp, Avg@3 +21.80 pp, Avg@5 +17.79 pp all
+defensible; **Top@5 +0.70 pp is NOT significant (p = 0.577)** and is recorded as such. The five recovered cases are
+real on CI, not only in replay.
+
+The standing instruction asks every iteration to study the 90.0 % Sonnet agent's source. GitHub API read the full
+tree of `LGU-SE-Internal/ThinkDepthAI` (38 files). Its mechanism, from bytes not from the paper: a three-node
+`llm_call → tool_node → compress` LangGraph; an explicit **investigation-only** phase that forbids emitting an
+answer; a **separate synthesis node** that validates one strict JSON against a spliced-in SDK contract with a
+3-attempt actionable repair loop; a mandatory `think_tool` reflection after every DuckDB query; a ~50/100 call
+budget. This is not a naked agent with override authority — it is investigation followed by a validated synthesis,
+which is the same shape as our gated board arm (93.32 % vs 90.0 % at a stated different denominator). It confirms
+the counter-intuitive-LLM answer: the LLM wins when its output is validated in a separate step and loses when it
+is trusted in-loop (our naked arm: 74.47 %, precision 0.216 ≈ chance). The one transferable, not-yet-built
+mechanism is the structured synthesis-repair loop, logged as item 12 in `PROGRESS_2026-11-28d.md` §5.
+
+Authored as Lambertyan, in English. No key or PAT in any repository.
