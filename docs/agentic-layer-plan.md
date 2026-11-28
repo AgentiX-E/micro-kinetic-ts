@@ -419,3 +419,31 @@ shown to carry `FAULT TYPE:` and `the reply is not JSON` verbatim and the summed
 usage. What is NOT claimed: that repairs improve the published ranking. That needs a paired dispatch of the malformed
 population, and a parseable claim is still not a true claim — the verifier decides. Eligibility stays open as item
 12b; the mechanism, its cost surface and its honesty are the scope closed here. Authored as Lambertyan, in English.
+
+## 15. Iteration 388: the gate becomes dispatchable from the paid arm
+
+Section 14 shipped `--synthesis-repair` as a CLI flag and left item 12b (the paired paid dispatch of the
+malformed population) open. A follow-up wiring audit found the gap that made item 12b impossible to run: the flag
+existed in `agentic-eliminator-study.ts`, but the ONLY workflow that holds `secrets.DEEPSEEK_API_KEY` —
+`benchmark-agentic.yml`'s propose step, which invokes `run-agentic-eliminator.ts --propose` — never forwarded a
+repair flag. A flag no dispatch can name is an axis nobody can measure, the exact defect
+`dispatch-surface-census.test.ts` exists to prevent.
+
+**What changed.** The propose step now reads two repository variables — `BENCHMARK_SYNTHESIS_REPAIR` and
+`BENCHMARK_REPAIR_ATTEMPTS` — into a `REPAIR_ARG` array materialised in the step's `env`, expanded into the
+invocation only when the first is literally `on`. Repository variables, not a 26th dispatch input: the workflow is
+at GitHub's 25-input ceiling and every input is fenced by its own test. `|| ''` maps an unset variable to the empty
+string, so the default expands to NO flag and the published arm stays byte-identical (one call, one parse, no
+`repair` block). This is the same pattern as `BENCHMARK_EMBEDDING_FALLBACK` in `benchmark-rcaeval.yml`. The decision
+lives in `env`, never on a command line the logger could echo.
+
+**What is asserted.** `agentic-workflow-wiring.test.ts` gains one test: the two variables are read as an env pair
+with `|| ''`, only `on` fills the array, the attempt budget is optional, the expansion sits inside the runner's
+invocation block (not a comment), and the input count remains exactly 25. TDD: the test failed on the unwired
+workflow (RED), passed after the wiring (GREEN). Root suite 9 871 tests / 392 files green on Node 22.23.5; YAML
+parses; lint 0 warnings, typecheck and format:check clean.
+
+**What is NOT claimed.** No paid dispatch was run in this iteration and no ranking number moved. Item 12b — the
+paired measurement of whether repairs recover cases the published arm lost — remains open and is now *runnable*:
+a caller sets the two repository variables and dispatches `benchmark-agentic.yml`. A parseable claim is still not a
+true claim; the gated verifier decides. Authored as Lambertyan, in English.

@@ -703,6 +703,40 @@ describe('the model arm’s wiring', () => {
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-proposer.ts'))).toBe(true);
     expect(existsSync(resolve(repoRoot, 'benchmarks/src/chat-completions.ts'))).toBe(true);
   });
+
+  it('exposes the synthesis-repair gate from repository variables, never a 26th input', () => {
+    // The gate is a production switch AND an ablation arm (item 12). A CLI flag nobody can dispatch
+    // is an axis nobody can name — the exact defect the census exists to prevent. But the workflow is
+    // at GitHub's 25-input ceiling and every input is fenced by its own test, so the gate is read from
+    // repository variables the way BENCHMARK_EMBEDDING_FALLBACK is: no new input, no surface change.
+    expect(inputNames(WORKFLOW)).toHaveLength(25);
+
+    const propose = WORKFLOW.slice(
+      WORKFLOW.indexOf('Ask the model to eliminate'),
+      WORKFLOW.indexOf('The second expression protocol'),
+    );
+    // The decision is materialised in the step's env (as a PAIR, each with the `|| ''` default that
+    // maps an unset variable to the empty string), never in a `run:` line the logger would echo.
+    expect(propose).toContain("SYNTHESIS_REPAIR: ${{ vars.BENCHMARK_SYNTHESIS_REPAIR || '' }}");
+    expect(propose).toContain("REPAIR_ATTEMPTS: ${{ vars.BENCHMARK_REPAIR_ATTEMPTS || '' }}");
+    // The default-off guard: an empty array is expanded into the invocation, and only `on` fills it.
+    // An unset variable therefore passes NO flag and leaves the published arm byte-identical.
+    expect(propose).toContain('REPAIR_ARG=()');
+    expect(propose).toContain('if [ "$SYNTHESIS_REPAIR" = "on" ]; then');
+    expect(propose).toContain('REPAIR_ARG+=(--synthesis-repair)');
+    expect(propose).toContain('if [ -n "$REPAIR_ATTEMPTS" ]; then');
+    expect(propose).toContain('REPAIR_ARG+=(--repair-attempts "$REPAIR_ATTEMPTS")');
+    expect(propose).toContain('"${REPAIR_ARG[@]}"');
+    // Non-vacuity: the expansion sits in the runner's invocation block (a backslash-continued shell
+    // command), not in a comment. Slice from the runner to the sink and require the flag inside it.
+    const invocation = propose.slice(
+      propose.indexOf('run-agentic-eliminator.ts'),
+      propose.indexOf('tee artifacts/agentic/eliminator.txt'),
+    );
+    expect(invocation).toContain('"${REPAIR_ARG[@]}"');
+    // No key or model value leaks into the variable reads: the gate carries only its two booleans.
+    expect(WORKFLOW_CODE).not.toMatch(/BENCHMARK_SYNTHESIS_REPAIR:.*secrets/);
+  });
 });
 
 /**

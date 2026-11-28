@@ -942,14 +942,34 @@ jobs:
         if: env.HAS_MODEL_KEY == 'true' && inputs.query_agent_sample == '' && !inputs.query_channel_split
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+          #   The structured synthesis-repair gate (item 12) is a repository variable, not a 26th
+          #   dispatch input: this workflow is at GitHub's 25-input ceiling and every input is fenced.
+          #   `|| ''` maps an unset variable to the empty string. Only the literal `on` opens the gate;
+          #   the default expands to NO flag, so the published arm stays byte-identical. This is the
+          #   2026-11-28 addition that makes the CLI flag dispatchable for production and ablation —
+          #   without it a `--synthesis-repair` nobody could name was an axis nobody could measure.
+          SYNTHESIS_REPAIR: ${{ vars.BENCHMARK_SYNTHESIS_REPAIR || '' }}
+          REPAIR_ATTEMPTS: ${{ vars.BENCHMARK_REPAIR_ATTEMPTS || '' }}
         run: |
           set -o pipefail
+          #   Both values are materialised into an argument array BEFORE the invocation. An empty
+          #   array expands to nothing, which is the default; a caller sets the repository variables
+          #   to `on` and, optionally, a positive attempt budget to spend repairs. The decision is in
+          #   env, never on a command line the runner would echo on failure.
+          REPAIR_ARG=()
+          if [ "$SYNTHESIS_REPAIR" = "on" ]; then
+            REPAIR_ARG+=(--synthesis-repair)
+            if [ -n "$REPAIR_ATTEMPTS" ]; then
+              REPAIR_ARG+=(--repair-attempts "$REPAIR_ATTEMPTS")
+            fi
+          fi
           pnpm exec tsx benchmarks/src/run-agentic-eliminator.ts \
             --fingerprints artifacts/agentic/fingerprints.ndjson \
             --verdicts artifacts/agentic/per-case.ndjson \
             --claims artifacts/agentic/claims.ndjson \
             --propose \
             --model "${{ inputs.model }}" \
+            "${REPAIR_ARG[@]}" \
             --concurrency 6 2>&1 | tee artifacts/agentic/eliminator.txt
 
       # ── The second expression protocol ───────────────────────────────────────────────────────────────────────

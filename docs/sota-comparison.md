@@ -4263,3 +4263,23 @@ Ranking position is unchanged from §29: first on the published FSE'26 Top@1 boa
 735 by +22.61 pp, and above the published leading agent on the gated arm with the denominator caveat stated. Cost
 position is unchanged: ¥0.0012/case engine, ≈27 000× below the Sonnet arm. The repair loop adds a bounded, counted
 cost only in the arm a caller explicitly opens. Full record: `docs-repository:PROGRESS_2026-11-28e.md`.
+
+## 2026-11-28 (31) — iteration 388: the repair gate becomes dispatchable, no number moves
+
+Section 30 built the synthesis-repair gate as a CLI flag. This section closes the wiring gap that left it
+unreachable from the only workflow holding the model key: `benchmark-agentic.yml`'s propose step now forwards
+`--synthesis-repair` and an optional `--repair-attempts` from two repository variables
+(`BENCHMARK_SYNTHESIS_REPAIR`, `BENCHMARK_REPAIR_ATTEMPTS`), materialised in `env` and expanded into the invocation
+only when the first is literally `on`. Repository variables rather than a 26th input because the workflow is at
+GitHub's 25-input ceiling; the `|| ''` default keeps the published arm byte-identical.
+
+| | §30 | now (this section) |
+| --- | --- | --- |
+| gate reachable from dispatch | no (CLI flag only) | yes (two repo variables, default off) |
+| item 12b paid dispatch | impossible without a local key | runnable on CI with `secrets.DEEPSEEK_API_KEY` |
+| published arm / ranking | 1 192 Top@1, 93.32 % gated | unchanged (no flag when unset) |
+
+This is an instrument-and-reproducibility fix, not a ranking claim. No paid arm was dispatched and no number
+moved: the board (1 192, +31.22 pp, p = 1.8e-73), the gated arm (93.32 %, denominator caveat), RCAEval 735
+(90.61 %) and the cost position (¥0.0012/case engine) are all as §30 left them. One wiring test added; root suite
+9 871 tests / 392 files green. Full record: `docs-repository:PROGRESS_2026-11-28f.md`.
