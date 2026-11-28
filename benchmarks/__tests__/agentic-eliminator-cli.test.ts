@@ -24,6 +24,8 @@ describe('parseEliminatorArgs', () => {
       limit: 0,
       maxCandidates: 5,
       delta: 0.05,
+      synthesisRepair: false,
+      repairAttempts: 3,
     });
   });
 
@@ -48,6 +50,9 @@ describe('parseEliminatorArgs', () => {
       '20',
       '--delta',
       '0.01',
+      '--synthesis-repair',
+      '--repair-attempts',
+      '2',
     ]);
     expect(parsed).toMatchObject({
       claims: 'c',
@@ -58,6 +63,8 @@ describe('parseEliminatorArgs', () => {
       limit: 40,
       maxCandidates: 20,
       delta: 0.01,
+      synthesisRepair: true,
+      repairAttempts: 2,
     });
   });
 
@@ -80,6 +87,15 @@ describe('parseEliminatorArgs', () => {
     expect(() => parseEliminatorArgs([...base, '--delta', '1'])).toThrow('strictly inside (0, 1)');
     expect(() => parseEliminatorArgs([...base, '--delta', '0'])).toThrow('strictly inside (0, 1)');
     expect(() => parseEliminatorArgs([...base, '--weight'])).toThrow('--weight needs a value');
+    expect(() => parseEliminatorArgs([...base, '--repair-attempts'])).toThrow(
+      '--repair-attempts needs a value',
+    );
+    expect(() => parseEliminatorArgs([...base, '--repair-attempts', '0'])).toThrow(
+      '--repair-attempts must be a positive integer',
+    );
+    expect(() => parseEliminatorArgs([...base, '--repair-attempts', '2.5'])).toThrow(
+      '--repair-attempts must be a positive integer',
+    );
     expect(() => parseEliminatorArgs([...base, '--nonsense', '1'])).toThrow(
       'unrecognised argument --nonsense',
     );
@@ -538,6 +554,70 @@ describe('runStudy', () => {
     // The same file, read back: nothing is asked again, and the answers already paid for are scored.
     expect(second.join('\n')).toContain('Proposal: asked 0, reused 3, answered 0, declined 0');
     expect(readFileSync(claimsPath, 'utf8').trim().split('\n')).toHaveLength(3);
+  });
+
+  it('gates the synthesis-repair loop behind --synthesis-repair, and prints its census', async () => {
+    // One case the engine gets right: with the gate off the malformed reply stays unreadable; with it on the same
+    // malformed reply is repaired into a claim and the run says so. Nothing here pays for a real call.
+    const files = artifacts(ROWS);
+    // A malformed first reply for every case, then a valid empty answer on the repair. The repair turn is marked
+    // in its system prompt, so the discriminator does not depend on concurrent call ordering.
+    const counting = {
+      model: 'deepseek-chat',
+      endpoint: 'http://127.0.0.1:1/v1/chat/completions',
+      complete: async (turn: { system: string; user: string }) => {
+        const text = turn.system.includes('REPAIR MODE')
+          ? JSON.stringify({ eliminate: [] })
+          : 'not JSON at all';
+        return {
+          text,
+          model: 'deepseek-chat',
+          promptTokens: 10,
+          completionTokens: 2,
+          cacheHitTokens: 0,
+          cacheMissTokens: 0,
+          attempts: 1,
+        };
+      },
+    };
+
+    const off: string[] = [];
+    await runStudy(
+      [
+        '--fingerprints',
+        files.fingerprints,
+        '--verdicts',
+        files.verdicts,
+        '--claims',
+        join(files.dir, 'off.ndjson'),
+        '--propose',
+      ],
+      (line) => off.push(line),
+      { client: counting },
+    );
+    expect(off.join('\n')).toContain('unreadable 3');
+    expect(off.join('\n')).toContain('Repair:   off · recovered 0 · calls 0');
+
+    const on: string[] = [];
+    await runStudy(
+      [
+        '--fingerprints',
+        files.fingerprints,
+        '--verdicts',
+        files.verdicts,
+        '--claims',
+        join(files.dir, 'on.ndjson'),
+        '--propose',
+        '--synthesis-repair',
+        '--repair-attempts',
+        '1',
+      ],
+      (line) => on.push(line),
+      { client: counting },
+    );
+    const text = on.join('\n');
+    expect(text).toContain('unreadable 0');
+    expect(text).toContain('Repair:   on · recovered 3 · calls 3');
   });
 
   it('reports an unreadable reply beside the cases it could not read', async () => {

@@ -87,6 +87,21 @@ describe('formatClaimRecord', () => {
     expect(parsed['malformed']).toBe('the reply is not JSON');
     expect(parsed['claims']).toEqual([]);
   });
+
+  it('writes repair provenance only when the answer was repaired', () => {
+    const plain = JSON.parse(formatClaimRecord(record())) as Record<string, unknown>;
+    expect('repair' in plain).toBe(false);
+    const repaired = JSON.parse(
+      formatClaimRecord(
+        record({ repair: { protocol: 1, calls: 2, faults: ['no-brace', 'never-closed'] } }),
+      ),
+    ) as Record<string, unknown>;
+    expect(repaired['repair']).toEqual({
+      protocol: 1,
+      calls: 2,
+      faults: ['no-brace', 'never-closed'],
+    });
+  });
 });
 
 describe('parseClaimRecords', () => {
@@ -166,6 +181,36 @@ describe('parseClaimRecords', () => {
     // accept both shapes: a record with the field and a record without it.
     const readless = record({ claims: [], malformed: 'the reply is not JSON' });
     expect(parseClaimRecords(`${formatClaimRecord(readless)}\n`)).toEqual([readless]);
+  });
+
+  it('round-trips repair provenance, including an empty fault list', () => {
+    const repaired = record({
+      repair: { protocol: 1, calls: 1, faults: ['no-brace'] },
+    });
+    expect(parseClaimRecords(`${formatClaimRecord(repaired)}\n`)).toEqual([repaired]);
+    const failed = record({
+      claims: [],
+      malformed: 'the reply is not JSON',
+      repair: { protocol: 1, calls: 3, faults: [] },
+    });
+    expect(parseClaimRecords(`${formatClaimRecord(failed)}\n`)).toEqual([failed]);
+  });
+
+  it('refuses a repair block that the writer could not have produced', () => {
+    const base = record();
+    const bad: readonly [unknown, string][] = [
+      [{ protocol: 1, calls: -1, faults: [] }, 'repair calls must be a non-negative integer'],
+      [{ protocol: 1, calls: 0.5, faults: [] }, 'repair calls must be a non-negative integer'],
+      [{ protocol: 1, calls: 1, faults: 'no-brace' }, 'repair faults must be an array of text'],
+      [{ protocol: 1, calls: 1, faults: [7] }, 'repair faults must be an array of text'],
+      [{ calls: 1, faults: [] }, 'repair protocol must be a number'],
+    ];
+    for (const [repair, message] of bad) {
+      const line = formatClaimRecord({ ...base, repair: { protocol: 1, calls: 1, faults: [] } });
+      const object = JSON.parse(line) as Record<string, unknown>;
+      object['repair'] = repair;
+      expect(() => parseClaimRecords(JSON.stringify(object))).toThrow(message);
+    }
   });
 
   it('refuses a claim it could not have written, by name', () => {

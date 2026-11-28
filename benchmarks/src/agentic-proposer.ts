@@ -19,20 +19,36 @@
 import {
   DEFAULT_ELIMINATOR_OPTIONS,
   ELIMINATOR_PROTOCOL,
+  SYNTHESIS_REPAIR_PROTOCOL,
   buildEliminatorPrompt,
   parseEliminatorReply,
+  repairSynthesis,
   type EliminatorOptions,
+  type SynthesisFault,
 } from '../../packages/ai/src/agent/index.js';
-import type { ClaimRecord } from './agentic-claims.js';
+import type { ClaimRecord, RepairProvenance } from './agentic-claims.js';
 import type { HeadroomCase } from './agentic-headroom.js';
 import type { ChatClient } from './chat-completions.js';
 import { ChatCompletionError } from './chat-completions.js';
+
+/** The gated structured synthesis-repair option, passed through to the pure driver. */
+export interface ProposeRepairOptions {
+  /** Off by default: the shipped arm never pays for a repair unless a caller opens the gate. */
+  readonly enabled: boolean;
+  /** Repair calls after the first synthesis. Defaults to the driver's ThinkDepth budget. */
+  readonly maxAttempts?: number;
+}
 
 /** How the proposer is driven. */
 export interface ProposeOptions {
   readonly client: ChatClient;
   /** Presentation width and reply bound. The default is the published top five. */
   readonly eliminator?: EliminatorOptions;
+  /**
+   * The structured synthesis-repair gate. Absent or disabled is bit-identical to the pre-repair arm: no extra
+   * call, no extra token, no provenance field. This is both the production switch and the ablation arm.
+   */
+  readonly repair?: ProposeRepairOptions;
   /** Calls in flight. Four is what a shared endpoint tolerates without a 429 as the common case. */
   readonly concurrency?: number;
   /** Answers already recorded, keyed by case. Reused only when the digest matches. */
@@ -61,6 +77,12 @@ export interface ProposeSummary {
   readonly unreadableCases: readonly string[];
   /** Claims proposed, before verification. */
   readonly claims: number;
+  /** Cases whose first reply was malformed and whose repair produced a readable claim. */
+  readonly repaired: number;
+  /** Repair calls made after a first synthesis, summed over the run. */
+  readonly repairCalls: number;
+  /** One fault category per failed parse, in order, including the first synthesis when it failed. */
+  readonly repairFaults: readonly SynthesisFault[];
   readonly promptTokens: number;
   readonly completionTokens: number;
   /** Wall clock of the whole run. */
@@ -104,6 +126,9 @@ export async function proposeClaims(
   let declined = 0;
   let unreadable = 0;
   let claims = 0;
+  let repaired = 0;
+  let repairCalls = 0;
+  const repairFaults: SynthesisFault[] = [];
   let promptTokens = 0;
   let completionTokens = 0;
   const unreadableCases: string[] = [];
@@ -130,51 +155,96 @@ export async function proposeClaims(
     const at = Date.now();
     asked += 1;
     let record: ClaimRecord;
+    let madeRepairCalls = 0;
     try {
       const completion = await options.client.complete({
         system: prompt.system,
         user: prompt.user,
       });
-      promptTokens += completion.promptTokens;
-      completionTokens += completion.completionTokens;
-      const parsed = parseEliminatorReply(completion.text, eliminator.maxClaims);
-      if (parsed.ok) {
-        claims += parsed.claims.length;
-        answered += parsed.claims.length > 0 ? 1 : 0;
-        declined += parsed.claims.length === 0 ? 1 : 0;
+      const model = completion.model === '' ? options.client.model : completion.model;
+
+      // With the gate off, the path below is the original one call / one parse / one record. With it on, the same
+      // first completion is handed to the pure repair driver, which makes further calls ONLY when it failed to
+      // parse and feeds the exact error back on each. The driver's token totals cover every call, so the record
+      // and the summary charge the whole repair sequence and no token is counted twice.
+      const gate = options.repair?.enabled === true ? options.repair : null;
+      const result = gate
+        ? await repairSynthesis(
+            prompt,
+            completion,
+            (turn) => {
+              madeRepairCalls += 1;
+              return options.client.complete({ system: turn.system, user: turn.user });
+            },
+            { maxAttempts: gate.maxAttempts, maxClaims: eliminator.maxClaims },
+          )
+        : null;
+      const ok =
+        result === null ? parseEliminatorReply(completion.text, eliminator.maxClaims) : null;
+      const accepted = result?.ok === true || (ok !== null && ok.ok);
+      const finalClaims = result !== null ? result.claims : ok !== null && ok.ok ? ok.claims : [];
+      const why = result !== null ? result.why : ok !== null && !ok.ok ? ok.why : '';
+      const spentPrompt = result?.promptTokens ?? completion.promptTokens;
+      const spentCompletion = result?.completionTokens ?? completion.completionTokens;
+      promptTokens += spentPrompt;
+      completionTokens += spentCompletion;
+
+      if (result !== null) {
+        repairCalls += madeRepairCalls;
+        repairFaults.push(...result.faults);
+        if (result.recovered) repaired += 1;
+      }
+      const repair: RepairProvenance | undefined =
+        result !== null && (result.repairs > 0 || result.faults.length > 0)
+          ? {
+              protocol: SYNTHESIS_REPAIR_PROTOCOL,
+              calls: result.repairs,
+              faults: [...result.faults],
+            }
+          : undefined;
+
+      if (accepted) {
+        claims += finalClaims.length;
+        answered += finalClaims.length > 0 ? 1 : 0;
+        declined += finalClaims.length === 0 ? 1 : 0;
         record = {
           datapack: oneCase.datapack,
-          model: completion.model === '' ? options.client.model : completion.model,
+          model,
           protocol: ELIMINATOR_PROTOCOL,
           digest: prompt.digest,
-          claims: parsed.claims,
+          claims: finalClaims,
+          ...(repair === undefined ? {} : { repair }),
           ms: Date.now() - at,
-          promptTokens: completion.promptTokens,
-          completionTokens: completion.completionTokens,
+          promptTokens: spentPrompt,
+          completionTokens: spentCompletion,
         };
       } else {
         unreadable += 1;
-        unreadableCases.push(`${oneCase.datapack}: ${parsed.why}`);
+        unreadableCases.push(`${oneCase.datapack}: ${why}`);
         record = {
           datapack: oneCase.datapack,
-          model: completion.model === '' ? options.client.model : completion.model,
+          model,
           protocol: ELIMINATOR_PROTOCOL,
           digest: prompt.digest,
           claims: [],
-          malformed: parsed.why,
+          malformed: why,
+          ...(repair === undefined ? {} : { repair }),
           ms: Date.now() - at,
-          promptTokens: completion.promptTokens,
-          completionTokens: completion.completionTokens,
+          promptTokens: spentPrompt,
+          completionTokens: spentCompletion,
         };
       }
     } catch (error) {
       // A failed call is recorded with the reason it failed, under the digest of the question that was asked, so a
-      // resumed run does not pay for it twice and a reader can tell it apart from a model that said nothing.
+      // resumed run does not pay for it twice and a reader can tell it apart from a model that said nothing. A
+      // transport failure DURING a repair propagates out of the pure driver to here, where it is counted as the
+      // unreadable case it is rather than swallowed into a "the model declined" fault.
       const why =
         error instanceof ChatCompletionError
           ? `the call failed: ${error.message}`
           : `the call failed: ${String(error)}`;
       unreadable += 1;
+      repairCalls += madeRepairCalls;
       unreadableCases.push(`${oneCase.datapack}: ${why}`);
       record = {
         datapack: oneCase.datapack,
@@ -183,6 +253,15 @@ export async function proposeClaims(
         digest: prompt.digest,
         claims: [],
         malformed: why,
+        ...(madeRepairCalls > 0
+          ? {
+              repair: {
+                protocol: SYNTHESIS_REPAIR_PROTOCOL,
+                calls: madeRepairCalls,
+                faults: [] as string[],
+              },
+            }
+          : {}),
         ms: Date.now() - at,
         promptTokens: 0,
         completionTokens: 0,
@@ -213,6 +292,9 @@ export async function proposeClaims(
     unreadable,
     unreadableCases,
     claims,
+    repaired,
+    repairCalls,
+    repairFaults,
     promptTokens,
     completionTokens,
     elapsedMs: Date.now() - started,

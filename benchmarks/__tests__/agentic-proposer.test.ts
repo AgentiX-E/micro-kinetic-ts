@@ -297,3 +297,105 @@ describe('proposeClaims', () => {
     expect(client.peak).toBe(1);
   });
 });
+
+describe('proposeClaims — gated synthesis repair', () => {
+  it('leaves a malformed reply unreadable when repair is off (the shipped default)', async () => {
+    const client = new ScriptedClient((_user, index) =>
+      index === 0 ? 'The source is ts-auth-service.' : VERIFIABLE,
+    );
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], { client, onRecord });
+    expect(summary.unreadable).toBe(1);
+    expect(summary.repaired).toBe(0);
+    expect(client.asked).toHaveLength(1);
+    expect(records[0]!.malformed).toBe('the reply is not JSON');
+  });
+
+  it('repairs a malformed reply into a claim when the gate is on', async () => {
+    const client = new ScriptedClient((_user, index) =>
+      index === 0 ? 'The source is ts-auth-service.' : VERIFIABLE,
+    );
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], {
+      client,
+      onRecord,
+      repair: { enabled: true, maxAttempts: 2 },
+    });
+    expect(summary.unreadable).toBe(0);
+    expect(summary.answered).toBe(1);
+    expect(summary.repaired).toBe(1);
+    expect(summary.repairCalls).toBe(1);
+    expect(summary.repairFaults).toContain('no-brace');
+    expect(client.asked).toHaveLength(2);
+    // The repair turn fed the exact error back, beside the original question.
+    expect(client.asked[1]).toContain('the reply is not JSON');
+    expect(client.asked[1]).toContain('FAULT TYPE:');
+    expect(records[0]!.malformed).toBeUndefined();
+    expect(records[0]!.claims).toHaveLength(1);
+    expect(records[0]!.repair).toMatchObject({ protocol: 1, calls: 1 });
+  });
+
+  it('keeps a reply unreadable after the repair budget is exhausted, with its fault census', async () => {
+    const client = new ScriptedClient(() => 'still not JSON');
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], {
+      client,
+      onRecord,
+      repair: { enabled: true, maxAttempts: 2 },
+    });
+    expect(summary.unreadable).toBe(1);
+    expect(summary.repaired).toBe(0);
+    expect(summary.repairCalls).toBe(2);
+    expect(summary.repairFaults).toHaveLength(3);
+    expect(client.asked).toHaveLength(3);
+    expect(records[0]!.malformed).toBe('the reply is not JSON');
+    expect(records[0]!.repair).toMatchObject({ protocol: 1, calls: 2 });
+  });
+
+  it('does not spend a repair call on a reply that already parsed', async () => {
+    const client = new ScriptedClient(() => VERIFIABLE);
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], {
+      client,
+      onRecord,
+      repair: { enabled: true, maxAttempts: 3 },
+    });
+    expect(client.asked).toHaveLength(1);
+    expect(summary.repaired).toBe(0);
+    expect(summary.repairCalls).toBe(0);
+    expect(records[0]!.repair).toBeUndefined();
+  });
+
+  it('counts the repair tokens in the record and the summary so the bill is honest', async () => {
+    const client = new ScriptedClient((_user, index) => (index === 0 ? 'not JSON' : VERIFIABLE));
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], {
+      client,
+      onRecord,
+      repair: { enabled: true, maxAttempts: 1 },
+    });
+    // Two calls at 100 prompt + 10 completion tokens each: no token disappears into the repair loop.
+    expect(summary.promptTokens).toBe(200);
+    expect(summary.completionTokens).toBe(20);
+    expect(records[0]!.promptTokens).toBe(200);
+    expect(records[0]!.completionTokens).toBe(20);
+  });
+
+  it('records the failed call of a repair as unreadable rather than crashing the run', async () => {
+    const client = new ScriptedClient((_user, index) =>
+      index === 0
+        ? 'not JSON'
+        : new ChatCompletionError('the endpoint answered 503', 503, 'busy', 4),
+    );
+    const { records, onRecord } = sink();
+    const summary = await proposeClaims([headroomCase('a')], {
+      client,
+      onRecord,
+      repair: { enabled: true, maxAttempts: 2 },
+    });
+    expect(summary.unreadable).toBe(1);
+    expect(summary.repaired).toBe(0);
+    expect(summary.repairCalls).toBe(1);
+    expect(records[0]!.malformed).toBe('the call failed: the endpoint answered 503');
+  });
+});

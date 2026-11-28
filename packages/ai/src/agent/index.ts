@@ -43,6 +43,25 @@ export {
   parseEliminatorReply,
 } from './eliminator.js';
 
+export {
+  DEFAULT_REPAIR_ATTEMPTS,
+  MAX_REPAIR_ATTEMPTS,
+  SYNTHESIS_REPAIR_PROTOCOL,
+  buildRepairTurn,
+  classifyFault,
+  repairSynthesis,
+} from './synthesis-repair.js';
+
+export type {
+  RepairOptions,
+  RepairOutcome,
+  RepairStep,
+  RepairTurn,
+  SynthesisComplete,
+  SynthesisFault,
+  SynthesisReply,
+} from './synthesis-repair.js';
+
 export { channelsByEvidence, compareChannelEvidence, departureOf, evidenceOf } from './evidence.js';
 
 export type { ChannelEvidence } from './evidence.js';

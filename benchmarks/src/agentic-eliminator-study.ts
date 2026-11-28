@@ -28,7 +28,10 @@
 
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
-import { DEFAULT_ELIMINATOR_OPTIONS } from '../../packages/ai/src/agent/index.js';
+import {
+  DEFAULT_ELIMINATOR_OPTIONS,
+  DEFAULT_REPAIR_ATTEMPTS,
+} from '../../packages/ai/src/agent/index.js';
 import { citationCensusOf, formatCitationCensus } from './agentic-citation-census.js';
 import {
   formatClaimRecord,
@@ -70,6 +73,10 @@ export interface EliminatorArgs {
   readonly limit: number;
   readonly maxCandidates: number;
   readonly delta: number;
+  /** The structured synthesis-repair gate: off by default, both a production switch and an ablation arm. */
+  readonly synthesisRepair: boolean;
+  /** Repair calls after the first synthesis, when the gate is on. */
+  readonly repairAttempts: number;
 }
 
 /**
@@ -91,11 +98,17 @@ export function parseEliminatorArgs(argv: readonly string[]): EliminatorArgs {
     limit: 0,
     maxCandidates: DEFAULT_ELIMINATOR_OPTIONS.maxCandidates,
     delta: 0.05,
+    synthesisRepair: false,
+    repairAttempts: DEFAULT_REPAIR_ATTEMPTS,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === '--propose') {
       args.propose = true;
+      continue;
+    }
+    if (arg === '--synthesis-repair') {
+      args.synthesisRepair = true;
       continue;
     }
     const value = argv[index + 1];
@@ -109,6 +122,7 @@ export function parseEliminatorArgs(argv: readonly string[]): EliminatorArgs {
     else if (arg === '--limit') args.limit = Number(value);
     else if (arg === '--max-candidates') args.maxCandidates = Number(value);
     else if (arg === '--delta') args.delta = Number(value);
+    else if (arg === '--repair-attempts') args.repairAttempts = Number(value);
     else throw new Error(`unrecognised argument ${arg}`);
     index += 1;
   }
@@ -127,6 +141,9 @@ export function parseEliminatorArgs(argv: readonly string[]): EliminatorArgs {
   }
   if (!(args.delta > 0 && args.delta < 1))
     throw new Error('--delta must be strictly inside (0, 1)');
+  if (!Number.isInteger(args.repairAttempts) || args.repairAttempts < 1) {
+    throw new Error('--repair-attempts must be a positive integer');
+  }
   return args;
 }
 
@@ -250,6 +267,9 @@ export async function runStudy(
       eliminator,
       concurrency: args.concurrency,
       existing,
+      ...(args.synthesisRepair
+        ? { repair: { enabled: true, maxAttempts: args.repairAttempts } }
+        : {}),
       onRecord: (record) => {
         appendFileSync(args.claims, `${formatClaimRecord(record)}\n`);
       },
@@ -265,6 +285,12 @@ export async function runStudy(
     out(
       `          ${summary.claims} claims · ${summary.promptTokens} prompt + ${summary.completionTokens} ` +
         `completion tokens · ${(summary.elapsedMs / 1000).toFixed(0)} s`,
+    );
+    // The repair census is printed whether the gate was on or off: a zero row is the honest statement that this
+    // arm did not pay for a repair, rather than an absence that could be read as "not measured".
+    out(
+      `Repair:   ${args.synthesisRepair ? 'on' : 'off'} · recovered ${summary.repaired} · ` +
+        `calls ${summary.repairCalls} · faults [${summary.repairFaults.join(', ')}]`,
     );
     for (const one of summary.unreadableCases.slice(0, 5)) out(`  UNREADABLE ${one}`);
   }

@@ -392,3 +392,30 @@ switch and an ablation arm. It is logged as item 12 in `PROGRESS_2026-11-28d.md`
 this iteration: the committed scope was the board publication (1 192, now done, `sota-comparison.md` §29) and this
 audit, and a half-built verifier on the answer path would be worse than none. Reopening the *naked* layer remains
 refused; taking this one validated-synthesis component behind a flag is the open, bounded next step.
+
+## 14. Iteration 387: item 12 is built, gated and measured — the repair loop is no longer the open gap
+
+Section 13 named one transferable, not-yet-built component from the 90.0 % agent's source and deliberately deferred
+it. This section records that it is now built, so no future iteration re-derives the same gap.
+
+**What shipped.** `packages/ai/src/agent/synthesis-repair.ts` is a pure, provider-agnostic core carrying ThinkDepth's
+fault taxonomy (`empty`, `no-brace`, `never-closed`, `decode-error`, `shape-error`, plus our `bound-error`), a repair
+turn that copies the rejected reply and the validator's exact `why` back verbatim, and a bounded attempt loop
+(`DEFAULT_REPAIR_ATTEMPTS = 3`, hard cap `MAX_REPAIR_ATTEMPTS = 5`) with an honest token census. The transport is an
+injected `SynthesisComplete`, so the same decision runs on DeepSeek, an offline provider or a recorded replay; no
+provider is imported into the core. Section 8's guardrails still hold: a repaired reply is only a set of elimination
+claims and every semantic question still belongs to `verifyClaim`.
+
+**The gate.** `benchmarks/src/agentic-proposer.ts` opens the loop only when `--synthesis-repair` is passed; the
+shipped default is off and bit-identical to the published arm (one call, one parse, no `repair` field).
+`--repair-attempts N` sets the budget. The answer artifact (`agentic-claims.ts`) gains an optional `repair` block —
+protocol version, calls made, and one fault per failed step — so an offline reader can distinguish a first-time-valid
+answer from one that took three repairs without re-running the paid arm. A repair call that throws is counted as a
+repair attempt and recorded as the unreadable case it is, never swallowed as a "declined" answer.
+
+**What is measured, and what is not.** The mechanism is asserted at 100 % statements/branches/functions/lines with
+a scoped denominator, and end-to-end over a real loopback `createChatClient`, where the second on-wire request is
+shown to carry `FAULT TYPE:` and `the reply is not JSON` verbatim and the summed tokens equal the endpoint's reported
+usage. What is NOT claimed: that repairs improve the published ranking. That needs a paired dispatch of the malformed
+population, and a parseable claim is still not a true claim — the verifier decides. Eligibility stays open as item
+12b; the mechanism, its cost surface and its honesty are the scope closed here. Authored as Lambertyan, in English.

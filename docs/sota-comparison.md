@@ -4239,3 +4239,27 @@ is trusted in-loop (our naked arm: 74.47 %, precision 0.216 ≈ chance). The one
 mechanism is the structured synthesis-repair loop, logged as item 12 in `PROGRESS_2026-11-28d.md` §5.
 
 Authored as Lambertyan, in English. No key or PAT in any repository.
+
+## 2026-11-28 (30) — iteration 387: the rival's one transferable mechanism, built behind a gate
+
+The 90.0 % agent's source (`LGU-SE-Internal/ThinkDepthAI`, read in §29 and verification §1.32) separates
+investigation from synthesis and validates the synthesis with an exact-error repair loop of three attempts. That
+was the one mechanism in the field's leading agent that this programme had not built. Iteration 387 builds it.
+
+| | before (§29) | now (this section) |
+| --- | --- | --- |
+| structured synthesis validator | gated verifier checks claims, not synthesis form | fault taxonomy on the synthesis itself: empty / no-brace / never-closed / decode / shape / bound |
+| malformed answer | recorded unreadable, dropped | fed back verbatim, repaired up to 3 calls when the gate is on |
+| provenance | `malformed` reason only | optional `repair` block: protocol, calls, one fault per failed step |
+| cost of the mechanism | none (did not exist) | zero when the gate is off; endpoint-reported tokens summed when on |
+| provider | n/a | injected boundary; DeepSeek, offline or replay, no core import |
+
+The gate is **off by default**, so the published board (1 192 Top@1, +31.22 pp, p = 1.8e-73) and the gated arm
+(93.32 % at a stated different denominator) are unchanged by this iteration. This is a capability, not a ranking
+claim: whether repairs recover lost cases requires a paired paid dispatch and a verifier decision, and is recorded
+as open item 12b rather than folded into a number.
+
+Ranking position is unchanged from §29: first on the published FSE'26 Top@1 board by +31.22 pp, first on RCAEval
+735 by +22.61 pp, and above the published leading agent on the gated arm with the denominator caveat stated. Cost
+position is unchanged: ¥0.0012/case engine, ≈27 000× below the Sonnet arm. The repair loop adds a bounded, counted
+cost only in the arm a caller explicitly opens. Full record: `docs-repository:PROGRESS_2026-11-28e.md`.

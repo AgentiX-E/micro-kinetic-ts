@@ -22,6 +22,21 @@
 import type { EliminationClaim } from '../../packages/ai/src/agent/index.js';
 import { ELIMINATOR_PROTOCOL } from '../../packages/ai/src/agent/index.js';
 
+/**
+ * Provenance of a structured synthesis-repair on this answer.
+ *
+ * Recorded, not inferred: a reader of the artifact must be able to tell a first-time-valid answer from one that
+ * took three repairs, without re-running the paid arm. `faults` is one category per failed step, in order.
+ */
+export interface RepairProvenance {
+  /** {@link SYNTHESIS_REPAIR_PROTOCOL} at the time of the repair. */
+  readonly protocol: number;
+  /** Repair calls actually made after the first synthesis. */
+  readonly calls: number;
+  /** The classified fault at every step that failed to parse, in order. */
+  readonly faults: readonly string[];
+}
+
 /** One case's answer. `claims: []` is a legitimate answer — the model agrees with the engine. */
 export interface ClaimRecord {
   readonly datapack: string;
@@ -34,6 +49,8 @@ export interface ClaimRecord {
   readonly claims: readonly EliminationClaim[];
   /** Why the reply could not be read, when it could not. Mutually exclusive with a non-empty `claims`. */
   readonly malformed?: string;
+  /** The structured synthesis-repair this answer went through, when the repair gate was on and it was needed. */
+  readonly repair?: RepairProvenance;
   /** Wall time of the call, in milliseconds. Provenance, never an input to any decision. */
   readonly ms: number;
   readonly promptTokens: number;
@@ -67,6 +84,15 @@ export function formatClaimRecord(record: ClaimRecord): string {
       },
     })),
     ...(record.malformed === undefined ? {} : { malformed: record.malformed }),
+    ...(record.repair === undefined
+      ? {}
+      : {
+          repair: {
+            protocol: record.repair.protocol,
+            calls: record.repair.calls,
+            faults: [...record.repair.faults],
+          },
+        }),
     ms: record.ms,
     promptTokens: record.promptTokens,
     completionTokens: record.completionTokens,
@@ -180,6 +206,7 @@ export function parseClaimRecords(text: string): ClaimRecord[] {
     if (source['malformed'] !== undefined && typeof source['malformed'] !== 'string') {
       throw new Error(`claims line ${at} carries a malformed reason that is not text`);
     }
+    const repair = readRepairProvenance(source['repair'], at);
     const raw = source['claims'];
     if (!Array.isArray(raw)) throw new Error(`claims line ${at} carries no claims array`);
     const claims: EliminationClaim[] = [];
@@ -195,12 +222,45 @@ export function parseClaimRecords(text: string): ClaimRecord[] {
       digest: source['digest'],
       claims,
       ...(source['malformed'] === undefined ? {} : { malformed: source['malformed'] }),
+      ...(repair === undefined ? {} : { repair }),
       ms,
       promptTokens,
       completionTokens,
     });
   }
   return records;
+}
+
+/**
+ * Read a repair block, or `undefined` when the answer was not repaired.
+ *
+ * A block the writer could not have produced is refused with its line number: an artifact that silently dropped
+ * a malformed provenance block would report a repair census it did not read, which is the failure the reader's
+ * strictness exists to prevent.
+ *
+ * @param raw - The parsed `repair` field, or `undefined`.
+ * @param at - The one-based line number, for the refusal message.
+ * @returns The provenance, or `undefined`.
+ */
+function readRepairProvenance(raw: unknown, at: number): RepairProvenance | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`claims line ${at} carries a repair that is not an object`);
+  }
+  const record = raw as Record<string, unknown>;
+  const protocol = record['protocol'];
+  if (typeof protocol !== 'number' || !Number.isFinite(protocol)) {
+    throw new Error(`claims line ${at} repair protocol must be a number`);
+  }
+  const calls = record['calls'];
+  if (typeof calls !== 'number' || !Number.isInteger(calls) || calls < 0) {
+    throw new Error(`claims line ${at} repair calls must be a non-negative integer`);
+  }
+  const faults = record['faults'];
+  if (!Array.isArray(faults) || faults.some((fault) => typeof fault !== 'string')) {
+    throw new Error(`claims line ${at} repair faults must be an array of text`);
+  }
+  return { protocol, calls, faults: faults as string[] };
 }
 
 /** What a replay could pair, and what it refused. Both counts are printed, never inferred. */
