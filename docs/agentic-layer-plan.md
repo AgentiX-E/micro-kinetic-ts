@@ -335,3 +335,32 @@ The next iteration attacks **ordering**, not the layer. The depth report's `abse
 engine's complete order holds an accepted answer in every case — so all 24.5 points between 75.5 % and a perfect
 Top@1 are position, and 173 of them are cases where the engine ranked the right service too low. That is a scoring
 change with an ablation in `docs/`, which is the shape this repository has always measured best.
+
+---
+
+## 12. Iteration 385: the reopening condition was checked against the 2026 field and not met
+
+Section 11 left one sentence standing: *a reopening needs the presentation to change, not the weight*. Iteration
+385 checks that condition against the competitor field rather than assuming it, and records that it is not met.
+
+Three 2026 results were re-verified from primary sources (`SOTA_LANDSCAPE_VERIFICATION.md` §1.31):
+
+1. **GALA+** (arXiv:2608.08968v1, ASE 2026) reaches 74.44 % OB / 73.33 % TT AC@1 by *bounding* the agent to the
+   dependency graph — free ReAct collapses to 24.44 % on TT. Its STRIX scorer fuses Instability (p99/p50),
+   Centrality (fan-in/out PageRank) and Impact (self-delay share) with RRF. This is a presentation change, but its
+   code is not public and its population is two 90-case panels, not our 1 422.
+2. **Continual Search** lifts Opus-4.8 F1 0.471 → 0.608 (+29 %) on MegaRCA-Mix — but that population is 50
+   long-horizon *agent-failure* traces, not service-level RCA. Our own query-agent already tested more rounds and
+   found they hurt (`free-investigation.md` §978-983); the budget stays at six.
+3. **Simple harnesses** (RCAtlas, 65–77 % vs stage-prescribing agents 16–53 %) confirm that *what the agent may
+   decide* dominates *how it reasons* — the same finding §1 of this plan already built the two roles on.
+
+None of the three changes the presentation on our four populations. The decision from §11 therefore stands: the
+layer stays retired, `AgentOptions` keeps no model-facing switch, and the shipped agentic shape remains the gated
+board arm where the model proposes and a mechanical verifier decides. The one component that cleared the
+published leader (93.32 % vs 90.0 %, at a stated different denominator) is that gated arm, not a naked agent.
+Reopening still requires a presentation change on **our** corpus with a >15 pp paired, 3-rep effect — because the
+layer's own run-to-run variance is 15.1 points (§11).
+
+The next work goes to the ¥0 engine axes (retrieval at ranks 6–49, edge-level F1, STRIX-style signals) and to
+publishing the priced 1 192 board, not to rebuilding a layer its own control already refuted.

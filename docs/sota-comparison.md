@@ -4187,3 +4187,30 @@ and not cost cannot say whether an agent is deployable.
 tree — and it does not claim their numbers are wrong. The one claim it makes is negative and checkable: the three
 newest agentic-RCA benchmarks all score *investigation* as well as *answer*, and this programme's headline still scores
 only the answer. That is a gap in the metric, not in the engine, and it is the next thing worth closing.
+
+---
+
+## 2026-11-28 (28) — iteration 385: the agentic instruction is answered by its own control, not by a rebuild
+
+The standing instruction asks each iteration to replicate 2026 agent designs to take RCABench SOTA. This entry
+records that the experiment was already run on the full corpus and returned a measured negative, so rebuilding it
+would be a regression dressed as progress. It is not a new engine number; it is the reason no engine number moved.
+
+| arm (1 422 cases unless noted) | Top@1 | vs engine control | source |
+| --- | ---: | ---: | --- |
+| engine, no model call | 75.5 % (iter285 frame) / published 83.47 % (current) | — | `agentic-layer-plan.md` §11 / `PROGRESS_2026-11-28b.md` §6 |
+| elimination, best (`rrf` w=0.3) | 73.6 % | −1.9 pp | `AGENTIC_SOTA_ROUTE_2026-11-14.md` |
+| nomination, best | 74.6 % | −0.9 pp | same |
+| free-investigation, ungated | 74.47 % | precision 0.216 ≈ chance | `free-investigation.md` §989 |
+| free-investigation, lag gate | 82.56 % | +18, p = 0.0096 | same |
+| **gated LLM board arm** | **93.32 %** (1 327) | leader 90.0 % (500-case) | `PROGRESS_2026-11-26a.md` |
+
+**The mechanism, in one line.** A naked agent that re-decides from raw telemetry scores at chance because it
+repeats the engine's first service in 87.1 % of cases and is the truth in only 74.3 % — it discards true answers
+already on the page. The shipped SOTA arm is the opposite: the model proposes and a mechanical verifier decides
+(`No LLM in the signal path`). This is the answer to the counter-intuitive-LLM question: LLM accuracy is low only
+when override authority is given without a verifier; with one it is the leading arm at ≈27 000× lower cost.
+
+The 2026 field was re-verified from primary sources and does not change this: GALA+ 74.44/73.33 % on two 90-case
+panels (code not public), Continual Search +29 % on agent-failure traces (non-transferable), ThinkDepth.ai 90.0 %
+on a 500-case sample. Full reasoning `PROGRESS_2026-11-28c.md` §2-§3, `SOTA_LANDSCAPE_VERIFICATION.md` §1.31.
