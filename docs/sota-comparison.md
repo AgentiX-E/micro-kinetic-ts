@@ -4348,3 +4348,31 @@ mechanism has no surface to act on. The gate we ship is the honest analogue and 
 the board stands and remaining work is maintenance. RCABench FSE'26 data is now public (Zenodo 17105974, CC-BY-4.0,
 and `AgentiX-E/rcabench-data` shards). No paid dispatch, no API call, no ranking change. Full record:
 `micro-kinetic-ts-docs:VERIFIER_REPLAY_REPRODUCIBILITY.md` and `PROGRESS_2026-11-28i.md`.
+
+## 2026-11-28 (34) — iteration 391: the strictness ladder is re-scorable; "exhausted" narrowed to one open board
+
+Iteration 390 closed the SOTA route. The standing instruction requires that a plateau trigger a re-audit for a design
+or implementation error and a fresh literature hunt. This iteration re-scored the arm's gate-policy monotonicity
+(`benchmarks/src/gate-policy-monotonicity.ts`, 17 tests at 100/100/100/100) against the real `query-agent.ndjson` of
+run `45939793686` (1 422 rows, sha256 `f40feabb042d09…`). As strictness rises `none < cited < cone < contrast < lag`,
+admitted overrides fall `709 → 36`, refusals rise `0 → 673` by the same count at every step, and resolved Top@1 rises
+`388 → 766 → 998 → 1 210 → 1 238`: **MONOTONE**. The first draft wrongly scoped the invariant to a seeded arm; the
+real artifact is a free arm and the nesting holds there too, so the module now checks both and carries the `seeded`
+flag so the free-arm caveat travels with the number.
+
+`arXiv:2610.35767` (2026-10) reports the opposite slope — more prescribed calls, lower accuracy — for a freely
+calling agent. That prices the calls an agent chooses, while our gate prices a deterministic fallback after the
+model answers; the runner prints both readings and does not claim one refutes the other. Our deterministic rule does
+not exhibit the paper's failure mode.
+
+| | §33 | now (this section) |
+| --- | --- | --- |
+| gate monotonicity | asserted in prose | `gate-policy-monotonicity.ts` + runner, re-scored on 1 422 |
+| "SOTA route exhausted" | whole board | narrowed: all *measured* populations; OPS-Lite unmeasured |
+| published board / gated arm / RCAEval | 1 192 / 93.32 % / 90.61 % | unchanged |
+
+The one genuinely open axis is OPS-Lite — the board's second population (500 cases), where the ranking inverts and
+we have no number. It is blocked by bandwidth (13.4 GB at 25–95 KB/s = 1.6–6.2 days), not by method or access; the
+newly public `AgentiX-E/rcabench-data` shards host only the 1 430 FSE'26 cases and do not remove the block. No paid
+dispatch, no API call, no ranking change. Full record: `micro-kinetic-ts-docs:GATE_MONOTONICITY_AND_OPEN_AXES.md`
+and `PROGRESS_2026-11-28j.md`.

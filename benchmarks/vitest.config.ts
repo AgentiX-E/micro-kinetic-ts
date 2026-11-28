@@ -758,6 +758,11 @@ export default defineConfig({
         // in lockstep. What is measured is survival over all claims, the per-family counters, and the absence of
         // a second scorer: the census tallies fabrication refusals, never judgement. 100/100/100/100.
         'src/verifier-replay-census.ts',
+        // Added with the module: the gate-policy monotonicity checker states the invariant the shipped arm
+        // claims — as strictness rises, admitted overrides never increase, refusals never decrease and resolved
+        // Top@1 never falls (on a seeded arm). It is the exact counterpart to the opposite shape reported for a
+        // freely calling agent in arXiv:2610.35767. 100/100/100/100.
+        'src/gate-policy-monotonicity.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
