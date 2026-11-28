@@ -737,6 +737,35 @@ describe('the model arm’s wiring', () => {
     // No key or model value leaks into the variable reads: the gate carries only its two booleans.
     expect(WORKFLOW_CODE).not.toMatch(/BENCHMARK_SYNTHESIS_REPAIR:.*secrets/);
   });
+
+  it('keeps the propose step’s flag set exact: repair is dispatchable, study knobs are not', () => {
+    // Iteration 388 audit: the eliminate runner ACCEPTS --weight/--limit/--max-candidates/--delta, but none of
+    // them belongs on the propose dispatch. --weight scores arms in the headroom step, which has its own input;
+    // --limit/--max-candidates are local study widths and --delta is the certification significance. Forwarding
+    // any of them here would let one dispatch run two configurations under one name — the census's exact defect.
+    // The repair pair is the ONLY flag family routed through an indirect array, so guard both sides of the set.
+    const propose = WORKFLOW.slice(
+      WORKFLOW.indexOf('Ask the model to eliminate'),
+      WORKFLOW.indexOf('The second expression protocol'),
+    );
+    const invocation = propose.slice(
+      propose.indexOf('run-agentic-eliminator.ts'),
+      propose.indexOf('tee artifacts/agentic/eliminator.txt'),
+    );
+    for (const studyFlag of ['--weight', '--limit', '--max-candidates', '--delta']) {
+      expect(invocation).not.toContain(studyFlag);
+    }
+    // Non-vacuity: the runner really accepts these (so the assertion is about wiring, not a stale flag), and
+    // --weight is dispatched through the headroom step rather than dropped.
+    const runner = readFileSync(
+      resolve(repoRoot, 'benchmarks/src/agentic-eliminator-study.ts'),
+      'utf8',
+    );
+    for (const studyFlag of ['--weight', '--limit', '--max-candidates', '--delta']) {
+      expect(runner).toContain(`'${studyFlag}'`);
+    }
+    expect(WORKFLOW).toContain('WEIGHT_ARG=(--weight "${{ inputs.weight }}")');
+  });
 });
 
 /**
