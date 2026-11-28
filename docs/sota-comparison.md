@@ -4312,3 +4312,39 @@ fenced acceptance it required cannot fire. No run-off is built and no number mov
 
 No paid dispatch, no API call, no ranking change. Full record: `micro-kinetic-ts-docs:SCORE_GAP_REPRODUCIBILITY.md`
 and `PROGRESS_2026-11-28h.md`.
+
+## 2026-11-28 (33) — iteration 390: the verifier ledger is re-scorable; item 8 closes refuted-by-mechanism
+
+Iteration 389 made `docs/rank-depth.md` §5's score-gap curve re-scorable and refuted it. This iteration applies the
+same rule to the last ranking lever, item 8 (a DiagGuard-style verifier switch). The verifier ledger — unlike the
+score-gap curve — **reproduces exactly**. `benchmarks/src/verifier-replay-census.ts` (10 tests at 100/100/100/100)
+calls `verifyClaim` once per joined claim and buckets the returned reason; the runner joins `claims.ndjson` to
+`fingerprints.ndjson` on `datapack` and re-scores the 5 335 real model claims of run `43548386087`.
+
+| reading | claims | verified | refused | survival |
+| --- | ---: | ---: | ---: | ---: |
+| docs (`agentic-fusion.md`, `PROGRESS_2026-11-14a.md`) | 5 335 | 3 321 | 2 014 | 62.2 % |
+| replay against the artifact | 5 335 | 3 321 | 2 014 | 62.2 % |
+
+Refusals decompose as `unknown-channel` 1 000 + `channel-not-observed-on-both` 774 (= the 1 774 pre-split figure)
++ `band-disagrees` 207 + `inside-band` 28 + `rate-disagrees` 4 + `value-disagrees` 1. Every document number matches,
+so the verifier is a live signal (37.8 % of real claims refused), not a rubber stamp — the "0 refused on 173 oracle
+claims" figure in `PROGRESS_2026-11-12b.md` is the label-reading ORACLE arm, not model output.
+
+Item 8 closes **refuted-by-mechanism**. Web verification (2026-11-28) confirms DiagGuard (`arXiv:2608.21310`) is an
+evidence-grounding + diagnosis-audit wrapper, not a re-ranker: its +9.0 pp is Grounder +4.5 and Verifier +4.1 on a
+400-case AIOps hold-out, with no code/data release. The +4.1 pp Verifier gain is an evidence-closure effect; our
+engine produces no evidence trajectories, so an `evidence-closure` gap is not measurable from our artifacts and the
+mechanism has no surface to act on. The gate we ship is the honest analogue and is already active.
+
+| | §32 | now (this section) |
+| --- | --- | --- |
+| score-gap twin | refuted-by-data, closed | unchanged |
+| item 8 verifier switch | open, ≤ +4.1 pp | refuted-by-mechanism, closed |
+| re-scorable verifier instrument | none | `verifier-replay-census.ts` + runner |
+| published board / gated arm / RCAEval | 1 192 / 93.32 % / 90.61 % | unchanged |
+
+**The SOTA route is exhausted.** No lever remains that can move the published Top@1 on a public reproducible harness;
+the board stands and remaining work is maintenance. RCABench FSE'26 data is now public (Zenodo 17105974, CC-BY-4.0,
+and `AgentiX-E/rcabench-data` shards). No paid dispatch, no API call, no ranking change. Full record:
+`micro-kinetic-ts-docs:VERIFIER_REPLAY_REPRODUCIBILITY.md` and `PROGRESS_2026-11-28i.md`.

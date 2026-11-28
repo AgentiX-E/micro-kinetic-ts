@@ -752,6 +752,12 @@ export default defineConfig({
         // histogram decides the twin direction, and the absence counters that keep an unranked truth out of
         // the top-1 numerator. Deleting a dead label branch is what took it to 100/100/100/100.
         'src/score-gap-census.ts',
+        // Added with the module: the verifier replay census gives the "3 321 of 5 335 survive verifyClaim"
+        // reading an owner. It calls verifyClaim once per joined row and buckets the returned reason, so the
+        // nine declared refusal families partition the refusals exactly and a verifier change moves the census
+        // in lockstep. What is measured is survival over all claims, the per-family counters, and the absence of
+        // a second scorer: the census tallies fabrication refusals, never judgement. 100/100/100/100.
+        'src/verifier-replay-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
