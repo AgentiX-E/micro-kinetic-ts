@@ -1,0 +1,122 @@
+export {
+  CLAIM_REJECTIONS,
+  CLAIM_STATISTICS,
+  DEFAULT_CONSULTATION_OPTIONS,
+  SKIP_REASONS,
+  applyClaims,
+  decideConsultation,
+  verifyClaim,
+} from './hypothesis-space.js';
+
+export type {
+  CandidateFingerprint,
+  ChannelFingerprint,
+  ClaimBasis,
+  ClaimRejection,
+  ClaimStatistic,
+  ClaimVerdict,
+  ConsultationDecision,
+  EliminationClaim,
+  SkipReason,
+} from './hypothesis-space.js';
+
+export {
+  AgentBudget,
+  DEEPSEEK_PRICE,
+  DEFAULT_ELIMINATOR_BUDGET,
+  DEFAULT_INVESTIGATOR_BUDGET,
+  GATE_TRIPS,
+  formatMicroUsd,
+  parseBudget,
+  roundCost,
+  tokenCost,
+} from './budget.js';
+
+export type { BudgetLimits, BudgetSpend, GateTrip, ModelPrice, RoundCost } from './budget.js';
+
+export {
+  DEFAULT_ELIMINATOR_OPTIONS,
+  ELIMINATOR_PROTOCOL,
+  PROMPTABLE_STATISTICS,
+  buildEliminatorPrompt,
+  digestOf,
+  parseEliminatorReply,
+} from './eliminator.js';
+
+export {
+  DEFAULT_REPAIR_ATTEMPTS,
+  MAX_REPAIR_ATTEMPTS,
+  SYNTHESIS_REPAIR_PROTOCOL,
+  buildRepairTurn,
+  classifyFault,
+  repairSynthesis,
+} from './synthesis-repair.js';
+
+export type {
+  RepairOptions,
+  RepairOutcome,
+  RepairStep,
+  RepairTurn,
+  SynthesisComplete,
+  SynthesisFault,
+  SynthesisReply,
+} from './synthesis-repair.js';
+
+export { channelsByEvidence, compareChannelEvidence, departureOf, evidenceOf } from './evidence.js';
+
+export type { ChannelEvidence } from './evidence.js';
+
+export type { EliminatorOptions, EliminatorPrompt, ParsedReply } from './eliminator.js';
+
+export {
+  DEFAULT_FUSION_OPTIONS,
+  FUSION_STRATEGIES,
+  RANK_STRATEGIES,
+  fuseClaims,
+  fuseRanks,
+  impliedOrder,
+} from './fusion.js';
+
+export type { FusionOptions, FusionStrategy, RankFusionOptions, RankStrategy } from './fusion.js';
+
+export {
+  DEFAULT_NOMINATION_OPTIONS,
+  NOMINATION_PROTOCOL,
+  NOMINATION_REJECTIONS,
+  buildNominationPrompt,
+  fuseNomination,
+  parseNominationReply,
+  verifyNomination,
+} from './nomination.js';
+
+export type {
+  NominationOptions,
+  NominationPrompt,
+  NominationRejection,
+  NominationVerdict,
+  ParsedNomination,
+} from './nomination.js';
+
+export { CHANNEL_TABLE_HEADER, CHANNEL_TABLE_RULE, num, renderCandidateTable } from './table.js';
+
+export {
+  DEFAULT_PROMOTION_THRESHOLD,
+  PROMOTION_OFF,
+  PROMOTION_OUTCOMES,
+  formatPromotionCensus,
+  gatePromotion,
+} from './promotion.js';
+
+export type {
+  EvidenceOptions,
+  EvidenceReading,
+  EvidenceVariant,
+  PromotionDecision,
+  PromotionOptions,
+  PromotionOutcome,
+  PublishedCandidate,
+} from './promotion.js';
+
+export { TOPOLOGY_BRIEF_HEADING, TopologyUnion, renderTopologyBrief } from './topology-brief.js';
+
+export type { RenderedTopologyBrief, TopologyBriefInput, TopologyEdge } from './topology-brief.js';

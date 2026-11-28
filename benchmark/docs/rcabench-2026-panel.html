@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RCABench 2026 — accuracy and cost, ours against the panel</title>
+    <style>
+      :root {
+        --ink: #14181f;
+        --muted: #5b6675;
+        --rule: #dde3ec;
+        --panel: #eef2f7;
+        --bar: #8c9bb0;
+        --ours: #c0392b;
+        --ours-lite: #e5998f;
+        --engine: #2f6f4f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 40px 44px 64px;
+        font: 15px/1.55 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background: #fff;
+        max-width: 1080px;
+      }
+      h1 { font-size: 23px; margin: 0 0 4px; letter-spacing: -0.01em; }
+      h2 { font-size: 16px; margin: 38px 0 2px; }
+      p.lede { color: var(--muted); margin: 0 0 18px; }
+      p.note { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+      .row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+      .label { width: 232px; text-align: right; font-size: 13px; flex: none; }
+      .label small { display: block; color: var(--muted); font-size: 11px; }
+      .track { position: relative; flex: 1; height: 19px; background: var(--panel); border-radius: 3px; }
+      .fill { position: absolute; inset: 0 auto 0 0; background: var(--bar); border-radius: 3px; }
+      .fill.ours { background: var(--ours); }
+      .fill.engine { background: var(--engine); }
+      .fill.ghost { background: repeating-linear-gradient(45deg, #c9d2df, #c9d2df 5px, #e3e9f2 5px, #e3e9f2 10px); }
+      .value { width: 108px; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
+      .value small { color: var(--muted); }
+      .axis { display: flex; gap: 10px; margin-top: 4px; font-size: 11px; color: var(--muted); }
+      .axis .label { visibility: hidden; }
+      .axis .ticks { position: relative; flex: 1; height: 14px; }
+      .axis .ticks span { position: absolute; transform: translateX(-50%); }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 12px; }
+      th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+      th { font-weight: 600; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      tr.me td { background: #fdf3f1; font-weight: 600; }
+      .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; border: 1px solid var(--rule); color: var(--muted); }
+      .tag.ours { border-color: #e8b4ac; color: var(--ours); background: #fdf3f1; }
+      .legend { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+      .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+    </style>
+  </head>
+  <body>
+    <h1>RCABench 2026 — accuracy, and the cost the accuracy was bought at</h1>
+    <p class="lede">
+      1 422 injected faults. The panel is the trajectory study's own Table 2 (arXiv 2608.21310v2), reported as
+      published. Ours is the shipped pipeline on the same corpus, end to end, ¥20.81 for all 1 422 cases.
+    </p>
+
+    <h2>1 · Acc@1 on RCABench</h2>
+    <div class="chart" id="acc"></div>
+
+    <h2>2 · Cost per case, where a cost is published</h2>
+    <p class="lede" style="margin-bottom: 8px">
+      Only three points in this panel carry a per-case price in the literature. The rest report rounds and budgets, not
+      money, and are drawn hollow rather than estimated.
+    </p>
+    <div class="chart" id="cost"></div>
+
+    <h2>3 · The table the figures come from</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>method</th>
+          <th>LLM</th>
+          <th>model</th>
+          <th class="num">Acc@1</th>
+          <th class="num">¥ / case</th>
+          <th>type</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <p class="note">
+      <strong>Reading the gap.</strong> 93.39 % against 90.0 % on 1 422 cases is +3.39 points, 5.1 standard errors — a
+      lead, and one bought at 6 model calls of ~6.3 k prompt tokens per case against an open-ended adaptive
+      investigation. The engine alone, with no model call at all, reads 81.29 % and clears nine of the ten published
+      frameworks — every one except Sonnet + ThinkDepth.ai.
+    </p>
+    <p class="note">
+      <strong>Where the numbers come from.</strong> Panel Acc@1: arXiv 2608.21310v2 Table 2, as published. Our 93.39 %:
+      run <code>45531140696</code> over the full corpus (<code>1 328 / 1 422</code>, 180 repairs, 8 breaks, precision
+      0.957, ¥20.81 for all 1 422 cases), with both deterministic guards applied inside the artifact. The 11-22 artifact
+      reads 90.51 % on the same flags, so the pair also prices the guards: +41 cases, 42 gained against 1 lost,
+      p &lt; 0.001. Our ¥0.0147/case: the runner's own price line at the declared
+      token prices. RCLAgent V2's ≈ USD 0.9/case is quoted in "Free to Look, Free to Reason" (2026), converted at
+      ¥7.1/USD. "Type" distinguishes a self-hosted pipeline (the code runs where the data is) from a hosted agent
+      service; nothing here is a licence claim about a project this repository does not ship.
+    </p>
+
+    <script>
+      const PANEL = [
+        { name: "ThinkDepth.ai", model: "Sonnet", acc: 90.0, cls: "" },
+        { name: "ours (pipeline)", model: "engine + 1 gated model", acc: 93.39, cls: "ours", me: true },
+        { name: "ClaudeCode", model: "Qwen", acc: 79.6, cls: "" },
+        { name: "ThinkDepth.ai", model: "Qwen", acc: 79.2, cls: "" },
+        { name: "AIQ", model: "Qwen", acc: 77.6, cls: "" },
+        { name: "TaskWeaver", model: "Qwen", acc: 65.2, cls: "" },
+        { name: "RCLAgent V2", model: "Qwen", acc: 53.4, cls: "" },
+        { name: "GoS", model: "Qwen", acc: 48.2, cls: "" },
+        { name: "OpenRCA", model: "Qwen", acc: 46.6, cls: "" },
+        { name: "OpsAgent", model: "Qwen", acc: 45.8, cls: "" },
+        { name: "mABC", model: "Qwen", acc: 42.6, cls: "" },
+        { name: "ours (engine only)", model: "no model call", acc: 81.29, cls: "engine", me: true },
+      ];
+      const COST = [
+        { name: "ours (pipeline)", model: "6 calls · 6.3 k prompt", cost: 0.0147, cls: "ours", me: true },
+        { name: "RCLAgent V2", model: "≈ USD 0.9", cost: 6.39, cls: "" },
+        { name: "ours (engine only)", model: "no model call", cost: 0, cls: "engine", me: true },
+        { name: "9 published agents", model: "price not published", cost: null, cls: "ghost" },
+      ];
+      const TYPE = {
+        "ours (pipeline)": ["self-hosted", "ours"],
+        "ours (engine only)": ["self-hosted", "ours"],
+        "RCLAgent V2": ["self-hosted research code", ""],
+      };
+
+      function bars(host, items, max, fmt) {
+        const el = document.getElementById(host);
+        for (const item of items) {
+          const row = document.createElement("div");
+          row.className = "row";
+          const pct = item.cost === null || item.cost === 0 ? 100 : (Math.log10(item.cost + 0.01) + 2) / (Math.log10(max + 0.01) + 2) * 100;
+          const width = item.acc !== undefined ? (item.acc / max) * 100 : pct;
+          row.innerHTML =
+            `<div class="label">${item.name}<small>${item.model}</small></div>` +
+            `<div class="track"><div class="fill ${item.cls}" style="width:${width.toFixed(2)}%"></div></div>` +
+            `<div class="value">${fmt(item)}</div>`;
+          el.appendChild(row);
+        }
+      }
+
+      bars("acc", PANEL, 100, (i) => `${i.acc.toFixed(i.me ? 2 : 1)} %`);
+      bars("cost", COST, 10, (i) => (i.cost === null ? `<small>n/p</small>` : i.cost === 0 ? `¥0` : `¥${i.cost.toFixed(i.cost < 0.1 ? 4 : 2)}`));
+
+      const rows = [...PANEL].sort((a, b) => b.acc - a.acc);
+      document.getElementById("rows").innerHTML = rows
+        .map((i) => {
+          const [type, tagCls] = TYPE[i.name] || ["hosted agent", ""];
+          const cost = i.name.includes("pipeline") ? "0.0147" : i.name.includes("engine") ? "0" : i.name === "RCLAgent V2" ? "≈ 6.39" : "n/p";
+          return (
+            `<tr class="${i.me ? "me" : ""}"><td>${i.name}</td><td>yes${i.name.includes("engine only") ? ", none" : ""}</td>` +
+            `<td>${i.model}</td><td class="num">${i.acc.toFixed(2)}</td><td class="num">${cost}</td>` +
+            `<td><span class="tag ${tagCls}">${type}</span></td></tr>`
+          );
+        })
+        .join("");
+    </script>
+  </body>
+</html>

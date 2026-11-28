@@ -1,0 +1,274 @@
+# TrainTicket Service Topology
+# Source: https://github.com/FudanSELab/train-ticket
+# Architecture: ~64 microservices across 3 layers (UI, Gateway, Business)
+#
+# Known issue: 95 edges defined here but RCAEval dataset has 64 services
+# in typical cases — only ~36 services match due to dataset subsetting.
+# The semantic alignment layer handles unresolved services via embedding
+# similarity matching.
+#
+# Key dependency patterns:
+#   ts-ui → ALL business services (ts-ui is the unified frontend)
+#   ts-order-service → ts-travel-service, ts-price-service, etc.
+#   ts-preserve-service → ts-seat-service, ts-train-service
+#   ts-admin-* → ts-auth + target business service
+#   ts-food-service chain → station-food, train-food, food-delivery
+#   ts-consign-service chain → consign-price, delivery
+#   ts-payment-service → inside-payment, voucher
+
+version: "1.0"
+system: TrainTicket
+description: "Fudan Train Ticket benchmark — 64 microservices"
+source: "https://github.com/FudanSELab/train-ticket"
+
+services:
+  # ── UI Layer ───────────────────────────────────────────
+  - id: ts-ui
+    namespace: train-ticket
+    labels:
+      tier: web
+      language: nodejs
+      description: "Unified web frontend"
+
+  # ── Core Business Services ─────────────────────────────
+  - id: ts-travel-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Travel plan management" }
+  - id: ts-train-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Train schedule and info" }
+  - id: ts-route-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Route planning" }
+  - id: ts-station-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Station information" }
+  - id: ts-seat-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Seat allocation" }
+  - id: ts-order-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Order processing" }
+  - id: ts-preserve-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Ticket reservation" }
+  - id: ts-user-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "User management" }
+  - id: ts-price-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Pricing engine" }
+  - id: ts-config-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Configuration" }
+  - id: ts-security-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Security policies" }
+  - id: ts-auth-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Authentication" }
+  - id: ts-payment-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Payment processing" }
+  - id: ts-assurance-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Insurance" }
+  - id: ts-contacts-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Contact management" }
+  - id: ts-food-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Food ordering" }
+  - id: ts-consign-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Luggage consignment" }
+  - id: ts-voucher-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Voucher/promo codes" }
+  - id: ts-verification-code-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "SMS/email verification" }
+  - id: ts-basic-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Basic shared info" }
+  - id: ts-cancel-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Order cancellation" }
+  - id: ts-rebook-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Ticket rebooking" }
+  - id: ts-execute-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Order execution" }
+  - id: ts-travel2-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Travel plan v2" }
+  - id: ts-route-plan-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Route planning UI" }
+  - id: ts-travel-plan-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Travel planning UI" }
+  - id: ts-ticket-office-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Physical ticket office" }
+  - id: ts-inside-payment-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Internal payment" }
+  - id: ts-order-other-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Other order types" }
+  - id: ts-wait-order-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Waitlist orders" }
+  - id: ts-food-map-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Food map/location" }
+  - id: ts-train-food-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Train food menu" }
+  - id: ts-station-food-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Station food menu" }
+  - id: ts-food-delivery-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Food delivery" }
+  - id: ts-consign-price-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Consignment pricing" }
+  - id: ts-delivery-service
+    namespace: train-ticket
+    labels: { tier: backend, language: java, description: "Package delivery" }
+
+  # ── Admin Services ─────────────────────────────────────
+  - id: ts-admin-basic-info-service
+    namespace: train-ticket
+    labels: { tier: admin, language: java, description: "Admin: basic info" }
+  - id: ts-admin-order-service
+    namespace: train-ticket
+    labels: { tier: admin, language: java, description: "Admin: order management" }
+  - id: ts-admin-route-service
+    namespace: train-ticket
+    labels: { tier: admin, language: java, description: "Admin: route management" }
+  - id: ts-admin-travel-service
+    namespace: train-ticket
+    labels: { tier: admin, language: java, description: "Admin: travel management" }
+  - id: ts-admin-user-service
+    namespace: train-ticket
+    labels: { tier: admin, language: java, description: "Admin: user management" }
+
+edges:
+  # ── UI → All Business Services ───────────────────────────
+  - { from: ts-ui, to: ts-travel-service, type: REST, callRate: 50, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-train-service, type: REST, callRate: 200, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-route-service, type: REST, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-station-service, type: REST, callRate: 300, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-seat-service, type: REST, callRate: 150, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-order-service, type: REST, callRate: 80, p99Latency: 40, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-preserve-service, type: REST, callRate: 80, p99Latency: 35, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-user-service, type: REST, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-price-service, type: REST, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-config-service, type: REST, callRate: 50, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-security-service, type: REST, callRate: 100, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-auth-service, type: REST, callRate: 200, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-payment-service, type: REST, callRate: 80, p99Latency: 50, errorRate: 0.02 }
+  - { from: ts-ui, to: ts-assurance-service, type: REST, callRate: 30, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-contacts-service, type: REST, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-food-service, type: REST, callRate: 50, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-consign-service, type: REST, callRate: 30, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-voucher-service, type: REST, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-verification-code-service, type: REST, callRate: 50, p99Latency: 40, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-basic-service, type: REST, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-cancel-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-rebook-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-execute-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-travel2-service, type: REST, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-route-plan-service, type: REST, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-travel-plan-service, type: REST, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-ticket-office-service, type: REST, callRate: 30, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-inside-payment-service, type: REST, callRate: 30, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-order-other-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-wait-order-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-food-map-service, type: REST, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-train-food-service, type: REST, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-station-food-service, type: REST, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-food-delivery-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-consign-price-service, type: REST, callRate: 20, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ui, to: ts-delivery-service, type: REST, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+
+  # ── Admin → auth + target ────────────────────────────────
+  - { from: ts-admin-basic-info-service, to: ts-auth-service, type: gRPC, callRate: 10, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-admin-basic-info-service, to: ts-basic-service, type: gRPC, callRate: 50, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-admin-order-service, to: ts-auth-service, type: gRPC, callRate: 10, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-admin-order-service, to: ts-order-service, type: gRPC, callRate: 50, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-admin-route-service, to: ts-auth-service, type: gRPC, callRate: 10, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-admin-route-service, to: ts-route-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-admin-travel-service, to: ts-auth-service, type: gRPC, callRate: 10, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-admin-travel-service, to: ts-travel-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-admin-user-service, to: ts-auth-service, type: gRPC, callRate: 10, p99Latency: 10, errorRate: 0.01 }
+  - { from: ts-admin-user-service, to: ts-user-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+
+  # ── Order Flow ───────────────────────────────────────────
+  - { from: ts-order-service, to: ts-travel-service, type: gRPC, callRate: 80, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-order-service, to: ts-user-service, type: gRPC, callRate: 80, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-order-service, to: ts-price-service, type: gRPC, callRate: 80, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-order-service, to: ts-station-service, type: gRPC, callRate: 80, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-order-service, to: ts-assurance-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-order-service, to: ts-payment-service, type: gRPC, callRate: 80, p99Latency: 50, errorRate: 0.01 }
+
+  # ── Preserve/Booking Flow ────────────────────────────────
+  - { from: ts-preserve-service, to: ts-train-service, type: gRPC, callRate: 80, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-preserve-service, to: ts-route-service, type: gRPC, callRate: 80, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-preserve-service, to: ts-travel-service, type: gRPC, callRate: 80, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-preserve-service, to: ts-seat-service, type: gRPC, callRate: 80, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-preserve-service, to: ts-station-service, type: gRPC, callRate: 80, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-preserve-service, to: ts-price-service, type: gRPC, callRate: 80, p99Latency: 15, errorRate: 0.01 }
+
+  # ── Travel/Train/Route Interdependency ───────────────────
+  - { from: ts-travel-service, to: ts-train-service, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-travel-service, to: ts-route-service, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-travel-service, to: ts-station-service, type: gRPC, callRate: 100, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-train-service, to: ts-route-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-train-service, to: ts-station-service, type: gRPC, callRate: 50, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-travel2-service, to: ts-train-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-travel2-service, to: ts-route-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-travel2-service, to: ts-station-service, type: gRPC, callRate: 50, p99Latency: 15, errorRate: 0.01 }
+
+  # ── Food Delivery Chain ──────────────────────────────────
+  - { from: ts-food-service, to: ts-station-food-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-food-service, to: ts-train-food-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-food-service, to: ts-food-delivery-service, type: gRPC, callRate: 20, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-food-map-service, to: ts-station-food-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-food-map-service, to: ts-train-food-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+
+  # ── Consign/Delivery Chain ───────────────────────────────
+  - { from: ts-consign-service, to: ts-consign-price-service, type: gRPC, callRate: 30, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-consign-service, to: ts-delivery-service, type: gRPC, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+
+  # ── Payment Chain ────────────────────────────────────────
+  - { from: ts-payment-service, to: ts-inside-payment-service, type: gRPC, callRate: 80, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-payment-service, to: ts-voucher-service, type: gRPC, callRate: 80, p99Latency: 25, errorRate: 0.01 }
+
+  # ── Supporting Services ──────────────────────────────────
+  - { from: ts-execute-service, to: ts-order-service, type: gRPC, callRate: 20, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-cancel-service, to: ts-order-service, type: gRPC, callRate: 20, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-cancel-service, to: ts-payment-service, type: gRPC, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-rebook-service, to: ts-order-service, type: gRPC, callRate: 20, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-rebook-service, to: ts-travel-service, type: gRPC, callRate: 20, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-route-plan-service, to: ts-route-service, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-route-plan-service, to: ts-train-service, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-travel-plan-service, to: ts-travel-service, type: gRPC, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-travel-plan-service, to: ts-train-service, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-ticket-office-service, to: ts-order-service, type: gRPC, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-ticket-office-service, to: ts-seat-service, type: gRPC, callRate: 30, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-order-other-service, to: ts-order-service, type: gRPC, callRate: 20, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-wait-order-service, to: ts-order-service, type: gRPC, callRate: 20, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-wait-order-service, to: ts-seat-service, type: gRPC, callRate: 20, p99Latency: 30, errorRate: 0.01 }
+
+  # ── Infrastructure → auth, config ────────────────────────
+  - { from: ts-contacts-service, to: ts-user-service, type: gRPC, callRate: 50, p99Latency: 20, errorRate: 0.01 }
+  - { from: ts-assurance-service, to: ts-order-service, type: gRPC, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-verification-code-service, to: ts-user-service, type: gRPC, callRate: 50, p99Latency: 30, errorRate: 0.01 }
+  - { from: ts-voucher-service, to: ts-order-service, type: gRPC, callRate: 30, p99Latency: 25, errorRate: 0.01 }
+  - { from: ts-basic-service, to: ts-config-service, type: gRPC, callRate: 50, p99Latency: 15, errorRate: 0.01 }
+  - { from: ts-config-service, to: ts-station-service, type: gRPC, callRate: 30, p99Latency: 15, errorRate: 0.01 }

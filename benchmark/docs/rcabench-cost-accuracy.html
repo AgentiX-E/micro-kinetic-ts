@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>micro-kinetic-ts vs the 2026 panel — accuracy and cost</title>
+    <style>
+      :root {
+        --ink: #14181f;
+        --muted: #5b6675;
+        --rule: #d8dee7;
+        --ours: #c0392b;
+        --ours-lite: #e08a80;
+        --panel: #eef2f7;
+        --bar: #7f8fa6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 40px 48px 64px;
+        font: 15px/1.55 -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background: #fff;
+        max-width: 1120px;
+      }
+      h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: -0.01em; }
+      h2 { font-size: 17px; margin: 40px 0 4px; }
+      p.lede { color: var(--muted); margin: 0 0 4px; }
+      p.note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+      .chart { margin-top: 14px; }
+      .row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+      .label { width: 250px; text-align: right; font-size: 13px; color: var(--ink); flex: none; }
+      .label small { color: var(--muted); display: block; font-size: 11px; }
+      .track { position: relative; flex: 1; height: 20px; background: var(--panel); border-radius: 3px; }
+      .fill { position: absolute; inset: 0 auto 0 0; background: var(--bar); border-radius: 3px; }
+      .ours .fill { background: var(--ours); }
+      .ours-lite .fill { background: var(--ours-lite); }
+      .value { width: 104px; font-variant-numeric: tabular-nums; font-size: 13px; }
+      .axis { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+      .axis .label { visibility: hidden; }
+      .ticks { position: relative; flex: 1; height: 14px; }
+      .tick { position: absolute; transform: translateX(-50%); }
+      .tick::before { content: ""; position: absolute; left: 50%; top: -6px; height: 4px; border-left: 1px solid var(--rule); }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 18px; }
+      th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+      th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      tr.us td { background: #fdf1ef; font-weight: 600; }
+      tr.ours-lite td { background: #fdf7f6; }
+      .legend { display: flex; gap: 18px; font-size: 12px; color: var(--muted); margin-top: 10px; flex-wrap: wrap; }
+      .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+      .foot { margin-top: 36px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; }
+      code { font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>micro-kinetic-ts against the 2026 panel</h1>
+    <p class="lede">
+      Two boards, one cost axis. Every number below is either measured in this repository's own artifacts or read
+      from the paper cited beside it — no value is interpolated.
+    </p>
+
+    <h2>1. RCABench — Acc@1 of the ten published configurations, and this project's four surfaces</h2>
+    <div class="chart" id="rcabench"></div>
+    <p class="note">
+      The ten grey bars are `arXiv:2608.21310` Table 2, measured by those authors on a 500-case random sample of the
+      1 430 released cases. The four red bars are this project on <strong>all 1 422</strong> cases: the deterministic
+      engine alone (1 156 correct), the seeded LLM arm (1 274), and the arm that <strong>shows no ranked order and
+      settles every refusal on the engine</strong> (1 286.3 over three runs = 90.46 %). The populations differ, so
+      the placement is directional — and the one sentence that has to travel with the top bar is that of the 130
+      cases between the engine and it, <strong>100 are two deterministic resolvers and 30 are the model</strong>.
+    </p>
+
+    <h2>2. RCAEval — the cells a published reference exists on, ours against it</h2>
+    <div class="chart" id="rcaeval"></div>
+    <p class="note">
+      Paired by board cell, because a suite average is not comparable to a single-cell number. RE1 92.0 % (345/375),
+      RE2 92.2 % (249/270), RE3 80.0 % (72/90) — 666/735 = 90.61 % overall. The RE3 pair is the one that is<strong>
+      not</strong> the same population: PRISM's 76.7 % is its own conjunctive magnitude read as a ranker on
+      TrainTicket alone, and on that cell a published number is still above ours — the one place in this document
+      where that is true.
+    </p>
+
+    <h2>3. Accuracy against cost — the axis that separates a product from a demonstration</h2>
+    <div class="chart" id="frontier"></div>
+    <p class="note">
+      Cost per case in CNY, logarithmic, on an axis that spans <strong>four orders of magnitude</strong>. The solid
+      line joins the two points with the <em>same accuracy</em>: 90.46 % here (three runs: 1 285 / 1 287 / 1 287) against 90.00 % there, at
+      <strong>¥0.0146 against ¥32.94 — 2 253×</strong>. The dashed line is the engine's own 81.29 % at ¥0: the
+      distance between it and the top of the chart is the model's contribution, and it is 29 cases. The engine and
+      the two arms are one product population measured on 1 422 cases; the Sonnet row is a leaderboard population on
+      500, and the 0.46 pp between them is measured on this side by three runs whose spread is 0.14 pp, which is stated rather
+      than drawn. Points with no published token count are absent rather than drawn at zero.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>system</th>
+          <th>board</th>
+          <th class</th>
+          <th>shape of the evidence</th>
+          <th class="num">accuracy</th>
+          <th class="num">cost / case</th>
+          <th>LLM</th>
+          <th>stack</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="legend">
+      <span><span class="swatch" style="background: #c0392b"></span>this project — deterministic engine, open source, self-hosted</span>
+      <span><span class="swatch" style="background: #e08a80"></span>this project — LLM arm, open source</span>
+      <span><span class="swatch" style="background: #7f8fa6"></span>published, closed harness or paper</span>
+    </div>
+
+    <p class="foot">
+      Sources: `arXiv:2608.21310` (ten framework–backbone configurations on RCABench; its cost cell for the Sonnet
+      arm is <strong>$4.64 per case</strong> = 1 465 ktok at $3/Mtok — the paper also prints "$0.2 per case" in its
+      body, which is the Qwen band and cannot be the same configuration); `arXiv:2601.21359` (PRISM);
+      `arXiv:2605.14866` (RCLAgent); `arXiv:2608.08968` (GALA+); `arXiv:2609.36771` (RCA-DCM);
+      `arXiv:2610.05009`; RCAtlas, <em>Free to Look, Free to Reason</em> (90 validated cases, 8 datasets); and this
+      repository's own artifacts for every number marked measured. The CNY figures use ¥7.1 to the dollar. A cost
+      marked "n/p" is not published and is not drawn.
+    </p>
+    <p class="foot">
+      <strong>Two readings of the same configuration, one case apart.</strong> This project's gated arm has been
+      dispatched twice under identical flags: <code>45531140696</code> reads <strong>1 328 / 1 422 = 93.39 %</strong>
+      (the panel chart beside this one), and <code>45595943761</code> reads <strong>1 327 / 1 422 = 93.32 %</strong>
+      (this chart, and the one with the measured cache bill). The difference is one case, it is the same
+      configuration, and neither is rounded up to the other: a reader comparing the two files should see the
+      disagreement rather than a figure that was quietly reconciled. The cost column below is the second run's,
+      because that is the artifact whose cache tokens were recorded.
+    </p>
+
+    <script>
+      // arXiv:2608.21310 Table 2, verbatim. 500-case sample of 1 430.
+      const rcabench = [
+        { name: 'Qwen · mABC', value: 42.6 },
+        { name: 'Qwen · OpsAgent', sub: 'pre-extracted features — our old shape', value: 45.8 },
+        { name: 'Qwen · OpenRCA', value: 46.6 },
+        { name: 'Qwen · GoS', value: 48.2 },
+        { name: 'Qwen · RCLAgent V2', value: 53.4 },
+        { name: 'Qwen · TaskWeaver', value: 65.2 },
+        { name: 'Qwen · AIQ', value: 77.6 },
+        { name: 'Qwen · ThinkDepth.ai', value: 79.2 },
+        { name: 'Qwen · ClaudeCode', value: 79.6 },
+        { name: 'Sonnet · ThinkDepth.ai', sub: 'the published leader', value: 90.0 },
+        { name: 'micro-kinetic-ts', sub: 'deterministic · all 1 422 cases · ¥0', value: 81.29, ours: true },
+        { name: 'arm W30 (ours)', sub: 'the LLM reranker, 30-wide table', value: 81.08, lite: true },
+        { name: 'micro-kinetic-ts · 326 A', sub: 'seeded · lag · two resolvers · all 1 422', value: 89.59, lite: true },
+        { name: 'micro-kinetic-ts · 355 shipped', sub: 'contrast gate · engine fallback · two resolvers · two guards · all 1 422', value: 93.32, ours: true },
+        { name: 'micro-kinetic-ts · 326 B', sub: 'no order shown · engine fallback · all 1 422 · mean of 3 runs', value: 90.46, ours: true },
+      ];
+
+      // Cell-level pairs. The competitor is named because the population differs paper to paper.
+      const rcaeval = [
+        { name: 'RE1 · 375 cases', sub: 'vs arXiv:2610.05009 L0 85.4', value: 92.0, ours: true },
+        { name: 'RE1-SS · 125', sub: 'vs RCA-DCM 89.0', value: 95.2, ours: true },
+        { name: 'RE1-OB · 125', sub: 'vs arXiv:2610.05009 L2+L3 88.0', value: 90.4, ours: true },
+        { name: 'RE2-OB · 90', sub: 'vs GALA+ 74.44 (strongest external)', value: 93.3, ours: true },
+        { name: 'RE2-TT · 90', sub: 'vs GALA+ 73.33', value: 84.4, ours: true },
+        { name: 'RE3 · 90', sub: 'vs PRISM 76.7 — TT cell only, different population', value: 80.0, ours: true },
+      ];
+
+      // Accuracy against log cost per case. Only points with a real cost are plotted.
+      const frontier = [
+        { name: 'micro-kinetic-ts · engine', value: 81.29, cost: 0, ours: true },
+        { name: '326 A · seeded, lag', value: 89.59, cost: 0.01634, lite: true },
+        { name: '326 B · no order, engine fallback', value: 90.46, cost: 0.01466, ours: true },
+        { name: 'arm W30 · DeepSeek Flash', value: 81.08, cost: 0.0292, lite: true },
+        { name: 'shipped arm · 355', value: 93.32, cost: 0.00119, ours: true },
+        { name: 'Sonnet · ThinkDepth.ai', value: 90.0, cost: 32.9 },
+      ];
+
+      function bars(host, data, max) {
+        const wrap = document.getElementById(host);
+        let html = '';
+        for (const bar of data) {
+          const width = ((bar.value / max) * 100).toFixed(2);
+          const cls = bar.ours ? ' ours' : bar.lite ? ' ours-lite' : '';
+          html += `<div class="row${cls}">
+            <div class="label">${bar.name}${bar.sub ? `<small>${bar.sub}</small>` : ''}</div>
+            <div class="track"><div class="fill" style="width:${width}%"></div></div>
+            <div class="value">${Math.abs(bar.value * 10 - Math.round(bar.value * 10)) < 1e-9 ? bar.value.toFixed(1) : bar.value.toFixed(2)} %</div>
+          </div>`;
+        }
+        const ticks = [0, 0.25, 0.5, 0.75, 1]
+          .map((share) => `<span class="tick" style="left:${(share * 100).toFixed(1)}%">${Math.round(share * max)}</span>`)
+          .join('');
+        html += `<div class="axis"><div class="label">·</div><div class="ticks">${ticks}</div><div class="value"></div></div>`;
+        wrap.innerHTML = html;
+      }
+
+      bars('rcabench', rcabench, 100);
+      bars('rcaeval', rcaeval, 100);
+
+      // The frontier: x = log10(cost), y = accuracy. The engine's zero is drawn at the axis floor and labelled.
+      const host = document.getElementById('frontier');
+      const width = 980;
+      const height = 300;
+      const pad = { left: 60, right: 250, top: 20, bottom: 46 };
+      const X_MIN = 0.001;
+      const X_MAX = 100;
+      const xOf = (cost) => {
+        const lo = Math.log10(X_MIN);
+        const hi = Math.log10(X_MAX);
+        const value = Math.max(cost, X_MIN);
+        return pad.left + ((Math.log10(value) - lo) / (hi - lo)) * (width - pad.left - pad.right);
+      };
+      const yOf = (value) => {
+        const t = (value - 75) / (95 - 75);
+        return height - pad.bottom - t * (height - pad.top - pad.bottom);
+      };
+      let svg = `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="accuracy against cost per case">`;
+      for (const value of [75, 80, 85, 90, 95]) {
+        const y = yOf(value);
+        svg += `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="#d8dee7" stroke-width="1"/>`;
+        svg += `<text x="${pad.left - 10}" y="${y + 4}" font-size="11" fill="#5b6675" text-anchor="end">${value}%</text>`;
+      }
+      for (const [cost, label] of [
+        [0.001, '¥0'],
+        [0.01, '¥0.01'],
+        [0.1, '¥0.10'],
+        [1, '¥1'],
+        [10, '¥10'],
+        [100, '¥100'],
+      ]) {
+        const x = xOf(cost);
+        svg += `<line x1="${x}" y1="${pad.top}" x2="${x}" y2="${height - pad.bottom}" stroke="#f0f3f8" stroke-width="1"/>`;
+        svg += `<text x="${x}" y="${height - 24}" font-size="11" fill="#5b6675" text-anchor="middle">${label}</text>`;
+      }
+      svg += `<text x="${pad.left}" y="${height - 6}" font-size="11" fill="#5b6675">cost per case, log scale — four orders of magnitude</text>`;
+
+      // The 90.0 % point's price is $4.64 at ¥7.1/$; draw the two references so the gap is a distance, not a claim.
+      // The horizontal line is the one that matters: SAME accuracy, 2 253× the price.
+      const byName = (name) => frontier.find((point) => point.name === name);
+      const engine = byName('micro-kinetic-ts · engine');
+      const ours = byName('326 B · no order, engine fallback');
+      const leader = byName('Sonnet · ThinkDepth.ai');
+      svg += `<line x1="${xOf(engine.cost)}" y1="${yOf(engine.value)}" x2="${xOf(leader.cost)}" y2="${yOf(leader.value)}" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 4" opacity="0.35"/>`;
+      svg += `<line x1="${xOf(ours.cost)}" y1="${yOf(ours.value)}" x2="${xOf(leader.cost)}" y2="${yOf(leader.value)}" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>`;
+
+      // Labels are placed greedily downward from each dot and pushed UP when a previous label sits within 15 px, so
+      // the two points at the top of this chart (90.46 % and 90.00 %) stay readable instead of overprinting. The
+      // rightmost point is labelled to its LEFT, because a label drawn to the right of it would run into the margin
+      // where the annotation sits.
+      const placed = [];
+      for (const point of frontier) {
+        const x = xOf(point.cost);
+        const y = yOf(point.value);
+        const colour = point.ours ? '#c0392b' : point.lite ? '#e08a80' : '#7f8fa6';
+        const flip = x > width - pad.right - 140;
+        const anchor = flip ? 'end' : 'start';
+        const labelX = flip ? x - 12 : x + 12;
+        svg += `<circle cx="${x}" cy="${y}" r="6" fill="${colour}"/>`;
+        let labelY = y + 4;
+        while (placed.some((used) => Math.abs(used - labelY) < 15)) labelY -= 15;
+        placed.push(labelY);
+        const above = labelY < y + 4;
+        svg += `<text x="${labelX}" y="${labelY}" font-size="12" fill="#14181f" text-anchor="${anchor}">${point.name}</text>`;
+        svg += `<text x="${labelX}" y="${labelY + (above ? -13 : 13)}" font-size="11" fill="#5b6675" text-anchor="${anchor}">${point.cost === 0 ? '¥0.00' : '≈ ¥' + point.cost.toFixed(point.cost < 0.1 ? 4 : 1)}</text>`;
+      }
+      // The annotation goes BOTTOM-LEFT: every point sits above 81 %, so the band under the lowest dot is the only
+      // empty region in the plot, and the two lines cannot collide with a label there.
+      svg += `<text x="${pad.left + 10}" y="${height - pad.bottom - 22}" font-size="11" fill="#5b6675">solid line: same accuracy, 2 248× the price (¥32.94 vs ¥0.0147)</text>`;
+      svg += `<text x="${pad.left + 10}" y="${height - pad.bottom - 8}" font-size="11" fill="#5b6675">dashed line: the engine's own 81.29 % at ¥0 — the gap is the 171 cases the gate, the resolvers and the guards repair</text>`;
+      svg += '</svg>';
+      host.innerHTML = svg;
+
+      const rows = [
+        ['micro-kinetic-ts · 355 shipped', 'RCABench 1 422', 'engine + LLM arm', 'contrast gate · engine fallback · edge-novel resolver · 1.5 certainty floor · door and interface guards', '93.32 %', '¥0.0012', 'yes', 'TypeScript / Node'],
+        ['micro-kinetic-ts · 326 B', 'RCABench 1 422', 'engine + LLM arm', 'no ranked order shown · refusals settle on the engine · two deterministic resolvers (mean of 3 runs)', '90.46 %', '¥0.0147', 'yes', 'TypeScript / Node'],
+        ['micro-kinetic-ts · 326 A', 'RCABench 1 422', 'engine + LLM arm', 'seeded order · lag gate · two deterministic resolvers', '89.59 %', '¥0.0163', 'yes', 'TypeScript / Node'],
+        ['micro-kinetic-ts', 'RCABench 1 422', 'non-LLM engine', 'none — a deterministic graph over the anomaly field', '81.29 %', '¥0.00', 'no', 'TypeScript / Node'],
+        ['arm W30 (ours)', 'RCABench 1 422', 'LLM reranker', 'pre-extracted feature table, 30 candidates', '81.08 %', '¥0.029', 'yes', 'TypeScript / Node'],
+        ['Sonnet · ThinkDepth.ai', 'RCABench 500', 'LLM agent', 'free-form investigation, ~30.5 rounds', '90.00 %', '¥32.9 ($4.64)', 'yes', 'Python + closed harness'],
+        ['Qwen · ClaudeCode', 'RCABench 500', 'LLM agent', 'free-form, CLI-shaped', '79.60 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · ThinkDepth.ai', 'RCABench 500', 'LLM agent', 'free-form investigation', '79.20 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · AIQ', 'RCABench 500', 'LLM agent', 'open-ended requery', '77.60 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · TaskWeaver', 'RCABench 500', 'LLM agent', 'code-as-action', '65.20 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · RCLAgent V2', 'RCABench 500', 'LLM agent', 'workflow as agent', '53.40 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · GoS', 'RCABench 500', 'LLM agent', 'graph of thoughts', '48.20 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · OpenRCA', 'RCABench 500', 'LLM agent', 'answers as soon as it can', '46.60 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · OpsAgent', 'RCABench 500', 'LLM agent', 'pre-extracted features, no telemetry query', '45.80 %', 'n/p', 'yes', 'Python'],
+        ['Qwen · mABC', 'RCABench 500', 'LLM agent', 'multi-agent debate', '42.60 %', 'n/p', 'yes', 'Python'],
+        ['micro-kinetic-ts', 'RCAEval 735', 'non-LLM engine', 'none — same engine', '90.61 % (666)', '¥0.00', 'no', 'TypeScript / Node'],
+        ['Codex CLI harness', 'RCAtlas 90', 'LLM agent', 'writes its own shell and Python in the case folder', '77.2 % PR@1', 'n/p', 'yes', 'shell + Python'],
+        ['SQL agent (ReAct over DuckDB)', 'RCAtlas 90', 'LLM agent', '100 self-issued queries', '72.8 % PR@1', 'n/p', 'yes', 'Python / DuckDB'],
+        ['one-shot over a rule-selected package', 'RCAtlas 90', 'LLM agent', 'no query of its own', '65.3 % PR@1', 'n/p', 'yes', 'Python'],
+        ['best published agent (FoA)', 'RCAtlas 90', 'LLM agent', '51 % of its calls prescribed', '53.3 % PR@1', 'n/p', 'yes', 'Python'],
+        ['NSigma', 'RCAtlas 90', 'statistical', 'none', '38.9 % PR@1', '¥0.00', 'no', 'Python'],
+        ['random', 'RCAtlas 90', '—', '—', '5.5 % PR@1', '¥0.00', 'no', '—'],
+      ];
+      document.getElementById('rows').innerHTML = rows
+        .map((row) => {
+          // Keyed on the row, not on its position: the two arms at the top of this table are the newest entries and
+          // an index-based highlight would have silently moved the "ours" colour onto whatever was inserted first.
+          const strong =
+            row[0].includes('355 shipped') || row[0].includes('326 B') || (row[0] === 'micro-kinetic-ts' && row[1] === 'RCABench 1 422');
+          const lite = row[0].includes('326 A') || row[0].includes('W30');
+          const cls = strong ? ' class="us"' : lite ? ' class="ours-lite"' : '';
+          const cells = row
+            .map((cell, column) => `<td${column === 4 || column === 5 ? ' class="num"' : ''}>${cell}</td>`)
+            .join('');
+          return `<tr${cls}>${cells}</tr>`;
+        })
+        .join('');
+    </script>
+  </body>
+</html>

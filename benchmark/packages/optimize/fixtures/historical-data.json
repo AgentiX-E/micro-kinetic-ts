@@ -1,0 +1,162 @@
+[
+  {
+    "system": "OnlineBoutique",
+    "suite": "RE1",
+    "context": {
+      "serviceCount": 12,
+      "graphDensity": 0.174,
+      "degreeCV": 0.82,
+      "maxDepth": 3,
+      "traceCoverage": 0.0,
+      "metricCV": 0.45,
+      "spikeDominanceRatio": 0.58,
+      "anomalyConcentration": 0.35,
+      "systemLoad": 0.5,
+      "faultTypeCount": 5,
+      "avgCasesPerType": 10
+    },
+    "config": {
+      "baselineStrategy": "q25",
+      "correlationMethod": "pearson",
+      "propagationMode": "multiplicative",
+      "enableCollisionAggregation": true,
+      "useTemporalCausality": true,
+      "decayAlpha": 0.80,
+      "pruneEpsilon": 0.001,
+      "temporalBonus": 0.15,
+      "defaultWeight": 0.05,
+      "childContributionCap": 1.0
+    },
+    "accuracy": 0.744,
+    "verifiedAt": "2026-08-10",
+    "commitSha": "6b1e352"
+  },
+  {
+    "system": "OnlineBoutique",
+    "suite": "RE2",
+    "context": {
+      "serviceCount": 12,
+      "graphDensity": 0.174,
+      "degreeCV": 0.82,
+      "maxDepth": 3,
+      "traceCoverage": 0.87,
+      "metricCV": 0.45,
+      "spikeDominanceRatio": 0.58,
+      "anomalyConcentration": 0.35,
+      "systemLoad": 0.5,
+      "faultTypeCount": 5,
+      "avgCasesPerType": 10
+    },
+    "config": {
+      "baselineStrategy": "auto",
+      "correlationMethod": "pearson",
+      "propagationMode": "multiplicative",
+      "enableCollisionAggregation": true,
+      "useTemporalCausality": true,
+      "decayAlpha": 0.85,
+      "pruneEpsilon": 0.001,
+      "temporalBonus": 0.15,
+      "defaultWeight": 0.05,
+      "childContributionCap": 1.0
+    },
+    "accuracy": 0.989,
+    "verifiedAt": "2026-08-10",
+    "commitSha": "6b1e352"
+  },
+  {
+    "system": "SockShop",
+    "suite": "RE1",
+    "context": {
+      "serviceCount": 13,
+      "graphDensity": 0.103,
+      "degreeCV": 0.64,
+      "maxDepth": 3,
+      "traceCoverage": 0.0,
+      "metricCV": 0.31,
+      "spikeDominanceRatio": 0.12,
+      "anomalyConcentration": 0.48,
+      "systemLoad": 0.5,
+      "faultTypeCount": 5,
+      "avgCasesPerType": 10
+    },
+    "config": {
+      "baselineStrategy": "sliding-window",
+      "correlationMethod": "pearson",
+      "propagationMode": "additive",
+      "enableCollisionAggregation": false,
+      "useTemporalCausality": true,
+      "decayAlpha": 0.85,
+      "pruneEpsilon": 1e-4,
+      "temporalBonus": 0.10,
+      "defaultWeight": 0.03,
+      "childContributionCap": 0.5
+    },
+    "accuracy": 0.960,
+    "verifiedAt": "2026-08-10",
+    "commitSha": "6b1e352"
+  },
+  {
+    "system": "SockShop",
+    "suite": "RE2",
+    "context": {
+      "serviceCount": 13,
+      "graphDensity": 0.103,
+      "degreeCV": 0.64,
+      "maxDepth": 3,
+      "traceCoverage": 0.94,
+      "metricCV": 0.31,
+      "spikeDominanceRatio": 0.12,
+      "anomalyConcentration": 0.48,
+      "systemLoad": 0.5,
+      "faultTypeCount": 5,
+      "avgCasesPerType": 10
+    },
+    "config": {
+      "baselineStrategy": "sliding-window",
+      "correlationMethod": "pearson",
+      "propagationMode": "additive",
+      "enableCollisionAggregation": false,
+      "useTemporalCausality": true,
+      "decayAlpha": 0.85,
+      "pruneEpsilon": 1e-4,
+      "temporalBonus": 0.10,
+      "defaultWeight": 0.03,
+      "childContributionCap": 0.5
+    },
+    "accuracy": 1.0,
+    "verifiedAt": "2026-08-10",
+    "commitSha": "6b1e352"
+  },
+  {
+    "system": "Synthetic",
+    "suite": "RE1",
+    "context": {
+      "serviceCount": 25,
+      "graphDensity": 0.25,
+      "degreeCV": 0.55,
+      "maxDepth": 4,
+      "traceCoverage": 0.0,
+      "metricCV": 0.38,
+      "spikeDominanceRatio": 0.20,
+      "anomalyConcentration": 0.40,
+      "systemLoad": 0.5,
+      "faultTypeCount": 6,
+      "avgCasesPerType": 29
+    },
+    "config": {
+      "baselineStrategy": "auto",
+      "correlationMethod": "pearson",
+      "propagationMode": "additive",
+      "enableCollisionAggregation": true,
+      "useTemporalCausality": true,
+      "decayAlpha": 0.80,
+      "pruneEpsilon": 0.001,
+      "temporalBonus": 0.15,
+      "defaultWeight": 0.05,
+      "childContributionCap": 1.0
+    },
+    "accuracy": 1.0,
+    "verifiedAt": "2026-08-06",
+    "commitSha": "7f9ba7c"
+  }
+]

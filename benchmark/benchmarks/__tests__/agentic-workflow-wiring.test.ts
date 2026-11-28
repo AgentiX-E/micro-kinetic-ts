@@ -1,0 +1,1245 @@
+/**
+ * Guards on the agentic measurement line: where it runs, what it forwards, and where the corpus comes from.
+ *
+ * ## Why this file exists
+ *
+ * Iteration 268 found the two failures this file is written against, both in the same class: **a guard whose
+ * exemption cannot be distinguished from its subject**. `sota-comparison.md` §31.1 printed a cell two enrolments
+ * old because the anchor fence scanned five NAMED table regions and everything else was unfenced by default;
+ * `cell-baseline.ts` skipped a run whose configuration digest differed from the baseline's, which is what an ARM
+ * looks like — and also what a STALE BASELINE looks like, so the gate was green with all nine cells unread.
+ *
+ * The agentic line had its own version of it, one level up: the dumps the offline study consumes
+ * (`--fingerprint-out`, `--per-case-out`) were reachable from a runner's command line but from no dispatch,
+ * because `fse26-benchmark.yml` is AT the 25-input `workflow_dispatch` limit and `dispatch-surface-census`
+ * pins that count as an exact 25. So the study was reproducible only on a machine that held ~19 GB of
+ * converted corpus, which is why its numbers were read over 711 cases instead of 1 422.
+ *
+ * ## What is asserted, and why each one is not obvious
+ *
+ * 1. **The flags reach the runner.** A dump flag the workflow never passes is a dump that never exists; the
+ *    study then fails on a missing file with no statement about which half was wrong.
+ * 2. **`--fault-free-weight` is NOT passed.** `--fault-free-profile` is required by the fingerprint dump and
+ *    supplies the BANDS the dump records, at the shipped weight of 0. A workflow that also forwarded a weight
+ *    would be measuring a different configuration than the one the standing document quotes, while printing a
+ *    number in the same table.
+ * 3. **An empty input is never forwarded.** `--max-cases ''` parses to 0. Whether 0 means "all" or "none"
+ *    depends on the flag's parser, and the rule the other workflow earned was: pass a flag only when its input
+ *    is non-empty, so the runner's own default is the single owner of the configuration.
+ * 4. **The corpus comes through ONE owner.** The three steps that fetch and verify it (resolve the tag from
+ *    the converter digest, download, provenance gate) live in `.github/actions/rcabench-shards` and nowhere
+ *    else. A second copy is how a gate ends up enforced in one workflow and skipped in another.
+ * 5. **The study reads the artifact, not the corpus.** Job `study` has no `--data-dir` and no `rcabench` path
+ *    in it, so a number it prints cannot be an accident of the data it happened to load.
+ * 6. **The profile key is derived, not typed.** `cache-datasets.yml` records the version of this mistake that
+ *    shipped: a constant key hit the cache the OLD pipeline had produced and converted nothing.
+ * 7. **The prune applies on a schedule and reports on a dispatch.** A reclaim job that only runs when a human
+ *    remembers runs after the eviction it was meant to prevent; a manual run that deletes by default is a foot
+ *    on a shared budget.
+ *
+ * Read as TEXT rather than parsed. The repo has no YAML dependency (`workflow-scalars.test.ts` records why),
+ * and every failure above is a MISSING OR EXTRA LINE, which is what a text scan sees.
+ *
+ * @module __tests__/agentic-workflow-wiring
+ */
+
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import { DEFAULT_FAILURE_CONTAINMENT_SCOPE } from '@agentix-e/micro-kinetic-tree';
+
+const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
+const WORKFLOW = readFileSync(resolve(repoRoot, '.github/workflows/benchmark-agentic.yml'), 'utf8');
+const FSE26 = readFileSync(resolve(repoRoot, '.github/workflows/fse26-benchmark.yml'), 'utf8');
+const ACTION = readFileSync(
+  resolve(repoRoot, '.github/actions/rcabench-shards/action.yml'),
+  'utf8',
+);
+const PROFILE_ACTION = readFileSync(
+  resolve(repoRoot, '.github/actions/rcabench-profile/action.yml'),
+  'utf8',
+);
+const PRUNE = readFileSync(resolve(repoRoot, '.github/workflows/cache-prune.yml'), 'utf8');
+
+/** The job blocks of a workflow, keyed by job id. */
+function jobs(text: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const starts = [...text.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)];
+  for (let index = 0; index < starts.length; index++) {
+    const start = starts[index]!;
+    const end = starts[index + 1]?.index ?? text.length;
+    found.set(start[1]!, text.slice(start.index!, end));
+  }
+  return found;
+}
+
+/** The declared `inputs:` names of a workflow. */
+function inputNames(text: string): string[] {
+  const lines = text.split('\n');
+  const start = lines.indexOf('    inputs:');
+  if (start < 0) return [];
+  const names: string[] = [];
+  for (let index = start + 1; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line.trim() === '') continue;
+    // The block ends at the first dedent, which is what makes this a scan of ONE block rather than of
+    // every six-space key in the file.
+    if (!line.startsWith('      ')) break;
+    const match = /^ {6}([a-z][a-z0-9_]*):$/.exec(line);
+    if (match !== null) names.push(match[1]!);
+  }
+  return names;
+}
+
+/** The workflow's lines with comments removed, so a claim in prose cannot satisfy a check on code. */
+function codeLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+}
+
+const WORKFLOW_CODE = codeLines(WORKFLOW);
+
+describe('the agentic line runs where the corpus and the keys are', () => {
+  it('passes the three dump flags the offline study consumes', () => {
+    // Without these the study has no input. Each is a distinct artifact: the fingerprints carry the
+    // posterior, the verdict file carries the labels as the corpus states them, and the profile is what
+    // makes the band per channel measurable at all.
+    expect(WORKFLOW).toContain('--fingerprint-out artifacts/agentic/fingerprints.ndjson');
+    expect(WORKFLOW).toContain('--per-case-out artifacts/agentic/per-case.ndjson');
+    expect(WORKFLOW).toContain('--fault-free-profile "$HOME/fault-free-profile.json"');
+    // Non-vacuity: the flags are on a line that invokes the runner, not in a comment that mentions them.
+    const invocations = WORKFLOW_CODE.split('\n').filter((line) =>
+      line.includes('tsx benchmarks/src/run-fse26.ts'),
+    );
+    expect(invocations).toHaveLength(1);
+  });
+
+  it('does not forward a fault-free weight, so the published configuration is the one measured', () => {
+    // The profile sets the BANDS. Its weight ships at 0 (`DEFAULT_FAULT_FREE_WEIGHT`), so passing the file
+    // changes no ranking term; passing a weight as well would change the ranking and still print the same
+    // column headings.
+    // Checked against the code, not the prose: the block comment above the step NAMES the flag to explain
+    // why it is absent, and a text scan over the whole file would call that explanation a violation.
+    expect(WORKFLOW_CODE).not.toMatch(/--fault-free-weight/);
+  });
+
+  it('states the containment scope in BOTH workflows, and the dump carries the one it ran under', () => {
+    // `DEFAULT_FAILURE_CONTAINMENT_SCOPE` is `adjacent` and its owner says so by design: the wide state was measured
+    // on this corpus and not on the other one, so it ships as a STATED flag. `fse26-benchmark.yml` states
+    // `global-measured`, and until the artifact could carry the sweep's input this workflow had to inherit the
+    // default, which made its engine `1 157` where the published cell is `1 186` on the same 1 422 -- and the arm's
+    // row is composed over THIS order.
+    expect(DEFAULT_FAILURE_CONTAINMENT_SCOPE).toBe('adjacent');
+    for (const [name, file] of [
+      ['fse26-benchmark.yml', FSE26],
+      ['benchmark-agentic.yml', WORKFLOW],
+    ] as const) {
+      const published = codeLines(file)
+        .split('\n')
+        .filter((line) => line.includes('--failure-containment-scope'));
+      // Once per workflow, and to the published state: two statements of one axis is a file where one wins silently.
+      expect(published, name).toHaveLength(1);
+      expect(published[0], name).toContain('--failure-containment-scope global-measured');
+    }
+    // Non-vacuity: the agentic line records the three dispatches behind the statement and the mechanism the last
+    // two of them found. A guard that could only be satisfied by a green job and a broken instrument is not a guard.
+    expect(WORKFLOW).toContain('45953662488');
+    expect(WORKFLOW).toContain('45968593004');
+    expect(WORKFLOW).toContain('the breaks fell to');
+    expect(WORKFLOW).toContain('quietPruner!.analyze');
+    expect(WORKFLOW).toContain('analyzeWithFusion');
+    // The third link stays guarded: the dump must carry the scope of WHATEVER configuration the run has, which is
+    // what makes a future dispatch's artifact readable without a change to the runner.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-fse26.ts'), 'utf8');
+    expect(runner).toContain('scope: engineOptions.signals.failureContainmentScope');
+    // And the fourth: the sweep's input comes from the ONE call, not from a second engine built beside it. This is
+    // the wiring half of the defect `docs/gate-replay.md` §9.6 records; the behavioural half is the dump fixture in
+    // `containment-row-build.test.ts`.
+    expect(runner).toContain('fusionOrder = analysis.passInput');
+    // The workflow NAMES the retired engine in prose (that is the positive assertion above); the runner must not.
+    expect(runner).not.toContain('quietPruner');
+    expect(runner).not.toContain('containment-pruner');
+  });
+
+  it('forwards an empty input to nothing, so the runner owns its own defaults', () => {
+    // `--max-cases ''` parses to 0 and whether that means "all" or "none" is the parser's business. The
+    // conditional form is the only shape that cannot silently change a configuration.
+    expect(WORKFLOW_CODE).toContain('MAX_CASES_ARG=()');
+    expect(WORKFLOW_CODE).toMatch(/if \[ -n "\$\{\{ inputs\.max_cases \}\}" \]; then/);
+    expect(WORKFLOW_CODE).toMatch(/WEIGHT_ARG=\(\)/);
+    // And it reaches the command line ONLY through that array: a flag written directly on the invocation
+    // is an unconditional override wearing the conditional form's clothes.
+    const invocation = WORKFLOW_CODE.slice(
+      WORKFLOW_CODE.indexOf('tsx benchmarks/src/run-fse26.ts'),
+      WORKFLOW_CODE.indexOf('tee artifacts/agentic/results.txt'),
+    );
+    expect(invocation).not.toBe('');
+    expect(invocation).not.toMatch(/--max-cases/);
+    expect(invocation).toContain('"${MAX_CASES_ARG[@]}"');
+  });
+
+  it('writes the terms dump and carries it to the study, because the gate divides by it', () => {
+    // The gate's denominator is the spread over the FULL scored order, which no other artifact holds: the
+    // fingerprint is cut at the presentation width and the depth row keeps a first-hit index. A workflow that
+    // dispatched `--promotion` without this file would be refused by the parser, so the failure would be loud —
+    // but it would be loud AFTER the measure job spent its twenty-five minutes.
+    expect(WORKFLOW).toContain('--terms-dump artifacts/agentic/terms.ndjson');
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).toContain('artifacts/agentic/terms.ndjson');
+    // And it reaches the study through a conditional array, like every other optional input: `--depth ''` would
+    // be a path to a file called nothing, which is a different failure from an absent flag.
+    expect(WORKFLOW).toContain('DEPTH_ARG=()');
+    expect(WORKFLOW).toContain('DEPTH_ARG=(--depth artifacts/agentic/terms.ndjson)');
+  });
+
+  it('states the presentation width ONCE, and never on the published ranking', () => {
+    // Two inputs for one decision is how a dispatch comes to show a twenty-wide table while scoring the
+    // five-wide one. The width input reaches `run-fse26` as `--fingerprint-top-k` (an artifact), and reaches the
+    // nomination runner as `--max-candidates`/`--max-ranked` (the prompt). It must not appear anywhere else: a
+    // `--top-k` on the engine invocation would change the published ranking and make the arm incomparable with
+    // the one it is differenced against.
+    expect(WORKFLOW).toContain('FINGERPRINT_WIDTH_ARG=()');
+    expect(WORKFLOW).toContain(
+      'FINGERPRINT_WIDTH_ARG=(--presentation-out artifacts/agentic/presentation.ndjson --fingerprint-top-k "${{ inputs.fingerprint_top_k }}")',
+    );
+    expect(WORKFLOW).toContain(
+      'WIDTH_ARG=(--max-candidates "${{ inputs.fingerprint_top_k }}" --max-ranked "${{ inputs.fingerprint_top_k }}")',
+    );
+    const invocation = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-fse26.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/results.txt'),
+    );
+    expect(invocation).not.toMatch(/--fingerprint-top-k/);
+    expect(invocation).toContain('"${FINGERPRINT_WIDTH_ARG[@]}"');
+    // `0` is the measure step's spelling of "every candidate" and has no counterpart in the nomination parser.
+    expect(WORKFLOW).toContain('"${{ inputs.fingerprint_top_k }}" != "0"');
+  });
+
+  it('writes the presentation dump, carries it to the study, and shows the TABLE from it', () => {
+    // Three links, and the arm is broken without any one of them: a width that writes no file (the parser refuses
+    // it), a file that never reaches the study (the study reads the five-wide table and reports the width it was
+    // asked for -- the defect `docs/agentic-presentation-width.md` §3.1 records), and a study that has the file
+    // and reads the other one.
+    expect(WORKFLOW).toContain('artifacts/agentic/presentation.ndjson');
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).toContain('artifacts/agentic/presentation.ndjson');
+    // The nomination arm is the one reader, and it prefers the presentation when it exists. The offline arms keep
+    // the published dump: their join indexes it against the verdict file, and this arm is the only one whose input
+    // is allowed to be a rendering.
+    const nomination = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-agentic-nomination.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/nomination.txt'),
+    );
+    expect(nomination).toContain('--fingerprints "$FINGERPRINTS"');
+    expect(WORKFLOW).toContain('FINGERPRINTS=artifacts/agentic/presentation.ndjson');
+    expect(WORKFLOW).toContain('FINGERPRINTS=artifacts/agentic/fingerprints.ndjson');
+    // The eliminator and the ceiling read the published one by name, and never the presentation.
+    for (const runner of ['run-agentic-eliminator.ts', 'run-agentic-ceiling.ts']) {
+      const step = WORKFLOW.slice(WORKFLOW.indexOf(`tsx benchmarks/src/${runner}`));
+      expect(step.slice(0, step.indexOf('tee '))).toContain(
+        '--fingerprints artifacts/agentic/fingerprints.ndjson',
+      );
+    }
+  });
+
+  it('derives the topology brief at measure time, carries it, and lets only `auto` name it', () => {
+    // The brief cannot be derived in `study`: the call graph is built per case and released with it, so no artifact
+    // this workflow uploads carries an edge. It is written where the corpus is and read where the artifacts are,
+    // and the three links below are the arm -- a brief written and not uploaded measures the control, and one
+    // uploaded and not passed measures it too.
+    expect(WORKFLOW).toContain(
+      'TOPOLOGY_ARG=(--topology-brief-out artifacts/agentic/topology.ndjson)',
+    );
+    const measure = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-fse26.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/results.txt'),
+    );
+    expect(measure).toContain('"${TOPOLOGY_ARG[@]}"');
+    // The measure half may name the WRITER and never the reader: `--topology-brief` is the arm's flag, and a
+    // workflow that passed it here would be attaching a brief to a run that never wrote one.
+    expect(measure).not.toMatch(/--topology-brief(?!-out)/);
+    // Uploaded with the measurement, on the same truncate-once rule as every other dump.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    expect(upload.slice(0, upload.indexOf('if-no-files-found'))).toContain(
+      'artifacts/agentic/topology.ndjson',
+    );
+    // The study passes it by PRESENCE, not by re-reading the input, so a study over an older artifact still runs
+    // its fusion arms -- and a dispatch that typed `auto` while the file is missing cannot measure the control
+    // under the arm's name.
+    expect(WORKFLOW).toContain('if [ -f artifacts/agentic/topology.ndjson ]; then');
+    expect(WORKFLOW).toContain('BRIEF_ARG=(--topology-brief artifacts/agentic/topology.ndjson)');
+    const nomination = WORKFLOW.slice(
+      WORKFLOW.indexOf('tsx benchmarks/src/run-agentic-nomination.ts'),
+      WORKFLOW.indexOf('tee artifacts/agentic/nomination.txt'),
+    );
+    expect(nomination).toContain('"${BRIEF_ARG[@]}"');
+    // One value is implemented, and the refusal runs BEFORE the 25-minute measurement rather than after it.
+    expect(WORKFLOW).toContain('if [ "${{ inputs.topology_brief }}" != "auto" ]; then');
+    expect(WORKFLOW).toContain('exit 1');
+    expect(inputNames(WORKFLOW)).toContain('topology_brief');
+    // And the refusal is inside the measure job, i.e. ahead of the run it would waste.
+    const measureJob = jobs(WORKFLOW).get('measure')!;
+    expect(measureJob).toContain('inputs.topology_brief');
+    expect(measureJob.indexOf('inputs.topology_brief')).toBeLessThan(
+      measureJob.indexOf('tsx benchmarks/src/run-fse26.ts'),
+    );
+  });
+
+  it('forwards the gate as a word or a number, and never as an empty string', () => {
+    // `Number('off')` is NaN, so `off` has to reach the parser as the WORD; an empty input has to reach it as
+    // nothing at all, because an empty threshold would be a band of zero rather than a control.
+    expect(WORKFLOW).toContain('PROMOTION_ARG=()');
+    expect(WORKFLOW).toContain('PROMOTION_ARG=(--promotion "${{ inputs.promotion }}")');
+    expect(WORKFLOW).toContain('if [ -n "${{ inputs.promotion }}" ]; then');
+  });
+
+  it('takes the corpus through the one action that owns it, and keeps no second copy', () => {
+    // The defect this forbids is the one §0p records one level up: two copies of a gate, one of which goes
+    // quiet. The provenance call appears in the action and in no workflow.
+    expect(WORKFLOW).toContain('uses: ./.github/actions/rcabench-shards');
+    // The workflow may READ the converter digest -- that is what keys the profile cache -- but it must not
+    // run the gate: `--manifest` and `--cache-label` are the tell, and they appear in the action alone.
+    expect(WORKFLOW).not.toContain('--manifest');
+    expect(WORKFLOW).not.toContain('--cache-label');
+    expect(ACTION).toContain('--manifest');
+    expect(ACTION).toContain('--cache-label');
+    expect(ACTION).toContain('fse26_cache_select.py');
+  });
+
+  it('reads only the artifacts in the study job, never the corpus', () => {
+    // The boundary is what makes the control arm free and the reading checkable: the study cannot see the
+    // data, so a number it prints is a property of the artifacts.
+    const study = jobs(WORKFLOW).get('study');
+    expect(study, 'the study job is missing').toBeDefined();
+    expect(study).not.toContain('rcabench');
+    expect(study).not.toContain('--data-dir');
+    expect(study).toContain('name: agentic-measure');
+    expect(study).toContain('run-agentic-headroom.ts');
+    const measure = jobs(WORKFLOW).get('measure');
+    expect(measure).toContain('name: agentic-measure');
+  });
+
+  it('keeps every uploaded path under one root, because the artifact root is their common ancestor', () => {
+    // `upload-artifact` computes the least common ancestor of the paths it is given. One path outside
+    // `artifacts/agentic/` -- `${{ github.workspace }}/manifest.json` was the tempting one -- makes the root the
+    // workspace, and the dumps then arrive at `artifacts/agentic/artifacts/agentic/...`: the study reads a file
+    // that is not there and the job fails one step after the measurement it spent 25 minutes producing.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('name: agentic-measure'));
+    const block = upload.slice(0, upload.indexOf('if-no-files-found'));
+    expect(block).not.toContain('github.workspace');
+    const paths = [...block.matchAll(/^ {12}(artifacts\/agentic\/\S+)$/gm)].map(
+      (match) => match[1]!,
+    );
+    expect(paths.length).toBeGreaterThanOrEqual(5);
+    expect(paths.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+    // And the manifest is staged INTO that root rather than uploaded from where the action left it.
+    expect(WORKFLOW).toContain('cp manifest.json artifacts/agentic/manifest.json');
+  });
+
+  it('derives the profile cache key instead of typing one, in the ONE action both workflows call', () => {
+    // `cache-datasets.yml` records the version of this that shipped: the constant `RCAEvalJSON` hit the cache
+    // the OLD bridge had produced, so the fix converted nothing and the step read `skipped`. Here the key is the
+    // corpus digest times a digest of every source file the build reads.
+    //
+    // It lives in the action rather than in this file because the FSE'26 surface is now the second consumer and
+    // a second copy of a key derivation is a second owner of "what the profile depends on": a miss costs minutes
+    // and a HIT on a changed builder publishes a stale band. The assertions therefore moved WITH the code, and
+    // the workflow's half of the claim is that it calls the action at all.
+    expect(PROFILE_ACTION).toContain('id: key');
+    expect(PROFILE_ACTION).toContain('key=fault-free-profile-$CORPUS-$BUILDER');
+    expect(PROFILE_ACTION).toContain('--digest');
+    expect(PROFILE_ACTION).toContain("pathlib.Path(root).rglob('*.ts')");
+    expect(WORKFLOW).toContain('uses: ./.github/actions/rcabench-profile');
+    expect(FSE26).toContain('uses: ./.github/actions/rcabench-profile');
+  });
+
+  it('never lets a caller choose where the profile lives', () => {
+    // The one input is the corpus. A `path` input would let a caller place a profile fitted on another corpus,
+    // and no reader downstream could tell that artifact from a measurement of this one — so the location is the
+    // action's own and the absence of the input is the guard.
+    const inputs = PROFILE_ACTION.split('\ninputs:\n')[1]!.split('\noutputs:\n')[0]!;
+    const names = [...inputs.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((match) => match[1]!);
+    expect(names).toEqual(['data-dir']);
+    // And the profile is built over the WHOLE corpus rather than a dispatched scope: the profile is a property
+    // of the corpus, and an arm that rebuilt it per scope could not be compared with one that read it.
+    expect(PROFILE_ACTION).not.toMatch(/--max-cases/);
+    expect(PROFILE_ACTION).toContain('--data-dir "${{ inputs.data-dir }}"');
+  });
+
+  it('has spent the dispatch input limit, so the count is now an exact 25', () => {
+    // The hard `workflow_dispatch` limit is 25. This file is a separate workflow PRECISELY because
+    // `fse26-benchmark.yml` is at 25, and this one had a single slot left — which iteration 355 spent on
+    // `query_result_chars`, the cut that removes full-price tokens instead of cache-served ones. From here the
+    // assertion is exact: the next axis cannot arrive as a new input without either a workflow of its own (the
+    // solution this file itself is) or a removal recorded as a decision rather than discovered as a validation error.
+    expect(inputNames(WORKFLOW)).toHaveLength(25);
+  });
+
+  it('leaves the other benchmark workflow at the exact 25 inputs the census pins', () => {
+    // The reason this is a separate file. If a later iteration frees a slot, this assertion is where that
+    // decision gets recorded rather than inferred.
+    expect(inputNames(FSE26)).toHaveLength(25);
+  });
+});
+
+describe('the transcript wall is a dispatch input, because a wall nobody can move is a constant', () => {
+  it('declares the cap, and states that empty is the runner own default', () => {
+    // The cap is the one lever this programme has that is measured on the BILL rather than on the ranking: 84.6 % of
+    // run `45595943761`'s 1.69 CNY was cache-miss input, and the uncached prompt is an opening repeated on every call
+    // plus a transcript that grows. Every published number was taken at 9 000 characters, which never binds — the
+    // corpus's own final traces are ~1 700 — so the cap has to be a dispatch input or the lever cannot be priced.
+    expect(inputNames(WORKFLOW)).toContain('query_transcript_chars');
+    const block = WORKFLOW.slice(WORKFLOW.indexOf('query_transcript_chars:'));
+    expect(block.slice(0, block.indexOf('query_seed:'))).toContain("default: ''");
+  });
+
+  it('forwards it through the budget array, and never as an unconditional flag', () => {
+    // Same shape as every other optional input: an empty value must reach the runner as NO argument, so the runner's
+    // own default stays the published configuration. A flag typed onto the invocation would be an override wearing the
+    // conditional form's clothes.
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_transcript_chars \}\}" \]; then\n\s+BUDGET_ARG\+=\(--transcript-chars/,
+    );
+  });
+
+  it('forwards it to the control too, because a capped run and an uncapped one are two arms', () => {
+    // The control exists to separate the presentation axis from everything else, and its step forwards the HARNESS
+    // flags while dropping the three presentation ones. The cap belongs with the harness: it changes what the model
+    // SEES, so a control without it would report the cap's delta as the axis's.
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_transcript_chars \}\}" \]; then\n\s+CONTROL_BUDGET\+=\(--transcript-chars/,
+    );
+  });
+});
+
+describe('the per-result cut is the lever that charges the bill, not the cache', () => {
+  it('declares the cut, and states that empty renders every result whole', () => {
+    // `query_transcript_chars` elides OLD blocks from the front, which moves the prefix and forfeits the endpoint's
+    // cache: measured on the full corpus, 600 characters removed 38.5 % of the prompt tokens and raised the bill
+    // 1.69 -> 1.70, with hits per call halving 974.7 -> 501.0. A cut applied on ENTRY decides each block's final form
+    // once, so every later prompt extends the previous one byte for byte, and it removes the tokens that are 84.6 % of
+    // the bill instead of the ones that are 7.3 %. Nothing has measured it yet, which is why it has to be dispatchable
+    // rather than a constant.
+    expect(inputNames(WORKFLOW)).toContain('query_result_chars');
+    const block = WORKFLOW.slice(WORKFLOW.indexOf('query_result_chars:'));
+    expect(block.slice(0, block.indexOf('query_seed:'))).toContain("default: ''");
+  });
+
+  it('forwards it through the budget array, and never as an unconditional flag', () => {
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_result_chars \}\}" \]; then\n\s+BUDGET_ARG\+=\(--result-chars/,
+    );
+  });
+
+  it('forwards it to the control too, because a cut run and a whole-result run are two arms', () => {
+    expect(WORKFLOW).toMatch(
+      /if \[ -n "\$\{\{ inputs\.query_result_chars \}\}" \]; then\n\s+CONTROL_BUDGET\+=\(--result-chars/,
+    );
+  });
+});
+
+describe('the shard action is one owner for the corpus', () => {
+  it('declares the three outputs its callers read, each bound to a step that produces it', () => {
+    const block = ACTION.split('\noutputs:\n')[1]!.split('\nruns:\n')[0]!;
+    const names = [...block.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((match) => match[1]!);
+    const values = [...block.matchAll(/^ {4}value: (.+)$/gm)].map((match) => match[1]!);
+    expect(names).toEqual(['tag', 'categories', 'case-count']);
+    // Every one names a step output rather than a literal, which is the difference between an output and a
+    // second copy of the answer.
+    expect(values).toEqual([
+      '${{ steps.resolve.outputs.tag }}',
+      '${{ steps.download.outputs.categories }}',
+      '${{ steps.download.outputs.case-count }}',
+    ]);
+  });
+
+  it('is used by BOTH consumers, so a gate cannot be re-inlined into one of them', () => {
+    // The reason the action exists rather than the three steps being copied. `fse26-benchmark.yml` is the
+    // consumer that existed first; if a later edit re-inlines the provenance call there, the two workflows
+    // can disagree about which corpus is consumable and only one of them will say so.
+    expect(FSE26).toContain('uses: ./.github/actions/rcabench-shards');
+    expect(FSE26).not.toContain('fse26_provenance.py');
+    expect(FSE26).not.toContain('releases/download');
+  });
+
+  it('refuses a cache, because the budget it would spend is already over quota', () => {
+    // The measurement, recorded where the decision lives: 10.74 GB of a 10 GB budget, 5.69 GB of it
+    // per-SHA CodeQL overlays. A 2.5 GB shard entry would buy a 114 s download and pay with the 3.9 GB
+    // artifact that takes ~30 minutes to rebuild.
+    expect(ACTION).not.toContain('uses: actions/cache');
+    expect(ACTION).toContain('10 743 940 592');
+    expect(ACTION).toContain('cache-prune.yml');
+  });
+
+  it('verifies provenance for a pinned tag too', () => {
+    // The pinned path skips DISCOVERY, never the check: a pinned tag whose manifest came from another
+    // converter must still be refused, or the pin becomes an override.
+    expect(ACTION).toContain('Cache tag PINNED by the caller');
+    // The gate step is UNCONDITIONAL: no `if:` on it means a pinned tag cannot skip it, which is the
+    // shape the old inline version had (the pin branch `exit 0`d out of discovery and the check ran anyway
+    // -- but nothing in the old file said so, so nothing stopped the next edit from moving it inside the
+    // discovery step).
+    const gate = ACTION.slice(ACTION.indexOf('- name: Verify cache provenance'));
+    expect(gate).not.toMatch(/^\s+if:/m);
+    expect(gate).toContain('--cache-label');
+  });
+});
+
+describe('the cache reclaim is an action on a schedule and a reading on a dispatch', () => {
+  it('applies from the schedule and requires an explicit flag from a dispatch', () => {
+    // A prune that only runs when a human remembers runs after the eviction it exists to prevent.
+    expect(PRUNE).toContain("github.event_name == 'schedule'");
+    expect(PRUNE).toMatch(/APPLY: \$\{\{ github\.event_name == 'schedule'/);
+    expect(PRUNE).toContain('ARGS+=(--apply)');
+  });
+
+  it('holds the permission the deletes need, and nothing more', () => {
+    // `actions: write` is what `DELETE /actions/caches/{id}` requires. `contents: read` is what checkout
+    // needs to read the script. A broader grant would be a token with a purpose nobody stated.
+    expect(PRUNE).toContain('actions: write');
+    expect(PRUNE).toContain('contents: read');
+    expect(PRUNE).not.toContain('contents: write');
+  });
+
+  it('calls the script that the tests and the docs name', () => {
+    // Non-vacuity for the whole file: a workflow that describes a prune and runs nothing would pass every
+    // assertion above.
+    expect(existsSync(resolve(repoRoot, 'scripts/prune_caches.py'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'scripts/test_prune_caches.py'))).toBe(true);
+    expect(PRUNE).toContain('python3 scripts/prune_caches.py');
+  });
+});
+
+describe('the depth split is measured, uploaded, and printed by the side that has no corpus', () => {
+  it('asks the runner for the depth rows on the same invocation that asks for the other dumps', () => {
+    // One invocation, not a second pass: the depth is read from the order the shipped `topK=5` is a slice of,
+    // so a separate run could order a case differently and the split would describe a configuration no arm ran.
+    const invocation = WORKFLOW_CODE.split('\n').find((line) =>
+      line.includes('benchmarks/src/run-fse26.ts'),
+    );
+    expect(invocation).toBeDefined();
+    const block = WORKFLOW_CODE.slice(WORKFLOW_CODE.indexOf('run-fse26.ts'));
+    expect(block).toContain('--depth-out artifacts/agentic/depth.ndjson');
+  });
+
+  it('uploads the depth artifact under the SAME root as every other path, or the study reads nothing', () => {
+    // `upload-artifact` takes the least common ancestor of its paths as the artifact root. One path outside
+    // `artifacts/agentic/` moves every file down a level — the defect run 43250866718 hit on the manifest.
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/depth.ndjson');
+    const listed = [...upload.matchAll(/^\s+(artifacts\/[^\s]+)$/gm)].map((match) => match[1]!);
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+  });
+
+  it('prints the split in the corpus-free job, before any arm is scored', () => {
+    const study = jobs(WORKFLOW).get('study');
+    expect(study).toBeDefined();
+    expect(study).toContain('benchmarks/src/run-depth-report.ts');
+    expect(study).toContain('--depth artifacts/agentic/depth.ndjson');
+    // Order matters: a ceiling read before the split is a ceiling over a population whose shape is unknown.
+    expect(study!.indexOf('run-depth-report.ts')).toBeLessThan(
+      study!.indexOf('run-agentic-headroom.ts'),
+    );
+    // And the study still has no corpus access.
+    expect(study).not.toContain('--data-dir');
+  });
+
+  it('keeps the tool that reads the artifact next to the tool that writes it', () => {
+    // Non-vacuity: a workflow naming a script that does not exist passes every assertion above.
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/ranking-depth.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-depth-report.ts'))).toBe(true);
+  });
+});
+
+/**
+ * The decomposition's wiring: it runs where the dump is written, and only when the dump exists.
+ *
+ * The measurement is `docs/depth-reranking-preregistration.md`'s, and its value is that the population it reports
+ * is the one the dispatch that produced the dump ran. Two ways to lose that and both are line-level:
+ *
+ * 1. **The step reads a file the run did not write.** `--terms-dump` is expanded from the dispatch input to
+ *    `fse26-terms.ndjson` by the workflow's own array, so the report's `--terms` has to name that path and not a
+ *    second one.
+ * 2. **The step runs unconditionally.** A report over a missing dump is an error rather than a reading, and an
+ *    `if: always()` here would turn every dispatch without the flag into a red job whose failure says nothing
+ *    about the engine.
+ *
+ * The third assertion is non-vacuity: a workflow naming a script that does not exist satisfies anything.
+ */
+describe('the term decomposition’s wiring', () => {
+  it('runs in the job that writes the dump, over that dump', () => {
+    const run = jobs(FSE26).get('build-benchmark') ?? jobs(FSE26).get('benchmark');
+    const text = run ?? FSE26;
+    expect(text).toContain('benchmarks/src/run-term-decomposition.ts');
+    expect(text).toContain('--terms fse26-terms.ndjson');
+    // The dump is the workflow's own expansion of the input, so a report reading anything else would be reading
+    // an artifact no dispatch of this file can produce.
+    expect(text).toContain('TERMS_ARG=(--terms-dump fse26-terms.ndjson)');
+  });
+
+  it('is gated on the dump being asked for, so a run without it stays green', () => {
+    const step = FSE26.slice(FSE26.indexOf('Decompose the miss by term'));
+    const gate = step.slice(0, step.indexOf('run:'));
+    expect(gate).toContain("if: ${{ inputs.terms_dump != '' }}");
+  });
+
+  it('uploads the report beside the dump it was read from', () => {
+    const upload = FSE26.slice(FSE26.indexOf('name: fse26-results'));
+    expect(upload).toContain('fse26-terms-report.txt');
+    // Both paths under one artifact, because a report that travels without its dump cannot be re-derived.
+    expect(upload).toContain('fse26-terms.ndjson');
+  });
+
+  it('keeps the tools the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-term-decomposition.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/term-decomposition.ts'))).toBe(true);
+  });
+});
+
+/**
+ * The model arm's wiring: where the key lives, what it is allowed to touch, and how an unmeasured arm is reported.
+ *
+ * Iterations 267–281 could price a ceiling and a deterministic rule and could replay somebody else's claims, but
+ * nothing in the workflow ever produced a claim. That gap was invisible in every table because a study with no
+ * recorded answers still prints the control, the ceiling and the evidence arm — a page of numbers with the one arm
+ * that costs money missing from the middle. Three line-level properties are what close it:
+ *
+ * 1. **The key is in the environment, never on a command line.** A `run:` line is echoed into the job log on a
+ *    failure (`set -x` is one typo away), copied into an issue by whoever reads it, and stored in the run's
+ *    transcript for ninety days.
+ * 2. **The arm's absence is REPORTED, not inferred.** A step that skips silently leaves a table a reader takes for
+ *    a refusal; the warning and the printed reason are the difference between "not measured" and "measured zero".
+ * 3. **A dispatch without the key still scores the arms it can.** The offline arms are the ones the ceiling lives
+ *    in, and a job that fails because a secret is missing throws away a measurement it already had.
+ */
+describe('the model arm’s wiring', () => {
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('proposes from the study job, over the artifacts that job already has', () => {
+    expect(study).toContain('benchmarks/src/run-agentic-eliminator.ts');
+    expect(study).toContain('--fingerprints artifacts/agentic/fingerprints.ndjson');
+    expect(study).toContain('--verdicts artifacts/agentic/per-case.ndjson');
+    expect(study).toContain('--claims artifacts/agentic/claims.ndjson');
+    expect(study).toContain('--propose');
+    // The corpus is still absent from this job: a model arm measured where the data is would make the score a
+    // property of the machine as well as of the method.
+    expect(study).not.toContain('--data-dir');
+    expect(study).not.toContain('rcabench');
+  });
+
+  it('never puts the key on a command line, only in a job environment', () => {
+    // The secret CONTEXT is read as a PAIR — the key itself, and the boolean a paid step gates on — and the pair
+    // appears once per job that has a paid arm. The PAIR is the invariant rather than the count: `2` was the right
+    // reading while one job spent money, and the free-investigation arm needs the corpus, which only the measure
+    // job has. So the assertion is "four reads, two of each name, and every one an `env:` assignment", which is
+    // the property a `run:` line would break — a `run:` line is echoed on failure, copied into an issue by whoever
+    // reads it, and kept in the transcript for months.
+    const lines = WORKFLOW.split('\n').filter((line) => line.includes('secrets.DEEPSEEK_API_KEY'));
+    expect(lines.map((line) => line.trim())).toEqual([
+      'DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}',
+      "HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}",
+      'DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}',
+      "HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}",
+    ]);
+    // And each pair sits in a job that has a paid arm, so a second read cannot appear somewhere nothing spends.
+    const spent = jobs(WORKFLOW);
+    for (const name of ['measure', 'study'] as const) {
+      const job = spent.get(name) ?? '';
+      expect(job).toContain('DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}');
+      expect(job).toContain("HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}");
+    }
+    // And no step passes a key as an argument, which is the shape that ends up in a log.
+    expect(WORKFLOW_CODE).not.toMatch(/--api-key/);
+    expect(WORKFLOW_CODE).not.toMatch(/\bsk-[a-z0-9]/i);
+    // Naming the VARIABLE in a message is the one mention that is required: a job that skipped the arm has to say
+    // which variable was missing, and a variable name is not a secret.
+    expect(WORKFLOW).toContain('echo "::warning::DEEPSEEK_API_KEY is not available to this job');
+  });
+
+  it('gates the paid arm on the key being present, through a materialised flag', () => {
+    // The `secrets` context cannot be read from a step's `if`, so the presence is computed once at job level and
+    // compared after. Comparing the KEY would be the other version of this: a condition that evaluates a secret.
+    expect(WORKFLOW).toContain("HAS_MODEL_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}");
+    const step = WORKFLOW.slice(WORKFLOW.indexOf('Ask the model to eliminate'));
+    const gate = step.slice(0, step.indexOf('run:'));
+    expect(gate).toContain("if: env.HAS_MODEL_KEY == 'true'");
+  });
+
+  it('reports an unmeasured arm rather than letting the table imply a refusal', () => {
+    const absent = WORKFLOW.slice(WORKFLOW.indexOf('Say why the model arm did not run'));
+    expect(absent.slice(0, absent.indexOf('- name:', 10))).toContain(
+      "if: env.HAS_MODEL_KEY != 'true'",
+    );
+    expect(absent).toContain('::warning::');
+    expect(absent).toContain('MODEL ARM NOT MEASURED');
+    // And the arms that need no key are still scored, so a dispatch without the secret is not a wasted run.
+    expect(WORKFLOW).toContain('name: Score the offline arms beside it');
+  });
+
+  it('uploads the claims beside the table they were scored into, under the same root', () => {
+    const upload = WORKFLOW.slice(WORKFLOW.indexOf('Upload the study'));
+    expect(upload).toContain('artifacts/agentic/eliminator.txt');
+    expect(upload).toContain('artifacts/agentic/claims.ndjson');
+    const listed = [...upload.matchAll(/^\s+(artifacts\/[^\s]+)$/gm)].map((match) => match[1]!);
+    expect(listed.every((path) => path.startsWith('artifacts/agentic/'))).toBe(true);
+  });
+
+  it('names the model as an input, because the tables separate models more than frameworks', () => {
+    expect(inputNames(WORKFLOW)).toContain('model');
+    expect(study).toContain('--model "${{ inputs.model }}"');
+  });
+
+  it('keeps the tools the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-agentic-eliminator.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-claims.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/agentic-proposer.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/chat-completions.ts'))).toBe(true);
+  });
+
+  it('exposes the synthesis-repair gate from repository variables, never a 26th input', () => {
+    // The gate is a production switch AND an ablation arm (item 12). A CLI flag nobody can dispatch
+    // is an axis nobody can name — the exact defect the census exists to prevent. But the workflow is
+    // at GitHub's 25-input ceiling and every input is fenced by its own test, so the gate is read from
+    // repository variables the way BENCHMARK_EMBEDDING_FALLBACK is: no new input, no surface change.
+    expect(inputNames(WORKFLOW)).toHaveLength(25);
+
+    const propose = WORKFLOW.slice(
+      WORKFLOW.indexOf('Ask the model to eliminate'),
+      WORKFLOW.indexOf('The second expression protocol'),
+    );
+    // The decision is materialised in the step's env (as a PAIR, each with the `|| ''` default that
+    // maps an unset variable to the empty string), never in a `run:` line the logger would echo.
+    expect(propose).toContain("SYNTHESIS_REPAIR: ${{ vars.BENCHMARK_SYNTHESIS_REPAIR || '' }}");
+    expect(propose).toContain("REPAIR_ATTEMPTS: ${{ vars.BENCHMARK_REPAIR_ATTEMPTS || '' }}");
+    // The default-off guard: an empty array is expanded into the invocation, and only `on` fills it.
+    // An unset variable therefore passes NO flag and leaves the published arm byte-identical.
+    expect(propose).toContain('REPAIR_ARG=()');
+    expect(propose).toContain('if [ "$SYNTHESIS_REPAIR" = "on" ]; then');
+    expect(propose).toContain('REPAIR_ARG+=(--synthesis-repair)');
+    expect(propose).toContain('if [ -n "$REPAIR_ATTEMPTS" ]; then');
+    expect(propose).toContain('REPAIR_ARG+=(--repair-attempts "$REPAIR_ATTEMPTS")');
+    expect(propose).toContain('"${REPAIR_ARG[@]}"');
+    // Non-vacuity: the expansion sits in the runner's invocation block (a backslash-continued shell
+    // command), not in a comment. Slice from the runner to the sink and require the flag inside it.
+    const invocation = propose.slice(
+      propose.indexOf('run-agentic-eliminator.ts'),
+      propose.indexOf('tee artifacts/agentic/eliminator.txt'),
+    );
+    expect(invocation).toContain('"${REPAIR_ARG[@]}"');
+    // No key or model value leaks into the variable reads: the gate carries only its two booleans.
+    expect(WORKFLOW_CODE).not.toMatch(/BENCHMARK_SYNTHESIS_REPAIR:.*secrets/);
+  });
+
+  it('keeps the propose step’s flag set exact: repair is dispatchable, study knobs are not', () => {
+    // Iteration 388 audit: the eliminate runner ACCEPTS --weight/--limit/--max-candidates/--delta, but none of
+    // them belongs on the propose dispatch. --weight scores arms in the headroom step, which has its own input;
+    // --limit/--max-candidates are local study widths and --delta is the certification significance. Forwarding
+    // any of them here would let one dispatch run two configurations under one name — the census's exact defect.
+    // The repair pair is the ONLY flag family routed through an indirect array, so guard both sides of the set.
+    const propose = WORKFLOW.slice(
+      WORKFLOW.indexOf('Ask the model to eliminate'),
+      WORKFLOW.indexOf('The second expression protocol'),
+    );
+    const invocation = propose.slice(
+      propose.indexOf('run-agentic-eliminator.ts'),
+      propose.indexOf('tee artifacts/agentic/eliminator.txt'),
+    );
+    for (const studyFlag of ['--weight', '--limit', '--max-candidates', '--delta']) {
+      expect(invocation).not.toContain(studyFlag);
+    }
+    // Non-vacuity: the runner really accepts these (so the assertion is about wiring, not a stale flag), and
+    // --weight is dispatched through the headroom step rather than dropped.
+    const runner = readFileSync(
+      resolve(repoRoot, 'benchmarks/src/agentic-eliminator-study.ts'),
+      'utf8',
+    );
+    for (const studyFlag of ['--weight', '--limit', '--max-candidates', '--delta']) {
+      expect(runner).toContain(`'${studyFlag}'`);
+    }
+    expect(WORKFLOW).toContain('WEIGHT_ARG=(--weight "${{ inputs.weight }}")');
+  });
+});
+
+/**
+ * The free-investigation arm's wiring, which is a different job from the table arms and for a reason that is
+ * visible in one line: the arm needs the CORPUS, and the corpus lives in the measure job. Everything else follows
+ * from that — the pairing against verdicts the same job just wrote, the gate on an input that costs money, and the
+ * exclusion of a second paid pass in the same dispatch.
+ */
+describe('the free-investigation arm’s wiring', () => {
+  const measure = jobs(WORKFLOW).get('measure') ?? '';
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('runs in the job that holds the corpus, after the verdicts it is paired against', () => {
+    expect(measure).toContain('benchmarks/src/run-query-agent.ts');
+    expect(measure).toContain('--data-dir "$HOME/rcabench/json"');
+    expect(measure).toContain('--verdicts artifacts/agentic/per-case.ndjson');
+    // Ordering is the reading: a sample drawn before the verdicts existed could not say which cases the engine had
+    // wrong, and the arm's two numbers are repairs and breaks against exactly that.
+    expect(measure.indexOf('run-query-agent.ts')).toBeGreaterThan(
+      measure.indexOf('--per-case-out artifacts/agentic/per-case.ndjson'),
+    );
+  });
+
+  it('is gated on the sample input and on the key, and says so when the key is absent', () => {
+    const step = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    const head = step.slice(0, step.indexOf('run:'));
+    expect(head).toContain("env.HAS_MODEL_KEY == 'true'");
+    expect(head).toContain("inputs.query_agent_sample != ''");
+    expect(measure).toContain(
+      'QUERY ARM NOT MEASURED: DEEPSEEK_API_KEY is not available to this job',
+    );
+  });
+
+  it('states the sample as a size per stratum, because the two readings need both', () => {
+    expect(measure).toContain('--sample-misses "${{ inputs.query_agent_sample }}"');
+    expect(measure).toContain('--sample-correct "${{ inputs.query_agent_sample }}"');
+  });
+
+  it('does not buy a second nomination pass in the same dispatch', () => {
+    // Two paid arms in one dispatch is two bills, and a document that reports one arm's cost must not contain the
+    // other's tokens. The offline arms still run, so the dispatch still reads its control rows.
+    // BOTH paid study arms, because the workflow has three and a dispatch that buys one must not buy the others:
+    // the elimination pass is the one that was missed first, and a run of this iteration paid for it.
+    for (const step of ['Ask the model to rank', 'Ask the model to eliminate']) {
+      const arm = study.slice(study.indexOf(step));
+      expect(arm.slice(0, arm.indexOf('run:')), step).toContain("inputs.query_agent_sample == ''");
+    }
+    expect(study).toContain('this dispatch asked for the free-investigation arm');
+  });
+
+  it('uploads the arm beside the measurement it was scored against', () => {
+    expect(measure).toContain('artifacts/agentic/query-agent.ndjson');
+    expect(measure).toContain('artifacts/agentic/query-agent.txt');
+  });
+
+  it('keeps both modules the workflow names in the tree', () => {
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/query-agent.ts'))).toBe(true);
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
+  });
+
+  it('lets a dispatch state the arm’s budget, which the runner has always accepted', () => {
+    // The runner has parsed `--max-rounds` and `--max-tool-calls` since it was written and NO step could spell
+    // either: the arm's budget was a constant a dispatch could not vary, so "the arm needs more turns" was not a
+    // question this workflow could ask. Both inputs ship empty, so the shipped budget stays 6 rounds / 10 calls.
+    for (const [input, flag] of [
+      ['query_max_rounds', '--max-rounds'],
+      ['query_max_tool_calls', '--max-tool-calls'],
+    ] as const) {
+      expect(inputNames(WORKFLOW), input).toContain(input);
+      expect(measure, input).toContain(`inputs.${input}`);
+      expect(measure, flag).toContain(flag);
+    }
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('"${BUDGET_ARG[@]}"');
+  });
+
+  it('lets a dispatch choose whether the arm is shown a prior, because the two arms have different floors', () => {
+    // A seeded arm's floor is its seed's accuracy and a free arm's floor is the first list a tool printed, so
+    // `--seed` is an ablation switch. It ships empty, which the runner reads as `none`: the free arm is what a
+    // dispatch gets by saying nothing, so a run is never seeded by accident.
+    expect(inputNames(WORKFLOW)).toContain('query_seed');
+    expect(measure).toContain('inputs.query_seed');
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('SEED_ARG+=(--seed');
+    expect(arm).toContain('"${SEED_ARG[@]}"');
+    // The flag reaches the runner that reads it, and the runner refuses a word it does not know.
+    expect(existsSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'))).toBe(true);
+  });
+
+  it('lets a dispatch choose what an override must show, because that is the axis iteration 318 opened', () => {
+    // The gate is a POLICY and not a quality knob: `none` is the ungated control whose 0.263 precision iteration
+    // 318 published, and the two gated policies admit an override only against a record the harness owns. It ships
+    // empty, so a dispatch that says nothing measures the surface every earlier reading measured.
+    expect(inputNames(WORKFLOW)).toContain('query_gate');
+    expect(measure).toContain('inputs.query_gate');
+    const arm = measure.slice(measure.indexOf('Free-investigation arm (sample)'));
+    expect(arm).toContain('GATE_ARG+=(--gate');
+    expect(arm).toContain('"${GATE_ARG[@]}"');
+    // The runner is where an unknown policy is refused, so the flag and the refusal are both in the source.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('gate')");
+    expect(runner).toContain('`none`, `cited`, `cone`, `contrast` or `lag`');
+    // Every policy the runner accepts is offered on the dispatch surface, or a reader of the workflow would not
+    // know the newest one exists and the ablation would be unreachable from the UI.
+    for (const policy of ['cited', 'cone', 'contrast', 'lag']) {
+      expect(WORKFLOW).toContain(`\`${policy}\``);
+    }
+  });
+
+  it('carries the resolver on the same surface, because a rule the runner accepts must be dispatchable', () => {
+    // Iteration 321's lesson in its cheapest form: a `--gate` the workflow never offers is an ablation nobody can
+    // run from the UI, and a `--resolve` with no workflow input would be exactly that.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('RESOLVE_ARG+=(--resolve');
+    expect(measure).toContain('"${RESOLVE_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('resolve')");
+    expect(WORKFLOW).toContain('query_resolve');
+    // Every mode the runner accepts is nameable from the dispatch form. Iteration 322 shipped `entry-prior` with a
+    // workflow input and no assertion tying the two lists together; a mode added to the runner alone would be an
+    // ablation that exists only in the source, and this is the cheapest place to notice.
+    for (const mode of ['none', 'entry-prior', 'edge-novel']) {
+      expect(runner).toContain(mode);
+      expect(WORKFLOW).toContain(mode);
+    }
+  });
+
+  it('carries the SCHEDULE on the same surface, and keeps it distinct from the seed', () => {
+    // The route is the axis this iteration opens, and the two words are not interchangeable: a `seed` prints the
+    // order into the prompt and measured WORSE than no order (§318), while a `schedule` serves one name per call and
+    // discloses no sequence. A workflow that offered only the first would make the second unreachable from the UI,
+    // and a reader would take the refuted arm for the untested one.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(inputNames(WORKFLOW)).toContain('query_schedule');
+    expect(measure).toContain('inputs.query_schedule');
+    expect(measure).toContain('SCHEDULE_ARG+=(--schedule');
+    expect(measure).toContain('"${SCHEDULE_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('schedule')");
+    expect(runner).toContain('`none` or `engine`');
+    // The dispatch description must carry the price, because the ceiling at width ten needs a second model call per
+    // case and a reader who took it for the zero-cost width would over-pay by the whole difference.
+    expect(WORKFLOW).toContain('query_max_rounds=11');
+  });
+
+  it('carries the FLEET SHORTLIST on the same surface, and it is neither a seed nor a schedule', () => {
+    // 342b measured a paragraph appended to the instruction costing −43 pp while the tool it advertised was never
+    // called, so the next arm changes EVIDENCE and not TEXT: the shortlist rides inside `TOOL fleet`, the prompt is the
+    // free arm's byte for byte, and no extra call is spent. A workflow that could not ask for it would leave the only
+    // text-free intervention in this line undispatchable.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(inputNames(WORKFLOW)).toContain('query_fleet_order');
+    expect(measure).toContain('inputs.query_fleet_order');
+    expect(measure).toContain('FLEET_ARG+=(--fleet-order');
+    expect(measure).toContain('"${FLEET_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('fleet-order')");
+    // The description has to say why it is not the two arms already refused, or a reader will file it beside them.
+    expect(WORKFLOW).toContain('byte-identical to the free arm');
+  });
+
+  it('carries the onset channel on the same surface, as an ablation switch that defaults to off', () => {
+    // The fourth arm of this family and the first that carries no ranking. It is an ABLATION switch, not a new
+    // default: `--evidence-order` falls back to `none`, and an empty dispatch input sends no flag at all, so every
+    // run that does not ask for the channel prints the metric line the published numbers were taken under.
+    expect(inputNames(WORKFLOW)).toContain('query_evidence_order');
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('inputs.query_evidence_order');
+    expect(measure).toContain('ONSET_ARG+=(--evidence-order');
+    expect(measure).toContain('"${ONSET_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('evidence-order')");
+    // The description has to say what makes it different from the three presentations already refused, or a reader
+    // will file it beside them: it carries no ranking, and the prompt stays byte-identical.
+    expect(WORKFLOW).toContain('carries NO ranking');
+  });
+
+  it('carries the FALLBACK on the same surface, because a surface the runner accepts must be dispatchable', () => {
+    // The decoupling this input exists for: what the arm SHOWS and what a refusal FALLS BACK TO are two decisions,
+    // and an arm with one and not the other is a surface nobody can ask for. The default is the shown order, which
+    // is what every arm measured before this input was — so the input is an ABLATION switch and not a new default.
+    const measure = WORKFLOW.slice(WORKFLOW.indexOf('Free-investigation arm (sample)'));
+    expect(measure).toContain('FALLBACK_ARG+=(--fallback');
+    expect(measure).toContain('"${FALLBACK_ARG[@]}"');
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).toContain("map.get('fallback')");
+    expect(WORKFLOW).toContain('query_fallback');
+    for (const value of ['none', 'engine', 'seed']) expect(WORKFLOW).toContain(value);
+  });
+
+  it('reports the incumbent on a row whose call failed, because the caveat reads the column', () => {
+    // The bug this pins, found while reading the two 326 dispatches: the error row hardcoded `incumbent: false`
+    // while the normal row computed it. A single transient 5xx on a seeded arm therefore said "this arm had no
+    // incumbent", `gateTableCaveat` raised its counterfactual sentence, and every number printed under the table
+    // for the rest of the sheet was disclaimed — by one case out of 1 422, with nothing in the output saying so.
+    //
+    // The property is asserted as a COUNT rather than as presence: one row computing the column and the other
+    // hardcoding it is precisely the state that shipped, so "the text appears at least once" would have passed.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-query-agent.ts'), 'utf8');
+    expect(runner).not.toContain('incumbent: false');
+    // Read ONCE and written on both exits, which is strictly stronger than computing it twice: two calls could
+    // disagree about the case, and iteration 351 needs the NAME for the next floor rule, not only the flag.
+    expect(runner.match(/const incumbentName = priorTopOf\(/g) ?? []).toHaveLength(1);
+    expect(runner.match(/^\s+incumbent: incumbentName !== null,$/gm) ?? []).toHaveLength(2);
+  });
+});
+
+describe('the channel split’s wiring', () => {
+  const measure = jobs(WORKFLOW).get('measure') ?? '';
+
+  it('is an input a dispatch has to ask for, because it costs a corpus walk and answers one question', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_channel_split');
+    expect(measure).toContain('inputs.query_channel_split');
+    // Off by default: a dispatch that is not asking this question must not pay 25 minutes for the walk.
+    expect(WORKFLOW).toContain('default: false');
+  });
+
+  it('runs in the job that holds the corpus, after the arm whose answers it reads', () => {
+    expect(measure).toContain('benchmarks/src/run-channel-split.ts');
+    expect(measure).toContain('--artifact artifacts/agentic/query-agent.ndjson');
+    expect(measure).toContain('--data-dir "$HOME/rcabench/json"');
+    expect(measure).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(measure.indexOf('run-channel-split.ts')).toBeGreaterThan(
+      measure.indexOf('Free-investigation arm (sample)'),
+    );
+  });
+
+  it('prices against the arm’s artifact when there is one, and walks anyway when there is not', () => {
+    // The profiles are a property of the CORPUS. The first dispatch of this axis priced the rule and then threw the
+    // profiles away, so its zero could only be re-read by walking again — the class of defect this file exists for.
+    // The step therefore passes `--artifact` by PRESENCE and always writes the profile file.
+    expect(measure).toContain('ARTIFACT_ARG=(--artifact artifacts/agentic/query-agent.ndjson)');
+    expect(measure).toContain('profiles only');
+    expect(measure).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(measure).not.toContain('CHANNEL SPLIT NOT PRICED');
+  });
+
+  it('uploads both the profiles and the reading, because a walk nobody can re-read is a walk that must be repeated', () => {
+    const upload = measure.slice(measure.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/channel-profiles.ndjson');
+    expect(upload).toContain('artifacts/agentic/channel-split.txt');
+  });
+
+  it('prices against a named PREVIOUS run, because a census dispatch buys no arm of its own', () => {
+    // The gap this closes, found by trying to dispatch the axis: `query_channel_split` skips both paid arms by
+    // design, so the step had no artifact to read and could only write profiles — the ¥0 read would have needed a
+    // second ¥21 arm to answer a question about evidence already bought.
+    expect(inputNames(WORKFLOW)).toContain('query_channel_baseline_run');
+    expect(measure).toContain('inputs.query_channel_baseline_run');
+    expect(measure).toContain('gh run download');
+    expect(measure).toContain('-n agentic-measure');
+    // The permission the download needs, stated on the workflow rather than discovered by a 404 in a runner.
+    expect(WORKFLOW).toContain('actions: read');
+  });
+
+  it('writes the label census in the same walk, because a column that does not exist cannot be swept', () => {
+    // 329's first question is answered by the walk that was going to run anyway: the census counts the families the
+    // corpus writes. A dispatch that only printed it would lose it — the profiles were thrown away exactly once for
+    // that reason — so the file is written and uploaded beside them.
+    expect(measure).toContain('--label-out artifacts/agentic/channel-labels.json');
+    const upload = measure.slice(measure.indexOf('Upload the measurement'));
+    expect(upload).toContain('artifacts/agentic/channel-labels.json');
+  });
+
+  it('keeps the runner and the two modules it prices with in the tree', () => {
+    for (const path of [
+      'benchmarks/src/run-channel-split.ts',
+      'benchmarks/src/channel-split.ts',
+      'benchmarks/src/channel-kind.ts',
+      'benchmarks/src/channel-label-census.ts',
+    ]) {
+      expect(existsSync(resolve(repoRoot, path)), path).toBe(true);
+    }
+  });
+
+  it('ships the bar DISABLED, because a number there is a decision a report has to witness', () => {
+    // The split priced at 1 277 against 1 270 at one value of a six-point sweep whose neighbours read 1 269 and
+    // 1 260 — a peak at one value on one corpus. Turning this constant into a number is what shipping the axis
+    // means, so this line is the deliberate edit that has to accompany a passing cross-validation, not an
+    // incidental one: a test that merely asserted "a number exists" would pass for every bar anyone typed.
+    const source = readFileSync(resolve(repoRoot, 'benchmarks/src/query-agent.ts'), 'utf8');
+    expect(source).toContain('export const ENTRY_PRIOR_TRAFFIC_KAPPA: number | null = null;');
+  });
+});
+
+describe('the channel census buys no paid arm', () => {
+  const study = jobs(WORKFLOW).get('study') ?? '';
+
+  it('skips both paid study arms on a census dispatch, because the census is a re-reading', () => {
+    // Measured, not supposed: a census dispatch with no query arm satisfies `query_agent_sample == ''`, which is
+    // the condition the two paid study arms run under — so the first one bought a 1 422-case elimination pass
+    // (≈ ¥20) to write a file nobody read. The census re-reads evidence the case already carries, so it must not
+    // be able to buy a model call by accident.
+    for (const step of ['Ask the model to rank', 'Ask the model to eliminate']) {
+      const arm = study.slice(study.indexOf(step));
+      const head = arm.slice(0, arm.indexOf('run:'));
+      expect(head, step).toContain('!inputs.query_channel_split');
+    }
+  });
+
+  it('says which of the three reasons stopped each arm, rather than leaving a missing row', () => {
+    for (const file of ['nomination.txt', 'eliminator.txt']) {
+      expect(study).toContain(`tee artifacts/agentic/${file}`);
+    }
+    expect(study.match(/asked for the channel census/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('the census workflow, which exists so a walk does not pay for an engine run', () => {
+  const census = readFileSync(
+    resolve(repoRoot, '.github/workflows/benchmark-channel-census.yml'),
+    'utf8',
+  );
+
+  it('is dispatched by hand, on the corpus, with no paid arm of any kind', () => {
+    expect(census).toContain('workflow_dispatch');
+    expect(census).toContain('uses: ./.github/actions/rcabench-shards');
+    // The three things that would make it a paid run: a model key, the agentic workflow, and an arm.
+    expect(census).not.toContain('DEEPSEEK_API_KEY');
+    expect(census).not.toContain('run-query-agent.ts');
+    expect(census).not.toContain('query_agent_sample');
+  });
+
+  it('prices against a named previous run, and needs the permission and the token to fetch it', () => {
+    // Both halves of the failure iteration 329's first walk hit: `gh run download` exits 4 without GH_TOKEN, and the
+    // permission is stated on the workflow rather than discovered by a 404 in a runner.
+    expect(census).toContain('inputs.baseline_run');
+    expect(census).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(census).toContain('actions: read');
+    expect(census).toContain('test -f artifacts/baseline/query-agent.ndjson');
+  });
+
+  it('writes and uploads all three files, because a walk nobody can re-read must be repeated', () => {
+    expect(census).toContain('--channel-out artifacts/agentic/channel-profiles.ndjson');
+    expect(census).toContain('--label-out artifacts/agentic/channel-labels.json');
+    expect(census).toContain('artifacts/agentic/channel-split.txt');
+    expect(census).toContain('name: channel-census');
+  });
+
+  it('builds, because a source-imported runner in a `dist`-resolved workspace still needs its dependencies', () => {
+    // This assertion started as `not.toContain('pnpm build')` — the reasoning being that the walk imports the loader
+    // by source and compiles nothing. The first dispatch of the workflow it guards died with ERR_MODULE_NOT_FOUND on
+    // `@agentix-e/micro-kinetic-core/dist/index.js`, which is exactly the dependency a workspace package resolves
+    // through `dist`. The build is a requirement of the SOURCE import, not of the census.
+    expect(census).toContain('pnpm install --frozen-lockfile');
+    expect(census).toContain('CI=false pnpm build');
+  });
+});
+
+/**
+ * The control that has to travel with the arm.
+ *
+ * Every arm this programme refused between 342b and 346 was refused against a control taken on another day, under
+ * another configuration, or both — and 346 is what that costs: a **236-case "model drift"** whose two files ran
+ * `gate contrast, fallback engine` with the resolvers on one side and all three off on the other. 186 of the 244-case
+ * gap was never a model answer in either run. Nothing in either artifact said so, because `fallback` and `resolve`
+ * were not in the record.
+ *
+ * The fix is distance, not care: the control runs in the same job, on the same sample, minutes later. These assertions
+ * are on the workflow text because the failure mode is a MISSING OR EXTRA LINE — a control step that forwarded the
+ * arm's presentation flag would be the arm twice, and one that dropped a harness flag would be 346 again.
+ */
+describe('the arm carries its own control', () => {
+  /** One step's block, from its `- name:` to the next `- name:` at the same depth. */
+  function step(name: string): string {
+    const start = WORKFLOW_CODE.indexOf(`- name: ${name}`);
+    expect(start).toBeGreaterThan(-1);
+    const next = WORKFLOW_CODE.indexOf('\n      - name: ', start);
+    return WORKFLOW_CODE.slice(start, next === -1 ? undefined : next);
+  }
+
+  const control = step('Free-investigation control (same batch)');
+  const comparison = step('The arm against its own control');
+
+  it('declares the input, so the control is a dispatch anybody can state', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_control');
+  });
+
+  it('runs the same runner on the same sample, and writes a different file', () => {
+    expect(control).toContain('tsx benchmarks/src/run-query-agent.ts');
+    expect(control).toContain('--out artifacts/agentic/query-agent.control.ndjson');
+    expect(control).toContain('--sample-misses "${{ inputs.query_agent_sample }}"');
+    expect(control).toContain('--sample-correct "${{ inputs.query_agent_sample }}"');
+    // The arm's own artifact is not overwritten: a control that wrote to the same path would leave one file where a
+    // reader expected two and a comparison of the file with itself.
+    expect(control).not.toContain('--out artifacts/agentic/query-agent.ndjson');
+  });
+
+  it('forwarding the harness and omitting the presentation is the whole contract', () => {
+    // The harness flags are the product's decisions; they must be identical on both sides or the delta is not the arm.
+    for (const flag of ['--gate', '--fallback', '--resolve', '--seed']) {
+      expect(control).toContain(flag);
+    }
+    // The presentation flags ARE the axis, and `run-arm-comparison` refuses the pairing if they leak into the control
+    // without being declared — so the control must not carry them at all.
+    for (const flag of ['--schedule', '--fleet-order', '--evidence-order']) {
+      expect(control).not.toContain(flag);
+    }
+  });
+
+  it('compares the two artifacts through the record that says what they are', () => {
+    expect(comparison).toContain('tsx benchmarks/src/run-arm-comparison.ts');
+    expect(comparison).toContain('--first artifacts/agentic/query-agent.control.ndjson');
+    expect(comparison).toContain('--second artifacts/agentic/query-agent.ndjson');
+    // Both metadata files, because the refusal lives there: two row files alone cannot say whether they were measured
+    // on the same model, the same budget, the same revision or the same harness.
+    expect(comparison).toContain(
+      '--first-meta artifacts/agentic/query-agent.control.ndjson.meta.json',
+    );
+    expect(comparison).toContain('--second-meta artifacts/agentic/query-agent.ndjson.meta.json');
+    // The axis is derived from the dispatch rather than typed, so it cannot name a flag that did not move.
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_schedule }}" ]; then AXIS="${AXIS},schedule"; fi',
+    );
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_fleet_order }}" ]; then AXIS="${AXIS},fleet"; fi',
+    );
+    expect(comparison).toContain(
+      'if [ -n "${{ inputs.query_evidence_order }}" ]; then AXIS="${AXIS},onset"; fi',
+    );
+    expect(comparison).toContain('--axis "$AXIS"');
+  });
+
+  it('uploads both records beside both artifacts, because a comparison nobody can re-read must be re-bought', () => {
+    // The `meta.json` files were written last iteration and never uploaded: the record existed and no artifact
+    // carried it, which is the same failure one level down.
+    for (const file of [
+      'artifacts/agentic/query-agent.control.ndjson',
+      'artifacts/agentic/query-agent.control.ndjson.meta.json',
+      'artifacts/agentic/query-agent.ndjson.meta.json',
+      'artifacts/agentic/query-comparison.txt',
+    ]) {
+      expect(WORKFLOW).toContain(file);
+    }
+  });
+});
+
+/**
+ * The price knob in the workflow, and the two ways it can be wrong.
+ *
+ * `query_certainty_floor` is the first flag in this programme whose failure mode is a **correct-looking bill**:
+ * parsed and then dropped at a hop, it spends the full budget and produces an artifact indistinguishable from a run
+ * that never asked for it — iteration 345's `onset` reached 0 of 532 transcripts that way. And forwarded to the arm
+ * but not to the control, it produces a paired delta that is the floor's own effect, which is the 346 defect with a
+ * new costume.
+ */
+describe('the certainty floor travels with the arm and with its control', () => {
+  function step(name: string): string {
+    const start = WORKFLOW_CODE.indexOf(`- name: ${name}`);
+    expect(start).toBeGreaterThan(-1);
+    const next = WORKFLOW_CODE.indexOf('\n      - name: ', start);
+    return WORKFLOW_CODE.slice(start, next === -1 ? undefined : next);
+  }
+
+  it('declares the input, so the price is a dispatch anybody can state', () => {
+    expect(inputNames(WORKFLOW)).toContain('query_certainty_floor');
+  });
+
+  it('reaches the runner from the arm step', () => {
+    const arm = step('Free-investigation arm');
+    expect(arm).toContain('--certainty-floor');
+    expect(arm).toContain('${{ inputs.query_certainty_floor }}');
+  });
+
+  it('reaches the runner from the control step too, or the delta is the floor rather than the axis', () => {
+    const control = step('Free-investigation control (same batch)');
+    expect(control).toContain('--certainty-floor');
+    expect(control).toContain('${{ inputs.query_certainty_floor }}');
+  });
+
+  it('is not an axis: a comparison may not name it, because it is a harness setting and not a presentation one', () => {
+    // `run-arm-comparison` refuses a pairing whose records differ outside the declared axis, and the floor is in
+    // `arms` — so a dispatch that changed the floor between the two would be refused rather than priced.
+    const comparison = step('The arm against its own control');
+    expect(comparison).not.toContain('certainty');
+  });
+});

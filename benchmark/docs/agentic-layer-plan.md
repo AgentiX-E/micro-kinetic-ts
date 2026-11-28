@@ -1,0 +1,449 @@
+# The agentic layer: two roles, four flags, and a cost model that does not spend scope
+
+Iteration 266. The layer this document specifies is the one `0d6ae609` removed — rebuilt with a different shape,
+measured on a different population, and gated rather than shipped.
+
+## 0. Why it is being rebuilt, in the register's own words
+
+`closed-axes-register.md:145` records the retirement of `RerankingEngine` and `InvestigatorEngine` and then states
+the condition under which either may return:
+
+> a reopening needs the presentation to change, not the weight
+
+That sentence is also a diagnosis of iteration 265. Two consecutive iterations spent their whole budget on
+`faultFreeWeight` — a weight. The closed axis was not reopened; it was walked past again.
+
+Three things differ from the retired attempt, and each is a reason the earlier verdict cannot be transferred:
+
+| dimension    | `0d6ae609` measured                                     | this layer                                                     |
+| ------------ | ------------------------------------------------------- | -------------------------------------------------------------- |
+| population   | RE3:TrainTicket's three error-value families, ~30 cases | **RCABench / FSE'26, all 1 422** plus the nine RCAEval cells   |
+| shape        | ReAct walking an evidence dump with a retrieval toolkit | a **typed elimination claim** the engine can verify, not prose |
+| presentation | unchanged                                               | changed: the agent sees a **fingerprint**, never a dump        |
+
+## 1. Two roles, and why both exist
+
+The 2026 literature reports a result that decides the architecture rather than decorating it. `arXiv:2608.21310`
+(§V-A, Finding 1) finds that **none of the top agents was built for RCA, yet every agent built for it trails
+them**: open-ended frameworks reach 79.2 / 79.6 / 77.6 %, while purpose-built ones sit at 65.2 / 46.6 / 42.6 %.
+It also finds the **backbone model is the dominant lever** — Sonnet leads Qwen by 10.8 pp on the same framework,
+five times the 2.0 pp that separates the whole top band.
+
+Read together those two findings say the same thing from opposite sides: _what the agent is allowed to decide_
+matters more than _how cleverly it reasons_, and the ceiling is set by the model only where free-form judgement is
+required. So the layer ships two roles, and they are deliberately not the same component wearing two prompt:
+
+- **`eliminator`** — the engine ranks first. The agent receives the top-K posterior and may only **remove** or
+  **promote** a candidate by producing a claim the engine then verifies against the same arrays it ranked on. Its
+  judgement is a numeric comparison, so a weak model suffices and a wrong claim is caught rather than trusted.
+  This is the `No LLM in the signal path` structure of `soul-bits/rca-agent` (Zenodo 19720128).
+- **`investigator`** — the agent decides what to look at, in what order, and when to stop. This is the shape that
+  reaches 90 %, and it is the shape that costs $0.2/case.
+
+**Both are built** because the axis that separates them — _anchored to the engine's posterior_ vs _free_ — has no
+non-LLM control in any published table. Building only one would answer "is this better" without answering "why".
+
+## 2. Four flags, and what each one is a function of
+
+| flag               | type                                    | default                         | what it selects                                     |
+| ------------------ | --------------------------------------- | ------------------------------- | --------------------------------------------------- |
+| `--agentic-mode`   | `off` \| `eliminator` \| `investigator` | `off`                           | which role runs at all                              |
+| `--agentic-weight` | number                                  | `0`                             | how far a **verified** claim may move the posterior |
+| `--agentic-budget` | `<rounds,tokens,usd>`                   | `3,9000,0.01` / `12,60000,0.05` | the three gates; first hit stops the loop           |
+| `--agentic-model`  | provider string                         | `deepseek`                      | routed through `ILLMProvider`, never a vendor SDK   |
+
+`weight = 0` is not "the layer runs and is ignored" — it is **the layer does not run**: `buildTerm` is never
+called, no cache is opened, and an integration test asserts the ranking is bit-identical to the engine that has no
+agentic code at all. This is the same contract `faultFreeWeight` carries, for the same reason.
+
+`mode` and `weight` are separate because they answer different questions. Collapsing them would make "the agent
+was wrong" indistinguishable from "the agent was right but under-weighted", and the first ablation table this
+layer has to produce is exactly that distinction.
+
+## 3. What the agent is allowed to see, and why it is a fingerprint
+
+The retired `InvestigatorEngine` handed the model an evidence dump. On the RCABench cases that is 37 thousand to
+5.6 million telemetry rows; the top-band agents in `arXiv:2608.21310` spend **1 500+ ktok** and 45–54 rounds
+reaching 79 %ish. Almost all of that budget is re-reading what a deterministic scan already summarised.
+
+So the input is a fingerprint, built by the engine:
+
+```
+Candidate#1  ts-auth-service
+  ch  cpu            pre 0.11  post 0.19  band [0.09,0.14]  rate 0.00   <- outside the fault-free band
+  ch  latency_p99    pre 12.4  post 91.0  band [11.0,14.2]  rate 0.33   <- outside, and it fires in 1/3 clean windows
+  ch  error          pre 0.00  post 0.00  band [0.00,0.00]  rate 0.00   <- constant, no evidence either way
+Candidate#2  ts-order-service
+  ...
+onset: ts-auth-service t0+3s  ->  ts-order-service t0+11s        (topoPrecedence fires)
+```
+
+Two properties matter and both are testable:
+
+1. **It is bounded.** K ≤ 5 candidates × ≤ 8 channels × 5 numbers ≈ 1 600 tokens, against 1 500 000. That is the
+   single largest cost term in the whole design, and it is bought by _summarising deterministically first_ — which
+   this engine already does better than any of the published agents.
+2. **Every number in it is re-derivable.** A claim that cites `rate 0.33` is checked against the profile artifact
+   from iteration 265; a claim that cites a channel outside the fingerprint is **rejected as unsupported**, which
+   is the `unsupported reasoning` failure family the same paper names.
+
+The fault-free band earns a second purpose here. In iteration 265 it was a ranking slope that moved nothing; as a
+_fingerprint column_ it tells the model which channels are evidence and which are noise, which is the difference
+between `omitted evidence` and `misinterpreted evidence` — the two dominant failure families in the trajectory
+study.
+
+## 4. The claim type
+
+```ts
+export interface EliminationClaim {
+  readonly remove: ServiceId;
+  readonly keep: ServiceId;
+  readonly because: {
+    readonly channel: string;
+    readonly statistic: 'post' | 'delta' | 'onset';
+    readonly observed: number;
+    readonly band: readonly [number, number];
+  };
+}
+```
+
+`observed` and `band` are checked against the fingerprint before the claim is applied. A claim that fails
+verification is **counted and discarded**, not clamped — the count is a reported quantity, because a layer whose
+claims are 60 % unverifiable is a layer whose accuracy number means nothing.
+
+Prose is never the output. The retired engine's failure mode was `9 of 16 conclusions still answer the symptom` —
+a natural-language conclusion cannot be checked, so it could not be wrong in a way anyone could see.
+
+## 5. The cost model
+
+The user's constraint is that cost falls **without dropping a single case from the scope**. Three structural
+changes do that; none of them is truncation.
+
+| term                  | retired / top-band    | this design                                  | factor   |
+| --------------------- | --------------------- | -------------------------------------------- | -------- |
+| input per case        | 1 500 ktok (raw dump) | ~9 ktok (fingerprint, 3 rounds)              | **166×** |
+| rounds per case       | 45–54                 | 3 (eliminator) / 12 (investigator)           | **15×**  |
+| model                 | Sonnet-class          | DeepSeek-class for eliminator                | **~10×** |
+| cases actually called | all                   | ~50 % skipped by a deterministic margin rule | **2×**   |
+
+Worked, at DeepSeek list prices ($0.27/M in, $1.10/M out):
+
+| arm                         | per case | 1 422 cases | note                                                    |
+| --------------------------- | -------: | ----------: | ------------------------------------------------------- |
+| top-band agent as published |    $0.20 |    **$284** | 45–54 rounds, 1 500 ktok                                |
+| `eliminator`, no skip       |  $0.0038 |    **$5.3** | 3 rounds × 9 ktok                                       |
+| `eliminator`, with skip     |  $0.0038 |    **$2.7** | ~50 % of cases resolve on margin                        |
+| `investigator`              |   $0.017 |   **$24.7** | 12 rounds; needs a stronger model, so ~$50–70 realistic |
+
+The eliminator's 74× is **not** bought by using a weaker model on the same task. It is bought by making the task
+smaller than a model's judgement: comparing two numbers against a band is not a reasoning problem, and the answer
+is verified either way. The investigator cannot be made cheap by the same trick, which is why it is the expensive
+arm and why it runs second.
+
+Two free arms sit underneath:
+
+- ~~the **skip rule** is deterministic — `top1_margin > θ ∧ top1 anomalous channels ≥ 3`~~ — **refused, iteration 267.** Measured on 711 RCABench cases it skips **710 of 711**, and the cases it skips include **117 of the 118**
+  a perfect eliminator could fix. The reason is mechanical and reverses the rule's premise: a fixable case is one
+  where a _symptom_ outranks the source confidently, so a wide margin and many deviating channels are evidence
+  **for** consultation, not against it. `docs/agentic-headroom.md` §4 carries the grid; the honest spend is the
+  full corpus, $5.3, not $2.7;
+- the **cache** (record/replay) means every weight/mode/budget ablation after the first costs **$0**. The 500-case
+  arm and the full-1422 arm then differ in _replay_, not in spend. Iteration 267's offline harness
+  (`benchmarks/src/agentic-headroom.ts`, `arm: 'recorded'`) is the scoring side of that cache: it takes claims
+  keyed by case id and reports accuracy, refusals, moves and the skip census without calling a model.
+
+## 6. Sampling that holds the scope
+
+500 cases is not a truncation if the strata are the population's own. The plan stratifies on **fault family ×
+engine correctness × causal-chain depth** (1–5, the axis `arXiv:2608.21310` shows accuracy collapsing along), with
+proportional allocation and a floor of 3 per non-empty stratum. Two consequences are asserted by test rather than
+claimed:
+
+- every fault family present in the 1 422-case corpus is present in the 500;
+- the per-stratum proportions are within one case of the corpus proportions.
+
+The published 90.0 % rests on a **500-case random sample**; a stratified 500 of the same size is strictly more
+informative, so the comparison is like-for-like on n and better on design.
+
+**Order of arms, and it is fixed in advance:**
+
+1. nine cells (735 cases) + RE3:TT/SS — no spend, replays the `0d6ae609` population under the new presentation;
+2. the stratified 500 of RCABench — ≈$2.7, paired, with the pre-registered detection floor of **2.8 pp** at n=500;
+3. full 1 422 — only if (2) clears its floor with a CI that does not cross zero.
+
+**Arms 0, added in iteration 267, and they ran first because they cost nothing:**
+
+0a. **the ceiling.** A perfect eliminator that may only remove candidates by a verifiable claim reaches
+**87.69 %** on all **1 422** RCABench cases against the engine's **75.50 %** — **+12.19 pp**, 174 cases, zero
+refused claims (`docs/agentic-headroom.md` §9, run `43253302440`). The first reading was over the `waveB2` half
+and said **+16.63 pp** (`84.70 %` vs `68.07 %` on 711); the full corpus corrects that by 4.4 pp and this row now
+quotes the full-width number. The ceiling equals Top@5 to within one case (87.69 % vs a saturated 87.8 %), so no
+layer can beat 87.8 % without the _ranking_ improving first;
+0b. **the evidence rule**, refused: −0.6 pp held out at its best thresholds, −21.8 pp at its most permissive. The
+expected-outlier rate survives as a **fingerprint column** — it is what makes 0a's claims checkable — and dies
+as a **decider** (`docs/agentic-headroom.md` §5);
+0c. **the skip rule**, refused (above).
+
+### The 87.8 % sentence, and the width it forgot to say
+
+Row 0a's final clause — *"no layer can beat 87.8 % without the ranking improving first"* — has one defect, and it is
+not the number. `87.69 %` is the **elimination** ceiling and it is correct: a protocol that may only *remove* a
+candidate cannot promote one the five-wide window never showed, so `Top@5` really is its bound. The defect is that
+the clause then makes a claim about **every** layer while stating the bound of one width. This document's own
+ceiling table, three hundred lines down, already quotes `Top@20 = 92.12 %` — measured by the depth ladder in
+`docs/agentic-headroom.md` §10 — and a reader who takes the clause at face value never reaches the table.
+
+Two corrections follow, and neither changes a measurement:
+
+1. **The bound is a function of the width, and the width is a flag.** `maxCandidates` accepts `[1, 50]` and
+   defaults to `5`; the oracle rises `87.83 % → 90.51 % → 92.12 % → 94.59 %` at widths `5 → 12 → 20 → 30`
+   (`docs/rank-depth.md` §2). So the arm order in §6 was derived from a default rather than from a measurement,
+   and a **width arm** cannot be skipped in favour of a protocol arm: it costs the same one call per case and
+   raises the oracle by `4.3 pp` before any protocol question is asked.
+2. **The candidate set is complete, which no earlier reading could say.** `DEPTH_TOP_LIMIT` ran to `20` while the
+   orders run to `49`, so `absent` was "not in the first twenty". Counted over the whole order, every one of the
+   1 422 answers is present, at rank `49` at the worst: the ladder's `100.00 %` rung is reachable, and every rung
+   below it is a presentation choice rather than a property of the ranking (`docs/rank-depth.md` §2).
+
+What survives unchanged is row 0a's measurement: a perfect eliminator moves 174 cases over the engine of the day,
+at the width it was measured at.
+
+## 7. Dependency layering, and the cycle that killed the first attempt
+
+```
+core  ←  tree (pruner; owns the fingerprint builder)
+              ↑
+              │  read-only view types only — `ai` must NOT import `tree`
+             ai (agent: pure, zero IO)
+              ↑
+        benchmarks (gate, cache, sampling, reporting)
+```
+
+`packages/ai` depends on `core` alone. It receives a `CandidateFingerprint` **value**, never a `FaultGraph`. The
+retired attempt let `ai` reach into the graph, which is why removing it also removed `packages/ai`'s ability to be
+tested without a pruner. A test asserts the import direction.
+
+**Amended in iteration 267: the builder is in `benchmarks`, not in `tree`.** The diagram above put the fingerprint
+builder in `tree`, and that sentence was wrong for a dependency reason rather than a stylistic one. The builder
+joins three artifacts — the case's `MetricMap`, the engine's posterior and the corpus profile — and its output type
+belongs to `packages/ai`. Building it in `tree` would force `tree` to import the `ai` value type or to duplicate it,
+and `ai` importing `tree` is exactly what the diagram forbids; a duplicated interface would be the defect this
+repository refuses by name. `benchmarks` already depends on both packages, so the join happens there
+(`benchmarks/src/agentic-fingerprint.ts`), the import direction the diagram states is still asserted, and `tree`
+exposes only the two primitives the join must not re-implement: `injectionSplitIndex` and `medianOfRange`.
+
+## 8. What this layer may NOT do
+
+1. It may not see ground truth. Truth isolation is a type-level boundary plus a test, not a prompt instruction.
+2. It may not emit a conclusion in prose. Only `EliminationClaim`, or `abstain`.
+3. It may not exceed its budget. A gate hit returns the engine's answer — **fallback, never failure**.
+4. It may not run by default. `--agentic-mode off` is the shipped configuration and the anchor.
+5. It may not be trusted when unverified. Unverifiable claims are counted and reported beside accuracy.
+
+## 9. Acceptance
+
+| #   | requirement                                                      | how it is checked                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `weight=0` is bit-identical to the engine without the layer      | asserted twice: `agentic-headroom.test.ts` scores `oracle` at weight 0 and requires `moved = 0` with the engine's own Top@1, and each run's own fingerprint dump reproduces the published control digit for digit (75.50 % over 1 422, `docs/agentic-headroom.md` §9). The nine-cell half is still owed |
+| 2   | no case leaves the scope at any arm                              | stratum-coverage test (§6)                                                                                                                                                                                                                                                                              |
+| 3   | per-case cost is reported with the score                         | `reported-config` gains the three budget fields                                                                                                                                                                                                                                                         |
+| 4   | the layer's net contribution clears its pre-registered floor     | paired per-case verdicts, CI not crossing zero. **The floor now has a denominator, measured on the full corpus**: the ceiling is +12.19 pp, so an arm that captures a tenth of it clears 2.8 pp at n=500 and one that captures a third clears it easily                                                 |
+| 5   | RE3:TT error-value class converts, or the layer is refused again | wrong→correct > 0, 3 of 3 reps                                                                                                                                                                                                                                                                          |
+
+Requirement 5 is the one `0d6ae609` failed, and it is kept **unchanged on purpose**: the point of changing the
+presentation is to find out whether that specific class was a presentation problem or a real ceiling. If it fails
+again under a new presentation, the answer is the second one and the axis closes for good.
+
+## 10. Amended in iteration 270: the window was the ceiling, not the order
+
+§6's arm 0a priced the elimination layer against a **five-wide** presentation and called the result the ceiling.
+A 106-case stratified reading of the full order (`docs/agentic-headroom.md` §10) overturned the premise:
+
+| window                  |                        reachable share | Δ over the control |
+| ----------------------- | -------------------------------------: | -----------------: |
+| `Top@1` (the control)   |                                 75.46% |                  — |
+| `Top@5` (§6's ceiling)  |                                 87.83% |          +12.37 pp |
+| `Top@20`                |                             **92.12%** |      **+16.66 pp** |
+| `absent` from the order | **0 of 1 422** (95% upper bound 0.27%) |                  — |
+
+(The table is the full corpus. The same measurement was first taken on a stratified 106-case sample, which put
+`Top@20` at 97.2% — 5.1 pp optimistic, because it drew 3 of the 112 cases past twenty where the corpus holds 7.9%.
+Both readings are recorded in `docs/agentic-headroom.md` §10.2–§10.3; the corpus is the number.)
+
+Three consequences, and they reorder the arms rather than cancelling them:
+
+1. **The presentation width becomes the first free parameter.** Five was inherited from `At-K` reporting, not
+   chosen: nothing about the engine stops at five, and the fingerprint's own bound (`maxCandidates`) is a constant
+   in `DEFAULT_FINGERPRINT_OPTIONS`. Widening it to twenty costs tokens and nothing else — 4× the candidates for a
+   surface that reaches eleven points further. The eliminator's three-round budget is unchanged in shape; the
+   ledger prices the input, and `AgentBudget` already does that exactly.
+2. **§6's order of arms changes.** Arm 0a is re-measured over a twenty-wide window before the model arm is priced,
+   because the ceiling an arm is compared against has to be the ceiling of the window it is allowed to see. An
+   eliminator paid for over five and scored against a twenty-wide oracle would look worse than it is, and one
+   scored against a five-wide oracle while being shown twenty would look better.
+3. **The `absent` column becomes a standing diagnostic.** It was 0/106 in the sample, which is the strongest single
+   piece of evidence this project has that its graph layer carries the answers and its losses are ordering. The
+   full-corpus number lands with the first `benchmark-agentic` dispatch that runs with `--depth-out`, and §11
+   records it there.
+
+## 11. Retired in iteration 285: the layer lost to its own control, and the control is what ships
+
+The pre-registration in §285 of the register was explicit: *"if nomination on 1 422 cases does not clear 75.5 %, the
+agentic line retires for good."* It scored 74.6 %. This section records the retirement so that the next reader does
+not rebuild it.
+
+### What was measured, on one dispatch, both protocols, one table
+
+| Arm | Top@1 | Perfect-gate ceiling | LLM calls |
+| --- | ---: | ---: | --- |
+| engine (control) | **75.5 %** | — | 0 |
+| elimination, best operator (`rrf` `w=0.3`) | 73.6 % | 79.4 % | 1 422 |
+| elimination + best gate | 75.7 % | — | 1 422 |
+| nomination (`rrf` `w=0.3`) | 74.6 % | **76.2 %** | 1 422 |
+
+The nomination arm's own answers explain the result: its first service **is** the engine's first service in **87.1 %**
+of cases, its first service is the truth in 74.3 % — less often than the engine's — and the truth appears *anywhere*
+in its ranking in 84.7 %, below the 87.8 % the posterior already held. The layer is asked to improve a ranking and
+answers by repeating it while discarding true answers that were on the page.
+
+### Why one run cannot be an ablation of this layer
+
+The elimination arm was re-measured in the same dispatch as the previous iteration, under a prompt that replays
+1 422 / 1 422 with zero stale digest, against a fingerprint artifact whose md5 is identical:
+
+| Reading | iteration 284 | iteration 285 |
+| --- | ---: | ---: |
+| elimination arm, damping `w=1` | 60.7 % | **45.6 %** |
+| preference, `ts-travel-plan-service` source vs innocent | 76.3 % / 16.4 % | **46.3 % / 28.1 %** |
+
+A 15.1-point swing on an unchanged question makes every single-run LLM delta in this repository's history
+uninterpretable, including the ones this plan's §2–§5 were calibrated on. The lesson is not "the layer is bad"; it is
+that **a component whose contribution is smaller than its own variance cannot be measured by one run**, and at ±3
+points of contribution against 15 points of variance it cannot be shipped either.
+
+### What is kept, and what the next iteration attacks
+
+Kept, because they are free and they bound every future attempt: `agentic-protocol-ceiling.ts` (the reader bound, the
+union bound, the recall curve), `run-agentic-ceiling.ts` (offline, one second), and the nomination module as a
+*measured negative* with its ceiling recorded.
+
+`AgentOptions` still has **no model-facing switch**. That is the correct state for a layer that lost to its control:
+the product has no path that reads either protocol, and a future attempt starts from this section rather than from a
+blank page.
+
+The next iteration attacks **ordering**, not the layer. The depth report's `absent` column is **0 of 1 422** — the
+engine's complete order holds an accepted answer in every case — so all 24.5 points between 75.5 % and a perfect
+Top@1 are position, and 173 of them are cases where the engine ranked the right service too low. That is a scoring
+change with an ablation in `docs/`, which is the shape this repository has always measured best.
+
+---
+
+## 12. Iteration 385: the reopening condition was checked against the 2026 field and not met
+
+Section 11 left one sentence standing: *a reopening needs the presentation to change, not the weight*. Iteration
+385 checks that condition against the competitor field rather than assuming it, and records that it is not met.
+
+Three 2026 results were re-verified from primary sources (`SOTA_LANDSCAPE_VERIFICATION.md` §1.31):
+
+1. **GALA+** (arXiv:2608.08968v1, ASE 2026) reaches 74.44 % OB / 73.33 % TT AC@1 by *bounding* the agent to the
+   dependency graph — free ReAct collapses to 24.44 % on TT. Its STRIX scorer fuses Instability (p99/p50),
+   Centrality (fan-in/out PageRank) and Impact (self-delay share) with RRF. This is a presentation change, but its
+   code is not public and its population is two 90-case panels, not our 1 422.
+2. **Continual Search** lifts Opus-4.8 F1 0.471 → 0.608 (+29 %) on MegaRCA-Mix — but that population is 50
+   long-horizon *agent-failure* traces, not service-level RCA. Our own query-agent already tested more rounds and
+   found they hurt (`free-investigation.md` §978-983); the budget stays at six.
+3. **Simple harnesses** (RCAtlas, 65–77 % vs stage-prescribing agents 16–53 %) confirm that *what the agent may
+   decide* dominates *how it reasons* — the same finding §1 of this plan already built the two roles on.
+
+None of the three changes the presentation on our four populations. The decision from §11 therefore stands: the
+layer stays retired, `AgentOptions` keeps no model-facing switch, and the shipped agentic shape remains the gated
+board arm where the model proposes and a mechanical verifier decides. The one component that cleared the
+published leader (93.32 % vs 90.0 %, at a stated different denominator) is that gated arm, not a naked agent.
+Reopening still requires a presentation change on **our** corpus with a >15 pp paired, 3-rep effect — because the
+layer's own run-to-run variance is 15.1 points (§11).
+
+The next work goes to the ¥0 engine axes (retrieval at ranks 6–49, edge-level F1, STRIX-style signals) and to
+publishing the priced 1 192 board, not to rebuilding a layer its own control already refuted.
+
+---
+
+## 13. Iteration 386: the 90 % agent's source confirms the gated shape, and names one mechanism we lack
+
+Section 12 checked the reopening condition against the field and found it unmet. This section reads the actual
+source of the field's 90.0 % Acc@1 agent (`LGU-SE-Internal/ThinkDepthAI`, 38 files read via GitHub API) and states
+what it proves about our retired layer.
+
+The source builds a three-node LangGraph: `llm_call → tool_node → compress`. The decisive detail is in the prompts:
+`RCA_ANALYSIS_SP` instructs **INVESTIGATION ONLY — do not try to emit JSON or final answers here**, and a distinct
+`COMPRESS_FINDINGS_SP` turns the accumulated messages into one strict JSON checked by `output_validator.py`, whose
+errors are fed verbatim into a 3-attempt repair loop. A mandatory `think_tool` reflection follows every DuckDB
+query; the budget is ~50 soft / 100 hard calls. The agent is not given override authority over a ranking — it
+investigates, then a *separate* node produces a validated answer.
+
+This is the mechanism behind the standing counter-intuitive observation. Our measurements and the competitor's
+source now agree: a naked agent that re-decides in-loop scores 74.47 % (precision 0.216 ≈ chance) here, while a
+gated arm where the model proposes and a mechanical verifier decides scores 93.32 % here and the field's 90.0 %
+there. The layer was right to retire; the winning shape is the gated one we ship.
+
+**The one mechanism worth taking, and the decision.** `output_validator.py`'s structured synthesis-repair loop —
+a malformed answer is repaired up to 3 times with the exact error fed back, instead of being accepted or dropped —
+is provider-agnostic and can be expressed as a DeepSeek-backed (or offline) gated flag, making it both a production
+switch and an ablation arm. It is logged as item 12 in `PROGRESS_2026-11-28d.md` §5 and deliberately **not** built
+this iteration: the committed scope was the board publication (1 192, now done, `sota-comparison.md` §29) and this
+audit, and a half-built verifier on the answer path would be worse than none. Reopening the *naked* layer remains
+refused; taking this one validated-synthesis component behind a flag is the open, bounded next step.
+
+## 14. Iteration 387: item 12 is built, gated and measured — the repair loop is no longer the open gap
+
+Section 13 named one transferable, not-yet-built component from the 90.0 % agent's source and deliberately deferred
+it. This section records that it is now built, so no future iteration re-derives the same gap.
+
+**What shipped.** `packages/ai/src/agent/synthesis-repair.ts` is a pure, provider-agnostic core carrying ThinkDepth's
+fault taxonomy (`empty`, `no-brace`, `never-closed`, `decode-error`, `shape-error`, plus our `bound-error`), a repair
+turn that copies the rejected reply and the validator's exact `why` back verbatim, and a bounded attempt loop
+(`DEFAULT_REPAIR_ATTEMPTS = 3`, hard cap `MAX_REPAIR_ATTEMPTS = 5`) with an honest token census. The transport is an
+injected `SynthesisComplete`, so the same decision runs on DeepSeek, an offline provider or a recorded replay; no
+provider is imported into the core. Section 8's guardrails still hold: a repaired reply is only a set of elimination
+claims and every semantic question still belongs to `verifyClaim`.
+
+**The gate.** `benchmarks/src/agentic-proposer.ts` opens the loop only when `--synthesis-repair` is passed; the
+shipped default is off and bit-identical to the published arm (one call, one parse, no `repair` field).
+`--repair-attempts N` sets the budget. The answer artifact (`agentic-claims.ts`) gains an optional `repair` block —
+protocol version, calls made, and one fault per failed step — so an offline reader can distinguish a first-time-valid
+answer from one that took three repairs without re-running the paid arm. A repair call that throws is counted as a
+repair attempt and recorded as the unreadable case it is, never swallowed as a "declined" answer.
+
+**What is measured, and what is not.** The mechanism is asserted at 100 % statements/branches/functions/lines with
+a scoped denominator, and end-to-end over a real loopback `createChatClient`, where the second on-wire request is
+shown to carry `FAULT TYPE:` and `the reply is not JSON` verbatim and the summed tokens equal the endpoint's reported
+usage. What is NOT claimed: that repairs improve the published ranking. That needs a paired dispatch of the malformed
+population, and a parseable claim is still not a true claim — the verifier decides. Eligibility stays open as item
+12b; the mechanism, its cost surface and its honesty are the scope closed here. Authored as Lambertyan, in English.
+
+## 15. Iteration 388: the gate becomes dispatchable from the paid arm
+
+Section 14 shipped `--synthesis-repair` as a CLI flag and left item 12b (the paired paid dispatch of the
+malformed population) open. A follow-up wiring audit found the gap that made item 12b impossible to run: the flag
+existed in `agentic-eliminator-study.ts`, but the ONLY workflow that holds `secrets.DEEPSEEK_API_KEY` —
+`benchmark-agentic.yml`'s propose step, which invokes `run-agentic-eliminator.ts --propose` — never forwarded a
+repair flag. A flag no dispatch can name is an axis nobody can measure, the exact defect
+`dispatch-surface-census.test.ts` exists to prevent.
+
+**What changed.** The propose step now reads two repository variables — `BENCHMARK_SYNTHESIS_REPAIR` and
+`BENCHMARK_REPAIR_ATTEMPTS` — into a `REPAIR_ARG` array materialised in the step's `env`, expanded into the
+invocation only when the first is literally `on`. Repository variables, not a 26th dispatch input: the workflow is
+at GitHub's 25-input ceiling and every input is fenced by its own test. `|| ''` maps an unset variable to the empty
+string, so the default expands to NO flag and the published arm stays byte-identical (one call, one parse, no
+`repair` block). This is the same pattern as `BENCHMARK_EMBEDDING_FALLBACK` in `benchmark-rcaeval.yml`. The decision
+lives in `env`, never on a command line the logger could echo.
+
+**What is asserted.** `agentic-workflow-wiring.test.ts` gains one test: the two variables are read as an env pair
+with `|| ''`, only `on` fills the array, the attempt budget is optional, the expansion sits inside the runner's
+invocation block (not a comment), and the input count remains exactly 25. TDD: the test failed on the unwired
+workflow (RED), passed after the wiring (GREEN). Root suite 9 871 tests / 392 files green on Node 22.23.5; YAML
+parses; lint 0 warnings, typecheck and format:check clean.
+
+**What is NOT claimed.** No paid dispatch was run in this iteration and no ranking number moved. Item 12b — the
+paired measurement of whether repairs recover cases the published arm lost — remains open and is now *runnable*:
+a caller sets the two repository variables and dispatches `benchmark-agentic.yml`. A parseable claim is still not a
+true claim; the gated verifier decides. Authored as Lambertyan, in English.

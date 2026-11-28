@@ -1,0 +1,74 @@
+{
+  "corpus": "LLM4Ops/Cloud-OpsBench",
+  "revision": "ec1d4f38",
+  "arms": [
+    {
+      "arm": "shipped-before-enrolment",
+      "weight": 0,
+      "gate": 0,
+      "jurisdiction": "tail",
+      "cases": 156,
+      "at1": 80,
+      "at3": 110,
+      "at5": 129
+    },
+    {
+      "arm": "enrolled",
+      "weight": 0.1,
+      "gate": 0,
+      "jurisdiction": "tail",
+      "cases": 156,
+      "at1": 80,
+      "at3": 124,
+      "at5": 141
+    },
+    {
+      "arm": "gate-0.02-everywhere-0.1",
+      "weight": 0.1,
+      "gate": 0.02,
+      "jurisdiction": "everywhere",
+      "cases": 156,
+      "at1": 90,
+      "at3": 124,
+      "at5": 138
+    },
+    {
+      "arm": "gate-0.02-everywhere-0.05",
+      "weight": 0.05,
+      "gate": 0.02,
+      "jurisdiction": "everywhere",
+      "cases": 156,
+      "at1": 87,
+      "at3": 119,
+      "at5": 132
+    },
+    {
+      "arm": "logs-side-channel",
+      "weight": 0.1,
+      "gate": 0,
+      "jurisdiction": "tail",
+      "logs": {
+        "weight": 0,
+        "mode": "count"
+      },
+      "cases": 156,
+      "at1": 81,
+      "at3": 124,
+      "at5": 144
+    },
+    {
+      "arm": "logs-count",
+      "weight": 0.1,
+      "gate": 0,
+      "jurisdiction": "tail",
+      "logs": {
+        "weight": 1,
+        "mode": "count"
+      },
+      "cases": 156,
+      "at1": 80,
+      "at3": 124,
+      "at5": 144
+    }
+  ]
+}

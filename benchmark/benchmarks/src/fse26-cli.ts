@@ -1,0 +1,1460 @@
+/**
+ * Argument parsing for the FSE'26 benchmark runner.
+ *
+ * Extracted from `run-fse26.ts` so it can be tested: that file calls `main()` at
+ * import time and therefore cannot be imported by a test, which is how the
+ * `--log-mode` defect below survived review.
+ *
+ * ## Why the accepted modes are an exhaustive object rather than a list
+ *
+ * `--log-mode` used to be validated against a hand-written `||` chain. When the
+ * default was flipped to the best-measured mode, that chain was rewritten and
+ * **`count` was left out** — so `--log-mode count` matched nothing and fell back
+ * to `logicHttp`. The `count` configuration became unreachable through the
+ * workflow, and silently: a dispatch asking for `count` ran `logicHttp` and
+ * printed a confident 47.3%. Two diagnostics dispatched to compare the two modes
+ * came back byte-identical, which is what exposed it.
+ *
+ * A list of names cannot be checked against a union. The vocabulary is a
+ * `Record<LogSignalMode, true>` instead, so **adding a member to the union fails
+ * to compile until it is added there**, and the fallback is reserved for values
+ * that are genuinely not modes.
+ *
+ * That table lives beside the union now (`packages/tree`, `LOG_SIGNAL_MODES`), because the
+ * RCAEval parser kept a second hand-written copy of it and the copy drifted — see the
+ * re-export below. The argument this docblock makes is the argument for there being ONE of
+ * them; making it twice is what let the other one rot.
+ *
+ * @module benchmarks/fse26-cli
+ */
+
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import { DEFAULT_DIAGNOSE_LIMIT } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
+import type {
+  BaselineAnchor,
+  DropDeviationMode,
+  FailedEdgeFirstScope,
+  FailedEdgeMode,
+  FailureContainmentScope,
+  FaultFreeSelection,
+  LabelPriorJurisdiction,
+  LogNormalisation,
+  LogSignalMode,
+  PoolAdmission,
+  SelfTimeScope,
+  StabilityScope,
+  TopoClosure,
+  TopoDiscountScope,
+  TopoEdgeRise,
+  TransientGuardTest,
+} from '../../packages/tree/src/index.js';
+import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_ANOMALY_BREADTH_GATE,
+  DEFAULT_ANOMALY_BREADTH_WEIGHT,
+  DEFAULT_ANOMALY_BURST_WEIGHT,
+  DEFAULT_ANOMALY_CV_WEIGHT,
+  DEFAULT_ANOMALY_TREND_WEIGHT,
+  DEFAULT_BASELINE_ANCHOR,
+  DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
+  DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_CONTAINMENT_MARGIN,
+  DEFAULT_CONTAINMENT_ORDER,
+  DEFAULT_DROP_DEVIATION_MODE,
+  DEFAULT_DUAL_FAMILY_GATE,
+  DEFAULT_DUAL_FAMILY_GATE_MODE,
+  DEFAULT_DUAL_FAMILY_WEIGHT,
+  DEFAULT_FAILED_EDGE_FIRST,
+  DEFAULT_FAILED_EDGE_FIRST_SCOPE,
+  DEFAULT_FAILED_EDGE_GATE_MODE,
+  DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  DEFAULT_FAILED_EDGE_MODE,
+  DEFAULT_FAILED_EDGE_WEIGHT,
+  DEFAULT_FAILURE_ATTRIBUTION,
+  DEFAULT_FAILURE_CONTAINMENT,
+  DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+  DEFAULT_FAULT_FREE_WEIGHT,
+  DEFAULT_LABEL_PRIOR_JURISDICTION,
+  DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+  DEFAULT_LABEL_PRIOR_WEIGHT,
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_LICENSE_BY_EXCURSION,
+  DEFAULT_LOG_NORMALISATION,
+  DEFAULT_LOG_WEIGHT,
+  DEFAULT_METRIC_FLEET_BASELINE,
+  DEFAULT_METRIC_RISE_CEILING,
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_POD_STATE_WEIGHT,
+  DEFAULT_POOL_ADMISSION,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
+  DEFAULT_PRISM_WEIGHT,
+  DEFAULT_RANK_NORMALIZATION,
+  DEFAULT_SELF_ANOMALY_WEIGHT,
+  DEFAULT_SELF_TIME_SCOPE,
+  DEFAULT_SELF_TIME_WEIGHT,
+  DEFAULT_STABILITY_SCOPE,
+  DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_SUPPRESS_DEMAND_METRICS,
+  DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+  DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+  DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+  DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_CLOSURE,
+  DEFAULT_TOPO_DISCOUNT,
+  DEFAULT_TOPO_DISCOUNT_GATE,
+  DEFAULT_TOPO_DISCOUNT_SCOPE,
+  DEFAULT_TOPO_EDGE_RISE,
+  DEFAULT_TOPO_WEIGHT,
+  DEFAULT_TRACE_SKIPS_LEADER,
+  DEFAULT_TRACE_WEIGHT,
+  DEFAULT_TRANSIENT_GUARD_TEST,
+  DEFAULT_VICTIM_WEIGHT,
+  FAULT_FREE_SELECTIONS,
+  isBaselineAnchor,
+  isDropDeviationMode,
+  isDualFamilyGateMode,
+  isFailedEdgeFirstScope,
+  isFailedEdgeGateMode,
+  isFailureAttribution,
+  isFailureContainmentScope,
+  isFaultFreeSelection,
+  isLabelPriorJurisdiction,
+  isLogNormalisation,
+  isLogSignalMode,
+  isOnsetShape,
+  isPoolAdmission,
+  isPrismPooling,
+  isSelfTimeScope,
+  isStabilityScope,
+  isTopoClosure,
+  isTopoDiscountScope,
+  isTransientGuardTest,
+  LABEL_PRIOR_JURISDICTIONS,
+  parseTopoEdgeRise,
+  SELF_TIME_SCOPES,
+  STABILITY_SCOPES,
+  TRANSIENT_GUARD_TESTS,
+  type DualFamilyGateMode,
+  type FailedEdgeGateMode,
+  type FailureAttribution,
+  type OnsetShape,
+  type PrismPooling,
+} from '../../packages/tree/src/index.js';
+
+import {
+  hasValue,
+  parseFieldDecimals,
+  parseNodeCount,
+  parseUnitInterval,
+  parseWeight,
+} from './cli-args.js';
+
+/**
+ * The log-signal mode the benchmark reports.
+ *
+ * Measured, not guessed. Full 1422-case runs on one commit and one
+ * provenance-verified cache:
+ *
+ *     logicHttp  Top@1 47.3% (673/1422)  — run 34604105028
+ *     count      Top@1 23.1% (328/1422)  — run 34604119657
+ *
+ * The +24.2pp gain comes from the replace-code / replace-method / replace-path /
+ * delay / abort classes, whose faulting service floods a propagated framework
+ * HTTP error that the logic-exception-only gate discards. `Network*` and
+ * `JVMException` do regress under it, but the net is strongly positive and
+ * clears the published SOTA best of 37.0%, so this is the configuration that
+ * gets reported.
+ */
+export const DEFAULT_FSE26_LOG_MODE: LogSignalMode = 'logicHttp';
+
+/**
+ * The vocabulary's owner moved: `isLogSignalMode` is re-exported from the union it guards.
+ *
+ * It used to be defined here, against a local `LOG_MODE_ACCEPTED` table, and the RCAEval
+ * parser kept a second hand-written copy of the same vocabulary. The copies drifted — the
+ * RCAEval one accepted two members and replaced the other four with `count` in silence — so
+ * the table now lives beside `LogSignalMode` in `packages/tree` (`LOG_SIGNAL_MODES`) and
+ * both runners consult it. The re-export stays because this module's own suite imports the
+ * guard from here, and a moved owner should not move the fence's import too.
+ */
+export { isLogSignalMode };
+
+/** The aggregation modes the failed-edge signal has been measured with. */
+export const FAILED_EDGE_MODES = { sum: true, mean: true } as const;
+
+/** Whether a raw argument names a failed-edge aggregation mode. */
+export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
+  return Object.prototype.hasOwnProperty.call(FAILED_EDGE_MODES, value);
+}
+
+/**
+ * How many candidates of the fusion order the containment dump's PAIR ROWS describe unless asked otherwise.
+ *
+ * `5` is not a convenient number, it is the DEPTH every containment measurement in
+ * `docs/containment-order.md` was taken at, and a dump taken at another depth describes a sweep with another
+ * population — ρ is fitted per edge over the pairs a run examined, so the width is a configuration and the row
+ * states it rather than leaving its reader to infer it from a length.
+ *
+ * It is a RECORDING width. The sweep decides over the whole order the engine handed its relational passes (see
+ * `TreePruner.analyzeWithFusion`), because that is the order the engine's own containment stage ran over, and a
+ * window applied to the decisions would make the artifact report an answer the run never published. The two were
+ * one number until `docs/gate-replay.md` §9.6: the dump stored a five-wide window of a pool-wide traversal and
+ * could not replay a head the wide flow pass had lifted into it from position six.
+ */
+export const DEFAULT_CONTAINMENT_DEPTH = 5;
+
+/**
+ * How many candidates the elimination FINGERPRINT carries unless asked otherwise.
+ *
+ * `5` is the width the engine publishes, so the default is the shipped artifact to the candidate and the flag's
+ * absence is the same code path the dump had before the flag existed. Raising it does **not** widen the ranking
+ * the run publishes: the fingerprint is re-derived at a wider cut of the same total order, exactly as the terms
+ * dump already is, and `results.json` — `Top@1`, `Top@3`, `Top@5` — is computed from the five-wide ranking as
+ * before. The flag changes the artifact a presentation-width arm reads, and nothing else.
+ */
+export const DEFAULT_FINGERPRINT_TOP_K = 5;
+
+/**
+ * The width of the ranking a run PUBLISHES.
+ *
+ * A constant and not an option, because every number in `docs/sota-comparison.md` is the accuracy of a ranking
+ * cut here: `Top@1` and `Top@3` are properties of the order, `Top@5` is its length, and a run whose published
+ * width was a flag would print `Top@5` for a five-wide answer and a five-wide answer for a twenty-wide one. It is
+ * named so that the one place that widens an ARTIFACT can say what it is widening relative to.
+ */
+export const PUBLISHED_TOP_K = 5;
+
+/** Parsed command-line options for one benchmark run. */
+export interface Fse26CliOptions {
+  readonly dataDir: string;
+  readonly maxCases: number;
+  /** Strength of the log signal (self-caused logic-exception volume). */
+  readonly logWeight: number;
+  readonly logMode: LogSignalMode;
+  /**
+   * How the log signal's counts become a score: `max` (shipped) divides by the case's largest admitted
+   * count, `saturating` divides by a fixed volume instead.
+   *
+   * Read `LogNormalisation` in `packages/tree` for why the shipped rule cannot express "this flood is
+   * small", and `docs/log-volume-scale.md` for the measurement this flag exists to take.
+   */
+  readonly logNormalisation: LogNormalisation;
+  /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
+  readonly rankNormalization: boolean;
+  /**
+   * The node count at or above which `rankNormalization` runs at all.
+   *
+   * The other half of the axis, and the half that decides its population. On RCAEval the two sides are
+   * exactly the small systems (487 cases) and the large one (248); on FSE'26 the corpus is large-graph, so
+   * this flag's default is what makes the flag above act nearly everywhere. Dispatchable so a run can say
+   * which of those two corpora it is describing.
+   */
+  readonly anomalyNormalizeNodeThreshold: number;
+  /** Emit a JSON result document to this path (empty = none). */
+  readonly output: string;
+  /**
+   * Emit one JSON line per case (datapack, fault type, accepted set, top-5 ranking) to this path, or nothing.
+   *
+   * The result document carries AVERAGES, and an average cannot be re-scored. RCABench's ground truth is a
+   * set for edge-shaped faults, so `top-1` is a different question depending on whether the injected endpoint
+   * alone must be named; without a per-case record the judgement can only be changed by a second run over the
+   * whole corpus. This option is what makes the judgement a post-processing decision instead.
+   */
+  readonly perCaseOut: string;
+  /** Fault types to dump a per-service signal diagnostic for (empty = none). */
+  readonly diagnose: readonly string[];
+  /** Max diagnostic dumps per matching fault type (0 = unlimited). */
+  readonly diagnoseLimit: number;
+  /**
+   * How many decimals the dump's per-service fields are rendered with.
+   *
+   * The dump DECLARES this in its header, and a reader's error bar is drawn from the declaration
+   * (`resolutionBoxFor`): the ensembles that decide an admissibility verdict draw each field inside
+   * the cell its render stands for. So this is not a display setting — a four-decimal request
+   * answered by a three-decimal file has a box three orders of magnitude too wide, and the two
+   * artifacts parse identically.
+   *
+   * Defaults to the producer's {@link SERVICE_FIELD_DECIMALS}, so a bare dispatch writes exactly the
+   * artifact every existing FSE'26 dump is. It exists because the register records the ONE window
+   * anywhere that answers `needs 1` — this screen's stability `flip` on `35107871516` — and the
+   * prediction it licenses, that a finer FSE'26 dump admits it, is settled only by producing one.
+   * Until this option existed the precision was not a dispatch input on this side at all, and the
+   * prediction was recorded as "one dispatch away" while being unreachable.
+   */
+  readonly diagnoseDecimals: number;
+  /**
+   * Path to write a machine-readable per-candidate TERM dump to (empty = none).
+   *
+   * The `--diagnose` block is for a human reader: it renders the four magnitudes a
+   * previous screen needed, at a declared precision, one case at a time. That is the
+   * wrong artifact for the question every remaining axis asks — "what would this score
+   * have been at a DIFFERENT weight" — because answering it from text means rebuilding
+   * the terms outside the engine, and a rebuild is a second implementation of the sum
+   * this repository treats as a defect.
+   *
+   * `--terms-dump` writes the engine's OWN breakdown instead: one JSON object per case,
+   * one entry per candidate, each term carrying the `weight` and `slope` that produced
+   * its contribution. The engine already attaches those two factors to every term
+   * ({@link ScoreTerm}), so a score at any weight vector is
+   * `Σ (w'ᵢ − wᵢ) × slopeᵢ` away from the recorded one — exactly, in one pass, with no
+   * dispatch. That is what turns a weight or architecture screen from one run per
+   * candidate configuration into a local computation over one run.
+   *
+   * Off by default: it is a diagnostic artifact, and a run that does not ask for it must
+   * not pay for serialising 51 candidates × 18 terms × 1422 cases.
+   */
+  readonly termsOut: string;
+  /**
+   * Path to write the per-case elimination FINGERPRINT to (empty = none).
+   *
+   * The artifact an elimination layer is allowed to read: as many ranked candidates as `--fingerprint-top-k`
+   * asks for (five unless told otherwise), at most eight channels each, and five numbers per channel — the case's own medians either side of the injection, the fault-free band
+   * the corpus profile published, the rate that channel leaves it in clean windows, and when it first did. It
+   * carries no label, for the reason `agentic-fingerprint-file.ts` records: an arm that can see a fingerprint and
+   * a label in one object can condition on the label by accident.
+   *
+   * Off by default and an output path rather than a knob: it changes nothing the engine computes, which is why
+   * `NON_ENGINE_OPTION_KEYS` and `NOT_REPORTED_FSE26_OPTION_KEYS` both name it.
+   */
+  readonly fingerprintOut: string;
+  /**
+   * How many candidates the PRESENTATION dump carries (0 = every candidate).
+   *
+   * The knob a presentation-width arm needs. The arm's question is what a model does when it is shown twenty
+   * candidates instead of five, and the only honest way to ask it is to hand the arm an artifact that holds
+   * twenty: widening the prompt over a five-wide fingerprint would show the model twenty rows it could not
+   * verify, and widening the RUN would move `Top@5` and make the arm incomparable with the one it is differenced
+   * against.
+   *
+   * ## Why this is a SECOND dump and not a wider `--fingerprint-out`
+   *
+   * Because the two files answer different questions and a consumer joins the one it means. `--fingerprint-out`
+   * is *the published ranking, as a fingerprint*: every offline arm — headroom, ceiling, elimination — joins it
+   * against the per-case verdict file and assumes the orders agree case for case, which they do because both come
+   * from `analyze(graph, 5)`.
+   *
+   * A widened dump does not satisfy that assumption, and it cannot: a structural pass permutes **the list it is
+   * handed**, so the twenty-wide order differs from the published five at positions 4 and 5 on 17 of 1 422 cases.
+   * The first attempt put both contracts in one file and the study job failed exactly there, in a guard that was
+   * right to refuse. One file cannot carry two contracts.
+   *
+   * So this field belongs to `--presentation-out`, the published dump is untouched, and every existing consumer
+   * keeps the premise it was written against.
+   *
+   * `0` means every candidate, the same sentence `--containment-depth` uses for the same word.
+   */
+  readonly fingerprintTopK: number;
+  /**
+   * Path to write the PRESENTATION dump to (empty = none).
+   *
+   * The engine's answer at `--fingerprint-top-k` candidates, with the same channels and the same census as
+   * `--fingerprint-out`. It exists so a presentation-width arm has an artifact whose width it can state, and it
+   * is separate from `--fingerprint-out` so that no reader has to ask which contract a given file follows.
+   *
+   * The published ranking is computed before this path is read, so a run that writes one is the same
+   * configuration as a run that does not — the relation `NOT_REPORTED_FSE26_OPTION_KEYS` describes.
+   */
+  readonly presentationOut: string;
+  /**
+   * Path to write the TOPOLOGY BRIEF to (empty = none).
+   *
+   * One record: the union of every case's call graph, rendered as the section the nomination prompt can carry.
+   * It is written by the run that measured because only a corpus pass holds the graphs, and it is written rather
+   * than passed as a string because a dispatch must not be able to attach a topology nobody measured.
+   *
+   * It is NOT part of the reported configuration, on the rule every other dump follows: it changes no ranking
+   * and describes no engine option, so the run's `Top@1` is the same with it and without it. What it identifies is
+   * the OFFLINE arm that reads it, and that arm prints its digest.
+   */
+  readonly topologyBriefOut: string;
+  /**
+   * Path to write the per-case RANKING DEPTH to (empty = none).
+   *
+   * `Top@1` and `Top@5` divide the corpus's misses into two families that an average cannot distinguish: a case
+   * whose answer is *deeper than five* (a ranking defect, reachable by re-ordering) and one whose answer is
+   * *nowhere in the order* (a graph, label or extraction defect that no re-ordering can reach). The second family
+   * is where the ceiling argument lives, so it has to be counted rather than inferred from `Top@5`'s shortfall.
+   *
+   * This records, per case, the first-hit depth in the order the engine actually sorted — the same order the
+   * shipped `Top@5` is a slice of — plus the candidate count and the head of the order with the scores the sort
+   * used, which is what makes a margin claim checkable without a second run.
+   *
+   * Costs a second ranking pass over each case (the depth needs EVERY candidate, not the reported five), so it is
+   * off unless asked for. It changes nothing the engine computes, which is why both classification lists name it.
+   */
+  readonly depthOut: string;
+  /**
+   * Path to write the per-case CONTAINMENT SWEEP rows to (empty = none).
+   *
+   * H2's population: one row per adjacent pair the containment sweep examined with a call edge between them,
+   * carrying both arms' decisions and both sides' excursions. The ranking ndjson cannot reconstruct that
+   * population — a pair that was never inverted leaves no trace in an answer — which is why the measurement
+   * needs its own artifact rather than a second reading of the one that already exists.
+   *
+   * It carries no label, for the reason `agentic-fingerprint-file.ts` records, and it joins to the accepted
+   * answers on `datapack`. Off by default: it costs one extra ranking pass over each case (the sweep's input is
+   * the FUSION order, which the published ranking no longer contains), and a run that does not ask for it must
+   * not pay for it. It changes nothing the engine computes, which is why both classification lists name it.
+   */
+  readonly containmentOut: string;
+  /**
+   * How many candidates the sweep's input order carries (0 = every candidate).
+   *
+   * Defaults to 5 because that is what the shipped run publishes and what every containment measurement in
+   * `docs/containment-order.md` was taken on: a dump taken at a different depth would describe a sweep with a
+   * different population, and the +47/−5 arm it is meant to explain would no longer be the arm it explains.
+   * A larger depth is what a reader reaches for when ρ's per-edge population turns out too thin, and the
+   * artifact records the depth it used through the row count rather than through a comment.
+   */
+  readonly containmentDepth: number;
+  /**
+   * Metric names to filter out of every case before scoring (empty = none).
+   * Component-ablation switch: the bridge merges four metric sources into one
+   * map, so removing a source's names here re-scores the same cases as if the
+   * bridge had never emitted that source — without rebuilding the cache.
+   */
+  readonly dropMetrics: readonly string[];
+  /**
+   * Additional metric labels admitted to the EVENT family (empty = the shipped family, `['error']`).
+   *
+   * The complement of {@link dropMetrics}, and it exists for the same reason: the two converters that produced
+   * this project's two corpora spell the same error rate differently, and a run has to be able to state the
+   * second spelling without editing a constant that the published number was measured against.
+   */
+  readonly eventExtraLabels: readonly string[];
+  /**
+   * Ceiling on one metric's relative deviation (0 = unbounded, the shipped
+   * behaviour).
+   *
+   * The anomaly score is `max` over a service's metrics and the RISE direction
+   * is unbounded, so a symptom with a wide dynamic range can out-score the
+   * source's own signature — measured at 29.2x against 8.5x median rise on the
+   * FSE'26 silent block (`docs/fse26-metric-competition-verdict.md`). This is
+   * the ablation switch for that bound; the default is off.
+   */
+  readonly metricRiseCeiling: number;
+  /**
+   * Subtract each metric's cross-service median before the service maximum.
+   *
+   * The other half of the dynamic-range question: a metric that moved for every
+   * service carries no information about WHICH service is the source, yet a
+   * maximum over metrics cannot tell "unusual on this metric" from "everyone
+   * moved". Off by default; the run config records whether it was used.
+   */
+  readonly metricFleetBaseline: boolean;
+  /**
+   * Strength of the failed-edge-DIRECTION signal (0 = disabled, the shipped
+   * behaviour).
+   *
+   * Charges each post-injection failed call to its CALLEE — the service its
+   * callers' calls failed against — which is the inverse of the log signal's
+   * credit to the emitter. This is the ablation switch for it.
+   */
+  readonly failedEdgeWeight: number;
+  /**
+   * How a callee's failed calls are aggregated: `sum` (default) or `mean` over
+   * its failing callers (fan-in normalised).
+   */
+  readonly failedEdgeMode: FailedEdgeMode;
+  /**
+   * Minimum contributing edges a callee needs before the signal credits it.
+   * 1 = the shipped behaviour.
+   */
+  readonly failedEdgeMinRecords: number;
+  /**
+   * Strength of the per-edge LATENCY-rise signal.
+   *
+   * Credits the callee of an edge whose mean span duration rose, which is the
+   * same direction as the failed-edge signal but exists on the cases where no
+   * call failed at all.
+   *
+   * The default is the engine's own {@link DEFAULT_LAT_WEIGHT}, imported rather
+   * than restated: a literal here would be a second copy, and a second copy of a
+   * measured default is what let the published mode drift 24.2pp from the measured
+   * one. Pass 0 for the ablation.
+   */
+  readonly latWeight: number;
+  /**
+   * Rise a service must clear before the latency term credits it.
+   *
+   * Shipped as {@link DEFAULT_LAT_MIN_RISE}, the engine's own constant, because it is
+   * one half of a measured PAIR: at the shipped weight a floor of 1 scores 673 and a
+   * floor of 10.3 scores 750, and the reverse pairing (a floor of 10.3 at the old
+   * 0.03) is a 6-case regression. `1` restores the credited-everything shape.
+   */
+  readonly latMinRise: number;
+  /**
+   * Weight of the DB-connection-pool dominance penalty: subtracts it from a
+   * service whose anomaly maximum was won by a `db.client.connections.*` series.
+   *
+   * Required, not optional, and defaulted to the engine's own constant rather
+   * than to a literal: this is the value a dispatched run without the flag uses,
+   * so a second copy here is a second shipped configuration.
+   */
+  readonly poolMetricPenaltyWeight: number;
+  /**
+   * Weight on the decisive-stability prior, SHIPPED ON: both halves of the kill criterion were
+   * measured at the engine's value before the default moved, so the flag path and the default path
+   * agree and this input exists to ABLATE the term rather than to reach it. Read from
+   * {@link DEFAULT_STABILITY_WEIGHT} rather than restated — a second copy of a shipped number is how
+   * this repo published one 24.2pp off the best-measured value.
+   */
+  readonly stabilityWeight: number;
+  /**
+   * Which STATISTIC the stability weight reads — the case rank, or the dispersion read against the metric
+   * family.
+   *
+   * `rank` is the shipped statistic and the one `DEFAULT_STABILITY_WEIGHT`'s criterion intersection was solved
+   * on; `fleet` and `fleet_unbinned` are the repair and its mechanism control. A new statistic invalidates that
+   * intersection rather than inheriting it, which is why the fleet arms carry their own weight ladder — the
+   * rank's permission ends at `0.008032` and the residual's typical magnitude is `O(1)`.
+   *
+   * Refused on an unknown word rather than defaulted: the scope decides what the weight multiplies, so a typo
+   * that fell back would publish the rank arm under the repair's name.
+   */
+  readonly stabilityScope: StabilityScope;
+  /**
+   * Weight on the FAULT-FREE FREQUENCY prior, SHIPPED OFF at {@link DEFAULT_FAULT_FREE_WEIGHT} = 0.
+   *
+   * The term reads a CORPUS profile — see `--fault-free-profile` — so the weight and the profile are a pair:
+   * a non-zero weight with no profile scores nothing, and the run's own `Config:` line reports both so the
+   * artifact cannot describe a configuration the ranking did not have.
+   */
+  readonly faultFreeWeight: number;
+  /**
+   * Where the fault-free frequency profile is read from, or `undefined` when the term is off.
+   *
+   * A HARNESS option rather than a configuration one: two runs of the same configuration from two files are
+   * the same configuration, which is the rule `NOT_REPORTED_FSE26_OPTION_KEYS` states for `dataDir`.
+   */
+  readonly faultFreeProfilePath?: string | undefined;
+  /**
+   * Which of a candidate's channels the fault-free term reads: `rarest` (the paper's aggregation) or
+   * `dominant` (this engine's own reading). Both are hypotheses; the corpus is the only thing that chooses.
+   */
+  readonly faultFreeSelection: FaultFreeSelection;
+  /**
+   * Weight on the LABEL prior — how much a service being this deployment's past answer is worth.
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_WEIGHT} = 0.1, the enrolled arm: it holds `Top@1` on this panel at 1 186
+   * (1 gained, 1 lost, `p = 1.000`) while gaining 24 and 27 cases at `Top@3` and `Top@5`, and on the nine RCAEval
+   * cells it leaves `AC@1` at 666 of 666 while lifting the nine-cell `Avg@5` mean 92.47 → 94.48 %. `0` remains the
+   * ablation and remains reachable: at 0 the term is not priced and the history is not even read, so the ranking is
+   * bit-identical to the engine that had no such term.
+   *
+   * ## Why this half needed a profile built for it
+   *
+   * The RCAEval half has carried this pair since iteration 367 and the census recorded the FSE'26 half as
+   * `fse26: null` beside both fields, because this runner built no history at all — so the arm was
+   * unstateable on one half of a kill criterion that is an AND over the two. The history is now DERIVED from the
+   * corpus this run scores (see `fse26-label-history.ts`) rather than read from a file: a frequency over one
+   * corpus's labels is true of that corpus alone, so a path would be a second place where "which history" can be
+   * wrong, and the derivation costs one prefix scan per datapack.
+   */
+  readonly labelPriorWeight: number;
+  /**
+   * The smallest top-1 margin at which the label prior may speak — the gate, as a number the ranking produces.
+   *
+   * Read off the engine's own `top1 − top2` BEFORE the term is added, because a gate computed from the gated
+   * score would be the term's own output deciding whether the term runs. Ships at
+   * {@link DEFAULT_LABEL_PRIOR_MARGIN_GATE} = 0: the plateau boundary the Cloud-OpsBench sweep measured
+   * (`tau ∈ [0.015, 0.02]`) is a gate on THAT corpus, and this one's median head margin is 0.6277 — sixty times it —
+   * so on this panel the gate withholds 89 cases and buys nothing. Under the `tail` jurisdiction below it is a
+   * substitute for the pin rather than a complement (`+16 / +19` at `tau = 0.02` against `+24 / +27` at 0).
+   * `label-prior-reach.ts` measures what it saw on THIS corpus, so a silent arm is a median rather than an
+   * inference.
+   */
+  readonly labelPriorMarginGate: number;
+  /**
+   * Where in the ranking the label prior may act: `everywhere` (summed with the rest) or `tail` (the base head is
+   * clamped and the prior reorders 2..n).
+   *
+   * Ships at {@link DEFAULT_LABEL_PRIOR_JURISDICTION} = `tail`, the only arm whose head cost is zero BY CONSTRUCTION
+   * rather than by measurement — this panel is where the two positions separated: the term loses `Top@1` here at
+   * every price and gate while gaining 24 cases at each of `Top@3` and `Top@5`, so the only arm that can survive is
+   * the one that makes position 1 not its to move. `everywhere` stays reachable and stays measured: it is the arm
+   * every published cell before iteration 369 was taken with, and a dispatch that reproduces one of those needs the
+   * word.
+   */
+  readonly labelPriorJurisdiction: LabelPriorJurisdiction;
+  /**
+   * Weight on the SELF-TIME prior, SHIPPED OFF at {@link DEFAULT_SELF_TIME_WEIGHT} = 0.
+   *
+   * The term rewards the share of a service's own latency rise that no CALLEE can explain — a
+   * caller's response time contains its callees', so an inherited rise is not evidence about the
+   * caller. Exposed here so the FSE'26 half of the kill criterion is measurable at the same weight
+   * as the golden half; until it is measured the weight stays 0 and the map is not even built.
+   */
+  readonly selfTimeWeight: number;
+  /**
+   * Which scale that weight reads: `absolute` (the share itself, the arm `docs/self-time-share.md` §6
+   * refused) or `fleet` (the same share minus the median of the node's own OUT-DEGREE class).
+   *
+   * Exposed on this half for the reason every other scope is: a mechanism measurable on one half only has
+   * an undecidable other half. It is a pair with the weight rather than a second weight, and it is inert at
+   * weight 0, so the shipped configuration is unchanged by construction.
+   */
+  readonly selfTimeScope: SelfTimeScope;
+  /**
+   * Weight on the internal/external SYMMETRY MASK. Exposed on this half for the reason every term is: a
+   * mechanism measurable on one half only has an undecidable other half. The shipped value is the engine's
+   * 0, and at 0 the symmetry map is not even built.
+   */
+  readonly victimWeight: number;
+  /**
+   * Weight on the BASE term — the candidate's own anomaly. Exposed here for the reason every term is: a
+   * coefficient measurable on one half only has an undecidable other half, and this one moves BOTH halves'
+   * scores at once.
+   */
+  readonly selfAnomalyWeight: number;
+  /**
+   * Weight on the dual-family presence bonus. Exposed here for the reason every term is: a shape measurable on
+   * one half only has an undecidable other half. The shipped value is the engine's 0.
+   */
+  readonly dualFamilyWeight: number;
+  /**
+   * Weight on the POD-STATE term — a pod's lifecycle transition across the injection boundary.
+   *
+   * Exposed here for the reason every term is: the coefficient is measurable only against a population that
+   * carries the channels, and this one is silent on every corpus that does not. The shipped value is the
+   * engine's {@link DEFAULT_POD_STATE_WEIGHT}.
+   */
+  readonly podStateWeight: number;
+  /**
+   * The share of the fleet's strongest dual signal a component must reach to be a family member — see
+   * `TreePrunerOptions.dualFamilyGate`.
+   *
+   * A SHARE rather than a weight, and it travels in the packed `ranking_knobs` block as
+   * `dual_family_gate=<share>`: the knob that decides the membership's POPULATION is only measurable on both
+   * halves if both can state it, and the kill criterion is an AND over the two benchmarks.
+   */
+  readonly dualFamilyGate: number;
+  /**
+   * Which fleet-relative comparison that gate applies — see `TreePrunerOptions.dualFamilyGateMode`.
+   *
+   * Travels in the packed `ranking_knobs` block as `dual_family_gate_mode=<min|channel>`; the kill criterion is
+   * an AND over two benchmarks, so an axis only one half can state has an undecidable other half.
+   */
+  readonly dualFamilyGateMode: DualFamilyGateMode;
+  /**
+   * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
+   * value: every measured headline is at 0, so a typo here reproduces a published
+   * configuration rather than inventing one.
+   */
+  readonly temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * Inert while `temporalWeight` is 0 — the term is multiplied by the weight — which is
+   * why the shape could be enrolled, screened and dispatched before the weight was
+   * chosen. `docs/fse26-onset-verdict.md` carries the measured menu.
+   */
+  readonly onsetShape: OnsetShape;
+  /**
+   * Weight on the trace-activity term — whether a service appears in the failed-call traces.
+   *
+   * One of the eight knobs `docs/dispatch-surface-audit.md`'s Finding 6 found by the third seam: the
+   * golden runner accepted the flag, carried it into `RCAEvalSignalOptions` and NAMED it on every
+   * artifact, while no dispatch could state it. The audit document's own boundary argument is why the
+   * mirror had to exist rather than the input alone — *adding an RCAEval-only knob grows the surface
+   * without growing the set of answerable questions, because the FSE'26 half would still be
+   * unreachable* — and the kill criterion is an AND over the two halves.
+   *
+   * `1` is the shipped value: the field follows the line's `omit when default` rule at whatever
+   * `DEFAULT_TRACE_WEIGHT` states, and that constant moved from `0` to `1` when the golden RE3 job's
+   * command-line pin was folded back into the engine. It is BINARY on the golden corpus (exactly `0` or exactly
+   * `1`, with no magnitude). The earlier reading — "it pushed for the wrong service on all six occasions it
+   * moved a deciding gap, which is why the default stayed at 0" — was taken against a control that also had
+   * `noInjectTime` on; the unconfounded nine-cell A/B is on the constant and on
+   * `docs/trace-weight-default.md`.
+   */
+  readonly traceWeight: number;
+  /**
+   * Whether the trace vote is withheld from the anomaly leader — see `TreePrunerOptions.traceSkipsLeader`.
+   *
+   * Inert at the FSE'26 half's shipped `traceWeight = 0`, and forwarded anyway for the reason every inert knob
+   * is: the kill criterion is an AND over two benchmarks, so an axis only one half can state has an undecidable
+   * other half. Travels in the packed `ranking_knobs` block as `trace_skips_leader=1|0`.
+   */
+  readonly traceSkipsLeader: boolean;
+  /**
+   * Whether a caller may be ranked above a callee whose own latency excursion is larger — the containment pass.
+   *
+   * Ships ON (`DEFAULT_CONTAINMENT_ORDER` = true, since iteration 293) and is still inert without
+   * `--fault-free-profile`, because the excursion is measured against the band the service occupied while nothing
+   * was wrong. What moved the default is the pass's second requirement: it only inverts a pair whose own interface
+   * carried failed calls, which is a record every case either has or does not, so the pass is either evidence-bound
+   * or silent rather than weight-driven. Travels in the packed `ranking_knobs` block as `containment_order=1|0`;
+   * `0` is the ablation.
+   */
+  readonly containmentOrder: boolean;
+  /**
+   * How much larger the callee's excursion must be before the pass inverts the pair, in band widths.
+   *
+   * Ships at `DEFAULT_CONTAINMENT_MARGIN` = 0 — a strict comparison rather than a tuned threshold, because both
+   * excursions are measured on one case in one unit.
+   */
+  readonly containmentMargin: number;
+  /**
+   * Whether a resolvable callee excursion licenses a silent-interface pair. Ships at
+   * `DEFAULT_LICENSE_BY_EXCURSION` = true; the direct flag makes the record-only ablation reproducible.
+   */
+  readonly licenseByExcursion: boolean;
+  /**
+   * Apply the FAILURE-FLOW order: a caller whose own interface failures are explained by its own calls may not
+   * outrank the callee those failures were reported against. Travels in the packed `ranking_knobs` block as
+   * `failure_containment=1|0`.
+   *
+   * Ships at `DEFAULT_FAILURE_CONTAINMENT` = false. Unlike `containmentOrder` it needs NO corpus profile — the
+   * flow is a property of the case — so the switch is live on any dispatch that can name it. What withholds it is
+   * the measurement: +72 top-1 gains against one loss in 711 cases, and that loss is a single conduit whose
+   * counts carry no direction (docs/containment-order.md §5). The flag exists so the arm is reproducible and so
+   * the day the conduit is guarded the pipe is one workflow input away.
+   */
+  readonly failureContainment: boolean;
+  /**
+   * Which reading of the failure flow the pass applies: `shape` charges a rise that arrived on a request shape
+   * the edge had never carried to the CALLER that sent it, `counts` charges every counted rise where the count
+   * says it lands. Travels in the packed `ranking_knobs` block as `failure_attribution=shape|counts`.
+   *
+   * Ships at `DEFAULT_FAILURE_ATTRIBUTION` = `shape`: on every case whose failures all arrive on shapes the
+   * baseline carried, the two readings are IDENTICAL, so the axis is silent where it has no evidence. It is a
+   * switch rather than a hard-wired choice because the two must be ablatable on ONE cache — a data-level
+   * ablation would have to re-cut the corpus, which is not an ablation anybody can run twice.
+   */
+  readonly failureAttribution: FailureAttribution;
+  /**
+   * How far through the order the failure-flow pass may look for a pair to invert: `adjacent` (neighbours only),
+   * `global` (any caller/callee pair on a failing edge), `global-measured` (`global`, and a candidate the channel
+   * did not measure may not take part). Travels in the packed `ranking_knobs` block as
+   * `failure_containment_scope=…`.
+   *
+   * Ships at the ENGINE's default, `adjacent`: this runner does not own a second opinion about an option the
+   * engine declares, and `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` enforces exactly that.
+   * The measured arm is `global-measured` — **1 156 → 1 186 `Top@1`**, 30 gained, none lost on 1 422 cases — and
+   * it is one flag away rather than the default, because that reading has never been taken on the RCAEval cells
+   * and they do carry failed-call rows. `docs/failure-containment-reach.md` §6 states the block.
+   */
+  readonly failureContainmentScope: FailureContainmentScope;
+  /**
+   * Rank the failed-edge ledger's candidate set AHEAD of everything else — a partition of the order rather than a
+   * term in the score. Travels in the packed `ranking_knobs` block as `failed_edge_first=1|0`.
+   *
+   * The ledger contains the truth in 418 of 421 value-replacement datapacks while naming 6.6 % of candidates, and
+   * the shipped gate can only substitute a champion rather than change the question. Ships at
+   * `DEFAULT_FAILED_EDGE_FIRST` = false so the arm and its control run on ONE commit; the corpus reading that
+   * decides the default is `docs/failed-edge-jurisdiction.md`.
+   */
+  readonly failedEdgeFirst: boolean;
+  /**
+   * Which membership that partition ranks first: `credited` (an inbound call failed against it) or `unexplained`
+   * (its own calls do not account for the failures reported at it). Travels in the packed `ranking_knobs` block as
+   * `failed_edge_first_scope=…`.
+   *
+   * `credited` is the measured reading and it is REFUSED (−170, `docs/failed-edge-jurisdiction.md`); `unexplained`
+   * is the arm registered against it, and its prediction is written down before it runs.
+   */
+  readonly failedEdgeFirstScope: FailedEdgeFirstScope;
+  /**
+   * Which bar decides whether the failed-call direction term may speak at all.
+   *
+   * Ships at `DEFAULT_FAILED_EDGE_GATE_MODE` = `absolute`, the constant every published cell ran. The FSE'26
+   * surface had no input for this axis and the census recorded that as a decision rather than an omission
+   * ("that corpus IS the bar's units"); `boundary` is the mode that made the input necessary, because it is
+   * the only reading of the axis whose evidence is the channel's OWN account of the case rather than a number
+   * in the corpus's units — one measured interface, fed from outside the graph. It answers 1 136 against the
+   * shipped 1 073 with 64 repairs and one regression on this corpus
+   * (`docs/failed-edge-gate.md` §13.7), so it has to be dispatchable to be accepted or refused on a runner.
+   */
+  readonly failedEdgeGateMode: FailedEdgeGateMode;
+  /**
+   * Weight on the trace-topology signal. `0` = off, the shipped value.
+   *
+   * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
+   * axis, and it was rejected at **+0.49pp with six regressed fault types** — so this knob's role is to be
+   * ABLATABLE rather than to be turned on, which is exactly what a reachable zero gives.
+   */
+  readonly topoWeight: number;
+  /**
+   * Topological deduction strength — the amount of a node's own anomaly its CALLEES may deduct.
+   *
+   *   explained(v) = max over callees c of propWeight(v→c) × anomaly(c)
+   *   anomaly'(v)  = max(0, anomaly(v) − topoDiscount × explained(v))
+   *
+   * `1` is the shipped value since iteration 163, paired with the boundary gate: a bare dispatch runs the
+   * enrolled operator, and `0` is the ablation's own zero — the map is not built at all, so `0` reproduces
+   * the corpus every cell before this release was published on. The enrolment was read on THIS population
+   * first: the arm is byte-identical to the bare dispatch on all three headline numbers and on all
+   * twenty-five fault types, which is why it costs nothing here. The form and its two refused predecessors
+   * are recorded on `TreePrunerOptions.topoDiscount`; `docs/topo-discount-scope.md` carries the sweep.
+   */
+  readonly topoDiscount: number;
+  /**
+   * Which channels {@link topoDiscount} may act on — `external` restricts both sides to response channels.
+   *
+   * Printed only when the weight is non-zero. Since the weight ships at 1 that is now every run, which is
+   * what it should be: a scope combined with a zero deduction is not part of the configuration, and the
+   * shipped configuration is no longer that case.
+   */
+  readonly topoDiscountScope: TopoDiscountScope;
+  /**
+   * The smallest share of a node's anomaly its callees must account for before {@link topoDiscount} may
+   * charge it — see `TreePrunerOptions.topoDiscountGate`. The shipped value is the BOUNDARY, 1, and `0` is
+   * the ungated ablation: at 0 every node a callee explains at all is charged, which is not a filter but a
+   * proportional demotion, and `docs/topo-share.md` §9 reads the plane between the two.
+   */
+  readonly topoDiscountGate: number;
+  /**
+   * How {@link topoDiscount}'s explanation is aggregated over a caller's callees — see `TopoClosure`.
+   *
+   * The golden half's fourth topological knob, printed on this half's `signals:` line because a run must be
+   * able to say which aggregation produced its number: `max` and `sum` agree on a tree and differ on every
+   * fan-out, which is the shape `docs/topo-share.md` §11 found in the rank-2 band.
+   */
+  readonly topoClosure: TopoClosure;
+  /**
+   * The smallest OUT-EDGE latency rise at which an edge may stand in for a response channel — see
+   * `TopoEdgeRise`.
+   *
+   * The third topological knob this half needed and the golden half cannot use: RCAEval records no span
+   * durations, so the field is absent there and the predicate unreachable, while FSE'26 records
+   * `traceEdgeLatency` per edge and its 87 metric names are all `container.*`/`k8s.*` — which is why the
+   * deduction is inert on that corpus and why this is the only reading that can move it.
+   *
+   * `null` is the shipped value: admission is decided by `isResponseChannel` alone. A number is the arm,
+   * and the run's `signals:` line prints it so an artifact can attribute its own number.
+   */
+  readonly topoEdgeRise: TopoEdgeRise | null;
+  /**
+   * Which SET of nodes the ranking may answer with — see `PoolAdmission`.
+   *
+   * The ranking admits only nodes whose post-deduction anomaly is positive, which makes a node the deduction
+   * explained in full ABSENT rather than last; twelve misses in the golden population are a truth of that shape,
+   * so the filter is a knob and not a detail. `positive` is what every published number ran under.
+   */
+  readonly poolAdmission: PoolAdmission;
+  /**
+   * Weight on the collision (co-occurrence) term. `0` = off, the shipped value.
+   *
+   * The Deng-Yu collision source is the term's name; its contribution on the golden corpus is `0.0000` on
+   * every case BECAUSE this weight is 0, which is the difference between `WEIGHT_ZERO` and a term that
+   * measured nothing. Making the weight reachable is what lets that be read rather than assumed.
+   */
+  readonly collisionWeight: number;
+  /**
+   * Weight on the PRISM external-signal term. `0` = off, the shipped value.
+   *
+   * Zero by measurement, not by omission: `prismWeight`'s row records the fusion rejected at the shipped
+   * pooling, and the pooling below is the second half of that axis.
+   */
+  readonly prismWeight: number;
+  /**
+   * Which pooling the PRISM term fuses with.
+   *
+   * Inert while `prismWeight` is 0, which is why it could be enrolled and screened before the weight was
+   * decided — the same relationship `onsetShape` has to `temporalWeight` above. Read from
+   * {@link DEFAULT_PRISM_POOLING} rather than restated, and validated by the union's own guard, so the
+   * accepted set cannot be a subset of the vocabulary (the defect `--log-mode` was repaired for, one
+   * vocabulary over).
+   */
+  readonly prismPooling: PrismPooling;
+  /**
+   * Discount applied to the DROP half of a metric's direction-aware deviation. `0` = off, the shipped
+   * value.
+   *
+   * This knob's only record is a code comment — the census classifies it `comment-only` — and its
+   * measurement lives on `computeMetricDirection` in `packages/tree/src/pruning/ranking-signals.ts`,
+   * citing "benchmark #226/227". A reachable flag is a precondition for promoting that record into a
+   * document; it is not the promotion itself.
+   */
+  readonly collapseDiscount: number;
+  /**
+   * How a metric's DROP becomes a deviation. Exposed here for the reason every axis is: the pair it belongs
+   * to (`metricRiseCeiling`) was already on this half, so this is the half where the pair is complete.
+   */
+  readonly dropDeviationMode: DropDeviationMode;
+  /**
+   * Which WINDOW the deviation is measured between — see `CliOptions.baselineAnchor` in the RCAEval runner,
+   * where the defect it addresses is measured. Here because the kill criterion is an AND over the two
+   * benchmarks: an option only one half can state has an undecidable other half.
+   */
+  readonly baselineAnchor: BaselineAnchor;
+  /**
+   * The transient guard's QUESTION — which statistic decides whether a channel moved for good.
+   *
+   * This half carried no such flag, and `dispatch-surface-census.test.ts` recorded the omission as a
+   * property of the corpus: *"that corpus carries no injection boundary in the units this test splits on,
+   * so the fallback would be the shipped statistic on every case and a `ranking_knobs` row would advertise
+   * a state it could never enter."* **That was never measured.** The loader reconstructs every series'
+   * timestamps from the bridge's compact `{start, step, values}` form and forwards `raw.injectTimeMs`
+   * verbatim, which are exactly the two inputs `levelPermanence` needs — so whether the boundary can be
+   * placed here is an open question that presented itself as a closed one, which is this repository's
+   * most-repeated defect shape. The flag exists so the question can be answered by a run instead of by a
+   * sentence, and `--transient-guard-test`'s docblock in `rcaeval-cli.ts` carries the measurement that
+   * makes the answer matter.
+   *
+   * Refused by NAME on an unknown value rather than falling back: every member of the union is a
+   * published configuration, so a typo between two of them is a silent re-pairing of the experiment.
+   */
+  readonly transientGuardTest: TransientGuardTest;
+  /**
+   * The anomaly composition's four coefficients — see `CliOptions.anomalyTrendWeight` in the RCAEval
+   * runner, where they are measured. Exposed here so the kill criterion, which is an AND over the two
+   * benchmarks, can be evaluated: a candidate that moves one half and not the other is undecidable.
+   */
+  readonly anomalyTrendWeight: number;
+  readonly anomalyBurstWeight: number;
+  readonly anomalyCvWeight: number;
+  readonly anomalyBreadthWeight: number;
+  /** The breadth contender gate — see the RCAEval runner's `CliOptions.anomalyBreadthGate`. */
+  readonly anomalyBreadthGate: number;
+  /**
+   * Whether a metric that was IDLE before the fault and only became active during it is discarded as an
+   * artifact of its near-zero baseline.
+   *
+   * `false` is the shipped value, and the pair of switches is NOT symmetric: its sibling below is a
+   * measured no-op, while this one was unmeasured until it was dispatched as the iteration-95 candidate.
+   * `docs/near-zero-rise-suppression-falsified.md` asserted the two were consistent without measuring
+   * this one, and the dispatch is what replaced that assertion with a number.
+   */
+  readonly suppressIdleTransients: boolean;
+  /**
+   * Whether a metric whose baseline is at or below the `0.001` epsilon is skipped, because its relative
+   * RISE is undefined. `false` is the shipped value.
+   *
+   * A measured no-op on the golden corpus: the guard never fires, because the production top-1's own
+   * baseline ranges from `0.008` to `8.3e7` and none is at or below the epsilon. Reachable here so the
+   * no-op can be re-read on THIS corpus rather than assumed to transfer — the correction
+   * `docs/near-zero-rise-suppression-falsified.md` records is precisely that a raw-deviation reading of a
+   * case is not a reading of the ranking.
+   */
+  readonly suppressNearZeroBaselineRise: boolean;
+  /**
+   * Discard a transport channel whose head window has no level. Exposed on this half for the reason every
+   * guard is: a term measurable on one half only has an undecidable other half. `false` is the shipped value.
+   */
+  readonly suppressZeroBaselineLatency: boolean;
+  /**
+   * Cap the trend bonus at the deviation it augments. Exposed on this half because FSE'26 is where a bonus
+   * larger than its evidence would do most damage: `JVMMemoryStress` runs at `selfAnomaly`-only Top@1 2.3%
+   * over 171 cases, so any term that amplifies a small deviation moves that block furthest. Shipped `false`.
+   */
+  readonly capTrendBonusAtDeviation: boolean;
+  /**
+   * Whether a DEMAND metric (`workload`) may be a node's decisive evidence. Shipped `true` since iteration 127.
+   *
+   * Reachable here even though this corpus carries no member of the family — `grep -c 'workload=' on run
+   * 34928980425's dump over 7781 service lines` is **0** — because a knob that only one half can state is the
+   * defect `docs/dispatch-surface-audit.md` records: the flag would be unmeasurable on the half that cannot
+   * say it, and a future corpus that DID carry the family would have no way to ablate it.
+   */
+  suppressDemandMetrics: boolean;
+}
+
+/** Split a comma-separated flag value, dropping empty entries. */
+function csv(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Parse a non-negative weight flag, falling back to the SHIPPED weight.
+ *
+ * Two ways a weight flag can go wrong, and they need the same answer:
+ *
+ * 1. an unusable value (`'1O'`, `'-1'`) — `parseFloat` would read `1O` as `1`, so a
+ *    typo would run a plausible but DIFFERENT ablation than the one asked for;
+ * 2. an EMPTY value. `Number('')` is `0`, which is not a missing measurement — it is
+ *    a *different measured configuration* (the ablation), so accepting it silently
+ *    selects one nobody asked for.
+ *
+ * Both fall back to the shipped weight, so the worst case is a run of the published
+ * configuration under a name that says so, never an unrequested experiment wearing
+ * the published configuration's label. The workflow passes each weight flag only
+ * when its dispatch input is non-empty, for exactly the reason in (2); enforcing it
+ * here as well means the CLI cannot be a second door into the same swap.
+ *
+ * @param raw - The flag's argument, verbatim.
+ * @param shipped - The shipped weight for this flag.
+ * @returns The parsed weight, or `shipped`.
+ */
+// `parseWeight` is the shared rule (see `./cli-args.js`): the RCAEval runner takes
+// the same kind of flag, and a second copy of "what a malformed weight means"
+// would let the two scripts disagree about a value neither of them owns.
+
+/**
+ * Parse the runner's arguments.
+ *
+ * An UNRECOGNISED mode is never downgraded to a *different* configuration: it
+ * falls back to {@link DEFAULT_FSE26_LOG_MODE}, so a typo reports the default
+ * rather than an unmeasured mode. A RECOGNISED mode always takes effect — see
+ * the module note for what happens when it does not.
+ *
+ * @param argv - Arguments after the script name (`process.argv.slice(2)`).
+ * @returns The options, with every default applied.
+ */
+export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
+  const opts = {
+    dataDir: join(homedir(), 'RCABench-json'),
+    maxCases: 0,
+    logWeight: DEFAULT_LOG_WEIGHT,
+    logMode: DEFAULT_FSE26_LOG_MODE as LogSignalMode,
+    logNormalisation: DEFAULT_LOG_NORMALISATION,
+    rankNormalization: DEFAULT_RANK_NORMALIZATION,
+    anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
+    output: '',
+    perCaseOut: '',
+    diagnose: [] as string[],
+    diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
+    diagnoseDecimals: SERVICE_FIELD_DECIMALS,
+    termsOut: '',
+    fingerprintOut: '',
+    depthOut: '',
+    containmentOut: '',
+    containmentDepth: DEFAULT_CONTAINMENT_DEPTH,
+    fingerprintTopK: DEFAULT_FINGERPRINT_TOP_K,
+    presentationOut: '',
+    topologyBriefOut: '',
+    dropMetrics: [] as string[],
+    eventExtraLabels: [] as string[],
+    metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
+    metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE,
+    failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
+    failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
+    failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
+    latWeight: DEFAULT_LAT_WEIGHT,
+    latMinRise: DEFAULT_LAT_MIN_RISE,
+    poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    stabilityScope: DEFAULT_STABILITY_SCOPE,
+    faultFreeWeight: DEFAULT_FAULT_FREE_WEIGHT,
+    faultFreeProfilePath: undefined as string | undefined,
+    faultFreeSelection: 'rarest' as FaultFreeSelection,
+    labelPriorWeight: DEFAULT_LABEL_PRIOR_WEIGHT,
+    labelPriorMarginGate: DEFAULT_LABEL_PRIOR_MARGIN_GATE,
+    labelPriorJurisdiction: DEFAULT_LABEL_PRIOR_JURISDICTION,
+    selfTimeWeight: DEFAULT_SELF_TIME_WEIGHT,
+    selfTimeScope: DEFAULT_SELF_TIME_SCOPE,
+    selfAnomalyWeight: DEFAULT_SELF_ANOMALY_WEIGHT,
+    victimWeight: DEFAULT_VICTIM_WEIGHT,
+    dualFamilyWeight: DEFAULT_DUAL_FAMILY_WEIGHT,
+    podStateWeight: DEFAULT_POD_STATE_WEIGHT,
+    dualFamilyGate: DEFAULT_DUAL_FAMILY_GATE,
+    dualFamilyGateMode: DEFAULT_DUAL_FAMILY_GATE_MODE,
+    temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+    onsetShape: DEFAULT_ONSET_SHAPE,
+    // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
+    // registered the mirror. Every default is the SHIPPED value rather than a plausible one, which is the
+    // rule the whole default block follows: a flag nobody passes must reproduce a published configuration.
+    // Named rather than literal since iteration 98: a literal here and the constant in the fallbacks below
+    // are two answers to one question, and only a census over BOTH sites can see them disagree.
+    traceWeight: DEFAULT_TRACE_WEIGHT,
+    traceSkipsLeader: DEFAULT_TRACE_SKIPS_LEADER,
+    containmentOrder: DEFAULT_CONTAINMENT_ORDER,
+    containmentMargin: DEFAULT_CONTAINMENT_MARGIN,
+    licenseByExcursion: DEFAULT_LICENSE_BY_EXCURSION,
+    failureContainment: DEFAULT_FAILURE_CONTAINMENT,
+    failureAttribution: DEFAULT_FAILURE_ATTRIBUTION,
+    failureContainmentScope: DEFAULT_FAILURE_CONTAINMENT_SCOPE,
+    failedEdgeFirst: DEFAULT_FAILED_EDGE_FIRST,
+    failedEdgeFirstScope: DEFAULT_FAILED_EDGE_FIRST_SCOPE,
+    failedEdgeGateMode: DEFAULT_FAILED_EDGE_GATE_MODE,
+    topoWeight: DEFAULT_TOPO_WEIGHT,
+    topoDiscount: DEFAULT_TOPO_DISCOUNT,
+    topoDiscountScope: DEFAULT_TOPO_DISCOUNT_SCOPE,
+    topoDiscountGate: DEFAULT_TOPO_DISCOUNT_GATE,
+    topoClosure: DEFAULT_TOPO_CLOSURE,
+    topoEdgeRise: DEFAULT_TOPO_EDGE_RISE,
+    poolAdmission: DEFAULT_POOL_ADMISSION,
+    collisionWeight: DEFAULT_COLLISION_WEIGHT,
+    prismWeight: DEFAULT_PRISM_WEIGHT,
+    prismPooling: DEFAULT_PRISM_POOLING,
+    collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
+    dropDeviationMode: DEFAULT_DROP_DEVIATION_MODE,
+    baselineAnchor: DEFAULT_BASELINE_ANCHOR,
+    transientGuardTest: DEFAULT_TRANSIENT_GUARD_TEST,
+    anomalyTrendWeight: DEFAULT_ANOMALY_TREND_WEIGHT,
+    anomalyBurstWeight: DEFAULT_ANOMALY_BURST_WEIGHT,
+    anomalyCvWeight: DEFAULT_ANOMALY_CV_WEIGHT,
+    anomalyBreadthWeight: DEFAULT_ANOMALY_BREADTH_WEIGHT,
+    anomalyBreadthGate: DEFAULT_ANOMALY_BREADTH_GATE,
+    suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+    suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+    suppressZeroBaselineLatency: DEFAULT_SUPPRESS_ZERO_BASELINE_LATENCY,
+    capTrendBonusAtDeviation: DEFAULT_CAP_TREND_BONUS_AT_DEVIATION,
+    suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--data-dir' && hasValue(argv, i + 1)) opts.dataDir = argv[++i]!;
+    else if (arg === '--max-cases' && hasValue(argv, i + 1))
+      opts.maxCases = parseInt(argv[++i]!, 10) || 0;
+    else if (arg === '--log-weight' && hasValue(argv, i + 1)) {
+      // The fallback is the SHIPPED weight (1.0), not 0 — 0 is a *different*
+      // measured configuration (14.98% Top@1), so silently selecting it would
+      // publish an ablation nobody chose. See `parseWeight` for the empty value.
+      opts.logWeight = parseWeight(argv[++i]!, DEFAULT_LOG_WEIGHT);
+    } else if (arg === '--log-mode' && hasValue(argv, i + 1)) {
+      const mode = argv[++i]!;
+      opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
+    } else if (arg === '--log-normalisation' && hasValue(argv, i + 1)) {
+      // Same rule as `--log-mode`: a RECOGNISED value takes effect and an unrecognised one falls back to the
+      // SHIPPED scale, so a typo reports the configuration every published cell was measured under rather than
+      // inventing a third one.
+      const scale = argv[++i]!;
+      opts.logNormalisation = isLogNormalisation(scale) ? scale : DEFAULT_LOG_NORMALISATION;
+    } else if (arg === '--no-rank-normalization') opts.rankNormalization = false;
+    else if (arg === '--anomaly-normalize-threshold' && hasValue(argv, i + 1)) {
+      // The same parser and the same fallback as the golden CLI: two runners parsing one flag with two rules
+      // is the defect `cli-args.ts` exists to prevent, and `0` is a legal setting rather than an absent one.
+      opts.anomalyNormalizeNodeThreshold = parseNodeCount(
+        argv[++i]!,
+        ANOMALY_NORMALIZE_NODE_THRESHOLD,
+      );
+    } else if (arg === '--output' && hasValue(argv, i + 1)) opts.output = argv[++i]!;
+    else if (arg === '--per-case-out' && hasValue(argv, i + 1)) opts.perCaseOut = argv[++i]!;
+    else if (arg === '--diagnose' && hasValue(argv, i + 1)) opts.diagnose = csv(argv[++i]!);
+    else if (arg === '--diagnose-limit' && hasValue(argv, i + 1))
+      opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;
+    else if (arg === '--diagnose-decimals' && hasValue(argv, i + 1))
+      // Through `parseFieldDecimals`, whose bound comes from the module that calls `toFixed`: an
+      // unguarded parse turns `--diagnose-decimals 200` into a `RangeError` on the first rendered
+      // case, i.e. after a suite has been loaded and scored. A non-integer falls back to the
+      // producer's precision rather than being rounded, because `4.5` digits names no artifact.
+      opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
+    else if (arg === '--terms-dump' && hasValue(argv, i + 1)) opts.termsOut = argv[++i]!;
+    else if (arg === '--fingerprint-out' && hasValue(argv, i + 1)) opts.fingerprintOut = argv[++i]!;
+    else if (arg === '--depth-out' && hasValue(argv, i + 1)) opts.depthOut = argv[++i]!;
+    else if (arg === '--containment-out' && hasValue(argv, i + 1)) opts.containmentOut = argv[++i]!;
+    else if (arg === '--containment-depth' && hasValue(argv, i + 1)) {
+      // Refused rather than clamped, for the reason `--rise-ceiling` records one branch below: a depth of one
+      // records no adjacent pair at all, so it would publish a dump whose every case has an empty `pairs` array —
+      // a zero that reads as "the sweep examined nothing" when the truth is that the flag asked for nothing to be
+      // WRITTEN. `0` is the explicit "every candidate" setting and is legal.
+      const depth = Number(argv[++i]!);
+      if (!Number.isInteger(depth) || depth < 0 || depth === 1) {
+        throw new Error(
+          `--containment-depth must be 0 (every candidate) or an integer >= 2, got ${String(argv[i])}`,
+        );
+      }
+      opts.containmentDepth = depth;
+    } else if (arg === '--presentation-out' && hasValue(argv, i + 1))
+      opts.presentationOut = argv[++i]!;
+    else if (arg === '--topology-brief-out' && hasValue(argv, i + 1))
+      opts.topologyBriefOut = argv[++i]!;
+    else if (arg === '--fingerprint-top-k' && hasValue(argv, i + 1)) {
+      // `0` is "every candidate" and is legal; a negative or fractional width is refused rather than rounded,
+      // for the reason `--containment-depth` records above: a clamped value publishes an artifact of a width the
+      // command line did not ask for, and an arm reading it would report a window nobody dispatched.
+      const width = Number(argv[++i]!);
+      if (!Number.isInteger(width) || width < 0) {
+        throw new Error(
+          `--fingerprint-top-k must be 0 (every candidate) or a non-negative integer, got ${String(argv[i])}`,
+        );
+      }
+      opts.fingerprintTopK = width;
+    } else if (arg === '--drop-metrics' && hasValue(argv, i + 1))
+      opts.dropMetrics = csv(argv[++i]!);
+    else if (arg === '--event-extra-labels' && hasValue(argv, i + 1))
+      opts.eventExtraLabels = csv(argv[++i]!);
+    else if (arg === '--rise-ceiling' && hasValue(argv, i + 1)) {
+      // STRICT, unlike the other numeric flags: `parseFloat('1O')` is 1, so a
+      // typo would run a plausible but DIFFERENT ablation than the one asked
+      // for — `--rise-ceiling 1O` meaning 10 would silently measure 1. `Number`
+      // rejects the trailing garbage, and anything not a finite positive value
+      // falls back to the SHIPPED configuration, which can only reproduce
+      // published numbers rather than invent an unmeasured one.
+      const ceiling = Number(argv[++i]!);
+      opts.metricRiseCeiling =
+        Number.isFinite(ceiling) && ceiling > 0 ? ceiling : DEFAULT_METRIC_RISE_CEILING;
+    } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
+    else if (arg === '--failed-edge-min-records' && hasValue(argv, i + 1)) {
+      // Strict, and it falls back to the SHIPPED floor of 1 — a floor of 0 would
+      // credit a callee on no evidence at all, which is not a configuration
+      // anyone asked for. A non-integer is rejected for the same reason the
+      // other numeric switches reject trailing garbage.
+      const floor = Number(argv[++i]!);
+      opts.failedEdgeMinRecords =
+        Number.isInteger(floor) && floor >= 1 ? floor : DEFAULT_FAILED_EDGE_MIN_RECORDS;
+    } else if (arg === '--failed-edge-mode' && hasValue(argv, i + 1)) {
+      // Falling back to the SHIPPED mode on an unknown value, like the log mode:
+      // a typo must reproduce a published configuration, never invent one.
+      const mode = argv[++i]!;
+      opts.failedEdgeMode = isFailedEdgeMode(mode) ? mode : DEFAULT_FAILED_EDGE_MODE;
+    } else if (arg === '--failed-edge-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, like every other weight on this surface — and it was NOT, which the flip
+      // exposed: `Number('')` is 0, so `--failed-edge-weight ""` passed the inline guard and silently selected
+      // the ABLATION. At the old shipped value of 0 that was invisible (the ablation WAS the shipped run);
+      // at 3 it would have run a term-off experiment under a dispatch that asked for the default. The shared
+      // parser refuses a blank value and returns the shipped one, which is the rule this line documents.
+      opts.failedEdgeWeight = parseWeight(argv[++i]!, DEFAULT_FAILED_EDGE_WEIGHT);
+    } else if (arg === '--lat-weight' && hasValue(argv, i + 1)) {
+      // Same rule and the same fallback as `--log-weight`: the SHIPPED weight, NOT
+      // 0. Zero is a *different measured* configuration — the 47.33% ablation — so
+      // a typo must reproduce the published configuration rather than silently run
+      // an experiment nobody asked for under the shipped one's name.
+      opts.latWeight = parseWeight(argv[++i]!, DEFAULT_LAT_WEIGHT);
+    } else if (arg === '--lat-min-rise' && hasValue(argv, i + 1)) {
+      // STRICT and floored at 1: a floor below 1 would be a no-op that silently
+      // reports a configuration the operator believes changed something, and a
+      // non-finite one would drop every measurement through the mask.
+      const rise = Number(argv[++i]!);
+      opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
+    } else if (arg === '--pool-penalty' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, not an inline `Number(...)`: an empty value must
+      // fall back to the SHIPPED weight rather than select 0, which is a
+      // different measured configuration (`--pool-penalty 0` is the ablation).
+      opts.poolMetricPenaltyWeight = parseWeight(argv[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    } else if (arg === '--stability-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight` for the same reason as the pool penalty: an empty value must fall
+      // back to the SHIPPED weight (0 here, which happens to be the ablation — so the fallback is
+      // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
+      // turn a blank flag into a measurement of the ablation).
+      opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
+    } else if (arg === '--stability-scope' && hasValue(argv, i + 1)) {
+      // Refused rather than defaulted, on `--self-time-scope`'s rule: the scope decides what the weight
+      // multiplies, so a typo that fell back to `rank` would publish the rank arm under the repair's name.
+      const value = argv[++i]!;
+      if (!isStabilityScope(value)) {
+        throw new Error(
+          `--stability-scope must be one of ${Object.keys(STABILITY_SCOPES).join(', ')}, got ${value}`,
+        );
+      }
+      opts.stabilityScope = value;
+    } else if (arg === '--label-prior-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, so a blank value falls back to the SHIPPED weight rather than selecting the
+      // ablation — the rule every weight on this parser follows.
+      opts.labelPriorWeight = parseWeight(argv[++i]!, DEFAULT_LABEL_PRIOR_WEIGHT);
+    } else if (arg === '--label-prior-margin-gate' && hasValue(argv, i + 1)) {
+      // The golden half's `parseWeight` rule and NOT `parseUnitInterval`: the domain is a non-negative score
+      // gap rather than a share, so `1` is not the largest legal gate and clamping at it would silently refuse
+      // an arm that withholds the term everywhere — the strongest control on this axis.
+      opts.labelPriorMarginGate = parseWeight(argv[++i]!, DEFAULT_LABEL_PRIOR_MARGIN_GATE);
+    } else if (arg === '--label-prior-jurisdiction' && hasValue(argv, i + 1)) {
+      // An unrecognised word FAILS rather than falling back, on the rule `--stability-scope` records: a run that
+      // asked for `tail` and silently read `everywhere` would publish the arm's depth as the shipped term's, and
+      // the two differ by exactly the cases the head decides.
+      const value = argv[++i]!;
+      if (!isLabelPriorJurisdiction(value)) {
+        throw new Error(
+          `--label-prior-jurisdiction must be one of ${Object.keys(LABEL_PRIOR_JURISDICTIONS).join(', ')}, got ${value}`,
+        );
+      }
+      opts.labelPriorJurisdiction = value;
+    } else if (arg === '--fault-free-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight` on the same rule as every other weight: an empty value falls back to the
+      // SHIPPED weight rather than selecting a configuration nobody asked for.
+      opts.faultFreeWeight = parseWeight(argv[++i]!, DEFAULT_FAULT_FREE_WEIGHT);
+    } else if (arg === '--fault-free-profile' && hasValue(argv, i + 1)) {
+      opts.faultFreeProfilePath = argv[++i]!;
+    } else if (arg === '--fault-free-selection' && hasValue(argv, i + 1)) {
+      // An unrecognised value FAILS rather than falling back: a run that asked for `dominant` and silently
+      // read `rarest` would publish one aggregation's numbers under the other's name.
+      const value = argv[++i]!;
+      if (!isFaultFreeSelection(value)) {
+        throw new Error(
+          `--fault-free-selection must be one of ${FAULT_FREE_SELECTIONS.join(', ')}, got ${value}`,
+        );
+      }
+      opts.faultFreeSelection = value;
+    } else if (arg === '--self-time-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight`, so an empty value falls back to the SHIPPED weight rather than
+      // selecting the ablation — the rule every weight on this parser follows.
+      opts.selfTimeWeight = parseWeight(argv[++i]!, DEFAULT_SELF_TIME_WEIGHT);
+    } else if (arg === '--self-time-scope' && hasValue(argv, i + 1)) {
+      // Refused rather than defaulted on an unknown word: the scope decides what the weight MULTIPLIES, so a
+      // typo that fell back to `absolute` would publish the refused arm under the repair's name.
+      const value = argv[++i]!;
+      if (!isSelfTimeScope(value)) {
+        throw new Error(
+          `--self-time-scope must be one of ${Object.keys(SELF_TIME_SCOPES).join(', ')}, got ${value}`,
+        );
+      }
+      opts.selfTimeScope = value;
+    } else if (arg === '--self-anomaly-weight' && hasValue(argv, i + 1)) {
+      opts.selfAnomalyWeight = parseWeight(argv[++i]!, DEFAULT_SELF_ANOMALY_WEIGHT);
+    } else if (arg === '--victim-weight' && hasValue(argv, i + 1)) {
+      opts.victimWeight = parseWeight(argv[++i]!, DEFAULT_VICTIM_WEIGHT);
+    } else if (arg === '--dual-family-weight' && hasValue(argv, i + 1)) {
+      opts.dualFamilyWeight = parseWeight(argv[++i]!, DEFAULT_DUAL_FAMILY_WEIGHT);
+    } else if (arg === '--pod-state-weight' && hasValue(argv, i + 1)) {
+      opts.podStateWeight = parseWeight(argv[++i]!, DEFAULT_POD_STATE_WEIGHT);
+    } else if (arg === '--dual-family-gate' && hasValue(argv, i + 1)) {
+      opts.dualFamilyGate = parseUnitInterval(argv[++i]!, DEFAULT_DUAL_FAMILY_GATE);
+    } else if (arg === '--dual-family-gate-mode' && hasValue(argv, i + 1)) {
+      const mode = argv[++i]!;
+      opts.dualFamilyGateMode = isDualFamilyGateMode(mode) ? mode : DEFAULT_DUAL_FAMILY_GATE_MODE;
+    } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
+      // Through `parseWeight` for the empty-value reason, and the fallback is the
+      // SHIPPED 0 — which here IS the published configuration, so a typo cannot select
+      // an unmeasured ablation.
+      opts.temporalWeight = parseWeight(argv[++i]!, DEFAULT_TEMPORAL_WEIGHT);
+    } else if (arg === '--onset-shape' && hasValue(argv, i + 1)) {
+      // Falling back to the SHIPPED shape on an unknown value, like the log mode and
+      // the failed-edge mode: a typo must reproduce a published configuration rather
+      // than invent one.
+      const shape = argv[++i]!;
+      opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
+    } else if (arg === '--trace-weight' && hasValue(argv, i + 1))
+      // The shipped 0, through the shared parser: the golden half's rule for this same flag, which is what
+      // makes the two halves' fallbacks equal rather than merely both "sensible".
+      opts.traceWeight = parseWeight(argv[++i]!, DEFAULT_TRACE_WEIGHT);
+    else if (arg === '--topo-weight' && hasValue(argv, i + 1))
+      opts.topoWeight = parseWeight(argv[++i]!, DEFAULT_TOPO_WEIGHT);
+    else if (arg === '--topo-discount' && hasValue(argv, i + 1))
+      // The golden half's `parseUnitInterval` rule, so one malformed argument cannot become two different
+      // configurations on the two halves of the same suite.
+      opts.topoDiscount = parseUnitInterval(argv[++i]!, DEFAULT_TOPO_DISCOUNT);
+    else if (arg === '--topo-discount-scope' && hasValue(argv, i + 1)) {
+      const scope = argv[++i]!;
+      opts.topoDiscountScope = isTopoDiscountScope(scope) ? scope : DEFAULT_TOPO_DISCOUNT_SCOPE;
+    } else if (arg === '--topo-discount-gate' && hasValue(argv, i + 1))
+      // The golden half's unit-interval rule, for the reason the weight above records: one malformed
+      // argument must not become two different configurations on the two halves of the same suite.
+      opts.topoDiscountGate = parseUnitInterval(argv[++i]!, DEFAULT_TOPO_DISCOUNT_GATE);
+    else if (arg === '--topo-closure' && hasValue(argv, i + 1)) {
+      // The golden half's fallback rule, for the reason those two record: an unusable value must resolve to
+      // the shipped configuration on both halves of one suite, not to two different aggregations.
+      const closure = argv[++i]!;
+      opts.topoClosure = isTopoClosure(closure) ? closure : DEFAULT_TOPO_CLOSURE;
+    } else if (arg === '--edge-explained' && hasValue(argv, i + 1)) {
+      // A THRESHOLD rather than a vocabulary, so the fallback cannot be the shipped `null`: an unusable
+      // value must resolve to the shipped configuration on both halves of one suite, and a run that
+      // silently kept a threshold the operator would never consult is the defect the closure's fallback
+      // records one branch up. The spelling is read by ONE function, shared with the golden half, because
+      // `2:inbound` is an axis and two readers of it would be two answers to what it means.
+      opts.topoEdgeRise = parseTopoEdgeRise(argv[++i]!) ?? DEFAULT_TOPO_EDGE_RISE;
+    } else if (arg === '--pool-admission' && hasValue(argv, i + 1)) {
+      // The golden half's fallback rule, for the reason the scope and closure above record: an unusable value
+      // must resolve to the shipped configuration on both halves of one suite.
+      const admission = argv[++i]!;
+      opts.poolAdmission = isPoolAdmission(admission) ? admission : DEFAULT_POOL_ADMISSION;
+    } else if (arg === '--collision-weight' && hasValue(argv, i + 1))
+      opts.collisionWeight = parseWeight(argv[++i]!, DEFAULT_COLLISION_WEIGHT);
+    else if (arg === '--prism-weight' && hasValue(argv, i + 1))
+      opts.prismWeight = parseWeight(argv[++i]!, DEFAULT_PRISM_WEIGHT);
+    else if (arg === '--prism-pooling' && hasValue(argv, i + 1)) {
+      // The whole vocabulary, by the union's own guard — not a hand-written pair. The golden parser records
+      // why: only one of the two poolings was ever reachable from the engine, so the flag would have been
+      // given a SUBSET, and a test asserts the accepted set is the union rather than a subset of it.
+      const pooling = argv[++i]!;
+      opts.prismPooling = isPrismPooling(pooling) ? pooling : DEFAULT_PRISM_POOLING;
+    } else if (arg === '--anomaly-trend-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyTrendWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_TREND_WEIGHT);
+    } else if (arg === '--anomaly-burst-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyBurstWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_BURST_WEIGHT);
+    } else if (arg === '--anomaly-cv-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyCvWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_CV_WEIGHT);
+    } else if (arg === '--anomaly-breadth-weight' && hasValue(argv, i + 1)) {
+      opts.anomalyBreadthWeight = parseWeight(argv[++i]!, DEFAULT_ANOMALY_BREADTH_WEIGHT);
+    } else if (arg === '--anomaly-breadth-gate' && hasValue(argv, i + 1)) {
+      opts.anomalyBreadthGate = parseUnitInterval(argv[++i]!, DEFAULT_ANOMALY_BREADTH_GATE);
+    } else if (arg === '--collapse-discount' && hasValue(argv, i + 1)) {
+      // The golden parser's own arithmetic rather than `parseWeight`: this knob is a FRACTION, and it
+      // CLAMPS to `[0, 1]` rather than falling back, so a value outside the range is a legal dispatch
+      // pinned to the nearest legal one instead of a silent default. An unreadable value still falls back
+      // to the shipped 0, which is the only configuration a typo may reproduce.
+      const discount = parseFloat(argv[++i]!);
+      opts.collapseDiscount = Number.isFinite(discount) ? Math.min(1, Math.max(0, discount)) : 0;
+    } else if (arg === '--drop-deviation-mode' && hasValue(argv, i + 1)) {
+      const raw = argv[++i]!;
+      if (isDropDeviationMode(raw)) opts.dropDeviationMode = raw;
+      else throw new Error(`--drop-deviation-mode expects bounded|log, got '${raw}'`);
+    } else if (arg === '--baseline-anchor' && hasValue(argv, i + 1)) {
+      const raw = argv[++i]!;
+      if (isBaselineAnchor(raw)) opts.baselineAnchor = raw;
+      else throw new Error(`--baseline-anchor expects whole-file|pre-injection, got '${raw}'`);
+    } else if (arg === '--transient-guard-test' && hasValue(argv, i + 1)) {
+      // The refusal names the value AND the vocabulary, reading the union's own table rather than a copy of
+      // it: a second spelling here would drift the moment a member was added, and the error message is the
+      // only place a dispatcher learns the accepted set. The golden half's branch is the same rule in the
+      // same words on purpose — two halves that refuse differently teach a dispatcher two vocabularies.
+      const raw = argv[++i]!;
+      if (isTransientGuardTest(raw)) opts.transientGuardTest = raw;
+      else
+        throw new Error(
+          `--transient-guard-test takes ${Object.keys(TRANSIENT_GUARD_TESTS).join(', ')}, got '${raw}'`,
+        );
+    } else if (arg === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
+    else if (arg === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
+    else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;
+    else if (arg === '--no-suppress-idle-transients') opts.suppressIdleTransients = false;
+    else if (arg === '--suppress-near-zero-baseline-rise') opts.suppressNearZeroBaselineRise = true;
+    else if (arg === '--no-suppress-near-zero-baseline-rise')
+      opts.suppressNearZeroBaselineRise = false;
+    else if (arg === '--suppress-zero-baseline-latency') opts.suppressZeroBaselineLatency = true;
+    else if (arg === '--no-suppress-zero-baseline-latency')
+      opts.suppressZeroBaselineLatency = false;
+    else if (arg === '--trace-skips-leader') opts.traceSkipsLeader = true;
+    else if (arg === '--no-trace-skips-leader') opts.traceSkipsLeader = false;
+    else if (arg === '--containment-order') opts.containmentOrder = true;
+    else if (arg === '--no-containment-order') opts.containmentOrder = false;
+    else if (arg === '--failure-containment') opts.failureContainment = true;
+    else if (arg === '--no-failure-containment') opts.failureContainment = false;
+    else if (arg === '--failed-edge-first-scope' && hasValue(argv, i + 1)) {
+      // A closed vocabulary with the shipped fallback, on the rule every option here follows: a typo reproduces a
+      // published configuration rather than inventing a third reading.
+      const value = argv[++i]!;
+      opts.failedEdgeFirstScope = isFailedEdgeFirstScope(value)
+        ? value
+        : DEFAULT_FAILED_EDGE_FIRST_SCOPE;
+    } else if (arg === '--failure-containment-scope' && hasValue(argv, i + 1)) {
+      // Closed vocabulary with the shipped fallback, on the rule every option here follows. The three states are
+      // three POPULATIONS of pairs rather than three magnitudes, so an unknown word must reproduce the shipped
+      // traversal rather than pick the nearest one.
+      const value = argv[++i]!;
+      opts.failureContainmentScope = isFailureContainmentScope(value)
+        ? value
+        : DEFAULT_FAILURE_CONTAINMENT_SCOPE;
+    } else if (arg === '--failed-edge-first') opts.failedEdgeFirst = true;
+    else if (arg === '--no-failed-edge-first') opts.failedEdgeFirst = false;
+    else if (arg === '--failure-attribution' && hasValue(argv, i + 1)) {
+      // A closed vocabulary, and an unknown value falls back to the SHIPPED one on the rule every option here
+      // follows: a typo reproduces a published configuration rather than inventing a third reading.
+      const value = argv[++i]!;
+      opts.failureAttribution = isFailureAttribution(value) ? value : DEFAULT_FAILURE_ATTRIBUTION;
+    } else if (arg === '--failed-edge-gate-mode' && hasValue(argv, i + 1)) {
+      // Closed vocabulary, shipped fallback: an unknown word reproduces a published configuration rather than
+      // inventing a sixth reading.
+      const value = argv[++i]!;
+      opts.failedEdgeGateMode = isFailedEdgeGateMode(value) ? value : DEFAULT_FAILED_EDGE_GATE_MODE;
+    } else if (arg === '--license-by-excursion') opts.licenseByExcursion = true;
+    else if (arg === '--no-license-by-excursion') opts.licenseByExcursion = false;
+    else if (arg === '--containment-margin' && hasValue(argv, i + 1)) {
+      // A plain parse with the SHIPPED fallback, on the rule every weight here follows: an unparseable value
+      // reproduces a published configuration rather than inventing one.
+      const parsed = Number.parseFloat(argv[++i]!);
+      opts.containmentMargin = Number.isFinite(parsed) ? parsed : DEFAULT_CONTAINMENT_MARGIN;
+    } else if (arg === '--cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = true;
+    else if (arg === '--no-cap-trend-bonus-at-deviation') opts.capTrendBonusAtDeviation = false;
+    else {
+      throw new Error(
+        `unrecognised argument ${arg} — either this runner does not accept it, ` +
+          'or the flag before it is missing its value',
+      );
+    }
+  }
+
+  // Cross-flag rules, at the tail because they are about the COMBINATION rather than about either value. This is
+  // the first one in this parser and it is here rather than in the runner so that it can be driven: a rule in
+  // `run-fse26.ts` sits behind a module that calls `main()` at import time, which is the reason this file exists.
+  //
+  // `--fingerprint-top-k` widens a FILE, and the file is `--presentation-out`. Asking for a width without asking
+  // for the writer is a flag that does nothing, and an arm dispatched that way would read a five-wide artifact and
+  // report the width it asked for — the `--log-mode count` defect one surface over, where the value was accepted
+  // and silently did not reach its consumer.
+  if (opts.fingerprintTopK !== DEFAULT_FINGERPRINT_TOP_K && opts.presentationOut === '') {
+    throw new Error('--fingerprint-top-k requires --presentation-out');
+  }
+
+  return opts;
+}
